@@ -8,6 +8,11 @@ updates:
     labels:
       - infra
       - p2-later
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
@@ -17,3 +22,8 @@ updates:
     labels:
       - infra
       - p2-later
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
