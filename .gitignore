@@ -1,0 +1,27 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Trunk (web crate dist output)
+/crates/web/dist/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Local SQLite databases (not committed)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
