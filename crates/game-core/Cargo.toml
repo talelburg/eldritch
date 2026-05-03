@@ -11,3 +11,4 @@ description = "Eldritch rules engine: game state, actions, events, effect system
 workspace = true
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
