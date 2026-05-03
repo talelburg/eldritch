@@ -50,6 +50,10 @@ pub struct Investigator {
 }
 
 /// The four base skill values.
+///
+/// Deliberately NOT `#[non_exhaustive]`: the four skills are fixed by
+/// FFG's rules. Card effects modify these values at query time; they
+/// don't add new fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Skills {
     /// Used for tests against effects of the will / fear.

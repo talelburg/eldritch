@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 ///
 /// Phases cycle in order: [`Mythos`] → [`Investigation`] → [`Enemy`] → [`Upkeep`] → [`Mythos`]…
 ///
+/// Deliberately NOT `#[non_exhaustive]`: the four phases are fixed by FFG's
+/// rules, not an open extension point. Scenario-specific timing
+/// (interludes, special encounter windows) is modeled with special rules,
+/// not by adding new phase variants.
+///
 /// [`Mythos`]: Phase::Mythos
 /// [`Investigation`]: Phase::Investigation
 /// [`Enemy`]: Phase::Enemy
