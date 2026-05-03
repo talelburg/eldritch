@@ -12,5 +12,5 @@ workspace = true
 
 [dependencies]
 game-core = { path = "../game-core" }
-leptos = { version = "0.7", features = ["csr"] }
+leptos = { version = "0.8", features = ["csr"] }
 console_error_panic_hook = "0.1"
