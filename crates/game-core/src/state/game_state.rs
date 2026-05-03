@@ -18,6 +18,7 @@ use super::{
 /// Phase-1 minimal shape; later phases will add e.g. encounter deck,
 /// act/agenda decks, doom track, persistent campaign-log facts, etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct GameState {
     /// All investigators currently in the scenario.
     pub investigators: Vec<Investigator>,

@@ -13,23 +13,32 @@ pub struct InvestigatorId(pub u32);
 /// Phase-1 minimal shape; fields will grow as later phases need them
 /// (mental/physical trauma carried in from the campaign log, traits,
 /// passive ability flags, etc.).
+///
+/// # Invariants
+///
+/// `damage <= max_health` and `horror <= max_sanity` are enforced by the
+/// apply loop, not by the type system. Constructing an `Investigator`
+/// with damage exceeding max-health is a bug, not a defeat.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Investigator {
     /// Stable identifier within this scenario.
     pub id: InvestigatorId,
     /// Display name.
     pub name: String,
-    /// Location the investigator is currently at.
-    pub current_location: LocationId,
+    /// Location the investigator is currently at, or `None` if they are
+    /// "between locations" (resigned, defeated, or in scenario setup
+    /// before initial placement).
+    pub current_location: Option<LocationId>,
     /// Skill values.
     pub skills: Skills,
     /// Maximum health (physical hit points).
     pub max_health: u8,
-    /// Current physical damage suffered.
+    /// Current physical damage suffered. Invariant: `<= max_health`.
     pub damage: u8,
     /// Maximum sanity.
     pub max_sanity: u8,
-    /// Current horror suffered.
+    /// Current horror suffered. Invariant: `<= max_sanity`.
     pub horror: u8,
     /// Clues currently held by the investigator.
     pub clues: u8,

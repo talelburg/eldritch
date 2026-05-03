@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 /// [`Tablet`]: ChaosToken::Tablet
 /// [`ElderThing`]: ChaosToken::ElderThing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ChaosToken {
     /// Numeric modifier token (+1, 0, −1, …, −8). The wrapped value is the
     /// modifier applied to the test's skill total when drawn.
@@ -35,6 +36,7 @@ pub enum ChaosToken {
 
 /// The pool of chaos tokens for the current scenario.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ChaosBag {
     /// Tokens currently in the bag. Order is not significant; the engine
     /// draws via the deterministic RNG, not list position.
@@ -48,17 +50,5 @@ impl ChaosBag {
         Self {
             tokens: tokens.into_iter().collect(),
         }
-    }
-
-    /// Number of tokens currently in the bag.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.tokens.len()
-    }
-
-    /// True if the bag has no tokens (e.g. all temporarily set aside).
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.tokens.is_empty()
     }
 }

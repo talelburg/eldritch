@@ -21,6 +21,7 @@ use crate::state::{ChaosToken, InvestigatorId, LocationId, Phase};
 /// commits, card plays, ability triggers, encounter draws, doom changes,
 /// trauma, scenario resolution, etc.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Event {
     /// A scenario session has begun.
     ScenarioStarted,

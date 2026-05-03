@@ -12,6 +12,7 @@ pub struct LocationId(pub u32);
 /// affiliation, victory points, location-specific effects, and
 /// hidden-information state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Location {
     /// Stable identifier within this scenario.
     pub id: LocationId,

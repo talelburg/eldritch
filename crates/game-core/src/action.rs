@@ -5,10 +5,10 @@
 //! state. There are two kinds of actions, distinguished by who or what
 //! initiated them:
 //!
-//! - [`Action::Player`] wraps a [`PlayerAction`] — input from a human via
-//!   the websocket. Submitting a player action is the only thing a client
-//!   can do; the wire protocol parses incoming messages as `PlayerAction`,
-//!   so a client cannot fabricate engine-only events.
+//! - [`Action::Player`] wraps a [`PlayerAction`] — input crossing the
+//!   transport boundary from a client. The wire layer parses incoming
+//!   messages as `PlayerAction`, so a client cannot fabricate
+//!   engine-only events.
 //! - [`Action::Engine`] wraps an [`EngineRecord`] — recorded output of
 //!   engine-side randomness or system events (chaos token draws, deck
 //!   shuffles). The engine generates these itself so the action log is
@@ -22,6 +22,7 @@ use crate::state::{ChaosToken, InvestigatorId, LocationId};
 ///
 /// See the module docs for the rationale of the two-bucket split.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Action {
     /// Action initiated by a human player.
     Player(PlayerAction),
@@ -35,6 +36,7 @@ pub enum Action {
 /// Phase-1 minimal set; later phases add `Investigate`, `Move`, `Fight`,
 /// `Evade`, `PlayCard`, `ActivateAbility`, etc.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum PlayerAction {
     /// Begin a scenario session. Carries no payload at this stage; later
     /// phases will attach scenario code, investigator selections, deck
@@ -57,6 +59,7 @@ pub enum PlayerAction {
 /// timer-derived values) goes into the log as one of these variants so
 /// replay produces identical results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum EngineRecord {
     /// A chaos token was drawn from the bag.
     ChaosTokenDrawn {
@@ -65,6 +68,11 @@ pub enum EngineRecord {
     },
     /// A deck was shuffled with the given seed. Replays use the same seed
     /// to reproduce the order.
+    //
+    // TODO(#15): once there are multiple decks (encounter deck, each
+    // investigator's deck, act/agenda decks), this needs a `deck:
+    // DeckId` field to disambiguate. Punted to the apply-loop PR where
+    // DeckId will be defined.
     DeckShuffled {
         /// Seed used for the shuffle.
         seed: u64,
@@ -77,14 +85,16 @@ pub enum EngineRecord {
 /// multi-target picks, etc. (The `EngineOutcome::AwaitingInput` variant
 /// lands in a later PR.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum InputResponse {
     /// Confirm / yes / proceed with the prompted action.
     Confirm,
     /// Decline / skip the prompted optional action.
     Skip,
     /// Pick the option at the given zero-based index from the prompt's
-    /// option list.
-    PickIndex(usize),
+    /// option list. `u32` rather than `usize` for a stable wire format
+    /// independent of host pointer width.
+    PickIndex(u32),
     /// Pick a specific investigator.
     PickInvestigator(InvestigatorId),
     /// Pick a specific location.
