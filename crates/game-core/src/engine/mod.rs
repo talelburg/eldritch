@@ -176,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn chaos_token_drawn_engine_record_is_rejected_phase_one() {
+    fn chaos_token_drawn_with_empty_bag_is_rejected() {
         let state = TestGame::new().build();
         let result = apply(
             state,
@@ -186,6 +186,106 @@ mod tests {
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
+    }
+
+    fn bag_with_three_tokens() -> crate::state::ChaosBag {
+        crate::state::ChaosBag::new([
+            ChaosToken::Skull,
+            ChaosToken::Numeric(1),
+            ChaosToken::Numeric(-2),
+        ])
+    }
+
+    /// Drive the RNG forward to figure out which token *will* be drawn
+    /// next. Used by tests to construct a `ChaosTokenDrawn` action with
+    /// a token that matches the RNG's expectation.
+    fn peek_next_token(state: &crate::state::GameState) -> ChaosToken {
+        let mut probe = state.rng.clone();
+        let idx = probe.next_index(state.chaos_bag.tokens.len());
+        state.chaos_bag.tokens[idx]
+    }
+
+    #[test]
+    fn chaos_token_drawn_with_matching_token_succeeds_and_advances_rng() {
+        let state = TestGame::new()
+            .with_chaos_bag(bag_with_three_tokens())
+            .with_rng_seed(42)
+            .build();
+        let token = peek_next_token(&state);
+        let draws_before = state.rng.draws;
+
+        let result = apply(
+            state,
+            Action::Engine(EngineRecord::ChaosTokenDrawn { token }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::ChaosTokenRevealed { token: t, modifier: 0 } if *t == token
+        );
+        assert_eq!(result.state.rng.draws, draws_before + 1);
+    }
+
+    #[test]
+    fn chaos_token_drawn_with_wrong_token_is_rejected_and_does_not_advance_rng() {
+        let state = TestGame::new()
+            .with_chaos_bag(bag_with_three_tokens())
+            .with_rng_seed(42)
+            .build();
+        let correct = peek_next_token(&state);
+        // Pick any token from the bag that ISN'T the correct one.
+        let wrong = state
+            .chaos_bag
+            .tokens
+            .iter()
+            .copied()
+            .find(|t| *t != correct)
+            .expect("bag contains at least two distinct tokens");
+        let rng_before = state.rng.clone();
+
+        let result = apply(
+            state,
+            Action::Engine(EngineRecord::ChaosTokenDrawn { token: wrong }),
+        );
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+        assert_eq!(result.state.rng, rng_before);
+    }
+
+    #[test]
+    fn chaos_token_drawn_log_round_trips() {
+        // Build a five-draw log against an initial state, then replay
+        // the log from scratch and assert the resulting RNG state
+        // matches. This is the core determinism property.
+        let initial = TestGame::new()
+            .with_chaos_bag(bag_with_three_tokens())
+            .with_rng_seed(123)
+            .build();
+
+        let mut state = initial.clone();
+        let mut log = Vec::new();
+        for _ in 0..5 {
+            let token = peek_next_token(&state);
+            let action = Action::Engine(EngineRecord::ChaosTokenDrawn { token });
+            log.push(action.clone());
+            let result = apply(state, action);
+            assert_eq!(result.outcome, EngineOutcome::Done);
+            state = result.state;
+        }
+        let after_first_pass = state;
+
+        // Replay against the original initial state.
+        let mut replay = initial;
+        for action in log {
+            let result = apply(replay, action);
+            assert_eq!(result.outcome, EngineOutcome::Done);
+            replay = result.state;
+        }
+
+        assert_eq!(after_first_pass.rng, replay.rng);
+        assert_eq!(after_first_pass.rng.draws, 5);
     }
 
     #[test]

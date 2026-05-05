@@ -25,6 +25,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::rng::RngState;
 use crate::state::{ChaosBag, GameState, Investigator, InvestigatorId, Location, Phase};
 
 /// Fluent builder for a [`GameState`].
@@ -42,11 +43,14 @@ pub struct TestGame {
     round: u32,
     active_investigator: Option<InvestigatorId>,
     turn_order: Vec<InvestigatorId>,
+    rng: RngState,
 }
 
 impl TestGame {
     /// Start a new builder with empty investigators / locations / chaos
-    /// bag, `Phase::Mythos`, round 0, no active investigator.
+    /// bag, `Phase::Mythos`, round 0, no active investigator, RNG
+    /// seeded at zero. Most tests override the seed explicitly via
+    /// [`with_rng_seed`](Self::with_rng_seed).
     pub fn new() -> Self {
         Self {
             investigators: BTreeMap::new(),
@@ -56,6 +60,7 @@ impl TestGame {
             round: 0,
             active_investigator: None,
             turn_order: Vec::new(),
+            rng: RngState::new(0),
         }
     }
 
@@ -110,6 +115,19 @@ impl TestGame {
         self
     }
 
+    /// Seed the deterministic RNG. Resets `draws` to 0.
+    pub fn with_rng_seed(mut self, seed: u64) -> Self {
+        self.rng = RngState::new(seed);
+        self
+    }
+
+    /// Set the full RNG state (seed + draws). Useful for tests that
+    /// want to start mid-stream.
+    pub fn with_rng(mut self, rng: RngState) -> Self {
+        self.rng = rng;
+        self
+    }
+
     /// Materialize the configured [`GameState`].
     pub fn build(self) -> GameState {
         GameState {
@@ -120,6 +138,7 @@ impl TestGame {
             round: self.round,
             active_investigator: self.active_investigator,
             turn_order: self.turn_order,
+            rng: self.rng,
         }
     }
 }
