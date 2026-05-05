@@ -13,14 +13,17 @@
 //!   (engine-recorded RNG and system events).
 //! - [`event`] — the [`Event`] enum (state-change records emitted by the
 //!   engine as actions resolve).
+//! - [`engine`] — the [`apply`] loop and [`EngineOutcome`] terminal status.
 //!
-//! Subsequent PRs add the apply loop, RNG, phase machine, and test harness.
+//! Subsequent PRs add the RNG, phase machine, and test harness.
 
 pub mod action;
+pub mod engine;
 pub mod event;
 pub mod state;
 
 pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
+pub use engine::{apply, ApplyResult, EngineOutcome, InputRequest, ResumeToken};
 pub use event::Event;
 pub use state::{
     ChaosBag, ChaosToken, GameState, Investigator, InvestigatorId, Location, LocationId, Phase,
