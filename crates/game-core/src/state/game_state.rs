@@ -1,11 +1,13 @@
 //! Top-level game state.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::{
     chaos_bag::ChaosBag,
     investigator::{Investigator, InvestigatorId},
-    location::Location,
+    location::{Location, LocationId},
     phase::Phase,
 };
 
@@ -17,13 +19,20 @@ use super::{
 ///
 /// Phase-1 minimal shape; later phases will add e.g. encounter deck,
 /// act/agenda decks, doom track, persistent campaign-log facts, etc.
+///
+/// Investigators and locations are stored in [`BTreeMap`]s keyed by ID
+/// rather than [`Vec`]s. This makes iteration order deterministic
+/// (sorted by ID) regardless of insertion order — important for replay
+/// equality — and gives O(log n) lookup. Turn order is tracked
+/// separately in [`turn_order`](Self::turn_order); the storage map's
+/// iteration order is *not* turn order.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct GameState {
-    /// All investigators currently in the scenario.
-    pub investigators: Vec<Investigator>,
-    /// All locations laid out (revealed and unrevealed alike).
-    pub locations: Vec<Location>,
+    /// All investigators currently in the scenario, keyed by ID.
+    pub investigators: BTreeMap<InvestigatorId, Investigator>,
+    /// All locations laid out (revealed and unrevealed alike), keyed by ID.
+    pub locations: BTreeMap<LocationId, Location>,
     /// The chaos bag at this scenario's difficulty.
     pub chaos_bag: ChaosBag,
     /// Current round phase.
@@ -35,4 +44,8 @@ pub struct GameState {
     ///
     /// [`Investigation`]: Phase::Investigation
     pub active_investigator: Option<InvestigatorId>,
+    /// Order in which investigators take their turns during the
+    /// Investigation phase, as decided by the lead investigator each
+    /// round. The first entry is the first to act.
+    pub turn_order: Vec<InvestigatorId>,
 }
