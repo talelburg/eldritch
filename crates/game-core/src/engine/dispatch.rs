@@ -10,7 +10,7 @@
 
 use crate::action::{EngineRecord, PlayerAction};
 use crate::event::Event;
-use crate::state::GameState;
+use crate::state::{GameState, Phase};
 
 use super::outcome::EngineOutcome;
 
@@ -29,8 +29,8 @@ pub fn apply_player_action(
         PlayerAction::StartScenario => start_scenario(state, events),
         PlayerAction::EndTurn => end_turn(state, events),
         PlayerAction::ResolveInput { .. } => EngineOutcome::Rejected {
-            reason: "TODO(phase-1): ResolveInput dispatch lands with the test \
-                     harness in PRs #18-#20; no AwaitingInput sites exist yet."
+            reason: "TODO(#18-#20): ResolveInput dispatch lands with the test \
+                     harness; no AwaitingInput sites exist yet."
                 .into(),
         },
     }
@@ -60,31 +60,42 @@ pub fn apply_engine_record(
 }
 
 fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
-    // For Phase 1 the GameState constructor places the world in its
-    // initial shape; this action is the explicit "session has begun"
-    // marker that lands in the action log. It also sets the round
-    // counter to 1 if it isn't already, in case the constructor left it
-    // at zero for a default-built state.
-    if state.round == 0 {
-        state.round = 1;
+    // The GameState constructor places the world in its initial shape;
+    // this action is the explicit "session has begun" marker that lands
+    // in the action log. Replaying it on an already-started state is a
+    // bug, not a no-op — reject so callers notice rather than silently
+    // double-emitting `ScenarioStarted`.
+    if state.round != 0 {
+        return EngineOutcome::Rejected {
+            reason: "StartScenario applied to a state that is already in progress".into(),
+        };
     }
+    state.round = 1;
     events.push(Event::ScenarioStarted);
     EngineOutcome::Done
 }
 
 fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    if state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: "EndTurn is only valid during the Investigation phase".into(),
+        };
+    }
     let Some(active_id) = state.active_investigator else {
         return EngineOutcome::Rejected {
-            reason: "EndTurn requires an active investigator (Investigation phase)".into(),
+            reason: "EndTurn requires an active investigator".into(),
         };
     };
-    let Some(active) = state.investigators.get_mut(&active_id) else {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "EndTurn: active investigator {active_id:?} is not in the investigators map"
-            ),
-        };
-    };
+    // The Some(active_investigator) invariant is paired with that ID
+    // existing in the investigators map; a missing entry would be state
+    // corruption, not a normal rejection. Surface it loudly rather than
+    // hiding behind Rejected.
+    let active = state.investigators.get_mut(&active_id).unwrap_or_else(|| {
+        unreachable!(
+            "active_investigator {active_id:?} is not in the investigators map; \
+                 this is a state-corruption invariant violation"
+        )
+    });
 
     // Drain remaining actions and announce the turn ended. The phase
     // machine + turn rotation lands in #17; for now EndTurn ends only

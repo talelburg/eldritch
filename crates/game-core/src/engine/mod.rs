@@ -21,6 +21,7 @@ use crate::state::GameState;
 
 /// The result of a single [`apply`] call.
 #[derive(Debug, Clone)]
+#[must_use = "the post-apply GameState lives in ApplyResult.state; dropping the result drops the new state"]
 #[non_exhaustive]
 pub struct ApplyResult {
     /// The state after the action was applied. If the action was
@@ -41,7 +42,16 @@ pub struct ApplyResult {
 /// through here. It must be deterministic — same input state and
 /// action always produce the same output — so the action log replays
 /// cleanly.
-#[must_use]
+///
+/// # Handler contract
+///
+/// On [`EngineOutcome::Rejected`], the returned state and event list
+/// must be unchanged from the input. `apply` enforces this for the
+/// event list (it clears events post-dispatch on rejection) but **not**
+/// for state — handlers are expected to validate before mutating.
+/// TODO(#17+): once non-trivial handlers exist, refactor to a strict
+/// validate-first / apply-second two-phase shape so this is structural
+/// rather than a per-handler convention.
 pub fn apply(state: GameState, action: Action) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
@@ -50,9 +60,9 @@ pub fn apply(state: GameState, action: Action) -> ApplyResult {
         Action::Engine(e) => dispatch::apply_engine_record(&mut state, &mut events, &e),
     };
     if matches!(outcome, EngineOutcome::Rejected { .. }) {
-        // Rejected actions don't mutate state or emit events; if any
-        // dispatch handler accidentally pushed something before
-        // bailing, drop it to keep the contract clean.
+        // Belt-and-suspenders: handlers are expected to validate before
+        // mutating, so events should already be empty here. Clear
+        // anyway in case a handler accidentally pushed before bailing.
         events.clear();
     }
     ApplyResult {
@@ -116,22 +126,30 @@ mod tests {
     }
 
     #[test]
-    fn start_scenario_leaves_already_set_round_alone() {
+    fn start_scenario_on_already_started_state_is_rejected() {
         let mut state = empty_state();
         state.round = 7;
         let result = apply(state, Action::Player(PlayerAction::StartScenario));
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 7);
+        assert!(result.events.is_empty());
+    }
+
+    fn investigation_state_with_active(actions_remaining: u8) -> (GameState, InvestigatorId) {
+        let mut state = empty_state();
+        let id = InvestigatorId(1);
+        state
+            .investigators
+            .insert(id, investigator(1, actions_remaining));
+        state.active_investigator = Some(id);
+        state.phase = Phase::Investigation;
+        (state, id)
     }
 
     #[test]
     fn end_turn_drains_actions_and_emits_turn_ended() {
-        let mut state = empty_state();
-        let id = InvestigatorId(1);
-        state.investigators.insert(id, investigator(1, 3));
-        state.active_investigator = Some(id);
-        state.phase = Phase::Investigation;
+        let (state, id) = investigation_state_with_active(3);
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
@@ -151,7 +169,22 @@ mod tests {
 
     #[test]
     fn end_turn_with_no_active_investigator_is_rejected() {
-        let state = empty_state();
+        let mut state = empty_state();
+        state.phase = Phase::Investigation;
+
+        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn end_turn_outside_investigation_phase_is_rejected() {
+        let mut state = empty_state();
+        let id = InvestigatorId(1);
+        state.investigators.insert(id, investigator(1, 3));
+        state.active_investigator = Some(id);
+        state.phase = Phase::Mythos;
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
@@ -181,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_record_actions_are_rejected_phase_one() {
+    fn chaos_token_drawn_engine_record_is_rejected_phase_one() {
         let state = empty_state();
         let result = apply(
             state,
@@ -190,5 +223,17 @@ mod tests {
             }),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn deck_shuffled_engine_record_is_rejected_phase_one() {
+        let state = empty_state();
+        let result = apply(
+            state,
+            Action::Engine(EngineRecord::DeckShuffled { seed: 42 }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
     }
 }

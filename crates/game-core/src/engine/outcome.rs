@@ -1,5 +1,7 @@
 //! Outcome of a single [`apply`](super::apply) call.
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
 /// The terminal status of an [`apply`](super::apply) call.
@@ -32,8 +34,10 @@ pub enum EngineOutcome {
     },
     /// Action was illegal; nothing changed.
     Rejected {
-        /// Human-readable reason for rejection.
-        reason: String,
+        /// Human-readable reason for rejection. `Cow` so static TODO
+        /// strings cost no allocation while dynamic ones (formatted with
+        /// runtime data) remain expressible.
+        reason: Cow<'static, str>,
     },
 }
 
@@ -52,8 +56,9 @@ pub struct InputRequest {
 ///
 /// The engine uses this to identify which choice point a
 /// [`ResolveInput`](crate::PlayerAction::ResolveInput) is answering.
-/// Treat as opaque outside the engine.
+/// The inner field is `pub(crate)` so external crates cannot fabricate
+/// tokens; they receive them from the engine and pass them back.
 ///
 /// [`AwaitingInput`]: EngineOutcome::AwaitingInput
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ResumeToken(pub u64);
+pub struct ResumeToken(pub(crate) u64);
