@@ -6,6 +6,16 @@
 //! failure they print the actual event list to make the mismatch
 //! obvious.
 //!
+//! **When event order matters**, fall back to plain `assert_eq!` on the
+//! slice (e.g. `assert_eq!(result.events, vec![Event::A, Event::B])`).
+//! The macros here intentionally do not enforce ordering, because most
+//! tests are about the set of effects rather than their sequence.
+//!
+//! If `assert_eq!` ever becomes unwieldy (e.g. several tests want to
+//! assert "these N events appeared in this order, ignoring others
+//! interleaved between them"), we can add an `assert_event_sequence!`
+//! macro then. Don't add one preemptively.
+//!
 //! # Examples
 //!
 //! ```
@@ -35,7 +45,7 @@
 macro_rules! assert_event {
     ($events:expr, $pat:pat $(if $guard:expr)?) => {{
         let events = &$events;
-        let matched = events.iter().any(|e| matches!(e, $pat $(if $guard)?));
+        let matched = events.iter().any(|__event| matches!(__event, $pat $(if $guard)?));
         if !matched {
             panic!(
                 "assert_event!: no event matching `{}` in:\n{:#?}",
@@ -57,7 +67,7 @@ macro_rules! assert_no_event {
         let events = &$events;
         let matched: Vec<&_> = events
             .iter()
-            .filter(|e| matches!(e, $pat $(if $guard)?))
+            .filter(|__event| matches!(__event, $pat $(if $guard)?))
             .collect();
         if !matched.is_empty() {
             panic!(
@@ -82,7 +92,7 @@ macro_rules! assert_event_count {
         let expected: usize = $count;
         let actual = events
             .iter()
-            .filter(|e| matches!(e, $pat $(if $guard)?))
+            .filter(|__event| matches!(__event, $pat $(if $guard)?))
             .count();
         if actual != expected {
             panic!(
