@@ -10,7 +10,7 @@
 
 use crate::action::{EngineRecord, PlayerAction};
 use crate::event::Event;
-use crate::state::{GameState, Phase};
+use crate::state::{ChaosToken, GameState, Phase};
 
 use super::outcome::EngineOutcome;
 
@@ -37,25 +37,17 @@ pub fn apply_player_action(
 }
 
 /// Apply an [`EngineRecord`] to the state, pushing events.
-///
-/// Phase-1: all variants return [`EngineOutcome::Rejected`] with a TODO
-/// message. Engine-recorded actions only flow once the RNG and skill-test
-/// machinery exist (issues #16, #3 in the plan).
 pub fn apply_engine_record(
-    _state: &mut GameState,
-    _events: &mut Vec<Event>,
+    state: &mut GameState,
+    events: &mut Vec<Event>,
     record: &EngineRecord,
 ) -> EngineOutcome {
-    let reason = match record {
-        EngineRecord::ChaosTokenDrawn { .. } => {
-            "TODO(#16): ChaosTokenDrawn dispatch lands with the deterministic RNG."
-        }
-        EngineRecord::DeckShuffled { .. } => {
-            "TODO(#16): DeckShuffled dispatch lands with the deterministic RNG."
-        }
-    };
-    EngineOutcome::Rejected {
-        reason: reason.into(),
+    match record {
+        EngineRecord::ChaosTokenDrawn { token } => chaos_token_drawn(state, events, *token),
+        EngineRecord::DeckShuffled { .. } => EngineOutcome::Rejected {
+            reason: "TODO: DeckShuffled dispatch lands when decks exist (#15+ scenario plumbing)"
+                .into(),
+        },
     }
 }
 
@@ -110,5 +102,43 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     events.push(Event::TurnEnded {
         investigator: active_id,
     });
+    EngineOutcome::Done
+}
+
+/// Handler for [`EngineRecord::ChaosTokenDrawn`].
+///
+/// Validate-first pattern: clone the RNG, draw an index, check the
+/// recorded token matches `chaos_bag[index]`. Only on match do we
+/// commit the RNG advance and emit the event. A mismatch indicates
+/// log corruption — return `Rejected` without mutating state.
+///
+/// Modifier resolution (token symbols → numeric modifier per scenario)
+/// lands later. For Phase 1 we emit `modifier: 0` so the event shape
+/// is right; downstream consumers will pick up the real modifier when
+/// scenario-aware token effects exist.
+fn chaos_token_drawn(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    token: ChaosToken,
+) -> EngineOutcome {
+    if state.chaos_bag.tokens.is_empty() {
+        return EngineOutcome::Rejected {
+            reason: "ChaosTokenDrawn requires a non-empty chaos bag".into(),
+        };
+    }
+    let mut probe = state.rng.clone();
+    let idx = probe.next_index(state.chaos_bag.tokens.len());
+    let derived = state.chaos_bag.tokens[idx];
+    if derived != token {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ChaosTokenDrawn: recorded token {token:?} does not match RNG-derived \
+                 {derived:?} (log corruption or wrong seed)"
+            )
+            .into(),
+        };
+    }
+    state.rng = probe;
+    events.push(Event::ChaosTokenRevealed { token, modifier: 0 });
     EngineOutcome::Done
 }

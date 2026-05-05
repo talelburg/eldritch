@@ -20,6 +20,7 @@
 pub mod action;
 pub mod engine;
 pub mod event;
+pub mod rng;
 pub mod state;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -28,6 +29,7 @@ pub mod test_support;
 pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
 pub use engine::{apply, ApplyResult, EngineOutcome, InputRequest, ResumeToken};
 pub use event::Event;
+pub use rng::RngState;
 pub use state::{
     ChaosBag, ChaosToken, GameState, Investigator, InvestigatorId, Location, LocationId, Phase,
     Skills,

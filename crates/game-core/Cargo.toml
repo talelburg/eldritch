@@ -18,3 +18,4 @@ test-support = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+rand_chacha = { version = "0.9", default-features = false }

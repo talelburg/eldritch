@@ -10,6 +10,7 @@ use super::{
     location::{Location, LocationId},
     phase::Phase,
 };
+use crate::rng::RngState;
 
 /// The full state of a scenario at a single point in time.
 ///
@@ -48,4 +49,8 @@ pub struct GameState {
     /// Investigation phase, as decided by the lead investigator each
     /// round. The first entry is the first to act.
     pub turn_order: Vec<InvestigatorId>,
+    /// Deterministic RNG state. Carries `(seed, draws)` only; the
+    /// underlying [`rand_chacha::ChaCha8Rng`] is reconstructed on
+    /// demand by [`RngState`] methods.
+    pub rng: RngState,
 }
