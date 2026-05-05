@@ -21,9 +21,10 @@
 //!
 //! `next_index` uses simple modulo, which is biased for non-power-of-2
 //! moduli. For the small moduli the engine actually uses (chaos bag
-//! sizes ≤ 20, deck sizes ≤ ~50) the bias is negligible. Avoiding it
-//! via rejection sampling would mean variable byte consumption per
-//! draw, which breaks the replay invariant above.
+//! sizes up to ~30 in late cycles, deck sizes ≤ ~50) the bias against
+//! a 64-bit value is on the order of 1 in 2^59 — clearly negligible.
+//! Avoiding it via rejection sampling would mean variable byte
+//! consumption per draw, which breaks the replay invariant above.
 
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -48,12 +49,27 @@ impl RngState {
         Self { seed, draws: 0 }
     }
 
+    /// Construct an RNG state mid-stream — at the given seed advanced
+    /// past `draws` prior `next_u64` calls. Useful for restoring a
+    /// snapshot or for integration tests that want to start partway
+    /// through a stream without driving the engine to that point.
+    #[must_use]
+    pub fn at(seed: u64, draws: u64) -> Self {
+        Self { seed, draws }
+    }
+
     /// Reconstruct the underlying `ChaCha8Rng` positioned at the current
     /// draw count.
+    ///
+    /// Relies on `rand_chacha`'s documented reproducibility contract:
+    /// `ChaCha8Rng::next_u64` consumes exactly two 32-bit words from
+    /// the stream, and `set_word_pos` measures position in 32-bit
+    /// words. A future `rand_chacha` bump that ever changed either
+    /// would silently break replay determinism — that's why the
+    /// frozen `chacha_stream_is_stable` test pins a specific
+    /// `(seed, n) → next_u64` mapping.
     fn rng_at_current_pos(&self) -> rand_chacha::ChaCha8Rng {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(self.seed);
-        // Each `next_u64` call consumes 2 32-bit words from the
-        // `ChaCha8` stream. `set_word_pos` is O(1).
         rng.set_word_pos(u128::from(self.draws) * 2);
         rng
     }
@@ -128,5 +144,36 @@ mod tests {
     fn next_index_panics_on_zero() {
         let mut rng = RngState::new(7);
         let _ = rng.next_index(0);
+    }
+
+    #[test]
+    fn at_constructs_a_mid_stream_state() {
+        let mut a = RngState::new(99);
+        for _ in 0..7 {
+            a.next_u64();
+        }
+        let mut b = RngState::at(99, 7);
+        assert_eq!(a.next_u64(), b.next_u64());
+        assert_eq!(b.draws, 8);
+    }
+
+    /// Frozen contract test: pins specific `(seed, draw_index) →
+    /// next_u64` outputs against the current `rand_chacha::ChaCha8`
+    /// stream. If any future `rand_chacha` bump silently changes its
+    /// output, replay determinism breaks — and this test catches it
+    /// before the round-trip tests start failing in mysterious ways.
+    /// If the test ever fails after a dependency bump: do NOT just
+    /// update the constants — the bump has broken the action-log
+    /// contract and needs to be either reverted or accompanied by a
+    /// migration plan.
+    #[test]
+    fn chacha_stream_is_stable() {
+        let mut r = RngState::new(0);
+        assert_eq!(r.next_u64(), 0xb585_f767_a79a_3b6c);
+        assert_eq!(r.next_u64(), 0x7746_a55f_bad8_c037);
+
+        let mut r = RngState::new(42);
+        assert_eq!(r.next_u64(), 0xae90_bfb5_395d_5ba1);
+        assert_eq!(r.next_u64(), 0xf345_3fc6_2579_9188);
     }
 }
