@@ -10,5 +10,11 @@ description = "Eldritch rules engine: game state, actions, events, effect system
 [lints]
 workspace = true
 
+[features]
+# Exposes the `test_support` module (TestGame builder, fixtures, event
+# assertion macros) for downstream crates' own tests. Always available
+# inside game-core's own test runs via `cfg(test)`.
+test-support = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }

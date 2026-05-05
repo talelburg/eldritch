@@ -74,61 +74,28 @@ pub fn apply(state: GameState, action: Action) -> ApplyResult {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use crate::action::{Action, EngineRecord, InputResponse, PlayerAction};
     use crate::event::Event;
-    use crate::state::{ChaosBag, GameState, Investigator, InvestigatorId, Phase, Skills};
+    use crate::state::{ChaosToken, InvestigatorId, Phase};
+    use crate::test_support::{test_investigator, TestGame};
+    use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{apply, EngineOutcome};
 
-    fn empty_state() -> GameState {
-        GameState {
-            investigators: BTreeMap::new(),
-            locations: BTreeMap::new(),
-            chaos_bag: ChaosBag::new([]),
-            phase: Phase::Mythos,
-            round: 0,
-            active_investigator: None,
-            turn_order: Vec::new(),
-        }
-    }
-
-    fn investigator(id: u32, actions_remaining: u8) -> Investigator {
-        Investigator {
-            id: InvestigatorId(id),
-            name: format!("Test Investigator {id}"),
-            current_location: None,
-            skills: Skills {
-                willpower: 3,
-                intellect: 3,
-                combat: 3,
-                agility: 3,
-            },
-            max_health: 8,
-            damage: 0,
-            max_sanity: 8,
-            horror: 0,
-            clues: 0,
-            resources: 5,
-            actions_remaining,
-        }
-    }
-
     #[test]
     fn start_scenario_emits_scenario_started_and_sets_round_to_one() {
-        let state = empty_state();
+        let state = TestGame::new().build();
         let result = apply(state, Action::Player(PlayerAction::StartScenario));
 
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(result.events, vec![Event::ScenarioStarted]);
+        assert_event!(result.events, Event::ScenarioStarted);
+        assert_event_count!(result.events, 1, _);
         assert_eq!(result.state.round, 1);
     }
 
     #[test]
     fn start_scenario_on_already_started_state_is_rejected() {
-        let mut state = empty_state();
-        state.round = 7;
+        let state = TestGame::new().with_round(7).build();
         let result = apply(state, Action::Player(PlayerAction::StartScenario));
 
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -136,41 +103,34 @@ mod tests {
         assert!(result.events.is_empty());
     }
 
-    fn investigation_state_with_active(actions_remaining: u8) -> (GameState, InvestigatorId) {
-        let mut state = empty_state();
-        let id = InvestigatorId(1);
-        state
-            .investigators
-            .insert(id, investigator(1, actions_remaining));
-        state.active_investigator = Some(id);
-        state.phase = Phase::Investigation;
-        (state, id)
-    }
-
     #[test]
     fn end_turn_drains_actions_and_emits_turn_ended() {
-        let (state, id) = investigation_state_with_active(3);
+        let id = InvestigatorId(1);
+        let mut roland = test_investigator(1);
+        roland.actions_remaining = 3;
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(roland)
+            .with_active_investigator(id)
+            .build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(
+        assert_event!(
             result.events,
-            vec![
-                Event::ActionsRemainingChanged {
-                    investigator: id,
-                    new_count: 0
-                },
-                Event::TurnEnded { investigator: id },
-            ]
+            Event::ActionsRemainingChanged { investigator, new_count: 0 } if *investigator == id
+        );
+        assert_event!(
+            result.events,
+            Event::TurnEnded { investigator } if *investigator == id
         );
         assert_eq!(result.state.investigators[&id].actions_remaining, 0);
     }
 
     #[test]
     fn end_turn_with_no_active_investigator_is_rejected() {
-        let mut state = empty_state();
-        state.phase = Phase::Investigation;
+        let state = TestGame::new().with_phase(Phase::Investigation).build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
@@ -180,11 +140,12 @@ mod tests {
 
     #[test]
     fn end_turn_outside_investigation_phase_is_rejected() {
-        let mut state = empty_state();
         let id = InvestigatorId(1);
-        state.investigators.insert(id, investigator(1, 3));
-        state.active_investigator = Some(id);
-        state.phase = Phase::Mythos;
+        let state = TestGame::new()
+            .with_phase(Phase::Mythos)
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(id)
+            .build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
@@ -194,8 +155,11 @@ mod tests {
 
     #[test]
     fn rejected_actions_do_not_mutate_state() {
-        let state = empty_state();
-        let before = state.clone();
+        let state = TestGame::new().build();
+        let round_before = state.round;
+        let phase_before = state.phase;
+        let active_before = state.active_investigator;
+
         // ResolveInput is a Phase-1 stub — guaranteed to be Rejected.
         let result = apply(
             state,
@@ -205,21 +169,19 @@ mod tests {
         );
 
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.events, Vec::<Event>::new());
-        // State equality requires a manual field check since GameState
-        // does not derive PartialEq (deliberately — it may be expensive).
-        assert_eq!(result.state.round, before.round);
-        assert_eq!(result.state.phase, before.phase);
-        assert_eq!(result.state.active_investigator, before.active_investigator);
+        assert_no_event!(result.events, _);
+        assert_eq!(result.state.round, round_before);
+        assert_eq!(result.state.phase, phase_before);
+        assert_eq!(result.state.active_investigator, active_before);
     }
 
     #[test]
     fn chaos_token_drawn_engine_record_is_rejected_phase_one() {
-        let state = empty_state();
+        let state = TestGame::new().build();
         let result = apply(
             state,
             Action::Engine(EngineRecord::ChaosTokenDrawn {
-                token: crate::state::ChaosToken::Skull,
+                token: ChaosToken::Skull,
             }),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -228,7 +190,7 @@ mod tests {
 
     #[test]
     fn deck_shuffled_engine_record_is_rejected_phase_one() {
-        let state = empty_state();
+        let state = TestGame::new().build();
         let result = apply(
             state,
             Action::Engine(EngineRecord::DeckShuffled { seed: 42 }),
