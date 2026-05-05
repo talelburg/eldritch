@@ -4,6 +4,18 @@
 //! place into a state. These helpers produce one with default-y values;
 //! callers tweak fields after construction when something specific is
 //! needed.
+//!
+//! # `#[non_exhaustive]` interaction
+//!
+//! [`Investigator`] and [`Location`] are `#[non_exhaustive]`, so
+//! downstream test crates cannot construct them via struct literal —
+//! they MUST go through these fixtures. That's deliberate (it forces
+//! a single source of test defaults) but it also means **adding a
+//! field to those structs requires updating these fixtures in the
+//! same PR**, otherwise the new field defaults to whatever
+//! `test_investigator` / `test_location` set, which may not match the
+//! field's intent. Phase-2+ reviewers: flag missing fixture updates
+//! when a field addition lands.
 
 use crate::state::{Investigator, InvestigatorId, Location, LocationId, Skills};
 
