@@ -49,7 +49,12 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
 /// the deck-import gate.
 #[must_use]
 pub fn is_playable(code: &str) -> bool {
-    impls::implementations().binary_search(&code).is_ok()
+    let impls = impls::implementations();
+    debug_assert!(
+        impls.windows(2).all(|w| w[0] < w[1]),
+        "impls::implementations() must return a sorted, deduplicated slice for binary_search to be valid"
+    );
+    impls.binary_search(&code).is_ok()
 }
 
 #[cfg(test)]

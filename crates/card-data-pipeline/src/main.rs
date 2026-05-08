@@ -172,13 +172,19 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
     let name = raw.name.ok_or("missing name")?;
     let class = map_class(raw.faction_code.as_deref(), &raw.code)?;
     let card_type = map_card_type(raw.type_code.as_deref(), &raw.code)?;
+    let cost = raw
+        .cost
+        .map(|n| {
+            i8::try_from(n).map_err(|_| format!("cost {n} on card {} doesn't fit in i8", raw.code))
+        })
+        .transpose()?;
 
     Ok(NormalizedCard {
         code: raw.code,
         name,
         class,
         card_type,
-        cost: raw.cost.map(|n| i8::try_from(n).unwrap_or(i8::MIN)),
+        cost,
         xp: raw.xp.and_then(|n| u8::try_from(n).ok()),
         text: raw.text,
         flavor: raw.flavor,
@@ -430,5 +436,28 @@ mod tests {
         assert!(parse_slots(None).is_empty());
         assert!(parse_slots(Some("")).is_empty());
         assert!(parse_slots(Some("   ")).is_empty());
+    }
+
+    #[test]
+    fn dot_separated_repeats_are_dropped() {
+        // The "Hand. Hand." pattern was the bug-discovery shape — the
+        // original parser split on '.' and would have emitted two Hand
+        // slots from this. Upstream uses "Hand x2" instead. If they
+        // ever switch back, this regression test pins the breakage so
+        // we notice rather than silently mis-emit.
+        assert!(parse_slots(Some("Hand. Hand.")).is_empty());
+    }
+
+    #[test]
+    fn zero_count_emits_no_slots() {
+        // `Foo x0` is degenerate but shouldn't crash; emit nothing.
+        assert!(parse_slots(Some("Hand x0")).is_empty());
+    }
+
+    #[test]
+    fn high_count_does_not_crash() {
+        // No real card has this; just guard against panics on weird
+        // upstream data.
+        assert_eq!(parse_slots(Some("Hand x10")).len(), 10);
     }
 }
