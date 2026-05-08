@@ -43,18 +43,22 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
         .map(|i| &all()[i])
 }
 
+/// Look up a card's hand-implemented abilities by code. Returns
+/// `None` for unimplemented cards. Re-exported from
+/// [`impls::abilities_for`].
+#[must_use]
+pub fn abilities_for(code: &str) -> Option<Vec<game_core::dsl::Ability>> {
+    impls::abilities_for(code)
+}
+
 /// Whether a card has an effect implementation and can therefore be
-/// taken into a scenario. Cards without an implementation appear in
-/// [`all`] (so deckbuilding tools can list them) but are refused by
-/// the deck-import gate.
+/// taken into a scenario. Derived from [`abilities_for`] so the two
+/// queries can never go out of sync. Cards without an implementation
+/// still appear in [`all`] (deckbuilding tools list them) but are
+/// refused by the deck-import gate.
 #[must_use]
 pub fn is_playable(code: &str) -> bool {
-    let impls = impls::implementations();
-    debug_assert!(
-        impls.windows(2).all(|w| w[0] < w[1]),
-        "impls::implementations() must return a sorted, deduplicated slice for binary_search to be valid"
-    );
-    impls.binary_search(&code).is_ok()
+    abilities_for(code).is_some()
 }
 
 #[cfg(test)]
@@ -92,10 +96,42 @@ mod tests {
     }
 
     #[test]
-    fn no_cards_are_playable_yet() {
-        // Phase-2 PR-G ships the framework; the 5 Phase-2 card impls
-        // land in PR-I onward. Until then nothing is playable.
+    fn dsl_pair_is_playable() {
+        // PR-I lands Holy Rosary (01059) and Working a Hunch (01037).
+        // Magnifying Glass needs a per-skill-test scope DSL extension
+        // (its bonus is "while investigating", not flat). Hyperawareness
+        // (01034) and Deduction (01039) need activated/triggered DSL
+        // primitives — both come in PR-J as Rust-impl placeholders.
+        assert!(is_playable("01037"));
+        assert!(is_playable("01059"));
+    }
+
+    #[test]
+    fn unimplemented_cards_are_not_playable() {
+        // Magnifying Glass (01030), Hyperawareness (01034), Deduction
+        // (01039) all blocked on DSL extensions — not yet playable.
         assert!(!is_playable("01030"));
-        assert!(!is_playable("01059"));
+        assert!(!is_playable("01034"));
+        assert!(!is_playable("01039"));
+        // Phase-2 doesn't touch most of the corpus.
+        assert!(!is_playable("01001")); // Roland Banks
+        assert!(!is_playable("99999")); // unknown code
+    }
+
+    #[test]
+    fn abilities_for_returns_some_for_implemented() {
+        for code in ["01037", "01059"] {
+            let abilities = super::abilities_for(code)
+                .unwrap_or_else(|| panic!("expected abilities for {code}"));
+            assert!(
+                !abilities.is_empty(),
+                "abilities for {code} should be non-empty"
+            );
+        }
+    }
+
+    #[test]
+    fn abilities_for_returns_none_for_unimplemented() {
+        assert!(super::abilities_for("99999").is_none());
     }
 }
