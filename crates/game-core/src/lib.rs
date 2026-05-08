@@ -18,6 +18,7 @@
 //! Subsequent PRs add the RNG, phase machine, and test harness.
 
 pub mod action;
+pub mod dsl;
 pub mod engine;
 pub mod event;
 pub mod rng;
