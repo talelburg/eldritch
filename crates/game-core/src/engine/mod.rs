@@ -78,19 +78,48 @@ mod tests {
     use crate::event::Event;
     use crate::state::{ChaosToken, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, TestGame};
-    use crate::{assert_event, assert_event_count, assert_no_event};
+    use crate::{assert_event, assert_no_event};
 
     use super::{apply, EngineOutcome};
 
     #[test]
-    fn start_scenario_emits_scenario_started_and_sets_round_to_one() {
-        let state = TestGame::new().build();
+    fn start_scenario_advances_to_investigation_with_round_one() {
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .build();
         let result = apply(state, Action::Player(PlayerAction::StartScenario));
 
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_event!(result.events, Event::ScenarioStarted);
-        assert_event_count!(result.events, 1, _);
         assert_eq!(result.state.round, 1);
+        assert_eq!(result.state.phase, Phase::Investigation);
+        assert_eq!(result.state.active_investigator, Some(id));
+        assert_eq!(result.state.investigators[&id].actions_remaining, 3);
+
+        assert_event!(result.events, Event::ScenarioStarted);
+        assert_event!(
+            result.events,
+            Event::PhaseStarted {
+                phase: Phase::Mythos
+            }
+        );
+        assert_event!(
+            result.events,
+            Event::PhaseEnded {
+                phase: Phase::Mythos
+            }
+        );
+        assert_event!(
+            result.events,
+            Event::PhaseStarted {
+                phase: Phase::Investigation
+            }
+        );
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 3 } if *investigator == id
+        );
     }
 
     #[test]
@@ -252,6 +281,75 @@ mod tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
         assert_eq!(result.state.rng, rng_before);
+    }
+
+    #[test]
+    fn full_round_advances_through_all_phases_with_two_investigators() {
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_turn_order([inv1, inv2])
+            .build();
+
+        // StartScenario: round 0 → 1, phase Mythos → Investigation,
+        // first investigator becomes active with 3 actions.
+        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let state = result.state;
+        assert_eq!(state.round, 1);
+        assert_eq!(state.phase, Phase::Investigation);
+        assert_eq!(state.active_investigator, Some(inv1));
+        assert_eq!(state.investigators[&inv1].actions_remaining, 3);
+
+        // First EndTurn: rotate to inv2 within Investigation.
+        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let state = result.state;
+        assert_eq!(state.round, 1);
+        assert_eq!(state.phase, Phase::Investigation);
+        assert_eq!(state.active_investigator, Some(inv2));
+        assert_eq!(state.investigators[&inv1].actions_remaining, 0);
+        assert_eq!(state.investigators[&inv2].actions_remaining, 3);
+        assert_event!(
+            result.events,
+            Event::TurnEnded { investigator } if *investigator == inv1
+        );
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 3 } if *investigator == inv2
+        );
+        // No phase transition yet.
+        assert_no_event!(result.events, Event::PhaseEnded { .. });
+
+        // Second EndTurn: tick through Enemy → Upkeep → Mythos (round
+        // bumps) → Investigation, with inv1 active again at full
+        // actions.
+        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let state = result.state;
+        assert_eq!(state.round, 2);
+        assert_eq!(state.phase, Phase::Investigation);
+        assert_eq!(state.active_investigator, Some(inv1));
+        assert_eq!(state.investigators[&inv1].actions_remaining, 3);
+        assert_eq!(state.investigators[&inv2].actions_remaining, 0);
+
+        // All four phase-end / phase-start pairs fired during the
+        // second EndTurn's auto-advance.
+        for phase in [
+            Phase::Investigation,
+            Phase::Enemy,
+            Phase::Upkeep,
+            Phase::Mythos,
+        ] {
+            assert_event!(result.events, Event::PhaseEnded { phase: p } if *p == phase);
+        }
+        for phase in [
+            Phase::Enemy,
+            Phase::Upkeep,
+            Phase::Mythos,
+            Phase::Investigation,
+        ] {
+            assert_event!(result.events, Event::PhaseStarted { phase: p } if *p == phase);
+        }
     }
 
     #[test]
