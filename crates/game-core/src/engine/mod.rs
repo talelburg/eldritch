@@ -78,7 +78,7 @@ mod tests {
     use crate::event::Event;
     use crate::state::{ChaosToken, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, TestGame};
-    use crate::{assert_event, assert_no_event};
+    use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{apply, EngineOutcome};
 
@@ -318,8 +318,11 @@ mod tests {
             result.events,
             Event::ActionsRemainingChanged { investigator, new_count: 3 } if *investigator == inv2
         );
-        // No phase transition yet.
+        // No phase transition yet, and EndTurn must never re-emit
+        // ScenarioStarted.
         assert_no_event!(result.events, Event::PhaseEnded { .. });
+        assert_no_event!(result.events, Event::PhaseStarted { .. });
+        assert_no_event!(result.events, Event::ScenarioStarted);
 
         // Second EndTurn: tick through Enemy → Upkeep → Mythos (round
         // bumps) → Investigation, with inv1 active again at full
@@ -333,7 +336,10 @@ mod tests {
         assert_eq!(state.investigators[&inv2].actions_remaining, 0);
 
         // All four phase-end / phase-start pairs fired during the
-        // second EndTurn's auto-advance.
+        // second EndTurn's auto-advance — exactly four of each, no more
+        // and no less.
+        assert_event_count!(result.events, 4, Event::PhaseEnded { .. });
+        assert_event_count!(result.events, 4, Event::PhaseStarted { .. });
         for phase in [
             Phase::Investigation,
             Phase::Enemy,
@@ -350,6 +356,33 @@ mod tests {
         ] {
             assert_event!(result.events, Event::PhaseStarted { phase: p } if *p == phase);
         }
+        // EndTurn must never re-emit ScenarioStarted.
+        assert_no_event!(result.events, Event::ScenarioStarted);
+    }
+
+    #[test]
+    fn solo_investigator_round_advances_on_single_end_turn() {
+        // Degenerate edge: with only one investigator in turn_order,
+        // their EndTurn is also the *last* EndTurn, so it must trigger
+        // the full phase auto-advance plus round bump in one step.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .build();
+
+        let after_start = apply(state, Action::Player(PlayerAction::StartScenario)).state;
+        assert_eq!(after_start.round, 1);
+        assert_eq!(after_start.active_investigator, Some(id));
+
+        let result = apply(after_start, Action::Player(PlayerAction::EndTurn));
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.round, 2);
+        assert_eq!(result.state.phase, Phase::Investigation);
+        assert_eq!(result.state.active_investigator, Some(id));
+        assert_eq!(result.state.investigators[&id].actions_remaining, 3);
+        assert_event_count!(result.events, 4, Event::PhaseEnded { .. });
+        assert_event_count!(result.events, 4, Event::PhaseStarted { .. });
     }
 
     #[test]

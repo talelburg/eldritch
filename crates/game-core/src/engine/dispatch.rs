@@ -14,6 +14,11 @@ use crate::state::{ChaosToken, GameState, InvestigatorId, Phase};
 
 use super::outcome::EngineOutcome;
 
+/// Action points granted to an investigator at the start of their
+/// turn during the Investigation phase. Per the Arkham Horror LCG
+/// rulebook.
+const ACTIONS_PER_TURN: u8 = 3;
+
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
 /// Phase-1 minimal coverage: [`StartScenario`](PlayerAction::StartScenario)
@@ -147,6 +152,12 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
 /// phase, advance, emit `PhaseStarted` for the new one. Bumps the
 /// round counter when entering [`Phase::Mythos`] (which is the start
 /// of a new round).
+///
+/// **Round-bump invariant:** this is the only path that bumps
+/// `state.round` post-`StartScenario`. A future caller that wants to
+/// step phases for a non-round-cycle reason (e.g. a scenario effect
+/// that skips a phase) will need to suppress the bump here, or the
+/// round counter will drift. Revisit when such a use case appears.
 fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     let from = state.phase;
     let to = from.next();
@@ -160,21 +171,26 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
 
 /// Set `active_investigator` to `id` and refresh that investigator's
 /// action points to the per-turn cap (3). Emits `ActionsRemainingChanged`.
+///
+/// `id` must refer to an investigator in `state.investigators` —
+/// callers that pass an id from `state.turn_order` are guaranteed
+/// this by the whole-program invariant "every id in `turn_order`
+/// exists in `investigators`." A missing entry would be state
+/// corruption, not a normal error.
 fn rotate_to_active(state: &mut GameState, events: &mut Vec<Event>, id: InvestigatorId) {
     state.active_investigator = Some(id);
-    if let Some(inv) = state.investigators.get_mut(&id) {
-        inv.actions_remaining = ACTIONS_PER_TURN;
-        events.push(Event::ActionsRemainingChanged {
-            investigator: id,
-            new_count: ACTIONS_PER_TURN,
-        });
-    }
+    let inv = state.investigators.get_mut(&id).unwrap_or_else(|| {
+        unreachable!(
+            "rotate_to_active: investigator {id:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    inv.actions_remaining = ACTIONS_PER_TURN;
+    events.push(Event::ActionsRemainingChanged {
+        investigator: id,
+        new_count: ACTIONS_PER_TURN,
+    });
 }
-
-/// Action points granted to an investigator at the start of their
-/// turn during the Investigation phase. Per the Arkham Horror LCG
-/// rulebook.
-const ACTIONS_PER_TURN: u8 = 3;
 
 /// Handler for [`EngineRecord::ChaosTokenDrawn`].
 ///
