@@ -14,6 +14,33 @@
 //! complex conditions are deferred — cards needing them get a Rust
 //! trait impl until the DSL grows the relevant verbs.
 //!
+//! # What's not yet expressible
+//!
+//! Common shapes the DSL cannot describe today, and where they'll
+//! land:
+//!
+//! - **Activated abilities** (`[action]` / `[fast]` symbols on
+//!   asset abilities — Hyperawareness, Magnifying Glass's "spend X
+//!   resources for Y" abilities, etc.). Need a `Trigger::Activated
+//!   { action_cost: u8, costs: Vec<Cost> }` plus cost primitives.
+//! - **Forced / leave-play triggers** (Beat Cop's "Forced — when
+//!   leaves play, deal 1 damage to a non-elite enemy at your
+//!   location"). Need `Trigger::OnLeavePlay`, plus enemy targeting
+//!   and trait/elite filters.
+//! - **Reaction abilities** (Roland's "After you defeat an enemy:
+//!   discover 1 clue at your location"). Need
+//!   `Trigger::Reaction(EventPattern)` with the engine's event-window
+//!   plumbing.
+//! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
+//!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). Phase-2 only
+//!   has [`Condition::SkillTest`] with success/failure granularity.
+//! - **Per-test scope-of-effect details** (Magnifying Glass's
+//!   "+1 intellect WHILE INVESTIGATING" rather than constant +1).
+//!   Needs a richer scope predicate than [`ModifierScope::WhileInPlay`].
+//!
+//! Cards needing any of these go to a Rust impl until the DSL grows
+//! the relevant primitive.
+//!
 //! # Free-function builders
 //!
 //! Each [`Effect`] variant has a paired free function with a friendly
@@ -191,7 +218,7 @@ pub enum InvestigatorTargetSet {
 #[non_exhaustive]
 pub enum LocationTarget {
     /// The location the controller is currently at.
-    Controllers,
+    ControllerLocation,
     /// The controller picks a location.
     ChosenByController,
 }
@@ -206,9 +233,23 @@ pub enum LocationTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Condition {
-    /// True if the most recent skill test (in the current resolution
-    /// stack) was a success. Used by Deduction-shaped effects.
-    SkillTestSucceeded,
+    /// Outcome of the most recent skill test in the current
+    /// resolution stack. Deduction's "if successful while
+    /// investigating" uses [`TestOutcome::Success`]; failure-triggered
+    /// cards (e.g. some Survivor cards) use [`TestOutcome::Failure`].
+    SkillTest { outcome: TestOutcome },
+}
+
+/// Result of a skill test, as a discrete value usable in conditions.
+///
+/// For "succeeded by N or more" / "failed by N or more" predicates we
+/// can add `SuccessBy(u8)` / `FailureBy(u8)` variants when the first
+/// margin-sensitive card lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum TestOutcome {
+    Success,
+    Failure,
 }
 
 // ---- builders --------------------------------------------------
@@ -262,6 +303,10 @@ pub fn modify(stat: Stat, delta: i8, scope: ModifierScope) -> Effect {
 }
 
 /// Build an [`Effect::Seq`] from any iterable of effects.
+///
+/// An empty `seq([])` is a no-op when evaluated. Useful as a neutral
+/// element in branches (e.g. `if_else(cond, do_thing(), seq([]))`)
+/// rather than always providing an `else_` of substance.
 #[must_use]
 pub fn seq(effects: impl IntoIterator<Item = Effect>) -> Effect {
     Effect::Seq(effects.into_iter().collect())
@@ -297,6 +342,14 @@ pub fn for_each(targets: InvestigatorTargetSet, body: Effect) -> Effect {
 }
 
 /// Build an [`Effect::ChooseOne`] from any iterable of effects.
+///
+/// Empty `choose_one([])` is meaningless — there's nothing to pick —
+/// and the evaluator (when it lands in Phase 3) will treat it as a
+/// programmer error / log corruption rather than a silent no-op. The
+/// DSL doesn't validate emptiness at construction time because card
+/// declarations are constants and any card author writing
+/// `choose_one([])` is making a typo we want to catch in tests
+/// rather than silently swallow.
 #[must_use]
 pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
     Effect::ChooseOne(effects.into_iter().collect())
@@ -339,12 +392,12 @@ mod tests {
     /// — the canonical `OnPlay` + `DiscoverClue` shape.
     #[test]
     fn working_a_hunch_compiles() {
-        let ability = on_play(discover_clue(LocationTarget::Controllers, 1));
+        let ability = on_play(discover_clue(LocationTarget::ControllerLocation, 1));
         assert_eq!(ability.trigger, Trigger::OnPlay);
         assert!(matches!(
             ability.effect,
             Effect::DiscoverClue {
-                from: LocationTarget::Controllers,
+                from: LocationTarget::ControllerLocation,
                 count: 1,
             }
         ));
@@ -357,8 +410,10 @@ mod tests {
     #[test]
     fn on_commit_distinct_from_on_play() {
         let ability = on_commit(if_(
-            Condition::SkillTestSucceeded,
-            discover_clue(LocationTarget::Controllers, 1),
+            Condition::SkillTest {
+                outcome: TestOutcome::Success,
+            },
+            discover_clue(LocationTarget::ControllerLocation, 1),
         ));
         assert_eq!(ability.trigger, Trigger::OnCommit);
         // Distinct enum variant — compiler enforces the difference at
@@ -373,7 +428,7 @@ mod tests {
     fn seq_composition_nests_two_effects() {
         let effect = seq([
             gain_resources(InvestigatorTarget::Controller, 1),
-            discover_clue(LocationTarget::Controllers, 1),
+            discover_clue(LocationTarget::ControllerLocation, 1),
         ]);
         match effect {
             Effect::Seq(inner) => assert_eq!(inner.len(), 2),
@@ -385,12 +440,16 @@ mod tests {
     #[test]
     fn conditional_branches_box_the_inner_effects() {
         let bare = if_(
-            Condition::SkillTestSucceeded,
-            discover_clue(LocationTarget::Controllers, 1),
+            Condition::SkillTest {
+                outcome: TestOutcome::Success,
+            },
+            discover_clue(LocationTarget::ControllerLocation, 1),
         );
         let with_else = if_else(
-            Condition::SkillTestSucceeded,
-            discover_clue(LocationTarget::Controllers, 1),
+            Condition::SkillTest {
+                outcome: TestOutcome::Success,
+            },
+            discover_clue(LocationTarget::ControllerLocation, 1),
             gain_resources(InvestigatorTarget::Controller, 1),
         );
         assert!(matches!(bare, Effect::If { else_: None, .. }));
@@ -418,7 +477,7 @@ mod tests {
     fn choose_one_collects_alternatives() {
         let effect = choose_one([
             gain_resources(InvestigatorTarget::Controller, 2),
-            discover_clue(LocationTarget::Controllers, 1),
+            discover_clue(LocationTarget::ControllerLocation, 1),
         ]);
         match effect {
             Effect::ChooseOne(alts) => assert_eq!(alts.len(), 2),
@@ -426,12 +485,29 @@ mod tests {
         }
     }
 
-    /// Effects clone deeply (the recursive Box doesn't break Clone).
+    /// `InvestigatorTarget::Controller` and `Active` are distinct
+    /// variants — they coincide during the controller's own turn but
+    /// differ during reactions across turns. The compiler enforces
+    /// the difference at every match site; this test pins the
+    /// distinction at the type level.
     #[test]
-    fn deeply_nested_effect_clones() {
+    fn investigator_target_controller_and_active_are_distinct() {
+        assert_ne!(InvestigatorTarget::Controller, InvestigatorTarget::Active);
+        let controller_effect = gain_resources(InvestigatorTarget::Controller, 1);
+        let active_effect = gain_resources(InvestigatorTarget::Active, 1);
+        assert_ne!(controller_effect, active_effect);
+    }
+
+    /// A deeply-nested effect tree round-trips through `serde_json`.
+    /// Cheap insurance against `Box<Effect>` × `#[non_exhaustive]` ×
+    /// serde derive surprises.
+    #[test]
+    fn deeply_nested_effect_round_trips_through_serde_json() {
         let original = seq([
             if_else(
-                Condition::SkillTestSucceeded,
+                Condition::SkillTest {
+                    outcome: TestOutcome::Success,
+                },
                 for_each(
                     InvestigatorTargetSet::AtControllerLocation,
                     gain_resources(InvestigatorTarget::Active, 1),
@@ -439,7 +515,31 @@ mod tests {
                 modify(Stat::Intellect, -1, ModifierScope::ThisSkillTest),
             ),
             choose_one([
-                discover_clue(LocationTarget::Controllers, 1),
+                discover_clue(LocationTarget::ControllerLocation, 1),
+                gain_resources(InvestigatorTarget::Controller, 2),
+            ]),
+        ]);
+        let json = serde_json::to_string(&original).expect("serialize");
+        let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(original, recovered);
+    }
+
+    /// Effects clone deeply (the recursive Box doesn't break Clone).
+    #[test]
+    fn deeply_nested_effect_clones() {
+        let original = seq([
+            if_else(
+                Condition::SkillTest {
+                    outcome: TestOutcome::Success,
+                },
+                for_each(
+                    InvestigatorTargetSet::AtControllerLocation,
+                    gain_resources(InvestigatorTarget::Active, 1),
+                ),
+                modify(Stat::Intellect, -1, ModifierScope::ThisSkillTest),
+            ),
+            choose_one([
+                discover_clue(LocationTarget::ControllerLocation, 1),
                 gain_resources(InvestigatorTarget::Controller, 2),
             ]),
         ]);
