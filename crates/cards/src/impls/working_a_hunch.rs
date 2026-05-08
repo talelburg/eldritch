@@ -1,7 +1,9 @@
 //! Working a Hunch (Seeker event, 01037).
 //!
-//! > Insight. Fast.
-//! > Discover 1 clue at your location.
+//! ```text
+//! Insight. Fast.
+//! Discover 1 clue at your location.
+//! ```
 //!
 //! The "Fast." keyword (no-action-cost-to-play) is a card-level play
 //! cost concern, not a DSL concern. It'll be encoded on the card
@@ -39,5 +41,13 @@ mod tests {
                 count: 1,
             }
         ));
+    }
+
+    /// Catches a `pub mod` rename or a fat-fingered match arm in
+    /// `impls::abilities_for` — the registry must dispatch CODE to
+    /// this module's `abilities()`.
+    #[test]
+    fn registry_dispatches_to_this_modules_abilities() {
+        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
     }
 }

@@ -1,7 +1,9 @@
 //! Holy Rosary (Mystic asset, 01059).
 //!
-//! > Hand. Item. Charm.
-//! > You get +1 \[willpower\].
+//! ```text
+//! Hand. Item. Charm.
+//! You get +1 [willpower].
+//! ```
 //!
 //! # Horror-soak gap
 //!
@@ -53,5 +55,13 @@ mod tests {
                 scope: ModifierScope::WhileInPlay,
             }
         ));
+    }
+
+    /// Catches a `pub mod` rename or a fat-fingered match arm in
+    /// `impls::abilities_for` — the registry must dispatch CODE to
+    /// this module's `abilities()`.
+    #[test]
+    fn registry_dispatches_to_this_modules_abilities() {
+        assert_eq!(crate::abilities_for(super::CODE), Some(super::abilities()));
     }
 }
