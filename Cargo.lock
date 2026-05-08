@@ -192,12 +192,17 @@ checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 [[package]]
 name = "card-data-pipeline"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "cards"
 version = "0.1.0"
 dependencies = [
  "game-core",
+ "serde",
 ]
 
 [[package]]

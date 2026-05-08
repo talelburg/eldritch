@@ -11,3 +11,5 @@ description = "Eldritch card-data ingestion CLI: arkhamdb-json-data → generate
 workspace = true
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
