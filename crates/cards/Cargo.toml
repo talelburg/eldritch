@@ -12,3 +12,4 @@ workspace = true
 
 [dependencies]
 game-core = { path = "../game-core" }
+serde = { version = "1", features = ["derive"] }
