@@ -73,6 +73,15 @@ impl EvalContext {
 ///
 /// See module docs for the v0 scope and the validate-first
 /// state-mutation contract.
+///
+/// **Stubbed-leaf cascade:** while any effect variant is stubbed
+/// (returns `Rejected` with TODO), a [`Seq`](Effect::Seq) containing
+/// it rejects as a unit even if other effects in the sequence are
+/// implementable. That's correct given the stub semantics — the
+/// evaluator can't safely run "the parts that work" because card
+/// authors expect the whole sequence or nothing — but it means
+/// gluing implemented + stubbed effects together still blocks on
+/// the stubs.
 pub fn apply_effect(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -95,16 +104,21 @@ pub fn apply_effect(
                      in-flight skill test in EvalContext (lands with #49)."
                 .into(),
         },
-        Effect::ForEach { .. } => EngineOutcome::Rejected {
-            reason: "TODO(#47): ForEach evaluator needs InvestigatorTargetSet resolution \
-                     (lands when first card actually requires per-target dispatch)."
-                .into(),
-        },
-        Effect::ChooseOne(_) => EngineOutcome::Rejected {
-            reason: "TODO(#47): ChooseOne evaluator needs AwaitingInput plumbing + ResolveInput \
-                     resume; lands with the ChoiceResolver (#19) alongside skill tests (#49)."
-                .into(),
-        },
+        Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
+        Effect::ChooseOne(_) => awaiting_input_stub("ChooseOne"),
+    }
+}
+
+/// Standard rejection message for effect variants whose evaluator
+/// needs `AwaitingInput` plumbing (`ChoiceResolver` / `ResolveInput`
+/// resume). Centralizes the message so the un-stub path is one grep.
+fn awaiting_input_stub(name: &'static str) -> EngineOutcome {
+    EngineOutcome::Rejected {
+        reason: format!(
+            "TODO(#47): {name} evaluator needs AwaitingInput plumbing + ResolveInput resume; \
+             lands with the ChoiceResolver (#19) alongside skill tests (#49)."
+        )
+        .into(),
     }
 }
 
@@ -117,6 +131,13 @@ fn gain_resources(
     target: InvestigatorTarget,
     amount: u8,
 ) -> EngineOutcome {
+    if amount == 0 {
+        // Zero-amount gain is a no-op: no state change, no event,
+        // no target resolution. Matches DiscoverClue's zero-count
+        // behavior and the rulebook intuition that "gain 0 resources"
+        // isn't a state change worth narrating.
+        return EngineOutcome::Done;
+    }
     let target_id = match resolve_investigator_target(state, ctx, target) {
         Ok(id) => id,
         Err(reason) => {
@@ -234,6 +255,12 @@ fn apply_seq(
     // refactor that fixes this for whole handlers is TODO'd in
     // engine/mod.rs::apply). Most card sequences are short enough
     // that the lack of mid-sequence rollback is fine for now.
+    //
+    // **AwaitingInput resume:** when ChooseOne et al. land and start
+    // returning AwaitingInput mid-Seq, this loop will need to track
+    // a resume token + remaining-effects continuation. Today
+    // AwaitingInput is unreachable here (no implemented variant
+    // produces it), so the simple early-return is correct for v0.
     for effect in effects {
         let outcome = apply_effect(state, events, effect, ctx);
         if !matches!(outcome, EngineOutcome::Done) {
@@ -245,6 +272,15 @@ fn apply_seq(
 
 // ---- target resolution ----------------------------------------
 
+/// Resolve an [`InvestigatorTarget`] to a concrete id given the
+/// current evaluation context.
+///
+/// **`Active` semantics:** rejects when no investigator is active
+/// (outside the Investigation phase). Card authors reaching for
+/// `Active` from a Mythos- or Enemy-phase reaction will silently
+/// fail until reaction windows wire an active-investigator-equivalent
+/// into `EvalContext`. Use [`InvestigatorTarget::Controller`] for
+/// "the player who triggered this" — it doesn't depend on phase.
 fn resolve_investigator_target(
     state: &GameState,
     ctx: EvalContext,
@@ -321,6 +357,31 @@ mod tests {
             events,
             Event::ResourcesGained { investigator, amount: 3 } if *investigator == id
         );
+    }
+
+    #[test]
+    fn gain_resources_zero_amount_is_a_silent_noop() {
+        // Symmetric with discover_clue_on_empty_location_is_a_silent_noop:
+        // a zero-amount gain isn't a state change. Crucially, it also
+        // skips target resolution, so an `Active` target with no
+        // active investigator doesn't reject for amount=0.
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let resources_before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+
+        let outcome = apply_effect(
+            &mut state,
+            &mut events,
+            &gain_resources(InvestigatorTarget::Active, 0),
+            ctx(1),
+        );
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].resources, resources_before);
+        assert!(events.is_empty());
     }
 
     #[test]
