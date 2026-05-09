@@ -91,4 +91,11 @@ pub enum Event {
         /// Amount of horror.
         amount: u8,
     },
+    /// An investigator gained resources.
+    ResourcesGained {
+        /// Who received resources.
+        investigator: InvestigatorId,
+        /// Amount gained.
+        amount: u8,
+    },
 }
