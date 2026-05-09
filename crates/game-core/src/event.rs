@@ -91,4 +91,19 @@ pub enum Event {
         /// Amount of horror.
         amount: u8,
     },
+    /// An investigator gained resources.
+    ResourcesGained {
+        /// Who received resources.
+        investigator: InvestigatorId,
+        /// Amount gained.
+        amount: u8,
+    },
+    /// An investigator paid / lost resources (e.g. as a `Cost::Resources`
+    /// payment for an activated ability).
+    ResourcesPaid {
+        /// Who paid resources.
+        investigator: InvestigatorId,
+        /// Amount paid.
+        amount: u8,
+    },
 }

@@ -11,8 +11,10 @@
 //! current state bit-for-bit.
 
 mod dispatch;
+pub mod evaluator;
 mod outcome;
 
+pub use evaluator::{apply_effect, EvalContext};
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
 
 use crate::action::Action;
