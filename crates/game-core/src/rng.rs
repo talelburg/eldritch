@@ -26,7 +26,11 @@
 //! Avoiding it via rejection sampling would mean variable byte
 //! consumption per draw, which breaks the replay invariant above.
 
-use rand_chacha::rand_core::{RngCore, SeedableRng};
+// rand_core 0.10 split the user-facing `next_u64` off of `RngCore`
+// (now fallible-only via `try_next_u64`) into a separate `Rng` trait.
+// We use the infallible `next_u64` since ChaCha8Rng's stream cannot
+// fail to produce bytes.
+use rand_chacha::rand_core::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 /// Deterministic RNG state for [`GameState`](crate::GameState).
