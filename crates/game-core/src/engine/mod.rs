@@ -1352,4 +1352,100 @@ mod tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
+
+    #[test]
+    fn fight_with_negative_fight_value_is_rejected_without_mutating_state() {
+        // Malformed scenario data: fight = -1. validate-first must
+        // reject BEFORE spend_one_action runs, otherwise the action
+        // is silently lost without a rejection event.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().fight = -1;
+        let actions_before = state.investigators[&inv_id].actions_remaining;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+        assert_eq!(
+            result.state.investigators[&inv_id].actions_remaining,
+            actions_before
+        );
+    }
+
+    #[test]
+    fn evade_with_negative_evade_value_is_rejected_without_mutating_state() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().evade = -1;
+        let actions_before = state.investigators[&inv_id].actions_remaining;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+        assert_eq!(
+            result.state.investigators[&inv_id].actions_remaining,
+            actions_before
+        );
+    }
+
+    #[test]
+    fn evade_on_already_exhausted_enemy_is_idempotent_on_exhaust() {
+        // Edge: enemy is already exhausted but still engaged (e.g.
+        // attacked the investigator earlier this round, now the
+        // investigator Evades). Success disengages and leaves
+        // `exhausted = true`.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestSucceeded { .. });
+        assert_event!(result.events, Event::EnemyDisengaged { .. });
+        assert!(result.state.enemies[&enemy_id].exhausted);
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+    }
+
+    #[test]
+    fn fight_engaged_with_two_enemies_only_touches_the_target() {
+        // Investigator engaged with two enemies. Fight one. The other
+        // engagement must stay intact and its state untouched.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        let other_id = EnemyId(101);
+        let mut other = test_enemy(101, "Bystander Ghoul");
+        other.engaged_with = Some(inv_id);
+        state.enemies.insert(other_id, other);
+        // Make sure the Fight defeats the target so we observe the
+        // full attribution + removal path while the other is untouched.
+        state.enemies.get_mut(&enemy_id).unwrap().damage = 1;
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!result.state.enemies.contains_key(&enemy_id));
+        // Other enemy untouched.
+        assert!(result.state.enemies.contains_key(&other_id));
+        let other_after = &result.state.enemies[&other_id];
+        assert_eq!(other_after.engaged_with, Some(inv_id));
+        assert_eq!(other_after.damage, 0);
+        assert!(!other_after.exhausted);
+    }
 }

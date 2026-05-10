@@ -206,6 +206,15 @@ pub enum Event {
     /// An enemy was defeated (damage reached `max_health` or a card
     /// effect explicitly defeated it). The enemy is removed from
     /// `GameState::enemies` after this event fires.
+    ///
+    /// Per the Rules Reference, defeat takes the enemy out of play
+    /// entirely — it does NOT emit a paired [`EnemyDisengaged`] for
+    /// an enemy that was engaged at the time of defeat. Engagement
+    /// implicitly terminates because the enemy is gone. Consumers
+    /// tracking engagement via the event stream should treat
+    /// `EnemyDefeated` as terminating any engagement the enemy had.
+    ///
+    /// [`EnemyDisengaged`]: Event::EnemyDisengaged
     EnemyDefeated {
         /// The defeated enemy.
         enemy: EnemyId,

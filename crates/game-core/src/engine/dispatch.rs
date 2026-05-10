@@ -12,7 +12,7 @@ use crate::action::{EngineRecord, PlayerAction};
 use crate::dsl::{discover_clue, LocationTarget};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, EnemyId, GameState, InvestigatorId, LocationId, Phase, SkillKind,
+    resolve_token, Enemy, EnemyId, GameState, InvestigatorId, LocationId, Phase, SkillKind,
     TokenResolution,
 };
 
@@ -545,19 +545,25 @@ fn move_action(
 
 /// Validate the prefix shared by Fight and Evade: phase, active
 /// investigator, action point available, enemy exists, engaged with
-/// the named enemy. Returns the enemy's (fight, evade) difficulties
-/// for the caller to pass into [`resolve_skill_test`]; the caller
-/// picks which to use.
+/// the named enemy. Returns the borrowed enemy so the caller can pick
+/// which difficulty (fight / evade) and read any other fields it
+/// needs.
 ///
 /// On `Err`, returns the rejection; the caller should propagate it
 /// without further state mutation. State-corruption invariants
 /// (active investigator missing from map) panic via `unreachable!`.
-fn validate_engaged_action(
-    state: &GameState,
+///
+/// Does NOT validate the chosen difficulty is non-negative — the
+/// caller must do that after picking, because Fight and Evade each
+/// only care about one of the two values, and validating both
+/// upfront would reject legitimate states (an enemy with `fight: -1`
+/// the investigator only ever Evades).
+fn validate_engaged_action<'a>(
+    state: &'a GameState,
     action_name: &'static str,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
-) -> Result<(i8, i8), EngineOutcome> {
+) -> Result<&'a Enemy, EngineOutcome> {
     if state.phase != Phase::Investigation {
         return Err(EngineOutcome::Rejected {
             reason: format!(
@@ -601,7 +607,7 @@ fn validate_engaged_action(
             .into(),
         });
     }
-    Ok((enemy.fight, enemy.evade))
+    Ok(enemy)
 }
 
 /// Spend 1 action point from the active investigator and emit
@@ -636,11 +642,21 @@ fn fight(
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    let (fight_difficulty, _) =
-        match validate_engaged_action(state, "Fight", investigator, enemy_id) {
-            Ok(d) => d,
-            Err(rejected) => return rejected,
-        };
+    let fight_difficulty = match validate_engaged_action(state, "Fight", investigator, enemy_id) {
+        Ok(enemy) => {
+            if enemy.fight < 0 {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
+                        enemy.fight,
+                    )
+                    .into(),
+                };
+            }
+            enemy.fight
+        }
+        Err(rejected) => return rejected,
+    };
     spend_one_action(state, events, investigator);
     match resolve_skill_test(
         state,
@@ -668,11 +684,21 @@ fn evade(
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    let (_, evade_difficulty) =
-        match validate_engaged_action(state, "Evade", investigator, enemy_id) {
-            Ok(d) => d,
-            Err(rejected) => return rejected,
-        };
+    let evade_difficulty = match validate_engaged_action(state, "Evade", investigator, enemy_id) {
+        Ok(enemy) => {
+            if enemy.evade < 0 {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "Evade: enemy {enemy_id:?} has negative evade value {} (malformed state)",
+                        enemy.evade,
+                    )
+                    .into(),
+                };
+            }
+            enemy.evade
+        }
+        Err(rejected) => return rejected,
+    };
     spend_one_action(state, events, investigator);
     match resolve_skill_test(
         state,
