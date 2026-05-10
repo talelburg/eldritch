@@ -416,8 +416,12 @@ fn investigate(
     // at i8::MAX for the absurd case; realistic shrouds are 0–6.
     let difficulty = i8::try_from(location.shroud).unwrap_or(i8::MAX);
 
-    // Mutate-second: spend the action, then resolve the test.
+    // Mutate-second: spend the action, fire AoO, then resolve the
+    // test. Investigate is NOT on the AoO-exempt list (only Fight,
+    // Evade, Parley, Engage, Resign are), so each ready engaged
+    // enemy attacks before the test resolves.
     spend_one_action(state, events, investigator);
+    fire_attacks_of_opportunity(state, events, investigator);
 
     match resolve_skill_test(
         state,
@@ -530,11 +534,32 @@ fn move_action(
 
     // Mutate-second.
     spend_one_action(state, events, investigator);
+
+    // Move triggers attacks of opportunity from each ready engaged
+    // enemy. Per the Rules Reference, this happens BEFORE the move
+    // resolves.
+    fire_attacks_of_opportunity(state, events, investigator);
+
+    // Engaged enemies move with the investigator. Capture the
+    // engagement set before mutating any locations, then update each
+    // engaged enemy's `current_location` to the destination
+    // alongside the investigator's own move.
+    let engaged: Vec<EnemyId> = state
+        .enemies
+        .iter()
+        .filter(|(_, e)| e.engaged_with == Some(investigator))
+        .map(|(id, _)| *id)
+        .collect();
     state
         .investigators
         .get_mut(&investigator)
         .expect("investigator existence checked above")
         .current_location = Some(destination);
+    for enemy_id in engaged {
+        if let Some(enemy) = state.enemies.get_mut(&enemy_id) {
+            enemy.current_location = Some(destination);
+        }
+    }
     events.push(Event::InvestigatorMoved {
         investigator,
         from,
@@ -759,5 +784,93 @@ fn damage_enemy(
             by,
         });
         state.enemies.remove(&enemy_id);
+    }
+}
+
+/// Apply an enemy's attack pattern (damage + horror) to an
+/// investigator. Used by attacks of opportunity today; will be reused
+/// by the enemy-phase handler (#71) when that lands.
+///
+/// Per the Rules Reference, an enemy making an attack of opportunity
+/// does NOT exhaust. Enemy-phase attacks DO exhaust the attacker.
+/// This helper therefore does NOT touch the attacker's `exhausted`
+/// flag — callers that need exhaustion (i.e. the enemy phase) apply
+/// it separately.
+///
+/// Investigator-defeat handling (damage > `max_health`, horror >
+/// `max_sanity`) is deferred to its own issue. For now, we
+/// `saturating_add` so we don't wrap, but allow the value to exceed
+/// the cap; the eventual defeat flow will reconcile.
+fn enemy_attack(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    enemy_id: EnemyId,
+    investigator: InvestigatorId,
+) {
+    let enemy = state.enemies.get(&enemy_id).unwrap_or_else(|| {
+        unreachable!(
+            "enemy_attack: enemy {enemy_id:?} is not in state.enemies; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    let damage = enemy.attack_damage;
+    let horror = enemy.attack_horror;
+
+    if damage > 0 {
+        let inv = state
+            .investigators
+            .get_mut(&investigator)
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "enemy_attack: investigator {investigator:?} is not in the investigators map; \
+                 this is a state-corruption invariant violation"
+                )
+            });
+        inv.damage = inv.damage.saturating_add(damage);
+        events.push(Event::DamageTaken {
+            investigator,
+            amount: damage,
+        });
+    }
+    if horror > 0 {
+        let inv = state
+            .investigators
+            .get_mut(&investigator)
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "enemy_attack: investigator {investigator:?} is not in the investigators map; \
+                 this is a state-corruption invariant violation"
+                )
+            });
+        inv.horror = inv.horror.saturating_add(horror);
+        events.push(Event::HorrorTaken {
+            investigator,
+            amount: horror,
+        });
+    }
+}
+
+/// Fire attacks of opportunity from every ready enemy engaged with
+/// `investigator`. Each attacker resolves via [`enemy_attack`]; order
+/// is deterministic by `EnemyId` (`BTreeMap` iteration).
+///
+/// Per the Rules Reference, the active player chooses the order of
+/// `AoOs` from multiple engaged ready enemies; v1 uses deterministic
+/// `EnemyId` order. We'll revisit when an actual ordering choice
+/// matters (e.g. a card reacts to "the second attack of opportunity
+/// this turn").
+fn fire_attacks_of_opportunity(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) {
+    let attackers: Vec<EnemyId> = state
+        .enemies
+        .iter()
+        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
+        .map(|(id, _)| *id)
+        .collect();
+    for enemy_id in attackers {
+        enemy_attack(state, events, enemy_id, investigator);
     }
 }

@@ -1448,4 +1448,212 @@ mod tests {
         assert_eq!(other_after.damage, 0);
         assert!(!other_after.exhausted);
     }
+
+    // ------------------------------------------------------------------
+    // Attack-of-opportunity tests (#78)
+    // ------------------------------------------------------------------
+
+    /// Move scenario with a ready enemy engaged with the active
+    /// investigator at the origin. A connects to B (one-way).
+    /// Returns (inv id, A, B, enemy id, state).
+    fn move_scenario_with_engaged_enemy() -> (
+        InvestigatorId,
+        crate::state::LocationId,
+        crate::state::LocationId,
+        EnemyId,
+        GameState,
+    ) {
+        let (inv_id, a, b, mut state) = move_scenario();
+        let enemy_id = EnemyId(200);
+        let mut enemy = test_enemy(200, "Engaged Ghoul");
+        enemy.current_location = Some(a);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 1;
+        enemy.attack_horror = 0;
+        state.enemies.insert(enemy_id, enemy);
+        (inv_id, a, b, enemy_id, state)
+    }
+
+    #[test]
+    fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {
+        let (inv_id, a, b, enemy_id, state) = move_scenario_with_engaged_enemy();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // AoO damage event fires before InvestigatorMoved.
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+        // Investigator damaged.
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        // Investigator moved.
+        assert_eq!(
+            result.state.investigators[&inv_id].current_location,
+            Some(b)
+        );
+        assert_event!(
+            result.events,
+            Event::InvestigatorMoved { from, to, .. } if *from == a && *to == b
+        );
+        // Engaged enemy followed.
+        assert_eq!(result.state.enemies[&enemy_id].current_location, Some(b));
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, Some(inv_id));
+        // AoO does NOT exhaust per the Rules Reference.
+        assert!(!result.state.enemies[&enemy_id].exhausted);
+    }
+
+    #[test]
+    fn move_with_exhausted_engaged_enemy_does_not_fire_aoo() {
+        let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
+        state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_no_event!(result.events, Event::HorrorTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        // Exhausted enemy still follows the investigator.
+        assert_eq!(result.state.enemies[&enemy_id].current_location, Some(b));
+    }
+
+    #[test]
+    fn move_with_unengaged_enemy_at_origin_leaves_enemy_behind() {
+        let (inv_id, a, b, _, mut state) = move_scenario_with_engaged_enemy();
+        // Convert the engagement into a non-engagement: enemy is at A
+        // but not engaged with anyone.
+        let other_id = EnemyId(201);
+        let mut other = test_enemy(201, "Bystander");
+        other.current_location = Some(a);
+        // engaged_with stays None.
+        state.enemies.insert(other_id, other);
+        // Remove the engaged enemy so the move doesn't trigger AoO,
+        // keeping the focus on the unengaged enemy.
+        state.enemies.remove(&EnemyId(200));
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // Investigator moved.
+        assert_eq!(
+            result.state.investigators[&inv_id].current_location,
+            Some(b)
+        );
+        // Unengaged enemy stayed put.
+        assert_eq!(result.state.enemies[&other_id].current_location, Some(a));
+    }
+
+    #[test]
+    fn investigate_with_ready_engaged_enemy_fires_aoo() {
+        // Set up an Investigate scenario, then attach an engaged
+        // enemy at the investigator's location.
+        let (inv_id, loc_id, state) = investigate_scenario(2, 2);
+        let enemy_id = EnemyId(300);
+        let mut enemy = test_enemy(300, "Engaged at Study");
+        enemy.current_location = Some(loc_id);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 0;
+        enemy.attack_horror = 1;
+        let mut state = state;
+        state.enemies.insert(enemy_id, enemy);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+        // Skill test still runs after AoO.
+        assert_event!(result.events, Event::SkillTestStarted { .. });
+        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+    }
+
+    #[test]
+    fn fight_does_not_fire_aoo_from_other_engaged_enemy() {
+        // Investigator engaged with the Fight target AND a second
+        // ready engaged enemy. Fight is on the AoO-exempt list, so
+        // no AoO fires — neither from the target nor from the
+        // bystander.
+        let (inv_id, target_id, mut state) = fight_evade_scenario();
+        let bystander_id = EnemyId(202);
+        let mut bystander = test_enemy(202, "Other Ghoul");
+        bystander.engaged_with = Some(inv_id);
+        bystander.attack_damage = 5;
+        state.enemies.insert(bystander_id, bystander);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: target_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_no_event!(result.events, Event::HorrorTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].horror, 0);
+    }
+
+    #[test]
+    fn evade_does_not_fire_aoo_from_other_engaged_enemy() {
+        let (inv_id, target_id, mut state) = fight_evade_scenario();
+        let bystander_id = EnemyId(203);
+        let mut bystander = test_enemy(203, "Other Ghoul");
+        bystander.engaged_with = Some(inv_id);
+        bystander.attack_damage = 5;
+        state.enemies.insert(bystander_id, bystander);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: target_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_no_event!(result.events, Event::HorrorTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+    }
+
+    #[test]
+    fn move_with_no_engaged_enemy_does_not_fire_aoo() {
+        // Regression: the AoO step is a no-op when no engaged
+        // enemies exist; pre-existing Move tests should not have
+        // started failing.
+        let (inv_id, _, b, state) = move_scenario();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+    }
 }
