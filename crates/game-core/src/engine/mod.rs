@@ -79,9 +79,9 @@ mod tests {
     use crate::action::{Action, EngineRecord, InputResponse, PlayerAction};
     use crate::event::{Event, FailureReason};
     use crate::state::{
-        ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers, TokenResolution,
+        ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers, TokenResolution,
     };
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, test_location, TestGame};
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{apply, EngineOutcome};
@@ -562,6 +562,179 @@ mod tests {
         assert_eq!(first.state.rng, second.state.rng);
         assert_eq!(first.state.rng.draws, 1);
         assert_eq!(first.events, second.events);
+    }
+
+    /// Build a scenario suitable for Investigate tests: one investigator
+    /// at a location with `clues` clues and `shroud` shroud, in
+    /// Investigation phase, with the investigator active and 3 actions.
+    /// Bag is `Numeric(0)` so the test outcome depends purely on
+    /// (intellect vs shroud).
+    fn investigate_scenario(
+        clues: u8,
+        shroud: u8,
+    ) -> (InvestigatorId, crate::state::LocationId, GameState) {
+        let inv_id = InvestigatorId(1);
+        let loc_id = crate::state::LocationId(10);
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc_id);
+        inv.actions_remaining = 3;
+        let mut loc = test_location(10, "Study");
+        loc.clues = clues;
+        loc.shroud = shroud;
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .with_chaos_bag(bag_only_zero())
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+        (inv_id, loc_id, state)
+    }
+
+    #[test]
+    fn investigate_succeeds_and_moves_one_clue_to_investigator() {
+        // Default intellect 3, shroud 2 → margin 1 → success.
+        let (inv_id, loc_id, state) = investigate_scenario(2, 2);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::SkillTestStarted {
+                skill: SkillKind::Intellect,
+                difficulty: 2,
+                ..
+            }
+        );
+        assert_event!(result.events, Event::SkillTestSucceeded { margin: 1, .. });
+        assert_event!(
+            result.events,
+            Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::LocationCluesChanged { location, new_count: 1 } if *location == loc_id
+        );
+        assert_eq!(result.state.investigators[&inv_id].clues, 1);
+        assert_eq!(result.state.locations[&loc_id].clues, 1);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    }
+
+    #[test]
+    fn investigate_failure_spends_action_but_moves_no_clue() {
+        // Intellect 3, shroud 5 → fails by 2; action still spent.
+        let (inv_id, loc_id, state) = investigate_scenario(2, 5);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestFailed { by: 2, .. });
+        assert_no_event!(result.events, Event::CluePlaced { .. });
+        assert_no_event!(result.events, Event::LocationCluesChanged { .. });
+        assert_eq!(result.state.locations[&loc_id].clues, 2);
+        assert_eq!(result.state.investigators[&inv_id].clues, 0);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    }
+
+    #[test]
+    fn investigate_at_empty_location_spends_action_and_runs_test_silently() {
+        // Location has 0 clues; the test still fires (you can't tell
+        // the location is empty without trying), the action is still
+        // spent, and discover_clue is a silent no-op on success.
+        let (inv_id, loc_id, state) = investigate_scenario(0, 2);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestSucceeded { .. });
+        assert_no_event!(result.events, Event::CluePlaced { .. });
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+        assert_eq!(result.state.locations[&loc_id].clues, 0);
+        assert_eq!(result.state.investigators[&inv_id].clues, 0);
+    }
+
+    #[test]
+    fn investigate_outside_investigation_phase_is_rejected() {
+        let (inv_id, _, mut state) = investigate_scenario(2, 2);
+        state.phase = Phase::Mythos;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn investigate_by_non_active_investigator_is_rejected() {
+        let (_, _, mut state) = investigate_scenario(2, 2);
+        // Add a second investigator but keep the first active.
+        let other = InvestigatorId(2);
+        state.investigators.insert(other, test_investigator(2));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: other,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn investigate_with_zero_actions_is_rejected() {
+        let (inv_id, _, mut state) = investigate_scenario(2, 2);
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .actions_remaining = 0;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn investigate_without_a_current_location_is_rejected() {
+        let (inv_id, _, mut state) = investigate_scenario(2, 2);
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .current_location = None;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
     }
 
     #[test]

@@ -59,6 +59,19 @@ pub enum PlayerAction {
         /// Difficulty: total to meet or exceed for success.
         difficulty: i8,
     },
+    /// Investigate at the active investigator's current location:
+    /// spend 1 action, make an intellect test against the location's
+    /// shroud value, and on success discover 1 clue at the location.
+    ///
+    /// Card-derived investigate variants (Rite of Seeking's "Action.
+    /// Spend 1 charge: Investigate using willpower instead of intellect",
+    /// Working a Hunch's discover-without-test) are the cards' concern,
+    /// not this action.
+    Investigate {
+        /// Investigator performing the action. Must be the active
+        /// investigator during the Investigation phase.
+        investigator: InvestigatorId,
+    },
     /// Respond to an `AwaitingInput` prompt the engine emitted. The
     /// shape of `response` is dictated by the active prompt. (The
     /// `EngineOutcome::AwaitingInput` variant lands in a later PR.)

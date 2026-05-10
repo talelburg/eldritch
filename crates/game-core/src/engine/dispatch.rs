@@ -9,9 +9,11 @@
 //! ones.
 
 use crate::action::{EngineRecord, PlayerAction};
+use crate::dsl::{discover_clue, LocationTarget};
 use crate::event::{Event, FailureReason};
 use crate::state::{resolve_token, GameState, InvestigatorId, Phase, SkillKind, TokenResolution};
 
+use super::evaluator::{apply_effect, EvalContext};
 use super::outcome::EngineOutcome;
 
 /// Action points granted to an investigator at the start of their
@@ -38,6 +40,7 @@ pub fn apply_player_action(
             skill,
             difficulty,
         } => perform_skill_test(state, events, *investigator, *skill, *difficulty),
+        PlayerAction::Investigate { investigator } => investigate(state, events, *investigator),
         PlayerAction::ResolveInput { .. } => EngineOutcome::Rejected {
             reason: "TODO(#63): ResolveInput dispatch lands with the skill-test commit \
                      window; no AwaitingInput sites exist yet."
@@ -196,49 +199,69 @@ fn rotate_to_active(state: &mut GameState, events: &mut Vec<Event>, id: Investig
     });
 }
 
-/// Handler for [`PlayerAction::PerformSkillTest`].
+/// The outcome of resolving a skill test, when the test runs at all.
+/// Returned by [`resolve_skill_test`] so callers (the
+/// `PerformSkillTest` dispatch wrapper, `Investigate`, future Fight /
+/// Evade) can branch on success vs failure to apply action-specific
+/// follow-on effects.
 ///
-/// Phase-1 foundation: declares the test, draws a chaos token, computes
-/// total = investigator's skill value + token numeric modifier vs.
-/// difficulty, and emits success/failure plus the bracketing
-/// `SkillTestStarted` / `SkillTestEnded` events — all in one apply call.
+/// `Succeeded.margin` and `Failed.{reason, by}` carry the same numbers
+/// as the corresponding events; callers that don't need them can
+/// match `Ok(SkillTestResolution::Succeeded { .. })`. Fields are
+/// `allow(dead_code)` until Fight/Evade (which want fail-by-X logic)
+/// land.
+#[allow(dead_code)]
+pub(super) enum SkillTestResolution {
+    /// The investigator's clamped total met or exceeded the difficulty.
+    Succeeded {
+        /// `total - difficulty` (always `>= 0`).
+        margin: i8,
+    },
+    /// The test failed.
+    Failed {
+        /// Why it failed.
+        reason: FailureReason,
+        /// Margin of failure (always `>= 0`).
+        by: i8,
+    },
+}
+
+/// Run the skill-test resolution sequence and return the outcome to
+/// the caller. Pushes the bracketing `SkillTestStarted` / `…Ended`
+/// events plus the per-step events (`ChaosTokenRevealed`,
+/// `SkillTestSucceeded` or `SkillTestFailed`).
 ///
-/// Card commits, the commit-window `AwaitingInput`, and the after-
-/// resolution trigger window are downstream (#63 / #64).
+/// Returns `Err(EngineOutcome::Rejected { .. })` on validation failure
+/// without pushing any events.
 ///
-/// **`AutoFail`** short-circuits the outcome to failure regardless of
-/// numeric total — `FailureReason::AutoFail`.
-///
-/// **`ElderSign`** is treated as `Modifier(0)` for now, with a TODO:
-/// the canonical behavior is "trigger the active investigator's elder
-/// sign ability," which depends on per-investigator ability dispatch.
-/// Modifier 0 + a TODO is a safe no-op default — Daisy Walker's "+0"
-/// elder sign already matches this; other investigators will be
-/// honored when ability dispatch lands.
-fn perform_skill_test(
+/// **`AutoFail`** forces the investigator's total to 0 per the Rules
+/// Reference; **`ElderSign`** is treated as `Modifier(0)` until per-
+/// investigator ability dispatch lands; **negative** `skill + modifier`
+/// clamps to 0.
+pub(super) fn resolve_skill_test(
     state: &mut GameState,
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
     skill: SkillKind,
     difficulty: i8,
-) -> EngineOutcome {
+) -> Result<SkillTestResolution, EngineOutcome> {
     // Validate-first: investigator must exist; chaos bag must be
     // non-empty so we can draw; difficulty must be non-negative (FFG
     // difficulties are always ≥ 0).
     let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("PerformSkillTest: investigator {investigator:?} not in state").into(),
-        };
+        return Err(EngineOutcome::Rejected {
+            reason: format!("skill test: investigator {investigator:?} not in state").into(),
+        });
     };
     if state.chaos_bag.tokens.is_empty() {
-        return EngineOutcome::Rejected {
-            reason: "PerformSkillTest requires a non-empty chaos bag".into(),
-        };
+        return Err(EngineOutcome::Rejected {
+            reason: "skill test requires a non-empty chaos bag".into(),
+        });
     }
     if difficulty < 0 {
-        return EngineOutcome::Rejected {
-            reason: format!("PerformSkillTest: difficulty {difficulty} must be >= 0").into(),
-        };
+        return Err(EngineOutcome::Rejected {
+            reason: format!("skill test: difficulty {difficulty} must be >= 0").into(),
+        });
     }
     let skill_value = inv.skills.value(skill);
 
@@ -254,15 +277,6 @@ fn perform_skill_test(
     let resolution = resolve_token(token, &state.token_modifiers);
     events.push(Event::ChaosTokenRevealed { token, resolution });
 
-    // Two related rules from the Rules Reference + FAQ:
-    //   1. AutoFail forces the investigator's total to 0 (not just
-    //      "test fails regardless of total"); the failure margin is
-    //      computed against that 0.
-    //   2. A negative (skill + modifier) clamps to 0 — totals are
-    //      never negative for margin-of-failure purposes.
-    // ElderSign is a placeholder Modifier(0) until per-investigator
-    // ability dispatch lands; that's a no-op for the math here.
-    //
     // All arithmetic stays in i8 with saturating ops: realistic
     // gameplay values (skill 1–8, modifier ±8, difficulty ≤ ~6) fit
     // far inside i8, but saturation defends against absurd state
@@ -273,12 +287,13 @@ fn perform_skill_test(
         TokenResolution::AutoFail => (0, Some(FailureReason::AutoFail)),
     };
     let margin = total.saturating_sub(difficulty);
-    if margin >= 0 && fail_reason.is_none() {
+    let outcome = if margin >= 0 && fail_reason.is_none() {
         events.push(Event::SkillTestSucceeded {
             investigator,
             skill,
             margin,
         });
+        SkillTestResolution::Succeeded { margin }
     } else {
         let reason = fail_reason.unwrap_or(FailureReason::Total);
         let by = difficulty.saturating_sub(total);
@@ -288,8 +303,138 @@ fn perform_skill_test(
             reason,
             by,
         });
-    }
+        SkillTestResolution::Failed { reason, by }
+    };
 
     events.push(Event::SkillTestEnded { investigator });
-    EngineOutcome::Done
+    Ok(outcome)
+}
+
+/// Public dispatch wrapper for [`PlayerAction::PerformSkillTest`].
+///
+/// Card commits, the commit-window `AwaitingInput`, and the after-
+/// resolution trigger window are downstream (#63 / #64). The skill-
+/// test machinery itself lives in [`resolve_skill_test`], which other
+/// turn-actions (Investigate, future Fight / Evade) invoke directly.
+fn perform_skill_test(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    skill: SkillKind,
+    difficulty: i8,
+) -> EngineOutcome {
+    match resolve_skill_test(state, events, investigator, skill, difficulty) {
+        Ok(_) => EngineOutcome::Done,
+        Err(rejected) => rejected,
+    }
+}
+
+/// Handler for [`PlayerAction::Investigate`].
+///
+/// Spends 1 action, runs an intellect skill test against the location's
+/// shroud, and on success applies [`Effect::DiscoverClue`] to move 1
+/// clue from the location to the investigator. The discover-clue
+/// evaluator handles the location-empty edge case as a silent no-op,
+/// so an investigation at a 0-clue location costs the action and runs
+/// the test but yields nothing — consistent with the rules.
+///
+/// Card-derived investigate variants (Rite of Seeking's "Action:
+/// Investigate using willpower instead of intellect", Working a
+/// Hunch's discover-without-test) implement their own paths; this
+/// handler is the bare turn-action.
+///
+/// [`Effect::DiscoverClue`]: crate::dsl::Effect::DiscoverClue
+fn investigate(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    // Validate-first.
+    if state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Investigate is only valid during the Investigation phase (was {:?})",
+                state.phase
+            )
+            .into(),
+        };
+    }
+    if state.active_investigator != Some(investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Investigate: {investigator:?} is not the active investigator ({:?})",
+                state.active_investigator,
+            )
+            .into(),
+        };
+    }
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return EngineOutcome::Rejected {
+            reason: format!("Investigate: investigator {investigator:?} not in state").into(),
+        };
+    };
+    if inv.actions_remaining < 1 {
+        return EngineOutcome::Rejected {
+            reason: "Investigate requires at least 1 action point".into(),
+        };
+    }
+    let Some(location_id) = inv.current_location else {
+        return EngineOutcome::Rejected {
+            reason: format!("Investigate: {investigator:?} has no current_location to investigate")
+                .into(),
+        };
+    };
+    let Some(location) = state.locations.get(&location_id) else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Investigate: location {location_id:?} (investigator's current_location) is not in state"
+            )
+            .into(),
+        };
+    };
+    // Shroud is u8 in state but skill-test difficulty is i8. Saturate
+    // at i8::MAX for the absurd case; realistic shrouds are 0–6.
+    let difficulty = i8::try_from(location.shroud).unwrap_or(i8::MAX);
+
+    // Mutate-second: spend the action, then resolve the test.
+    let new_actions = inv.actions_remaining - 1;
+    state
+        .investigators
+        .get_mut(&investigator)
+        .expect("investigator existence checked above")
+        .actions_remaining = new_actions;
+    events.push(Event::ActionsRemainingChanged {
+        investigator,
+        new_count: new_actions,
+    });
+
+    match resolve_skill_test(
+        state,
+        events,
+        investigator,
+        SkillKind::Intellect,
+        difficulty,
+    ) {
+        Ok(SkillTestResolution::Succeeded { .. }) => {
+            let effect = discover_clue(LocationTarget::ControllerLocation, 1);
+            let ctx = EvalContext::for_controller(investigator);
+            // discover_clue's evaluator handles empty-location as a
+            // silent no-op; any rejection here would indicate the
+            // investigator is between locations, which we already
+            // validated. Treat any unexpected rejection as a hard
+            // engine error rather than a silent failure.
+            let outcome = apply_effect(state, events, &effect, ctx);
+            if let EngineOutcome::Rejected { reason } = outcome {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "Investigate: discover_clue effect rejected unexpectedly: {reason}"
+                    )
+                    .into(),
+                };
+            }
+            EngineOutcome::Done
+        }
+        Ok(SkillTestResolution::Failed { .. }) => EngineOutcome::Done,
+        Err(rejected) => rejected,
+    }
 }
