@@ -11,7 +11,9 @@
 use crate::action::{EngineRecord, PlayerAction};
 use crate::dsl::{discover_clue, LocationTarget};
 use crate::event::{Event, FailureReason};
-use crate::state::{resolve_token, GameState, InvestigatorId, Phase, SkillKind, TokenResolution};
+use crate::state::{
+    resolve_token, GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+};
 
 use super::evaluator::{apply_effect, EvalContext};
 use super::outcome::EngineOutcome;
@@ -41,6 +43,10 @@ pub fn apply_player_action(
             difficulty,
         } => perform_skill_test(state, events, *investigator, *skill, *difficulty),
         PlayerAction::Investigate { investigator } => investigate(state, events, *investigator),
+        PlayerAction::Move {
+            investigator,
+            destination,
+        } => move_action(state, events, *investigator, *destination),
         PlayerAction::ResolveInput { .. } => EngineOutcome::Rejected {
             reason: "TODO(#63): ResolveInput dispatch lands with the skill-test commit \
                      window; no AwaitingInput sites exist yet."
@@ -368,11 +374,14 @@ fn investigate(
             .into(),
         };
     }
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("Investigate: investigator {investigator:?} not in state").into(),
-        };
-    };
+    // Active-investigator + missing-from-map is a state-corruption
+    // invariant violation; panic rather than silently rejecting.
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Investigate: active_investigator {investigator:?} is not in the investigators \
+             map; this is a state-corruption invariant violation"
+        )
+    });
     if inv.actions_remaining < 1 {
         return EngineOutcome::Rejected {
             reason: "Investigate requires at least 1 action point".into(),
@@ -437,4 +446,104 @@ fn investigate(
         Ok(SkillTestResolution::Failed { .. }) => EngineOutcome::Done,
         Err(rejected) => rejected,
     }
+}
+
+/// Handler for [`PlayerAction::Move`].
+///
+/// Spends 1 action, then updates `current_location` to a connected
+/// destination. Move is legal while engaged with enemies: per the
+/// Rules Reference, each ready engaged enemy makes an attack of
+/// opportunity before the move resolves, and engaged enemies move
+/// with the investigator. Both behaviors land alongside enemy state
+/// in #67; this handler covers only the bare movement.
+fn move_action(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    destination: LocationId,
+) -> EngineOutcome {
+    // Validate-first.
+    if state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Move is only valid during the Investigation phase (was {:?})",
+                state.phase
+            )
+            .into(),
+        };
+    }
+    if state.active_investigator != Some(investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Move: {investigator:?} is not the active investigator ({:?})",
+                state.active_investigator,
+            )
+            .into(),
+        };
+    }
+    // Active-investigator + missing-from-map is a state-corruption
+    // invariant violation (active_investigator is engine-set; the
+    // pairing with the map entry is an invariant), so surface loudly.
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Move: active_investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv.actions_remaining < 1 {
+        return EngineOutcome::Rejected {
+            reason: "Move requires at least 1 action point".into(),
+        };
+    }
+    let Some(from) = inv.current_location else {
+        return EngineOutcome::Rejected {
+            reason: format!("Move: {investigator:?} has no current_location to move from").into(),
+        };
+    };
+    if from == destination {
+        return EngineOutcome::Rejected {
+            reason: format!("Move: destination {destination:?} is the current location").into(),
+        };
+    }
+    // current_location is engine-set state, so a dangling reference is
+    // an invariant violation and panics. Connection lists, by contrast,
+    // are scenario-data inputs — a connection pointing at a missing
+    // location is malformed input, not engine corruption, so we
+    // reject. Check destination-in-state BEFORE connections so the
+    // error message is informative when both fail.
+    let from_loc = state.locations.get(&from).unwrap_or_else(|| {
+        unreachable!(
+            "Move: location {from:?} (investigator's current_location) is not in the \
+             locations map; this is a state-corruption invariant violation"
+        )
+    });
+    if !state.locations.contains_key(&destination) {
+        return EngineOutcome::Rejected {
+            reason: format!("Move: destination {destination:?} is not in state").into(),
+        };
+    }
+    if !from_loc.connections.contains(&destination) {
+        return EngineOutcome::Rejected {
+            reason: format!("Move: {destination:?} is not connected to {from:?}").into(),
+        };
+    }
+
+    // Mutate-second.
+    let new_actions = inv.actions_remaining - 1;
+    let inv_mut = state
+        .investigators
+        .get_mut(&investigator)
+        .expect("investigator existence checked above");
+    inv_mut.actions_remaining = new_actions;
+    inv_mut.current_location = Some(destination);
+    events.push(Event::ActionsRemainingChanged {
+        investigator,
+        new_count: new_actions,
+    });
+    events.push(Event::InvestigatorMoved {
+        investigator,
+        from,
+        to: destination,
+    });
+    EngineOutcome::Done
 }
