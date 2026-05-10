@@ -258,6 +258,25 @@ mod tests {
     }
 
     #[test]
+    fn perform_skill_test_with_negative_difficulty_is_rejected() {
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Willpower,
+                difficulty: -1,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
     fn perform_skill_test_succeeds_when_total_meets_difficulty() {
         // Default skills are 3/3/3/3; bag only has Numeric(0), so total=3.
         // Difficulty 3 → margin 0 → success.
@@ -298,6 +317,33 @@ mod tests {
             Event::SkillTestEnded { investigator } if *investigator == id
         );
         assert_no_event!(result.events, Event::SkillTestFailed { .. });
+    }
+
+    #[test]
+    fn perform_skill_test_succeeds_with_positive_margin() {
+        // Skill 5 + Numeric(0) vs difficulty 2 → margin 3.
+        let id = InvestigatorId(1);
+        let mut strong = test_investigator(1);
+        strong.skills.combat = 5;
+        let state = TestGame::new()
+            .with_investigator(strong)
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Combat,
+                difficulty: 2,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::SkillTestSucceeded { investigator, skill: SkillKind::Combat, margin: 3 }
+                if *investigator == id
+        );
     }
 
     #[test]
@@ -363,6 +409,37 @@ mod tests {
                 by: 4,
             } if *investigator == id
         );
+    }
+
+    #[test]
+    fn perform_skill_test_autofail_at_difficulty_zero_still_fails() {
+        // Edge case: difficulty 0 would normally succeed at margin 0,
+        // but AutoFail forces total = 0 AND tags the result as a
+        // failure regardless. by = 0 here, reason = AutoFail.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Willpower,
+                difficulty: 0,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::SkillTestFailed {
+                reason: FailureReason::AutoFail,
+                by: 0,
+                ..
+            }
+        );
+        assert_no_event!(result.events, Event::SkillTestSucceeded { .. });
     }
 
     #[test]

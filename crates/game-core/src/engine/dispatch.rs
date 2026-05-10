@@ -223,7 +223,8 @@ fn perform_skill_test(
     difficulty: i8,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist; chaos bag must be
-    // non-empty so we can draw.
+    // non-empty so we can draw; difficulty must be non-negative (FFG
+    // difficulties are always ≥ 0).
     let Some(inv) = state.investigators.get(&investigator) else {
         return EngineOutcome::Rejected {
             reason: format!("PerformSkillTest: investigator {investigator:?} not in state").into(),
@@ -232,6 +233,11 @@ fn perform_skill_test(
     if state.chaos_bag.tokens.is_empty() {
         return EngineOutcome::Rejected {
             reason: "PerformSkillTest requires a non-empty chaos bag".into(),
+        };
+    }
+    if difficulty < 0 {
+        return EngineOutcome::Rejected {
+            reason: format!("PerformSkillTest: difficulty {difficulty} must be >= 0").into(),
         };
     }
     let skill_value = inv.skills.value(skill);
@@ -256,39 +262,34 @@ fn perform_skill_test(
     //      never negative for margin-of-failure purposes.
     // ElderSign is a placeholder Modifier(0) until per-investigator
     // ability dispatch lands; that's a no-op for the math here.
-    let (raw_total, fail_reason) = match resolution {
-        TokenResolution::Modifier(n) => (i16::from(skill_value) + i16::from(n), None),
-        TokenResolution::ElderSign => (i16::from(skill_value), None),
+    //
+    // All arithmetic stays in i8 with saturating ops: realistic
+    // gameplay values (skill 1–8, modifier ±8, difficulty ≤ ~6) fit
+    // far inside i8, but saturation defends against absurd state
+    // configurations without needing a wider integer type.
+    let (total, fail_reason) = match resolution {
+        TokenResolution::Modifier(n) => (skill_value.saturating_add(n).max(0), None),
+        TokenResolution::ElderSign => (skill_value.max(0), None),
         TokenResolution::AutoFail => (0, Some(FailureReason::AutoFail)),
     };
-    let total = raw_total.max(0);
-    let margin = total - i16::from(difficulty);
+    let margin = total.saturating_sub(difficulty);
     if margin >= 0 && fail_reason.is_none() {
         events.push(Event::SkillTestSucceeded {
             investigator,
             skill,
-            margin: clamp_to_i8(margin),
+            margin,
         });
     } else {
         let reason = fail_reason.unwrap_or(FailureReason::Total);
-        let by = clamp_to_i8(i16::from(difficulty) - total);
+        let by = difficulty.saturating_sub(total);
         events.push(Event::SkillTestFailed {
             investigator,
             skill,
             reason,
-            by: by.max(0),
+            by,
         });
     }
 
     events.push(Event::SkillTestEnded { investigator });
     EngineOutcome::Done
-}
-
-/// Saturating cast `i16 -> i8`. Skill totals are computed in `i16` to
-/// avoid overflow when stacking very negative tokens with very low
-/// skills (e.g. `-8 - 5 = -13`, fits in `i16` cleanly), then narrowed
-/// for the event payload.
-fn clamp_to_i8(n: i16) -> i8 {
-    i8::try_from(n.clamp(i16::from(i8::MIN), i16::from(i8::MAX)))
-        .expect("clamped value is always within i8 range")
 }
