@@ -12,4 +12,4 @@ pub mod builder;
 pub mod fixtures;
 
 pub use builder::TestGame;
-pub use fixtures::{test_investigator, test_location};
+pub use fixtures::{test_enemy, test_investigator, test_location};

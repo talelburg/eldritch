@@ -27,7 +27,8 @@ use std::collections::BTreeMap;
 
 use crate::rng::RngState;
 use crate::state::{
-    ChaosBag, GameState, Investigator, InvestigatorId, Location, Phase, TokenModifiers,
+    ChaosBag, Enemy, EnemyId, GameState, Investigator, InvestigatorId, Location, Phase,
+    TokenModifiers,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -40,6 +41,7 @@ use crate::state::{
 pub struct TestGame {
     investigators: BTreeMap<InvestigatorId, Investigator>,
     locations: BTreeMap<crate::state::LocationId, Location>,
+    enemies: BTreeMap<EnemyId, Enemy>,
     chaos_bag: ChaosBag,
     token_modifiers: TokenModifiers,
     phase: Phase,
@@ -58,6 +60,7 @@ impl TestGame {
         Self {
             investigators: BTreeMap::new(),
             locations: BTreeMap::new(),
+            enemies: BTreeMap::new(),
             chaos_bag: ChaosBag::new([]),
             token_modifiers: TokenModifiers::default(),
             phase: Phase::Mythos,
@@ -79,6 +82,13 @@ impl TestGame {
     /// the same id.
     pub fn with_location(mut self, location: Location) -> Self {
         self.locations.insert(location.id, location);
+        self
+    }
+
+    /// Add an enemy to the state. Replaces any existing entry with the
+    /// same id.
+    pub fn with_enemy(mut self, enemy: Enemy) -> Self {
+        self.enemies.insert(enemy.id, enemy);
         self
     }
 
@@ -144,6 +154,7 @@ impl TestGame {
         GameState {
             investigators: self.investigators,
             locations: self.locations,
+            enemies: self.enemies,
             chaos_bag: self.chaos_bag,
             token_modifiers: self.token_modifiers,
             phase: self.phase,

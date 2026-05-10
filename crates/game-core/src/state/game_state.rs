@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     chaos_bag::{ChaosBag, TokenModifiers},
+    enemy::{Enemy, EnemyId},
     investigator::{Investigator, InvestigatorId},
     location::{Location, LocationId},
     phase::Phase,
@@ -34,6 +35,9 @@ pub struct GameState {
     pub investigators: BTreeMap<InvestigatorId, Investigator>,
     /// All locations laid out (revealed and unrevealed alike), keyed by ID.
     pub locations: BTreeMap<LocationId, Location>,
+    /// All enemies currently in play, keyed by ID. Defeated enemies are
+    /// removed; the map is the source of truth for "this enemy exists."
+    pub enemies: BTreeMap<EnemyId, Enemy>,
     /// The chaos bag at this scenario's difficulty.
     pub chaos_bag: ChaosBag,
     /// Per-scenario numeric values for the four symbol tokens
