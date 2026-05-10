@@ -865,4 +865,201 @@ mod tests {
             }),
         );
     }
+
+    /// Build a scenario suitable for Move tests: one investigator at
+    /// location A, with A connected to B (and only A→B; B has no
+    /// connections back). Investigation phase, active investigator,
+    /// 3 actions. Returns (investigator id, A id, B id, state).
+    fn move_scenario() -> (
+        InvestigatorId,
+        crate::state::LocationId,
+        crate::state::LocationId,
+        GameState,
+    ) {
+        let inv_id = InvestigatorId(1);
+        let a = crate::state::LocationId(10);
+        let b = crate::state::LocationId(11);
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(a);
+        inv.actions_remaining = 3;
+        let mut loc_a = test_location(10, "A");
+        loc_a.connections = vec![b];
+        let loc_b = test_location(11, "B");
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+        (inv_id, a, b, state)
+    }
+
+    #[test]
+    fn move_to_connected_location_spends_action_and_emits_events() {
+        let (inv_id, a, b, state) = move_scenario();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::InvestigatorMoved { investigator, from, to }
+                if *investigator == inv_id && *from == a && *to == b
+        );
+        assert_eq!(
+            result.state.investigators[&inv_id].current_location,
+            Some(b)
+        );
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    }
+
+    #[test]
+    fn move_to_unconnected_location_is_rejected() {
+        // Build a fresh scenario where C exists but A is not connected to C.
+        let (inv_id, _, _, mut state) = move_scenario();
+        let c = crate::state::LocationId(12);
+        state.locations.insert(c, test_location(12, "C"));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: c,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn move_to_current_location_is_rejected() {
+        let (inv_id, a, _, state) = move_scenario();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: a,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn move_outside_investigation_phase_is_rejected() {
+        let (inv_id, _, b, mut state) = move_scenario();
+        state.phase = Phase::Mythos;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn move_by_non_active_investigator_is_rejected() {
+        let (_, _, b, mut state) = move_scenario();
+        let other = InvestigatorId(2);
+        state.investigators.insert(other, test_investigator(2));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: other,
+                destination: b,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn move_with_zero_actions_is_rejected() {
+        let (inv_id, _, b, mut state) = move_scenario();
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .actions_remaining = 0;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn move_without_current_location_is_rejected() {
+        let (inv_id, _, b, mut state) = move_scenario();
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .current_location = None;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn move_to_missing_destination_is_rejected() {
+        // Connection list points to an id that's been removed from
+        // state.locations — this isn't state corruption (the
+        // current_location is intact), it's a malformed connection
+        // graph the caller might fix; reject.
+        let (inv_id, a, b, mut state) = move_scenario();
+        state.locations.remove(&b);
+        // The current_location still points at A which is in state, so
+        // we don't trip the corruption panic; we just hit the
+        // destination-not-in-state branch.
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        let _ = a;
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "state-corruption invariant violation")]
+    fn move_with_dangling_current_location_panics() {
+        // Corruption: current_location points at A but A isn't in
+        // state.locations. Surface loudly per the project pattern.
+        let (inv_id, a, b, mut state) = move_scenario();
+        state.locations.remove(&a);
+        let _ = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+    }
 }

@@ -59,6 +59,27 @@ pub enum PlayerAction {
         /// Difficulty: total to meet or exceed for success.
         difficulty: i8,
     },
+    /// Move the active investigator from their current location to a
+    /// connected location. Spends 1 action.
+    ///
+    /// Validation: investigation phase, investigator is active, has
+    /// `actions_remaining >= 1`, has a `current_location`, and the
+    /// destination is in `state.locations` and connected to the current
+    /// location.
+    ///
+    /// Move *is* legal while engaged with enemies — but each ready
+    /// engaged enemy makes an attack of opportunity before the move
+    /// resolves, and engaged enemies move with the investigator.
+    /// Both behaviors land alongside enemy state in #67; this handler
+    /// covers only the bare movement.
+    Move {
+        /// Investigator performing the move. Must be the active
+        /// investigator during the Investigation phase.
+        investigator: InvestigatorId,
+        /// The destination location. Must be in `state.locations` and
+        /// connected to the investigator's current location.
+        destination: LocationId,
+    },
     /// Investigate at the active investigator's current location:
     /// spend 1 action, make an intellect test against the location's
     /// shroud value, and on success discover 1 clue at the location.
