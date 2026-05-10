@@ -374,11 +374,14 @@ fn investigate(
             .into(),
         };
     }
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("Investigate: investigator {investigator:?} not in state").into(),
-        };
-    };
+    // Active-investigator + missing-from-map is a state-corruption
+    // invariant violation; panic rather than silently rejecting.
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Investigate: active_investigator {investigator:?} is not in the investigators \
+             map; this is a state-corruption invariant violation"
+        )
+    });
     if inv.actions_remaining < 1 {
         return EngineOutcome::Rejected {
             reason: "Investigate requires at least 1 action point".into(),
@@ -478,11 +481,15 @@ fn move_action(
             .into(),
         };
     }
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("Move: investigator {investigator:?} not in state").into(),
-        };
-    };
+    // Active-investigator + missing-from-map is a state-corruption
+    // invariant violation (active_investigator is engine-set; the
+    // pairing with the map entry is an invariant), so surface loudly.
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Move: active_investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+    });
     if inv.actions_remaining < 1 {
         return EngineOutcome::Rejected {
             reason: "Move requires at least 1 action point".into(),
@@ -498,22 +505,26 @@ fn move_action(
             reason: format!("Move: destination {destination:?} is the current location").into(),
         };
     }
-    // The investigator's current_location must exist in state; a
-    // dangling reference is state corruption, surface loudly.
+    // current_location is engine-set state, so a dangling reference is
+    // an invariant violation and panics. Connection lists, by contrast,
+    // are scenario-data inputs — a connection pointing at a missing
+    // location is malformed input, not engine corruption, so we
+    // reject. Check destination-in-state BEFORE connections so the
+    // error message is informative when both fail.
     let from_loc = state.locations.get(&from).unwrap_or_else(|| {
         unreachable!(
             "Move: location {from:?} (investigator's current_location) is not in the \
              locations map; this is a state-corruption invariant violation"
         )
     });
-    if !from_loc.connections.contains(&destination) {
-        return EngineOutcome::Rejected {
-            reason: format!("Move: {destination:?} is not connected to {from:?}").into(),
-        };
-    }
     if !state.locations.contains_key(&destination) {
         return EngineOutcome::Rejected {
             reason: format!("Move: destination {destination:?} is not in state").into(),
+        };
+    }
+    if !from_loc.connections.contains(&destination) {
+        return EngineOutcome::Rejected {
+            reason: format!("Move: {destination:?} is not connected to {from:?}").into(),
         };
     }
 

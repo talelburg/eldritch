@@ -1030,11 +1030,8 @@ mod tests {
         // state.locations — this isn't state corruption (the
         // current_location is intact), it's a malformed connection
         // graph the caller might fix; reject.
-        let (inv_id, a, b, mut state) = move_scenario();
+        let (inv_id, _a, b, mut state) = move_scenario();
         state.locations.remove(&b);
-        // The current_location still points at A which is in state, so
-        // we don't trip the corruption panic; we just hit the
-        // destination-not-in-state branch.
         let result = apply(
             state,
             Action::Player(PlayerAction::Move {
@@ -1042,7 +1039,6 @@ mod tests {
                 destination: b,
             }),
         );
-        let _ = a;
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -1059,6 +1055,38 @@ mod tests {
             Action::Player(PlayerAction::Move {
                 investigator: inv_id,
                 destination: b,
+            }),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "state-corruption invariant violation")]
+    fn move_with_active_investigator_missing_from_map_panics() {
+        // Corruption: active_investigator points at an id that isn't
+        // in state.investigators. The active-investigator check passes
+        // (Some(id) == active), so this case is only reachable from
+        // corrupt state — panic to match end_turn / rotate_to_active.
+        let (inv_id, _a, b, mut state) = move_scenario();
+        state.investigators.remove(&inv_id);
+        let _ = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "state-corruption invariant violation")]
+    fn investigate_with_active_investigator_missing_from_map_panics() {
+        // Same corruption pattern as above, applied to Investigate.
+        let (inv_id, _, mut state) = investigate_scenario(2, 2);
+        state.investigators.remove(&inv_id);
+        let _ = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
             }),
         );
     }
