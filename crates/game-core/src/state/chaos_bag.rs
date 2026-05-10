@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 /// negative) is added to the test's skill total. Symbol tokens
 /// ([`Skull`], [`Cultist`], [`Tablet`], [`ElderThing`]) have scenario- or
 /// effect-specific modifiers that are resolved by separate logic, not by
-/// this enum directly.
+/// this enum directly. See [`resolve_token`] for the resolver and
+/// [`TokenResolution`] for the result type.
 ///
 /// [`Skull`]: ChaosToken::Skull
 /// [`Cultist`]: ChaosToken::Cultist
@@ -63,6 +64,7 @@ impl ChaosBag {
 /// "Cultist: −2 and an enemy spawns"). Only the numeric modifier lives
 /// here; effect triggering is a separate, downstream concern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TokenModifiers {
     /// Numeric modifier for [`ChaosToken::Skull`].
     pub skull: i8,
@@ -84,6 +86,7 @@ pub struct TokenModifiers {
 /// investigator's elder-sign ability, whose dispatch is downstream of
 /// this resolution step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum TokenResolution {
     /// Numeric modifier contributed to the skill-test total.
     Modifier(i8),

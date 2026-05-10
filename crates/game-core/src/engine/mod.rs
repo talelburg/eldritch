@@ -251,15 +251,20 @@ mod tests {
         );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
+        // The bag has only Skull and Numeric tokens — both resolve to
+        // Modifier(_), no AutoFail/ElderSign should ever appear here.
+        // Asserting the variant guards against a future bug that emits
+        // AutoFail unconditionally.
         assert_event!(
             result.events,
-            Event::ChaosTokenRevealed { token: t, .. } if *t == token
+            Event::ChaosTokenRevealed { token: t, resolution: TokenResolution::Modifier(_) }
+                if *t == token
         );
         assert_eq!(result.state.rng.draws, draws_before + 1);
     }
 
-    /// All seven token kinds, so a draw across this bag exercises every
-    /// resolution branch.
+    /// All seven `ChaosToken` variants (with `Numeric` exercised at two
+    /// values), so a draw across this bag covers every resolution branch.
     fn bag_with_all_token_kinds() -> crate::state::ChaosBag {
         crate::state::ChaosBag::new([
             ChaosToken::Numeric(1),
@@ -296,10 +301,10 @@ mod tests {
 
         let mut seen: std::collections::HashMap<ChaosToken, TokenResolution> =
             std::collections::HashMap::new();
-        // Eight tokens in the bag; loop until we've witnessed each kind.
-        // RNG draws with replacement (see ChaosBag::tokens semantics:
-        // order doesn't matter, draw via RNG), so this terminates
-        // quickly without us pre-computing the sequence.
+        // The dispatch handler doesn't yet remove drawn tokens from the
+        // bag (depletion lands with skill-test sequencing in #49), so
+        // the same bag is sampled on each iteration and we just loop
+        // until every distinct kind has been seen.
         let kinds_to_cover = [
             ChaosToken::Numeric(1),
             ChaosToken::Numeric(-2),
