@@ -29,9 +29,9 @@ pub mod test_support;
 
 pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
 pub use engine::{apply, ApplyResult, EngineOutcome, InputRequest, ResumeToken};
-pub use event::Event;
+pub use event::{Event, FailureReason};
 pub use rng::RngState;
 pub use state::{
     resolve_token, ChaosBag, ChaosToken, GameState, Investigator, InvestigatorId, Location,
-    LocationId, Phase, Skills, TokenModifiers, TokenResolution,
+    LocationId, Phase, SkillKind, Skills, TokenModifiers, TokenResolution,
 };

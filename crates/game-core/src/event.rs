@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{ChaosToken, InvestigatorId, LocationId, Phase, TokenResolution};
+use crate::state::{ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution};
 
 /// One state-change record emitted by the engine.
 ///
@@ -110,4 +110,66 @@ pub enum Event {
         /// Amount paid.
         amount: u8,
     },
+    /// A skill test was declared and resolution has begun.
+    SkillTestStarted {
+        /// Investigator taking the test.
+        investigator: InvestigatorId,
+        /// Skill the test is against.
+        skill: SkillKind,
+        /// Difficulty: total to meet or exceed for success.
+        difficulty: i8,
+    },
+    /// A skill test succeeded. The investigator's total met or
+    /// exceeded the difficulty.
+    SkillTestSucceeded {
+        /// Investigator who passed the test.
+        investigator: InvestigatorId,
+        /// Skill the test was against.
+        skill: SkillKind,
+        /// `total - difficulty`. Always `>= 0` for a success.
+        margin: i8,
+    },
+    /// A skill test failed. Either the total fell short of the
+    /// difficulty, or an `AutoFail` chaos token forced the total to 0.
+    ///
+    /// Note: per the Rules Reference, the investigator's total is
+    /// clamped to a minimum of 0 before the margin is computed (a
+    /// negative `skill + modifier` is treated as 0). `AutoFail` short-
+    /// circuits to the same total = 0 regardless of skill or modifier.
+    /// In both cases `by` reflects the clamped margin.
+    SkillTestFailed {
+        /// Investigator who failed the test.
+        investigator: InvestigatorId,
+        /// Skill the test was against.
+        skill: SkillKind,
+        /// Why the test failed.
+        reason: FailureReason,
+        /// Amount the test failed by (`difficulty - clamped_total`,
+        /// always `>= 0`). Effects keying on "if you fail by X+" read
+        /// this directly.
+        by: i8,
+    },
+    /// The skill-test resolution sequence finished. Cleanup events
+    /// (committed-card discards, etc.) precede this; downstream
+    /// listeners use it as a "test is fully over" signal.
+    SkillTestEnded {
+        /// Investigator the test was for.
+        investigator: InvestigatorId,
+    },
+}
+
+/// Why a skill test failed.
+///
+/// Both variants produce a `by` margin on the bracketing
+/// [`SkillTestFailed`](Event::SkillTestFailed) event; this enum names
+/// the *cause*, which some card effects key off independently of the
+/// numeric margin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum FailureReason {
+    /// The investigator's clamped total fell short of the difficulty.
+    Total,
+    /// An `AutoFail` chaos token forced the total to 0, regardless of
+    /// skill value or other modifiers.
+    AutoFail,
 }

@@ -77,8 +77,10 @@ pub fn apply(state: GameState, action: Action) -> ApplyResult {
 #[cfg(test)]
 mod tests {
     use crate::action::{Action, EngineRecord, InputResponse, PlayerAction};
-    use crate::event::Event;
-    use crate::state::{ChaosToken, InvestigatorId, Phase, TokenModifiers, TokenResolution};
+    use crate::event::{Event, FailureReason};
+    use crate::state::{
+        ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers, TokenResolution,
+    };
     use crate::test_support::{test_investigator, TestGame};
     use crate::{assert_event, assert_event_count, assert_no_event};
 
@@ -206,78 +208,6 @@ mod tests {
         assert_eq!(result.state.active_investigator, active_before);
     }
 
-    #[test]
-    fn chaos_token_drawn_with_empty_bag_is_rejected() {
-        let state = TestGame::new().build();
-        let result = apply(
-            state,
-            Action::Engine(EngineRecord::ChaosTokenDrawn {
-                token: ChaosToken::Skull,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
-    }
-
-    fn bag_with_three_tokens() -> crate::state::ChaosBag {
-        crate::state::ChaosBag::new([
-            ChaosToken::Skull,
-            ChaosToken::Numeric(1),
-            ChaosToken::Numeric(-2),
-        ])
-    }
-
-    /// Drive the RNG forward to figure out which token *will* be drawn
-    /// next. Used by tests to construct a `ChaosTokenDrawn` action with
-    /// a token that matches the RNG's expectation.
-    fn peek_next_token(state: &crate::state::GameState) -> ChaosToken {
-        let mut probe = state.rng.clone();
-        let idx = probe.next_index(state.chaos_bag.tokens.len());
-        state.chaos_bag.tokens[idx]
-    }
-
-    #[test]
-    fn chaos_token_drawn_with_matching_token_succeeds_and_advances_rng() {
-        let state = TestGame::new()
-            .with_chaos_bag(bag_with_three_tokens())
-            .with_rng_seed(42)
-            .build();
-        let token = peek_next_token(&state);
-        let draws_before = state.rng.draws;
-
-        let result = apply(
-            state,
-            Action::Engine(EngineRecord::ChaosTokenDrawn { token }),
-        );
-
-        assert_eq!(result.outcome, EngineOutcome::Done);
-        // The bag has only Skull and Numeric tokens — both resolve to
-        // Modifier(_), no AutoFail/ElderSign should ever appear here.
-        // Asserting the variant guards against a future bug that emits
-        // AutoFail unconditionally.
-        assert_event!(
-            result.events,
-            Event::ChaosTokenRevealed { token: t, resolution: TokenResolution::Modifier(_) }
-                if *t == token
-        );
-        assert_eq!(result.state.rng.draws, draws_before + 1);
-    }
-
-    /// All seven `ChaosToken` variants (with `Numeric` exercised at two
-    /// values), so a draw across this bag covers every resolution branch.
-    fn bag_with_all_token_kinds() -> crate::state::ChaosBag {
-        crate::state::ChaosBag::new([
-            ChaosToken::Numeric(1),
-            ChaosToken::Numeric(-2),
-            ChaosToken::Skull,
-            ChaosToken::Cultist,
-            ChaosToken::Tablet,
-            ChaosToken::ElderThing,
-            ChaosToken::AutoFail,
-            ChaosToken::ElderSign,
-        ])
-    }
-
     /// Standard-difficulty Night of the Zealot symbol-token values.
     fn night_of_the_zealot_standard() -> TokenModifiers {
         TokenModifiers {
@@ -288,106 +218,273 @@ mod tests {
         }
     }
 
-    #[test]
-    fn chaos_token_drawn_emits_resolution_for_each_token_kind() {
-        // Drive the engine across all seven token kinds and assert each
-        // one's emitted resolution matches the scenario modifiers and
-        // the AutoFail/ElderSign special variants.
-        let mut state = TestGame::new()
-            .with_chaos_bag(bag_with_all_token_kinds())
-            .with_token_modifiers(night_of_the_zealot_standard())
-            .with_rng_seed(7)
-            .build();
-
-        let mut seen: std::collections::HashMap<ChaosToken, TokenResolution> =
-            std::collections::HashMap::new();
-        // The dispatch handler doesn't yet remove drawn tokens from the
-        // bag (depletion lands with skill-test sequencing in #49), so
-        // the same bag is sampled on each iteration and we just loop
-        // until every distinct kind has been seen.
-        let kinds_to_cover = [
-            ChaosToken::Numeric(1),
-            ChaosToken::Numeric(-2),
-            ChaosToken::Skull,
-            ChaosToken::Cultist,
-            ChaosToken::Tablet,
-            ChaosToken::ElderThing,
-            ChaosToken::AutoFail,
-            ChaosToken::ElderSign,
-        ];
-        let mut iters = 0;
-        while seen.len() < kinds_to_cover.len() {
-            iters += 1;
-            assert!(iters < 200, "RNG never produced full token coverage");
-            let token = peek_next_token(&state);
-            let result = apply(
-                state,
-                Action::Engine(EngineRecord::ChaosTokenDrawn { token }),
-            );
-            assert_eq!(result.outcome, EngineOutcome::Done);
-            let resolution = result
-                .events
-                .iter()
-                .find_map(|e| match e {
-                    Event::ChaosTokenRevealed { resolution, .. } => Some(*resolution),
-                    _ => None,
-                })
-                .expect("ChaosTokenRevealed event missing");
-            seen.entry(token).or_insert(resolution);
-            state = result.state;
-        }
-
-        let mods = night_of_the_zealot_standard();
-        assert_eq!(seen[&ChaosToken::Numeric(1)], TokenResolution::Modifier(1));
-        assert_eq!(
-            seen[&ChaosToken::Numeric(-2)],
-            TokenResolution::Modifier(-2),
-        );
-        assert_eq!(
-            seen[&ChaosToken::Skull],
-            TokenResolution::Modifier(mods.skull),
-        );
-        assert_eq!(
-            seen[&ChaosToken::Cultist],
-            TokenResolution::Modifier(mods.cultist),
-        );
-        assert_eq!(
-            seen[&ChaosToken::Tablet],
-            TokenResolution::Modifier(mods.tablet),
-        );
-        assert_eq!(
-            seen[&ChaosToken::ElderThing],
-            TokenResolution::Modifier(mods.elder_thing),
-        );
-        assert_eq!(seen[&ChaosToken::AutoFail], TokenResolution::AutoFail);
-        assert_eq!(seen[&ChaosToken::ElderSign], TokenResolution::ElderSign);
+    /// Bag of a single `Numeric(0)` token — the next draw is always a
+    /// no-op modifier, so test totals = skill exactly.
+    fn bag_only_zero() -> crate::state::ChaosBag {
+        crate::state::ChaosBag::new([ChaosToken::Numeric(0)])
     }
 
     #[test]
-    fn chaos_token_drawn_with_wrong_token_is_rejected_and_does_not_advance_rng() {
-        let state = TestGame::new()
-            .with_chaos_bag(bag_with_three_tokens())
-            .with_rng_seed(42)
-            .build();
-        let correct = peek_next_token(&state);
-        // Pick any token from the bag that ISN'T the correct one.
-        let wrong = state
-            .chaos_bag
-            .tokens
-            .iter()
-            .copied()
-            .find(|t| *t != correct)
-            .expect("bag contains at least two distinct tokens");
-        let rng_before = state.rng.clone();
-
+    fn perform_skill_test_with_unknown_investigator_is_rejected() {
+        let state = TestGame::new().with_chaos_bag(bag_only_zero()).build();
         let result = apply(
             state,
-            Action::Engine(EngineRecord::ChaosTokenDrawn { token: wrong }),
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: InvestigatorId(999),
+                skill: SkillKind::Willpower,
+                difficulty: 0,
+            }),
         );
-
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
-        assert_eq!(result.state.rng, rng_before);
+    }
+
+    #[test]
+    fn perform_skill_test_with_empty_bag_is_rejected() {
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Willpower,
+                difficulty: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn perform_skill_test_succeeds_when_total_meets_difficulty() {
+        // Default skills are 3/3/3/3; bag only has Numeric(0), so total=3.
+        // Difficulty 3 → margin 0 → success.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::SkillTestStarted { investigator, skill: SkillKind::Intellect, difficulty: 3 }
+                if *investigator == id
+        );
+        assert_event!(
+            result.events,
+            Event::ChaosTokenRevealed {
+                token: ChaosToken::Numeric(0),
+                resolution: TokenResolution::Modifier(0),
+            }
+        );
+        assert_event!(
+            result.events,
+            Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
+                if *investigator == id
+        );
+        assert_event!(
+            result.events,
+            Event::SkillTestEnded { investigator } if *investigator == id
+        );
+        assert_no_event!(result.events, Event::SkillTestFailed { .. });
+    }
+
+    #[test]
+    fn perform_skill_test_fails_when_total_below_difficulty() {
+        // Skills 3/3/3/3, bag Numeric(0), difficulty 5 → margin -2 →
+        // FailureReason::Total, by: 2.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Combat,
+                difficulty: 5,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::SkillTestFailed {
+                investigator,
+                skill: SkillKind::Combat,
+                reason: FailureReason::Total,
+                by: 2,
+            } if *investigator == id
+        );
+        assert_no_event!(result.events, Event::SkillTestSucceeded { .. });
+    }
+
+    #[test]
+    fn perform_skill_test_autofail_forces_total_to_zero() {
+        // Per the Rules Reference: AutoFail makes the investigator's
+        // total = 0 (not just "test fails"), so the failure margin is
+        // computed against 0. Skill 99 + AutoFail vs difficulty 4 →
+        // total 0, by = 4, reason AutoFail.
+        let id = InvestigatorId(1);
+        let mut high = test_investigator(1);
+        high.skills.willpower = 99;
+        let state = TestGame::new()
+            .with_investigator(high)
+            .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Willpower,
+                difficulty: 4,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::SkillTestFailed {
+                investigator,
+                skill: SkillKind::Willpower,
+                reason: FailureReason::AutoFail,
+                by: 4,
+            } if *investigator == id
+        );
+    }
+
+    #[test]
+    fn perform_skill_test_clamps_negative_total_to_zero() {
+        // skill 3 + Skull(−6) = −3, clamped to 0. Difficulty 2 →
+        // by = 2, reason Total (NOT AutoFail).
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::Skull]))
+            .with_token_modifiers(TokenModifiers {
+                skull: -6,
+                ..TokenModifiers::default()
+            })
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Willpower,
+                difficulty: 2,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::SkillTestFailed {
+                reason: FailureReason::Total,
+                by: 2,
+                ..
+            }
+        );
+    }
+
+    #[test]
+    fn perform_skill_test_elder_sign_treated_as_modifier_zero() {
+        // ElderSign as +0 placeholder until per-investigator ability
+        // dispatch lands. Skill 3, difficulty 3 → margin 0 → success.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::ElderSign]))
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Agility,
+                difficulty: 3,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::ChaosTokenRevealed {
+                token: ChaosToken::ElderSign,
+                resolution: TokenResolution::ElderSign,
+            }
+        );
+        assert_event!(result.events, Event::SkillTestSucceeded { margin: 0, .. });
+    }
+
+    #[test]
+    fn perform_skill_test_symbol_token_modifier_applies() {
+        // Bag is one Skull. Standard-difficulty NotZ: skull = -1.
+        // Skill 3 + (-1) = 2 vs difficulty 2 → margin 0 → success.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::Skull]))
+            .with_token_modifiers(night_of_the_zealot_standard())
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Willpower,
+                difficulty: 2,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::ChaosTokenRevealed {
+                token: ChaosToken::Skull,
+                resolution: TokenResolution::Modifier(-1),
+            }
+        );
+        assert_event!(result.events, Event::SkillTestSucceeded { margin: 0, .. });
+    }
+
+    #[test]
+    fn perform_skill_test_advances_rng_and_log_round_trips() {
+        // Determinism: applying the same PerformSkillTest action twice
+        // from identical initial state produces identical post-state.
+        let id = InvestigatorId(1);
+        let initial = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(crate::state::ChaosBag::new([
+                ChaosToken::Numeric(1),
+                ChaosToken::Numeric(-1),
+                ChaosToken::Skull,
+            ]))
+            .with_token_modifiers(night_of_the_zealot_standard())
+            .with_rng_seed(123)
+            .build();
+        let action = Action::Player(PlayerAction::PerformSkillTest {
+            investigator: id,
+            skill: SkillKind::Willpower,
+            difficulty: 3,
+        });
+
+        let first = apply(initial.clone(), action.clone());
+        let second = apply(initial, action);
+
+        assert_eq!(first.outcome, EngineOutcome::Done);
+        assert_eq!(first.state.rng, second.state.rng);
+        assert_eq!(first.state.rng.draws, 1);
+        assert_eq!(first.events, second.events);
     }
 
     #[test]
@@ -490,40 +587,6 @@ mod tests {
         assert_eq!(result.state.investigators[&id].actions_remaining, 3);
         assert_event_count!(result.events, 4, Event::PhaseEnded { .. });
         assert_event_count!(result.events, 4, Event::PhaseStarted { .. });
-    }
-
-    #[test]
-    fn chaos_token_drawn_log_round_trips() {
-        // Build a five-draw log against an initial state, then replay
-        // the log from scratch and assert the resulting RNG state
-        // matches. This is the core determinism property.
-        let initial = TestGame::new()
-            .with_chaos_bag(bag_with_three_tokens())
-            .with_rng_seed(123)
-            .build();
-
-        let mut state = initial.clone();
-        let mut log = Vec::new();
-        for _ in 0..5 {
-            let token = peek_next_token(&state);
-            let action = Action::Engine(EngineRecord::ChaosTokenDrawn { token });
-            log.push(action.clone());
-            let result = apply(state, action);
-            assert_eq!(result.outcome, EngineOutcome::Done);
-            state = result.state;
-        }
-        let after_first_pass = state;
-
-        // Replay against the original initial state.
-        let mut replay = initial;
-        for action in log {
-            let result = apply(replay, action);
-            assert_eq!(result.outcome, EngineOutcome::Done);
-            replay = result.state;
-        }
-
-        assert_eq!(after_first_pass.rng, replay.rng);
-        assert_eq!(after_first_pass.rng.draws, 5);
     }
 
     #[test]
