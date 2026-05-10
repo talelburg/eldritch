@@ -65,3 +65,32 @@ pub struct Skills {
     /// Used for evade tests.
     pub agility: i8,
 }
+
+impl Skills {
+    /// Lookup the value for a given [`SkillKind`].
+    #[must_use]
+    pub fn value(&self, kind: SkillKind) -> i8 {
+        match kind {
+            SkillKind::Willpower => self.willpower,
+            SkillKind::Intellect => self.intellect,
+            SkillKind::Combat => self.combat,
+            SkillKind::Agility => self.agility,
+        }
+    }
+}
+
+/// Which of the four skill values a skill test is being made against.
+///
+/// Deliberately NOT `#[non_exhaustive]` — same rationale as [`Skills`]:
+/// the four skill kinds are fixed by FFG's rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SkillKind {
+    /// Tests against the will, fear, sanity-eroding effects.
+    Willpower,
+    /// Tests for investigating, deduction, lore.
+    Intellect,
+    /// Tests for fighting, combat, physical strength.
+    Combat,
+    /// Tests for evading, dexterity, speed.
+    Agility,
+}

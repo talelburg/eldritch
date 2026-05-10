@@ -10,13 +10,13 @@
 //!   messages as `PlayerAction`, so a client cannot fabricate
 //!   engine-only events.
 //! - [`Action::Engine`] wraps an [`EngineRecord`] — recorded output of
-//!   engine-side randomness or system events (chaos token draws, deck
-//!   shuffles). The engine generates these itself so the action log is
-//!   replayable; clients never construct them.
+//!   engine-side randomness or system events (deck shuffles). The
+//!   engine generates these itself so the action log is replayable;
+//!   clients never construct them.
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{ChaosToken, InvestigatorId, LocationId};
+use crate::state::{InvestigatorId, LocationId, SkillKind};
 
 /// A single entry in the action log.
 ///
@@ -44,6 +44,21 @@ pub enum PlayerAction {
     StartScenario,
     /// Active investigator ends their turn during the Investigation phase.
     EndTurn,
+    /// Perform a skill test on `investigator` against `difficulty`,
+    /// using the named `skill`.
+    ///
+    /// Phase-1 foundation: resolves in one apply call as base skill +
+    /// chaos token modifier vs. difficulty. Card commits, the commit
+    /// window's `AwaitingInput`, and the after-resolution trigger
+    /// window land in #63 / #64.
+    PerformSkillTest {
+        /// Investigator taking the test.
+        investigator: InvestigatorId,
+        /// Which of the four skills the test is against.
+        skill: SkillKind,
+        /// Difficulty: total to meet or exceed for success.
+        difficulty: i8,
+    },
     /// Respond to an `AwaitingInput` prompt the engine emitted. The
     /// shape of `response` is dictated by the active prompt. (The
     /// `EngineOutcome::AwaitingInput` variant lands in a later PR.)
@@ -55,24 +70,21 @@ pub enum PlayerAction {
 
 /// Engine-recorded events.
 ///
-/// Anything non-deterministic from the engine's perspective (RNG draws,
-/// timer-derived values) goes into the log as one of these variants so
-/// replay produces identical results.
+/// Anything non-deterministic from the engine's perspective (timer-
+/// derived values, deck shuffles) goes into the log as one of these
+/// variants so replay produces identical results. Chaos token draws
+/// are NOT recorded here — they happen inline as part of the action
+/// that triggered them (e.g. `PerformSkillTest`); RNG determinism plus
+/// the per-draw `Event::ChaosTokenRevealed` give replay equivalence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum EngineRecord {
-    /// A chaos token was drawn from the bag.
-    ChaosTokenDrawn {
-        /// The token that was drawn.
-        token: ChaosToken,
-    },
     /// A deck was shuffled with the given seed. Replays use the same seed
     /// to reproduce the order.
     //
-    // TODO(#15): once there are multiple decks (encounter deck, each
+    // TODO(#62): once there are multiple decks (encounter deck, each
     // investigator's deck, act/agenda decks), this needs a `deck:
-    // DeckId` field to disambiguate. Punted to the apply-loop PR where
-    // DeckId will be defined.
+    // DeckId` field to disambiguate.
     DeckShuffled {
         /// Seed used for the shuffle.
         seed: u64,

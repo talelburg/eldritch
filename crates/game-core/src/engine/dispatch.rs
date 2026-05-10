@@ -9,8 +9,8 @@
 //! ones.
 
 use crate::action::{EngineRecord, PlayerAction};
-use crate::event::Event;
-use crate::state::{resolve_token, ChaosToken, GameState, InvestigatorId, Phase};
+use crate::event::{Event, FailureReason};
+use crate::state::{resolve_token, GameState, InvestigatorId, Phase, SkillKind, TokenResolution};
 
 use super::outcome::EngineOutcome;
 
@@ -33,9 +33,14 @@ pub fn apply_player_action(
     match action {
         PlayerAction::StartScenario => start_scenario(state, events),
         PlayerAction::EndTurn => end_turn(state, events),
+        PlayerAction::PerformSkillTest {
+            investigator,
+            skill,
+            difficulty,
+        } => perform_skill_test(state, events, *investigator, *skill, *difficulty),
         PlayerAction::ResolveInput { .. } => EngineOutcome::Rejected {
-            reason: "TODO(#18-#20): ResolveInput dispatch lands with the test \
-                     harness; no AwaitingInput sites exist yet."
+            reason: "TODO(#63): ResolveInput dispatch lands with the skill-test commit \
+                     window; no AwaitingInput sites exist yet."
                 .into(),
         },
     }
@@ -47,11 +52,10 @@ pub fn apply_engine_record(
     events: &mut Vec<Event>,
     record: &EngineRecord,
 ) -> EngineOutcome {
+    let _ = (state, events);
     match record {
-        EngineRecord::ChaosTokenDrawn { token } => chaos_token_drawn(state, events, *token),
         EngineRecord::DeckShuffled { .. } => EngineOutcome::Rejected {
-            reason: "TODO: DeckShuffled dispatch lands when decks exist (#15+ scenario plumbing)"
-                .into(),
+            reason: "TODO(#62): DeckShuffled dispatch lands when decks exist".into(),
         },
     }
 }
@@ -192,44 +196,100 @@ fn rotate_to_active(state: &mut GameState, events: &mut Vec<Event>, id: Investig
     });
 }
 
-/// Handler for [`EngineRecord::ChaosTokenDrawn`].
+/// Handler for [`PlayerAction::PerformSkillTest`].
 ///
-/// Validate-first pattern: clone the RNG, draw an index, check the
-/// recorded token matches `chaos_bag[index]`. Only on match do we
-/// commit the RNG advance and emit the event. A mismatch indicates
-/// log corruption — return `Rejected` without mutating state.
+/// Phase-1 foundation: declares the test, draws a chaos token, computes
+/// total = investigator's skill value + token numeric modifier vs.
+/// difficulty, and emits success/failure plus the bracketing
+/// `SkillTestStarted` / `SkillTestEnded` events — all in one apply call.
 ///
-/// The emitted event carries a [`TokenResolution`] resolved against the
-/// scenario's `token_modifiers`. Symbol-token *effects* beyond the
-/// numeric modifier (e.g. "Cultist: −2 and an enemy spawns") and the
-/// elder-sign ability dispatch are downstream of this handler; they
-/// hook into the skill-test resolution flow that consumes the event.
+/// Card commits, the commit-window `AwaitingInput`, and the after-
+/// resolution trigger window are downstream (#63 / #64).
 ///
-/// [`TokenResolution`]: crate::state::TokenResolution
-fn chaos_token_drawn(
+/// **`AutoFail`** short-circuits the outcome to failure regardless of
+/// numeric total — `FailureReason::AutoFail`.
+///
+/// **`ElderSign`** is treated as `Modifier(0)` for now, with a TODO:
+/// the canonical behavior is "trigger the active investigator's elder
+/// sign ability," which depends on per-investigator ability dispatch.
+/// Modifier 0 + a TODO is a safe no-op default — Daisy Walker's "+0"
+/// elder sign already matches this; other investigators will be
+/// honored when ability dispatch lands.
+fn perform_skill_test(
     state: &mut GameState,
     events: &mut Vec<Event>,
-    token: ChaosToken,
+    investigator: InvestigatorId,
+    skill: SkillKind,
+    difficulty: i8,
 ) -> EngineOutcome {
+    // Validate-first: investigator must exist; chaos bag must be
+    // non-empty so we can draw; difficulty must be non-negative (FFG
+    // difficulties are always ≥ 0).
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return EngineOutcome::Rejected {
+            reason: format!("PerformSkillTest: investigator {investigator:?} not in state").into(),
+        };
+    };
     if state.chaos_bag.tokens.is_empty() {
         return EngineOutcome::Rejected {
-            reason: "ChaosTokenDrawn requires a non-empty chaos bag".into(),
+            reason: "PerformSkillTest requires a non-empty chaos bag".into(),
         };
     }
-    let mut probe = state.rng.clone();
-    let idx = probe.next_index(state.chaos_bag.tokens.len());
-    let derived = state.chaos_bag.tokens[idx];
-    if derived != token {
+    if difficulty < 0 {
         return EngineOutcome::Rejected {
-            reason: format!(
-                "ChaosTokenDrawn: recorded token {token:?} does not match RNG-derived \
-                 {derived:?} (log corruption or wrong seed)"
-            )
-            .into(),
+            reason: format!("PerformSkillTest: difficulty {difficulty} must be >= 0").into(),
         };
     }
-    state.rng = probe;
+    let skill_value = inv.skills.value(skill);
+
+    // Mutate-second: advance RNG, derive token, emit events.
+    events.push(Event::SkillTestStarted {
+        investigator,
+        skill,
+        difficulty,
+    });
+
+    let idx = state.rng.next_index(state.chaos_bag.tokens.len());
+    let token = state.chaos_bag.tokens[idx];
     let resolution = resolve_token(token, &state.token_modifiers);
     events.push(Event::ChaosTokenRevealed { token, resolution });
+
+    // Two related rules from the Rules Reference + FAQ:
+    //   1. AutoFail forces the investigator's total to 0 (not just
+    //      "test fails regardless of total"); the failure margin is
+    //      computed against that 0.
+    //   2. A negative (skill + modifier) clamps to 0 — totals are
+    //      never negative for margin-of-failure purposes.
+    // ElderSign is a placeholder Modifier(0) until per-investigator
+    // ability dispatch lands; that's a no-op for the math here.
+    //
+    // All arithmetic stays in i8 with saturating ops: realistic
+    // gameplay values (skill 1–8, modifier ±8, difficulty ≤ ~6) fit
+    // far inside i8, but saturation defends against absurd state
+    // configurations without needing a wider integer type.
+    let (total, fail_reason) = match resolution {
+        TokenResolution::Modifier(n) => (skill_value.saturating_add(n).max(0), None),
+        TokenResolution::ElderSign => (skill_value.max(0), None),
+        TokenResolution::AutoFail => (0, Some(FailureReason::AutoFail)),
+    };
+    let margin = total.saturating_sub(difficulty);
+    if margin >= 0 && fail_reason.is_none() {
+        events.push(Event::SkillTestSucceeded {
+            investigator,
+            skill,
+            margin,
+        });
+    } else {
+        let reason = fail_reason.unwrap_or(FailureReason::Total);
+        let by = difficulty.saturating_sub(total);
+        events.push(Event::SkillTestFailed {
+            investigator,
+            skill,
+            reason,
+            by,
+        });
+    }
+
+    events.push(Event::SkillTestEnded { investigator });
     EngineOutcome::Done
 }
