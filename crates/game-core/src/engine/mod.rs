@@ -78,10 +78,11 @@ pub fn apply(state: GameState, action: Action) -> ApplyResult {
 mod tests {
     use crate::action::{Action, EngineRecord, InputResponse, PlayerAction};
     use crate::event::{Event, FailureReason};
+    use crate::state::EnemyId;
     use crate::state::{
         ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers, TokenResolution,
     };
-    use crate::test_support::{test_investigator, test_location, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{apply, EngineOutcome};
@@ -1089,5 +1090,362 @@ mod tests {
                 investigator: inv_id,
             }),
         );
+    }
+
+    /// Build a scenario suitable for Fight/Evade tests: one
+    /// investigator engaged with one enemy. Bag is `Numeric(0)` so
+    /// the test outcome is determined purely by (skill vs
+    /// fight/evade). Investigation phase, investigator is active,
+    /// 3 actions. Returns (investigator id, enemy id, state).
+    fn fight_evade_scenario() -> (InvestigatorId, EnemyId, GameState) {
+        let inv_id = InvestigatorId(1);
+        let enemy_id = EnemyId(100);
+        let mut inv = test_investigator(1);
+        inv.actions_remaining = 3;
+        let mut enemy = test_enemy(100, "Test Ghoul");
+        enemy.fight = 3;
+        enemy.evade = 3;
+        enemy.max_health = 2;
+        enemy.engaged_with = Some(inv_id);
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_enemy(enemy)
+            .with_chaos_bag(bag_only_zero())
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+        (inv_id, enemy_id, state)
+    }
+
+    #[test]
+    fn fight_succeeds_deals_one_damage_and_spends_action() {
+        // Combat 3, fight 3, modifier 0 → margin 0 → success.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        // Set investigator combat = 3 (default already is 3) so the
+        // test just barely passes.
+        state.investigators.get_mut(&inv_id).unwrap().skills.combat = 3;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::SkillTestStarted {
+                skill: SkillKind::Combat,
+                difficulty: 3,
+                ..
+            }
+        );
+        assert_event!(result.events, Event::SkillTestSucceeded { .. });
+        assert_event!(
+            result.events,
+            Event::EnemyDamaged { enemy: e, amount: 1, new_damage: 1 } if *e == enemy_id
+        );
+        assert_no_event!(result.events, Event::EnemyDefeated { .. });
+        assert_eq!(result.state.enemies[&enemy_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    }
+
+    #[test]
+    fn fight_failure_spends_action_but_deals_no_damage() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.combat = 1;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestFailed { .. });
+        assert_no_event!(result.events, Event::EnemyDamaged { .. });
+        assert_no_event!(result.events, Event::EnemyDefeated { .. });
+        assert_eq!(result.state.enemies[&enemy_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    }
+
+    #[test]
+    fn fight_defeats_enemy_when_damage_reaches_max_health() {
+        // Enemy at 1/2 already; Fight success → damage 2, defeated,
+        // removed from state, engagement cleared.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().damage = 1;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::EnemyDamaged { enemy: e, amount: 1, new_damage: 2 } if *e == enemy_id
+        );
+        assert_event!(
+            result.events,
+            Event::EnemyDefeated { enemy: e, by: Some(by) }
+                if *e == enemy_id && *by == inv_id
+        );
+        assert!(!result.state.enemies.contains_key(&enemy_id));
+    }
+
+    #[test]
+    fn evade_succeeds_disengages_and_exhausts() {
+        // Default agility 3, evade 3 → margin 0 → success.
+        let (inv_id, enemy_id, state) = fight_evade_scenario();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::SkillTestStarted {
+                skill: SkillKind::Agility,
+                difficulty: 3,
+                ..
+            }
+        );
+        assert_event!(result.events, Event::SkillTestSucceeded { .. });
+        assert_event!(
+            result.events,
+            Event::EnemyDisengaged { enemy: e, investigator: i }
+                if *e == enemy_id && *i == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::EnemyExhausted { enemy: e } if *e == enemy_id
+        );
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+        assert!(result.state.enemies[&enemy_id].exhausted);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    }
+
+    #[test]
+    fn evade_failure_leaves_engagement_intact() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.agility = 1;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestFailed { .. });
+        assert_no_event!(result.events, Event::EnemyDisengaged { .. });
+        assert_no_event!(result.events, Event::EnemyExhausted { .. });
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, Some(inv_id));
+        assert!(!result.state.enemies[&enemy_id].exhausted);
+    }
+
+    #[test]
+    fn fight_when_not_engaged_with_target_is_rejected() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().engaged_with = None;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn evade_when_not_engaged_with_target_is_rejected() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().engaged_with = None;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn fight_with_unknown_enemy_is_rejected() {
+        let (inv_id, _, state) = fight_evade_scenario();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: EnemyId(9999),
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn fight_outside_investigation_phase_is_rejected() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.phase = Phase::Mythos;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn fight_by_non_active_investigator_is_rejected() {
+        let (_, enemy_id, mut state) = fight_evade_scenario();
+        let other = InvestigatorId(2);
+        state.investigators.insert(other, test_investigator(2));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: other,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn fight_with_zero_actions_is_rejected() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .actions_remaining = 0;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn fight_with_negative_fight_value_is_rejected_without_mutating_state() {
+        // Malformed scenario data: fight = -1. validate-first must
+        // reject BEFORE spend_one_action runs, otherwise the action
+        // is silently lost without a rejection event.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().fight = -1;
+        let actions_before = state.investigators[&inv_id].actions_remaining;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+        assert_eq!(
+            result.state.investigators[&inv_id].actions_remaining,
+            actions_before
+        );
+    }
+
+    #[test]
+    fn evade_with_negative_evade_value_is_rejected_without_mutating_state() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().evade = -1;
+        let actions_before = state.investigators[&inv_id].actions_remaining;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+        assert_eq!(
+            result.state.investigators[&inv_id].actions_remaining,
+            actions_before
+        );
+    }
+
+    #[test]
+    fn evade_on_already_exhausted_enemy_is_idempotent_on_exhaust() {
+        // Edge: enemy is already exhausted but still engaged (e.g.
+        // attacked the investigator earlier this round, now the
+        // investigator Evades). Success disengages and leaves
+        // `exhausted = true`.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestSucceeded { .. });
+        assert_event!(result.events, Event::EnemyDisengaged { .. });
+        assert!(result.state.enemies[&enemy_id].exhausted);
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+    }
+
+    #[test]
+    fn fight_engaged_with_two_enemies_only_touches_the_target() {
+        // Investigator engaged with two enemies. Fight one. The other
+        // engagement must stay intact and its state untouched.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        let other_id = EnemyId(101);
+        let mut other = test_enemy(101, "Bystander Ghoul");
+        other.engaged_with = Some(inv_id);
+        state.enemies.insert(other_id, other);
+        // Make sure the Fight defeats the target so we observe the
+        // full attribution + removal path while the other is untouched.
+        state.enemies.get_mut(&enemy_id).unwrap().damage = 1;
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!result.state.enemies.contains_key(&enemy_id));
+        // Other enemy untouched.
+        assert!(result.state.enemies.contains_key(&other_id));
+        let other_after = &result.state.enemies[&other_id];
+        assert_eq!(other_after.engaged_with, Some(inv_id));
+        assert_eq!(other_after.damage, 0);
+        assert!(!other_after.exhausted);
     }
 }

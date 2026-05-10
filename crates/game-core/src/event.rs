@@ -13,7 +13,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution};
+use crate::state::{
+    ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+};
 
 /// One state-change record emitted by the engine.
 ///
@@ -155,6 +157,71 @@ pub enum Event {
     SkillTestEnded {
         /// Investigator the test was for.
         investigator: InvestigatorId,
+    },
+    /// An enemy entered play at a location. (Spawning logic lands
+    /// with the encounter deck and Mythos phase; this event slot
+    /// exists so card effects that react to spawns have something to
+    /// listen for from day one.)
+    EnemySpawned {
+        /// The newly-spawned enemy.
+        enemy: EnemyId,
+        /// Where it spawned.
+        location: LocationId,
+    },
+    /// An enemy became engaged with an investigator.
+    EnemyEngaged {
+        /// The engaged enemy.
+        enemy: EnemyId,
+        /// The investigator the enemy is now engaged with.
+        investigator: InvestigatorId,
+    },
+    /// An enemy disengaged from an investigator (e.g. via a
+    /// successful Evade).
+    EnemyDisengaged {
+        /// The enemy that disengaged.
+        enemy: EnemyId,
+        /// The investigator it was previously engaged with.
+        investigator: InvestigatorId,
+    },
+    /// An enemy was exhausted (e.g. via a successful Evade or after
+    /// attacking).
+    EnemyExhausted {
+        /// The enemy that exhausted.
+        enemy: EnemyId,
+    },
+    /// An enemy was readied (e.g. during the Upkeep phase).
+    EnemyReadied {
+        /// The enemy that readied.
+        enemy: EnemyId,
+    },
+    /// An enemy took damage.
+    EnemyDamaged {
+        /// The damaged enemy.
+        enemy: EnemyId,
+        /// Amount of damage applied.
+        amount: u8,
+        /// The enemy's new accumulated damage after the application.
+        new_damage: u8,
+    },
+    /// An enemy was defeated (damage reached `max_health` or a card
+    /// effect explicitly defeated it). The enemy is removed from
+    /// `GameState::enemies` after this event fires.
+    ///
+    /// Per the Rules Reference, defeat takes the enemy out of play
+    /// entirely — it does NOT emit a paired [`EnemyDisengaged`] for
+    /// an enemy that was engaged at the time of defeat. Engagement
+    /// implicitly terminates because the enemy is gone. Consumers
+    /// tracking engagement via the event stream should treat
+    /// `EnemyDefeated` as terminating any engagement the enemy had.
+    ///
+    /// [`EnemyDisengaged`]: Event::EnemyDisengaged
+    EnemyDefeated {
+        /// The defeated enemy.
+        enemy: EnemyId,
+        /// Who defeated it, if attributable. `None` for non-
+        /// investigator-attributed defeats (e.g. effects that just
+        /// say "defeat this enemy").
+        by: Option<InvestigatorId>,
     },
 }
 

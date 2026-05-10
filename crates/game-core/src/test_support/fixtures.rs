@@ -17,7 +17,7 @@
 //! field's intent. Phase-2+ reviewers: flag missing fixture updates
 //! when a field addition lands.
 
-use crate::state::{Investigator, InvestigatorId, Location, LocationId, Skills};
+use crate::state::{Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills};
 
 /// A stock investigator with reasonable defaults.
 ///
@@ -62,5 +62,34 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
         clues: 0,
         revealed: true,
         connections: Vec::new(),
+    }
+}
+
+/// A stock enemy with reasonable defaults.
+///
+/// - Fight 2, Evade 2, max-health 2, no damage.
+/// - Attack pattern: 1 damage / 0 horror.
+/// - Not spawned (`current_location: None`), ready, unengaged, no
+///   traits.
+///
+/// Mutate fields directly after construction to customize. The
+/// `#[non_exhaustive]` interaction note from the module-level docs
+/// applies to `Enemy` as well — adding a field to the struct requires
+/// updating this fixture in the same PR.
+#[must_use]
+pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
+    Enemy {
+        id: EnemyId(id),
+        name: name.into(),
+        fight: 2,
+        evade: 2,
+        max_health: 2,
+        damage: 0,
+        attack_damage: 1,
+        attack_horror: 0,
+        current_location: None,
+        exhausted: false,
+        traits: Vec::new(),
+        engaged_with: None,
     }
 }

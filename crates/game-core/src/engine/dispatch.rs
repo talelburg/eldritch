@@ -12,7 +12,8 @@ use crate::action::{EngineRecord, PlayerAction};
 use crate::dsl::{discover_clue, LocationTarget};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+    resolve_token, Enemy, EnemyId, GameState, InvestigatorId, LocationId, Phase, SkillKind,
+    TokenResolution,
 };
 
 use super::evaluator::{apply_effect, EvalContext};
@@ -47,6 +48,14 @@ pub fn apply_player_action(
             investigator,
             destination,
         } => move_action(state, events, *investigator, *destination),
+        PlayerAction::Fight {
+            investigator,
+            enemy,
+        } => fight(state, events, *investigator, *enemy),
+        PlayerAction::Evade {
+            investigator,
+            enemy,
+        } => evade(state, events, *investigator, *enemy),
         PlayerAction::ResolveInput { .. } => EngineOutcome::Rejected {
             reason: "TODO(#63): ResolveInput dispatch lands with the skill-test commit \
                      window; no AwaitingInput sites exist yet."
@@ -408,16 +417,7 @@ fn investigate(
     let difficulty = i8::try_from(location.shroud).unwrap_or(i8::MAX);
 
     // Mutate-second: spend the action, then resolve the test.
-    let new_actions = inv.actions_remaining - 1;
-    state
-        .investigators
-        .get_mut(&investigator)
-        .expect("investigator existence checked above")
-        .actions_remaining = new_actions;
-    events.push(Event::ActionsRemainingChanged {
-        investigator,
-        new_count: new_actions,
-    });
+    spend_one_action(state, events, investigator);
 
     match resolve_skill_test(
         state,
@@ -529,21 +529,235 @@ fn move_action(
     }
 
     // Mutate-second.
-    let new_actions = inv.actions_remaining - 1;
-    let inv_mut = state
+    spend_one_action(state, events, investigator);
+    state
         .investigators
         .get_mut(&investigator)
-        .expect("investigator existence checked above");
-    inv_mut.actions_remaining = new_actions;
-    inv_mut.current_location = Some(destination);
-    events.push(Event::ActionsRemainingChanged {
-        investigator,
-        new_count: new_actions,
-    });
+        .expect("investigator existence checked above")
+        .current_location = Some(destination);
     events.push(Event::InvestigatorMoved {
         investigator,
         from,
         to: destination,
     });
     EngineOutcome::Done
+}
+
+/// Validate the prefix shared by Fight and Evade: phase, active
+/// investigator, action point available, enemy exists, engaged with
+/// the named enemy. Returns the borrowed enemy so the caller can pick
+/// which difficulty (fight / evade) and read any other fields it
+/// needs.
+///
+/// On `Err`, returns the rejection; the caller should propagate it
+/// without further state mutation. State-corruption invariants
+/// (active investigator missing from map) panic via `unreachable!`.
+///
+/// Does NOT validate the chosen difficulty is non-negative — the
+/// caller must do that after picking, because Fight and Evade each
+/// only care about one of the two values, and validating both
+/// upfront would reject legitimate states (an enemy with `fight: -1`
+/// the investigator only ever Evades).
+fn validate_engaged_action<'a>(
+    state: &'a GameState,
+    action_name: &'static str,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) -> Result<&'a Enemy, EngineOutcome> {
+    if state.phase != Phase::Investigation {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "{action_name} is only valid during the Investigation phase (was {:?})",
+                state.phase
+            )
+            .into(),
+        });
+    }
+    if state.active_investigator != Some(investigator) {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "{action_name}: {investigator:?} is not the active investigator ({:?})",
+                state.active_investigator,
+            )
+            .into(),
+        });
+    }
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "{action_name}: active_investigator {investigator:?} is not in the investigators \
+             map; this is a state-corruption invariant violation"
+        )
+    });
+    if inv.actions_remaining < 1 {
+        return Err(EngineOutcome::Rejected {
+            reason: format!("{action_name} requires at least 1 action point").into(),
+        });
+    }
+    let Some(enemy) = state.enemies.get(&enemy_id) else {
+        return Err(EngineOutcome::Rejected {
+            reason: format!("{action_name}: enemy {enemy_id:?} is not in state").into(),
+        });
+    };
+    if enemy.engaged_with != Some(investigator) {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "{action_name}: {investigator:?} is not engaged with {enemy_id:?} (engaged_with = {:?})",
+                enemy.engaged_with,
+            )
+            .into(),
+        });
+    }
+    Ok(enemy)
+}
+
+/// Spend 1 action point from the active investigator and emit
+/// `ActionsRemainingChanged`. Caller has already validated that
+/// `actions_remaining >= 1`.
+fn spend_one_action(state: &mut GameState, events: &mut Vec<Event>, investigator: InvestigatorId) {
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .expect("investigator existence checked before spend_one_action");
+    let new_count = inv.actions_remaining - 1;
+    inv.actions_remaining = new_count;
+    events.push(Event::ActionsRemainingChanged {
+        investigator,
+        new_count,
+    });
+}
+
+/// Handler for [`PlayerAction::Fight`].
+///
+/// Spends 1 action, runs a Combat skill test against the enemy's
+/// fight value, and on success deals 1 damage. If damage reaches
+/// `max_health`, the enemy is defeated and removed from play.
+///
+/// Damage > 1 (weapons, card buffs), after-success / after-failure
+/// triggers (#64), and `AoO` from *other* engaged enemies (#78) are all
+/// downstream. `AoO` does NOT fire on Fight itself per the Rules
+/// Reference's `AoO`-exempt list.
+fn fight(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) -> EngineOutcome {
+    let fight_difficulty = match validate_engaged_action(state, "Fight", investigator, enemy_id) {
+        Ok(enemy) => {
+            if enemy.fight < 0 {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
+                        enemy.fight,
+                    )
+                    .into(),
+                };
+            }
+            enemy.fight
+        }
+        Err(rejected) => return rejected,
+    };
+    spend_one_action(state, events, investigator);
+    match resolve_skill_test(
+        state,
+        events,
+        investigator,
+        SkillKind::Combat,
+        fight_difficulty,
+    ) {
+        Ok(SkillTestResolution::Succeeded { .. }) => {
+            damage_enemy(state, events, enemy_id, 1, Some(investigator));
+            EngineOutcome::Done
+        }
+        Ok(SkillTestResolution::Failed { .. }) => EngineOutcome::Done,
+        Err(rejected) => rejected,
+    }
+}
+
+/// Handler for [`PlayerAction::Evade`].
+///
+/// Spends 1 action, runs an Agility skill test against the enemy's
+/// evade value, and on success disengages and exhausts the enemy.
+fn evade(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) -> EngineOutcome {
+    let evade_difficulty = match validate_engaged_action(state, "Evade", investigator, enemy_id) {
+        Ok(enemy) => {
+            if enemy.evade < 0 {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "Evade: enemy {enemy_id:?} has negative evade value {} (malformed state)",
+                        enemy.evade,
+                    )
+                    .into(),
+                };
+            }
+            enemy.evade
+        }
+        Err(rejected) => return rejected,
+    };
+    spend_one_action(state, events, investigator);
+    match resolve_skill_test(
+        state,
+        events,
+        investigator,
+        SkillKind::Agility,
+        evade_difficulty,
+    ) {
+        Ok(SkillTestResolution::Succeeded { .. }) => {
+            let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+                unreachable!(
+                    "Evade: enemy {enemy_id:?} disappeared between validation and resolution; \
+                     this is a state-corruption invariant violation"
+                )
+            });
+            enemy.engaged_with = None;
+            enemy.exhausted = true;
+            events.push(Event::EnemyDisengaged {
+                enemy: enemy_id,
+                investigator,
+            });
+            events.push(Event::EnemyExhausted { enemy: enemy_id });
+            EngineOutcome::Done
+        }
+        Ok(SkillTestResolution::Failed { .. }) => EngineOutcome::Done,
+        Err(rejected) => rejected,
+    }
+}
+
+/// Apply `amount` damage to an enemy. If the new damage reaches or
+/// exceeds `max_health`, emit `EnemyDefeated` and remove the enemy
+/// from `state.enemies`. `by` attributes the defeat for
+/// trigger-window consumers (e.g. Roland's reaction). Used by Fight
+/// today; will be reused by future damage-dealing card effects.
+fn damage_enemy(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    enemy_id: EnemyId,
+    amount: u8,
+    by: Option<InvestigatorId>,
+) {
+    let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+        unreachable!(
+            "damage_enemy: enemy {enemy_id:?} is not in state.enemies; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    let new_damage = enemy.damage.saturating_add(amount).min(enemy.max_health);
+    enemy.damage = new_damage;
+    events.push(Event::EnemyDamaged {
+        enemy: enemy_id,
+        amount,
+        new_damage,
+    });
+    if new_damage >= enemy.max_health {
+        events.push(Event::EnemyDefeated {
+            enemy: enemy_id,
+            by,
+        });
+        state.enemies.remove(&enemy_id);
+    }
 }

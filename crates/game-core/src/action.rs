@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{InvestigatorId, LocationId, SkillKind};
+use crate::state::{EnemyId, InvestigatorId, LocationId, SkillKind};
 
 /// A single entry in the action log.
 ///
@@ -79,6 +79,42 @@ pub enum PlayerAction {
         /// The destination location. Must be in `state.locations` and
         /// connected to the investigator's current location.
         destination: LocationId,
+    },
+    /// Engage an enemy with a combat skill test. Spends 1 action.
+    /// On success, deals 1 damage to the enemy; if damage reaches
+    /// `max_health`, the enemy is defeated and removed from play.
+    ///
+    /// Validate: Investigation phase, investigator is active,
+    /// `actions_remaining >= 1`, enemy exists, and the investigator
+    /// is currently engaged with that enemy.
+    ///
+    /// Damage > 1 (weapons, card buffs) and after-success / after-
+    /// failure triggers (#64) land downstream. `AoO` does NOT fire on
+    /// Fight (Fight is on the `AoO`-exempt list per the Rules
+    /// Reference).
+    Fight {
+        /// Investigator performing the Fight action. Must be the
+        /// active investigator during the Investigation phase.
+        investigator: InvestigatorId,
+        /// The enemy to fight. Must be currently engaged with the
+        /// investigator.
+        enemy: EnemyId,
+    },
+    /// Evade an engaged enemy with an agility skill test. Spends
+    /// 1 action. On success, the enemy disengages and exhausts.
+    ///
+    /// Validate: Investigation phase, investigator is active,
+    /// `actions_remaining >= 1`, enemy exists, and the investigator
+    /// is currently engaged with that enemy.
+    ///
+    /// `AoO` does NOT fire on Evade (also on the `AoO`-exempt list).
+    Evade {
+        /// Investigator performing the Evade action. Must be the
+        /// active investigator.
+        investigator: InvestigatorId,
+        /// The enemy to evade. Must be currently engaged with the
+        /// investigator.
+        enemy: EnemyId,
     },
     /// Investigate at the active investigator's current location:
     /// spend 1 action, make an intellect test against the location's
