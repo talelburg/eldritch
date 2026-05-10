@@ -849,4 +849,20 @@ mod tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
+
+    #[test]
+    #[should_panic(expected = "state-corruption invariant violation")]
+    fn investigate_with_dangling_current_location_panics() {
+        // Corruption case: investigator's current_location references
+        // a location not in state.locations. Matches the loud-on-
+        // corruption pattern used by end_turn / rotate_to_active.
+        let (inv_id, loc_id, mut state) = investigate_scenario(2, 2);
+        state.locations.remove(&loc_id);
+        let _ = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+    }
 }

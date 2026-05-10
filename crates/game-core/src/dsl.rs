@@ -20,17 +20,17 @@
 //! land:
 //!
 //! - **Activated abilities** (`[action]` / `[fast]` symbols on
-//!   asset abilities — Hyperawareness's "[fast] Spend 1 resource:
-//!   You get +1 [intellect] for this skill test", etc.). Need a
+//!   asset abilities — Hyperawareness's `[fast] Spend 1 resource:
+//!   You get +1 [intellect] for this skill test`, etc.). Need a
 //!   `Trigger::Activated { action_cost: u8, costs: Vec<Cost> }` plus
 //!   cost primitives.
-//! - **Forced / leave-play triggers** (Harold Walsted's "Forced — when
-//!   Harold Walsted leaves play: Remove him from the game and add..."
+//! - **Forced / leave-play triggers** (Harold Walsted's `Forced — when
+//!   Harold Walsted leaves play: Remove him from the game and add...`
 //!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
 //!   ability-specific effect machinery.
-//! - **Reaction abilities** (Roland Banks's "[reaction] After you
+//! - **Reaction abilities** (Roland Banks's `[reaction] After you
 //!   defeat an enemy: Discover 1 clue at your location. (Limit once
-//!   per round.)"). Need `Trigger::Reaction(EventPattern)` with the
+//!   per round.)`). Need `Trigger::Reaction(EventPattern)` with the
 //!   engine's event-window plumbing plus per-round limit tracking.
 //! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
 //!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). Phase-2 only
@@ -390,6 +390,22 @@ mod tests {
             constant(modify(Stat::MaxHealth, 1, ModifierScope::WhileInPlay)),
         ];
         assert_eq!(abilities.len(), 2);
+        assert!(matches!(
+            abilities[0].effect,
+            Effect::Modify {
+                stat: Stat::Willpower,
+                delta: 1,
+                scope: ModifierScope::WhileInPlay,
+            }
+        ));
+        assert!(matches!(
+            abilities[1].effect,
+            Effect::Modify {
+                stat: Stat::MaxHealth,
+                delta: 1,
+                scope: ModifierScope::WhileInPlay,
+            }
+        ));
     }
 
     /// Working a Hunch's "fast event: discover 1 clue at your location"

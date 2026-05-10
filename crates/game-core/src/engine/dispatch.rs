@@ -384,14 +384,16 @@ fn investigate(
                 .into(),
         };
     };
-    let Some(location) = state.locations.get(&location_id) else {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Investigate: location {location_id:?} (investigator's current_location) is not in state"
-            )
-            .into(),
-        };
-    };
+    // A `current_location` that doesn't exist in `state.locations` is
+    // a state-corruption invariant violation, not a user-facing
+    // rejection — match `end_turn` and `rotate_to_active` and surface
+    // it loudly.
+    let location = state.locations.get(&location_id).unwrap_or_else(|| {
+        unreachable!(
+            "Investigate: location {location_id:?} (investigator's current_location) \
+             is not in the locations map; this is a state-corruption invariant violation"
+        )
+    });
     // Shroud is u8 in state but skill-test difficulty is i8. Saturate
     // at i8::MAX for the absurd case; realistic shrouds are 0–6.
     let difficulty = i8::try_from(location.shroud).unwrap_or(i8::MAX);
@@ -418,19 +420,17 @@ fn investigate(
         Ok(SkillTestResolution::Succeeded { .. }) => {
             let effect = discover_clue(LocationTarget::ControllerLocation, 1);
             let ctx = EvalContext::for_controller(investigator);
-            // discover_clue's evaluator handles empty-location as a
-            // silent no-op; any rejection here would indicate the
-            // investigator is between locations, which we already
-            // validated. Treat any unexpected rejection as a hard
-            // engine error rather than a silent failure.
+            // The remaining rejection path inside `discover_clue` is
+            // "controller is between locations," which we already
+            // validated above. Empty-location is a silent no-op by
+            // design. So any rejection here is a state-corruption
+            // invariant violation — surface it loudly, not as a
+            // half-applied Rejected outcome.
             let outcome = apply_effect(state, events, &effect, ctx);
             if let EngineOutcome::Rejected { reason } = outcome {
-                return EngineOutcome::Rejected {
-                    reason: format!(
-                        "Investigate: discover_clue effect rejected unexpectedly: {reason}"
-                    )
-                    .into(),
-                };
+                unreachable!(
+                    "Investigate: discover_clue rejected unexpectedly after validation: {reason}"
+                );
             }
             EngineOutcome::Done
         }
