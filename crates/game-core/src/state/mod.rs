@@ -11,7 +11,7 @@ pub mod investigator;
 pub mod location;
 pub mod phase;
 
-pub use chaos_bag::{ChaosBag, ChaosToken};
+pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use game_state::GameState;
 pub use investigator::{Investigator, InvestigatorId, Skills};
 pub use location::{Location, LocationId};

@@ -26,7 +26,9 @@
 use std::collections::BTreeMap;
 
 use crate::rng::RngState;
-use crate::state::{ChaosBag, GameState, Investigator, InvestigatorId, Location, Phase};
+use crate::state::{
+    ChaosBag, GameState, Investigator, InvestigatorId, Location, Phase, TokenModifiers,
+};
 
 /// Fluent builder for a [`GameState`].
 ///
@@ -39,6 +41,7 @@ pub struct TestGame {
     investigators: BTreeMap<InvestigatorId, Investigator>,
     locations: BTreeMap<crate::state::LocationId, Location>,
     chaos_bag: ChaosBag,
+    token_modifiers: TokenModifiers,
     phase: Phase,
     round: u32,
     active_investigator: Option<InvestigatorId>,
@@ -56,6 +59,7 @@ impl TestGame {
             investigators: BTreeMap::new(),
             locations: BTreeMap::new(),
             chaos_bag: ChaosBag::new([]),
+            token_modifiers: TokenModifiers::default(),
             phase: Phase::Mythos,
             round: 0,
             active_investigator: None,
@@ -81,6 +85,13 @@ impl TestGame {
     /// Set the chaos bag. Replaces any prior bag.
     pub fn with_chaos_bag(mut self, chaos_bag: ChaosBag) -> Self {
         self.chaos_bag = chaos_bag;
+        self
+    }
+
+    /// Set the per-scenario symbol-token modifiers. Defaults to all
+    /// zeros if not called.
+    pub fn with_token_modifiers(mut self, modifiers: TokenModifiers) -> Self {
+        self.token_modifiers = modifiers;
         self
     }
 
@@ -134,6 +145,7 @@ impl TestGame {
             investigators: self.investigators,
             locations: self.locations,
             chaos_bag: self.chaos_bag,
+            token_modifiers: self.token_modifiers,
             phase: self.phase,
             round: self.round,
             active_investigator: self.active_investigator,

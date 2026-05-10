@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    chaos_bag::ChaosBag,
+    chaos_bag::{ChaosBag, TokenModifiers},
     investigator::{Investigator, InvestigatorId},
     location::{Location, LocationId},
     phase::Phase,
@@ -36,6 +36,10 @@ pub struct GameState {
     pub locations: BTreeMap<LocationId, Location>,
     /// The chaos bag at this scenario's difficulty.
     pub chaos_bag: ChaosBag,
+    /// Per-scenario numeric values for the four symbol tokens
+    /// (Skull/Cultist/Tablet/ElderThing). Set at scenario setup,
+    /// immutable for the scenario.
+    pub token_modifiers: TokenModifiers,
     /// Current round phase.
     pub phase: Phase,
     /// 1-based round counter, incremented on each Mythos phase entry.

@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{ChaosToken, InvestigatorId, LocationId, Phase};
+use crate::state::{ChaosToken, InvestigatorId, LocationId, Phase, TokenResolution};
 
 /// One state-change record emitted by the engine.
 ///
@@ -60,8 +60,12 @@ pub enum Event {
     ChaosTokenRevealed {
         /// The token revealed.
         token: ChaosToken,
-        /// Numeric modifier applied to the test's skill total.
-        modifier: i8,
+        /// How the token resolves against the scenario's modifier table:
+        /// a numeric modifier, [`AutoFail`], or [`ElderSign`].
+        ///
+        /// [`AutoFail`]: TokenResolution::AutoFail
+        /// [`ElderSign`]: TokenResolution::ElderSign
+        resolution: TokenResolution,
     },
     /// One or more clues moved to an investigator.
     CluePlaced {
