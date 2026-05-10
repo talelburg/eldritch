@@ -20,17 +20,18 @@
 //! land:
 //!
 //! - **Activated abilities** (`[action]` / `[fast]` symbols on
-//!   asset abilities — Hyperawareness, Magnifying Glass's "spend X
-//!   resources for Y" abilities, etc.). Need a `Trigger::Activated
-//!   { action_cost: u8, costs: Vec<Cost> }` plus cost primitives.
-//! - **Forced / leave-play triggers** (Beat Cop's "Forced — when
-//!   leaves play, deal 1 damage to a non-elite enemy at your
-//!   location"). Need `Trigger::OnLeavePlay`, plus enemy targeting
-//!   and trait/elite filters.
-//! - **Reaction abilities** (Roland's "After you defeat an enemy:
-//!   discover 1 clue at your location"). Need
-//!   `Trigger::Reaction(EventPattern)` with the engine's event-window
-//!   plumbing.
+//!   asset abilities — Hyperawareness's `[fast] Spend 1 resource:
+//!   You get +1 [intellect] for this skill test`, etc.). Need a
+//!   `Trigger::Activated { action_cost: u8, costs: Vec<Cost> }` plus
+//!   cost primitives.
+//! - **Forced / leave-play triggers** (Harold Walsted's `Forced — when
+//!   Harold Walsted leaves play: Remove him from the game and add...`
+//!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
+//!   ability-specific effect machinery.
+//! - **Reaction abilities** (Roland Banks's `[reaction] After you
+//!   defeat an enemy: Discover 1 clue at your location. (Limit once
+//!   per round.)`). Need `Trigger::Reaction(EventPattern)` with the
+//!   engine's event-window plumbing plus per-round limit tracking.
 //! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
 //!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). Phase-2 only
 //!   has [`Condition::SkillTest`] with success/failure granularity.
@@ -376,16 +377,35 @@ mod tests {
         ));
     }
 
-    /// Holy Rosary's full shape: two constant modifiers (willpower
-    /// and max-sanity), naturally expressed as two separate Ability
-    /// declarations on the card.
+    /// A multi-ability card naturally expressed as two separate
+    /// `Ability` declarations: one constant willpower modifier plus a
+    /// constant max-health buff. Illustrative shape only — not a real
+    /// printed card. (Holy Rosary's `sanity: 2` is *horror-soak*
+    /// capacity, NOT a max-sanity modifier; that's a redirect-and-
+    /// discard mechanic the DSL doesn't yet model — see #44.)
     #[test]
-    fn holy_rosary_full_shape_compiles_as_two_abilities() {
+    fn vec_of_abilities_supports_multiple_constant_modifiers() {
         let abilities = [
             constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay)),
-            constant(modify(Stat::MaxSanity, 2, ModifierScope::WhileInPlay)),
+            constant(modify(Stat::MaxHealth, 1, ModifierScope::WhileInPlay)),
         ];
         assert_eq!(abilities.len(), 2);
+        assert!(matches!(
+            abilities[0].effect,
+            Effect::Modify {
+                stat: Stat::Willpower,
+                delta: 1,
+                scope: ModifierScope::WhileInPlay,
+            }
+        ));
+        assert!(matches!(
+            abilities[1].effect,
+            Effect::Modify {
+                stat: Stat::MaxHealth,
+                delta: 1,
+                scope: ModifierScope::WhileInPlay,
+            }
+        ));
     }
 
     /// Working a Hunch's "fast event: discover 1 clue at your location"
