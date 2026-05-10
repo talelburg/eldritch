@@ -10,7 +10,7 @@
 
 use crate::action::{EngineRecord, PlayerAction};
 use crate::event::Event;
-use crate::state::{ChaosToken, GameState, InvestigatorId, Phase};
+use crate::state::{resolve_token, ChaosToken, GameState, InvestigatorId, Phase};
 
 use super::outcome::EngineOutcome;
 
@@ -199,10 +199,13 @@ fn rotate_to_active(state: &mut GameState, events: &mut Vec<Event>, id: Investig
 /// commit the RNG advance and emit the event. A mismatch indicates
 /// log corruption — return `Rejected` without mutating state.
 ///
-/// Modifier resolution (token symbols → numeric modifier per scenario)
-/// lands later. For Phase 1 we emit `modifier: 0` so the event shape
-/// is right; downstream consumers will pick up the real modifier when
-/// scenario-aware token effects exist.
+/// The emitted event carries a [`TokenResolution`] resolved against the
+/// scenario's `token_modifiers`. Symbol-token *effects* beyond the
+/// numeric modifier (e.g. "Cultist: −2 and an enemy spawns") and the
+/// elder-sign ability dispatch are downstream of this handler; they
+/// hook into the skill-test resolution flow that consumes the event.
+///
+/// [`TokenResolution`]: crate::state::TokenResolution
 fn chaos_token_drawn(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -226,6 +229,7 @@ fn chaos_token_drawn(
         };
     }
     state.rng = probe;
-    events.push(Event::ChaosTokenRevealed { token, modifier: 0 });
+    let resolution = resolve_token(token, &state.token_modifiers);
+    events.push(Event::ChaosTokenRevealed { token, resolution });
     EngineOutcome::Done
 }

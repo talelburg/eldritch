@@ -78,7 +78,7 @@ pub fn apply(state: GameState, action: Action) -> ApplyResult {
 mod tests {
     use crate::action::{Action, EngineRecord, InputResponse, PlayerAction};
     use crate::event::Event;
-    use crate::state::{ChaosToken, InvestigatorId, Phase};
+    use crate::state::{ChaosToken, InvestigatorId, Phase, TokenModifiers, TokenResolution};
     use crate::test_support::{test_investigator, TestGame};
     use crate::{assert_event, assert_event_count, assert_no_event};
 
@@ -251,11 +251,116 @@ mod tests {
         );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
+        // The bag has only Skull and Numeric tokens — both resolve to
+        // Modifier(_), no AutoFail/ElderSign should ever appear here.
+        // Asserting the variant guards against a future bug that emits
+        // AutoFail unconditionally.
         assert_event!(
             result.events,
-            Event::ChaosTokenRevealed { token: t, modifier: 0 } if *t == token
+            Event::ChaosTokenRevealed { token: t, resolution: TokenResolution::Modifier(_) }
+                if *t == token
         );
         assert_eq!(result.state.rng.draws, draws_before + 1);
+    }
+
+    /// All seven `ChaosToken` variants (with `Numeric` exercised at two
+    /// values), so a draw across this bag covers every resolution branch.
+    fn bag_with_all_token_kinds() -> crate::state::ChaosBag {
+        crate::state::ChaosBag::new([
+            ChaosToken::Numeric(1),
+            ChaosToken::Numeric(-2),
+            ChaosToken::Skull,
+            ChaosToken::Cultist,
+            ChaosToken::Tablet,
+            ChaosToken::ElderThing,
+            ChaosToken::AutoFail,
+            ChaosToken::ElderSign,
+        ])
+    }
+
+    /// Standard-difficulty Night of the Zealot symbol-token values.
+    fn night_of_the_zealot_standard() -> TokenModifiers {
+        TokenModifiers {
+            skull: -1,
+            cultist: -2,
+            tablet: -3,
+            elder_thing: -4,
+        }
+    }
+
+    #[test]
+    fn chaos_token_drawn_emits_resolution_for_each_token_kind() {
+        // Drive the engine across all seven token kinds and assert each
+        // one's emitted resolution matches the scenario modifiers and
+        // the AutoFail/ElderSign special variants.
+        let mut state = TestGame::new()
+            .with_chaos_bag(bag_with_all_token_kinds())
+            .with_token_modifiers(night_of_the_zealot_standard())
+            .with_rng_seed(7)
+            .build();
+
+        let mut seen: std::collections::HashMap<ChaosToken, TokenResolution> =
+            std::collections::HashMap::new();
+        // The dispatch handler doesn't yet remove drawn tokens from the
+        // bag (depletion lands with skill-test sequencing in #49), so
+        // the same bag is sampled on each iteration and we just loop
+        // until every distinct kind has been seen.
+        let kinds_to_cover = [
+            ChaosToken::Numeric(1),
+            ChaosToken::Numeric(-2),
+            ChaosToken::Skull,
+            ChaosToken::Cultist,
+            ChaosToken::Tablet,
+            ChaosToken::ElderThing,
+            ChaosToken::AutoFail,
+            ChaosToken::ElderSign,
+        ];
+        let mut iters = 0;
+        while seen.len() < kinds_to_cover.len() {
+            iters += 1;
+            assert!(iters < 200, "RNG never produced full token coverage");
+            let token = peek_next_token(&state);
+            let result = apply(
+                state,
+                Action::Engine(EngineRecord::ChaosTokenDrawn { token }),
+            );
+            assert_eq!(result.outcome, EngineOutcome::Done);
+            let resolution = result
+                .events
+                .iter()
+                .find_map(|e| match e {
+                    Event::ChaosTokenRevealed { resolution, .. } => Some(*resolution),
+                    _ => None,
+                })
+                .expect("ChaosTokenRevealed event missing");
+            seen.entry(token).or_insert(resolution);
+            state = result.state;
+        }
+
+        let mods = night_of_the_zealot_standard();
+        assert_eq!(seen[&ChaosToken::Numeric(1)], TokenResolution::Modifier(1));
+        assert_eq!(
+            seen[&ChaosToken::Numeric(-2)],
+            TokenResolution::Modifier(-2),
+        );
+        assert_eq!(
+            seen[&ChaosToken::Skull],
+            TokenResolution::Modifier(mods.skull),
+        );
+        assert_eq!(
+            seen[&ChaosToken::Cultist],
+            TokenResolution::Modifier(mods.cultist),
+        );
+        assert_eq!(
+            seen[&ChaosToken::Tablet],
+            TokenResolution::Modifier(mods.tablet),
+        );
+        assert_eq!(
+            seen[&ChaosToken::ElderThing],
+            TokenResolution::Modifier(mods.elder_thing),
+        );
+        assert_eq!(seen[&ChaosToken::AutoFail], TokenResolution::AutoFail);
+        assert_eq!(seen[&ChaosToken::ElderSign], TokenResolution::ElderSign);
     }
 
     #[test]
