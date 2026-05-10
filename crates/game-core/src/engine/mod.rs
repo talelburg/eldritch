@@ -1486,10 +1486,26 @@ mod tests {
         );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
-        // AoO damage event fires before InvestigatorMoved.
         assert_event!(
             result.events,
             Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+        // AoO damage must fire BEFORE the move resolves per the Rules
+        // Reference. assert_event! is existence-only, so check the
+        // positions explicitly.
+        let damage_idx = result
+            .events
+            .iter()
+            .position(|e| matches!(e, Event::DamageTaken { .. }))
+            .expect("DamageTaken event missing");
+        let moved_idx = result
+            .events
+            .iter()
+            .position(|e| matches!(e, Event::InvestigatorMoved { .. }))
+            .expect("InvestigatorMoved event missing");
+        assert!(
+            damage_idx < moved_idx,
+            "AoO DamageTaken (idx {damage_idx}) must precede InvestigatorMoved (idx {moved_idx})"
         );
         // Investigator damaged.
         assert_eq!(result.state.investigators[&inv_id].damage, 1);
@@ -1655,5 +1671,65 @@ mod tests {
         );
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
+    }
+
+    #[test]
+    fn aoo_fires_in_enemy_id_order_for_multiple_attackers() {
+        // Lock in the v1 ordering contract (deterministic by EnemyId
+        // via BTreeMap iteration). Three engaged ready enemies with
+        // distinct attack_damage values; the sequence of DamageTaken
+        // amounts must match EnemyId ordering.
+        let (inv_id, _, b, state) = move_scenario();
+        let mut state = state;
+        for (id, dmg) in [(300, 1), (301, 2), (302, 4)] {
+            let mut e = test_enemy(id, "");
+            e.engaged_with = Some(inv_id);
+            e.attack_damage = dmg;
+            state.enemies.insert(EnemyId(id), e);
+        }
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        let damages: Vec<u8> = result
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                Event::DamageTaken { amount, .. } => Some(*amount),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(damages, vec![1, 2, 4]);
+        assert_eq!(result.state.investigators[&inv_id].damage, 7);
+    }
+
+    #[test]
+    fn aoo_from_zero_damage_zero_horror_enemy_emits_no_events() {
+        // Edge: an engaged ready enemy with attack_damage = 0 and
+        // attack_horror = 0 still "attacks" but the helper's `if > 0`
+        // guards must skip both event emissions.
+        let (inv_id, _, b, state) = move_scenario();
+        let mut state = state;
+        let mut e = test_enemy(310, "Quiet Watcher");
+        e.engaged_with = Some(inv_id);
+        e.attack_damage = 0;
+        e.attack_horror = 0;
+        state.enemies.insert(EnemyId(310), e);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_no_event!(result.events, Event::HorrorTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].horror, 0);
     }
 }

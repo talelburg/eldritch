@@ -798,9 +798,9 @@ fn damage_enemy(
 /// it separately.
 ///
 /// Investigator-defeat handling (damage > `max_health`, horror >
-/// `max_sanity`) is deferred to its own issue. For now, we
-/// `saturating_add` so we don't wrap, but allow the value to exceed
-/// the cap; the eventual defeat flow will reconcile.
+/// `max_sanity`) is deferred to #80. For now, we `saturating_add` so
+/// we don't wrap, but allow the value to exceed the cap; the defeat
+/// flow installed by #80 will reconcile.
 fn enemy_attack(
     state: &mut GameState,
     events: &mut Vec<Event>,
