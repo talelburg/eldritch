@@ -1008,6 +1008,31 @@ mod tests {
     }
 
     #[test]
+    fn start_scenario_handles_sparse_investigator_ids_deterministically() {
+        // Investigator ids 1, 5, 9 — non-contiguous. BTreeMap
+        // iteration is sorted, so shuffle order is deterministic.
+        // Each investigator gets their own deck + hand independently.
+        let ids = [InvestigatorId(1), InvestigatorId(5), InvestigatorId(9)];
+        let mut tg = TestGame::new().with_rng_seed(2026);
+        for id in ids {
+            let mut inv = test_investigator(id.0);
+            inv.deck = make_test_deck(8);
+            tg = tg.with_investigator(inv);
+        }
+        let result = apply(tg.build(), Action::Player(PlayerAction::StartScenario));
+        assert_eq!(result.outcome, EngineOutcome::Done);
+
+        // Each investigator drew 5 cards and has 3 left in deck.
+        for id in ids {
+            let inv_after = &result.state.investigators[&id];
+            assert_eq!(inv_after.hand.len(), 5);
+            assert_eq!(inv_after.deck.len(), 3);
+        }
+        // Each emitted CardsDrawn { count: 5 }.
+        assert_event_count!(result.events, 3, Event::CardsDrawn { count: 5, .. });
+    }
+
+    #[test]
     #[should_panic(expected = "state-corruption invariant violation")]
     fn investigate_with_dangling_current_location_panics() {
         // Corruption case: investigator's current_location references

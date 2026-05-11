@@ -123,12 +123,13 @@ pub(super) fn shuffle_player_deck(
     }
     // Fisher-Yates: walk from the end, swap each element with one in
     // [0, i]. `next_index(n)` returns `[0, n)`, so we pass i+1.
-    let mut i = inv.deck.len() - 1;
+    let deck_len = inv.deck.len();
     // Collect swap indices first, then apply — avoids holding a
     // mutable borrow on `inv.deck` across the RNG calls. (next_index
     // takes &mut state.rng, which conflicts with the &mut borrow we
     // already have on the investigator if we did this inline.)
-    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(i);
+    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
+    let mut i = deck_len - 1;
     while i >= 1 {
         let j = state.rng.next_index(i + 1);
         swaps.push((i, j));
@@ -169,7 +170,8 @@ pub(super) fn draw_cards(
     // `drawn` cards in order and append to hand.
     let drawn_cards: Vec<_> = inv.deck.drain(..drawn).collect();
     inv.hand.extend(drawn_cards);
-    let drawn_u8 = u8::try_from(drawn).unwrap_or(u8::MAX);
+    // `drawn` ≤ `count: u8`, so the cast can't overflow.
+    let drawn_u8 = u8::try_from(drawn).expect("drawn <= count <= u8::MAX");
     events.push(Event::CardsDrawn {
         investigator,
         count: drawn_u8,

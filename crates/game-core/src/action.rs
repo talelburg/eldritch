@@ -18,9 +18,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::{EnemyId, InvestigatorId, LocationId, SkillKind};
 
-// Re-export for users constructing actions (just for future Engine
-// variants; today's EngineRecord shape is minimal).
-
 /// A single entry in the action log.
 ///
 /// See the module docs for the rationale of the two-bucket split.

@@ -72,10 +72,10 @@ pub struct Investigator {
     ///
     /// **Phase-1 minimal shape:** just card codes. Per-instance
     /// asset state (exhausted, accumulated horror/damage on the asset,
-    /// remaining uses/charges) lands when the first asset card
-    /// demands it — separate issue. The DSL evaluator's existing
-    /// `Trigger::Constant` query for in-play modifiers iterates these
-    /// codes.
+    /// remaining uses/charges) is tracked at **#87** and will replace
+    /// this with a richer `CardInPlay` type when the first asset card
+    /// demands it. The DSL evaluator's existing `Trigger::Constant`
+    /// query for in-play modifiers iterates these codes.
     pub cards_in_play: Vec<CardCode>,
 }
 
