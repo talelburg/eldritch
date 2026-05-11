@@ -140,24 +140,26 @@ pub enum PlayerAction {
 
 /// Engine-recorded events.
 ///
-/// Anything non-deterministic from the engine's perspective (timer-
-/// derived values, deck shuffles) goes into the log as one of these
-/// variants so replay produces identical results. Chaos token draws
-/// are NOT recorded here — they happen inline as part of the action
-/// that triggered them (e.g. `PerformSkillTest`); RNG determinism plus
-/// the per-draw `Event::ChaosTokenRevealed` give replay equivalence.
+/// Anything that doesn't originate from a single player action but
+/// still needs an action-log entry for replay clarity. Chaos token
+/// draws and inline-during-handler deck shuffles do NOT use this
+/// channel — they happen as side effects of the action that
+/// triggered them (e.g. [`PlayerAction::StartScenario`] shuffles
+/// every player deck before the initial hand draw), and RNG
+/// determinism reproduces them from the same triggering action.
+///
+/// The standalone [`DeckShuffled`](EngineRecord::DeckShuffled)
+/// variant is for shuffle requests that don't come from a player
+/// action — future card effects like "shuffle X into your deck" will
+/// emit this when the effect resolves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum EngineRecord {
-    /// A deck was shuffled with the given seed. Replays use the same seed
-    /// to reproduce the order.
-    //
-    // TODO(#62): once there are multiple decks (encounter deck, each
-    // investigator's deck, act/agenda decks), this needs a `deck:
-    // DeckId` field to disambiguate.
+    /// Shuffle the named investigator's player deck. Encounter deck
+    /// and act/agenda decks add their own variants when they land.
     DeckShuffled {
-        /// Seed used for the shuffle.
-        seed: u64,
+        /// Whose deck to shuffle.
+        investigator: InvestigatorId,
     },
 }
 

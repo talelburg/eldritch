@@ -49,6 +49,10 @@ pub fn test_investigator(id: u32) -> Investigator {
         resources: 5,
         actions_remaining: 3,
         status: Status::Active,
+        deck: Vec::new(),
+        hand: Vec::new(),
+        discard: Vec::new(),
+        cards_in_play: Vec::new(),
     }
 }
 
