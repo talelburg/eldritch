@@ -1740,7 +1740,7 @@ mod tests {
 
     /// Build a Move scenario with one ready engaged enemy at the
     /// origin. The investigator is configured to be defeated by the
-    /// enemy's AoO: `max_health = 1`, `damage = 0`, enemy
+    /// enemy's `AoO`: `max_health = 1`, `damage = 0`, enemy
     /// `attack_damage = 1`. Returns (inv id, origin, dest, enemy id,
     /// state).
     fn move_scenario_with_lethal_aoo() -> (
@@ -1901,7 +1901,6 @@ mod tests {
         i1.actions_remaining = 3;
         let i2 = test_investigator(2);
         // i2 stays at default 8/8.
-        let enemy_id = EnemyId(500);
         let mut e = test_enemy(500, "Lethal Ghoul");
         e.engaged_with = Some(inv1);
         e.attack_damage = 1;

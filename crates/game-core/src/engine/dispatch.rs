@@ -446,7 +446,13 @@ fn investigate(
     // (the skill test) is suppressed. The action point and AoO events
     // already fired — they stay. The action declaration was legal;
     // the investigator just can't complete it.
-    if state.investigators[&investigator].status != Status::Active {
+    let inv_after_aoo = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Investigate: investigator {investigator:?} disappeared between AoO and skill test; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv_after_aoo.status != Status::Active {
         return EngineOutcome::Done;
     }
 
@@ -579,7 +585,13 @@ fn move_action(
     // If AoO defeated the investigator, the move is cancelled. The
     // action point and AoO events stay; the investigator (and any
     // engaged enemies) don't change location.
-    if state.investigators[&investigator].status != Status::Active {
+    let inv_after_aoo = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Move: investigator {investigator:?} disappeared between AoO and move resolution; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv_after_aoo.status != Status::Active {
         return EngineOutcome::Done;
     }
 
@@ -936,16 +948,28 @@ fn take_horror(
 }
 
 /// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`
-/// investigator remains. Idempotent on subsequent defeats: the event
-/// fires whenever the predicate becomes true; consumers that care
-/// about exactly-once semantics dedupe themselves. Currently callers
-/// only invoke this immediately after flipping a status to non-
-/// `Active`, so it fires exactly once per scenario in practice.
+/// investigator remains.
+///
+/// **Contract for callers:** *any* code path that flips a
+/// `Status::Active` investigator to a non-`Active` status (Killed,
+/// Insane, Resigned) must call this helper afterwards. Currently
+/// only [`take_damage`] / [`take_horror`] flip status, so they're
+/// the only callers; future paths (the Resign action, scenario
+/// effects that defeat directly) need to add a call too — otherwise
+/// the event silently fails to fire when those paths cause the last
+/// `Active` to fall.
+///
+/// Idempotent on subsequent defeats: the predicate becomes true once
+/// and stays true. Callers only invoke it after a status flip, so it
+/// fires exactly once per scenario in practice.
 fn check_all_defeated(state: &GameState, events: &mut Vec<Event>) {
     let any_active = state
         .investigators
         .values()
         .any(|inv| inv.status == Status::Active);
+    // Empty-investigators is nonsense scenario state; suppress the
+    // event so we don't emit a meaningless "all defeated" when there
+    // was nobody to defeat in the first place.
     if !any_active && !state.investigators.is_empty() {
         events.push(Event::AllInvestigatorsDefeated);
     }
