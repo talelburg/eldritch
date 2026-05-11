@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::card::CardCode;
 use super::location::LocationId;
 
 /// Stable identifier for an investigator within a scenario.
@@ -58,6 +59,24 @@ pub struct Investigator {
     pub actions_remaining: u8,
     /// Active / Killed / Insane / Resigned. See [`Status`].
     pub status: Status,
+    /// Player deck. Cards are listed top-to-bottom; the engine draws
+    /// from the front. Populated at scenario setup (and re-shuffled
+    /// when empty during a Draw, when that lands in the follow-up
+    /// issue).
+    pub deck: Vec<CardCode>,
+    /// Cards currently in hand.
+    pub hand: Vec<CardCode>,
+    /// Player discard pile.
+    pub discard: Vec<CardCode>,
+    /// Cards currently in play under this investigator's control.
+    ///
+    /// **Phase-1 minimal shape:** just card codes. Per-instance
+    /// asset state (exhausted, accumulated horror/damage on the asset,
+    /// remaining uses/charges) lands when the first asset card
+    /// demands it — separate issue. The DSL evaluator's existing
+    /// `Trigger::Constant` query for in-play modifiers iterates these
+    /// codes.
+    pub cards_in_play: Vec<CardCode>,
 }
 
 /// Whether an investigator is still active in the scenario, and if not,

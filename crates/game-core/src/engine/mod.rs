@@ -80,7 +80,7 @@ mod tests {
     use crate::event::{Event, FailureReason};
     use crate::state::EnemyId;
     use crate::state::{
-        ChaosToken, DefeatCause, GameState, InvestigatorId, Phase, SkillKind, Status,
+        CardCode, ChaosToken, DefeatCause, GameState, InvestigatorId, Phase, SkillKind, Status,
         TokenModifiers, TokenResolution,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
@@ -842,14 +842,169 @@ mod tests {
     }
 
     #[test]
-    fn deck_shuffled_engine_record_is_rejected_phase_one() {
+    fn deck_shuffled_engine_record_with_unknown_investigator_is_rejected() {
         let state = TestGame::new().build();
         let result = apply(
             state,
-            Action::Engine(EngineRecord::DeckShuffled { seed: 42 }),
+            Action::Engine(EngineRecord::DeckShuffled {
+                investigator: InvestigatorId(999),
+            }),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // Player deck / zone tests (#62)
+    // ------------------------------------------------------------------
+
+    /// Build a deck of `n` cards with codes "test-001", "test-002",
+    /// etc. so tests can identify exact ordering.
+    fn make_test_deck(n: usize) -> Vec<CardCode> {
+        (1..=n).map(|i| CardCode(format!("test-{i:03}"))).collect()
+    }
+
+    #[test]
+    fn start_scenario_shuffles_each_deck_and_deals_initial_hand() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.deck = make_test_deck(10);
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_turn_order([id])
+            .with_rng_seed(42)
+            .build();
+        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::DeckShuffled { investigator } if *investigator == id
+        );
+        assert_event!(
+            result.events,
+            Event::CardsDrawn { investigator, count: 5 } if *investigator == id
+        );
+        // Hand has 5 cards, deck has 5 left, both partitions cover the
+        // original 10 cards (just shuffled).
+        let inv_after = &result.state.investigators[&id];
+        assert_eq!(inv_after.hand.len(), 5);
+        assert_eq!(inv_after.deck.len(), 5);
+        let mut all: Vec<_> = inv_after.hand.iter().chain(inv_after.deck.iter()).collect();
+        all.sort();
+        let mut expected: Vec<_> = make_test_deck(10).into_iter().collect();
+        expected.sort();
+        assert_eq!(
+            all.iter().map(|c| CardCode::as_str(c)).collect::<Vec<_>>(),
+            expected.iter().map(CardCode::as_str).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .build();
+        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // Empty-deck no-op shuffle: no event.
+        assert_no_event!(result.events, Event::DeckShuffled { .. });
+        // draw_cards still emits CardsDrawn { count: 0 } so consumers
+        // see the attempt.
+        assert_event!(
+            result.events,
+            Event::CardsDrawn { investigator, count: 0 } if *investigator == id
+        );
+        assert!(result.state.investigators[&id].hand.is_empty());
+        assert!(result.state.investigators[&id].deck.is_empty());
+    }
+
+    #[test]
+    fn start_scenario_with_short_deck_draws_only_what_remains() {
+        // Deck of 3, INITIAL_HAND_SIZE is 5: draw 3, deck empties, no
+        // panic.
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.deck = make_test_deck(3);
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_turn_order([id])
+            .with_rng_seed(7)
+            .build();
+        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::CardsDrawn { investigator, count: 3 } if *investigator == id
+        );
+        assert_eq!(result.state.investigators[&id].hand.len(), 3);
+        assert!(result.state.investigators[&id].deck.is_empty());
+    }
+
+    #[test]
+    fn deck_shuffle_is_deterministic_across_replay() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.deck = make_test_deck(20);
+        let state_a = TestGame::new()
+            .with_investigator(inv.clone())
+            .with_turn_order([id])
+            .with_rng_seed(123)
+            .build();
+        let state_b = TestGame::new()
+            .with_investigator(inv)
+            .with_turn_order([id])
+            .with_rng_seed(123)
+            .build();
+
+        let result_a = apply(state_a, Action::Player(PlayerAction::StartScenario));
+        let result_b = apply(state_b, Action::Player(PlayerAction::StartScenario));
+
+        assert_eq!(
+            result_a.state.investigators[&id].deck,
+            result_b.state.investigators[&id].deck
+        );
+        assert_eq!(
+            result_a.state.investigators[&id].hand,
+            result_b.state.investigators[&id].hand
+        );
+        assert_eq!(result_a.state.rng, result_b.state.rng);
+    }
+
+    #[test]
+    fn deck_shuffled_engine_record_shuffles_named_investigator() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.deck = make_test_deck(8);
+        let original_deck = inv.deck.clone();
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_rng_seed(99)
+            .build();
+        let result = apply(
+            state,
+            Action::Engine(EngineRecord::DeckShuffled { investigator: id }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::DeckShuffled { investigator } if *investigator == id
+        );
+        // Deck contains the same cards (multiset equal) but reordered.
+        // With seed 99 and 8 cards, the shuffle should differ from
+        // the original; treat that as a probabilistic check.
+        let after = &result.state.investigators[&id].deck;
+        assert_eq!(after.len(), original_deck.len());
+        let mut sorted_before = original_deck.clone();
+        sorted_before.sort();
+        let mut sorted_after = after.clone();
+        sorted_after.sort();
+        assert_eq!(sorted_before, sorted_after);
     }
 
     #[test]

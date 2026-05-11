@@ -235,6 +235,23 @@ pub enum Event {
         /// What caused the defeat.
         cause: DefeatCause,
     },
+    /// An investigator's player deck was shuffled. State inspection
+    /// has the new order; this event is the announcement.
+    DeckShuffled {
+        /// Whose deck was shuffled.
+        investigator: InvestigatorId,
+    },
+    /// An investigator drew `count` cards from their player deck. The
+    /// cards have already been moved from deck to hand by the time
+    /// this event fires; the specific card codes are not in the event
+    /// payload (state inspection has the post-draw hand). Cards are
+    /// drawn from the deck front, i.e. top.
+    CardsDrawn {
+        /// The investigator who drew.
+        investigator: InvestigatorId,
+        /// How many cards were drawn.
+        count: u8,
+    },
     /// Every investigator in `state.investigators` is now non-Active.
     /// Fires immediately after the [`InvestigatorDefeated`] that
     /// flipped the last active investigator. Scenario-resolution

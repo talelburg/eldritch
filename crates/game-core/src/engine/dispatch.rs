@@ -24,6 +24,10 @@ use super::outcome::EngineOutcome;
 /// rulebook.
 const ACTIONS_PER_TURN: u8 = 3;
 
+/// Starting hand size at scenario setup. Per the Rules Reference,
+/// each investigator draws 5 cards before mulligan.
+const INITIAL_HAND_SIZE: u8 = 5;
+
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
 /// Phase-1 minimal coverage: [`StartScenario`](PlayerAction::StartScenario)
@@ -70,12 +74,106 @@ pub fn apply_engine_record(
     events: &mut Vec<Event>,
     record: &EngineRecord,
 ) -> EngineOutcome {
-    let _ = (state, events);
     match record {
-        EngineRecord::DeckShuffled { .. } => EngineOutcome::Rejected {
-            reason: "TODO(#62): DeckShuffled dispatch lands when decks exist".into(),
-        },
+        EngineRecord::DeckShuffled { investigator } => deck_shuffled(state, events, *investigator),
     }
+}
+
+/// Handler for [`EngineRecord::DeckShuffled`].
+///
+/// Permutes the named investigator's player deck via the deterministic
+/// RNG and emits [`Event::DeckShuffled`]. Empty decks are a silent
+/// no-op (no event emitted) — there's nothing to shuffle.
+fn deck_shuffled(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    if !state.investigators.contains_key(&investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!("DeckShuffled: investigator {investigator:?} is not in state").into(),
+        };
+    }
+    shuffle_player_deck(state, events, investigator);
+    EngineOutcome::Done
+}
+
+/// Fisher-Yates shuffle of the named investigator's deck using the
+/// shared deterministic RNG. Used by [`deck_shuffled`] and by
+/// scenario setup (initial-hand draw).
+///
+/// Emits [`Event::DeckShuffled`] iff the deck had at least 2 cards
+/// (a 0- or 1-card deck has nothing to permute).
+pub(super) fn shuffle_player_deck(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) {
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+            "shuffle_player_deck: investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+        });
+    if inv.deck.len() < 2 {
+        return;
+    }
+    // Fisher-Yates: walk from the end, swap each element with one in
+    // [0, i]. `next_index(n)` returns `[0, n)`, so we pass i+1.
+    let mut i = inv.deck.len() - 1;
+    // Collect swap indices first, then apply — avoids holding a
+    // mutable borrow on `inv.deck` across the RNG calls. (next_index
+    // takes &mut state.rng, which conflicts with the &mut borrow we
+    // already have on the investigator if we did this inline.)
+    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(i);
+    while i >= 1 {
+        let j = state.rng.next_index(i + 1);
+        swaps.push((i, j));
+        i -= 1;
+    }
+    let inv = state.investigators.get_mut(&investigator).expect("checked");
+    for (a, b) in swaps {
+        inv.deck.swap(a, b);
+    }
+    events.push(Event::DeckShuffled { investigator });
+}
+
+/// Draw up to `count` cards from the named investigator's deck top
+/// into their hand. Stops early (without panic) if the deck runs out;
+/// no reshuffle in this PR — that lands with the Draw action (#84),
+/// which also handles the empty-both-take-1-horror rule.
+///
+/// Emits a single [`Event::CardsDrawn`] with the actually-drawn
+/// count, even if that's zero. A zero-count draw is informative for
+/// consumers tracking the attempt.
+pub(super) fn draw_cards(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    count: u8,
+) {
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "draw_cards: investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+            )
+        });
+    let drawn = std::cmp::min(count as usize, inv.deck.len());
+    // Cards are drawn from the deck front (top). Splice out the first
+    // `drawn` cards in order and append to hand.
+    let drawn_cards: Vec<_> = inv.deck.drain(..drawn).collect();
+    inv.hand.extend(drawn_cards);
+    let drawn_u8 = u8::try_from(drawn).unwrap_or(u8::MAX);
+    events.push(Event::CardsDrawn {
+        investigator,
+        count: drawn_u8,
+    });
 }
 
 fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
@@ -98,6 +196,15 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
     events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });
+
+    // For each investigator (sorted by id for determinism), shuffle
+    // their deck and deal an initial hand of up to 5. Cards-in-hand
+    // mechanics (Draw action, Mulligan, PlayCard) land in #84 / #85.
+    let inv_ids: Vec<InvestigatorId> = state.investigators.keys().copied().collect();
+    for inv_id in inv_ids {
+        shuffle_player_deck(state, events, inv_id);
+        draw_cards(state, events, inv_id, INITIAL_HAND_SIZE);
+    }
 
     // Phase 1: Mythos / Enemy / Upkeep have no content yet, so we
     // tick straight through them. Once the engine grows real Mythos
