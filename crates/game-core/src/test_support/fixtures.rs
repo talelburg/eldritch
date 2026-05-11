@@ -17,7 +17,9 @@
 //! field's intent. Phase-2+ reviewers: flag missing fixture updates
 //! when a field addition lands.
 
-use crate::state::{Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills};
+use crate::state::{
+    Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
+};
 
 /// A stock investigator with reasonable defaults.
 ///
@@ -46,6 +48,7 @@ pub fn test_investigator(id: u32) -> Investigator {
         clues: 0,
         resources: 5,
         actions_remaining: 3,
+        status: Status::Active,
     }
 }
 

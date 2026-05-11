@@ -80,7 +80,8 @@ mod tests {
     use crate::event::{Event, FailureReason};
     use crate::state::EnemyId;
     use crate::state::{
-        ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers, TokenResolution,
+        ChaosToken, DefeatCause, GameState, InvestigatorId, Phase, SkillKind, Status,
+        TokenModifiers, TokenResolution,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
     use crate::{assert_event, assert_event_count, assert_no_event};
@@ -1731,5 +1732,291 @@ mod tests {
         assert_no_event!(result.events, Event::HorrorTaken { .. });
         assert_eq!(result.state.investigators[&inv_id].damage, 0);
         assert_eq!(result.state.investigators[&inv_id].horror, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Investigator-defeat tests (#80)
+    // ------------------------------------------------------------------
+
+    /// Build a Move scenario with one ready engaged enemy at the
+    /// origin. The investigator is configured to be defeated by the
+    /// enemy's `AoO`: `max_health = 1`, `damage = 0`, enemy
+    /// `attack_damage = 1`. Returns (inv id, origin, dest, enemy id,
+    /// state).
+    fn move_scenario_with_lethal_aoo() -> (
+        InvestigatorId,
+        crate::state::LocationId,
+        crate::state::LocationId,
+        EnemyId,
+        GameState,
+    ) {
+        let (inv_id, a, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
+        state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
+        // attack_damage = 1 is already the default from
+        // move_scenario_with_engaged_enemy, but be explicit.
+        state.enemies.get_mut(&enemy_id).unwrap().attack_damage = 1;
+        (inv_id, a, b, enemy_id, state)
+    }
+
+    #[test]
+    fn aoo_lethal_damage_defeats_investigator_during_move_and_cancels_move() {
+        let (inv_id, a, b, enemy_id, state) = move_scenario_with_lethal_aoo();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // Damage applied + defeat event fired.
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::InvestigatorDefeated {
+                investigator,
+                cause: DefeatCause::Damage,
+            } if *investigator == inv_id
+        );
+        // Status flipped to Killed.
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
+        // Action point still spent (the action declaration stays).
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+        // Move suppressed: investigator and engaged enemy stay at the
+        // origin; no InvestigatorMoved event.
+        assert_no_event!(result.events, Event::InvestigatorMoved { .. });
+        assert_eq!(
+            result.state.investigators[&inv_id].current_location,
+            Some(a)
+        );
+        assert_eq!(result.state.enemies[&enemy_id].current_location, Some(a));
+        // Single-investigator scenario, so AllInvestigatorsDefeated
+        // also fires.
+        assert_event!(result.events, Event::AllInvestigatorsDefeated);
+    }
+
+    #[test]
+    fn aoo_lethal_horror_defeats_investigator_during_investigate_and_cancels_test() {
+        // Set up Investigate with an engaged enemy whose attack is
+        // pure horror. Investigator's max_sanity = 1, so 1 horror
+        // drives them insane.
+        let (inv_id, loc_id, mut state) = investigate_scenario(2, 2);
+        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 1;
+        let enemy_id = EnemyId(400);
+        let mut enemy = test_enemy(400, "Tormenting Shade");
+        enemy.current_location = Some(loc_id);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 0;
+        enemy.attack_horror = 1;
+        state.enemies.insert(enemy_id, enemy);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::InvestigatorDefeated {
+                investigator,
+                cause: DefeatCause::Horror,
+            } if *investigator == inv_id
+        );
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Insane);
+        // Skill test suppressed: no SkillTestStarted event.
+        assert_no_event!(result.events, Event::SkillTestStarted { .. });
+        assert_no_event!(result.events, Event::CluePlaced { .. });
+    }
+
+    #[test]
+    fn aoo_damage_to_active_investigator_below_threshold_does_not_defeat() {
+        // Sanity check: AoO that doesn't reach max_health leaves the
+        // investigator Active. Same as the existing AoO test but
+        // explicit on the status field and absence of defeat events.
+        let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
+        // Bump max_health above the AoO damage (which is 1).
+        state.investigators.get_mut(&inv_id).unwrap().max_health = 5;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Active);
+        assert_no_event!(result.events, Event::InvestigatorDefeated { .. });
+        // Move proceeds.
+        assert_event!(result.events, Event::InvestigatorMoved { .. });
+    }
+
+    #[test]
+    fn defeated_investigator_does_not_take_further_damage() {
+        // Two engaged ready enemies, both with attack_damage = 5.
+        // Investigator has max_health = 1. The first AoO defeats;
+        // the second is a no-op (take_damage skips defeated).
+        let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
+        state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
+        state.enemies.get_mut(&EnemyId(200)).unwrap().attack_damage = 5;
+        // Add a second engaged ready enemy.
+        let mut e2 = test_enemy(201, "Second Ghoul");
+        e2.engaged_with = Some(inv_id);
+        e2.attack_damage = 5;
+        state.enemies.insert(EnemyId(201), e2);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // Exactly one DamageTaken event (from the first AoO) and one
+        // InvestigatorDefeated.
+        assert_event_count!(result.events, 1, Event::DamageTaken { .. });
+        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
+        // Damage saturates at the first AoO's amount; second AoO is
+        // skipped entirely.
+        assert_eq!(result.state.investigators[&inv_id].damage, 5);
+    }
+
+    #[test]
+    fn all_investigators_defeated_fires_only_when_last_active_falls() {
+        // Two investigators, one defeated, then the second defeated.
+        // AllInvestigatorsDefeated should fire only on the second.
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut i1 = test_investigator(1);
+        i1.max_health = 1;
+        i1.actions_remaining = 3;
+        let i2 = test_investigator(2);
+        // i2 stays at default 8/8.
+        let mut e = test_enemy(500, "Lethal Ghoul");
+        e.engaged_with = Some(inv1);
+        e.attack_damage = 1;
+        let a = crate::state::LocationId(10);
+        let b = crate::state::LocationId(11);
+        let mut loc_a = test_location(10, "A");
+        loc_a.connections = vec![b];
+        let state = TestGame::new()
+            .with_investigator(i1)
+            .with_investigator(i2)
+            .with_location(loc_a)
+            .with_location(test_location(11, "B"))
+            .with_chaos_bag(bag_only_zero())
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv1)
+            .with_enemy(e)
+            .build();
+        // First, place inv1 at A so the move scenario validates.
+        let mut state = state;
+        state.investigators.get_mut(&inv1).unwrap().current_location = Some(a);
+
+        // inv1 moves → AoO defeats them. inv2 is still Active.
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv1,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::InvestigatorDefeated { investigator, .. } if *investigator == inv1
+        );
+        assert_no_event!(result.events, Event::AllInvestigatorsDefeated);
+        assert_eq!(result.state.investigators[&inv1].status, Status::Killed);
+        assert_eq!(result.state.investigators[&inv2].status, Status::Active);
+    }
+
+    #[test]
+    fn defeated_investigator_cannot_move() {
+        let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Killed;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn defeated_investigator_cannot_investigate() {
+        let (inv_id, _, mut state) = investigate_scenario(2, 2);
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn defeated_investigator_cannot_fight() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Killed;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn defeated_investigator_cannot_evade() {
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn defeated_investigator_cannot_perform_skill_test() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.status = Status::Killed;
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Willpower,
+                difficulty: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
     }
 }
