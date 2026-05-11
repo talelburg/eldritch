@@ -14,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::state::{
-    ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+    ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
 };
 
 /// One state-change record emitted by the engine.
@@ -223,6 +223,26 @@ pub enum Event {
         /// say "defeat this enemy").
         by: Option<InvestigatorId>,
     },
+    /// An investigator was defeated. The investigator's
+    /// [`Status`](crate::state::Status) has been flipped from
+    /// `Active` to `Killed` / `Insane` (or `Resigned` once the
+    /// Resign action lands). The investigator entry stays in
+    /// `state.investigators` so consumers can still identify them by
+    /// id; they just can't take actions or be targeted as "active."
+    InvestigatorDefeated {
+        /// The defeated investigator.
+        investigator: InvestigatorId,
+        /// What caused the defeat.
+        cause: DefeatCause,
+    },
+    /// Every investigator in `state.investigators` is now non-Active.
+    /// Fires immediately after the [`InvestigatorDefeated`] that
+    /// flipped the last active investigator. Scenario-resolution
+    /// flow (#74) consumes this when it lands; for now, downstream
+    /// listeners can use it as a "scenario lost" trigger.
+    ///
+    /// [`InvestigatorDefeated`]: Event::InvestigatorDefeated
+    AllInvestigatorsDefeated,
 }
 
 /// Why a skill test failed.

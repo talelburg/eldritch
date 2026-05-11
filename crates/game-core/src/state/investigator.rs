@@ -16,9 +16,18 @@ pub struct InvestigatorId(pub u32);
 ///
 /// # Invariants
 ///
-/// `damage <= max_health` and `horror <= max_sanity` are enforced by the
-/// apply loop, not by the type system. Constructing an `Investigator`
-/// with damage exceeding max-health is a bug, not a defeat.
+/// - `damage` may exceed `max_health` transiently — when that happens
+///   the apply loop's damage helpers flip `status` to [`Status::Killed`]
+///   and emit [`Event::InvestigatorDefeated`]. Symmetric for `horror`
+///   / `max_sanity` / [`Status::Insane`]. The numeric fields are
+///   `u8` so they don't wrap; the threshold check is what defines
+///   defeat.
+/// - Once `status != Status::Active`, the investigator is "out of
+///   play": damage / horror helpers no-op, the engine doesn't let
+///   them take actions, and card effects targeting investigators
+///   should filter by status.
+///
+/// [`Event::InvestigatorDefeated`]: crate::event::Event::InvestigatorDefeated
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Investigator {
@@ -34,11 +43,11 @@ pub struct Investigator {
     pub skills: Skills,
     /// Maximum health (physical hit points).
     pub max_health: u8,
-    /// Current physical damage suffered. Invariant: `<= max_health`.
+    /// Current physical damage suffered.
     pub damage: u8,
     /// Maximum sanity.
     pub max_sanity: u8,
-    /// Current horror suffered. Invariant: `<= max_sanity`.
+    /// Current horror suffered.
     pub horror: u8,
     /// Clues currently held by the investigator.
     pub clues: u8,
@@ -47,6 +56,45 @@ pub struct Investigator {
     /// Action points remaining this turn (refreshed at the start of each
     /// investigation phase).
     pub actions_remaining: u8,
+    /// Active / Killed / Insane / Resigned. See [`Status`].
+    pub status: Status,
+}
+
+/// Whether an investigator is still active in the scenario, and if not,
+/// how they left play.
+///
+/// Resigned is a placeholder slot until the Resign action lands; the
+/// engine doesn't currently produce that variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Status {
+    /// Investigator is in play and can take actions.
+    #[default]
+    Active,
+    /// Investigator was killed (`damage >= max_health`).
+    Killed,
+    /// Investigator was driven insane (`horror >= max_sanity`).
+    Insane,
+    /// Investigator chose to resign from the scenario. Not yet
+    /// produced by the engine; the Resign action is downstream.
+    Resigned,
+}
+
+/// Why an investigator was defeated. Carried on
+/// [`Event::InvestigatorDefeated`] so consumers (campaign log,
+/// after-defeat triggers) know the cause without re-reading state.
+///
+/// [`Event::InvestigatorDefeated`]: crate::event::Event::InvestigatorDefeated
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum DefeatCause {
+    /// Damage reached `max_health`.
+    Damage,
+    /// Horror reached `max_sanity`.
+    Horror,
+    /// Investigator resigned. Not yet produced; reserved for the
+    /// Resign action.
+    Resigned,
 }
 
 /// The four base skill values.

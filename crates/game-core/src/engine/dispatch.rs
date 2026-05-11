@@ -12,8 +12,8 @@ use crate::action::{EngineRecord, PlayerAction};
 use crate::dsl::{discover_clue, LocationTarget};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, Enemy, EnemyId, GameState, InvestigatorId, LocationId, Phase, SkillKind,
-    TokenResolution,
+    resolve_token, DefeatCause, Enemy, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    SkillKind, Status, TokenResolution,
 };
 
 use super::evaluator::{apply_effect, EvalContext};
@@ -260,14 +260,24 @@ pub(super) fn resolve_skill_test(
     skill: SkillKind,
     difficulty: i8,
 ) -> Result<SkillTestResolution, EngineOutcome> {
-    // Validate-first: investigator must exist; chaos bag must be
-    // non-empty so we can draw; difficulty must be non-negative (FFG
-    // difficulties are always ≥ 0).
+    // Validate-first: investigator must exist and be Active; chaos
+    // bag must be non-empty so we can draw; difficulty must be non-
+    // negative (FFG difficulties are always ≥ 0). Defeated
+    // investigators can't take skill tests — they're out of play.
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(EngineOutcome::Rejected {
             reason: format!("skill test: investigator {investigator:?} not in state").into(),
         });
     };
+    if inv.status != Status::Active {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "skill test: {investigator:?} is not Active (status {:?})",
+                inv.status,
+            )
+            .into(),
+        });
+    }
     if state.chaos_bag.tokens.is_empty() {
         return Err(EngineOutcome::Rejected {
             reason: "skill test requires a non-empty chaos bag".into(),
@@ -391,6 +401,15 @@ fn investigate(
              map; this is a state-corruption invariant violation"
         )
     });
+    if inv.status != Status::Active {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Investigate: {investigator:?} is not Active (status {:?})",
+                inv.status,
+            )
+            .into(),
+        };
+    }
     if inv.actions_remaining < 1 {
         return EngineOutcome::Rejected {
             reason: "Investigate requires at least 1 action point".into(),
@@ -422,6 +441,14 @@ fn investigate(
     // enemy attacks before the test resolves.
     spend_one_action(state, events, investigator);
     fire_attacks_of_opportunity(state, events, investigator);
+
+    // If AoO defeated the investigator, the action's primary effect
+    // (the skill test) is suppressed. The action point and AoO events
+    // already fired — they stay. The action declaration was legal;
+    // the investigator just can't complete it.
+    if state.investigators[&investigator].status != Status::Active {
+        return EngineOutcome::Done;
+    }
 
     match resolve_skill_test(
         state,
@@ -494,6 +521,15 @@ fn move_action(
              this is a state-corruption invariant violation"
         )
     });
+    if inv.status != Status::Active {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Move: {investigator:?} is not Active (status {:?})",
+                inv.status,
+            )
+            .into(),
+        };
+    }
     if inv.actions_remaining < 1 {
         return EngineOutcome::Rejected {
             reason: "Move requires at least 1 action point".into(),
@@ -539,6 +575,13 @@ fn move_action(
     // enemy. Per the Rules Reference, this happens BEFORE the move
     // resolves.
     fire_attacks_of_opportunity(state, events, investigator);
+
+    // If AoO defeated the investigator, the move is cancelled. The
+    // action point and AoO events stay; the investigator (and any
+    // engaged enemies) don't change location.
+    if state.investigators[&investigator].status != Status::Active {
+        return EngineOutcome::Done;
+    }
 
     // Engaged enemies move with the investigator. Capture the
     // engagement set before mutating any locations, then update each
@@ -613,6 +656,15 @@ fn validate_engaged_action<'a>(
              map; this is a state-corruption invariant violation"
         )
     });
+    if inv.status != Status::Active {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "{action_name}: {investigator:?} is not Active (status {:?})",
+                inv.status,
+            )
+            .into(),
+        });
+    }
     if inv.actions_remaining < 1 {
         return Err(EngineOutcome::Rejected {
             reason: format!("{action_name} requires at least 1 action point").into(),
@@ -787,6 +839,118 @@ fn damage_enemy(
     }
 }
 
+/// Apply `amount` damage to an investigator. If their accumulated
+/// damage reaches `max_health`, flip status to [`Status::Killed`],
+/// emit [`Event::InvestigatorDefeated`], and (if no `Active`
+/// investigators remain) emit [`Event::AllInvestigatorsDefeated`].
+///
+/// No-ops when `amount == 0` or the investigator is already defeated
+/// (status `!= Active`): defeated investigators are out of play and
+/// don't accumulate more damage.
+///
+/// All damage-application paths should funnel through this helper so
+/// defeat detection stays consistent. The first caller is
+/// [`enemy_attack`]; future damage-dealing card effects plug in here
+/// too.
+///
+/// [`Status::Killed`]: crate::state::Status::Killed
+fn take_damage(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    amount: u8,
+) {
+    if amount == 0 {
+        return;
+    }
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "take_damage: investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+            )
+        });
+    if inv.status != Status::Active {
+        return;
+    }
+    inv.damage = inv.damage.saturating_add(amount);
+    let max_health = inv.max_health;
+    let now_defeated = inv.damage >= max_health;
+    events.push(Event::DamageTaken {
+        investigator,
+        amount,
+    });
+    if now_defeated {
+        inv.status = Status::Killed;
+        events.push(Event::InvestigatorDefeated {
+            investigator,
+            cause: DefeatCause::Damage,
+        });
+        check_all_defeated(state, events);
+    }
+}
+
+/// Apply `amount` horror to an investigator. Symmetric to
+/// [`take_damage`] but against `horror` / `max_sanity`, defeating
+/// with [`Status::Insane`] and [`DefeatCause::Horror`].
+///
+/// [`Status::Insane`]: crate::state::Status::Insane
+fn take_horror(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    amount: u8,
+) {
+    if amount == 0 {
+        return;
+    }
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "take_horror: investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+            )
+        });
+    if inv.status != Status::Active {
+        return;
+    }
+    inv.horror = inv.horror.saturating_add(amount);
+    let max_sanity = inv.max_sanity;
+    let now_defeated = inv.horror >= max_sanity;
+    events.push(Event::HorrorTaken {
+        investigator,
+        amount,
+    });
+    if now_defeated {
+        inv.status = Status::Insane;
+        events.push(Event::InvestigatorDefeated {
+            investigator,
+            cause: DefeatCause::Horror,
+        });
+        check_all_defeated(state, events);
+    }
+}
+
+/// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`
+/// investigator remains. Idempotent on subsequent defeats: the event
+/// fires whenever the predicate becomes true; consumers that care
+/// about exactly-once semantics dedupe themselves. Currently callers
+/// only invoke this immediately after flipping a status to non-
+/// `Active`, so it fires exactly once per scenario in practice.
+fn check_all_defeated(state: &GameState, events: &mut Vec<Event>) {
+    let any_active = state
+        .investigators
+        .values()
+        .any(|inv| inv.status == Status::Active);
+    if !any_active && !state.investigators.is_empty() {
+        events.push(Event::AllInvestigatorsDefeated);
+    }
+}
+
 /// Apply an enemy's attack pattern (damage + horror) to an
 /// investigator. Used by attacks of opportunity today; will be reused
 /// by the enemy-phase handler (#71) when that lands.
@@ -797,10 +961,12 @@ fn damage_enemy(
 /// flag — callers that need exhaustion (i.e. the enemy phase) apply
 /// it separately.
 ///
-/// Investigator-defeat handling (damage > `max_health`, horror >
-/// `max_sanity`) is deferred to #80. For now, we `saturating_add` so
-/// we don't wrap, but allow the value to exceed the cap; the defeat
-/// flow installed by #80 will reconcile.
+/// Defeat handling flows through [`take_damage`] / [`take_horror`].
+/// If damage defeats first, horror is a no-op (already defeated);
+/// per rules damage and horror from an attack are simultaneous, so
+/// the practical loss of information is minor (the cause field on
+/// [`Event::InvestigatorDefeated`] still identifies the lethal
+/// stat).
 fn enemy_attack(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -816,38 +982,8 @@ fn enemy_attack(
     let damage = enemy.attack_damage;
     let horror = enemy.attack_horror;
 
-    if damage > 0 {
-        let inv = state
-            .investigators
-            .get_mut(&investigator)
-            .unwrap_or_else(|| {
-                unreachable!(
-                    "enemy_attack: investigator {investigator:?} is not in the investigators map; \
-                 this is a state-corruption invariant violation"
-                )
-            });
-        inv.damage = inv.damage.saturating_add(damage);
-        events.push(Event::DamageTaken {
-            investigator,
-            amount: damage,
-        });
-    }
-    if horror > 0 {
-        let inv = state
-            .investigators
-            .get_mut(&investigator)
-            .unwrap_or_else(|| {
-                unreachable!(
-                    "enemy_attack: investigator {investigator:?} is not in the investigators map; \
-                 this is a state-corruption invariant violation"
-                )
-            });
-        inv.horror = inv.horror.saturating_add(horror);
-        events.push(Event::HorrorTaken {
-            investigator,
-            amount: horror,
-        });
-    }
+    take_damage(state, events, investigator, damage);
+    take_horror(state, events, investigator, horror);
 }
 
 /// Fire attacks of opportunity from every ready enemy engaged with

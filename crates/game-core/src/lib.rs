@@ -32,6 +32,7 @@ pub use engine::{apply, ApplyResult, EngineOutcome, InputRequest, ResumeToken};
 pub use event::{Event, FailureReason};
 pub use rng::RngState;
 pub use state::{
-    resolve_token, ChaosBag, ChaosToken, Enemy, EnemyId, GameState, Investigator, InvestigatorId,
-    Location, LocationId, Phase, SkillKind, Skills, TokenModifiers, TokenResolution,
+    resolve_token, ChaosBag, ChaosToken, DefeatCause, Enemy, EnemyId, GameState, Investigator,
+    InvestigatorId, Location, LocationId, Phase, SkillKind, Skills, Status, TokenModifiers,
+    TokenResolution,
 };
