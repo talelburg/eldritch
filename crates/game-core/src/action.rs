@@ -116,6 +116,22 @@ pub enum PlayerAction {
         /// investigator.
         enemy: EnemyId,
     },
+    /// Draw a card from the player deck. Standard turn-action:
+    /// spends 1 action, draws 1 card.
+    ///
+    /// **Empty-deck reshuffle:** if the deck is empty and the
+    /// discard is non-empty, shuffle the discard into the deck (via
+    /// the shared RNG, emitting `DeckShuffled`), draw, then take
+    /// 1 horror.
+    ///
+    /// **Both empty:** no shuffle, no card drawn, but the 1 horror
+    /// still applies as the safer reading of "would-draw-from-empty-
+    /// deck."
+    Draw {
+        /// Investigator drawing. Must be the active investigator
+        /// during the Investigation phase, with status `Active`.
+        investigator: InvestigatorId,
+    },
     /// Investigate at the active investigator's current location:
     /// spend 1 action, make an intellect test against the location's
     /// shroud value, and on success discover 1 clue at the location.
