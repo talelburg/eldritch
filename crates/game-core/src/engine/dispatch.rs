@@ -52,6 +52,7 @@ pub fn apply_player_action(
             investigator,
             destination,
         } => move_action(state, events, *investigator, *destination),
+        PlayerAction::Draw { investigator } => draw(state, events, *investigator),
         PlayerAction::Fight {
             investigator,
             enemy,
@@ -143,9 +144,9 @@ pub(super) fn shuffle_player_deck(
 }
 
 /// Draw up to `count` cards from the named investigator's deck top
-/// into their hand. Stops early (without panic) if the deck runs out;
-/// no reshuffle in this PR — that lands with the Draw action (#84),
-/// which also handles the empty-both-take-1-horror rule.
+/// into their hand. Stops early (without panic) if the deck runs out
+/// — this helper is just the structural move; reshuffle / horror
+/// penalty logic for an empty deck lives in [`draw`].
 ///
 /// Emits a single [`Event::CardsDrawn`] with the actually-drawn
 /// count, even if that's zero. A zero-count draw is informative for
@@ -1142,4 +1143,114 @@ fn fire_attacks_of_opportunity(
     for enemy_id in attackers {
         enemy_attack(state, events, enemy_id, investigator);
     }
+}
+
+/// Reshuffle the discard pile back into the deck for the named
+/// investigator. Used by [`draw`] when the deck runs empty. Drains
+/// `discard` into `deck`, then calls [`shuffle_player_deck`] (which
+/// emits [`Event::DeckShuffled`] when ≥ 2 cards land in the deck).
+fn reshuffle_discard_into_deck(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) {
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "reshuffle_discard_into_deck: investigator {investigator:?} is not in the \
+             investigators map; this is a state-corruption invariant violation"
+            )
+        });
+    let cards: Vec<_> = inv.discard.drain(..).collect();
+    inv.deck.extend(cards);
+    shuffle_player_deck(state, events, investigator);
+}
+
+/// Handler for [`PlayerAction::Draw`].
+///
+/// Validate-first: Investigation phase, investigator is active and
+/// `Status::Active`, has at least 1 action remaining. Then spend the
+/// action and resolve the draw per the Rules Reference:
+///
+/// - **Non-empty deck**: draw 1 to hand.
+/// - **Empty deck, non-empty discard**: shuffle discard into deck,
+///   draw 1, then take 1 horror — the horror penalty fires when an
+///   investigator with an empty deck needs to draw.
+/// - **Both empty**: no shuffle (per the Rules Reference's "any
+///   ability that would shuffle a discard pile of zero cards back
+///   into a deck does not shuffle the deck"), no card drawn — but
+///   the 1 horror still applies. The rules don't explicitly address
+///   this corner case; we apply the horror as the safer reading
+///   ("would-draw-from-empty triggers the penalty"), and the case
+///   is rare enough in practice (only high-cycle decks burn through
+///   both zones) that the difference is mostly theoretical.
+fn draw(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    if state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Draw is only valid during the Investigation phase (was {:?})",
+                state.phase
+            )
+            .into(),
+        };
+    }
+    if state.active_investigator != Some(investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Draw: {investigator:?} is not the active investigator ({:?})",
+                state.active_investigator,
+            )
+            .into(),
+        };
+    }
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Draw: active_investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv.status != Status::Active {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Draw: {investigator:?} is not Active (status {:?})",
+                inv.status,
+            )
+            .into(),
+        };
+    }
+    if inv.actions_remaining < 1 {
+        return EngineOutcome::Rejected {
+            reason: "Draw requires at least 1 action point".into(),
+        };
+    }
+
+    // Mutate.
+    spend_one_action(state, events, investigator);
+
+    let inv = state.investigators.get(&investigator).expect("checked");
+    let deck_empty = inv.deck.is_empty();
+    let discard_empty = inv.discard.is_empty();
+    if deck_empty {
+        if !discard_empty {
+            reshuffle_discard_into_deck(state, events, investigator);
+        }
+        // After the (possibly no-op) reshuffle, attempt the draw.
+        // draw_cards handles a still-empty deck by emitting
+        // CardsDrawn { count: 0 } without moving cards.
+        draw_cards(state, events, investigator, 1);
+        // Horror penalty fires on any "would-draw-from-empty-deck"
+        // (the reshuffle did happen if discard was non-empty; if it
+        // was also empty, the rules don't strictly require horror
+        // but we apply it as the safer reading).
+        take_horror(state, events, investigator, 1);
+    } else {
+        draw_cards(state, events, investigator, 1);
+    }
+    EngineOutcome::Done
 }
