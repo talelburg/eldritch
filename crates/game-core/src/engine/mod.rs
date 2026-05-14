@@ -2382,4 +2382,32 @@ mod tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
+
+    #[test]
+    fn draw_with_low_sanity_investigator_defeated_by_reshuffle_horror() {
+        // Interaction: 1-sanity investigator + empty deck + empty
+        // discard → the 1-horror penalty defeats the investigator
+        // via take_horror's defeat path (#80). Verifies the Draw
+        // flow correctly composes with the defeat helpers.
+        let (id, mut state) = draw_scenario();
+        let inv = state.investigators.get_mut(&id).unwrap();
+        inv.max_sanity = 1;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Draw { investigator: id }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::HorrorTaken { investigator, amount: 1 } if *investigator == id
+        );
+        assert_event!(
+            result.events,
+            Event::InvestigatorDefeated {
+                investigator,
+                cause: DefeatCause::Horror,
+            } if *investigator == id
+        );
+        assert_eq!(result.state.investigators[&id].status, Status::Insane);
+    }
 }
