@@ -39,7 +39,27 @@ pub fn apply_player_action(
     events: &mut Vec<Event>,
     action: &PlayerAction,
 ) -> EngineOutcome {
-    match action {
+    // While the mulligan window is open, only Mulligan (and the
+    // already-rejected re-StartScenario) is valid. Per the Rules
+    // Reference, "after all players have completed their mulligans,
+    // the game begins" — the engine enforces that by gating other
+    // actions until every investigator has signaled their mulligan
+    // choice.
+    if state.mulligan_window
+        && !matches!(
+            action,
+            PlayerAction::Mulligan { .. } | PlayerAction::StartScenario
+        )
+    {
+        return EngineOutcome::Rejected {
+            reason: "mulligan window is still open; all investigators must submit \
+                     PlayerAction::Mulligan (with an empty indices_to_redraw to \
+                     keep their hand) before any other action"
+                .into(),
+        };
+    }
+
+    let outcome = match action {
         PlayerAction::StartScenario => start_scenario(state, events),
         PlayerAction::EndTurn => end_turn(state, events),
         PlayerAction::PerformSkillTest {
@@ -53,6 +73,10 @@ pub fn apply_player_action(
             destination,
         } => move_action(state, events, *investigator, *destination),
         PlayerAction::Draw { investigator } => draw(state, events, *investigator),
+        PlayerAction::Mulligan {
+            investigator,
+            indices_to_redraw,
+        } => mulligan(state, events, *investigator, indices_to_redraw),
         PlayerAction::Fight {
             investigator,
             enemy,
@@ -66,7 +90,21 @@ pub fn apply_player_action(
                      window; no AwaitingInput sites exist yet."
                 .into(),
         },
+    };
+
+    // After a successful Mulligan, check whether every investigator
+    // has now mulliganed. If so, the setup window closes and normal
+    // play begins. Assumes `mulligan()` only ever returns `Done` or
+    // `Rejected` (never `AwaitingInput`) — if it ever grows an
+    // input-prompt path, this gate must be revisited so the window
+    // doesn't silently stay open across a partial mulligan.
+    if matches!(outcome, EngineOutcome::Done)
+        && matches!(action, PlayerAction::Mulligan { .. })
+        && state.investigators.values().all(|inv| inv.mulligan_used)
+    {
+        state.mulligan_window = false;
     }
+    outcome
 }
 
 /// Apply an [`EngineRecord`] to the state, pushing events.
@@ -201,13 +239,19 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
     });
 
     // For each investigator (sorted by id for determinism), shuffle
-    // their deck and deal an initial hand of up to 5. Cards-in-hand
-    // mechanics (Draw action, Mulligan, PlayCard) land in #84 / #85.
+    // their deck and deal an initial hand of up to 5.
     let inv_ids: Vec<InvestigatorId> = state.investigators.keys().copied().collect();
     for inv_id in inv_ids {
         shuffle_player_deck(state, events, inv_id);
         draw_cards(state, events, inv_id, INITIAL_HAND_SIZE);
     }
+
+    // Open the mulligan window. Each investigator may now submit a
+    // single `PlayerAction::Mulligan` to redraw a subset of their
+    // starting hand. The window closes once every investigator has
+    // `mulligan_used == true` (see `apply_player_action`); other
+    // player actions are rejected until then.
+    state.mulligan_window = true;
 
     // Phase 1: Mythos / Enemy / Upkeep have no content yet, so we
     // tick straight through them. Once the engine grows real Mythos
@@ -1252,5 +1296,94 @@ fn draw(
     } else {
         draw_cards(state, events, investigator, 1);
     }
+    EngineOutcome::Done
+}
+
+/// Handler for [`PlayerAction::Mulligan`].
+///
+/// Per the Rules Reference, the redrawn cards shuffle directly back
+/// into the deck (not via the discard pile). Validates the mulligan
+/// window is open, the investigator is Active and hasn't already
+/// mulliganed, and the redraw indices are in bounds and unique.
+///
+/// On success: move named hand cards to the deck, shuffle, draw the
+/// same count back, set `mulligan_used = true`, emit
+/// `MulliganPerformed`. An empty `indices_to_redraw` is a legal
+/// "keep my hand" mulligan that consumes the one-shot without
+/// touching the deck.
+fn mulligan(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    indices_to_redraw: &[u8],
+) -> EngineOutcome {
+    if !state.mulligan_window {
+        return EngineOutcome::Rejected {
+            reason: "Mulligan: setup window has closed (every investigator has already \
+                     mulliganed and normal play has begun)"
+                .into(),
+        };
+    }
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return EngineOutcome::Rejected {
+            reason: format!("Mulligan: investigator {investigator:?} is not in state").into(),
+        };
+    };
+    if inv.status != Status::Active {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Mulligan: {investigator:?} is not Active (status {:?})",
+                inv.status,
+            )
+            .into(),
+        };
+    }
+    if inv.mulligan_used {
+        return EngineOutcome::Rejected {
+            reason: format!("Mulligan: {investigator:?} has already used their mulligan").into(),
+        };
+    }
+    // Validate indices: each must be in bounds and unique.
+    let hand_len = inv.hand.len();
+    for &idx in indices_to_redraw {
+        if usize::from(idx) >= hand_len {
+            return EngineOutcome::Rejected {
+                reason: format!("Mulligan: hand_index {idx} out of bounds (hand size {hand_len})")
+                    .into(),
+            };
+        }
+    }
+    let mut sorted: Vec<usize> = indices_to_redraw.iter().map(|&i| usize::from(i)).collect();
+    sorted.sort_unstable();
+    if sorted.windows(2).any(|w| w[0] == w[1]) {
+        return EngineOutcome::Rejected {
+            reason: format!("Mulligan: duplicate index in {indices_to_redraw:?}").into(),
+        };
+    }
+
+    // Mutate.
+    let redrawn_count = u8::try_from(indices_to_redraw.len())
+        .expect("indices_to_redraw.len() <= hand.len() <= u8::MAX in practice");
+    let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
+    // Walk indices high-to-low so smaller positions remain valid as
+    // we remove. Move named cards directly into the deck — they
+    // shuffle back in per the rules, not through the discard pile.
+    for &i in sorted.iter().rev() {
+        let card = inv_mut.hand.remove(i);
+        inv_mut.deck.push(card);
+    }
+    inv_mut.mulligan_used = true;
+    // If anything actually moved, shuffle the deck (which now contains
+    // the redrawn cards mixed with the rest) and draw replacements.
+    // For an empty "keep my hand" mulligan, skip both — there's
+    // nothing to put back, so no shuffle and no draw.
+    if redrawn_count > 0 {
+        shuffle_player_deck(state, events, investigator);
+        draw_cards(state, events, investigator, redrawn_count);
+    }
+    events.push(Event::MulliganPerformed {
+        investigator,
+        redrawn_count,
+    });
     EngineOutcome::Done
 }

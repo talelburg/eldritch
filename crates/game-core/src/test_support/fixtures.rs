@@ -53,6 +53,7 @@ pub fn test_investigator(id: u32) -> Investigator {
         hand: Vec::new(),
         discard: Vec::new(),
         cards_in_play: Vec::new(),
+        mulligan_used: false,
     }
 }
 

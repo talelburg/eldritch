@@ -77,6 +77,11 @@ pub struct Investigator {
     /// demands it. The DSL evaluator's existing `Trigger::Constant`
     /// query for in-play modifiers iterates these codes.
     pub cards_in_play: Vec<CardCode>,
+    /// Whether this investigator has used their one-shot mulligan
+    /// during scenario setup. Set true after a successful Mulligan
+    /// action; remains true for the rest of the scenario so a second
+    /// mulligan rejects.
+    pub mulligan_used: bool,
 }
 
 /// Whether an investigator is still active in the scenario, and if not,
