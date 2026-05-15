@@ -36,9 +36,10 @@
 //! change and no events pushed. The outer apply loop's belt-and-
 //! suspenders `events.clear()` on rejection backs this up.
 
-use crate::dsl::{Effect, InvestigatorTarget, LocationTarget};
+use crate::card_registry::CardRegistry;
+use crate::dsl::{Effect, InvestigatorTarget, LocationTarget, ModifierScope, Stat, Trigger};
 use crate::event::Event;
-use crate::state::GameState;
+use crate::state::{GameState, InvestigatorId, SkillKind};
 
 use super::outcome::EngineOutcome;
 
@@ -316,6 +317,88 @@ fn resolve_location_target(
             Err("LocationTarget::ChosenByController requires AwaitingInput plumbing (PR-M)")
         }
     }
+}
+
+// ---- constant-modifier query ----------------------------------
+
+/// Sum the constant skill-modifier contributions from every card in
+/// `controller`'s `cards_in_play`.
+///
+/// Walks each in-play card code, looks up its abilities via the
+/// supplied [`CardRegistry`], and sums every
+/// [`Effect::Modify`] under a [`Trigger::Constant`] ability where the
+/// scope is [`ModifierScope::WhileInPlay`] and the stat matches the
+/// queried `skill`. This is the "Holy Rosary contributes +1 willpower
+/// while in play" query the skill-test handler consumes.
+///
+/// # Why only the controller's cards
+///
+/// Constant modifiers on player cards are scoped to their controller
+/// ("you get +1 willpower"). Solo coincides with "every investigator"
+/// but multi-investigator does not — a controller's Holy Rosary must
+/// not give every other investigator +1 willpower. Cards that DO
+/// modify all investigators ("each investigator at your location gets
+/// +1 …") need a new `ModifierScope` variant; out of scope here.
+///
+/// # What this deliberately does NOT cover
+///
+/// - **Per-skill-test-kind scoping** ("while investigating" — #45):
+///   only the bare stat match is checked; richer scope predicates
+///   need a different `ModifierScope` variant.
+/// - **Conditional constants** (`Effect::If` under a `Trigger::Constant`):
+///   not yet wired; this helper ignores them.
+/// - **Commit-time bonuses** (`ModifierScope::ThisSkillTest`): not in
+///   scope for constants; the skill-test commit window (#63) handles
+///   those.
+/// - **Unimplemented cards**: cards in `cards_in_play` whose code
+///   isn't in the registry's `abilities_for` return None; we skip
+///   them silently. In practice the deck-import gate (Phase 9) keeps
+///   unimplemented codes out of play, so silent-skip is the safest
+///   v1 behavior.
+#[must_use]
+pub fn constant_skill_modifier(
+    state: &GameState,
+    registry: &CardRegistry,
+    controller: InvestigatorId,
+    skill: SkillKind,
+) -> i8 {
+    let Some(inv) = state.investigators.get(&controller) else {
+        return 0;
+    };
+    let mut total: i8 = 0;
+    for code in &inv.cards_in_play {
+        let Some(abilities) = (registry.abilities_for)(code) else {
+            continue;
+        };
+        for ability in &abilities {
+            if ability.trigger != Trigger::Constant {
+                continue;
+            }
+            let Effect::Modify { stat, delta, scope } = &ability.effect else {
+                continue;
+            };
+            if *scope != ModifierScope::WhileInPlay {
+                continue;
+            }
+            if stat_matches_skill(*stat, skill) {
+                total = total.saturating_add(*delta);
+            }
+        }
+    }
+    total
+}
+
+/// Whether a DSL [`Stat`] refers to the same axis as a state-side
+/// [`SkillKind`]. Non-skill stats ([`Stat::MaxHealth`] / [`Stat::MaxSanity`])
+/// never match.
+fn stat_matches_skill(stat: Stat, skill: SkillKind) -> bool {
+    matches!(
+        (stat, skill),
+        (Stat::Willpower, SkillKind::Willpower)
+            | (Stat::Intellect, SkillKind::Intellect)
+            | (Stat::Combat, SkillKind::Combat)
+            | (Stat::Agility, SkillKind::Agility)
+    )
 }
 
 #[cfg(test)]
@@ -625,5 +708,174 @@ mod tests {
             }
             _ => panic!("expected Rejected"),
         }
+    }
+
+    // ---- constant-modifier query tests --------------------------
+
+    use super::constant_skill_modifier;
+    use crate::card_registry::CardRegistry;
+    use crate::dsl::{constant, Ability, Trigger};
+    use crate::state::{CardCode, SkillKind};
+
+    /// Mock registry that maps a small hardcoded set of codes to
+    /// abilities. Keeps the constant-modifier query tests isolated
+    /// from the global `OnceLock` and from the cards crate.
+    fn mock_registry(_: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+        None
+    }
+
+    fn fake_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+        match code.as_str() {
+            "willpower-plus-1" => Some(vec![constant(modify(
+                Stat::Willpower,
+                1,
+                ModifierScope::WhileInPlay,
+            ))]),
+            "intellect-plus-2" => Some(vec![constant(modify(
+                Stat::Intellect,
+                2,
+                ModifierScope::WhileInPlay,
+            ))]),
+            "willpower-plus-1-this-test-only" => Some(vec![constant(modify(
+                Stat::Willpower,
+                1,
+                ModifierScope::ThisSkillTest,
+            ))]),
+            "willpower-minus-1" => Some(vec![constant(modify(
+                Stat::Willpower,
+                -1,
+                ModifierScope::WhileInPlay,
+            ))]),
+            "non-constant-willpower" => Some(vec![Ability {
+                trigger: Trigger::OnPlay,
+                effect: modify(Stat::Willpower, 5, ModifierScope::WhileInPlay),
+            }]),
+            "max-health-plus-1" => Some(vec![constant(modify(
+                Stat::MaxHealth,
+                1,
+                ModifierScope::WhileInPlay,
+            ))]),
+            _ => None,
+        }
+    }
+
+    fn fake_registry() -> CardRegistry {
+        CardRegistry {
+            metadata_for: mock_registry,
+            abilities_for: fake_abilities_for,
+        }
+    }
+
+    fn state_with_cards_in_play(codes: &[&str]) -> (crate::state::GameState, InvestigatorId) {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.cards_in_play = codes.iter().map(|c| CardCode::new(*c)).collect();
+        let state = TestGame::new().with_investigator(inv).build();
+        (state, id)
+    }
+
+    #[test]
+    fn constant_modifier_is_zero_with_empty_cards_in_play() {
+        let (state, id) = state_with_cards_in_play(&[]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            0
+        );
+    }
+
+    #[test]
+    fn constant_modifier_sums_matching_skill_contributions() {
+        let (state, id) = state_with_cards_in_play(&["willpower-plus-1", "willpower-minus-1"]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            0
+        );
+
+        let (state, id) =
+            state_with_cards_in_play(&["willpower-plus-1", "willpower-plus-1", "willpower-plus-1"]);
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            3
+        );
+    }
+
+    #[test]
+    fn constant_modifier_ignores_non_matching_skill() {
+        let (state, id) = state_with_cards_in_play(&["intellect-plus-2"]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            0
+        );
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Intellect),
+            2
+        );
+    }
+
+    #[test]
+    fn constant_modifier_ignores_non_while_in_play_scope() {
+        // ThisSkillTest scope shouldn't fire from constant in-play
+        // query — that scope belongs to commit-time bonuses.
+        let (state, id) = state_with_cards_in_play(&["willpower-plus-1-this-test-only"]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            0
+        );
+    }
+
+    #[test]
+    fn constant_modifier_ignores_non_constant_trigger() {
+        // OnPlay-triggered Modify isn't a constant contribution; it
+        // resolved once when the card was played.
+        let (state, id) = state_with_cards_in_play(&["non-constant-willpower"]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            0
+        );
+    }
+
+    #[test]
+    fn constant_modifier_ignores_non_skill_stats() {
+        // MaxHealth / MaxSanity aren't skills; they should never
+        // contribute to a skill-test total regardless of how the
+        // helper is queried.
+        let (state, id) = state_with_cards_in_play(&["max-health-plus-1"]);
+        let reg = fake_registry();
+        for skill in [
+            SkillKind::Willpower,
+            SkillKind::Intellect,
+            SkillKind::Combat,
+            SkillKind::Agility,
+        ] {
+            assert_eq!(constant_skill_modifier(&state, &reg, id, skill), 0);
+        }
+    }
+
+    #[test]
+    fn constant_modifier_skips_unknown_codes() {
+        // Cards in play whose code the registry doesn't know are
+        // silently skipped — the deck-import gate (Phase 9) keeps
+        // unimplemented codes out of play, so silent-skip is safe.
+        let (state, id) = state_with_cards_in_play(&["willpower-plus-1", "unknown-card"]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            1
+        );
+    }
+
+    #[test]
+    fn constant_modifier_zero_for_unknown_controller() {
+        let state = TestGame::new().build();
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, InvestigatorId(99), SkillKind::Willpower),
+            0
+        );
     }
 }

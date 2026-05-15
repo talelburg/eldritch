@@ -18,7 +18,7 @@ use crate::state::{
     Phase, SkillKind, Status, TokenResolution, Zone,
 };
 
-use super::evaluator::{apply_effect, EvalContext};
+use super::evaluator::{apply_effect, constant_skill_modifier, EvalContext};
 use super::outcome::EngineOutcome;
 
 /// Action points granted to an investigator at the start of their
@@ -448,7 +448,16 @@ pub(super) fn resolve_skill_test(
             reason: format!("skill test: difficulty {difficulty} must be >= 0").into(),
         });
     }
-    let skill_value = inv.skills.value(skill);
+    let base_skill = inv.skills.value(skill);
+    // Drop the `inv` borrow before re-borrowing state for the
+    // constant-modifier query (it walks state.investigators[*].cards_in_play).
+    // The modifier contribution is 0 when no card registry is installed —
+    // most engine unit tests don't install one, and a skill test with no
+    // card effects in play is the correct fallback.
+    let modifier = card_registry::current().map_or(0, |reg| {
+        constant_skill_modifier(state, reg, investigator, skill)
+    });
+    let skill_value = base_skill.saturating_add(modifier);
 
     // Mutate-second: advance RNG, derive token, emit events.
     events.push(Event::SkillTestStarted {
