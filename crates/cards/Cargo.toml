@@ -14,7 +14,3 @@ workspace = true
 game-core = { path = "../game-core" }
 serde = { version = "1", features = ["derive"] }
 
-[dev-dependencies]
-# Enable game-core's TestGame builder + fixtures so integration tests
-# in tests/ can build scenario states for real-card play tests.
-game-core = { path = "../game-core", features = ["test-support"] }

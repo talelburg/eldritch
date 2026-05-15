@@ -86,7 +86,7 @@ Three layers, in this order of importance:
 2. **Engine unit tests** in `crates/game-core/src/engine/mod.rs` and per-module `#[cfg(test)]` blocks. Use the `TestGame` builder (`game-core/src/test_support/`) — fluent `.with_phase(...).with_investigator(...).with_active_investigator(...).build()` shape with `test_investigator(id)` / `test_location(id, name)` / `test_enemy(id, name)` fixtures. **Use the event-assertion macros**: `assert_event!`, `assert_no_event!`, `assert_event_count!`, `assert_event_sequence!` — order-insensitive by default; the `_sequence` variant for subsequence-in-order checks. Use `assert_eq!` on the events slice only when you need exact contiguous order.
 3. **Integration tests in `crates/cards/tests/`**. Each file is a separate cargo binary, gets its own process, so it can `install(cards::REGISTRY)` without colliding with other test runs. This is the right home for any test that needs real card metadata + abilities — `game-core` itself can't reach the corpus by crate-dependency direction. See `crates/cards/tests/play_card.rs` for the pattern.
 
-`game-core` exposes `test_support` behind the `test-support` feature flag; the `cards` Cargo.toml enables it in `[dev-dependencies]`.
+`game-core::test_support` is unconditionally `pub` — integration tests in `tests/*.rs` and downstream crates (e.g. `cards`) use it without any feature flag.
 
 ### Card-data pipeline
 

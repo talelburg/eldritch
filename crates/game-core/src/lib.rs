@@ -26,7 +26,6 @@ pub mod event;
 pub mod rng;
 pub mod state;
 
-#[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
 pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
