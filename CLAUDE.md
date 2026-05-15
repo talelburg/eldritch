@@ -64,6 +64,8 @@ A future `card-dsl` crate split is tracked in #93; the registry survives that re
 
 The apply loop has a belt-and-suspenders `events.clear()` on `Rejected` — but handlers should never push then bail. Read `move_action`, `investigate`, or `play_card` for the canonical shape (long if-chains of validations, then a single mutation block).
 
+Note this is enforced **by convention, not yet structurally** — the `apply()` doc tracks a TODO to refactor to a structural two-phase shape. `play_card` itself has a documented caveat: it emits `Event::CardPlayed` and runs on-play effects *before* removing the card from hand, so if a future on-play effect rejects mid-resolution it leaves partial state. Safe for the Phase-3 on-play effects in scope (`DiscoverClue`, `GainResources`) because they can't reject after the standard prefix passes; broader hardening deferred.
+
 `EngineOutcome` is `Done | AwaitingInput { ... } | Rejected { reason }`. `AwaitingInput` round-trips via `PlayerAction::ResolveInput`; the ChoiceResolver plumbing for this lands in #19.
 
 ### Hybrid card-effect DSL
@@ -72,7 +74,9 @@ The apply loop has a belt-and-suspenders `events.clear()` on `Rejected` — but 
 
 Cards are declared in **Rust source files** (typed, compiler-checked), not JSON. Each card has a module in `crates/cards/src/impls/<name>.rs` exposing a `CODE: &str` and an `abilities() -> Vec<Ability>` function. The DSL handles common patterns; cards needing primitives the DSL doesn't yet support get a Rust trait impl until the DSL grows the relevant verbs. **Do not add DSL primitives speculatively** — wait until two or more hand-written cards want the same pattern.
 
-A card is **playable** iff it has an `abilities()` implementation (`cards::is_playable(code)`). Cards in the corpus without one appear in deckbuilding tools but are refused by the deck-import gate (#73-era). When asked to play an unimplemented card from hand, `PlayCard` rejects loudly — never silently no-op.
+A card is **playable** iff it has an `abilities()` implementation (`cards::is_playable(code)`). Cards in the corpus without one appear in deckbuilding tools but are refused by the deck-import gate (Phase 9). When asked to play an unimplemented card from hand, `PlayCard` rejects loudly — never silently no-op.
+
+When a card *is* played: assets land in `cards_in_play` and stay there (their `Trigger::Constant` abilities contribute via the registry while in play); events resolve their `Trigger::OnPlay` effects then move to `discard`, emitting `Event::CardDiscarded { from: Zone::Hand, … }`. Every other `CardType` rejects.
 
 ### Test layering
 
@@ -82,7 +86,7 @@ Three layers, in this order of importance:
 2. **Engine unit tests** in `crates/game-core/src/engine/mod.rs` and per-module `#[cfg(test)]` blocks. Use the `TestGame` builder (`game-core/src/test_support/`) — fluent `.with_phase(...).with_investigator(...).with_active_investigator(...).build()` shape with `test_investigator(id)` / `test_location(id, name)` / `test_enemy(id, name)` fixtures. **Use the event-assertion macros**: `assert_event!`, `assert_no_event!`, `assert_event_count!`, `assert_event_sequence!` — order-insensitive by default; the `_sequence` variant for subsequence-in-order checks. Use `assert_eq!` on the events slice only when you need exact contiguous order.
 3. **Integration tests in `crates/cards/tests/`**. Each file is a separate cargo binary, gets its own process, so it can `install(cards::REGISTRY)` without colliding with other test runs. This is the right home for any test that needs real card metadata + abilities — `game-core` itself can't reach the corpus by crate-dependency direction. See `crates/cards/tests/play_card.rs` for the pattern.
 
-`game-core` exposes `test_support` behind a feature flag; the `cards` Cargo.toml enables it in `[dev-dependencies]`.
+`game-core` exposes `test_support` behind the `test-support` feature flag; the `cards` Cargo.toml enables it in `[dev-dependencies]`.
 
 ### Card-data pipeline
 
