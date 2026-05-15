@@ -1,17 +1,18 @@
 //! Event assertion macros.
 //!
-//! The order-insensitive macros ([`assert_event!`], [`assert_no_event!`],
-//! [`assert_event_count!`]) take a slice or `Vec<Event>` as the first
-//! argument and a Rust pattern (with optional `if` guard) as the
-//! second. Most tests assert on what happened, not on the order
-//! events fired in; reach for these first.
+//! The order-insensitive macros — [`assert_event!`](crate::assert_event),
+//! [`assert_no_event!`](crate::assert_no_event), and
+//! [`assert_event_count!`](crate::assert_event_count) — take a slice
+//! or `Vec<Event>` as the first argument and a Rust pattern (with
+//! optional `if` guard) as the second. Most tests assert on what
+//! happened, not on the order events fired in; reach for these first.
 //!
 //! **When event order matters** between a few specific events with
 //! others interleaved (e.g. "`CardPlayed` precedes `CluePlaced`
 //! precedes `CardDiscarded`, with arbitrary events in between"), use
-//! [`assert_event_sequence!`]. When you need an exact sequence with no
-//! events allowed between or around, fall back to plain `assert_eq!`
-//! on the slice.
+//! [`assert_event_sequence!`](crate::assert_event_sequence). When you
+//! need an exact sequence with no events allowed between or around,
+//! fall back to plain `assert_eq!` on the slice.
 //!
 //! # Examples
 //!
