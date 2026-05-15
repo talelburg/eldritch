@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::card::CardCode;
+use super::card::{CardCode, CardInPlay};
 use super::location::LocationId;
 
 /// Stable identifier for an investigator within a scenario.
@@ -70,13 +70,14 @@ pub struct Investigator {
     pub discard: Vec<CardCode>,
     /// Cards currently in play under this investigator's control.
     ///
-    /// **Phase-1 minimal shape:** just card codes. Per-instance
-    /// asset state (exhausted, accumulated horror/damage on the asset,
-    /// remaining uses/charges) is tracked at **#87** and will replace
-    /// this with a richer `CardInPlay` type when the first asset card
-    /// demands it. The DSL evaluator's existing `Trigger::Constant`
-    /// query for in-play modifiers iterates these codes.
-    pub cards_in_play: Vec<CardCode>,
+    /// Each entry is a [`CardInPlay`] carrying the card code plus
+    /// per-instance state (exhaust, named-uses, accumulated horror /
+    /// damage on the asset itself). Instance ids are assigned by the
+    /// engine from
+    /// [`GameState::next_card_instance_id`](crate::state::GameState::next_card_instance_id)
+    /// at enter-play time so duplicate codes are still individually
+    /// addressable.
+    pub cards_in_play: Vec<CardInPlay>,
     /// Whether this investigator has used their one-shot mulligan
     /// during scenario setup. Set true after a successful Mulligan
     /// action; remains true for the rest of the scenario so a second

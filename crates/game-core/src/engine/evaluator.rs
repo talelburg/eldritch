@@ -368,8 +368,12 @@ pub fn constant_skill_modifier(
         return 0;
     };
     let mut total: i8 = 0;
-    for code in &inv.cards_in_play {
-        let Some(abilities) = (registry.abilities_for)(code) else {
+    for in_play in &inv.cards_in_play {
+        // Constant modifiers apply regardless of the source asset's
+        // ready/exhaust state — most rulebook constants are "while
+        // in play" full-stop, not "while ready." When a card with a
+        // ready-gated constant lands, gate here.
+        let Some(abilities) = (registry.abilities_for)(&in_play.code) else {
             continue;
         };
         for ability in &abilities {
@@ -411,7 +415,9 @@ mod tests {
         LocationTarget, ModifierScope, Stat, Trigger,
     };
     use crate::event::Event;
-    use crate::state::{CardCode, InvestigatorId, LocationId, SkillKind};
+    use crate::state::{
+        CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, SkillKind,
+    };
     use crate::test_support::{test_investigator, test_location, TestGame};
     use crate::{assert_event, assert_no_event};
 
@@ -767,7 +773,17 @@ mod tests {
     fn state_with_cards_in_play(codes: &[&str]) -> (crate::state::GameState, InvestigatorId) {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
-        inv.cards_in_play = codes.iter().map(|c| CardCode::new(*c)).collect();
+        inv.cards_in_play = codes
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                CardInPlay::enter_play(
+                    CardCode::new(*c),
+                    #[allow(clippy::cast_possible_truncation)]
+                    CardInstanceId(i as u32),
+                )
+            })
+            .collect();
         let state = TestGame::new().with_investigator(inv).build();
         (state, id)
     }

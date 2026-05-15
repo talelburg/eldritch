@@ -69,4 +69,11 @@ pub struct GameState {
     /// to redraw a subset of their starting hand; the engine rejects
     /// every non-Mulligan player action until the window closes.
     pub mulligan_window: bool,
+    /// Monotonic counter for assigning [`CardInstanceId`]s when cards
+    /// enter play. Starts at 0 and increments after each assignment;
+    /// guarantees uniqueness within a scenario and deterministic ids
+    /// across replays.
+    ///
+    /// [`CardInstanceId`]: super::card::CardInstanceId
+    pub next_card_instance_id: u32,
 }
