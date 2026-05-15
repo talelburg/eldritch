@@ -11,10 +11,12 @@
 //! variants return [`EngineOutcome::Rejected`] with a TODO message
 //! pointing at the issue or PR that fills them in:
 //!
-//! - [`Effect::Modify`] needs a "cards in play" state on
-//!   [`GameState`] to register passive modifiers against, plus a
-//!   query mechanism that the skill-test resolution flow consumes.
-//!   Both land later in Phase 3.
+//! - [`Effect::Modify`] is **queried**, not applied: the cards-in-play
+//!   state landed with #62 and the constant-modifier query (this
+//!   module's [`constant_skill_modifier`]) reads it during skill-test
+//!   resolution. The `Effect::Modify` arm of [`apply_effect`] still
+//!   rejects — `Modify` isn't directly *applied*; it's a passive
+//!   contribution surfaced by query.
 //! - [`Effect::If`] dispatches but its [`Condition`](crate::dsl::Condition)
 //!   evaluator is skill-test-aware
 //!   ([`SkillTest`](crate::dsl::Condition::SkillTest) reads the
@@ -403,16 +405,17 @@ fn stat_matches_skill(stat: Stat, skill: SkillKind) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        discover_clue, gain_resources, modify, seq, Effect, InvestigatorTarget, LocationTarget,
-        ModifierScope, Stat,
+        constant, discover_clue, gain_resources, modify, seq, Ability, Effect, InvestigatorTarget,
+        LocationTarget, ModifierScope, Stat, Trigger,
     };
     use crate::event::Event;
-    use crate::state::{InvestigatorId, LocationId};
+    use crate::state::{CardCode, InvestigatorId, LocationId, SkillKind};
     use crate::test_support::{test_investigator, test_location, TestGame};
     use crate::{assert_event, assert_no_event};
 
-    use super::{apply_effect, EngineOutcome, EvalContext};
+    use super::{apply_effect, constant_skill_modifier, EngineOutcome, EvalContext};
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))
@@ -711,11 +714,6 @@ mod tests {
     }
 
     // ---- constant-modifier query tests --------------------------
-
-    use super::constant_skill_modifier;
-    use crate::card_registry::CardRegistry;
-    use crate::dsl::{constant, Ability, Trigger};
-    use crate::state::{CardCode, SkillKind};
 
     /// Mock registry that maps a small hardcoded set of codes to
     /// abilities. Keeps the constant-modifier query tests isolated
