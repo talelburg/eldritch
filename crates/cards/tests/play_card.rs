@@ -94,9 +94,14 @@ fn play_holy_rosary_emits_card_played_and_lands_in_play() {
     let inv = &result.state.investigators[&id];
     assert!(inv.hand.is_empty(), "hand should be empty after play");
     assert_eq!(
-        inv.cards_in_play,
-        vec![CardCode::new(HOLY_ROSARY)],
-        "asset should land in cards_in_play",
+        inv.cards_in_play.len(),
+        1,
+        "asset should land in cards_in_play"
+    );
+    assert_eq!(inv.cards_in_play[0].code, CardCode::new(HOLY_ROSARY));
+    assert!(
+        !inv.cards_in_play[0].exhausted,
+        "asset enters play ready, not exhausted",
     );
     assert!(inv.discard.is_empty(), "asset should not land in discard");
 
@@ -107,6 +112,44 @@ fn play_holy_rosary_emits_card_played_and_lands_in_play() {
             if *investigator == id && code.as_str() == HOLY_ROSARY
     );
     assert_no_event!(result.events, Event::CardDiscarded { .. });
+}
+
+#[test]
+fn asset_enters_play_with_instance_id_from_state_counter() {
+    // The per-state counter assigns a fresh CardInstanceId to each
+    // asset entering play and advances after each assignment.
+    //
+    // TODO: a two-copies-simultaneously variant proves the uniqueness
+    // path more directly, but Holy Rosary takes the single Accessory
+    // slot so playing two at once is rules-invalid. Add that test
+    // when Magnifying Glass (#37) lands — it's a Hand-slot deck-limit-2
+    // asset, so two copies in play simultaneously IS rules-valid
+    // (one Hand slot each, both slots filled).
+    use game_core::state::CardInstanceId;
+
+    let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
+    assert_eq!(state.next_card_instance_id, 0, "counter starts at 0");
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        }),
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+
+    let in_play = &result.state.investigators[&id].cards_in_play;
+    assert_eq!(in_play.len(), 1);
+    assert_eq!(
+        in_play[0].instance_id,
+        CardInstanceId(0),
+        "first asset gets id 0",
+    );
+    assert_eq!(
+        result.state.next_card_instance_id, 1,
+        "counter advances after assigning",
+    );
 }
 
 #[test]

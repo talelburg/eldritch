@@ -14,8 +14,8 @@ use crate::card_registry;
 use crate::dsl::{discover_clue, LocationTarget, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, DefeatCause, Enemy, EnemyId, GameState, InvestigatorId, LocationId,
-    Phase, SkillKind, Status, TokenResolution, Zone,
+    resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId, GameState,
+    InvestigatorId, LocationId, Phase, SkillKind, Status, TokenResolution, Zone,
 };
 
 use super::evaluator::{apply_effect, constant_skill_modifier, EvalContext};
@@ -1554,13 +1554,24 @@ fn play_card(
             return outcome;
         }
     }
-    let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
-    let card = inv_mut.hand.remove(idx);
     match destination {
         PlayDestination::InPlay => {
-            inv_mut.cards_in_play.push(card);
+            // Mint a fresh instance id from the per-state counter
+            // before re-borrowing the investigator. `state.investigators`
+            // and `state.next_card_instance_id` are separate fields but
+            // `get_mut` borrows state as a whole, so the counter
+            // mutation must precede the inv_mut borrow.
+            let instance_id = CardInstanceId(state.next_card_instance_id);
+            state.next_card_instance_id = state.next_card_instance_id.saturating_add(1);
+            let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
+            let card = inv_mut.hand.remove(idx);
+            inv_mut
+                .cards_in_play
+                .push(CardInPlay::enter_play(card, instance_id));
         }
         PlayDestination::Discard => {
+            let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
+            let card = inv_mut.hand.remove(idx);
             inv_mut.discard.push(card.clone());
             events.push(Event::CardDiscarded {
                 investigator,
