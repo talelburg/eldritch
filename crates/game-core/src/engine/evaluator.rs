@@ -39,7 +39,9 @@
 //! suspenders `events.clear()` on rejection backs this up.
 
 use crate::card_registry::CardRegistry;
-use crate::dsl::{Effect, InvestigatorTarget, LocationTarget, ModifierScope, Stat, Trigger};
+use crate::dsl::{
+    Effect, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat, Trigger,
+};
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
 
@@ -324,14 +326,23 @@ fn resolve_location_target(
 // ---- constant-modifier query ----------------------------------
 
 /// Sum the constant skill-modifier contributions from every card in
-/// `controller`'s `cards_in_play`.
+/// `controller`'s `cards_in_play` that apply to a skill test of the
+/// given `skill` + `kind`.
 ///
 /// Walks each in-play card code, looks up its abilities via the
-/// supplied [`CardRegistry`], and sums every
-/// [`Effect::Modify`] under a [`Trigger::Constant`] ability where the
-/// scope is [`ModifierScope::WhileInPlay`] and the stat matches the
-/// queried `skill`. This is the "Holy Rosary contributes +1 willpower
-/// while in play" query the skill-test handler consumes.
+/// supplied [`CardRegistry`], and sums every [`Effect::Modify`] under
+/// a [`Trigger::Constant`] ability where the stat matches `skill` and
+/// the scope is either:
+///
+/// - [`ModifierScope::WhileInPlay`] — applies to any skill test (Holy
+///   Rosary's unqualified +1 willpower).
+/// - [`ModifierScope::WhileInPlayDuring(k)`](ModifierScope::WhileInPlayDuring)
+///   where `k == kind` — Magnifying Glass's +1 intellect *while
+///   investigating* contributes during `SkillTestKind::Investigate`
+///   but NOT during `SkillTestKind::Plain`.
+///
+/// Other scopes (`ThisSkillTest`, `ThisTurn`) are not constant
+/// contributions and are skipped here.
 ///
 /// # Why only the controller's cards
 ///
@@ -344,14 +355,15 @@ fn resolve_location_target(
 ///
 /// # What this deliberately does NOT cover
 ///
-/// - **Per-skill-test-kind scoping** ("while investigating" — #45):
-///   only the bare stat match is checked; richer scope predicates
-///   need a different `ModifierScope` variant.
 /// - **Conditional constants** (`Effect::If` under a `Trigger::Constant`):
 ///   not yet wired; this helper ignores them.
 /// - **Commit-time bonuses** (`ModifierScope::ThisSkillTest`): not in
 ///   scope for constants; the skill-test commit window (#63) handles
 ///   those.
+/// - **Ready/exhaust gating** on constant sources: most rulebook
+///   constants apply regardless of the source asset's ready/exhaust
+///   state. When a ready-gated constant card lands, filter on
+///   `in_play.exhausted` here.
 /// - **Unimplemented cards**: cards in `cards_in_play` whose code
 ///   isn't in the registry's `abilities_for` return None; we skip
 ///   them silently. In practice the deck-import gate (Phase 9) keeps
@@ -363,16 +375,13 @@ pub fn constant_skill_modifier(
     registry: &CardRegistry,
     controller: InvestigatorId,
     skill: SkillKind,
+    kind: SkillTestKind,
 ) -> i8 {
     let Some(inv) = state.investigators.get(&controller) else {
         return 0;
     };
     let mut total: i8 = 0;
     for in_play in &inv.cards_in_play {
-        // Constant modifiers apply regardless of the source asset's
-        // ready/exhaust state — most rulebook constants are "while
-        // in play" full-stop, not "while ready." When a card with a
-        // ready-gated constant lands, gate here.
         let Some(abilities) = (registry.abilities_for)(&in_play.code) else {
             continue;
         };
@@ -383,7 +392,7 @@ pub fn constant_skill_modifier(
             let Effect::Modify { stat, delta, scope } = &ability.effect else {
                 continue;
             };
-            if *scope != ModifierScope::WhileInPlay {
+            if !scope_applies(*scope, kind) {
                 continue;
             }
             if stat_matches_skill(*stat, skill) {
@@ -392,6 +401,21 @@ pub fn constant_skill_modifier(
         }
     }
     total
+}
+
+/// Whether a constant-trigger [`ModifierScope`] contributes to a
+/// skill test of the given [`SkillTestKind`].
+///
+/// [`WhileInPlay`](ModifierScope::WhileInPlay) is unqualified — it
+/// applies to every test. [`WhileInPlayDuring`](ModifierScope::WhileInPlayDuring)
+/// only fires when the in-flight test's kind matches the scope's
+/// kind. Non-constant scopes never apply through this query path.
+fn scope_applies(scope: ModifierScope, kind: SkillTestKind) -> bool {
+    match scope {
+        ModifierScope::WhileInPlay => true,
+        ModifierScope::WhileInPlayDuring(k) => k == kind,
+        ModifierScope::ThisSkillTest | ModifierScope::ThisTurn => false,
+    }
 }
 
 /// Whether a DSL [`Stat`] refers to the same axis as a state-side
@@ -412,7 +436,7 @@ mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
         constant, discover_clue, gain_resources, modify, seq, Ability, Effect, InvestigatorTarget,
-        LocationTarget, ModifierScope, Stat, Trigger,
+        LocationTarget, ModifierScope, SkillTestKind, Stat, Trigger,
     };
     use crate::event::Event;
     use crate::state::{
@@ -740,6 +764,11 @@ mod tests {
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
+            "intellect-plus-1-while-investigating" => Some(vec![constant(modify(
+                Stat::Intellect,
+                1,
+                ModifierScope::WhileInPlayDuring(SkillTestKind::Investigate),
+            ))]),
             "willpower-plus-1-this-test-only" => Some(vec![constant(modify(
                 Stat::Willpower,
                 1,
@@ -793,7 +822,7 @@ mod tests {
         let (state, id) = state_with_cards_in_play(&[]);
         let reg = fake_registry();
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             0
         );
     }
@@ -803,14 +832,14 @@ mod tests {
         let (state, id) = state_with_cards_in_play(&["willpower-plus-1", "willpower-minus-1"]);
         let reg = fake_registry();
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             0
         );
 
         let (state, id) =
             state_with_cards_in_play(&["willpower-plus-1", "willpower-plus-1", "willpower-plus-1"]);
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             3
         );
     }
@@ -820,11 +849,11 @@ mod tests {
         let (state, id) = state_with_cards_in_play(&["intellect-plus-2"]);
         let reg = fake_registry();
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             0
         );
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Intellect),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Intellect, SkillTestKind::Plain),
             2
         );
     }
@@ -836,7 +865,7 @@ mod tests {
         let (state, id) = state_with_cards_in_play(&["willpower-plus-1-this-test-only"]);
         let reg = fake_registry();
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             0
         );
     }
@@ -848,7 +877,7 @@ mod tests {
         let (state, id) = state_with_cards_in_play(&["non-constant-willpower"]);
         let reg = fake_registry();
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             0
         );
     }
@@ -866,7 +895,10 @@ mod tests {
             SkillKind::Combat,
             SkillKind::Agility,
         ] {
-            assert_eq!(constant_skill_modifier(&state, &reg, id, skill), 0);
+            assert_eq!(
+                constant_skill_modifier(&state, &reg, id, skill, SkillTestKind::Plain),
+                0,
+            );
         }
     }
 
@@ -878,7 +910,7 @@ mod tests {
         let (state, id) = state_with_cards_in_play(&["willpower-plus-1", "unknown-card"]);
         let reg = fake_registry();
         assert_eq!(
-            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower),
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             1
         );
     }
@@ -888,8 +920,82 @@ mod tests {
         let state = TestGame::new().build();
         let reg = fake_registry();
         assert_eq!(
-            constant_skill_modifier(&state, &reg, InvestigatorId(99), SkillKind::Willpower),
-            0
+            constant_skill_modifier(
+                &state,
+                &reg,
+                InvestigatorId(99),
+                SkillKind::Willpower,
+                SkillTestKind::Plain,
+            ),
+            0,
+        );
+    }
+
+    // ---- WhileInPlayDuring scope tests ---------------------------
+
+    #[test]
+    fn while_in_play_during_contributes_only_to_matching_kind() {
+        // A Magnifying-Glass-shaped card: "+1 intellect while
+        // investigating." Contributes during Investigate; does NOT
+        // contribute during Plain or Fight tests of intellect.
+        let (state, id) = state_with_cards_in_play(&["intellect-plus-1-while-investigating"]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(
+                &state,
+                &reg,
+                id,
+                SkillKind::Intellect,
+                SkillTestKind::Investigate,
+            ),
+            1,
+        );
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Intellect, SkillTestKind::Plain,),
+            0,
+        );
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Intellect, SkillTestKind::Fight,),
+            0,
+        );
+    }
+
+    #[test]
+    fn while_in_play_modifier_applies_to_every_kind() {
+        // Holy Rosary–shaped: unqualified `WhileInPlay`. Should
+        // contribute during every test kind.
+        let (state, id) = state_with_cards_in_play(&["willpower-plus-1"]);
+        let reg = fake_registry();
+        for kind in [
+            SkillTestKind::Investigate,
+            SkillTestKind::Fight,
+            SkillTestKind::Evade,
+            SkillTestKind::Plain,
+        ] {
+            assert_eq!(
+                constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, kind),
+                1,
+                "WhileInPlay should apply during {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn while_in_play_during_with_wrong_stat_still_does_not_contribute() {
+        // The intellect-while-investigating card must NOT contribute
+        // to a willpower test even during Investigate. Scope and
+        // stat are independent filters.
+        let (state, id) = state_with_cards_in_play(&["intellect-plus-1-while-investigating"]);
+        let reg = fake_registry();
+        assert_eq!(
+            constant_skill_modifier(
+                &state,
+                &reg,
+                id,
+                SkillKind::Willpower,
+                SkillTestKind::Investigate,
+            ),
+            0,
         );
     }
 }

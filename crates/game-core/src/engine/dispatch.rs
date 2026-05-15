@@ -11,7 +11,7 @@
 use crate::action::{EngineRecord, PlayerAction};
 use crate::card_data::CardType;
 use crate::card_registry;
-use crate::dsl::{discover_clue, LocationTarget, Trigger};
+use crate::dsl::{discover_clue, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId, GameState,
@@ -418,6 +418,7 @@ pub(super) fn resolve_skill_test(
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
     skill: SkillKind,
+    kind: SkillTestKind,
     difficulty: i8,
 ) -> Result<SkillTestResolution, EngineOutcome> {
     // Validate-first: investigator must exist and be Active; chaos
@@ -455,7 +456,7 @@ pub(super) fn resolve_skill_test(
     // most engine unit tests don't install one, and a skill test with no
     // card effects in play is the correct fallback.
     let modifier = card_registry::current().map_or(0, |reg| {
-        constant_skill_modifier(state, reg, investigator, skill)
+        constant_skill_modifier(state, reg, investigator, skill, kind)
     });
     let skill_value = base_skill.saturating_add(modifier);
 
@@ -517,7 +518,14 @@ fn perform_skill_test(
     skill: SkillKind,
     difficulty: i8,
 ) -> EngineOutcome {
-    match resolve_skill_test(state, events, investigator, skill, difficulty) {
+    match resolve_skill_test(
+        state,
+        events,
+        investigator,
+        skill,
+        SkillTestKind::Plain,
+        difficulty,
+    ) {
         Ok(_) => EngineOutcome::Done,
         Err(rejected) => rejected,
     }
@@ -630,6 +638,7 @@ fn investigate(
         events,
         investigator,
         SkillKind::Intellect,
+        SkillTestKind::Investigate,
         difficulty,
     ) {
         Ok(SkillTestResolution::Succeeded { .. }) => {
@@ -921,6 +930,7 @@ fn fight(
         events,
         investigator,
         SkillKind::Combat,
+        SkillTestKind::Fight,
         fight_difficulty,
     ) {
         Ok(SkillTestResolution::Succeeded { .. }) => {
@@ -963,6 +973,7 @@ fn evade(
         events,
         investigator,
         SkillKind::Agility,
+        SkillTestKind::Evade,
         evade_difficulty,
     ) {
         Ok(SkillTestResolution::Succeeded { .. }) => {

@@ -35,9 +35,6 @@
 //! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
 //!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). Phase-2 only
 //!   has [`Condition::SkillTest`] with success/failure granularity.
-//! - **Per-test scope-of-effect details** (Magnifying Glass's
-//!   "+1 intellect WHILE INVESTIGATING" rather than constant +1).
-//!   Needs a richer scope predicate than [`ModifierScope::WhileInPlay`].
 //!
 //! Cards needing any of these go to a Rust impl until the DSL grows
 //! the relevant primitive.
@@ -171,20 +168,57 @@ pub enum Stat {
 
 /// How long an [`Effect::Modify`] applies.
 ///
-/// Phase-2 minimal set. Mid-test buffs would need `ThisSkillTest`;
-/// turn-scoped ones use `ThisTurn`. The most common scope by far is
-/// `WhileInPlay` (constant modifiers from assets).
+/// Phase-3 set. Most cards land in `WhileInPlay` (Holy Rosary's
+/// unconditional +1 willpower) or `WhileInPlayDuring(...)` (Magnifying
+/// Glass's "+1 intellect *while investigating*" — the qualifier
+/// that gates most +stat assets in Core+Dunwich). Commit-time and
+/// turn-scoped buffs use `ThisSkillTest` / `ThisTurn`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ModifierScope {
     /// Active for as long as the source card is in play. Used by
-    /// constant abilities (Holy Rosary, Magnifying Glass).
+    /// unqualified constant abilities (Holy Rosary).
     WhileInPlay,
+    /// Like [`WhileInPlay`](Self::WhileInPlay) but the modifier only
+    /// contributes when the current skill test is of the given kind.
+    /// Magnifying Glass's "+1 intellect while investigating" is
+    /// `WhileInPlayDuring(SkillTestKind::Investigate)`.
+    WhileInPlayDuring(SkillTestKind),
     /// Active until the current skill test resolves. Used by
     /// commit-time bonuses and action abilities like Hyperawareness.
     ThisSkillTest,
     /// Active until the end of the current investigator turn.
     ThisTurn,
+}
+
+/// Which kind of skill test is running.
+///
+/// Cards routinely qualify their bonuses on the test's *kind*, not
+/// just the underlying stat — Magnifying Glass's "+1 intellect while
+/// investigating" applies to Investigate but **not** to a treachery
+/// that tests intellect. Engine-side, every test-initiating action
+/// (Investigate, Fight, Evade, the generic
+/// [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest))
+/// passes the matching kind to skill-test resolution.
+///
+/// Add a variant when a new test-initiating action lands (Parley /
+/// Engage will need their own; treacheries that *force* an investigate-
+/// flavored test could reuse `Investigate`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum SkillTestKind {
+    /// The Investigate action's intellect test against a location's
+    /// shroud.
+    Investigate,
+    /// The Fight action's combat test against an enemy.
+    Fight,
+    /// The Evade action's agility test against an enemy.
+    Evade,
+    /// Any other skill test: treachery effects, agenda effects, or
+    /// [`PlayerAction::PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest)
+    /// invoked directly. Cards qualifying their bonus with one of the
+    /// named-action variants will NOT contribute here.
+    Plain,
 }
 
 // ---- targets --------------------------------------------------
