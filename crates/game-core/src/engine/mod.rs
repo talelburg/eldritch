@@ -2861,4 +2861,115 @@ mod tests {
         assert_eq!(inv2_after.deck, original_inv2_deck);
         assert!(inv2_after.mulligan_used);
     }
+
+    // ---- PlayCard rejection tests --------------------------------
+    //
+    // These exercise the validations that fire *before* the registry
+    // lookup. Tests that need real-card metadata / abilities live in
+    // crates/cards/tests/play_card.rs — that crate can install the
+    // real REGISTRY in its own integration-test process without
+    // polluting game-core's OnceLock.
+
+    fn play_card_state(active: bool, hand: Vec<CardCode>) -> (GameState, InvestigatorId) {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.hand = hand;
+        let mut builder = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(inv);
+        if active {
+            builder = builder.with_active_investigator(id);
+        }
+        (builder.build(), id)
+    }
+
+    #[test]
+    fn play_card_outside_investigation_phase_is_rejected() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.hand = vec![CardCode::new("01059")];
+        let state = TestGame::new()
+            .with_phase(Phase::Mythos)
+            .with_investigator(inv)
+            .with_active_investigator(id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+        // Hand untouched.
+        assert_eq!(
+            result.state.investigators[&id].hand,
+            vec![CardCode::new("01059")]
+        );
+    }
+
+    #[test]
+    fn play_card_by_non_active_investigator_is_rejected() {
+        let (state, id) = play_card_state(false, vec![CardCode::new("01059")]);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn play_card_by_defeated_investigator_is_rejected() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.hand = vec![CardCode::new("01059")];
+        inv.status = Status::Killed;
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(inv)
+            .with_active_investigator(id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn play_card_with_out_of_bounds_hand_index_is_rejected() {
+        let (state, id) = play_card_state(true, vec![CardCode::new("01059")]);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PlayCard {
+                investigator: id,
+                hand_index: 5,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn play_card_with_empty_hand_is_rejected() {
+        let (state, id) = play_card_state(true, vec![]);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
 }

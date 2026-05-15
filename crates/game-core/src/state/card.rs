@@ -46,3 +46,21 @@ impl std::fmt::Display for CardCode {
         std::fmt::Display::fmt(&self.0, f)
     }
 }
+
+/// A card-bearing zone, used as the `from` field on movement events
+/// (e.g. [`Event::CardDiscarded`](crate::Event::CardDiscarded)).
+///
+/// Phase-3 minimal set. Discard is a destination but never a `from`
+/// in the current event set; encounter / weakness / out-of-game zones
+/// land when they're needed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Zone {
+    /// A player's hand.
+    Hand,
+    /// A player's deck (top or bottom — events that need the
+    /// distinction can record it separately).
+    Deck,
+    /// Cards currently in play under an investigator's control.
+    InPlay,
+}
