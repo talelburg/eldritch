@@ -32,6 +32,7 @@
 use game_core::dsl::Ability;
 
 pub mod holy_rosary;
+pub mod magnifying_glass;
 pub mod working_a_hunch;
 
 /// Look up a card's hand-implemented abilities by code. Returns
@@ -40,6 +41,7 @@ pub mod working_a_hunch;
 pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     match code {
         holy_rosary::CODE => Some(holy_rosary::abilities()),
+        magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
         _ => None,
     }
