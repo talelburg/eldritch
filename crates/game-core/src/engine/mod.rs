@@ -2972,4 +2972,113 @@ mod tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
+
+    // ---- ActivateAbility rejection tests --------------------------
+    //
+    // State-side rejection prefix only. The full activation flow
+    // (registry → ability dispatch → cost payment → effect) needs
+    // a registry, which lives in crates/game-core/tests/activate_ability.rs
+    // as a separate integration-test binary.
+
+    use crate::state::CardInstanceId;
+
+    fn activate_ability_state(active: bool) -> (GameState, InvestigatorId, CardInstanceId) {
+        let id = InvestigatorId(1);
+        let instance_id = CardInstanceId(7);
+        let mut inv = test_investigator(1);
+        inv.cards_in_play.push(crate::state::CardInPlay::enter_play(
+            CardCode::new("01059"),
+            instance_id,
+        ));
+        let mut builder = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(inv);
+        if active {
+            builder = builder.with_active_investigator(id);
+        }
+        (builder.build(), id, instance_id)
+    }
+
+    #[test]
+    fn activate_ability_outside_investigation_phase_is_rejected() {
+        let id = InvestigatorId(1);
+        let instance_id = CardInstanceId(0);
+        let mut inv = test_investigator(1);
+        inv.cards_in_play.push(crate::state::CardInPlay::enter_play(
+            CardCode::new("01059"),
+            instance_id,
+        ));
+        let state = TestGame::new()
+            .with_phase(Phase::Mythos)
+            .with_investigator(inv)
+            .with_active_investigator(id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ActivateAbility {
+                investigator: id,
+                instance_id,
+                ability_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn activate_ability_by_non_active_investigator_is_rejected() {
+        let (state, id, instance_id) = activate_ability_state(false);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ActivateAbility {
+                investigator: id,
+                instance_id,
+                ability_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn activate_ability_with_unknown_instance_id_is_rejected() {
+        let (state, id, _real_instance) = activate_ability_state(true);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ActivateAbility {
+                investigator: id,
+                instance_id: CardInstanceId(9999),
+                ability_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn activate_ability_when_defeated_is_rejected() {
+        let id = InvestigatorId(1);
+        let instance_id = CardInstanceId(0);
+        let mut inv = test_investigator(1);
+        inv.status = Status::Killed;
+        inv.cards_in_play.push(crate::state::CardInPlay::enter_play(
+            CardCode::new("01059"),
+            instance_id,
+        ));
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(inv)
+            .with_active_investigator(id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ActivateAbility {
+                investigator: id,
+                instance_id,
+                ability_index: 0,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert!(result.events.is_empty());
+    }
 }

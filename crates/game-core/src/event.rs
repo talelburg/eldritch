@@ -14,8 +14,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::state::{
-    CardCode, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase, SkillKind,
-    TokenResolution, Zone,
+    CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
+    SkillKind, TokenResolution, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -293,6 +293,33 @@ pub enum Event {
         code: CardCode,
         /// Where the card came from before landing in discard.
         from: Zone,
+    },
+    /// An in-play card was exhausted (turned 90°). Fires as part of
+    /// activation cost payment when a card's
+    /// [`Cost::Exhaust`](crate::dsl::Cost::Exhaust) resolves, and
+    /// from future ready/exhaust effects.
+    CardExhausted {
+        /// The card's controller.
+        investigator: InvestigatorId,
+        /// The exhausted in-play instance.
+        instance_id: CardInstanceId,
+        /// The card code (for log readability; redundant with state).
+        code: CardCode,
+    },
+    /// An activated ability resolved its costs and is about to apply
+    /// its effect. Fires after every cost-payment event and before
+    /// the ability's own effect events. Downstream reactions that
+    /// key on "after an ability is activated" use this as their
+    /// trigger point.
+    AbilityActivated {
+        /// Who activated the ability.
+        investigator: InvestigatorId,
+        /// The in-play source's instance.
+        instance_id: CardInstanceId,
+        /// The source card's code.
+        code: CardCode,
+        /// Which ability on the card fired.
+        ability_index: u8,
     },
 }
 

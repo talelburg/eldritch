@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{EnemyId, InvestigatorId, LocationId, SkillKind};
+use crate::state::{CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind};
 
 /// A single entry in the action log.
 ///
@@ -194,6 +194,32 @@ pub enum PlayerAction {
         investigator: InvestigatorId,
         /// Zero-based position in the investigator's hand.
         hand_index: u8,
+    },
+    /// Activate a [`Trigger::Activated`](crate::dsl::Trigger::Activated)
+    /// ability on a specific in-play card instance.
+    ///
+    /// Validation: Investigation phase, investigator is active and
+    /// `Status::Active`, the named card instance is in
+    /// `cards_in_play`, the indexed ability exists and has an
+    /// `Activated` trigger, sufficient action points for the
+    /// trigger's `action_cost`, and every entry in
+    /// [`Ability::costs`](crate::dsl::Ability::costs) is payable
+    /// (resources available, source not yet exhausted, etc.).
+    ///
+    /// On apply: pay every cost (emitting the matching events), emit
+    /// [`AbilityActivated`](crate::Event::AbilityActivated), then
+    /// resolve the ability's effect through the DSL evaluator.
+    ActivateAbility {
+        /// Investigator activating the ability. Must be the active
+        /// investigator during the Investigation phase, with status
+        /// `Active`.
+        investigator: InvestigatorId,
+        /// Which copy of the in-play card is the source.
+        instance_id: CardInstanceId,
+        /// Zero-based index into the card's
+        /// [`abilities`](crate::dsl::Ability) vec. Must point at an
+        /// `Activated`-triggered ability.
+        ability_index: u8,
     },
     /// Respond to an `AwaitingInput` prompt the engine emitted. The
     /// shape of `response` is dictated by the active prompt. (The

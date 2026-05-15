@@ -58,11 +58,9 @@ use serde::{Deserialize, Serialize};
 
 /// When an [`Ability`] is active.
 ///
-/// Phase-2 minimal set. Later phases add `OnEvent(EventPattern)`,
-/// `AtPhaseStart`/`AtPhaseEnd`, `DuringSkillTest`, `OnLeavePlay`,
-/// `Activated { action_cost: u8, ... }` (covering both `[action]` and
-/// `[fast]` activated abilities), and reaction triggers.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Phase-3 set. Later phases add `OnEvent(EventPattern)`,
+/// `AtPhaseStart`/`AtPhaseEnd`, `OnLeavePlay`, and reaction triggers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Trigger {
     /// Always-on while the card is in play. The ability's `effect`
@@ -81,19 +79,66 @@ pub enum Trigger {
     /// of player cards with commit-time effects (e.g. Deduction's
     /// "if your skill test is successful while investigating, …").
     OnCommit,
+    /// Fires when the controller activates the ability via
+    /// [`PlayerAction::ActivateAbility`](crate::action::PlayerAction::ActivateAbility).
+    ///
+    /// `action_cost` mirrors the printed activation cost: `0` for the
+    /// `[fast]` symbol (no action), `1` for `[action]`, `N` for multi-
+    /// action abilities. Additional costs (resources, exhaust, named-
+    /// uses spending) live on [`Ability::costs`], not here — separating
+    /// the action-economy cost from arbitrary payment costs keeps
+    /// validation and event-emission straightforward.
+    Activated {
+        /// Number of action points required to activate. `0` = Fast.
+        action_cost: u8,
+    },
+}
+
+// ---- costs -----------------------------------------------------
+
+/// A payment required to activate an [`Trigger::Activated`] ability.
+///
+/// All costs on an ability pay together (all-or-nothing) before the
+/// ability's effect resolves. The engine validates every cost is
+/// payable *before* mutating any state, then pays them in order.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Cost {
+    /// Spend `n` resources from the controller's wallet. Insufficient
+    /// resources reject the activation.
+    Resources(u8),
+    /// Exhaust the source card. Already-exhausted source rejects.
+    /// (Most activated abilities self-exhaust per the rulebook; cards
+    /// with a `[fast] no exhaust` ability simply don't list this cost.)
+    Exhaust,
+    /// Discard a card from the controller's hand. Requires a target
+    /// selection via [`AwaitingInput`](crate::EngineOutcome::AwaitingInput),
+    /// which lands with the `ChoiceResolver` (#19). Until then,
+    /// activations with this cost reject with a TODO.
+    DiscardCardFromHand,
 }
 
 // ---- abilities -------------------------------------------------
 
-/// One ability on a card: a trigger paired with the effect that
-/// resolves when the trigger fires.
+/// One ability on a card: a trigger paired with payment costs and
+/// the effect that resolves once the costs are paid.
 ///
 /// A card may have multiple [`Ability`] entries — e.g. a constant
-/// modifier plus a forced-on-leave-play effect.
+/// modifier plus an activated `[fast]` ability.
+///
+/// `costs` carries any non-action-economy payment (resources, exhaust,
+/// named-uses spent) the ability demands. Constant / on-play / on-
+/// commit abilities use an empty `costs` vec. Activated abilities
+/// list their payment here in addition to the `action_cost` baked
+/// into [`Trigger::Activated`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Ability {
     pub trigger: Trigger,
+    /// Payment costs (besides action cost). Defaults to empty on
+    /// deserialize so older saved logs still load cleanly.
+    #[serde(default)]
+    pub costs: Vec<Cost>,
     pub effect: Effect,
 }
 
@@ -290,21 +335,26 @@ pub enum TestOutcome {
 // ---- builders --------------------------------------------------
 
 /// Construct a [`Trigger::Constant`]-driven [`Ability`] wrapping the
-/// given effect.
+/// given effect. Costs are empty — constant abilities don't pay
+/// anything to "fire."
 #[must_use]
 pub fn constant(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::Constant,
+        costs: Vec::new(),
         effect,
     }
 }
 
 /// Construct a [`Trigger::OnPlay`]-driven [`Ability`] wrapping the
-/// given effect.
+/// given effect. Costs are empty — the card's play cost (resources to
+/// play, action point) is a play-time concern handled elsewhere; the
+/// on-play *ability* itself doesn't pay anything additional.
 #[must_use]
 pub fn on_play(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnPlay,
+        costs: Vec::new(),
         effect,
     }
 }
@@ -315,6 +365,25 @@ pub fn on_play(effect: Effect) -> Ability {
 pub fn on_commit(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnCommit,
+        costs: Vec::new(),
+        effect,
+    }
+}
+
+/// Construct a [`Trigger::Activated`] ability with the given action
+/// cost, payment costs, and effect.
+///
+/// `action_cost`: `0` for `[fast]`, `1` for `[action]`, higher for
+/// multi-action abilities.
+///
+/// `costs`: the non-action payment (resources, exhaust, …). An empty
+/// vec is legal — some activated abilities have no payment besides
+/// the action cost itself.
+#[must_use]
+pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
+    Ability {
+        trigger: Trigger::Activated { action_cost },
+        costs,
         effect,
     }
 }
