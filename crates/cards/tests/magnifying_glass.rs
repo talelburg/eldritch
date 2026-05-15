@@ -28,9 +28,9 @@ fn install_real_registry() {
 /// Build a state with Magnifying Glass in hand, the controller in the
 /// Investigation phase placed at a 4-shroud location with a clue, and
 /// a single-Numeric(0) chaos bag so the token modifier is always 0.
-/// Skill defaults (3 intellect) plus the rosary's bonus (when in
-/// play) cleanly cross / miss difficulty 4 depending on whether the
-/// bonus applies.
+/// Skill defaults (3 intellect) plus the card's bonus (when in play)
+/// cleanly cross / miss difficulty 4 depending on whether the bonus
+/// applies.
 fn state_with_mg_in_hand() -> (game_core::GameState, InvestigatorId, LocationId) {
     install_real_registry();
 
@@ -57,7 +57,7 @@ fn state_with_mg_in_hand() -> (game_core::GameState, InvestigatorId, LocationId)
 
 #[test]
 fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
-    // 3 intellect + 1 (rosary, sorry, Magnifying Glass) + 0 (token) = 4 vs shroud 4 → succeed by 0.
+    // 3 intellect + 1 (Magnifying Glass) + 0 (token) = 4 vs shroud 4 → succeed by 0.
     let (state, id, _loc) = state_with_mg_in_hand();
 
     let after_play = apply(
