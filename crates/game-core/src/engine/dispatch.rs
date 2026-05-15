@@ -1556,11 +1556,6 @@ fn play_card(
     }
     match destination {
         PlayDestination::InPlay => {
-            // Mint a fresh instance id from the per-state counter
-            // before re-borrowing the investigator. `state.investigators`
-            // and `state.next_card_instance_id` are separate fields but
-            // `get_mut` borrows state as a whole, so the counter
-            // mutation must precede the inv_mut borrow.
             let instance_id = CardInstanceId(state.next_card_instance_id);
             state.next_card_instance_id = state.next_card_instance_id.saturating_add(1);
             let inv_mut = state.investigators.get_mut(&investigator).expect("checked");

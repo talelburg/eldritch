@@ -175,6 +175,7 @@ impl TestGame {
             turn_order: self.turn_order,
             rng: self.rng,
             mulligan_window: self.mulligan_window,
+            next_card_instance_id: 0,
         }
     }
 }

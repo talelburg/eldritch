@@ -68,10 +68,9 @@ fn willpower_test_succeeds_at_difficulty_4_after_playing_holy_rosary() {
         }),
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
-    assert_eq!(
-        after_play.state.investigators[&id].cards_in_play,
-        vec![CardCode::new(HOLY_ROSARY)],
-    );
+    let in_play = &after_play.state.investigators[&id].cards_in_play;
+    assert_eq!(in_play.len(), 1);
+    assert_eq!(in_play[0].code, CardCode::new(HOLY_ROSARY));
 
     // Difficulty-4 willpower test — +1 from the rosary should carry it.
     let result = apply(
