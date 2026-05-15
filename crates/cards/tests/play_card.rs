@@ -30,9 +30,14 @@ const HOLY_ROSARY: &str = "01059";
 /// at your location."
 const WORKING_A_HUNCH: &str = "01037";
 
-/// Magnifying Glass (01030) — Seeker asset, in the corpus but
-/// unimplemented (no `abilities()` impl). Used as the "unimplemented
-/// but known" rejection case.
+/// Hyperawareness (01034) — Seeker Talent asset, in the corpus but
+/// unimplemented (no `abilities()` impl until #38 lands the activated-
+/// ability DSL). Used as the "unimplemented but known" rejection case.
+const UNIMPLEMENTED_ASSET: &str = "01034";
+
+/// Magnifying Glass (01030) — Seeker Hand-slot, deck-limit 2. Two
+/// copies in play simultaneously is rules-valid (one Hand slot each,
+/// both slots filled); used here for the multi-copy counter test.
 const MAGNIFYING_GLASS: &str = "01030";
 
 /// Roland Banks (01001) — investigator card. Represents the player
@@ -118,13 +123,6 @@ fn play_holy_rosary_emits_card_played_and_lands_in_play() {
 fn asset_enters_play_with_instance_id_from_state_counter() {
     // The per-state counter assigns a fresh CardInstanceId to each
     // asset entering play and advances after each assignment.
-    //
-    // TODO: a two-copies-simultaneously variant proves the uniqueness
-    // path more directly, but Holy Rosary takes the single Accessory
-    // slot so playing two at once is rules-invalid. Add that test
-    // when Magnifying Glass (#37) lands — it's a Hand-slot deck-limit-2
-    // asset, so two copies in play simultaneously IS rules-valid
-    // (one Hand slot each, both slots filled).
     use game_core::state::CardInstanceId;
 
     let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
@@ -149,6 +147,43 @@ fn asset_enters_play_with_instance_id_from_state_counter() {
     assert_eq!(
         result.state.next_card_instance_id, 1,
         "counter advances after assigning",
+    );
+}
+
+#[test]
+fn two_copies_of_magnifying_glass_get_distinct_instance_ids() {
+    // Magnifying Glass: Hand slot, deck_limit 2 — playing both copies
+    // is rules-valid (two Hand slots per investigator). The counter
+    // must assign distinct ids so per-instance state stays separable.
+    use game_core::state::CardInstanceId;
+
+    let (state, id, _loc) = play_state(vec![MAGNIFYING_GLASS, MAGNIFYING_GLASS]);
+
+    let after_first = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        }),
+    );
+    assert_eq!(after_first.outcome, EngineOutcome::Done);
+
+    let after_second = apply(
+        after_first.state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        }),
+    );
+    assert_eq!(after_second.outcome, EngineOutcome::Done);
+
+    let in_play = &after_second.state.investigators[&id].cards_in_play;
+    assert_eq!(in_play.len(), 2);
+    assert_eq!(in_play[0].instance_id, CardInstanceId(0));
+    assert_eq!(in_play[1].instance_id, CardInstanceId(1));
+    assert_eq!(
+        after_second.state.next_card_instance_id, 2,
+        "counter advances once per play",
     );
 }
 
@@ -296,11 +331,11 @@ fn play_non_event_or_asset_card_is_rejected() {
 
 #[test]
 fn play_unimplemented_card_is_rejected() {
-    // Magnifying Glass is in the corpus (metadata resolves) but has
-    // no ability implementation yet (#37). The deck-import gate
-    // (Phase 9) will refuse decks containing it; PlayCard double-
-    // checks rather than silently no-op.
-    let (state, id, _loc) = play_state(vec![MAGNIFYING_GLASS]);
+    // Hyperawareness is in the corpus (metadata resolves) but has
+    // no ability implementation yet (blocked on #38). The deck-import
+    // gate (Phase 9) will refuse decks containing unimplemented
+    // cards; PlayCard double-checks rather than silently no-op.
+    let (state, id, _loc) = play_state(vec![UNIMPLEMENTED_ASSET]);
     let result = apply(
         state,
         Action::Player(PlayerAction::PlayCard {

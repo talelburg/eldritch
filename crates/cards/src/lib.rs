@@ -128,31 +128,30 @@ mod tests {
     }
 
     #[test]
-    fn dsl_pair_is_playable() {
-        // PR-I lands Holy Rosary (01059) and Working a Hunch (01037).
-        // Magnifying Glass needs a per-skill-test scope DSL extension
-        // (its bonus is "while investigating", not flat). Hyperawareness
-        // (01034) and Deduction (01039) need activated/triggered DSL
-        // primitives — both come in PR-J as Rust-impl placeholders.
+    fn implemented_cards_are_playable() {
+        // Phase-2 PR-I: Holy Rosary (01059), Working a Hunch (01037).
+        // Phase-3 #37: Magnifying Glass (01030) once #45 (per-skill-
+        // test scope) landed.
         assert!(is_playable("01037"));
         assert!(is_playable("01059"));
+        assert!(is_playable("01030"));
     }
 
     #[test]
     fn unimplemented_cards_are_not_playable() {
-        // Magnifying Glass (01030), Hyperawareness (01034), Deduction
-        // (01039) all blocked on DSL extensions — not yet playable.
-        assert!(!is_playable("01030"));
+        // Hyperawareness (01034) needs Trigger::Activated + cost
+        // primitives (#53). Deduction (01039) needs the skill-test
+        // commit window (#63) or the after-resolution trigger (#64).
         assert!(!is_playable("01034"));
         assert!(!is_playable("01039"));
-        // Phase-2 doesn't touch most of the corpus.
+        // Phase-3 doesn't touch most of the corpus.
         assert!(!is_playable("01001")); // Roland Banks
         assert!(!is_playable("99999")); // unknown code
     }
 
     #[test]
     fn abilities_for_returns_some_for_implemented() {
-        for code in ["01037", "01059"] {
+        for code in ["01030", "01037", "01059"] {
             let abilities = super::abilities_for(code)
                 .unwrap_or_else(|| panic!("expected abilities for {code}"));
             assert!(
