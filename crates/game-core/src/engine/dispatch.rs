@@ -9,11 +9,13 @@
 //! ones.
 
 use crate::action::{EngineRecord, PlayerAction};
-use crate::dsl::{discover_clue, LocationTarget};
+use crate::card_data::CardType;
+use crate::card_registry;
+use crate::dsl::{discover_clue, LocationTarget, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, DefeatCause, Enemy, EnemyId, GameState, InvestigatorId, LocationId, Phase,
-    SkillKind, Status, TokenResolution,
+    resolve_token, CardCode, DefeatCause, Enemy, EnemyId, GameState, InvestigatorId, LocationId,
+    Phase, SkillKind, Status, TokenResolution, Zone,
 };
 
 use super::evaluator::{apply_effect, EvalContext};
@@ -85,6 +87,10 @@ pub fn apply_player_action(
             investigator,
             enemy,
         } => evade(state, events, *investigator, *enemy),
+        PlayerAction::PlayCard {
+            investigator,
+            hand_index,
+        } => play_card(state, events, *investigator, *hand_index),
         PlayerAction::ResolveInput { .. } => EngineOutcome::Rejected {
             reason: "TODO(#63): ResolveInput dispatch lands with the skill-test commit \
                      window; no AwaitingInput sites exist yet."
@@ -1385,5 +1391,174 @@ fn mulligan(
         investigator,
         redrawn_count,
     });
+    EngineOutcome::Done
+}
+
+/// Internal helper: where a played card lands after on-play effects
+/// resolve. Mirrors the Arkham rule that assets stay in play while
+/// events resolve and go to the discard.
+enum PlayDestination {
+    /// Card stays in play (asset).
+    InPlay,
+    /// Card moves to the discard after on-play effects resolve (event).
+    Discard,
+}
+
+/// Resolve the card's destination + abilities via the registry, or
+/// produce the appropriate rejection.
+///
+/// Split out so [`play_card`] stays under the function-size lint —
+/// and because the registry-side validations are conceptually
+/// separate from the state-side prefix.
+fn resolve_play_target(
+    code: &CardCode,
+) -> Result<(PlayDestination, Vec<crate::dsl::Ability>), EngineOutcome> {
+    let Some(registry) = card_registry::current() else {
+        return Err(EngineOutcome::Rejected {
+            reason: "PlayCard: no card registry installed; engine cannot resolve card \
+                     metadata or abilities. Install game_core::card_registry before \
+                     dispatching PlayCard."
+                .into(),
+        });
+    };
+    let Some(metadata) = (registry.metadata_for)(code) else {
+        return Err(EngineOutcome::Rejected {
+            reason: format!("PlayCard: unknown card code {code}").into(),
+        });
+    };
+    let destination = match metadata.card_type {
+        CardType::Asset => PlayDestination::InPlay,
+        CardType::Event => PlayDestination::Discard,
+        other => {
+            return Err(EngineOutcome::Rejected {
+                reason: format!(
+                    "PlayCard: card_type {other:?} is not playable from hand (card {code})",
+                )
+                .into(),
+            });
+        }
+    };
+    let Some(abilities) = (registry.abilities_for)(code) else {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "PlayCard: card {code} has no effect implementation; the deck-import \
+                 gate (#73-era) should refuse decks containing unimplemented cards.",
+            )
+            .into(),
+        });
+    };
+    Ok((destination, abilities))
+}
+
+/// Handler for [`PlayerAction::PlayCard`].
+///
+/// Validates the standard player-action prefix, looks up the card's
+/// metadata and abilities via the installed [`card_registry`], routes
+/// the card to its destination zone based on its
+/// [`CardType`](crate::card_data::CardType), and runs every
+/// [`Trigger::OnPlay`] ability through the DSL evaluator.
+///
+/// # Ordering
+///
+/// [`Event::CardPlayed`] fires first (the play *causes* any on-play
+/// effects, so it's correct for the play event to precede the
+/// effects' own events in the stream). Then each [`Trigger::OnPlay`]
+/// ability runs through [`apply_effect`]; if any returns non-`Done`,
+/// the handler propagates that outcome. Finally the card moves out
+/// of `hand` — into `cards_in_play` for assets / investigators, or
+/// into `discard` (with an emitted [`Event::CardDiscarded`]) for
+/// events.
+///
+/// # State-mutation contract caveat
+///
+/// For the Phase-3-scoped Core cards the on-play effects in scope
+/// (`DiscoverClue`, `GainResources`) can't reject after the standard
+/// validation prefix passes. If a future on-play effect can reject
+/// mid-resolution, the partial mutation between [`Event::CardPlayed`]
+/// and the destination move violates the engine's "no state change on
+/// rejection" contract. The apply loop's belt-and-suspenders
+/// `events.clear()` still clears the event stream on a rejected
+/// outcome; the state-rollback hardening is out of scope here.
+fn play_card(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    hand_index: u8,
+) -> EngineOutcome {
+    if state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "PlayCard is only valid during the Investigation phase (was {:?})",
+                state.phase,
+            )
+            .into(),
+        };
+    }
+    if state.active_investigator != Some(investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "PlayCard: {investigator:?} is not the active investigator ({:?})",
+                state.active_investigator,
+            )
+            .into(),
+        };
+    }
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return EngineOutcome::Rejected {
+            reason: format!("PlayCard: investigator {investigator:?} is not in state").into(),
+        };
+    };
+    if inv.status != Status::Active {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "PlayCard: {investigator:?} is not Active (status {:?})",
+                inv.status,
+            )
+            .into(),
+        };
+    }
+    let idx = usize::from(hand_index);
+    if idx >= inv.hand.len() {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "PlayCard: hand_index {hand_index} out of bounds (hand size {})",
+                inv.hand.len(),
+            )
+            .into(),
+        };
+    }
+    let code: CardCode = inv.hand[idx].clone();
+    let (destination, abilities) = match resolve_play_target(&code) {
+        Ok(v) => v,
+        Err(reject) => return reject,
+    };
+
+    // Mutate.
+    events.push(Event::CardPlayed {
+        investigator,
+        code: code.clone(),
+    });
+    let ctx = EvalContext::for_controller(investigator);
+    for ability in abilities.iter().filter(|a| a.trigger == Trigger::OnPlay) {
+        let outcome = apply_effect(state, events, &ability.effect, ctx);
+        if !matches!(outcome, EngineOutcome::Done) {
+            return outcome;
+        }
+    }
+    let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
+    let card = inv_mut.hand.remove(idx);
+    match destination {
+        PlayDestination::InPlay => {
+            inv_mut.cards_in_play.push(card);
+        }
+        PlayDestination::Discard => {
+            inv_mut.discard.push(card.clone());
+            events.push(Event::CardDiscarded {
+                investigator,
+                code: card,
+                from: Zone::Hand,
+            });
+        }
+    }
     EngineOutcome::Done
 }

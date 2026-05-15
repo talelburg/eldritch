@@ -1,20 +1,17 @@
-//! Order-insensitive event assertion macros.
+//! Event assertion macros.
 //!
-//! Tests assert on what happened, not on the order events fired in.
-//! The macros below take a slice or `Vec<Event>` as the first argument
-//! and a Rust pattern (with optional `if` guard) as the second; on
-//! failure they print the actual event list to make the mismatch
-//! obvious.
+//! The order-insensitive macros ([`assert_event!`], [`assert_no_event!`],
+//! [`assert_event_count!`]) take a slice or `Vec<Event>` as the first
+//! argument and a Rust pattern (with optional `if` guard) as the
+//! second. Most tests assert on what happened, not on the order
+//! events fired in; reach for these first.
 //!
-//! **When event order matters**, fall back to plain `assert_eq!` on the
-//! slice (e.g. `assert_eq!(result.events, vec![Event::A, Event::B])`).
-//! The macros here intentionally do not enforce ordering, because most
-//! tests are about the set of effects rather than their sequence.
-//!
-//! If `assert_eq!` ever becomes unwieldy (e.g. several tests want to
-//! assert "these N events appeared in this order, ignoring others
-//! interleaved between them"), we can add an `assert_event_sequence!`
-//! macro then. Don't add one preemptively.
+//! **When event order matters** between a few specific events with
+//! others interleaved (e.g. "`CardPlayed` precedes `CluePlaced`
+//! precedes `CardDiscarded`, with arbitrary events in between"), use
+//! [`assert_event_sequence!`]. When you need an exact sequence with no
+//! events allowed between or around, fall back to plain `assert_eq!`
+//! on the slice.
 //!
 //! # Examples
 //!
@@ -104,4 +101,136 @@ macro_rules! assert_event_count {
             );
         }
     }};
+}
+
+/// Assert that the listed patterns each match at least one event in
+/// the slice **and** that a matching event for the first pattern
+/// precedes a matching event for the second, the second precedes the
+/// third, and so on.
+///
+/// Other events may appear before, between, or after the matched
+/// ones — this is a *subsequence* check, not a contiguous-sequence
+/// check. Use plain `assert_eq!` on the slice if you need an exact
+/// contiguous order with no events between or around.
+///
+/// On failure, panics with the pattern source plus a debug-printed
+/// list of all events.
+///
+/// # Example
+///
+/// ```ignore
+/// assert_event_sequence!(
+///     result.events,
+///     Event::CardPlayed { .. },
+///     Event::CluePlaced { .. },
+///     Event::CardDiscarded { .. },
+/// );
+/// ```
+#[macro_export]
+macro_rules! assert_event_sequence {
+    ($events:expr, $($pat:pat $(if $guard:expr)?),+ $(,)?) => {{
+        let events = &$events;
+        // The cursor advances past each match; the last iteration's
+        // assignment is naturally unused (there are no more patterns
+        // after it), so allow the dead-store warning that fires on
+        // that last assignment.
+        #[allow(unused_assignments)]
+        {
+            let mut cursor: usize = 0;
+            $(
+                let found = events
+                    .iter()
+                    .enumerate()
+                    .skip(cursor)
+                    .find(|(_, __event)| matches!(__event, $pat $(if $guard)?));
+                match found {
+                    Some((idx, _)) => {
+                        cursor = idx + 1;
+                    }
+                    None => {
+                        panic!(
+                            "assert_event_sequence!: no event matching `{}` found at or after \
+                             position {} in:\n{:#?}",
+                            stringify!($pat $(if $guard)?),
+                            cursor,
+                            events,
+                        );
+                    }
+                }
+            )+
+        }
+    }};
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::event::Event;
+    use crate::state::{InvestigatorId, LocationId};
+
+    fn investigator_id() -> InvestigatorId {
+        InvestigatorId(1)
+    }
+
+    fn sample_events() -> Vec<Event> {
+        let id = investigator_id();
+        vec![
+            Event::ResourcesGained {
+                investigator: id,
+                amount: 1,
+            },
+            Event::CluePlaced {
+                investigator: id,
+                count: 1,
+            },
+            Event::LocationCluesChanged {
+                location: LocationId(101),
+                new_count: 0,
+            },
+            Event::TurnEnded { investigator: id },
+        ]
+    }
+
+    #[test]
+    fn assert_event_sequence_passes_when_subsequence_in_order() {
+        let events = sample_events();
+        crate::assert_event_sequence!(
+            events,
+            Event::ResourcesGained { .. },
+            Event::CluePlaced { .. },
+            Event::TurnEnded { .. },
+        );
+    }
+
+    #[test]
+    fn assert_event_sequence_passes_with_single_pattern() {
+        let events = sample_events();
+        crate::assert_event_sequence!(events, Event::CluePlaced { .. });
+    }
+
+    #[test]
+    #[should_panic(expected = "no event matching")]
+    fn assert_event_sequence_panics_when_pattern_missing() {
+        let events = sample_events();
+        crate::assert_event_sequence!(events, Event::ScenarioStarted);
+    }
+
+    #[test]
+    #[should_panic(expected = "no event matching")]
+    fn assert_event_sequence_panics_when_order_is_wrong() {
+        let events = sample_events();
+        // TurnEnded fires after CluePlaced in `sample_events`, so this
+        // order is impossible to satisfy as a subsequence.
+        crate::assert_event_sequence!(events, Event::TurnEnded { .. }, Event::CluePlaced { .. },);
+    }
+
+    #[test]
+    fn assert_event_sequence_respects_guards() {
+        let events = sample_events();
+        let id = investigator_id();
+        crate::assert_event_sequence!(
+            events,
+            Event::ResourcesGained { investigator, amount: 1 } if *investigator == id,
+            Event::CluePlaced { investigator, .. } if *investigator == id,
+        );
+    }
 }

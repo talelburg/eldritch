@@ -38,5 +38,5 @@ pub use rng::RngState;
 pub use state::{
     resolve_token, CardCode, ChaosBag, ChaosToken, DefeatCause, Enemy, EnemyId, GameState,
     Investigator, InvestigatorId, Location, LocationId, Phase, SkillKind, Skills, Status,
-    TokenModifiers, TokenResolution,
+    TokenModifiers, TokenResolution, Zone,
 };

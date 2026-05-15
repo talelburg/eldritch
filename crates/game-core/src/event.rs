@@ -14,7 +14,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::state::{
-    ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+    CardCode, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase, SkillKind,
+    TokenResolution, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -269,6 +270,30 @@ pub enum Event {
     ///
     /// [`InvestigatorDefeated`]: Event::InvestigatorDefeated
     AllInvestigatorsDefeated,
+    /// An investigator played a card from their hand. Fires before
+    /// any `Trigger::OnPlay` effects resolve (the play *causes* the
+    /// effects), and before the card lands in its destination zone.
+    /// State inspection has the post-play hand / `cards_in_play` /
+    /// discard contents.
+    CardPlayed {
+        /// Who played the card.
+        investigator: InvestigatorId,
+        /// The card code that was played.
+        code: CardCode,
+    },
+    /// A card was discarded — moved from `from` to the investigator's
+    /// discard pile. Fires for played events after their on-play
+    /// effects resolve; future card effects ("discard a card from
+    /// your hand", "discard top of deck") emit this with the
+    /// matching `from` zone.
+    CardDiscarded {
+        /// The card's controller.
+        investigator: InvestigatorId,
+        /// The discarded card code.
+        code: CardCode,
+        /// Where the card came from before landing in discard.
+        from: Zone,
+    },
 }
 
 /// Why a skill test failed.

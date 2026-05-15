@@ -170,6 +170,31 @@ pub enum PlayerAction {
         /// investigator during the Investigation phase.
         investigator: InvestigatorId,
     },
+    /// Play a card from an investigator's hand. Spends no action
+    /// point at this stage — play-cost gating (resource cost,
+    /// action cost, "Fast" exemption) lives on the card and lands
+    /// with the cost-primitive DSL work (#53).
+    ///
+    /// Validation: Investigation phase, investigator is active and
+    /// `Status::Active`, `hand_index < hand.len()`, the registry is
+    /// installed, the card code resolves to known metadata, and the
+    /// card's type is one of the two hand-playable types — Asset or
+    /// Event. Every other type rejects.
+    ///
+    /// On apply: emit [`CardPlayed`](crate::Event::CardPlayed), run
+    /// every [`Trigger::OnPlay`](crate::dsl::Trigger::OnPlay) ability
+    /// through the DSL evaluator, then move the card to its
+    /// destination zone — `cards_in_play` for assets, `discard` for
+    /// events (the latter emitting
+    /// [`CardDiscarded`](crate::Event::CardDiscarded) with `from: Hand`).
+    PlayCard {
+        /// Investigator playing the card. Must be the active
+        /// investigator during the Investigation phase, with status
+        /// `Active`.
+        investigator: InvestigatorId,
+        /// Zero-based position in the investigator's hand.
+        hand_index: u8,
+    },
     /// Respond to an `AwaitingInput` prompt the engine emitted. The
     /// shape of `response` is dictated by the active prompt. (The
     /// `EngineOutcome::AwaitingInput` variant lands in a later PR.)
