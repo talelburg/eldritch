@@ -94,7 +94,10 @@ pub fn apply_player_action(
 
     // After a successful Mulligan, check whether every investigator
     // has now mulliganed. If so, the setup window closes and normal
-    // play begins.
+    // play begins. Assumes `mulligan()` only ever returns `Done` or
+    // `Rejected` (never `AwaitingInput`) — if it ever grows an
+    // input-prompt path, this gate must be revisited so the window
+    // doesn't silently stay open across a partial mulligan.
     if matches!(outcome, EngineOutcome::Done)
         && matches!(action, PlayerAction::Mulligan { .. })
         && state.investigators.values().all(|inv| inv.mulligan_used)
@@ -245,8 +248,9 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
 
     // Open the mulligan window. Each investigator may now submit a
     // single `PlayerAction::Mulligan` to redraw a subset of their
-    // starting hand. The window closes the first time any other
-    // player action resolves successfully (see `apply_player_action`).
+    // starting hand. The window closes once every investigator has
+    // `mulligan_used == true` (see `apply_player_action`); other
+    // player actions are rejected until then.
     state.mulligan_window = true;
 
     // Phase 1: Mythos / Enemy / Upkeep have no content yet, so we
@@ -1315,8 +1319,8 @@ fn mulligan(
 ) -> EngineOutcome {
     if !state.mulligan_window {
         return EngineOutcome::Rejected {
-            reason: "Mulligan: setup window has closed (a non-Mulligan action has already \
-                     resolved)"
+            reason: "Mulligan: setup window has closed (every investigator has already \
+                     mulliganed and normal play has begun)"
                 .into(),
         };
     }

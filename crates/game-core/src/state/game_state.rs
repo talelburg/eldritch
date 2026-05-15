@@ -63,9 +63,10 @@ pub struct GameState {
     pub rng: RngState,
     /// Whether the mulligan setup window is open. Set true at the end
     /// of [`PlayerAction::StartScenario`](crate::action::PlayerAction::StartScenario)
-    /// processing; cleared at the end of the first non-Mulligan
-    /// `Done` player action. While open, investigators may submit
+    /// processing; cleared once every investigator has
+    /// `mulligan_used == true`. While open, investigators may submit
     /// [`PlayerAction::Mulligan`](crate::action::PlayerAction::Mulligan)
-    /// to redraw a subset of their starting hand.
+    /// to redraw a subset of their starting hand; the engine rejects
+    /// every non-Mulligan player action until the window closes.
     pub mulligan_window: bool,
 }

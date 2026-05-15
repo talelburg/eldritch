@@ -2756,25 +2756,109 @@ mod tests {
     }
 
     #[test]
-    fn rejected_action_does_not_close_mulligan_window() {
-        // Try a Move with a bogus destination (rejected). The window
-        // should stay open so the investigator can still mulligan.
-        let (id, mut state) = mulligan_scenario();
-        state.investigators.get_mut(&id).unwrap().current_location =
-            Some(crate::state::LocationId(99));
-        state.phase = Phase::Investigation;
-        state.active_investigator = Some(id);
-        // Note: no location 99 exists in state, so Move panics
-        // unreachable!. Instead, try a Move with a missing
-        // destination on a real-from-but-no-connection setup.
-        // Simpler: use an action that rejects without panicking,
-        // like Investigate without a location.
-        state.investigators.get_mut(&id).unwrap().current_location = None;
-        let result = apply(
+    fn multi_investigator_mulligan_order_does_not_matter() {
+        // Same shape as the previous test but with the second
+        // investigator mulliganing first — exercises that the
+        // window-closure predicate is order-independent.
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut a = test_investigator(1);
+        let mut b = test_investigator(2);
+        a.hand = vec![CardCode::new("a-0")];
+        b.hand = vec![CardCode::new("b-0")];
+        let state = TestGame::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .with_mulligan_window_open()
+            .build();
+
+        let after_inv2 = apply(
             state,
-            Action::Player(PlayerAction::Investigate { investigator: id }),
+            Action::Player(PlayerAction::Mulligan {
+                investigator: inv2,
+                indices_to_redraw: vec![],
+            }),
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.state.mulligan_window);
+        assert!(after_inv2.state.mulligan_window);
+        let after_inv1 = apply(
+            after_inv2.state,
+            Action::Player(PlayerAction::Mulligan {
+                investigator: inv1,
+                indices_to_redraw: vec![],
+            }),
+        );
+        assert!(!after_inv1.state.mulligan_window);
+    }
+
+    #[test]
+    fn multi_investigator_real_redraw_plus_empty_mulligan_combo() {
+        // One investigator does a real redraw, the other keeps their
+        // hand. Both signal Mulligan; window closes after the
+        // second.
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut a = test_investigator(1);
+        let mut b = test_investigator(2);
+        a.hand = vec![
+            CardCode::new("a-h-0"),
+            CardCode::new("a-h-1"),
+            CardCode::new("a-h-2"),
+        ];
+        a.deck = vec![
+            CardCode::new("a-d-0"),
+            CardCode::new("a-d-1"),
+            CardCode::new("a-d-2"),
+        ];
+        b.hand = vec![CardCode::new("b-h-0"), CardCode::new("b-h-1")];
+        b.deck = vec![CardCode::new("b-d-0")];
+        let state = TestGame::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .with_mulligan_window_open()
+            .with_rng_seed(99)
+            .build();
+
+        // inv1 redraws indices [0, 2] → those two go to deck, deck
+        // shuffles, two new cards come back.
+        let after_inv1 = apply(
+            state,
+            Action::Player(PlayerAction::Mulligan {
+                investigator: inv1,
+                indices_to_redraw: vec![0, 2],
+            }),
+        );
+        assert_eq!(after_inv1.outcome, EngineOutcome::Done);
+        assert!(after_inv1.state.mulligan_window); // inv2 hasn't yet
+        let inv1_after = &after_inv1.state.investigators[&inv1];
+        assert_eq!(inv1_after.hand.len(), 3);
+        assert_eq!(inv1_after.deck.len(), 3);
+        assert_event!(
+            after_inv1.events,
+            Event::MulliganPerformed { investigator, redrawn_count: 2 }
+                if *investigator == inv1
+        );
+
+        // inv2 keeps hand (empty redraw). Window now closes.
+        let original_inv2_hand = after_inv1.state.investigators[&inv2].hand.clone();
+        let original_inv2_deck = after_inv1.state.investigators[&inv2].deck.clone();
+        let after_inv2 = apply(
+            after_inv1.state,
+            Action::Player(PlayerAction::Mulligan {
+                investigator: inv2,
+                indices_to_redraw: vec![],
+            }),
+        );
+        assert_eq!(after_inv2.outcome, EngineOutcome::Done);
+        assert!(!after_inv2.state.mulligan_window);
+        assert_event!(
+            after_inv2.events,
+            Event::MulliganPerformed { investigator, redrawn_count: 0 }
+                if *investigator == inv2
+        );
+        // inv2's zones untouched by their no-op mulligan.
+        let inv2_after = &after_inv2.state.investigators[&inv2];
+        assert_eq!(inv2_after.hand, original_inv2_hand);
+        assert_eq!(inv2_after.deck, original_inv2_deck);
+        assert!(inv2_after.mulligan_used);
     }
 }
