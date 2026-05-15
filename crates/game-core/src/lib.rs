@@ -18,6 +18,8 @@
 //! Subsequent PRs add the RNG, phase machine, and test harness.
 
 pub mod action;
+pub mod card_data;
+pub mod card_registry;
 pub mod dsl;
 pub mod engine;
 pub mod event;
@@ -28,6 +30,8 @@ pub mod state;
 pub mod test_support;
 
 pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
+pub use card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};
+pub use card_registry::CardRegistry;
 pub use engine::{apply, ApplyResult, EngineOutcome, InputRequest, ResumeToken};
 pub use event::{Event, FailureReason};
 pub use rng::RngState;

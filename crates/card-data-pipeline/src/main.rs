@@ -255,7 +255,7 @@ fn parse_traits(raw: Option<&str>) -> Vec<String> {
 /// `"Foo xN"` expands to `N` copies of `Foo`. Unknown slot names are
 /// dropped silently — Chapter-2 introduced `"Head"` which we don't
 /// ingest yet (pipeline reads original Core, not `core_2026`); add a
-/// `Head` variant to `cards::types::Slot` when widening coverage.
+/// `Head` variant to `game_core::card_data::Slot` when widening coverage.
 fn parse_slots(raw: Option<&str>) -> Vec<&'static str> {
     let Some(raw) = raw else { return Vec::new() };
     let raw = raw.trim();
@@ -289,7 +289,7 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     let mut out = String::new();
     out.push_str(GENERATED_HEADER);
     out.push_str(
-        "use crate::types::{CardMetadata, CardType, Class, SkillIcons, Slot};\n\n\
+        "use game_core::card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",

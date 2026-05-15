@@ -1,13 +1,16 @@
 //! Static card metadata types.
 //!
 //! These types describe a card as printed: code, name, class, type,
-//! cost, traits, skill icons, etc. They are what the
-//! [`card-data-pipeline`] CLI emits into [`crate::generated`] and what
-//! the rest of the engine queries when it needs to know "what *is*
-//! this card." They do **not** describe a card's *effect logic* —
-//! that lives in [`crate::impls`].
+//! cost, traits, skill icons, etc. They live in `game-core` (not the
+//! `cards` crate) because the engine needs to query metadata when
+//! resolving actions — e.g. `PlayCard` reads [`CardMetadata::card_type`]
+//! to choose where the played card lands. The `cards` crate populates
+//! the corpus (generated from the pinned `ArkhamDB` snapshot) and
+//! installs it via [`crate::card_registry`].
 //!
-//! [`card-data-pipeline`]: ../../card_data_pipeline/index.html
+//! Card *effect logic* (hand-implemented abilities) is separate; it's
+//! looked up through the registry too but lives in
+//! [`crate::dsl::Ability`].
 
 use serde::{Deserialize, Serialize};
 
@@ -78,8 +81,12 @@ pub struct SkillIcons {
 /// This is the universal shape; type-specific data (location shroud,
 /// enemy stats, agenda doom thresholds, etc.) will land in dedicated
 /// types in later phases. For Phase 2 the universal fields are enough.
+///
+/// Construction sites live in the `cards` crate (the pipeline-generated
+/// corpus); the struct deliberately isn't `#[non_exhaustive]` so
+/// generated code can use a struct literal. Adding a field requires
+/// regenerating the corpus, which is the pipeline's job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
 pub struct CardMetadata {
     /// Five-character `ArkhamDB` code (e.g. `"01059"`).
     pub code: String,

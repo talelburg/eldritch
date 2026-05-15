@@ -6,7 +6,7 @@
 
 #![allow(clippy::too_many_lines, clippy::needless_raw_string_hashes)]
 
-use crate::types::{CardMetadata, CardType, Class, SkillIcons, Slot};
+use game_core::card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};
 
 /// Every card from the pinned snapshot, sorted by code.
 #[must_use]
