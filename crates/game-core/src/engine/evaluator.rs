@@ -781,6 +781,7 @@ mod tests {
             ))]),
             "non-constant-willpower" => Some(vec![Ability {
                 trigger: Trigger::OnPlay,
+                costs: Vec::new(),
                 effect: modify(Stat::Willpower, 5, ModifierScope::WhileInPlay),
             }]),
             "max-health-plus-1" => Some(vec![constant(modify(
