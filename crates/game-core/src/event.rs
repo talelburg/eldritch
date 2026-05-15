@@ -252,6 +252,15 @@ pub enum Event {
         /// How many cards were drawn.
         count: u8,
     },
+    /// An investigator completed a mulligan. `redrawn_count` is the
+    /// number of cards swapped (0 if the player kept their hand).
+    /// State inspection has the new hand contents.
+    MulliganPerformed {
+        /// Who mulliganed.
+        investigator: InvestigatorId,
+        /// How many cards were redrawn.
+        redrawn_count: u8,
+    },
     /// Every investigator in `state.investigators` is now non-Active.
     /// Fires immediately after the [`InvestigatorDefeated`] that
     /// flipped the last active investigator. Scenario-resolution

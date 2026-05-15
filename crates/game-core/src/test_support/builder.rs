@@ -49,6 +49,7 @@ pub struct TestGame {
     active_investigator: Option<InvestigatorId>,
     turn_order: Vec<InvestigatorId>,
     rng: RngState,
+    mulligan_window: bool,
 }
 
 impl TestGame {
@@ -68,6 +69,7 @@ impl TestGame {
             active_investigator: None,
             turn_order: Vec::new(),
             rng: RngState::new(0),
+            mulligan_window: false,
         }
     }
 
@@ -149,6 +151,16 @@ impl TestGame {
         self
     }
 
+    /// Open the mulligan window. By default the window is closed so
+    /// tests don't accidentally exercise Mulligan paths; opt in by
+    /// calling this on the builder when a test wants to fire the
+    /// Mulligan action directly without going through
+    /// `StartScenario`.
+    pub fn with_mulligan_window_open(mut self) -> Self {
+        self.mulligan_window = true;
+        self
+    }
+
     /// Materialize the configured [`GameState`].
     pub fn build(self) -> GameState {
         GameState {
@@ -162,6 +174,7 @@ impl TestGame {
             active_investigator: self.active_investigator,
             turn_order: self.turn_order,
             rng: self.rng,
+            mulligan_window: self.mulligan_window,
         }
     }
 }

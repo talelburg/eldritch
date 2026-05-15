@@ -61,4 +61,11 @@ pub struct GameState {
     /// underlying [`rand_chacha::ChaCha8Rng`] is reconstructed on
     /// demand by [`RngState`] methods.
     pub rng: RngState,
+    /// Whether the mulligan setup window is open. Set true at the end
+    /// of [`PlayerAction::StartScenario`](crate::action::PlayerAction::StartScenario)
+    /// processing; cleared at the end of the first non-Mulligan
+    /// `Done` player action. While open, investigators may submit
+    /// [`PlayerAction::Mulligan`](crate::action::PlayerAction::Mulligan)
+    /// to redraw a subset of their starting hand.
+    pub mulligan_window: bool,
 }

@@ -116,6 +116,26 @@ pub enum PlayerAction {
         /// investigator.
         enemy: EnemyId,
     },
+    /// Redraw a subset of an investigator's starting hand. One-shot
+    /// per investigator per scenario; only valid while the engine's
+    /// mulligan window is open (set at `StartScenario`, cleared by
+    /// the first non-Mulligan `Done` player action).
+    ///
+    /// `indices_to_redraw` names zero-based positions in the hand to
+    /// put into discard. An empty vec is a legal no-op-style
+    /// mulligan ("keep my hand") that still consumes the one-shot.
+    /// Indices must be in bounds (`< hand.len()`) and unique.
+    ///
+    /// On apply: named cards move hand → discard, the discard
+    /// reshuffles back into the deck, the investigator draws
+    /// replacement cards equal to the redraw count.
+    Mulligan {
+        /// Investigator mulliganing. Must be `Status::Active` and
+        /// not have already used their mulligan this scenario.
+        investigator: InvestigatorId,
+        /// Hand indices to redraw; empty = no-op-but-consumes.
+        indices_to_redraw: Vec<u8>,
+    },
     /// Draw a card from the player deck. Standard turn-action:
     /// spends 1 action, draws 1 card.
     ///
