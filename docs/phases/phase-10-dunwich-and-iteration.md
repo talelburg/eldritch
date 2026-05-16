@@ -21,7 +21,7 @@ From the 2026-05-01/02 strategy phase:
 ⏳ **Scoping TBD.** When Phase 9 closes, file:
 
 - **The Dunwich Legacy campaign module.** Eight scenarios: Extracurricular Activity, The House Always Wins, The Miskatonic Museum, The Essex County Express, Blood on the Altar, Undimensioned and Unseen, Where Doom Awaits, Lost in Time and Space. Plus the Lita Chantler / Jenny Barnes etc. campaign-wide investigator availability.
-- **Dunwich card implementations.** All ~~330+ cards across the cycle. Substantial.~~ The unimplemented cards are scoped at deck-import time per the project's "no manual-resolution fallback" rule — every card a player wants to use needs an implementation. Iterative.
+- **Dunwich card implementations.** Substantial volume — hundreds of cards across the cycle. Per the project's "no manual-resolution fallback" rule, every card a player wants to use needs an implementation; the deck-import gate enforces this. Iterative.
 - **Encounter sets specific to Dunwich.** New encounter sets per scenario.
 - **New DSL primitives surfaced by Dunwich cards.** Some Dunwich cards will need primitives that Core didn't (horror redirect / damage soak with state — `#44` already filed; conditional `Effect::If` consumers with richer predicates; etc.).
 - **Polish backlog.** Whatever rough edges Phases 5–9 left. UX improvements, error-message tweaks, performance.

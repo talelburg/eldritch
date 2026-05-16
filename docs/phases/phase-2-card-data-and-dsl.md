@@ -2,7 +2,7 @@
 
 ## Status
 
-✅ Closed (5/8). Cards `#37` Magnifying Glass, `#38` Hyperawareness, `#39` Deduction, and the per-skill-test scope extension `#45` moved to phase-3-skill-test-end-to-end where their blocking primitives land naturally with the engine evaluator.
+✅ Closed. Original scope had 8 issues; 4 (`#37`, `#38`, `#39`, `#45`) migrated to Phase 3 where their blocking primitives land naturally with the engine evaluator, leaving 5 issues in the milestone proper (all closed).
 
 ## Goal
 

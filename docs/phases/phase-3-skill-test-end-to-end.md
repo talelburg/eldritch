@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 14 closed / 7 open as of 2026-05-16.
+🟡 In progress. 14 closed / 8 open as of 2026-05-16.
 
 ## Goal
 
@@ -29,7 +29,7 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#92` | constant-modifier query during skill-test resolution | Closes the Phase-3 demo: Holy Rosary `+1 willpower` actually applies. |
 | `#102` | `ThisSkillTest` modifier accumulator | Pushed + drained on `SkillTestEnded`. |
 
-### Open (7)
+### Open (8)
 
 | # | Title | Notes |
 |---|---|---|
