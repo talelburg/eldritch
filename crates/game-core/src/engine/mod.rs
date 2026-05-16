@@ -537,6 +537,50 @@ mod tests {
     }
 
     #[test]
+    fn perform_skill_test_drains_only_resolving_investigators_pending_modifiers() {
+        // Two investigators each have a pending ThisSkillTest entry.
+        // Running a skill test for inv1 must drain inv1's entry but
+        // leave inv2's intact for their own future test.
+        let id1 = InvestigatorId(1);
+        let id2 = InvestigatorId(2);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        state.pending_skill_modifiers = vec![
+            crate::state::PendingSkillModifier {
+                investigator: id1,
+                stat: crate::dsl::Stat::Willpower,
+                delta: 1,
+                source: None,
+            },
+            crate::state::PendingSkillModifier {
+                investigator: id2,
+                stat: crate::dsl::Stat::Willpower,
+                delta: 1,
+                source: None,
+            },
+        ];
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id1,
+                skill: SkillKind::Willpower,
+                difficulty: 0,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(
+            result.state.pending_skill_modifiers.len(),
+            1,
+            "inv2's entry must survive inv1's test",
+        );
+        assert_eq!(result.state.pending_skill_modifiers[0].investigator, id2);
+    }
+
+    #[test]
     fn perform_skill_test_advances_rng_and_log_round_trips() {
         // Determinism: applying the same PerformSkillTest action twice
         // from identical initial state produces identical post-state.

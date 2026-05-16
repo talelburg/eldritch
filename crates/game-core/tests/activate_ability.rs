@@ -21,8 +21,8 @@ use game_core::dsl::{
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, Status,
-    TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
+    Status, TokenModifiers,
 };
 use game_core::test_support::{test_investigator, TestGame};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -46,6 +46,11 @@ const CONSTANT_ONLY: &str = "MOCK3";
 /// Mock card code: activated ability whose ONLY cost is the
 /// `DiscardCardFromHand` stub. Used to test the TODO-reject path.
 const DISCARD_COST_ABILITY: &str = "MOCK4";
+
+/// Mock card code: Hyperawareness-shaped `[fast] Spend 1 resource:
+/// you get +1 intellect for this skill test.` Exercises the
+/// `ThisSkillTest` push path + accumulator drain across resolution.
+const SKILL_BOOST: &str = "MOCK5";
 
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
@@ -72,6 +77,11 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             0,
             vec![Cost::DiscardCardFromHand],
             gain_resources(InvestigatorTarget::Controller, 1),
+        )]),
+        SKILL_BOOST => Some(vec![activated(
+            0,
+            vec![Cost::Resources(1)],
+            modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
         )]),
         _ => None,
     }
@@ -323,4 +333,114 @@ fn activating_with_defeated_status_doesnt_need_registry() {
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_no_event!(result.events, Event::AbilityActivated { .. });
+}
+
+// ---- ThisSkillTest accumulator (#102) ------------------------------
+
+#[test]
+fn this_skill_test_modifier_contributes_to_next_skill_test() {
+    // Activate the SKILL_BOOST mock card: pay 1 resource, push +1
+    // intellect for this skill test. Then run an intellect skill
+    // test at difficulty 4 — the base 3 intellect + 1 from the
+    // pushed modifier exactly clears it.
+    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
+
+    let after_activate = apply(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id,
+            ability_index: 0,
+        }),
+    );
+    assert_eq!(after_activate.outcome, EngineOutcome::Done);
+    assert_eq!(
+        after_activate.state.pending_skill_modifiers.len(),
+        1,
+        "ThisSkillTest push should leave one pending entry",
+    );
+
+    let after_test = apply(
+        after_activate.state,
+        Action::Player(PlayerAction::PerformSkillTest {
+            investigator: id,
+            skill: SkillKind::Intellect,
+            difficulty: 4,
+        }),
+    );
+    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    assert_event!(
+        after_test.events,
+        Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
+            if *investigator == id
+    );
+    // Drain: pending list empty after the test ends.
+    assert!(
+        after_test.state.pending_skill_modifiers.is_empty(),
+        "ThisSkillTest accumulator must drain after SkillTestEnded",
+    );
+}
+
+#[test]
+fn this_skill_test_modifier_does_not_leak_into_a_second_test() {
+    // Activate the boost, run an intellect test (consumes + drains
+    // the pending entry), then run a second intellect test at the
+    // same difficulty. Without the boost re-activating, the second
+    // test fails — proving the prior modifier didn't carry over.
+    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
+
+    let after_activate = apply(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id,
+            ability_index: 0,
+        }),
+    );
+    assert_eq!(after_activate.outcome, EngineOutcome::Done);
+
+    let after_first_test = apply(
+        after_activate.state,
+        Action::Player(PlayerAction::PerformSkillTest {
+            investigator: id,
+            skill: SkillKind::Intellect,
+            difficulty: 4,
+        }),
+    );
+    assert_eq!(after_first_test.outcome, EngineOutcome::Done);
+
+    let after_second_test = apply(
+        after_first_test.state,
+        Action::Player(PlayerAction::PerformSkillTest {
+            investigator: id,
+            skill: SkillKind::Intellect,
+            difficulty: 4,
+        }),
+    );
+    assert_eq!(after_second_test.outcome, EngineOutcome::Done);
+    assert_event!(
+        after_second_test.events,
+        Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
+            if *investigator == id
+    );
+}
+
+#[test]
+fn this_skill_test_modifier_carries_source_instance_id() {
+    // Activated abilities push with ctx.source = Some(instance_id)
+    // so future limit-once-per-test logic can key off the source.
+    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
+    let after_activate = apply(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id,
+            ability_index: 0,
+        }),
+    );
+    assert_eq!(after_activate.outcome, EngineOutcome::Done);
+    let pending = &after_activate.state.pending_skill_modifiers[0];
+    assert_eq!(pending.investigator, id);
+    assert_eq!(pending.delta, 1);
+    assert_eq!(pending.source, Some(instance_id));
 }

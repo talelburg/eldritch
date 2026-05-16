@@ -5,12 +5,14 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    card::CardInstanceId,
     chaos_bag::{ChaosBag, TokenModifiers},
     enemy::{Enemy, EnemyId},
     investigator::{Investigator, InvestigatorId},
     location::{Location, LocationId},
     phase::Phase,
 };
+use crate::dsl::Stat;
 use crate::rng::RngState;
 
 /// The full state of a scenario at a single point in time.
@@ -73,7 +75,41 @@ pub struct GameState {
     /// enter play. Starts at 0 and increments after each assignment;
     /// guarantees uniqueness within a scenario and deterministic ids
     /// across replays.
-    ///
-    /// [`CardInstanceId`]: super::card::CardInstanceId
     pub next_card_instance_id: u32,
+    /// In-flight skill modifiers contributed by activated / triggered
+    /// abilities with [`ModifierScope::ThisSkillTest`] scope.
+    /// Accumulates between activation and skill-test resolution; the
+    /// skill-test handler drains the entries for the resolving
+    /// investigator after [`Event::SkillTestEnded`] fires.
+    ///
+    /// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
+    /// [`Event::SkillTestEnded`]: crate::Event::SkillTestEnded
+    pub pending_skill_modifiers: Vec<PendingSkillModifier>,
+}
+
+/// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
+/// apply to a skill test.
+///
+/// Pushed by [`apply_effect`](crate::engine::apply_effect) when an
+/// activated or triggered ability resolves a `Modify { scope:
+/// ThisSkillTest, … }` effect. Consumed (and cleared) by the next
+/// skill-test resolution for the same investigator.
+///
+/// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct PendingSkillModifier {
+    /// The investigator whose skill test this contributes to.
+    pub investigator: InvestigatorId,
+    /// Which stat the modifier targets (the skill-test handler
+    /// maps `SkillKind` → `Stat` for matching).
+    pub stat: Stat,
+    /// Signed magnitude.
+    pub delta: i8,
+    /// The in-play instance that produced the modifier, if any.
+    /// `None` for modifiers from non-activated paths (e.g. an
+    /// `OnPlay` ability that pushes a per-test buff). Limit-once-
+    /// per-test logic in later cycles (Roland Banks, Hard Knocks
+    /// upgrades) will key off this.
+    pub source: Option<CardInstanceId>,
 }

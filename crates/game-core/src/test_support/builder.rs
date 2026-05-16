@@ -176,6 +176,7 @@ impl TestGame {
             rng: self.rng,
             mulligan_window: self.mulligan_window,
             next_card_instance_id: 0,
+            pending_skill_modifiers: Vec::new(),
         }
     }
 }
