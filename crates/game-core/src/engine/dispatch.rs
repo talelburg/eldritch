@@ -1625,8 +1625,10 @@ fn play_card(
 ///   not already exhausted, flips `cards_in_play[i].exhausted`,
 ///   emits [`Event::CardExhausted`].
 /// - [`Cost::DiscardCardFromHand`](crate::dsl::Cost::DiscardCardFromHand):
-///   rejects with a TODO — target-card selection needs the
-///   `ChoiceResolver` (#19).
+///   rejects with a TODO — target-card selection needs an engine
+///   `AwaitingInput` producer + `ResolveInput` dispatch. No card on
+///   the roadmap uses this cost yet, so the consumer hasn't landed.
+///   Test-side seam is [`ChoiceResolver`](crate::test_support::ChoiceResolver).
 ///
 /// # State-mutation contract
 ///
@@ -1879,8 +1881,8 @@ fn check_cost_payable(
             Ok(())
         }
         Cost::DiscardCardFromHand => Err(
-            "TODO(#19): Cost::DiscardCardFromHand requires AwaitingInput plumbing + \
-             ResolveInput; lands with the ChoiceResolver."
+            "TODO: Cost::DiscardCardFromHand requires AwaitingInput + ResolveInput \
+             dispatch; no card uses this cost yet so the engine consumer hasn't landed."
                 .to_string(),
         ),
     }

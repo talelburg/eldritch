@@ -135,4 +135,12 @@ Follow this order for every non-trivial PR. Skipping steps has cost real iterati
 
 6. **Address CI failures by pushing follow-up commits to the same branch.** Don't amend / force-push unless the user asks. CI re-runs automatically; the second watch can usually be foregrounded since it's only one job re-running.
 
-7. **Merge only after explicit user approval**, via `gh pr merge <PR#> --squash --delete-branch`. Confirm the issue auto-closed and `git pull` on `main` to sync.
+7. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge.** Land it as a final commit on the same branch so the doc reflects what actually ships — including review-driven fixes, scope changes, or new decisions surfaced during review. Skipping this step has cost real iterations; the next person hits a stale doc and re-derives context. Specifically:
+   - Move the closing issue from the **Open** table to the **Closed** table; bump the closed/open counts in the Status section.
+   - Flip the Ordering / Arc table's row to `✅ PR #N`.
+   - Add an entry to **Decisions made** for any non-obvious choice the PR cemented (design pattern, intentional divergence from the issue, scope split, review-surfaced rephrasings, etc.) — include the PR number.
+   - Remove any **Open question** the PR settled.
+
+   The `docs/phases/README.md` "Maintaining these docs" section is the authoritative spec; this step is the enforcement.
+
+8. **Merge only after explicit user approval**, via `gh pr merge <PR#> --squash --delete-branch`. Confirm the issue auto-closed and `git pull` on `main` to sync.

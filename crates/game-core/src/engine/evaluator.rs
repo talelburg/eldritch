@@ -202,13 +202,14 @@ fn modify(
 }
 
 /// Standard rejection message for effect variants whose evaluator
-/// needs `AwaitingInput` plumbing (`ChoiceResolver` / `ResolveInput`
+/// needs `AwaitingInput` plumbing (engine-side producer + `ResolveInput`
 /// resume). Centralizes the message so the un-stub path is one grep.
+/// Test-side seam is [`ChoiceResolver`](crate::test_support::ChoiceResolver).
 fn awaiting_input_stub(name: &'static str) -> EngineOutcome {
     EngineOutcome::Rejected {
         reason: format!(
-            "TODO(#47): {name} evaluator needs AwaitingInput plumbing + ResolveInput resume; \
-             lands with the ChoiceResolver (#19) alongside skill tests (#49)."
+            "TODO: {name} evaluator needs AwaitingInput + ResolveInput resume; \
+             no engine consumer has landed yet."
         )
         .into(),
     }
@@ -385,10 +386,9 @@ fn resolve_investigator_target(
             .ok_or("InvestigatorTarget::Active but no active investigator (outside Investigation)"),
         InvestigatorTarget::ChosenByController => {
             // Same shape as ChooseOne — needs AwaitingInput + a
-            // ResolveInput round-trip carrying the chosen id. Land
-            // with the ChoiceResolver (#19) in PR-M alongside skill
-            // tests.
-            Err("InvestigatorTarget::ChosenByController requires AwaitingInput plumbing (PR-M)")
+            // ResolveInput round-trip carrying the chosen id. No
+            // engine consumer landed yet.
+            Err("InvestigatorTarget::ChosenByController requires AwaitingInput plumbing")
         }
     }
 }
@@ -405,7 +405,7 @@ fn resolve_location_target(
             .and_then(|i| i.current_location)
             .ok_or("LocationTarget::ControllerLocation but the controller is between locations"),
         LocationTarget::ChosenByController => {
-            Err("LocationTarget::ChosenByController requires AwaitingInput plumbing (PR-M)")
+            Err("LocationTarget::ChosenByController requires AwaitingInput plumbing")
         }
     }
 }

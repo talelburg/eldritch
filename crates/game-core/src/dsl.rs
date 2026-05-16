@@ -112,9 +112,11 @@ pub enum Cost {
     /// with a `[fast] no exhaust` ability simply don't list this cost.)
     Exhaust,
     /// Discard a card from the controller's hand. Requires a target
-    /// selection via [`AwaitingInput`](crate::EngineOutcome::AwaitingInput),
-    /// which lands with the `ChoiceResolver` (#19). Until then,
-    /// activations with this cost reject with a TODO.
+    /// selection via [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)
+    /// and a `ResolveInput` dispatch. No card uses this cost yet, so
+    /// the engine consumer hasn't landed; activations with this cost
+    /// reject with a TODO. Test-side seam is
+    /// [`ChoiceResolver`](crate::test_support::ChoiceResolver).
     DiscardCardFromHand,
 }
 

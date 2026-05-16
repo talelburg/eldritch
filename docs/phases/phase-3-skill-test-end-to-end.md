@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 14 closed / 8 open as of 2026-05-16.
+🟡 In progress. 15 closed / 7 open as of 2026-05-17.
 
 ## Goal
 
@@ -10,10 +10,11 @@ Full skill test sequence runs through the engine in tests — with real-card met
 
 ## Issues
 
-### Closed (14)
+### Closed (15)
 
 | # | Title | Notes |
 |---|---|---|
+| `#19` | deterministic `ChoiceResolver` | Test infra; ships ahead of first engine consumer (`#63`). `commit_cards` stubbed pending commit-window response shape. |
 | `#37` | Magnifying Glass (01030) | First new card after the Phase-3 demo; composes `#87` + `#45`. |
 | `#38` | Hyperawareness (01034) | Exercises `Trigger::Activated` + `ThisSkillTest` push end-to-end. |
 | `#45` | per-skill-test-kind modifier scope | Adds `ModifierScope::WhileInPlayDuring(SkillTestKind)`. |
@@ -29,17 +30,16 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#92` | constant-modifier query during skill-test resolution | Closes the Phase-3 demo: Holy Rosary `+1 willpower` actually applies. |
 | `#102` | `ThisSkillTest` modifier accumulator | Pushed + drained on `SkillTestEnded`. |
 
-### Open (8)
+### Open (7)
 
 | # | Title | Notes |
 |---|---|---|
-| `#19` | deterministic `ChoiceResolver` | Test infra for `AwaitingInput` round-trips; foundational for `#63` and `#52`. |
 | `#39` | Deduction (01039) | Needs `#63` (skill-test commits) or `#64` (after-resolution trigger). |
 | `#52` | reaction windows + trigger ordering | Needs `#54` + `#19`. The largest remaining engine piece. |
 | `#54` | DSL `OnEvent` trigger | Small extension; unblocks `#52` and `#55` Roland Banks. |
 | `#55` | Roland Banks investigator (01001) | Needs `#54` + `#52`. |
 | `#56` | Study location (01111) | Needs a location-state shape decision; thinnest issue body. |
-| `#63` | skill-test card commits from hand | Needs `#19` (commit AwaitingInput). |
+| `#63` | skill-test card commits from hand | First engine consumer of `#19`. Finalizes the commit-window response shape and un-stubs `ScriptedResolver::commit_cards`. |
 | `#64` | skill-test after-resolution trigger window | Needs `#54` (OnEvent) + `#19`. |
 
 ## Ordering (Shape B)
@@ -68,7 +68,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 | 4 | `#53` Activated trigger + cost primitives | ✅ PR #104 |
 | 5 | `#102` `ThisSkillTest` accumulator | ✅ PR #105 |
 | 6 | `#38` Hyperawareness | ✅ PR #106 |
-| 7 | `#19` ChoiceResolver | ⏳ next |
+| 7 | `#19` ChoiceResolver | ✅ PR #109 |
 | 8 | `#63` skill-test commits | needs `#19` |
 | 9 | `#39` Deduction | needs `#63` (or `#64`) |
 | 10 | `#54` OnEvent trigger | small |
@@ -89,6 +89,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 - **Investigation-phase + active-investigator gate on `PlayCard`/`ActivateAbility` is overly strict for Fast abilities.** No-op for Phase-3 scope (only Investigation phase exists); `#103` lifts the gate when phase content lands.
 - **`test-support` Cargo feature dropped (PR #104).** `pub mod test_support` is now unconditional. Surfaced during `#53` review when the integration-test binary failed to compile without `--all-features`. The feature gated nothing in practice (only consumer was `cards`, which always enabled it).
 - **Event-sequence macro `assert_event_sequence!` added (PR #95).** The file's own "don't add preemptively" note had been waiting for a concrete first user; Working a Hunch's ordering test was that user.
+- **`ChoiceResolver` shipped ahead of consumer (`#19`, PR #109).** Test seam (trait + `ScriptedResolver` + `drive` + `TestSession` + `TestGame::session()`) lands now; no engine path emits `AwaitingInput` yet. `ScriptedResolver::commit_cards` is a recorded stub that panics on resolve until `#63` finalizes the commit-window response variant(s). Diverged from the issue's `pick_target(id)` to concrete `pick_investigator` / `pick_location` matching the existing `InputResponse` variants. Pre-existing `#19` forward references in `dispatch.rs` / `dsl.rs` / `evaluator.rs` were rephrased to "no engine consumer landed yet" so they don't dangle after merge.
 
 ## Open questions
 
@@ -97,8 +98,6 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
   - Via `#63` commits from hand → `Trigger::OnCommit` + `Condition::SkillTest { outcome: Success }`.
   - Via `#64` after-resolution trigger window → reactive consumer of a `SkillTestSucceeded` event.
   Pick when implementing.
-- **`#19` ChoiceResolver scope.** A test helper for scripted `AwaitingInput` responses. Today no choice-point exists. Lands when the first consumer needs it (`#63` is the natural first).
-
 ## Dependencies
 
 Phases 0–2.
