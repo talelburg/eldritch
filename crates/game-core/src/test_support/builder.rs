@@ -161,6 +161,19 @@ impl TestGame {
         self
     }
 
+    /// Build into a [`TestSession`] for driving the engine with a
+    /// scripted [`ChoiceResolver`].
+    ///
+    /// Equivalent to `TestSession::new(self.build())`; sugar so
+    /// resolver-driven tests can write
+    /// `TestGame::new()...session().apply(...).resolve_choices(...).run()`.
+    ///
+    /// [`TestSession`]: super::resolver::TestSession
+    /// [`ChoiceResolver`]: super::resolver::ChoiceResolver
+    pub fn session(self) -> super::resolver::TestSession {
+        super::resolver::TestSession::new(self.build())
+    }
+
     /// Materialize the configured [`GameState`].
     pub fn build(self) -> GameState {
         GameState {
