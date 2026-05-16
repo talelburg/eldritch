@@ -36,6 +36,6 @@ pub use event::{Event, FailureReason};
 pub use rng::RngState;
 pub use state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DefeatCause, Enemy,
-    EnemyId, GameState, Investigator, InvestigatorId, Location, LocationId, Phase, SkillKind,
-    Skills, Status, TokenModifiers, TokenResolution, UseKind, Zone,
+    EnemyId, GameState, Investigator, InvestigatorId, Location, LocationId, PendingSkillModifier,
+    Phase, SkillKind, Skills, Status, TokenModifiers, TokenResolution, UseKind, Zone,
 };

@@ -16,7 +16,7 @@ pub mod phase;
 pub use card::{CardCode, CardInPlay, CardInstanceId, UseKind, Zone};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use enemy::{Enemy, EnemyId};
-pub use game_state::GameState;
+pub use game_state::{GameState, PendingSkillModifier};
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, SkillKind, Skills, Status};
 pub use location::{Location, LocationId};
 pub use phase::Phase;

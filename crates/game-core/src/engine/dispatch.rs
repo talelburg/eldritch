@@ -18,7 +18,9 @@ use crate::state::{
     Investigator, InvestigatorId, LocationId, Phase, SkillKind, Status, TokenResolution, Zone,
 };
 
-use super::evaluator::{apply_effect, constant_skill_modifier, EvalContext};
+use super::evaluator::{
+    apply_effect, constant_skill_modifier, pending_skill_modifier, EvalContext,
+};
 use super::outcome::EngineOutcome;
 
 /// Action points granted to an investigator at the start of their
@@ -456,14 +458,19 @@ pub(super) fn resolve_skill_test(
     }
     let base_skill = inv.skills.value(skill);
     // Drop the `inv` borrow before re-borrowing state for the
-    // constant-modifier query (it walks state.investigators[*].cards_in_play).
-    // The modifier contribution is 0 when no card registry is installed —
-    // most engine unit tests don't install one, and a skill test with no
-    // card effects in play is the correct fallback.
-    let modifier = card_registry::current().map_or(0, |reg| {
+    // modifier queries. The constant query walks
+    // state.investigators[*].cards_in_play; the pending query walks
+    // state.pending_skill_modifiers. The constant query contributes 0
+    // when no registry is installed (most engine unit tests don't
+    // install one, and a skill test with no card effects in play is
+    // the correct fallback).
+    let constant_mod = card_registry::current().map_or(0, |reg| {
         constant_skill_modifier(state, reg, investigator, skill, kind)
     });
-    let skill_value = base_skill.saturating_add(modifier);
+    let pending_mod = pending_skill_modifier(state, investigator, skill);
+    let skill_value = base_skill
+        .saturating_add(constant_mod)
+        .saturating_add(pending_mod);
 
     // Mutate-second: advance RNG, derive token, emit events.
     events.push(Event::SkillTestStarted {
@@ -507,6 +514,14 @@ pub(super) fn resolve_skill_test(
     };
 
     events.push(Event::SkillTestEnded { investigator });
+
+    // ModifierScope::ThisSkillTest contributions expire when the test
+    // ends. Drain pending entries for *this* investigator only —
+    // entries queued for other investigators' future tests stay.
+    state
+        .pending_skill_modifiers
+        .retain(|m| m.investigator != investigator);
+
     Ok(outcome)
 }
 
@@ -1735,7 +1750,7 @@ fn activate_ability(
         ability_index,
     });
 
-    let ctx = EvalContext::for_controller(investigator);
+    let ctx = EvalContext::for_controller_with_source(investigator, instance_id);
     apply_effect(state, events, &effect, ctx)
 }
 

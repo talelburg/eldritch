@@ -11,12 +11,23 @@
 //! variants return [`EngineOutcome::Rejected`] with a TODO message
 //! pointing at the issue or PR that fills them in:
 //!
-//! - [`Effect::Modify`] is **queried**, not applied: the cards-in-play
-//!   state landed with #62 and the constant-modifier query (this
-//!   module's [`constant_skill_modifier`]) reads it during skill-test
-//!   resolution. The `Effect::Modify` arm of [`apply_effect`] still
-//!   rejects — `Modify` isn't directly *applied*; it's a passive
-//!   contribution surfaced by query.
+//! - [`Effect::Modify`] splits by scope. [`WhileInPlay`] and
+//!   [`WhileInPlayDuring`] contributions are passive and surfaced
+//!   by [`constant_skill_modifier`] from card abilities directly —
+//!   reaching `apply_effect` with one of those means the card
+//!   author put a constant-flavored modifier under a non-constant
+//!   trigger, which rejects. [`ThisSkillTest`] is **pushed** into
+//!   [`GameState::pending_skill_modifiers`] for the active skill
+//!   test to consume via [`pending_skill_modifier`]; the skill-
+//!   test handler drains it after `SkillTestEnded`. [`ThisTurn`]
+//!   is not yet wired; rejects with TODO until a card or test
+//!   demands the turn-scoped accumulator.
+//!
+//! [`WhileInPlay`]: crate::dsl::ModifierScope::WhileInPlay
+//! [`WhileInPlayDuring`]: crate::dsl::ModifierScope::WhileInPlayDuring
+//! [`ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
+//! [`ThisTurn`]: crate::dsl::ModifierScope::ThisTurn
+//! [`GameState::pending_skill_modifiers`]: crate::state::GameState::pending_skill_modifiers
 //! - [`Effect::If`] dispatches but its [`Condition`](crate::dsl::Condition)
 //!   evaluator is skill-test-aware
 //!   ([`SkillTest`](crate::dsl::Condition::SkillTest) reads the
@@ -50,13 +61,12 @@ use super::outcome::EngineOutcome;
 /// Per-evaluation context the effect needs to resolve targets and
 /// reference in-flight game state (current skill test, etc.).
 ///
-/// Phase-3 minimal: just the controller's id. Grows fields as
-/// effects demand them — current skill test (for
-/// [`SkillTest`](crate::dsl::Condition::SkillTest) condition),
-/// current target (for [`Effect::ForEach`] body), reaction-window
-/// context (for `OnEvent` triggers), etc. Keep the surface narrow
-/// and add fields only when an effect's evaluator actually reads
-/// them.
+/// Phase-3 minimal. Grows fields as effects demand them — current
+/// skill test (for [`SkillTest`](crate::dsl::Condition::SkillTest)
+/// condition), current target (for [`Effect::ForEach`] body),
+/// reaction-window context (for `OnEvent` triggers), etc. Keep the
+/// surface narrow and add fields only when an effect's evaluator
+/// actually reads them.
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct EvalContext {
@@ -64,13 +74,41 @@ pub struct EvalContext {
     /// "you" in card text. Resolves [`InvestigatorTarget::Controller`]
     /// and [`LocationTarget::ControllerLocation`].
     pub controller: crate::state::InvestigatorId,
+    /// The in-play card-instance that triggered this effect, if any.
+    /// Set by [`activate_ability`](crate::engine) so pushed
+    /// [`PendingSkillModifier`](crate::state::PendingSkillModifier)
+    /// entries can name their source (for replay clarity and future
+    /// limit-once-per-test logic). `None` for evaluations not
+    /// originating from a specific in-play instance (events played
+    /// from hand, scenario forced effects, …).
+    pub source: Option<crate::state::CardInstanceId>,
 }
 
 impl EvalContext {
-    /// Construct a context for the given controller.
+    /// Construct a context for the given controller with no source
+    /// card. Use [`for_controller_with_source`](Self::for_controller_with_source)
+    /// when the effect originates from a specific in-play instance.
     #[must_use]
     pub fn for_controller(controller: crate::state::InvestigatorId) -> Self {
-        Self { controller }
+        Self {
+            controller,
+            source: None,
+        }
+    }
+
+    /// Construct a context for an effect triggered from a specific
+    /// in-play card instance. Used by
+    /// [`activate_ability`](crate::engine) so pushed
+    /// `PendingSkillModifier`s carry their source.
+    #[must_use]
+    pub fn for_controller_with_source(
+        controller: crate::state::InvestigatorId,
+        source: crate::state::CardInstanceId,
+    ) -> Self {
+        Self {
+            controller,
+            source: Some(source),
+        }
     }
 }
 
@@ -99,11 +137,7 @@ pub fn apply_effect(
         }
         Effect::DiscoverClue { from, count } => discover_clue(state, events, ctx, *from, *count),
         Effect::Seq(effects) => apply_seq(state, events, effects, ctx),
-        Effect::Modify { .. } => EngineOutcome::Rejected {
-            reason: "TODO(#47): Modify evaluator needs a cards-in-play state + modifier query \
-                     mechanism. Lands later in Phase 3 alongside the skill-test resolution flow."
-                .into(),
-        },
+        Effect::Modify { stat, delta, scope } => modify(state, ctx, *stat, *delta, *scope),
         Effect::If { .. } => EngineOutcome::Rejected {
             reason: "TODO(#47): If evaluator dispatches but Condition::SkillTest needs the \
                      in-flight skill test in EvalContext (lands with #49)."
@@ -111,6 +145,59 @@ pub fn apply_effect(
         },
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(_) => awaiting_input_stub("ChooseOne"),
+    }
+}
+
+/// Apply an [`Effect::Modify`].
+///
+/// Most scopes are passive contributions queried elsewhere:
+///
+/// - [`ModifierScope::WhileInPlay`] / [`ModifierScope::WhileInPlayDuring`]:
+///   the constant-modifier query walks `cards_in_play` and reads
+///   abilities directly. Reaching `apply_effect` with one of these
+///   means a card author put a constant-flavored modifier under a
+///   non-constant trigger (an `OnPlay`/`Activated` ability whose
+///   effect *is* a `Modify` with constant scope), which doesn't fit
+///   either path cleanly. Reject loudly so the card author notices.
+/// - [`ModifierScope::ThisSkillTest`]: pushed onto
+///   [`GameState::pending_skill_modifiers`]; consumed and drained
+///   by the skill-test resolution flow.
+/// - [`ModifierScope::ThisTurn`]: not yet wired; rejects with TODO
+///   until a card or test demands it.
+fn modify(
+    state: &mut GameState,
+    ctx: EvalContext,
+    stat: crate::dsl::Stat,
+    delta: i8,
+    scope: ModifierScope,
+) -> EngineOutcome {
+    match scope {
+        ModifierScope::ThisSkillTest => {
+            state
+                .pending_skill_modifiers
+                .push(crate::state::PendingSkillModifier {
+                    investigator: ctx.controller,
+                    stat,
+                    delta,
+                    source: ctx.source,
+                });
+            EngineOutcome::Done
+        }
+        ModifierScope::WhileInPlay | ModifierScope::WhileInPlayDuring(_) => {
+            EngineOutcome::Rejected {
+                reason: format!(
+                    "Modify with constant scope ({scope:?}) under a non-constant trigger isn't \
+                     applied via the evaluator; declare it under Trigger::Constant so the \
+                     constant-modifier query picks it up. Stat = {stat:?}, delta = {delta}."
+                )
+                .into(),
+            }
+        }
+        ModifierScope::ThisTurn => EngineOutcome::Rejected {
+            reason: "TODO(#102-followup): ThisTurn scope not yet wired; needs a turn-scoped \
+                     accumulator that drains on TurnEnded."
+                .into(),
+        },
     }
 }
 
@@ -398,6 +485,36 @@ pub fn constant_skill_modifier(
             if stat_matches_skill(*stat, skill) {
                 total = total.saturating_add(*delta);
             }
+        }
+    }
+    total
+}
+
+/// Sum the [`PendingSkillModifier`](crate::state::PendingSkillModifier)
+/// contributions queued for `controller`'s in-flight skill test
+/// against `skill`.
+///
+/// These are the modifiers pushed by
+/// [`ModifierScope::ThisSkillTest`]-scoped `Effect::Modify`
+/// evaluations from activated / triggered abilities (Hyperawareness's
+/// `[fast] Spend 1 resource: You get +1 [intellect] for this skill
+/// test` is the canonical example). The skill-test handler drains
+/// the entries for the resolving investigator after
+/// [`Event::SkillTestEnded`] fires;
+/// stale entries from a prior test never leak into the next.
+#[must_use]
+pub fn pending_skill_modifier(
+    state: &GameState,
+    controller: InvestigatorId,
+    skill: SkillKind,
+) -> i8 {
+    let mut total: i8 = 0;
+    for pending in &state.pending_skill_modifiers {
+        if pending.investigator != controller {
+            continue;
+        }
+        if stat_matches_skill(pending.stat, skill) {
+            total = total.saturating_add(pending.delta);
         }
     }
     total
@@ -702,7 +819,10 @@ mod tests {
     }
 
     #[test]
-    fn modify_is_rejected_with_todo_message() {
+    fn modify_with_while_in_play_scope_under_non_constant_trigger_rejects() {
+        // WhileInPlay belongs under Trigger::Constant; reaching the
+        // evaluator with this combination means the card author
+        // wired the ability wrong. Reject loudly.
         let mut state = TestGame::new().build();
         let mut events = Vec::new();
         let outcome = apply_effect(
@@ -711,11 +831,66 @@ mod tests {
             &modify(Stat::Willpower, 1, ModifierScope::WhileInPlay),
             ctx(1),
         );
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn modify_with_this_skill_test_scope_pushes_pending_modifier() {
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut state,
+            &mut events,
+            &modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(events.is_empty(), "push doesn't emit an event");
+        assert_eq!(state.pending_skill_modifiers.len(), 1);
+        let m = &state.pending_skill_modifiers[0];
+        assert_eq!(m.investigator, id);
+        assert_eq!(m.stat, Stat::Intellect);
+        assert_eq!(m.delta, 1);
+        assert_eq!(m.source, None, "no source on a bare for_controller ctx");
+    }
+
+    #[test]
+    fn modify_pushes_source_when_ctx_has_one() {
+        let id = InvestigatorId(1);
+        let src = CardInstanceId(42);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let ctx_with_src = EvalContext::for_controller_with_source(id, src);
+        let outcome = apply_effect(
+            &mut state,
+            &mut events,
+            &modify(Stat::Combat, 2, ModifierScope::ThisSkillTest),
+            ctx_with_src,
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.pending_skill_modifiers[0].source, Some(src));
+    }
+
+    #[test]
+    fn modify_with_this_turn_scope_rejects_with_todo() {
+        let mut state = TestGame::new().build();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut state,
+            &mut events,
+            &modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
+            ctx(1),
+        );
         match outcome {
             EngineOutcome::Rejected { reason } => {
                 assert!(
-                    reason.contains("Modify"),
-                    "reason should mention Modify: {reason:?}"
+                    reason.contains("ThisTurn"),
+                    "reason should mention ThisTurn: {reason:?}",
                 );
             }
             _ => panic!("expected Rejected"),
@@ -998,5 +1173,91 @@ mod tests {
             ),
             0,
         );
+    }
+
+    // ---- pending_skill_modifier tests ----------------------------
+
+    use super::pending_skill_modifier;
+    use crate::state::PendingSkillModifier;
+
+    fn state_with_pending(pending: Vec<PendingSkillModifier>) -> crate::state::GameState {
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.pending_skill_modifiers = pending;
+        state
+    }
+
+    #[test]
+    fn pending_modifier_is_zero_with_empty_accumulator() {
+        let state = state_with_pending(vec![]);
+        assert_eq!(
+            pending_skill_modifier(&state, InvestigatorId(1), SkillKind::Willpower),
+            0,
+        );
+    }
+
+    #[test]
+    fn pending_modifier_sums_matching_investigator_and_stat() {
+        let id = InvestigatorId(1);
+        let state = state_with_pending(vec![
+            PendingSkillModifier {
+                investigator: id,
+                stat: Stat::Intellect,
+                delta: 1,
+                source: None,
+            },
+            PendingSkillModifier {
+                investigator: id,
+                stat: Stat::Intellect,
+                delta: 2,
+                source: None,
+            },
+        ]);
+        assert_eq!(pending_skill_modifier(&state, id, SkillKind::Intellect), 3,);
+    }
+
+    #[test]
+    fn pending_modifier_ignores_other_investigators() {
+        let me = InvestigatorId(1);
+        let them = InvestigatorId(2);
+        let state = state_with_pending(vec![PendingSkillModifier {
+            investigator: them,
+            stat: Stat::Willpower,
+            delta: 5,
+            source: None,
+        }]);
+        assert_eq!(pending_skill_modifier(&state, me, SkillKind::Willpower), 0,);
+    }
+
+    #[test]
+    fn pending_modifier_ignores_non_matching_stat() {
+        let id = InvestigatorId(1);
+        let state = state_with_pending(vec![PendingSkillModifier {
+            investigator: id,
+            stat: Stat::Intellect,
+            delta: 1,
+            source: None,
+        }]);
+        assert_eq!(pending_skill_modifier(&state, id, SkillKind::Willpower), 0,);
+    }
+
+    #[test]
+    fn pending_modifier_ignores_non_skill_stats() {
+        let id = InvestigatorId(1);
+        let state = state_with_pending(vec![PendingSkillModifier {
+            investigator: id,
+            stat: Stat::MaxHealth,
+            delta: 1,
+            source: None,
+        }]);
+        for skill in [
+            SkillKind::Willpower,
+            SkillKind::Intellect,
+            SkillKind::Combat,
+            SkillKind::Agility,
+        ] {
+            assert_eq!(pending_skill_modifier(&state, id, skill), 0);
+        }
     }
 }
