@@ -27,15 +27,19 @@
 //! - Working a Hunch (01037) — `Trigger::OnPlay` + `DiscoverClue`.
 //! - Magnifying Glass (01030) — `Trigger::Constant` +
 //!   `WhileInPlayDuring(SkillTestKind::Investigate)`.
+//! - Hyperawareness (01034) — two `Trigger::Activated { action_cost: 0 }`
+//!   abilities with `Cost::Resources(1)` and `ThisSkillTest`-scoped
+//!   `Modify`.
 //!
-//! Remaining Phase-3 cards (Hyperawareness #38, Deduction #39,
-//! Roland Banks #55, Study #56) each block on a DSL primitive the
-//! cards crate doesn't yet emit — activated triggers, commit
-//! windows, `OnEvent` reactions, location-state shape.
+//! Remaining Phase-3 cards (Deduction #39, Roland Banks #55,
+//! Study #56) each block on a DSL primitive the cards crate doesn't
+//! yet emit — commit windows, `OnEvent` reactions, location-state
+//! shape.
 
 use game_core::dsl::Ability;
 
 pub mod holy_rosary;
+pub mod hyperawareness;
 pub mod magnifying_glass;
 pub mod working_a_hunch;
 
@@ -45,6 +49,7 @@ pub mod working_a_hunch;
 pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     match code {
         holy_rosary::CODE => Some(holy_rosary::abilities()),
+        hyperawareness::CODE => Some(hyperawareness::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
         _ => None,

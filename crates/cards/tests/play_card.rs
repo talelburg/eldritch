@@ -30,10 +30,11 @@ const HOLY_ROSARY: &str = "01059";
 /// at your location."
 const WORKING_A_HUNCH: &str = "01037";
 
-/// Hyperawareness (01034) — Seeker Talent asset, in the corpus but
-/// unimplemented (no `abilities()` impl until #38 lands the activated-
-/// ability DSL). Used as the "unimplemented but known" rejection case.
-const UNIMPLEMENTED_ASSET: &str = "01034";
+/// Physical Training (01017) — Guardian Talent asset, in the corpus
+/// but unimplemented. Not on the Phase-3 roadmap (waits for later
+/// cycles' broader asset coverage). Used as the "unimplemented but
+/// known" rejection case.
+const UNIMPLEMENTED_ASSET: &str = "01017";
 
 /// Magnifying Glass (01030) — Seeker Hand-slot, deck-limit 2. Two
 /// copies in play simultaneously is rules-valid (one Hand slot each,
@@ -331,10 +332,10 @@ fn play_non_event_or_asset_card_is_rejected() {
 
 #[test]
 fn play_unimplemented_card_is_rejected() {
-    // Hyperawareness is in the corpus (metadata resolves) but has
-    // no ability implementation yet (blocked on #38). The deck-import
-    // gate (Phase 9) will refuse decks containing unimplemented
-    // cards; PlayCard double-checks rather than silently no-op.
+    // The canary card is in the corpus (metadata resolves) but has
+    // no ability implementation yet. The deck-import gate (Phase 9)
+    // will refuse decks containing unimplemented cards; PlayCard
+    // double-checks rather than silently no-op.
     let (state, id, _loc) = play_state(vec![UNIMPLEMENTED_ASSET]);
     let result = apply(
         state,

@@ -130,28 +130,28 @@ mod tests {
     #[test]
     fn implemented_cards_are_playable() {
         // Phase-2 PR-I: Holy Rosary (01059), Working a Hunch (01037).
-        // Phase-3 #37: Magnifying Glass (01030) once #45 (per-skill-
-        // test scope) landed.
+        // Phase-3 #37: Magnifying Glass (01030).
+        // Phase-3 #38: Hyperawareness (01034).
         assert!(is_playable("01037"));
         assert!(is_playable("01059"));
         assert!(is_playable("01030"));
+        assert!(is_playable("01034"));
     }
 
     #[test]
     fn unimplemented_cards_are_not_playable() {
-        // Hyperawareness (01034) needs Trigger::Activated + cost
-        // primitives (#53). Deduction (01039) needs the skill-test
-        // commit window (#63) or the after-resolution trigger (#64).
-        assert!(!is_playable("01034"));
+        // Deduction (01039) needs the skill-test commit window (#63)
+        // or the after-resolution trigger (#64).
         assert!(!is_playable("01039"));
         // Phase-3 doesn't touch most of the corpus.
         assert!(!is_playable("01001")); // Roland Banks
+        assert!(!is_playable("01017")); // Physical Training
         assert!(!is_playable("99999")); // unknown code
     }
 
     #[test]
     fn abilities_for_returns_some_for_implemented() {
-        for code in ["01030", "01037", "01059"] {
+        for code in ["01030", "01034", "01037", "01059"] {
             let abilities = super::abilities_for(code)
                 .unwrap_or_else(|| panic!("expected abilities for {code}"));
             assert!(
