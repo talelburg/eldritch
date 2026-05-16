@@ -108,7 +108,7 @@ When citing card text or behavior, verify against `data/arkhamdb-snapshot/pack/*
 
 ### Phase plan and milestones
 
-Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Current phase is **3** (`phase-3-skill-test-end-to-end`), focused on running a full skill test through the engine with real-card effects. Issues are labeled by priority (`p0-blocker` / `p1-next` / `p2-later`) and category (`engine` / `card` / `scenario` / `infra` / `test`). The PR template's `Closes #` line auto-closes the issue on merge.
+Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Each phase has a plan doc at **`docs/phases/phase-N-<slug>.md`** capturing the ordered work, design decisions made along the way, and open questions — read the relevant one when picking up a new issue. The index at `docs/phases/README.md` covers the full arc and the unmilestoned cross-cutting work. Issues are labeled by priority (`p0-blocker` / `p1-next` / `p2-later`) and category (`engine` / `card` / `scenario` / `infra` / `test`). The PR template's `Closes #` line auto-closes the issue on merge.
 
 PRs use squash-merge; commit subject convention is `scope: description` (e.g. `engine: cards-registry binding via static OnceLock`).
 
