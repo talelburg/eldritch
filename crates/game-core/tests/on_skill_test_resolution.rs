@@ -16,7 +16,8 @@ use std::sync::OnceLock;
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    discover_clue, on_skill_test_resolution, Ability, LocationTarget, TestOutcome,
+    constant, discover_clue, modify, on_skill_test_resolution, Ability, LocationTarget,
+    ModifierScope, Stat, TestOutcome,
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -37,6 +38,12 @@ const BONUS_CLUE_SUCCESS: &str = "MOCK-OSR-S";
 /// Mock: failure-gated mirror.
 const BONUS_CLUE_FAILURE: &str = "MOCK-OSR-F";
 
+/// Mock: a constant +1 intellect modifier (passive, not a resolution
+/// trigger) PLUS a success-gated `OnSkillTestResolution`. Exercises
+/// the inner trigger-filter inside `fire_on_skill_test_resolution`:
+/// the constant ability must NOT fire as a resolution trigger.
+const MIXED_TRIGGERS: &str = "MOCK-OSR-MIXED";
+
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
@@ -51,6 +58,13 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             TestOutcome::Failure,
             discover_clue(LocationTarget::TestedLocation, 1),
         )]),
+        MIXED_TRIGGERS => Some(vec![
+            constant(modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
+            on_skill_test_resolution(
+                TestOutcome::Success,
+                discover_clue(LocationTarget::TestedLocation, 1),
+            ),
+        ]),
         _ => None,
     }
 }
@@ -224,6 +238,31 @@ fn two_committed_success_triggers_both_fire() {
     assert_eq!(result.state.locations[&loc].clues, 1);
     assert_eq!(result.state.investigators[&id].clues, 2);
     assert_event_count!(result.events, 2, Event::CluePlaced { .. });
+}
+
+#[test]
+fn mixed_triggers_card_only_fires_the_resolution_ability() {
+    // A card carrying a constant modifier AND an OnSkillTestResolution
+    // ability: only the resolution ability should fire from the
+    // fire-loop. The constant modifier is already a passive
+    // contribution (would be queried via `constant_skill_modifier`
+    // if the card were in play, but it's in hand here so doesn't
+    // contribute to the test total either — the test just confirms
+    // the trigger-filter inside `fire_on_skill_test_resolution` skips
+    // non-matching trigger variants on the same card).
+    let (state, id, loc) = state_with_hand_and_location(&[MIXED_TRIGGERS], 3);
+    let result = drive_with_commits(state, intellect_test(id, 2), &[MIXED_TRIGGERS]);
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_event!(
+        result.events,
+        Event::SkillTestSucceeded { investigator, .. } if *investigator == id
+    );
+    // Exactly one bonus clue from the OnSkillTestResolution ability;
+    // the constant modifier doesn't emit anything.
+    assert_eq!(result.state.locations[&loc].clues, 2);
+    assert_eq!(result.state.investigators[&id].clues, 1);
+    assert_event_count!(result.events, 1, Event::CluePlaced { .. });
 }
 
 #[test]

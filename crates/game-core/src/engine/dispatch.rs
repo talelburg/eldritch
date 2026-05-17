@@ -455,9 +455,9 @@ pub(super) fn start_skill_test(
     // Mutate-second: stash the in-flight record and announce the test.
     // Snapshot the investigator's location for
     // `LocationTarget::TestedLocation` resolution during
-    // `Trigger::OnSkillTestResolution` firing. `inv` is `Some` (we
-    // checked above) and we haven't mutated state since the read, so
-    // re-borrowing is safe.
+    // `Trigger::OnSkillTestResolution` firing. `inv`'s immutable
+    // borrow from the validation block above is still live; reading
+    // `current_location` here doesn't extend it past this line.
     let tested_location = inv.current_location;
     state.in_flight_skill_test = Some(InFlightSkillTest {
         investigator,

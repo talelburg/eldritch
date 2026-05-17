@@ -115,6 +115,13 @@ pub enum Trigger {
     /// over a kind-aware [`Condition`]. Triggers stay outcome-only
     /// so the surface stays small until a second card with a non-
     /// trivial kind narrowing lands.
+    ///
+    /// Distinct from the after-resolution reactive trigger window
+    /// tracked in [issue #64](https://github.com/talelburg/eldritch/issues/64),
+    /// which fires *after* the test ends with a player decision
+    /// window ("after a test succeeds, you may …"). This trigger
+    /// runs as part of the test's resolution machinery with no
+    /// player choice; route card text by which timing fits.
     OnSkillTestResolution {
         /// Whether the trigger fires on success or on failure of the
         /// resolving test.

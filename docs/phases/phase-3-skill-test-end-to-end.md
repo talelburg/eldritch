@@ -102,6 +102,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 ## Open questions
 
 - **`#56` Study (location).** Locations have a state shape (shroud, clues, connections), but printed locations also have abilities — Reveal effects, on-enter triggers. The shape for location abilities isn't yet decided. Could land alongside Phase-4 scenario plumbing (`#74` scenario module skeleton) where the location-handling shape gets settled.
+
 ## Dependencies
 
 Phases 0–2.
