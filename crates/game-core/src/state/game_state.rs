@@ -8,11 +8,11 @@ use super::{
     card::CardInstanceId,
     chaos_bag::{ChaosBag, TokenModifiers},
     enemy::{Enemy, EnemyId},
-    investigator::{Investigator, InvestigatorId},
+    investigator::{Investigator, InvestigatorId, SkillKind},
     location::{Location, LocationId},
     phase::Phase,
 };
-use crate::dsl::Stat;
+use crate::dsl::{SkillTestKind, Stat};
 use crate::rng::RngState;
 
 /// The full state of a scenario at a single point in time.
@@ -85,6 +85,96 @@ pub struct GameState {
     /// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
     /// [`Event::SkillTestEnded`]: crate::Event::SkillTestEnded
     pub pending_skill_modifiers: Vec<PendingSkillModifier>,
+    /// The skill test currently paused between [`SkillTestStarted`] and
+    /// [`ChaosTokenRevealed`] awaiting commit-window input from the
+    /// active investigator. `Some` whenever the engine has emitted
+    /// [`EngineOutcome::AwaitingInput`] for a commit window and is
+    /// waiting on a
+    /// [`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput)
+    /// with a
+    /// [`CommitCards`](crate::action::InputResponse::CommitCards)
+    /// response. While set, every non-`ResolveInput` player action
+    /// rejects (mirrors the [`mulligan_window`](Self::mulligan_window)
+    /// guard).
+    ///
+    /// [`SkillTestStarted`]: crate::Event::SkillTestStarted
+    /// [`ChaosTokenRevealed`]: crate::Event::ChaosTokenRevealed
+    /// [`EngineOutcome::AwaitingInput`]: crate::EngineOutcome::AwaitingInput
+    pub in_flight_skill_test: Option<InFlightSkillTest>,
+}
+
+/// A skill test paused mid-resolution at the commit window.
+///
+/// Pushed by the skill-test initiator (`PerformSkillTest`, `Investigate`,
+/// `Fight`, `Evade`) after [`SkillTestStarted`] fires; consumed by the
+/// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) dispatch
+/// once the active investigator submits their commit list. The follow-
+/// up describes the action-specific success path: discover a clue
+/// (Investigate), deal damage (Fight), disengage and exhaust (Evade),
+/// or nothing (bare `PerformSkillTest`).
+///
+/// [`SkillTestStarted`]: crate::Event::SkillTestStarted
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct InFlightSkillTest {
+    /// Investigator taking the test.
+    pub investigator: InvestigatorId,
+    /// Skill the test is against.
+    pub skill: SkillKind,
+    /// Test kind (Investigate / Fight / Evade / Plain). Drives
+    /// [`ModifierScope::WhileInPlayDuring`](crate::dsl::ModifierScope::WhileInPlayDuring)
+    /// matching during resolution.
+    pub kind: SkillTestKind,
+    /// Difficulty: total to meet or exceed for success.
+    pub difficulty: i8,
+    /// Hand indices the active investigator has committed to the test.
+    /// Populated on the [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
+    /// dispatch and snapshotted onto the in-flight record for replay
+    /// clarity and inspection of a saved mid-test state. The icon-sum
+    /// and discard paths read the indices off the local variable
+    /// computed during validation, not off this field — the field is
+    /// captured *afterward*, so it's not load-bearing for resolution
+    /// today.
+    ///
+    /// Multi-investigator commits (the rule "any investigator at the
+    /// same location may commit") are a separate downstream issue; for
+    /// now only the active investigator's commits live here.
+    pub committed_by_active: Vec<u8>,
+    /// Action-specific resolution to apply on success.
+    pub follow_up: SkillTestFollowUp,
+}
+
+/// What to do after the bracketing skill test resolves, depending on
+/// which player action initiated it.
+///
+/// All variants are no-ops on failure (Fight / Evade / Investigate's
+/// on-success effects only fire when the test succeeds; the bare
+/// `PerformSkillTest` has no follow-up either way). The success-path
+/// effect is what each variant captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum SkillTestFollowUp {
+    /// No action-specific follow-up. Used by bare
+    /// [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest).
+    None,
+    /// On success, discover 1 clue at the investigator's current
+    /// location (via the
+    /// [`DiscoverClue`](crate::dsl::Effect::DiscoverClue) evaluator
+    /// path). Used by [`Investigate`](crate::action::PlayerAction::Investigate).
+    Investigate,
+    /// On success, deal 1 damage to the named enemy (and defeat it if
+    /// damage reaches `max_health`). Used by
+    /// [`Fight`](crate::action::PlayerAction::Fight).
+    Fight {
+        /// The enemy the Fight action targeted.
+        enemy: EnemyId,
+    },
+    /// On success, disengage the named enemy from the investigator and
+    /// exhaust it. Used by [`Evade`](crate::action::PlayerAction::Evade).
+    Evade {
+        /// The enemy the Evade action targeted.
+        enemy: EnemyId,
+    },
 }
 
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to

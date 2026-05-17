@@ -8,20 +8,23 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
-use crate::action::{EngineRecord, PlayerAction};
+use std::collections::BTreeSet;
+
+use crate::action::{EngineRecord, InputResponse, PlayerAction};
 use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::{discover_clue, Cost, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId, GameState,
-    Investigator, InvestigatorId, LocationId, Phase, SkillKind, Status, TokenResolution, Zone,
+    InFlightSkillTest, Investigator, InvestigatorId, LocationId, Phase, SkillKind,
+    SkillTestFollowUp, Status, TokenResolution, Zone,
 };
 
 use super::evaluator::{
     apply_effect, constant_skill_modifier, pending_skill_modifier, EvalContext,
 };
-use super::outcome::EngineOutcome;
+use super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 
 /// Action points granted to an investigator at the start of their
 /// turn during the Investigation phase. Per the Arkham Horror LCG
@@ -63,6 +66,19 @@ pub fn apply_player_action(
         };
     }
 
+    // While a skill test is paused at its commit window, only
+    // `ResolveInput` can advance the engine. Mirrors the
+    // `mulligan_window` guard above.
+    if state.in_flight_skill_test.is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason: "a skill test is paused at its commit window; submit a \
+                     PlayerAction::ResolveInput with an InputResponse::CommitCards \
+                     (empty indices commits no cards) before any other action"
+                .into(),
+        };
+    }
+
     let outcome = match action {
         PlayerAction::StartScenario => start_scenario(state, events),
         PlayerAction::EndTurn => end_turn(state, events),
@@ -98,11 +114,7 @@ pub fn apply_player_action(
             instance_id,
             ability_index,
         } => activate_ability(state, events, *investigator, *instance_id, *ability_index),
-        PlayerAction::ResolveInput { .. } => EngineOutcome::Rejected {
-            reason: "TODO(#63): ResolveInput dispatch lands with the skill-test commit \
-                     window; no AwaitingInput sites exist yet."
-                .into(),
-        },
+        PlayerAction::ResolveInput { response } => resolve_input(state, events, response),
     };
 
     // After a successful Mulligan, check whether every investigator
@@ -381,126 +393,305 @@ fn rotate_to_active(state: &mut GameState, events: &mut Vec<Event>, id: Investig
     });
 }
 
-/// The outcome of resolving a skill test, when the test runs at all.
-/// Returned by [`resolve_skill_test`] so callers (the
-/// `PerformSkillTest` dispatch wrapper, `Investigate`, future Fight /
-/// Evade) can branch on success vs failure to apply action-specific
-/// follow-on effects.
+/// Open the commit window for a skill test.
 ///
-/// `Succeeded.margin` and `Failed.{reason, by}` carry the same numbers
-/// as the corresponding events; callers that don't need them can
-/// match `Ok(SkillTestResolution::Succeeded { .. })`. Fields are
-/// `allow(dead_code)` until Fight/Evade (which want fail-by-X logic)
-/// land.
-#[allow(dead_code)]
-pub(super) enum SkillTestResolution {
-    /// The investigator's clamped total met or exceeded the difficulty.
-    Succeeded {
-        /// `total - difficulty` (always `>= 0`).
-        margin: i8,
-    },
-    /// The test failed.
-    Failed {
-        /// Why it failed.
-        reason: FailureReason,
-        /// Margin of failure (always `>= 0`).
-        by: i8,
-    },
-}
-
-/// Run the skill-test resolution sequence and return the outcome to
-/// the caller. Pushes the bracketing `SkillTestStarted` / `…Ended`
-/// events plus the per-step events (`ChaosTokenRevealed`,
-/// `SkillTestSucceeded` or `SkillTestFailed`).
+/// Validates the test (investigator exists and is Active, chaos bag is
+/// non-empty, difficulty non-negative, no other test already in
+/// flight), pushes [`Event::SkillTestStarted`], stores an
+/// [`InFlightSkillTest`] on `state`, and returns
+/// [`EngineOutcome::AwaitingInput`]. The active investigator finishes
+/// the test by submitting a
+/// [`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput)
+/// carrying [`InputResponse::CommitCards`].
 ///
-/// Returns `Err(EngineOutcome::Rejected { .. })` on validation failure
-/// without pushing any events.
-///
-/// **`AutoFail`** forces the investigator's total to 0 per the Rules
-/// Reference; **`ElderSign`** is treated as `Modifier(0)` until per-
-/// investigator ability dispatch lands; **negative** `skill + modifier`
-/// clamps to 0.
-pub(super) fn resolve_skill_test(
+/// On validation failure, returns [`EngineOutcome::Rejected`] with no
+/// state change and no events pushed.
+pub(super) fn start_skill_test(
     state: &mut GameState,
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
     difficulty: i8,
-) -> Result<SkillTestResolution, EngineOutcome> {
+    follow_up: SkillTestFollowUp,
+) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
     // bag must be non-empty so we can draw; difficulty must be non-
     // negative (FFG difficulties are always ≥ 0). Defeated
     // investigators can't take skill tests — they're out of play.
+    // A second test cannot overlap an in-flight one.
     let Some(inv) = state.investigators.get(&investigator) else {
-        return Err(EngineOutcome::Rejected {
+        return EngineOutcome::Rejected {
             reason: format!("skill test: investigator {investigator:?} not in state").into(),
-        });
+        };
     };
     if inv.status != Status::Active {
-        return Err(EngineOutcome::Rejected {
+        return EngineOutcome::Rejected {
             reason: format!(
                 "skill test: {investigator:?} is not Active (status {:?})",
                 inv.status,
             )
             .into(),
-        });
+        };
     }
     if state.chaos_bag.tokens.is_empty() {
-        return Err(EngineOutcome::Rejected {
+        return EngineOutcome::Rejected {
             reason: "skill test requires a non-empty chaos bag".into(),
-        });
+        };
     }
     if difficulty < 0 {
-        return Err(EngineOutcome::Rejected {
+        return EngineOutcome::Rejected {
             reason: format!("skill test: difficulty {difficulty} must be >= 0").into(),
-        });
+        };
     }
-    let base_skill = inv.skills.value(skill);
-    // Drop the `inv` borrow before re-borrowing state for the
-    // modifier queries. The constant query walks
-    // state.investigators[*].cards_in_play; the pending query walks
-    // state.pending_skill_modifiers. The constant query contributes 0
-    // when no registry is installed (most engine unit tests don't
-    // install one, and a skill test with no card effects in play is
-    // the correct fallback).
-    let constant_mod = card_registry::current().map_or(0, |reg| {
-        constant_skill_modifier(state, reg, investigator, skill, kind)
-    });
-    let pending_mod = pending_skill_modifier(state, investigator, skill);
-    let skill_value = base_skill
-        .saturating_add(constant_mod)
-        .saturating_add(pending_mod);
+    if state.in_flight_skill_test.is_some() {
+        return EngineOutcome::Rejected {
+            reason: "skill test: another skill test is already in flight; only one test \
+                     may pause at a commit window at a time"
+                .into(),
+        };
+    }
 
-    // Mutate-second: advance RNG, derive token, emit events.
+    // Mutate-second: stash the in-flight record and announce the test.
+    state.in_flight_skill_test = Some(InFlightSkillTest {
+        investigator,
+        skill,
+        kind,
+        difficulty,
+        committed_by_active: Vec::new(),
+        follow_up,
+    });
     events.push(Event::SkillTestStarted {
         investigator,
         skill,
         difficulty,
     });
 
-    let idx = state.rng.next_index(state.chaos_bag.tokens.len());
-    let token = state.chaos_bag.tokens[idx];
+    EngineOutcome::AwaitingInput {
+        request: InputRequest {
+            prompt: format!(
+                "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
+                 (difficulty {difficulty}). Empty indices commits no cards.",
+            ),
+        },
+        // Routing keys off `state.in_flight_skill_test`, not the
+        // token, so any opaque value is fine here. ResumeToken(0) is
+        // the conventional "no extra context needed" choice for the
+        // first AwaitingInput site.
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Finish the in-flight skill test using the supplied commit indices.
+///
+/// Drives the rest of the resolution sequence the legacy
+/// `resolve_skill_test` did synchronously: validate the commit
+/// indices, sum the committed cards' icon contribution (matching
+/// skill + wild), draw a chaos token, compute the clamped total,
+/// emit the per-step events, apply the action-specific
+/// [`SkillTestFollowUp`] on success, discard the committed cards, and
+/// drain the in-flight record plus stale pending modifiers.
+///
+/// On invalid input (no in-flight test, malformed indices) returns
+/// [`EngineOutcome::Rejected`] with no state change and no events
+/// pushed — the engine stays paused at the commit window so the
+/// caller can submit a fixed-up response.
+fn finish_skill_test(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    indices: &[u32],
+) -> EngineOutcome {
+    // Snapshot the in-flight record (Copy-able primitives only) so
+    // later mutation paths can re-borrow state freely.
+    let Some(in_flight) = state.in_flight_skill_test.as_ref() else {
+        return EngineOutcome::Rejected {
+            reason: "ResolveInput::CommitCards: no in-flight skill test to resume".into(),
+        };
+    };
+    let investigator = in_flight.investigator;
+    let skill = in_flight.skill;
+    let kind = in_flight.kind;
+    let difficulty = in_flight.difficulty;
+    let follow_up = in_flight.follow_up;
+
+    // Validate the commit indices against the resolving
+    // investigator's hand. On Err, state is untouched and the engine
+    // stays paused so the client can retry.
+    let indices_u8 = match validate_commit_indices(state, investigator, indices) {
+        Ok(v) => v,
+        Err(rejected) => return rejected,
+    };
+
+    let skill_value = sum_skill_value(state, investigator, skill, kind, &indices_u8);
+
+    // Persist the committed indices into the in-flight record for
+    // replay clarity. Safe to expect: we read `in_flight_skill_test`
+    // immediately above and nothing has cleared it since.
+    state
+        .in_flight_skill_test
+        .as_mut()
+        .expect("in_flight_skill_test was Some immediately above")
+        .committed_by_active
+        .clone_from(&indices_u8);
+
+    let succeeded =
+        resolve_chaos_token_and_emit(state, events, investigator, skill, difficulty, skill_value);
+
+    if succeeded {
+        apply_skill_test_follow_up(state, events, investigator, follow_up);
+    }
+    discard_committed_cards(state, events, investigator, &indices_u8);
+
+    events.push(Event::SkillTestEnded { investigator });
+
+    // ModifierScope::ThisSkillTest contributions expire when the
+    // test ends. Drain pending entries for *this* investigator only —
+    // entries queued for other investigators' future tests stay.
+    state
+        .pending_skill_modifiers
+        .retain(|m| m.investigator != investigator);
+    state.in_flight_skill_test = None;
+
+    EngineOutcome::Done
+}
+
+/// Validate that every entry in `indices` is a unique in-bounds hand
+/// index for `investigator`, and return them downcast to `u8` (the
+/// width hand indices use elsewhere in state).
+fn validate_commit_indices(
+    state: &GameState,
+    investigator: InvestigatorId,
+    indices: &[u32],
+) -> Result<Vec<u8>, EngineOutcome> {
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "validate_commit_indices: investigator {investigator:?} disappeared while test \
+             was in flight; this is a state-corruption invariant violation"
+        )
+    });
+    // Arkham's upkeep hand-size limit caps hands well below 256 cards
+    // in practice (#111 tracks the engine-side enforcement of the
+    // discard-to-max-hand-size step), so the `u8::try_from` below
+    // succeeds for every index that passed the bounds check. No
+    // defensive overflow-rejection branch needed.
+    let hand_len = inv.hand.len();
+    let mut indices_u8: Vec<u8> = Vec::with_capacity(indices.len());
+    let mut seen: BTreeSet<u32> = BTreeSet::new();
+    for &i in indices {
+        if !seen.insert(i) {
+            return Err(EngineOutcome::Rejected {
+                reason: format!("CommitCards: duplicate hand index {i}").into(),
+            });
+        }
+        if (i as usize) >= hand_len {
+            return Err(EngineOutcome::Rejected {
+                reason: format!("CommitCards: hand index {i} out of bounds (hand size {hand_len})")
+                    .into(),
+            });
+        }
+        indices_u8.push(
+            u8::try_from(i)
+                .expect("bounds check above guarantees i < hand_len <= u8::MAX (see #111)"),
+        );
+    }
+    Ok(indices_u8)
+}
+
+/// Sum the four skill-value contributions: investigator's printed
+/// stat, constant modifiers from cards in play, queued
+/// [`ModifierScope::ThisSkillTest`] pushes, and the committed cards'
+/// matching + wild icons.
+///
+/// Cards / scopes not addressed by an installed registry contribute
+/// 0 — the same silent-skip policy `constant_skill_modifier` uses.
+///
+/// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
+fn sum_skill_value(
+    state: &GameState,
+    investigator: InvestigatorId,
+    skill: SkillKind,
+    kind: SkillTestKind,
+    committed_indices: &[u8],
+) -> i8 {
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "sum_skill_value: investigator {investigator:?} disappeared while test was in \
+             flight; this is a state-corruption invariant violation"
+        )
+    });
+    let base = inv.skills.value(skill);
+    let icon_mod = sum_committed_icons(&inv.hand, committed_indices, skill);
+    let constant_mod = card_registry::current().map_or(0, |reg| {
+        constant_skill_modifier(state, reg, investigator, skill, kind)
+    });
+    let pending_mod = pending_skill_modifier(state, investigator, skill);
+    base.saturating_add(constant_mod)
+        .saturating_add(pending_mod)
+        .saturating_add(icon_mod)
+}
+
+/// Sum the skill-icon contribution from the cards at `indices` in
+/// `hand`: each card adds its matching-skill icons plus its wild
+/// icons. Cards whose code isn't in the installed registry contribute
+/// 0; no registry installed = 0 contribution overall.
+fn sum_committed_icons(hand: &[CardCode], indices: &[u8], skill: SkillKind) -> i8 {
+    let Some(reg) = card_registry::current() else {
+        return 0;
+    };
+    indices
+        .iter()
+        .map(|&idx| {
+            let code = &hand[usize::from(idx)];
+            (reg.metadata_for)(code).map_or(0_i8, |meta| {
+                let matching = match skill {
+                    SkillKind::Willpower => meta.skill_icons.willpower,
+                    SkillKind::Intellect => meta.skill_icons.intellect,
+                    SkillKind::Combat => meta.skill_icons.combat,
+                    SkillKind::Agility => meta.skill_icons.agility,
+                };
+                let raw = matching.saturating_add(meta.skill_icons.wild);
+                i8::try_from(raw).unwrap_or(i8::MAX)
+            })
+        })
+        .fold(0_i8, i8::saturating_add)
+}
+
+/// Advance the RNG, draw a chaos token, compute the clamped total
+/// against `difficulty`, and emit the per-step events
+/// (`ChaosTokenRevealed` + either `SkillTestSucceeded` or
+/// `SkillTestFailed`). Returns `true` on success so the caller can
+/// branch its follow-up.
+///
+/// All arithmetic stays in `i8` with saturating ops: realistic
+/// gameplay values (skill 1–8, modifier ±8, difficulty ≤ ~6) fit far
+/// inside `i8`, but saturation defends against absurd state
+/// configurations without needing a wider integer type.
+fn resolve_chaos_token_and_emit(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    skill: SkillKind,
+    difficulty: i8,
+    skill_value: i8,
+) -> bool {
+    let token_idx = state.rng.next_index(state.chaos_bag.tokens.len());
+    let token = state.chaos_bag.tokens[token_idx];
     let resolution = resolve_token(token, &state.token_modifiers);
     events.push(Event::ChaosTokenRevealed { token, resolution });
 
-    // All arithmetic stays in i8 with saturating ops: realistic
-    // gameplay values (skill 1–8, modifier ±8, difficulty ≤ ~6) fit
-    // far inside i8, but saturation defends against absurd state
-    // configurations without needing a wider integer type.
     let (total, fail_reason) = match resolution {
         TokenResolution::Modifier(n) => (skill_value.saturating_add(n).max(0), None),
         TokenResolution::ElderSign => (skill_value.max(0), None),
         TokenResolution::AutoFail => (0, Some(FailureReason::AutoFail)),
     };
     let margin = total.saturating_sub(difficulty);
-    let outcome = if margin >= 0 && fail_reason.is_none() {
+    let succeeded = margin >= 0 && fail_reason.is_none();
+    if succeeded {
         events.push(Event::SkillTestSucceeded {
             investigator,
             skill,
             margin,
         });
-        SkillTestResolution::Succeeded { margin }
     } else {
         let reason = fail_reason.unwrap_or(FailureReason::Total);
         let by = difficulty.saturating_sub(total);
@@ -510,27 +701,128 @@ pub(super) fn resolve_skill_test(
             reason,
             by,
         });
-        SkillTestResolution::Failed { reason, by }
-    };
+    }
+    succeeded
+}
 
-    events.push(Event::SkillTestEnded { investigator });
+/// Move every committed hand card to the controller's discard pile,
+/// emitting [`Event::CardDiscarded`] for each. Per the
+/// [`Event::SkillTestEnded`] docs, these discards precede the
+/// `SkillTestEnded` cleanup marker. Walk indices in descending order
+/// so each `remove` keeps the still-pending indices stable.
+fn discard_committed_cards(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    indices_u8: &[u8],
+) {
+    let mut sorted: Vec<u8> = indices_u8.to_vec();
+    sorted.sort_by(|a, b| b.cmp(a));
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "discard_committed_cards: investigator {investigator:?} vanished after \
+                 follow-up; this is a state-corruption invariant violation"
+            )
+        });
+    for idx in sorted {
+        let code = inv.hand.remove(usize::from(idx));
+        inv.discard.push(code.clone());
+        events.push(Event::CardDiscarded {
+            investigator,
+            code,
+            from: Zone::Hand,
+        });
+    }
+}
 
-    // ModifierScope::ThisSkillTest contributions expire when the test
-    // ends. Drain pending entries for *this* investigator only —
-    // entries queued for other investigators' future tests stay.
-    state
-        .pending_skill_modifiers
-        .retain(|m| m.investigator != investigator);
+/// Dispatch the action-specific on-success effect for the resolving
+/// skill test. Failure-path follow-ups (none today) would route here
+/// too if we grow them.
+fn apply_skill_test_follow_up(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    follow_up: SkillTestFollowUp,
+) {
+    match follow_up {
+        SkillTestFollowUp::None => {}
+        SkillTestFollowUp::Investigate => {
+            let effect = discover_clue(LocationTarget::ControllerLocation, 1);
+            let ctx = EvalContext::for_controller(investigator);
+            // Same caveat as the pre-refactor `investigate`: the only
+            // remaining rejection path inside `discover_clue` is
+            // "controller is between locations", which the Investigate
+            // action validates before starting the test. Empty-
+            // location is a silent no-op by design. Any rejection
+            // here is a state-corruption invariant violation.
+            let outcome = apply_effect(state, events, &effect, ctx);
+            if let EngineOutcome::Rejected { reason } = outcome {
+                unreachable!(
+                    "Investigate follow-up: discover_clue rejected unexpectedly after \
+                     validation: {reason}"
+                );
+            }
+        }
+        SkillTestFollowUp::Fight { enemy } => {
+            // Mid-test enemy disappearance isn't possible in Phase 3
+            // (no commit-window effects mutate enemies), so
+            // damage_enemy's enemy-missing panic stays loud.
+            damage_enemy(state, events, enemy, 1, Some(investigator));
+        }
+        SkillTestFollowUp::Evade { enemy } => {
+            let e = state.enemies.get_mut(&enemy).unwrap_or_else(|| {
+                unreachable!(
+                    "Evade follow-up: enemy {enemy:?} vanished while test was in flight; \
+                     this is a state-corruption invariant violation"
+                )
+            });
+            e.engaged_with = None;
+            e.exhausted = true;
+            events.push(Event::EnemyDisengaged {
+                enemy,
+                investigator,
+            });
+            events.push(Event::EnemyExhausted { enemy });
+        }
+    }
+}
 
-    Ok(outcome)
+/// Dispatch a [`PlayerAction::ResolveInput`].
+///
+/// Today the only `AwaitingInput` site is the skill-test commit
+/// window, so this routes [`InputResponse::CommitCards`] through
+/// [`finish_skill_test`] and rejects everything else. Future
+/// `AwaitingInput` sites (`ChooseOne`, target picks, …) extend this
+/// dispatch.
+fn resolve_input(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    response: &InputResponse,
+) -> EngineOutcome {
+    if state.in_flight_skill_test.is_none() {
+        return EngineOutcome::Rejected {
+            reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
+        };
+    }
+    match response {
+        InputResponse::CommitCards { indices } => finish_skill_test(state, events, indices),
+        other => EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: skill-test commit window expects InputResponse::CommitCards, \
+                 got {other:?}",
+            )
+            .into(),
+        },
+    }
 }
 
 /// Public dispatch wrapper for [`PlayerAction::PerformSkillTest`].
 ///
-/// Card commits, the commit-window `AwaitingInput`, and the after-
-/// resolution trigger window are downstream (#63 / #64). The skill-
-/// test machinery itself lives in [`resolve_skill_test`], which other
-/// turn-actions (Investigate, future Fight / Evade) invoke directly.
+/// Opens the commit window with no action-specific follow-up. The
+/// after-resolution trigger window (#64) is downstream.
 fn perform_skill_test(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -538,17 +830,15 @@ fn perform_skill_test(
     skill: SkillKind,
     difficulty: i8,
 ) -> EngineOutcome {
-    match resolve_skill_test(
+    start_skill_test(
         state,
         events,
         investigator,
         skill,
         SkillTestKind::Plain,
         difficulty,
-    ) {
-        Ok(_) => EngineOutcome::Done,
-        Err(rejected) => rejected,
-    }
+        SkillTestFollowUp::None,
+    )
 }
 
 /// Handler for [`PlayerAction::Investigate`].
@@ -653,34 +943,15 @@ fn investigate(
         return EngineOutcome::Done;
     }
 
-    match resolve_skill_test(
+    start_skill_test(
         state,
         events,
         investigator,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
         difficulty,
-    ) {
-        Ok(SkillTestResolution::Succeeded { .. }) => {
-            let effect = discover_clue(LocationTarget::ControllerLocation, 1);
-            let ctx = EvalContext::for_controller(investigator);
-            // The remaining rejection path inside `discover_clue` is
-            // "controller is between locations," which we already
-            // validated above. Empty-location is a silent no-op by
-            // design. So any rejection here is a state-corruption
-            // invariant violation — surface it loudly, not as a
-            // half-applied Rejected outcome.
-            let outcome = apply_effect(state, events, &effect, ctx);
-            if let EngineOutcome::Rejected { reason } = outcome {
-                unreachable!(
-                    "Investigate: discover_clue rejected unexpectedly after validation: {reason}"
-                );
-            }
-            EngineOutcome::Done
-        }
-        Ok(SkillTestResolution::Failed { .. }) => EngineOutcome::Done,
-        Err(rejected) => rejected,
-    }
+        SkillTestFollowUp::Investigate,
+    )
 }
 
 /// Handler for [`PlayerAction::Move`].
@@ -945,21 +1216,15 @@ fn fight(
         Err(rejected) => return rejected,
     };
     spend_one_action(state, events, investigator);
-    match resolve_skill_test(
+    start_skill_test(
         state,
         events,
         investigator,
         SkillKind::Combat,
         SkillTestKind::Fight,
         fight_difficulty,
-    ) {
-        Ok(SkillTestResolution::Succeeded { .. }) => {
-            damage_enemy(state, events, enemy_id, 1, Some(investigator));
-            EngineOutcome::Done
-        }
-        Ok(SkillTestResolution::Failed { .. }) => EngineOutcome::Done,
-        Err(rejected) => rejected,
-    }
+        SkillTestFollowUp::Fight { enemy: enemy_id },
+    )
 }
 
 /// Handler for [`PlayerAction::Evade`].
@@ -988,33 +1253,15 @@ fn evade(
         Err(rejected) => return rejected,
     };
     spend_one_action(state, events, investigator);
-    match resolve_skill_test(
+    start_skill_test(
         state,
         events,
         investigator,
         SkillKind::Agility,
         SkillTestKind::Evade,
         evade_difficulty,
-    ) {
-        Ok(SkillTestResolution::Succeeded { .. }) => {
-            let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
-                unreachable!(
-                    "Evade: enemy {enemy_id:?} disappeared between validation and resolution; \
-                     this is a state-corruption invariant violation"
-                )
-            });
-            enemy.engaged_with = None;
-            enemy.exhausted = true;
-            events.push(Event::EnemyDisengaged {
-                enemy: enemy_id,
-                investigator,
-            });
-            events.push(Event::EnemyExhausted { enemy: enemy_id });
-            EngineOutcome::Done
-        }
-        Ok(SkillTestResolution::Failed { .. }) => EngineOutcome::Done,
-        Err(rejected) => rejected,
-    }
+        SkillTestFollowUp::Evade { enemy: enemy_id },
+    )
 }
 
 /// Apply `amount` damage to an enemy. If the new damage reaches or

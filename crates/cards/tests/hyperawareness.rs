@@ -17,7 +17,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
     TokenModifiers,
 };
-use game_core::test_support::{test_investigator, TestGame};
+use game_core::test_support::{apply_no_commits, test_investigator, TestGame};
 use game_core::{assert_event, Action, PlayerAction};
 
 const HYPERAWARENESS: &str = "01034";
@@ -81,7 +81,7 @@ fn intellect_ability_buffs_an_intellect_test_at_difficulty_4() {
         "1 resource paid",
     );
 
-    let after_test = apply(
+    let after_test = apply_no_commits(
         after_activate.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
@@ -116,7 +116,7 @@ fn agility_ability_buffs_an_agility_test_at_difficulty_4() {
     );
     assert_eq!(after_activate.outcome, EngineOutcome::Done);
 
-    let after_test = apply(
+    let after_test = apply_no_commits(
         after_activate.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
@@ -148,7 +148,7 @@ fn intellect_ability_does_not_buff_an_agility_test() {
     );
     assert_eq!(after_activate.outcome, EngineOutcome::Done);
 
-    let after_test = apply(
+    let after_test = apply_no_commits(
         after_activate.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,

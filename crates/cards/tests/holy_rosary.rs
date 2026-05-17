@@ -15,7 +15,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{test_investigator, TestGame};
+use game_core::test_support::{apply_no_commits, test_investigator, TestGame};
 use game_core::{assert_event, Action, PlayerAction};
 
 const HOLY_ROSARY: &str = "01059";
@@ -73,7 +73,7 @@ fn willpower_test_succeeds_at_difficulty_4_after_playing_holy_rosary() {
     assert_eq!(in_play[0].code, CardCode::new(HOLY_ROSARY));
 
     // Difficulty-4 willpower test — +1 from the rosary should carry it.
-    let result = apply(
+    let result = apply_no_commits(
         after_play.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
@@ -103,7 +103,7 @@ fn willpower_test_fails_at_difficulty_5_even_with_holy_rosary() {
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
 
-    let result = apply(
+    let result = apply_no_commits(
         after_play.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
@@ -135,7 +135,7 @@ fn intellect_test_unaffected_by_holy_rosary_in_play() {
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
 
-    let result = apply(
+    let result = apply_no_commits(
         after_play.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
@@ -160,7 +160,7 @@ fn willpower_test_without_rosary_in_play_uses_base_value_only() {
     assert!(!state.investigators[&id].hand.is_empty());
     assert!(state.investigators[&id].cards_in_play.is_empty());
 
-    let result = apply(
+    let result = apply_no_commits(
         state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,

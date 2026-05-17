@@ -190,6 +190,7 @@ impl TestGame {
             mulligan_window: self.mulligan_window,
             next_card_instance_id: 0,
             pending_skill_modifiers: Vec::new(),
+            in_flight_skill_test: None,
         }
     }
 }

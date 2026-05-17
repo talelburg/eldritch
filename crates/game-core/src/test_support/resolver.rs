@@ -14,28 +14,30 @@
 //! [`Rejected`](crate::EngineOutcome::Rejected). [`TestSession`] is the
 //! fluent wrapper that pairs a [`GameState`] with a resolver script.
 //!
-//! # Status
+//! # Engine consumers
 //!
-//! No engine path emits `AwaitingInput` yet — the first consumer is
-//! the skill-test commit window (#63). This module ships the test
-//! infrastructure ahead of that work so the API has a stable home.
-//! [`ScriptedResolver::commit_cards`] is intentionally a stub until #63
-//! finalizes the commit-window response shape.
+//! The first (and currently only) `AwaitingInput` site is the skill-
+//! test commit window (#63). When the engine prompts, the active
+//! investigator must reply with [`InputResponse::CommitCards`].
+//! [`ScriptedResolver::commit_cards`] is the ergonomic helper: tests
+//! pass card codes, the resolver translates them to hand indices using
+//! [`GameState`] at resolve time.
+//!
+//! [`InputResponse::CommitCards`]: crate::action::InputResponse::CommitCards
 //!
 //! # Example
 //!
 //! ```
-//! use game_core::action::{Action, InputResponse, PlayerAction};
+//! use game_core::action::{Action, PlayerAction};
 //! use game_core::engine::EngineOutcome;
 //! use game_core::test_support::TestGame;
 //!
-//! // `ResolveInput` rejects today (TODO(#63)); use it as a no-resolver
-//! // smoke test for the fluent API.
+//! // A skill-test action with no investigator in state still rejects
+//! // — useful as a tiny smoke test for the fluent API without needing
+//! // a real chaos bag.
 //! let result = TestGame::new()
 //!     .session()
-//!     .apply(Action::Player(PlayerAction::ResolveInput {
-//!         response: InputResponse::Confirm,
-//!     }))
+//!     .apply(Action::Player(PlayerAction::EndTurn))
 //!     .run();
 //! assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
 //! ```
@@ -126,16 +128,16 @@ impl ScriptedResolver {
         self.push(InputResponse::PickLocation(id))
     }
 
-    /// Commit cards (by code) from the active investigator's hand to
-    /// the current skill test.
+    /// Commit cards (by code) from the in-flight skill test's
+    /// investigator's hand. The resolver translates each code to the
+    /// first matching not-yet-committed hand index at resolve time
+    /// using the [`GameState`] passed into [`next`](Self::next).
+    /// Duplicate codes pick distinct indices in left-to-right order;
+    /// a missing code panics.
     ///
-    /// TODO(#63): stub until the commit-window prompt shape is
-    /// finalized. The codes are recorded but never converted into
-    /// responses; if the engine ever prompts a [`ScriptedResolver`]
-    /// whose next step is `CommitCards`, [`next`](Self::next) panics
-    /// with the request prompt and the recorded codes. Once #63 lands,
-    /// this helper will translate codes to the real commit-window
-    /// response variant(s) using the engine state passed into `next`.
+    /// Pass `&[]` to commit nothing — the canonical empty-commit
+    /// helper for tests that aren't exercising the commit-window
+    /// itself.
     pub fn commit_cards(&mut self, codes: &[CardCode]) -> &mut Self {
         self.steps
             .push_back(ScriptedStep::CommitCards(codes.to_vec()));
@@ -151,7 +153,7 @@ impl ScriptedResolver {
 }
 
 impl ChoiceResolver for ScriptedResolver {
-    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
+    fn next(&mut self, request: &InputRequest, state: &GameState) -> InputResponse {
         let step = self.steps.pop_front().unwrap_or_else(|| {
             panic!(
                 "ScriptedResolver: no scripted response for prompt: {:?}",
@@ -160,14 +162,83 @@ impl ChoiceResolver for ScriptedResolver {
         });
         match step {
             ScriptedStep::Response(r) => r,
-            ScriptedStep::CommitCards(codes) => panic!(
-                "ScriptedResolver::commit_cards: TODO(#63) — commit-window response \
-                 shape not yet finalized; helper is a stub. Codes recorded: {:?}, \
-                 prompt was: {:?}",
-                codes, request.prompt,
-            ),
+            ScriptedStep::CommitCards(codes) => InputResponse::CommitCards {
+                indices: resolve_commit_codes(&codes, state, &request.prompt),
+            },
         }
     }
+}
+
+/// Translate scripted commit-card codes to hand indices using the
+/// in-flight skill test's investigator on `state`.
+///
+/// Returns an empty vec for an empty code list (the canonical
+/// commit-nothing case). Each code is matched against the
+/// investigator's hand left-to-right; duplicate codes claim distinct
+/// indices so `&[CardCode("X"), CardCode("X")]` against a hand with
+/// two `X`s yields `[i, j]`. Panics with the prompt and remaining
+/// state if any code can't be matched — that's a test-author error.
+fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> Vec<u32> {
+    if codes.is_empty() {
+        return Vec::new();
+    }
+    let in_flight = state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
+        panic!(
+            "ScriptedResolver::commit_cards: state has no in-flight skill test at \
+             resolve time; prompt was: {prompt:?}",
+        )
+    });
+    let inv = state
+        .investigators
+        .get(&in_flight.investigator)
+        .unwrap_or_else(|| {
+            panic!(
+                "ScriptedResolver::commit_cards: in-flight investigator {:?} not in \
+                 state.investigators; prompt was: {prompt:?}",
+                in_flight.investigator,
+            )
+        });
+    let mut used = vec![false; inv.hand.len()];
+    let mut indices = Vec::with_capacity(codes.len());
+    for code in codes {
+        let idx = inv
+            .hand
+            .iter()
+            .enumerate()
+            .find_map(|(i, c)| (!used[i] && c == code).then_some(i))
+            .unwrap_or_else(|| {
+                panic!(
+                    "ScriptedResolver::commit_cards: code {code:?} not found in \
+                     {:?}'s hand (hand = {:?}, already-used indices = {:?}); \
+                     prompt was: {prompt:?}",
+                    in_flight.investigator, inv.hand, used,
+                )
+            });
+        used[idx] = true;
+        indices.push(u32::try_from(idx).expect("hand index fits in u32"));
+    }
+    indices
+}
+
+/// Drive a single skill-test-initiating action through the engine
+/// with an empty commit submitted to the commit window.
+///
+/// Tests that don't care about the commit window (they're exercising
+/// the rest of skill-test resolution) call this instead of
+/// [`apply`] and treat the returned
+/// [`ApplyResult`] exactly as they used to — `events` accumulates
+/// across `SkillTestStarted`, the empty `ResolveInput`, and the
+/// post-commit resolution chain; `outcome` is the terminal
+/// [`Done`](EngineOutcome::Done) or [`Rejected`](EngineOutcome::Rejected).
+///
+/// Equivalent to:
+/// ```ignore
+/// drive(state, action, { let mut r = ScriptedResolver::new(); r.commit_cards(&[]); r })
+/// ```
+pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
+    let mut resolver = ScriptedResolver::new();
+    resolver.commit_cards(&[]);
+    drive(state, action, resolver)
 }
 
 /// Run `action` against `state`, draining
@@ -365,12 +436,81 @@ mod tests {
         let _ = r.next(&req("oops"), &empty_state());
     }
 
+    /// Build a tiny state with one investigator who has a non-empty
+    /// hand and an in-flight skill test parked on it. Used by the
+    /// commit-card resolution tests below.
+    fn state_with_in_flight_hand(hand: &[&str]) -> GameState {
+        use crate::dsl::SkillTestKind;
+        use crate::state::{InFlightSkillTest, SkillTestFollowUp};
+        let id = InvestigatorId(1);
+        let mut inv = crate::test_support::test_investigator(1);
+        inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
+        let mut state = TestGame::new().with_investigator(inv).build();
+        state.in_flight_skill_test = Some(InFlightSkillTest {
+            investigator: id,
+            skill: crate::state::SkillKind::Intellect,
+            kind: SkillTestKind::Plain,
+            difficulty: 1,
+            committed_by_active: Vec::new(),
+            follow_up: SkillTestFollowUp::None,
+        });
+        state
+    }
+
     #[test]
-    #[should_panic(expected = "TODO(#63)")]
-    fn commit_cards_is_a_stub_until_issue_63() {
+    fn commit_cards_empty_resolves_to_empty_indices() {
         let mut r = ScriptedResolver::new();
-        r.commit_cards(&[CardCode::new("01001")]);
+        r.commit_cards(&[]);
+        // Empty doesn't even consult `in_flight_skill_test` — symmetric
+        // with the engine's "empty commits is the no-op" semantics.
+        let state = empty_state();
+        let response = r.next(&req("commit"), &state);
+        assert_eq!(response, InputResponse::CommitCards { indices: vec![] });
+    }
+
+    #[test]
+    fn commit_cards_translates_codes_to_hand_indices_in_order() {
+        let mut r = ScriptedResolver::new();
+        r.commit_cards(&[CardCode::new("X"), CardCode::new("Y")]);
+        let state = state_with_in_flight_hand(&["X", "Y", "Z"]);
+        let response = r.next(&req("commit"), &state);
+        assert_eq!(
+            response,
+            InputResponse::CommitCards {
+                indices: vec![0, 1],
+            }
+        );
+    }
+
+    #[test]
+    fn commit_cards_duplicate_code_picks_distinct_indices_left_to_right() {
+        let mut r = ScriptedResolver::new();
+        r.commit_cards(&[CardCode::new("X"), CardCode::new("X")]);
+        let state = state_with_in_flight_hand(&["A", "X", "B", "X"]);
+        let response = r.next(&req("commit"), &state);
+        assert_eq!(
+            response,
+            InputResponse::CommitCards {
+                indices: vec![1, 3],
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "no in-flight skill test")]
+    fn commit_cards_panics_when_no_in_flight_skill_test() {
+        let mut r = ScriptedResolver::new();
+        r.commit_cards(&[CardCode::new("X")]);
         let _ = r.next(&req("commit"), &empty_state());
+    }
+
+    #[test]
+    #[should_panic(expected = "not found")]
+    fn commit_cards_panics_when_code_not_in_hand() {
+        let mut r = ScriptedResolver::new();
+        r.commit_cards(&[CardCode::new("MISSING")]);
+        let state = state_with_in_flight_hand(&["X", "Y"]);
+        let _ = r.next(&req("commit"), &state);
     }
 
     #[test]

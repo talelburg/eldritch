@@ -54,6 +54,15 @@ pub struct ApplyResult {
 /// TODO(#17+): once non-trivial handlers exist, refactor to a strict
 /// validate-first / apply-second two-phase shape so this is structural
 /// rather than a per-handler convention.
+///
+/// On [`EngineOutcome::AwaitingInput`], the returned state and event
+/// list reflect the work done up to the pause point — e.g. a
+/// `PerformSkillTest` apply that suspends at the commit window has
+/// already emitted [`Event::SkillTestStarted`] and populated
+/// [`GameState::in_flight_skill_test`]. The resume action
+/// ([`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput))
+/// drives the rest of resolution in a subsequent `apply` call. While
+/// paused, every non-`ResolveInput` player action rejects.
 pub fn apply(state: GameState, action: Action) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
@@ -81,9 +90,11 @@ mod tests {
     use crate::state::EnemyId;
     use crate::state::{
         CardCode, ChaosToken, DefeatCause, GameState, InvestigatorId, Phase, SkillKind, Status,
-        TokenModifiers, TokenResolution,
+        TokenModifiers, TokenResolution, Zone,
     };
-    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::test_support::{
+        apply_no_commits, test_enemy, test_investigator, test_location, TestGame,
+    };
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{apply, EngineOutcome};
@@ -229,7 +240,7 @@ mod tests {
     #[test]
     fn perform_skill_test_with_unknown_investigator_is_rejected() {
         let state = TestGame::new().with_chaos_bag(bag_only_zero()).build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: InvestigatorId(999),
@@ -247,7 +258,7 @@ mod tests {
         let state = TestGame::new()
             .with_investigator(test_investigator(1))
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -266,7 +277,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -287,7 +298,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -331,7 +342,7 @@ mod tests {
             .with_investigator(strong)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -357,7 +368,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -392,7 +403,7 @@ mod tests {
             .with_investigator(high)
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -423,7 +434,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -457,7 +468,7 @@ mod tests {
                 ..TokenModifiers::default()
             })
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -486,7 +497,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::ElderSign]))
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -516,7 +527,7 @@ mod tests {
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::Skull]))
             .with_token_modifiers(night_of_the_zealot_standard())
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -563,7 +574,7 @@ mod tests {
             },
         ];
 
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id1,
@@ -601,8 +612,8 @@ mod tests {
             difficulty: 3,
         });
 
-        let first = apply(initial.clone(), action.clone());
-        let second = apply(initial, action);
+        let first = apply_no_commits(initial.clone(), action.clone());
+        let second = apply_no_commits(initial, action);
 
         assert_eq!(first.outcome, EngineOutcome::Done);
         assert_eq!(first.state.rng, second.state.rng);
@@ -641,7 +652,7 @@ mod tests {
     fn investigate_succeeds_and_moves_one_clue_to_investigator() {
         // Default intellect 3, shroud 2 → margin 1 → success.
         let (inv_id, loc_id, state) = investigate_scenario(2, 2);
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -680,7 +691,7 @@ mod tests {
     fn investigate_failure_spends_action_but_moves_no_clue() {
         // Intellect 3, shroud 5 → fails by 2; action still spent.
         let (inv_id, loc_id, state) = investigate_scenario(2, 5);
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -702,7 +713,7 @@ mod tests {
         // the location is empty without trying), the action is still
         // spent, and discover_clue is a silent no-op on success.
         let (inv_id, loc_id, state) = investigate_scenario(0, 2);
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -721,7 +732,7 @@ mod tests {
     fn investigate_outside_investigation_phase_is_rejected() {
         let (inv_id, _, mut state) = investigate_scenario(2, 2);
         state.phase = Phase::Mythos;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -737,7 +748,7 @@ mod tests {
         // Add a second investigator but keep the first active.
         let other = InvestigatorId(2);
         state.investigators.insert(other, test_investigator(2));
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: other,
@@ -755,7 +766,7 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .actions_remaining = 0;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -773,7 +784,7 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .current_location = None;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -1380,7 +1391,7 @@ mod tests {
         // Set investigator combat = 3 (default already is 3) so the
         // test just barely passes.
         state.investigators.get_mut(&inv_id).unwrap().skills.combat = 3;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1416,7 +1427,7 @@ mod tests {
     fn fight_failure_spends_action_but_deals_no_damage() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().skills.combat = 1;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1438,7 +1449,7 @@ mod tests {
         // removed from state, engagement cleared.
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().damage = 1;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1463,7 +1474,7 @@ mod tests {
     fn evade_succeeds_disengages_and_exhausts() {
         // Default agility 3, evade 3 → margin 0 → success.
         let (inv_id, enemy_id, state) = fight_evade_scenario();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Evade {
                 investigator: inv_id,
@@ -1499,7 +1510,7 @@ mod tests {
     fn evade_failure_leaves_engagement_intact() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().skills.agility = 1;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Evade {
                 investigator: inv_id,
@@ -1519,7 +1530,7 @@ mod tests {
     fn fight_when_not_engaged_with_target_is_rejected() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().engaged_with = None;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1534,7 +1545,7 @@ mod tests {
     fn evade_when_not_engaged_with_target_is_rejected() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().engaged_with = None;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Evade {
                 investigator: inv_id,
@@ -1548,7 +1559,7 @@ mod tests {
     #[test]
     fn fight_with_unknown_enemy_is_rejected() {
         let (inv_id, _, state) = fight_evade_scenario();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1563,7 +1574,7 @@ mod tests {
     fn fight_outside_investigation_phase_is_rejected() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.phase = Phase::Mythos;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1579,7 +1590,7 @@ mod tests {
         let (_, enemy_id, mut state) = fight_evade_scenario();
         let other = InvestigatorId(2);
         state.investigators.insert(other, test_investigator(2));
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: other,
@@ -1598,7 +1609,7 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .actions_remaining = 0;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1617,7 +1628,7 @@ mod tests {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().fight = -1;
         let actions_before = state.investigators[&inv_id].actions_remaining;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1637,7 +1648,7 @@ mod tests {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().evade = -1;
         let actions_before = state.investigators[&inv_id].actions_remaining;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Evade {
                 investigator: inv_id,
@@ -1660,7 +1671,7 @@ mod tests {
         // `exhausted = true`.
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Evade {
                 investigator: inv_id,
@@ -1687,7 +1698,7 @@ mod tests {
         // full attribution + removal path while the other is untouched.
         state.enemies.get_mut(&enemy_id).unwrap().damage = 1;
 
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1846,7 +1857,7 @@ mod tests {
         enemy.attack_horror = 1;
         let mut state = state;
         state.enemies.insert(enemy_id, enemy);
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -1875,7 +1886,7 @@ mod tests {
         bystander.engaged_with = Some(inv_id);
         bystander.attack_damage = 5;
         state.enemies.insert(bystander_id, bystander);
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -1898,7 +1909,7 @@ mod tests {
         bystander.engaged_with = Some(inv_id);
         bystander.attack_damage = 5;
         state.enemies.insert(bystander_id, bystander);
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Evade {
                 investigator: inv_id,
@@ -2068,7 +2079,7 @@ mod tests {
         enemy.attack_damage = 0;
         enemy.attack_horror = 1;
         state.enemies.insert(enemy_id, enemy);
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -2214,7 +2225,7 @@ mod tests {
     fn defeated_investigator_cannot_investigate() {
         let (inv_id, _, mut state) = investigate_scenario(2, 2);
         state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Investigate {
                 investigator: inv_id,
@@ -2228,7 +2239,7 @@ mod tests {
     fn defeated_investigator_cannot_fight() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().status = Status::Killed;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
                 investigator: inv_id,
@@ -2243,7 +2254,7 @@ mod tests {
     fn defeated_investigator_cannot_evade() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Evade {
                 investigator: inv_id,
@@ -2263,7 +2274,7 @@ mod tests {
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply(
+        let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
                 investigator: id,
@@ -3124,5 +3135,325 @@ mod tests {
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
+    }
+
+    // ---- skill-test commit window (#63) -----------------------------
+
+    #[test]
+    fn perform_skill_test_awaits_input_between_started_and_revealed() {
+        // Acceptance: AwaitingInput must fire between SkillTestStarted
+        // and ChaosTokenRevealed. The first `apply` returns
+        // AwaitingInput with only SkillTestStarted on the events list.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
+        assert_event!(
+            result.events,
+            Event::SkillTestStarted { investigator, .. } if *investigator == id
+        );
+        // The chaos token has NOT been drawn yet — that fires on the
+        // resume path after the commit response arrives.
+        assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+        assert!(
+            result.state.in_flight_skill_test.is_some(),
+            "in_flight_skill_test must be populated while paused",
+        );
+    }
+
+    #[test]
+    fn resolve_input_with_empty_commits_resumes_the_test() {
+        // Pause → resume with `CommitCards { indices: [] }` →
+        // ChaosTokenRevealed and the rest of resolution fire on the
+        // second apply.
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+
+        let resumed = apply(
+            paused.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::CommitCards { indices: vec![] },
+            }),
+        );
+
+        assert_eq!(resumed.outcome, EngineOutcome::Done);
+        assert_event!(resumed.events, Event::ChaosTokenRevealed { .. });
+        assert_event!(
+            resumed.events,
+            Event::SkillTestSucceeded { investigator, .. } if *investigator == id
+        );
+        assert_event!(
+            resumed.events,
+            Event::SkillTestEnded { investigator } if *investigator == id
+        );
+        assert!(
+            resumed.state.in_flight_skill_test.is_none(),
+            "in_flight_skill_test must clear after resolution",
+        );
+    }
+
+    #[test]
+    fn commit_window_discards_committed_cards_into_discard_pile() {
+        // Two cards in hand; commit both. After resolution, both are
+        // in the discard pile, neither in hand, and CardDiscarded
+        // events fired with `from: Hand`. Icon counting is exercised
+        // separately via the cards integration test (this one
+        // doesn't install a registry, so icon contribution is 0).
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.hand = vec![CardCode::new("A"), CardCode::new("B")];
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_chaos_bag(bag_only_zero())
+            .build();
+
+        let result = apply_no_commits_with_response(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+            InputResponse::CommitCards {
+                indices: vec![0, 1],
+            },
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        let inv_after = &result.state.investigators[&id];
+        assert!(
+            inv_after.hand.is_empty(),
+            "hand must be empty after commit + discard"
+        );
+        assert_eq!(
+            inv_after.discard,
+            vec![CardCode::new("B"), CardCode::new("A")],
+            "committed cards land in discard (descending-index removal order)",
+        );
+        assert_event_count!(result.events, 2, Event::CardDiscarded { .. });
+        assert_event!(
+            result.events,
+            Event::CardDiscarded { investigator, code, from: Zone::Hand }
+                if *investigator == id && *code == CardCode::new("A")
+        );
+        assert_event!(
+            result.events,
+            Event::CardDiscarded { investigator, code, from: Zone::Hand }
+                if *investigator == id && *code == CardCode::new("B")
+        );
+    }
+
+    /// Helper: drive a skill-test-initiating action through with the
+    /// given `InputResponse`. Used by commit-window tests that don't
+    /// fit `apply_no_commits` (which always submits an empty commit).
+    fn apply_no_commits_with_response(
+        state: GameState,
+        action: Action,
+        response: InputResponse,
+    ) -> crate::engine::ApplyResult {
+        use crate::test_support::ScriptedResolver;
+        let mut resolver = ScriptedResolver::new();
+        resolver.push(response);
+        crate::test_support::drive(state, action, resolver)
+    }
+
+    #[test]
+    fn commit_window_rejects_out_of_bounds_index() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.hand = vec![CardCode::new("A")];
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+        let bad = apply(
+            paused.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::CommitCards { indices: vec![5] },
+            }),
+        );
+        match bad.outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("out of bounds"),
+                    "unexpected reason: {reason}"
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        // State stays paused (engine still in-flight) so a client
+        // can submit a fixed-up response without re-initiating.
+        assert!(bad.state.in_flight_skill_test.is_some());
+    }
+
+    #[test]
+    fn commit_window_rejects_duplicate_indices() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.hand = vec![CardCode::new("A"), CardCode::new("B")];
+        let state = TestGame::new()
+            .with_investigator(inv)
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+        let bad = apply(
+            paused.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::CommitCards {
+                    indices: vec![0, 0],
+                },
+            }),
+        );
+        match bad.outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(reason.contains("duplicate"), "unexpected reason: {reason}");
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        // State stays paused so the client can submit a fixed-up
+        // response without re-initiating the test.
+        assert!(bad.state.in_flight_skill_test.is_some());
+    }
+
+    #[test]
+    fn non_resolve_input_action_rejects_while_skill_test_paused() {
+        // While a test is paused at its commit window, the engine
+        // rejects every other player action (mirrors the
+        // mulligan_window guard).
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(id)
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+        let rejected = apply(paused.state, Action::Player(PlayerAction::EndTurn));
+        match rejected.outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("commit window"),
+                    "unexpected reason: {reason}",
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        // The pause must survive the rejected action.
+        assert!(rejected.state.in_flight_skill_test.is_some());
+    }
+
+    #[test]
+    fn resolve_input_with_wrong_response_variant_rejects() {
+        let id = InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+        let bad = apply(
+            paused.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Confirm,
+            }),
+        );
+        assert!(matches!(bad.outcome, EngineOutcome::Rejected { .. }));
+        // Test still paused.
+        assert!(bad.state.in_flight_skill_test.is_some());
+    }
+
+    #[test]
+    fn resolve_input_without_any_outstanding_prompt_rejects() {
+        // No prior `apply` opened a commit window — the engine has
+        // nothing to resume.
+        let state = TestGame::new().build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::CommitCards { indices: vec![] },
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn investigate_canonical_event_sequence_pins_followup_before_test_ended() {
+        // Pins the post-#63 ordering: on a successful Investigate the
+        // discover-clue events fire *before* SkillTestEnded, matching
+        // the `SkillTestEnded` event-doc text that cleanup precedes
+        // the end marker. The pre-#63 ordering ran the follow-up
+        // after the bracketing end event — silently flipping that
+        // back would break downstream listeners that key off the end
+        // marker as "all sub-effects already applied."
+        let (inv_id, _loc_id, state) = investigate_scenario(2, 2);
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        crate::assert_event_sequence!(
+            result.events,
+            Event::SkillTestStarted { .. },
+            Event::ChaosTokenRevealed { .. },
+            Event::SkillTestSucceeded { .. },
+            Event::CluePlaced { .. },
+            Event::LocationCluesChanged { .. },
+            Event::SkillTestEnded { .. },
+        );
     }
 }
