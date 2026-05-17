@@ -569,6 +569,11 @@ fn validate_commit_indices(
              was in flight; this is a state-corruption invariant violation"
         )
     });
+    // Arkham's upkeep hand-size limit caps hands well below 256 cards
+    // in practice (#111 tracks the engine-side enforcement of the
+    // discard-to-max-hand-size step), so the `u8::try_from` below
+    // succeeds for every index that passed the bounds check. No
+    // defensive overflow-rejection branch needed.
     let hand_len = inv.hand.len();
     let mut indices_u8: Vec<u8> = Vec::with_capacity(indices.len());
     let mut seen: BTreeSet<u32> = BTreeSet::new();
@@ -578,20 +583,17 @@ fn validate_commit_indices(
                 reason: format!("CommitCards: duplicate hand index {i}").into(),
             });
         }
-        let Ok(i_u8) = u8::try_from(i) else {
+        if (i as usize) >= hand_len {
             return Err(EngineOutcome::Rejected {
-                reason: format!("CommitCards: hand index {i} exceeds u8 range").into(),
-            });
-        };
-        if usize::from(i_u8) >= hand_len {
-            return Err(EngineOutcome::Rejected {
-                reason: format!(
-                    "CommitCards: hand index {i_u8} out of bounds (hand size {hand_len})",
-                )
-                .into(),
+                reason:
+                    format!("CommitCards: hand index {i} out of bounds (hand size {hand_len})",)
+                        .into(),
             });
         }
-        indices_u8.push(i_u8);
+        indices_u8.push(
+            u8::try_from(i)
+                .expect("bounds check above guarantees i < hand_len <= u8::MAX (see #111)"),
+        );
     }
     Ok(indices_u8)
 }

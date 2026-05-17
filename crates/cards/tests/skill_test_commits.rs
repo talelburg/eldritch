@@ -165,6 +165,33 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
 }
 
 #[test]
+fn mixing_matching_and_non_matching_commits_only_counts_the_matching_card() {
+    // Commit Perception (intellect 2) + Overpower (combat 2, no
+    // wild) together against an intellect test. Only Perception's
+    // icons contribute: 3 + 0 + 2 + 0 = 5 vs difficulty 5 → success
+    // with margin 0. Both cards still discard regardless of
+    // contribution.
+    let (state, id) = state_with_hand(&[PERCEPTION, OVERPOWER]);
+    let result = drive_with_commits(
+        state,
+        intellect_test_difficulty_5(id),
+        &[PERCEPTION, OVERPOWER],
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_event!(
+        result.events,
+        Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
+            if *investigator == id
+    );
+    let inv = &result.state.investigators[&id];
+    assert!(inv.hand.is_empty(), "both cards removed from hand");
+    assert_eq!(
+        inv.discard,
+        vec![CardCode::new(OVERPOWER), CardCode::new(PERCEPTION)],
+    );
+}
+
+#[test]
 fn committing_overpower_to_an_intellect_test_contributes_zero_icons() {
     // Non-matching skill icons + no wild = 0 contribution. Overpower
     // has two combat icons; committing it to an intellect test adds
