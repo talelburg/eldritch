@@ -452,6 +452,7 @@ mod tests {
             kind: SkillTestKind::Plain,
             difficulty: 1,
             committed_by_active: Vec::new(),
+            tested_location: None,
             follow_up: SkillTestFollowUp::None,
         });
         state

@@ -138,7 +138,7 @@ Follow this order for every non-trivial PR. Skipping steps has cost real iterati
 7. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge.** Land it as a final commit on the same branch so the doc reflects what actually ships — including review-driven fixes, scope changes, or new decisions surfaced during review. Skipping this step has cost real iterations; the next person hits a stale doc and re-derives context. Specifically:
    - Move the closing issue from the **Open** table to the **Closed** table; bump the closed/open counts in the Status section.
    - Flip the Ordering / Arc table's row to `✅ PR #N`.
-   - Add an entry to **Decisions made** for any non-obvious choice the PR cemented (design pattern, intentional divergence from the issue, scope split, review-surfaced rephrasings, etc.) — include the PR number.
+   - Add an entry to **Decisions made** ONLY for choices that are load-bearing for future PRs — design-shape choices that constrain later work, intentional divergences from the issue body, significant scope splits, or review-surfaced rephrasings that shift the meaning. Skip routine field additions, mirroring of existing patterns, internal trade-offs settled within the PR, and anything a future contributor could grep from the code. If a future PR-author wouldn't need to know this to make their next decision, leave it out. Decisions entries are not a changelog; they're a context-saver for the next person. Include the PR number on each kept entry.
    - Remove any **Open question** the PR settled.
 
    The `docs/phases/README.md` "Maintaining these docs" section is the authoritative spec; this step is the enforcement.

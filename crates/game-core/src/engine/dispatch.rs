@@ -453,12 +453,19 @@ pub(super) fn start_skill_test(
     }
 
     // Mutate-second: stash the in-flight record and announce the test.
+    // Snapshot the investigator's location for
+    // `LocationTarget::TestedLocation` resolution during
+    // `Trigger::OnSkillTestResolution` firing. `inv` is `Some` (we
+    // checked above) and we haven't mutated state since the read, so
+    // re-borrowing is safe.
+    let tested_location = inv.current_location;
     state.in_flight_skill_test = Some(InFlightSkillTest {
         investigator,
         skill,
         kind,
         difficulty,
         committed_by_active: Vec::new(),
+        tested_location,
         follow_up,
     });
     events.push(Event::SkillTestStarted {
@@ -540,6 +547,7 @@ fn finish_skill_test(
     if succeeded {
         apply_skill_test_follow_up(state, events, investigator, follow_up);
     }
+    fire_on_skill_test_resolution(state, events, investigator, &indices_u8, succeeded);
     discard_committed_cards(state, events, investigator, &indices_u8);
 
     events.push(Event::SkillTestEnded { investigator });
@@ -786,6 +794,83 @@ fn apply_skill_test_follow_up(
                 investigator,
             });
             events.push(Event::EnemyExhausted { enemy });
+        }
+    }
+}
+
+/// Iterate the active investigator's committed cards and fire each
+/// matching [`Trigger::OnSkillTestResolution`] ability for the
+/// resolved outcome.
+///
+/// Called inside `finish_skill_test` after the action-specific
+/// [`SkillTestFollowUp`] has emitted its events and before the
+/// committed cards discard. At evaluation time the cards are still in
+/// hand at their hand indices and the in-flight record still holds
+/// the tested location, so
+/// [`LocationTarget::TestedLocation`] resolves cleanly.
+///
+/// **Rejections panic.** Card-impl bugs (e.g. an `OnSkillTestResolution`
+/// effect that uses `LocationTarget::ChosenByController` without
+/// `AwaitingInput` plumbing landing) are state-corruption invariant
+/// violations once a card's been imported through the deck gate;
+/// surface them loudly in tests rather than silently dropping the
+/// triggered effect. Mirrors `apply_skill_test_follow_up`'s
+/// `unreachable!` on a follow-up rejection.
+fn fire_on_skill_test_resolution(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    indices_u8: &[u8],
+    succeeded: bool,
+) {
+    let Some(reg) = card_registry::current() else {
+        // No registry installed — engine-only tests that don't touch
+        // card data don't reach OnSkillTestResolution at all. Silent
+        // skip mirrors `constant_skill_modifier`'s behavior.
+        return;
+    };
+    let outcome_now = if succeeded {
+        crate::dsl::TestOutcome::Success
+    } else {
+        crate::dsl::TestOutcome::Failure
+    };
+
+    // Snapshot the (code, instance-eligible) pairs we'll iterate
+    // before re-borrowing state mutably during apply_effect calls.
+    // Each committed index resolves to a hand-position CardCode; the
+    // cards are still in hand at this point (discard happens next).
+    let codes: Vec<CardCode> = {
+        let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+            unreachable!(
+                "fire_on_skill_test_resolution: investigator {investigator:?} vanished while \
+                 test was in flight; this is a state-corruption invariant violation"
+            )
+        });
+        indices_u8
+            .iter()
+            .map(|&i| inv.hand[usize::from(i)].clone())
+            .collect()
+    };
+
+    for code in &codes {
+        let Some(abilities) = (reg.abilities_for)(code) else {
+            continue;
+        };
+        for ability in abilities {
+            let Trigger::OnSkillTestResolution { outcome } = ability.trigger else {
+                continue;
+            };
+            if outcome != outcome_now {
+                continue;
+            }
+            let ctx = EvalContext::for_controller(investigator);
+            let result = apply_effect(state, events, &ability.effect, ctx);
+            if let EngineOutcome::Rejected { reason } = result {
+                unreachable!(
+                    "OnSkillTestResolution: effect for card {code:?} rejected unexpectedly: \
+                     {reason}"
+                );
+            }
         }
     }
 }
