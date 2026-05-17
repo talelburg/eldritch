@@ -407,6 +407,16 @@ fn resolve_location_target(
         LocationTarget::ChosenByController => {
             Err("LocationTarget::ChosenByController requires AwaitingInput plumbing")
         }
+        LocationTarget::TestedLocation => state
+            .in_flight_skill_test
+            .as_ref()
+            .ok_or("LocationTarget::TestedLocation but no skill test is in flight")
+            .and_then(|t| {
+                t.tested_location.ok_or(
+                    "LocationTarget::TestedLocation but the test's location is unset \
+                     (investigator was between locations at test start)",
+                )
+            }),
     }
 }
 
@@ -747,6 +757,105 @@ mod tests {
             &mut state,
             &mut events,
             &discover_clue(LocationTarget::ControllerLocation, 1),
+            ctx(1),
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn discover_clue_tested_location_resolves_to_in_flight_test_location() {
+        // LocationTarget::TestedLocation reads
+        // GameState::in_flight_skill_test.tested_location, regardless
+        // of where the controller currently is. Set the controller's
+        // current_location to a *different* location and confirm the
+        // discover lands at the tested location.
+        let tested = LocationId(20);
+        let elsewhere = LocationId(30);
+        let mut investigator = test_investigator(1);
+        investigator.current_location = Some(elsewhere);
+        let mut tested_loc = test_location(20, "Study");
+        tested_loc.clues = 2;
+        let elsewhere_loc = test_location(30, "Hall");
+
+        let mut state = TestGame::new()
+            .with_investigator(investigator)
+            .with_location(tested_loc)
+            .with_location(elsewhere_loc)
+            .build();
+        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Intellect,
+            kind: SkillTestKind::Investigate,
+            difficulty: 2,
+            committed_by_active: Vec::new(),
+            tested_location: Some(tested),
+            follow_up: crate::state::SkillTestFollowUp::Investigate,
+        });
+        let mut events = Vec::new();
+
+        let outcome = apply_effect(
+            &mut state,
+            &mut events,
+            &discover_clue(LocationTarget::TestedLocation, 1),
+            ctx(1),
+        );
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.locations[&tested].clues, 1);
+        assert_eq!(state.locations[&elsewhere].clues, 0);
+        assert_eq!(state.investigators[&InvestigatorId(1)].clues, 1);
+    }
+
+    #[test]
+    fn tested_location_rejects_without_in_flight_test() {
+        // No in-flight skill test → TestedLocation can't resolve.
+        let mut investigator = test_investigator(1);
+        investigator.current_location = Some(LocationId(10));
+        let mut state = TestGame::new()
+            .with_investigator(investigator)
+            .with_location({
+                let mut l = test_location(10, "Study");
+                l.clues = 1;
+                l
+            })
+            .build();
+        let mut events = Vec::new();
+
+        let outcome = apply_effect(
+            &mut state,
+            &mut events,
+            &discover_clue(LocationTarget::TestedLocation, 1),
+            ctx(1),
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn tested_location_rejects_when_test_has_no_location_snapshot() {
+        // In-flight test exists but tested_location is None (e.g.
+        // bare PerformSkillTest invoked while between locations).
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Willpower,
+            kind: SkillTestKind::Plain,
+            difficulty: 2,
+            committed_by_active: Vec::new(),
+            tested_location: None,
+            follow_up: crate::state::SkillTestFollowUp::None,
+        });
+        let mut events = Vec::new();
+
+        let outcome = apply_effect(
+            &mut state,
+            &mut events,
+            &discover_clue(LocationTarget::TestedLocation, 1),
             ctx(1),
         );
 

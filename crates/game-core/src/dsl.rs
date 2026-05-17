@@ -92,6 +92,41 @@ pub enum Trigger {
         /// Number of action points required to activate. `0` = Fast.
         action_cost: u8,
     },
+    /// Fires during the resolution of a skill test the card is
+    /// committed to, after the outcome is determined and gated on
+    /// `outcome` matching it.
+    ///
+    /// This is not a reaction window (no player decision, no "may");
+    /// it's part of the test's own resolution machinery. The effect
+    /// evaluates after the action-specific
+    /// [`SkillTestFollowUp`](crate::state::SkillTestFollowUp) and
+    /// before the committed cards discard, so the source card is
+    /// still in hand at evaluation time and
+    /// [`LocationTarget::TestedLocation`] resolves against the
+    /// in-flight test record.
+    ///
+    /// Canonical motivating card: Deduction (01039) — "If this skill
+    /// test is successful while investigating a location, discover 1
+    /// additional clue at that location." See
+    /// [issue #112](https://github.com/talelburg/eldritch/issues/112).
+    ///
+    /// Kind narrowing (the "while investigating" qualifier) is not
+    /// baked into the trigger; it's expressed as an [`Effect::If`]
+    /// over a kind-aware [`Condition`]. Triggers stay outcome-only
+    /// so the surface stays small until a second card with a non-
+    /// trivial kind narrowing lands.
+    ///
+    /// Distinct from the after-resolution reactive trigger window
+    /// tracked in [issue #64](https://github.com/talelburg/eldritch/issues/64),
+    /// which fires *after* the test ends with a player decision
+    /// window ("after a test succeeds, you may …"). This trigger
+    /// runs as part of the test's resolution machinery with no
+    /// player choice; route card text by which timing fits.
+    OnSkillTestResolution {
+        /// Whether the trigger fires on success or on failure of the
+        /// resolving test.
+        outcome: TestOutcome,
+    },
 }
 
 // ---- costs -----------------------------------------------------
@@ -303,6 +338,18 @@ pub enum LocationTarget {
     ControllerLocation,
     /// The controller picks a location.
     ChosenByController,
+    /// The location associated with the in-flight skill test. For
+    /// Investigate that's the location being investigated; the engine
+    /// snapshots it onto
+    /// [`InFlightSkillTest`](crate::state::InFlightSkillTest) at the
+    /// commit window. The
+    /// [`OnSkillTestResolution`](Trigger::OnSkillTestResolution)
+    /// firing path reads this snapshot. Rejects when
+    /// no skill test is in flight or when the snapshotted location
+    /// is absent (controller was between locations at test start —
+    /// only reachable via [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest)
+    /// from outside an Investigate path).
+    TestedLocation,
 }
 
 // ---- conditions -----------------------------------------------
@@ -367,6 +414,19 @@ pub fn on_play(effect: Effect) -> Ability {
 pub fn on_commit(effect: Effect) -> Ability {
     Ability {
         trigger: Trigger::OnCommit,
+        costs: Vec::new(),
+        effect,
+    }
+}
+
+/// Construct a [`Trigger::OnSkillTestResolution`] ability gated on
+/// the given outcome. Costs are empty — resolution-time triggers fire
+/// automatically as part of the test's machinery, not via player
+/// activation.
+#[must_use]
+pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability {
+    Ability {
+        trigger: Trigger::OnSkillTestResolution { outcome },
         costs: Vec::new(),
         effect,
     }
@@ -545,6 +605,30 @@ mod tests {
         // every match site, which is the whole point of separating
         // them rather than reusing OnPlay.
         assert_ne!(ability.trigger, Trigger::OnPlay);
+    }
+
+    /// `on_skill_test_resolution` builds the outcome-gated trigger
+    /// and accepts `TestedLocation`-targeted effects.
+    #[test]
+    fn on_skill_test_resolution_builder() {
+        let ability = on_skill_test_resolution(
+            TestOutcome::Success,
+            discover_clue(LocationTarget::TestedLocation, 1),
+        );
+        assert_eq!(
+            ability.trigger,
+            Trigger::OnSkillTestResolution {
+                outcome: TestOutcome::Success,
+            },
+        );
+        assert!(matches!(
+            ability.effect,
+            Effect::DiscoverClue {
+                from: LocationTarget::TestedLocation,
+                count: 1,
+            },
+        ));
+        assert!(ability.costs.is_empty());
     }
 
     /// Sequence composition: a hypothetical "gain 1 resource AND

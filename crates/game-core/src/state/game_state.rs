@@ -140,6 +140,21 @@ pub struct InFlightSkillTest {
     /// same location may commit") are a separate downstream issue; for
     /// now only the active investigator's commits live here.
     pub committed_by_active: Vec<u8>,
+    /// The location the test is associated with, snapshotted at
+    /// skill-test start (`engine::dispatch::start_skill_test`) from
+    /// the investigator's current location. Used by
+    /// [`LocationTarget::TestedLocation`](crate::dsl::LocationTarget::TestedLocation)
+    /// during
+    /// [`Trigger::OnSkillTestResolution`](crate::dsl::Trigger::OnSkillTestResolution)
+    /// firing so "at that location" resolves to the location the
+    /// test was originally taken against, even if the investigator
+    /// has since moved (no Phase-3 path moves mid-test, but the
+    /// snapshot future-proofs against cards that will). `None` when
+    /// the investigator was between locations at test start —
+    /// only reachable via the bare
+    /// [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest)
+    /// from outside an Investigate path.
+    pub tested_location: Option<LocationId>,
     /// Action-specific resolution to apply on success.
     pub follow_up: SkillTestFollowUp,
 }
