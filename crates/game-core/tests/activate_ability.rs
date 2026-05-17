@@ -24,7 +24,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
     Status, TokenModifiers,
 };
-use game_core::test_support::{test_investigator, TestGame};
+use game_core::test_support::{apply_no_commits, test_investigator, TestGame};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 use game_core::{Action, PlayerAction};
 
@@ -360,7 +360,7 @@ fn this_skill_test_modifier_contributes_to_next_skill_test() {
         "ThisSkillTest push should leave one pending entry",
     );
 
-    let after_test = apply(
+    let after_test = apply_no_commits(
         after_activate.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
@@ -399,7 +399,7 @@ fn this_skill_test_modifier_does_not_leak_into_a_second_test() {
     );
     assert_eq!(after_activate.outcome, EngineOutcome::Done);
 
-    let after_first_test = apply(
+    let after_first_test = apply_no_commits(
         after_activate.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
@@ -409,7 +409,7 @@ fn this_skill_test_modifier_does_not_leak_into_a_second_test() {
     );
     assert_eq!(after_first_test.outcome, EngineOutcome::Done);
 
-    let after_second_test = apply(
+    let after_second_test = apply_no_commits(
         after_first_test.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,

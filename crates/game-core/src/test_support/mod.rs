@@ -12,4 +12,4 @@ pub mod resolver;
 
 pub use builder::TestGame;
 pub use fixtures::{test_enemy, test_investigator, test_location};
-pub use resolver::{drive, ChoiceResolver, ScriptedResolver, TestSession};
+pub use resolver::{apply_no_commits, drive, ChoiceResolver, ScriptedResolver, TestSession};

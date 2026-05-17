@@ -13,7 +13,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{test_investigator, test_location, TestGame};
+use game_core::test_support::{apply_no_commits, test_investigator, test_location, TestGame};
 use game_core::{assert_event, Action, PlayerAction};
 
 const MAGNIFYING_GLASS: &str = "01030";
@@ -73,7 +73,7 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
         CardCode::new(MAGNIFYING_GLASS),
     );
 
-    let result = apply(
+    let result = apply_no_commits(
         after_play.state,
         Action::Player(PlayerAction::Investigate { investigator: id }),
     );
@@ -91,7 +91,7 @@ fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
     let (state, id, _loc) = state_with_mg_in_hand();
     assert!(state.investigators[&id].cards_in_play.is_empty());
 
-    let result = apply(
+    let result = apply_no_commits(
         state,
         Action::Player(PlayerAction::Investigate { investigator: id }),
     );
@@ -121,7 +121,7 @@ fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
 
-    let result = apply(
+    let result = apply_no_commits(
         after_play.state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,

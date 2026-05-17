@@ -275,4 +275,19 @@ pub enum InputResponse {
     PickInvestigator(InvestigatorId),
     /// Pick a specific location.
     PickLocation(LocationId),
+    /// Commit cards from hand to a skill test's commit window. Each
+    /// entry is a zero-based index into the active investigator's hand
+    /// at the moment of the prompt; the engine reads the matching
+    /// `CardCode`s, sums their printed skill icons (matching skill +
+    /// wild) into the test total, and discards them as part of the
+    /// test's cleanup. Empty `indices` is a legal "commit nothing"
+    /// signal.
+    ///
+    /// `u32` rather than `u8` for wire-format symmetry with
+    /// [`PickIndex`](Self::PickIndex); hand sizes never approach `u8`
+    /// limits in practice, the field is downcast at validation time.
+    CommitCards {
+        /// Hand indices to commit.
+        indices: Vec<u32>,
+    },
 }
