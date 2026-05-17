@@ -54,6 +54,15 @@ pub struct ApplyResult {
 /// TODO(#17+): once non-trivial handlers exist, refactor to a strict
 /// validate-first / apply-second two-phase shape so this is structural
 /// rather than a per-handler convention.
+///
+/// On [`EngineOutcome::AwaitingInput`], the returned state and event
+/// list reflect the work done up to the pause point — e.g. a
+/// `PerformSkillTest` apply that suspends at the commit window has
+/// already emitted [`Event::SkillTestStarted`] and populated
+/// [`GameState::in_flight_skill_test`]. The resume action
+/// ([`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput))
+/// drives the rest of resolution in a subsequent `apply` call. While
+/// paused, every non-`ResolveInput` player action rejects.
 pub fn apply(state: GameState, action: Action) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
@@ -3341,6 +3350,9 @@ mod tests {
             }
             other => panic!("expected Rejected, got {other:?}"),
         }
+        // State stays paused so the client can submit a fixed-up
+        // response without re-initiating the test.
+        assert!(bad.state.in_flight_skill_test.is_some());
     }
 
     #[test]
@@ -3415,5 +3427,33 @@ mod tests {
             }),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn investigate_canonical_event_sequence_pins_followup_before_test_ended() {
+        // Pins the post-#63 ordering: on a successful Investigate the
+        // discover-clue events fire *before* SkillTestEnded, matching
+        // the `SkillTestEnded` event-doc text that cleanup precedes
+        // the end marker. The pre-#63 ordering ran the follow-up
+        // after the bracketing end event — silently flipping that
+        // back would break downstream listeners that key off the end
+        // marker as "all sub-effects already applied."
+        let (inv_id, _loc_id, state) = investigate_scenario(2, 2);
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        crate::assert_event_sequence!(
+            result.events,
+            Event::SkillTestStarted { .. },
+            Event::ChaosTokenRevealed { .. },
+            Event::SkillTestSucceeded { .. },
+            Event::CluePlaced { .. },
+            Event::LocationCluesChanged { .. },
+            Event::SkillTestEnded { .. },
+        );
     }
 }

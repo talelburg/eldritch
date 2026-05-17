@@ -534,7 +534,7 @@ fn finish_skill_test(
         .committed_by_active
         .clone_from(&indices_u8);
 
-    let (succeeded, _margin) =
+    let succeeded =
         resolve_chaos_token_and_emit(state, events, investigator, skill, difficulty, skill_value);
 
     if succeeded {
@@ -599,7 +599,7 @@ fn validate_commit_indices(
 /// Sum the four skill-value contributions: investigator's printed
 /// stat, constant modifiers from cards in play, queued
 /// [`ModifierScope::ThisSkillTest`] pushes, and the committed cards'
-/// matching + wild icon icons.
+/// matching + wild icons.
 ///
 /// Cards / scopes not addressed by an installed registry contribute
 /// 0 — the same silent-skip policy `constant_skill_modifier` uses.
@@ -658,8 +658,8 @@ fn sum_committed_icons(hand: &[CardCode], indices: &[u8], skill: SkillKind) -> i
 /// Advance the RNG, draw a chaos token, compute the clamped total
 /// against `difficulty`, and emit the per-step events
 /// (`ChaosTokenRevealed` + either `SkillTestSucceeded` or
-/// `SkillTestFailed`). Returns `(succeeded, margin)` for the caller to
-/// branch its follow-up on.
+/// `SkillTestFailed`). Returns `true` on success so the caller can
+/// branch its follow-up.
 ///
 /// All arithmetic stays in `i8` with saturating ops: realistic
 /// gameplay values (skill 1–8, modifier ±8, difficulty ≤ ~6) fit far
@@ -672,7 +672,7 @@ fn resolve_chaos_token_and_emit(
     skill: SkillKind,
     difficulty: i8,
     skill_value: i8,
-) -> (bool, i8) {
+) -> bool {
     let token_idx = state.rng.next_index(state.chaos_bag.tokens.len());
     let token = state.chaos_bag.tokens[token_idx];
     let resolution = resolve_token(token, &state.token_modifiers);
@@ -701,7 +701,7 @@ fn resolve_chaos_token_and_emit(
             by,
         });
     }
-    (succeeded, margin)
+    succeeded
 }
 
 /// Move every committed hand card to the controller's discard pile,

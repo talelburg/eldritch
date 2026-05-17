@@ -129,11 +129,16 @@ pub struct InFlightSkillTest {
     pub difficulty: i8,
     /// Hand indices the active investigator has committed to the test.
     /// Populated on the [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
-    /// dispatch; the finishing path reads card icons by hand index and
-    /// then discards each committed card. Multi-investigator commits
-    /// (the rule "any investigator at the same location may commit")
-    /// are a separate downstream issue; for now only the active
-    /// investigator's commits live here.
+    /// dispatch and snapshotted onto the in-flight record for replay
+    /// clarity and inspection of a saved mid-test state. The icon-sum
+    /// and discard paths read the indices off the local variable
+    /// computed during validation, not off this field — the field is
+    /// captured *afterward*, so it's not load-bearing for resolution
+    /// today.
+    ///
+    /// Multi-investigator commits (the rule "any investigator at the
+    /// same location may commit") are a separate downstream issue; for
+    /// now only the active investigator's commits live here.
     pub committed_by_active: Vec<u8>,
     /// Action-specific resolution to apply on success.
     pub follow_up: SkillTestFollowUp,
