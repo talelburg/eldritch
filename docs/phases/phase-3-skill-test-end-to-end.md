@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 15 closed / 7 open as of 2026-05-17.
+🟡 In progress. 16 closed / 6 open as of 2026-05-17.
 
 ## Goal
 
@@ -10,11 +10,12 @@ Full skill test sequence runs through the engine in tests — with real-card met
 
 ## Issues
 
-### Closed (15)
+### Closed (16)
 
 | # | Title | Notes |
 |---|---|---|
 | `#19` | deterministic `ChoiceResolver` | Test infra; ships ahead of first engine consumer (`#63`). `commit_cards` stubbed pending commit-window response shape. |
+| `#63` | skill-test card commits from hand | First engine consumer of `#19`. Splits `resolve_skill_test` → `start_skill_test` + `finish_skill_test`; adds `state.in_flight_skill_test`, `SkillTestFollowUp`, `InputResponse::CommitCards`. |
 | `#37` | Magnifying Glass (01030) | First new card after the Phase-3 demo; composes `#87` + `#45`. |
 | `#38` | Hyperawareness (01034) | Exercises `Trigger::Activated` + `ThisSkillTest` push end-to-end. |
 | `#45` | per-skill-test-kind modifier scope | Adds `ModifierScope::WhileInPlayDuring(SkillTestKind)`. |
@@ -30,7 +31,7 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#92` | constant-modifier query during skill-test resolution | Closes the Phase-3 demo: Holy Rosary `+1 willpower` actually applies. |
 | `#102` | `ThisSkillTest` modifier accumulator | Pushed + drained on `SkillTestEnded`. |
 
-### Open (7)
+### Open (6)
 
 | # | Title | Notes |
 |---|---|---|
@@ -39,7 +40,6 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#54` | DSL `OnEvent` trigger | Small extension; unblocks `#52` and `#55` Roland Banks. |
 | `#55` | Roland Banks investigator (01001) | Needs `#54` + `#52`. |
 | `#56` | Study location (01111) | Needs a location-state shape decision; thinnest issue body. |
-| `#63` | skill-test card commits from hand | First engine consumer of `#19`. Finalizes the commit-window response shape and un-stubs `ScriptedResolver::commit_cards`. |
 | `#64` | skill-test after-resolution trigger window | Needs `#54` (OnEvent) + `#19`. |
 
 ## Ordering (Shape B)
@@ -69,7 +69,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 | 5 | `#102` `ThisSkillTest` accumulator | ✅ PR #105 |
 | 6 | `#38` Hyperawareness | ✅ PR #106 |
 | 7 | `#19` ChoiceResolver | ✅ PR #109 |
-| 8 | `#63` skill-test commits | needs `#19` |
+| 8 | `#63` skill-test commits | ✅ PR #110 |
 | 9 | `#39` Deduction | needs `#63` (or `#64`) |
 | 10 | `#54` OnEvent trigger | small |
 | 11 | `#52` reaction windows | needs `#54` + `#19`; largest remaining piece |
@@ -90,6 +90,11 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 - **`test-support` Cargo feature dropped (PR #104).** `pub mod test_support` is now unconditional. Surfaced during `#53` review when the integration-test binary failed to compile without `--all-features`. The feature gated nothing in practice (only consumer was `cards`, which always enabled it).
 - **Event-sequence macro `assert_event_sequence!` added (PR #95).** The file's own "don't add preemptively" note had been waiting for a concrete first user; Working a Hunch's ordering test was that user.
 - **`ChoiceResolver` shipped ahead of consumer (`#19`, PR #109).** Test seam (trait + `ScriptedResolver` + `drive` + `TestSession` + `TestGame::session()`) lands now; no engine path emits `AwaitingInput` yet. `ScriptedResolver::commit_cards` is a recorded stub that panics on resolve until `#63` finalizes the commit-window response variant(s). Diverged from the issue's `pick_target(id)` to concrete `pick_investigator` / `pick_location` matching the existing `InputResponse` variants. Pre-existing `#19` forward references in `dispatch.rs` / `dsl.rs` / `evaluator.rs` were rephrased to "no engine consumer landed yet" so they don't dangle after merge.
+- **Always-suspend at the commit window (`#63`, PR #110).** Every skill test routes through `AwaitingInput` even when the active investigator's hand is empty. Engine uniformity over a "suspend only when hand non-empty" shortcut — the alternative would force every client and test to branch on whether the apply needs a resume. Test side absorbs the cost via `test_support::apply_no_commits`; every new skill-test-initiating action follows this pattern.
+- **`SkillTestFollowUp` is an enum, not an `Effect` (`#63`, PR #110).** The action-specific success path (discover clue / damage enemy / disengage+exhaust / none) is captured as an enum on the in-flight record rather than a DSL `Effect`. The DSL doesn't yet have primitives for `damage_enemy` or "disengage + exhaust"; introducing them just to route Fight/Evade follow-ups would be premature DSL expansion. Revisit if a third primitive use case emerges or if `#39` Deduction's OnCommit logic wants a DSL effect.
+- **Event ordering: action-specific follow-up fires BEFORE `SkillTestEnded` (`#63`, PR #110).** `SkillTestSucceeded → follow-up events → CardDiscarded* → SkillTestEnded`. Matches the `SkillTestEnded` event-doc text ("Cleanup events … precede this"); load-bearing for `#64`'s after-resolution trigger window and any future listener keying off the end marker as "all sub-effects already applied." Pinned by `investigate_canonical_event_sequence_pins_followup_before_test_ended`.
+- **"Max 1 committed per skill test" not enforced (`#63`, PR #110).** Perception, Overpower, and Unexpected Courage all carry the constraint in their printed text but the engine accepts duplicate commits today. The general "card-level commit-limit constraint" needs the DSL to grow a primitive — wait until the second card with a non-trivial commit restriction lands before designing it. No separate tracking issue; resurfaces naturally when needed.
+- **Upkeep hand-size limit tracked as `#111` (`#63`, PR #110).** `InputResponse::CommitCards` carries `u32` indices for wire-format symmetry with `PickIndex`. The engine assumes hand size stays below 256 (a `u8::try_from(...).expect(...)` justified by the preceding bound check); `#111` makes that structural by implementing the Arkham upkeep discard-to-max-hand-size step.
 
 ## Open questions
 
