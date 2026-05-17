@@ -585,9 +585,8 @@ fn validate_commit_indices(
         }
         if (i as usize) >= hand_len {
             return Err(EngineOutcome::Rejected {
-                reason:
-                    format!("CommitCards: hand index {i} out of bounds (hand size {hand_len})",)
-                        .into(),
+                reason: format!("CommitCards: hand index {i} out of bounds (hand size {hand_len})")
+                    .into(),
             });
         }
         indices_u8.push(
