@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 16 closed / 7 open as of 2026-05-17.
+🟡 In progress. 17 closed / 6 open as of 2026-05-17.
 
 ## Goal
 
@@ -10,7 +10,7 @@ Full skill test sequence runs through the engine in tests — with real-card met
 
 ## Issues
 
-### Closed (16)
+### Closed (17)
 
 | # | Title | Notes |
 |---|---|---|
@@ -30,8 +30,9 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#89` | PlayCard action | Asset → in-play; event → discard. |
 | `#92` | constant-modifier query during skill-test resolution | Closes the Phase-3 demo: Holy Rosary `+1 willpower` actually applies. |
 | `#102` | `ThisSkillTest` modifier accumulator | Pushed + drained on `SkillTestEnded`. |
+| `#112` | DSL `Trigger::OnSkillTestResolution` + tested-location plumbing | Split out of `#39` so the trigger variant lands on its own; `#39` consumes it. |
 
-### Open (7)
+### Open (6)
 
 | # | Title | Notes |
 |---|---|---|
@@ -41,7 +42,6 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#55` | Roland Banks investigator (01001) | Needs `#54` + `#52`. |
 | `#56` | Study location (01111) | Needs a location-state shape decision; thinnest issue body. |
 | `#64` | skill-test after-resolution trigger window | Needs `#54` (OnEvent) + `#19`. Distinct semantic from `#112` — `#64` is a player-window-driven reactive trigger after the test ends; `#112` is a resolution-machinery trigger on committed cards. |
-| `#112` | DSL `Trigger::OnSkillTestResolution` + tested-location plumbing | Split out of `#39` so the trigger variant lands on its own; `#39` consumes it. |
 
 ## Ordering (Shape B)
 
@@ -71,7 +71,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 | 6 | `#38` Hyperawareness | ✅ PR #106 |
 | 7 | `#19` ChoiceResolver | ✅ PR #109 |
 | 8 | `#63` skill-test commits | ✅ PR #110 |
-| 9 | `#112` `Trigger::OnSkillTestResolution` + tested-location plumbing | in flight |
+| 9 | `#112` `Trigger::OnSkillTestResolution` + tested-location plumbing | ✅ PR #113 |
 | 10 | `#39` Deduction | consumes `#112` |
 | 11 | `#54` OnEvent trigger | small |
 | 12 | `#52` reaction windows | needs `#54` + `#19`; largest remaining piece |
@@ -97,7 +97,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 - **Event ordering: action-specific follow-up fires BEFORE `SkillTestEnded` (`#63`, PR #110).** `SkillTestSucceeded → follow-up events → CardDiscarded* → SkillTestEnded`. Matches the `SkillTestEnded` event-doc text ("Cleanup events … precede this"); load-bearing for `#64`'s after-resolution trigger window and any future listener keying off the end marker as "all sub-effects already applied." Pinned by `investigate_canonical_event_sequence_pins_followup_before_test_ended`.
 - **"Max 1 committed per skill test" not enforced (`#63`, PR #110).** Perception, Overpower, and Unexpected Courage all carry the constraint in their printed text but the engine accepts duplicate commits today. The general "card-level commit-limit constraint" needs the DSL to grow a primitive — wait until the second card with a non-trivial commit restriction lands before designing it. No separate tracking issue; resurfaces naturally when needed.
 - **Upkeep hand-size limit tracked as `#111` (`#63`, PR #110).** `InputResponse::CommitCards` carries `u32` indices for wire-format symmetry with `PickIndex`. The engine assumes hand size stays below 256 (a `u8::try_from(...).expect(...)` justified by the preceding bound check); `#111` makes that structural by implementing the Arkham upkeep discard-to-max-hand-size step.
-- **`Trigger::OnSkillTestResolution` is resolution-machinery, not a reaction window (`#112`).** Deduction-shaped text ("if this skill test is successful while investigating, discover 1 additional clue at that location") doesn't fit `OnCommit` (outcome unknown at commit) and doesn't fit `#64`'s reactive window (no player decision). New variant fires inside `finish_skill_test` for committed cards, gated on actual outcome. Settles `#39` Deduction's routing question; keeps `#64` strictly for player-window-driven "after a test succeeds, you may …" cards. Event order pinned by `investigate_canonical_event_order_with_on_resolution`: action follow-up before OnResolution before discards, load-bearing for `#64` listeners that key off `SkillTestEnded` as "all sub-effects applied."
+- **`Trigger::OnSkillTestResolution` is resolution-machinery, not a reaction window (`#112`, PR #113).** Deduction-shaped text ("if this skill test is successful while investigating, discover 1 additional clue at that location") doesn't fit `OnCommit` (outcome unknown at commit) and doesn't fit `#64`'s reactive window (no player decision). New variant fires inside `finish_skill_test` for committed cards, gated on actual outcome. Settles `#39` Deduction's routing question; keeps `#64` strictly for player-window-driven "after a test succeeds, you may …" cards. Event order pinned by `investigate_canonical_event_order_with_on_resolution`: action follow-up before OnResolution before discards, load-bearing for `#64` listeners that key off `SkillTestEnded` as "all sub-effects applied."
 
 ## Open questions
 
