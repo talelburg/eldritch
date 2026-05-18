@@ -28,10 +28,11 @@
 //! [`ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
 //! [`ThisTurn`]: crate::dsl::ModifierScope::ThisTurn
 //! [`GameState::pending_skill_modifiers`]: crate::state::GameState::pending_skill_modifiers
-//! - [`Effect::If`] dispatches but its [`Condition`](crate::dsl::Condition)
-//!   evaluator is skill-test-aware
-//!   ([`SkillTest`](crate::dsl::Condition::SkillTest) reads the
-//!   in-flight test's outcome) and skill tests don't exist yet (#49).
+//! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
+//!   the in-flight test's `kind`. [`SkillTest`](crate::dsl::Condition::SkillTest)
+//!   isn't yet wired — the outcome isn't snapshotted onto state, and
+//!   inside an [`Trigger::OnSkillTestResolution`] effect the trigger
+//!   itself gates outcome, so the condition is redundant there.
 //! - [`Effect::ForEach`] dispatches but the
 //!   [`InvestigatorTargetSet`](crate::dsl::InvestigatorTargetSet)
 //!   resolver ("at controller location", "all investigators")
@@ -51,7 +52,8 @@
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Effect, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat, Trigger,
+    Condition, Effect, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
+    Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -138,13 +140,75 @@ pub fn apply_effect(
         Effect::DiscoverClue { from, count } => discover_clue(state, events, ctx, *from, *count),
         Effect::Seq(effects) => apply_seq(state, events, effects, ctx),
         Effect::Modify { stat, delta, scope } => modify(state, ctx, *stat, *delta, *scope),
-        Effect::If { .. } => EngineOutcome::Rejected {
-            reason: "TODO(#47): If evaluator dispatches but Condition::SkillTest needs the \
-                     in-flight skill test in EvalContext (lands with #49)."
-                .into(),
-        },
+        Effect::If {
+            condition,
+            then,
+            else_,
+        } => apply_if(state, events, ctx, condition, then, else_.as_deref()),
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(_) => awaiting_input_stub("ChooseOne"),
+    }
+}
+
+/// Evaluate an [`Effect::If`].
+///
+/// Walks the [`Condition`], branches into `then` on hold or `else_`
+/// otherwise (or [`EngineOutcome::Done`] when `else_` is absent).
+/// Condition evaluation that needs context the engine can't supply
+/// today (e.g. comparing against a stat snapshot not stored on
+/// state) returns [`EngineOutcome::Rejected`] with a TODO message.
+fn apply_if(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    ctx: EvalContext,
+    condition: &Condition,
+    then: &Effect,
+    else_: Option<&Effect>,
+) -> EngineOutcome {
+    let holds = match eval_condition(state, condition) {
+        Ok(b) => b,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    if holds {
+        apply_effect(state, events, then, ctx)
+    } else if let Some(else_branch) = else_ {
+        apply_effect(state, events, else_branch, ctx)
+    } else {
+        EngineOutcome::Done
+    }
+}
+
+/// Resolve a [`Condition`] against the current state.
+///
+/// Returns `Err` for conditions that aren't expressible yet (the
+/// state shape they'd query against doesn't exist) — the caller
+/// turns those into [`EngineOutcome::Rejected`].
+fn eval_condition(state: &GameState, condition: &Condition) -> Result<bool, String> {
+    match condition {
+        Condition::SkillTestKind(kind) => {
+            let t = state.in_flight_skill_test.as_ref().ok_or_else(|| {
+                "Condition::SkillTestKind but no skill test is in flight".to_owned()
+            })?;
+            Ok(t.kind == *kind)
+        }
+        Condition::SkillTest { outcome } => {
+            // Inside an [`Trigger::OnSkillTestResolution`] effect, the
+            // outcome is already gated by the trigger; using this
+            // condition there is redundant. Outside that context
+            // (e.g. an OnEvent reaction keying off `SkillTestSucceeded`),
+            // the engine would need to snapshot the outcome onto
+            // state, which it doesn't today. Reject with a TODO
+            // pointing at the preferred trigger.
+            Err(format!(
+                "TODO: Condition::SkillTest {{ outcome: {outcome:?} }} not yet evaluated; \
+                 prefer Trigger::OnSkillTestResolution for resolution-time effects, \
+                 or wait for an OnEvent-based reaction model to surface past-test outcome."
+            ))
+        }
     }
 }
 
@@ -832,6 +896,139 @@ mod tests {
 
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
         assert!(events.is_empty());
+    }
+
+    // ---- Effect::If + Condition::SkillTestKind tests -------------
+
+    fn state_with_in_flight_kind(kind: SkillTestKind) -> crate::state::GameState {
+        let mut state = TestGame::new()
+            .with_investigator({
+                let mut inv = test_investigator(1);
+                inv.current_location = Some(LocationId(10));
+                inv
+            })
+            .with_location({
+                let mut l = test_location(10, "Study");
+                l.clues = 2;
+                l
+            })
+            .build();
+        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Intellect,
+            kind,
+            difficulty: 2,
+            committed_by_active: Vec::new(),
+            tested_location: Some(LocationId(10)),
+            follow_up: crate::state::SkillTestFollowUp::None,
+        });
+        state
+    }
+
+    #[test]
+    fn if_skill_test_kind_runs_then_branch_when_kind_matches() {
+        use crate::dsl::{discover_clue, if_, Condition};
+        let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
+        let mut events = Vec::new();
+        let effect = if_(
+            Condition::SkillTestKind(SkillTestKind::Investigate),
+            discover_clue(LocationTarget::TestedLocation, 1),
+        );
+
+        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.locations[&LocationId(10)].clues, 1);
+        assert_eq!(state.investigators[&InvestigatorId(1)].clues, 1);
+    }
+
+    #[test]
+    fn if_skill_test_kind_skips_then_branch_when_kind_differs() {
+        use crate::dsl::{discover_clue, if_, Condition};
+        let mut state = state_with_in_flight_kind(SkillTestKind::Plain);
+        let mut events = Vec::new();
+        let effect = if_(
+            Condition::SkillTestKind(SkillTestKind::Investigate),
+            discover_clue(LocationTarget::TestedLocation, 1),
+        );
+
+        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        // No-op: location clues unchanged, no events emitted.
+        assert_eq!(state.locations[&LocationId(10)].clues, 2);
+        assert_eq!(state.investigators[&InvestigatorId(1)].clues, 0);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
+        use crate::dsl::{discover_clue, gain_resources, if_else, Condition, InvestigatorTarget};
+        let mut state = state_with_in_flight_kind(SkillTestKind::Fight);
+        let mut events = Vec::new();
+        let effect = if_else(
+            Condition::SkillTestKind(SkillTestKind::Investigate),
+            discover_clue(LocationTarget::TestedLocation, 1),
+            gain_resources(InvestigatorTarget::Controller, 2),
+        );
+        let resources_before = state.investigators[&InvestigatorId(1)].resources;
+
+        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        // Else branch ran: location untouched, resources +2.
+        assert_eq!(state.locations[&LocationId(10)].clues, 2);
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].resources,
+            resources_before + 2,
+        );
+    }
+
+    #[test]
+    fn if_skill_test_kind_rejects_without_in_flight_test() {
+        use crate::dsl::{discover_clue, if_, Condition};
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let effect = if_(
+            Condition::SkillTestKind(SkillTestKind::Investigate),
+            discover_clue(LocationTarget::TestedLocation, 1),
+        );
+
+        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn if_skill_test_outcome_condition_remains_todo() {
+        // `Condition::SkillTest { outcome }` isn't yet wired. The
+        // preferred path for resolution-time outcome-gated effects is
+        // Trigger::OnSkillTestResolution; the condition is reserved
+        // for a future past-test reaction model.
+        use crate::dsl::{discover_clue, if_, Condition, TestOutcome};
+        let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
+        let mut events = Vec::new();
+        let effect = if_(
+            Condition::SkillTest {
+                outcome: TestOutcome::Success,
+            },
+            discover_clue(LocationTarget::TestedLocation, 1),
+        );
+
+        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+
+        match outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("Condition::SkillTest"),
+                    "reason should mention Condition::SkillTest: {reason:?}",
+                );
+            }
+            _ => panic!("expected Rejected for stubbed condition, got {outcome:?}"),
+        }
     }
 
     #[test]

@@ -136,13 +136,11 @@ mod tests {
         assert!(is_playable("01059"));
         assert!(is_playable("01030"));
         assert!(is_playable("01034"));
+        assert!(is_playable("01039"));
     }
 
     #[test]
     fn unimplemented_cards_are_not_playable() {
-        // Deduction (01039) needs the skill-test commit window (#63)
-        // or the after-resolution trigger (#64).
-        assert!(!is_playable("01039"));
         // Phase-3 doesn't touch most of the corpus.
         assert!(!is_playable("01001")); // Roland Banks
         assert!(!is_playable("01017")); // Physical Training
@@ -151,7 +149,7 @@ mod tests {
 
     #[test]
     fn abilities_for_returns_some_for_implemented() {
-        for code in ["01030", "01034", "01037", "01059"] {
+        for code in ["01030", "01034", "01037", "01039", "01059"] {
             let abilities = super::abilities_for(code)
                 .unwrap_or_else(|| panic!("expected abilities for {code}"));
             assert!(
