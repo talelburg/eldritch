@@ -27,6 +27,7 @@
 //!
 //! [`Trigger::OnSkillTestResolution`]: game_core::dsl::Trigger::OnSkillTestResolution
 //! [`TestOutcome::Success`]: game_core::dsl::TestOutcome::Success
+//! [`if_`]: game_core::dsl::if_
 //! [`Condition::SkillTestKind`]: game_core::dsl::Condition::SkillTestKind
 //! [`SkillTestKind::Investigate`]: game_core::dsl::SkillTestKind::Investigate
 //! [`LocationTarget::TestedLocation`]: game_core::dsl::LocationTarget::TestedLocation

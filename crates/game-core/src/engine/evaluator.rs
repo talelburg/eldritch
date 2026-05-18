@@ -157,6 +157,11 @@ pub fn apply_effect(
 /// Condition evaluation that needs context the engine can't supply
 /// today (e.g. comparing against a stat snapshot not stored on
 /// state) returns [`EngineOutcome::Rejected`] with a TODO message.
+///
+/// Inherits [`apply_seq`]'s partial-events-on-rejection caveat: a
+/// `Rejected` returned by the branch passes through with whatever
+/// events the branch already pushed. The structural fix lives at
+/// the outer `apply` loop (TODO in `engine/mod.rs::apply`).
 fn apply_if(
     state: &mut GameState,
     events: &mut Vec<Event>,

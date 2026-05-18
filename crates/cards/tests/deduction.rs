@@ -69,8 +69,12 @@ fn drive_committing_deduction(
 #[test]
 fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon() {
     // 3 intellect + 0 (token) + 1 (Deduction's intellect icon) = 4 vs
-    // shroud 4 → succeed by 0. Bonus clue fires → location lost 2 of
-    // 2 clues, controller has 2 clues.
+    // shroud 4 → succeed by 0. Two CluePlaced events fire: one from
+    // the Investigate action's standard `SkillTestFollowUp` (1 clue
+    // at the controller's location), and one from Deduction's
+    // OnSkillTestResolution bonus (1 clue at the tested location,
+    // same location here). Location ends with 0 of 2 clues;
+    // controller carries 2.
     let (state, id, loc) = state_with_deduction(2, 4);
     let result = drive_committing_deduction(
         state,
@@ -107,7 +111,7 @@ fn failed_investigate_does_not_fire_deductions_bonus() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,
-        Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, .. }
+        Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 95, .. }
             if *investigator == id
     );
     // Deduction still discards on a failed test (committed cards
