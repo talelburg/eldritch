@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 17 closed / 6 open as of 2026-05-17.
+🟡 In progress. 18 closed / 5 open as of 2026-05-18.
 
 ## Goal
 
@@ -10,7 +10,7 @@ Full skill test sequence runs through the engine in tests — with real-card met
 
 ## Issues
 
-### Closed (17)
+### Closed (18)
 
 | # | Title | Notes |
 |---|---|---|
@@ -18,6 +18,7 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#63` | skill-test card commits from hand | First engine consumer of `#19`. Splits `resolve_skill_test` → `start_skill_test` + `finish_skill_test`; adds `state.in_flight_skill_test`, `SkillTestFollowUp`, `InputResponse::CommitCards`. |
 | `#37` | Magnifying Glass (01030) | First new card after the Phase-3 demo; composes `#87` + `#45`. |
 | `#38` | Hyperawareness (01034) | Exercises `Trigger::Activated` + `ThisSkillTest` push end-to-end. |
+| `#39` | Deduction (01039) | First consumer of `Trigger::OnSkillTestResolution`; also wires `Effect::If` evaluator + adds `Condition::SkillTestKind` for the kind narrowing. |
 | `#45` | per-skill-test-kind modifier scope | Adds `ModifierScope::WhileInPlayDuring(SkillTestKind)`. |
 | `#47` | DSL evaluator (Effect → state mutation) | Initial scaffold with stubs for non-leaf effects. |
 | `#48` | chaos bag draw + token modifier resolution | `resolve_token` + `TokenResolution`. |
@@ -32,11 +33,10 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#102` | `ThisSkillTest` modifier accumulator | Pushed + drained on `SkillTestEnded`. |
 | `#112` | DSL `Trigger::OnSkillTestResolution` + tested-location plumbing | Split out of `#39` so the trigger variant lands on its own; `#39` consumes it. |
 
-### Open (6)
+### Open (5)
 
 | # | Title | Notes |
 |---|---|---|
-| `#39` | Deduction (01039) | Consumes `#112`; lands as the next PR. |
 | `#52` | reaction windows + trigger ordering | Needs `#54` + `#19`. The largest remaining engine piece. |
 | `#54` | DSL `OnEvent` trigger | Small extension; unblocks `#52` and `#55` Roland Banks. |
 | `#55` | Roland Banks investigator (01001) | Needs `#54` + `#52`. |
@@ -72,7 +72,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 | 7 | `#19` ChoiceResolver | ✅ PR #109 |
 | 8 | `#63` skill-test commits | ✅ PR #110 |
 | 9 | `#112` `Trigger::OnSkillTestResolution` + tested-location plumbing | ✅ PR #113 |
-| 10 | `#39` Deduction | consumes `#112` |
+| 10 | `#39` Deduction | ✅ PR #114 |
 | 11 | `#54` OnEvent trigger | small |
 | 12 | `#52` reaction windows | needs `#54` + `#19`; largest remaining piece |
 | 13 | `#55` Roland Banks | needs `#54` + `#52` |

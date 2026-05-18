@@ -363,10 +363,19 @@ pub enum LocationTarget {
 #[non_exhaustive]
 pub enum Condition {
     /// Outcome of the most recent skill test in the current
-    /// resolution stack. Deduction's "if successful while
-    /// investigating" uses [`TestOutcome::Success`]; failure-triggered
-    /// cards (e.g. some Survivor cards) use [`TestOutcome::Failure`].
+    /// resolution stack. Failure-triggered cards (some Survivor
+    /// cards) use [`TestOutcome::Failure`]; success-side card text
+    /// typically gates via [`Trigger::OnSkillTestResolution`] instead,
+    /// so this variant is rarely paired with `Success`.
     SkillTest { outcome: TestOutcome },
+    /// Kind of the currently-resolving skill test. Used to narrow
+    /// effects whose printed text qualifies on the action that
+    /// initiated the test — Deduction's "if this skill test is
+    /// successful **while investigating** …" wraps its bonus-clue
+    /// effect in `If(SkillTestKind(Investigate), …)`. Holds when
+    /// there's an in-flight test whose kind matches; rejects when
+    /// no test is in flight.
+    SkillTestKind(SkillTestKind),
 }
 
 /// Result of a skill test, as a discrete value usable in conditions.
