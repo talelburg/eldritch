@@ -6,42 +6,42 @@
 //! tests do, in Phase 3+) walks an [`Effect`] tree to actually mutate
 //! game state.
 //!
-//! # Phase-2 scope
+//! # Scope
 //!
-//! Just enough primitives to express the simple Phase-2 cards (Holy
-//! Rosary's constant modifiers, Working a Hunch's `on_play` clue
-//! discovery). Costs, action abilities, reaction triggers, and
-//! complex conditions are deferred — cards needing them get a Rust
-//! trait impl until the DSL grows the relevant verbs.
+//! The primitive set grows as cards demand. Today the DSL covers
+//! constant modifiers, on-play and on-commit triggers, activated
+//! abilities with action / payment costs, and a skill-test-resolution
+//! trigger. Reaction-style abilities have a DSL surface
+//! ([`Trigger::OnEvent`]) but no engine machinery yet (see below).
+//! Cards needing primitives the DSL doesn't yet express get a Rust
+//! trait impl until the verb lands.
 //!
 //! # What's not yet expressible
 //!
 //! Common shapes the DSL cannot describe today, and where they'll
 //! land:
 //!
-//! - **Activated abilities** (`[action]` / `[fast]` symbols on
-//!   asset abilities — Hyperawareness's `[fast] Spend 1 resource:
-//!   You get +1 [intellect] for this skill test`, etc.). Need a
-//!   `Trigger::Activated { action_cost: u8, costs: Vec<Cost> }` plus
-//!   cost primitives.
 //! - **Forced / leave-play triggers** (Harold Walsted's `Forced — when
 //!   Harold Walsted leaves play: Remove him from the game and add...`
 //!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
 //!   ability-specific effect machinery.
+//! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
+//!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). [`Condition`]
+//!   today only covers skill-test outcome and kind.
+//!
+//! # Has DSL surface but not yet engine support
+//!
 //! - **Reaction abilities** (Roland Banks's `[reaction] After you
 //!   defeat an enemy: Discover 1 clue at your location. (Limit once
-//!   per round.)`). The DSL surface ([`Trigger::OnEvent`]) lands;
-//!   the engine event-window plumbing — registering active triggers
-//!   from cards in play and firing them against emitted events —
-//!   lands in
+//!   per round.)`). [`Trigger::OnEvent`] compiles and round-trips
+//!   through serde, but the engine event-window plumbing —
+//!   registering active triggers from cards in play and firing them
+//!   against emitted events — lands in
 //!   [issue #52](https://github.com/talelburg/eldritch/issues/52),
 //!   and per-round limit tracking still needs a primitive.
-//! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
-//!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). Phase-2 only
-//!   has [`Condition::SkillTest`] with success/failure granularity.
 //!
-//! Cards needing any of these go to a Rust impl until the DSL grows
-//! the relevant primitive.
+//! Cards needing primitives in either list go to a Rust impl until
+//! the relevant verb lands.
 //!
 //! # Free-function builders
 //!
@@ -861,8 +861,10 @@ mod tests {
 
     /// `OnEvent` is a distinct enum variant from existing trigger
     /// shapes — the compiler enforces the distinction at every match
-    /// site, and the pattern/timing fields differentiate sub-cases
-    /// from each other.
+    /// site, and the `by_controller` / `timing` fields differentiate
+    /// the currently-expressible sub-cases. Pattern-vs-pattern
+    /// distinction lands as soon as a second [`EventPattern`] variant
+    /// arrives.
     #[test]
     fn on_event_distinct_from_other_triggers_and_internally() {
         let after_any = Trigger::OnEvent {
@@ -893,19 +895,25 @@ mod tests {
     /// An `OnEvent`-triggered ability round-trips through `serde_json`
     /// — `#[non_exhaustive]` × struct-variant × serde derive can
     /// surprise; pin the wire shape now so #52's persistence doesn't
-    /// re-discover problems later.
+    /// re-discover problems later. Both [`EventTiming`] variants
+    /// (`After` and `Before`) are exercised independently since
+    /// `#[non_exhaustive]` × unit-variant × serde can fail on either
+    /// alone (very rare, but the test rationale explicitly covers
+    /// this surface).
     #[test]
     fn on_event_ability_round_trips_through_serde_json() {
-        let original = on_event(
-            EventPattern::EnemyDefeated {
-                by_controller: true,
-            },
-            EventTiming::After,
-            discover_clue(LocationTarget::ControllerLocation, 1),
-        );
-        let json = serde_json::to_string(&original).expect("serialize");
-        let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(original, recovered);
+        for timing in [EventTiming::After, EventTiming::Before] {
+            let original = on_event(
+                EventPattern::EnemyDefeated {
+                    by_controller: true,
+                },
+                timing,
+                discover_clue(LocationTarget::ControllerLocation, 1),
+            );
+            let json = serde_json::to_string(&original).expect("serialize");
+            let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(original, recovered);
+        }
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).
