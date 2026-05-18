@@ -30,8 +30,12 @@
 //!   ability-specific effect machinery.
 //! - **Reaction abilities** (Roland Banks's `[reaction] After you
 //!   defeat an enemy: Discover 1 clue at your location. (Limit once
-//!   per round.)`). Need `Trigger::Reaction(EventPattern)` with the
-//!   engine's event-window plumbing plus per-round limit tracking.
+//!   per round.)`). The DSL surface ([`Trigger::OnEvent`]) lands;
+//!   the engine event-window plumbing — registering active triggers
+//!   from cards in play and firing them against emitted events —
+//!   lands in
+//!   [issue #52](https://github.com/talelburg/eldritch/issues/52),
+//!   and per-round limit tracking still needs a primitive.
 //! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
 //!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). Phase-2 only
 //!   has [`Condition::SkillTest`] with success/failure granularity.
@@ -58,8 +62,8 @@ use serde::{Deserialize, Serialize};
 
 /// When an [`Ability`] is active.
 ///
-/// Phase-3 set. Later phases add `OnEvent(EventPattern)`,
-/// `AtPhaseStart`/`AtPhaseEnd`, `OnLeavePlay`, and reaction triggers.
+/// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
+/// `OnLeavePlay`, and additional reactive patterns as cards demand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Trigger {
@@ -127,6 +131,74 @@ pub enum Trigger {
         /// resolving test.
         outcome: TestOutcome,
     },
+    /// Fires when an engine [`Event`](crate::Event) matching `pattern`
+    /// is emitted, in the reaction window opened by the engine for
+    /// the corresponding `timing`.
+    ///
+    /// Canonical motivating card: Roland Banks (01001) —
+    /// `[reaction] After you defeat an enemy: Discover 1 clue at your
+    /// location.` compiles to `OnEvent { pattern: EnemyDefeated {
+    /// by_controller: true }, timing: After }`.
+    ///
+    /// Distinct from [`OnSkillTestResolution`](Self::OnSkillTestResolution),
+    /// which fires inside a skill test's own resolution machinery
+    /// (no player decision, no `may`). `OnEvent` triggers fire in
+    /// reaction windows where the controller may choose to use them.
+    ///
+    /// The DSL surface lands here; the engine machinery that
+    /// registers these triggers from cards in play and fires them
+    /// during reaction windows lands in
+    /// [issue #52](https://github.com/talelburg/eldritch/issues/52).
+    /// Until then the engine ignores `OnEvent` abilities; cards
+    /// declaring one compile and round-trip through serde but
+    /// otherwise do nothing at runtime.
+    OnEvent {
+        /// Which engine event(s) trigger this ability.
+        pattern: EventPattern,
+        /// Whether the trigger fires before or after the matching
+        /// event finalizes.
+        timing: EventTiming,
+    },
+}
+
+/// Which engine event(s) an [`Trigger::OnEvent`] ability listens for.
+///
+/// Phase-3 minimal set: just the variant Roland Banks needs. The enum
+/// is `#[non_exhaustive]` and grows as later cards demand new
+/// patterns (skill-test outcomes, investigator movement, clue
+/// placement, …).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum EventPattern {
+    /// An enemy was defeated. `by_controller` narrows the match to
+    /// defeats credited to the ability's controller — Roland Banks's
+    /// "after **you** defeat an enemy" sets this `true`; an
+    /// unqualified "after an enemy is defeated" would set it `false`.
+    EnemyDefeated {
+        /// If `true`, only fires when the controller of this ability
+        /// is credited with the defeat (the
+        /// [`by`](crate::Event::EnemyDefeated) field of the event).
+        /// If `false`, any defeat matches.
+        by_controller: bool,
+    },
+}
+
+/// When an [`Trigger::OnEvent`] ability fires relative to the
+/// triggering event finalizing.
+///
+/// Most reaction cards use [`After`](Self::After) ("After you defeat
+/// an enemy …"). [`Before`](Self::Before) is the "Forced — when …
+/// would …" timing that lets an effect interpose on an in-progress
+/// event; no card uses it in the Phase-3 scope yet, but the variant
+/// is included so #52's reaction-window machinery can hang both
+/// windows off the same trigger surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum EventTiming {
+    /// Resolves before the triggering event finalizes.
+    Before,
+    /// Resolves after the triggering event has finalized.
+    After,
 }
 
 // ---- costs -----------------------------------------------------
@@ -441,6 +513,18 @@ pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability
     }
 }
 
+/// Construct a [`Trigger::OnEvent`] ability for the given pattern
+/// and timing. Costs are empty — reactive triggers fire from the
+/// engine's reaction-window plumbing, not via player activation.
+#[must_use]
+pub fn on_event(pattern: EventPattern, timing: EventTiming, effect: Effect) -> Ability {
+    Ability {
+        trigger: Trigger::OnEvent { pattern, timing },
+        costs: Vec::new(),
+        effect,
+    }
+}
+
 /// Construct a [`Trigger::Activated`] ability with the given action
 /// cost, payment costs, and effect.
 ///
@@ -739,6 +823,88 @@ mod tests {
         ]);
         let json = serde_json::to_string(&original).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(original, recovered);
+    }
+
+    /// Roland-Banks-shaped reaction: "after you defeat an enemy,
+    /// discover 1 clue at your location" — the canonical motivating
+    /// card for [`Trigger::OnEvent`]. The DSL doesn't fire it yet
+    /// (engine reaction windows land in #52), but construction must
+    /// work today so #55 has somewhere to land.
+    #[test]
+    fn on_event_builder_constructs_roland_banks_reaction() {
+        let ability = on_event(
+            EventPattern::EnemyDefeated {
+                by_controller: true,
+            },
+            EventTiming::After,
+            discover_clue(LocationTarget::ControllerLocation, 1),
+        );
+        assert_eq!(
+            ability.trigger,
+            Trigger::OnEvent {
+                pattern: EventPattern::EnemyDefeated {
+                    by_controller: true,
+                },
+                timing: EventTiming::After,
+            },
+        );
+        assert!(matches!(
+            ability.effect,
+            Effect::DiscoverClue {
+                from: LocationTarget::ControllerLocation,
+                count: 1,
+            },
+        ));
+        assert!(ability.costs.is_empty());
+    }
+
+    /// `OnEvent` is a distinct enum variant from existing trigger
+    /// shapes — the compiler enforces the distinction at every match
+    /// site, and the pattern/timing fields differentiate sub-cases
+    /// from each other.
+    #[test]
+    fn on_event_distinct_from_other_triggers_and_internally() {
+        let after_any = Trigger::OnEvent {
+            pattern: EventPattern::EnemyDefeated {
+                by_controller: false,
+            },
+            timing: EventTiming::After,
+        };
+        let after_controller = Trigger::OnEvent {
+            pattern: EventPattern::EnemyDefeated {
+                by_controller: true,
+            },
+            timing: EventTiming::After,
+        };
+        let before_controller = Trigger::OnEvent {
+            pattern: EventPattern::EnemyDefeated {
+                by_controller: true,
+            },
+            timing: EventTiming::Before,
+        };
+        assert_ne!(after_any, Trigger::Constant);
+        assert_ne!(after_any, Trigger::OnPlay);
+        assert_ne!(after_any, Trigger::OnCommit);
+        assert_ne!(after_any, after_controller);
+        assert_ne!(after_controller, before_controller);
+    }
+
+    /// An `OnEvent`-triggered ability round-trips through `serde_json`
+    /// — `#[non_exhaustive]` × struct-variant × serde derive can
+    /// surprise; pin the wire shape now so #52's persistence doesn't
+    /// re-discover problems later.
+    #[test]
+    fn on_event_ability_round_trips_through_serde_json() {
+        let original = on_event(
+            EventPattern::EnemyDefeated {
+                by_controller: true,
+            },
+            EventTiming::After,
+            discover_clue(LocationTarget::ControllerLocation, 1),
+        );
+        let json = serde_json::to_string(&original).expect("serialize");
+        let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(original, recovered);
     }
 
