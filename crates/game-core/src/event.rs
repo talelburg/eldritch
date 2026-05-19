@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::{
     CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenResolution, Zone,
+    SkillKind, TokenResolution, WindowKind, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -320,6 +320,44 @@ pub enum Event {
         code: CardCode,
         /// Which ability on the card fired.
         ability_index: u8,
+    },
+    /// A reaction window opened. Carries the [`WindowKind`] discriminant
+    /// so listeners and replay tools know what kind of triggers can
+    /// fire inside the window. Pairs with a later
+    /// [`WindowClosed`](Self::WindowClosed) of the same kind.
+    ///
+    /// **Mid-action timing.** Per the Rules Reference's "after…"
+    /// clause, this event fires immediately after the triggering
+    /// condition's impact resolves — *inside* the surrounding action
+    /// handler, before the action's other resolution steps continue.
+    /// For a Fight that defeats an enemy, that means:
+    /// `EnemyDefeated → WindowOpened → [reaction effects] →
+    /// WindowClosed → OnSkillTestResolution → CardDiscarded →
+    /// SkillTestEnded`.
+    WindowOpened {
+        /// The kind of window that opened.
+        kind: WindowKind,
+    },
+    /// A reaction window closed — every forced trigger inside it has
+    /// fired and the player has chosen to fire or skip each optional
+    /// one. Pairs with the preceding [`WindowOpened`](Self::WindowOpened)
+    /// of the same kind.
+    ///
+    /// A window with **no** matching triggers is not opened at all —
+    /// no [`WindowOpened`]/`WindowClosed` pair fires for it. Listeners
+    /// can treat the presence of a `WindowOpened` event as proof that
+    /// at least one trigger was offered to the player; the matching
+    /// `WindowClosed` follows once the player resolves the window.
+    ///
+    /// After this fires, the surrounding action's driver resumes
+    /// (e.g. the skill-test driver advances from
+    /// [`FinishContinuation::PostFollowUp`](crate::state::FinishContinuation::PostFollowUp)
+    /// to the `OnSkillTestResolution` step).
+    ///
+    /// [`WindowOpened`]: Self::WindowOpened
+    WindowClosed {
+        /// The kind of window that closed.
+        kind: WindowKind,
     },
 }
 

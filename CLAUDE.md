@@ -104,7 +104,9 @@ Several Arkham mechanics have non-obvious shapes that have already caused mistak
 - **"Fast" is a play-cost concern, not a DSL concern.** `Trigger::Activated { action_cost: 0 }` is a different "fast." Both exist; don't conflate.
 - **ArkhamDB calls factions "factions"; the rulebook calls them "classes."** The pipeline translates at ingestion; internally we use `Class`.
 
-When citing card text or behavior, verify against `data/arkhamdb-snapshot/pack/*/` before asserting — memory of card text isn't reliable.
+**Whenever you reference or quote a card's text or effect — in code, comments, commit messages, PR descriptions, or chat — you MUST first look up the card's exact text in `data/arkhamdb-snapshot/pack/*/` before writing anything.** No exceptions: don't paraphrase from memory and then "verify later," because the verify step gets skipped. Read the JSON entry first; copy text verbatim where it appears in a quote. Memory of card text is unreliable and PR review has caught real divergences (renamed traits, off-by-one stats, dropped sub-clauses). If a card you want to cite isn't in the snapshot, say so explicitly rather than reconstructing from memory.
+
+When implementing or citing **rules behavior** — ability timing, trigger windows, framework events, skill-test resolution sequence, action structure, anything procedural — verify against the official Rules Reference at `data/rules-reference/ahc01_rules_reference_web.pdf` (vendored from Fantasy Flight; see `data/rules-reference/SOURCE.md` for provenance) before asserting. Paraphrases drift from canonical text; secondary mirrors (ArkhamDB rules page, Rulepop, fan wikis) lag and occasionally disagree. Quote the load-bearing clause verbatim in PR descriptions and engine doc-comments where the rule actually shapes behavior; elision is fine when the surrounding clause is decorative, but never substitute words. When the user asks for a rules-based judgment call, the citation belongs in the answer.
 
 ### Phase plan and milestones
 

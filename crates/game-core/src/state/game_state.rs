@@ -101,6 +101,39 @@ pub struct GameState {
     /// [`ChaosTokenRevealed`]: crate::Event::ChaosTokenRevealed
     /// [`EngineOutcome::AwaitingInput`]: crate::EngineOutcome::AwaitingInput
     pub in_flight_skill_test: Option<InFlightSkillTest>,
+    /// An open reaction window the engine is waiting on input for.
+    /// `Some` between the moment the engine emits
+    /// [`Event::WindowOpened`](crate::Event::WindowOpened) for a
+    /// reaction window with at least one matching trigger and the
+    /// moment the player has resolved every forced trigger and either
+    /// fired or skipped each optional one (closing the window).
+    ///
+    /// While set, every non-[`ResolveInput`](crate::action::PlayerAction::ResolveInput)
+    /// player action rejects, mirroring the
+    /// [`in_flight_skill_test`](Self::in_flight_skill_test) and
+    /// [`mulligan_window`](Self::mulligan_window) guards.
+    ///
+    /// **Timing relative to the surrounding action.** Per the Rules
+    /// Reference, an "after…" reaction "may be used immediately after
+    /// that triggering condition's impact upon the game state has
+    /// resolved" — i.e. mid-action, not at action's end. The engine
+    /// honors this: the triggering event-emitter (e.g.
+    /// `damage_enemy` emitting [`EnemyDefeated`](crate::Event::EnemyDefeated))
+    /// queues the window via `queue_reaction_window`, and the next
+    /// step boundary inside the current handler (the skill-test
+    /// driver between [`FinishContinuation::PostFollowUp`] and the
+    /// `OnSkillTestResolution` step) checks for queued windows and
+    /// suspends.
+    ///
+    /// On resume the window's close path (`close_reaction_window`)
+    /// re-enters the surrounding handler's driver at the saved
+    /// [`continuation`](InFlightSkillTest::continuation) so the rest
+    /// of the action's events fire in their canonical order.
+    ///
+    /// Single-slot today: actions in scope queue at most one window
+    /// per apply. Multi-window queueing (e.g. a card effect that
+    /// defeats two enemies) lands when the first such effect arrives.
+    pub in_flight_reaction_window: Option<ReactionWindow>,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -157,6 +190,93 @@ pub struct InFlightSkillTest {
     pub tested_location: Option<LocationId>,
     /// Action-specific resolution to apply on success.
     pub follow_up: SkillTestFollowUp,
+    /// Where the resolution driver should resume on the next call to
+    /// `drive_skill_test`. Initialized to
+    /// [`FinishContinuation::AwaitingCommit`] at
+    /// `start_skill_test`; advanced in lock-step as the resolution
+    /// sequence runs. Post-commit variants carry the test's outcome
+    /// as a `succeeded` payload (see [`FinishContinuation`]) so the
+    /// invariant "outcome is known iff the test is past the commit
+    /// window" is structural.
+    pub continuation: FinishContinuation,
+}
+
+/// Where the skill-test resolution driver should resume on the next
+/// call to `drive_skill_test`.
+///
+/// The driver walks a fixed sequence of steps inside
+/// `finish_skill_test`:
+///
+/// 1. Validate commits + draw chaos token + emit
+///    [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
+///    [`SkillTestFailed`](crate::Event::SkillTestFailed)
+/// 2. Apply the action-specific
+///    [`SkillTestFollowUp`] (Investigate / Fight / Evade / None) —
+///    this is where `damage_enemy` may emit
+///    [`EnemyDefeated`](crate::Event::EnemyDefeated) and queue an
+///    [`AfterEnemyDefeated`](WindowKind::AfterEnemyDefeated) window
+/// 3. Fire
+///    [`OnSkillTestResolution`](crate::dsl::Trigger::OnSkillTestResolution)
+///    triggers on committed cards
+/// 4. Discard committed cards + emit
+///    [`SkillTestEnded`](crate::Event::SkillTestEnded) + drain
+///    pending modifiers
+///
+/// After each step that *can* queue a reaction window, the driver
+/// checks [`GameState::in_flight_reaction_window`]; if a window is
+/// pending it suspends with
+/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). On resume
+/// (via `close_reaction_window`) the driver reads this field and
+/// jumps to the matching step. This is the rules-correct shape per
+/// the Rules Reference's "after… initiates immediately after that
+/// triggering condition's impact has resolved" clause: the reaction
+/// fires between steps 2 and 3, not after the entire action ends.
+///
+/// Variants past [`AwaitingCommit`](Self::AwaitingCommit) carry the
+/// `succeeded` payload because the test's outcome is determined in
+/// step 1 and read by every subsequent step
+/// (`OnSkillTestResolution` gating, `#64`'s reactive after-resolution
+/// window). Embedding it in the continuation makes the invariant
+/// "succeeded is known iff the test is past the commit window"
+/// structural.
+///
+/// Variants:
+///
+/// - [`AwaitingCommit`](Self::AwaitingCommit) — initial state at
+///   skill-test start. No resume; the next dispatch step is the
+///   commit-window
+///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
+///   with a [`CommitCards`](crate::action::InputResponse::CommitCards)
+///   response.
+/// - [`PostFollowUp`](Self::PostFollowUp) — set by the commit-stage
+///   entry once steps 1–2 have run. The next driver iteration runs
+///   step 3.
+/// - [`PostOnResolution`](Self::PostOnResolution) — set after step 3.
+///   The next driver iteration runs step 4 (terminal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum FinishContinuation {
+    /// Initial state: waiting on the commit-window
+    /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput).
+    AwaitingCommit,
+    /// Steps 1–2 are complete (chaos token + action follow-up).
+    /// The next driver iteration runs `OnSkillTestResolution` triggers.
+    PostFollowUp {
+        /// The chaos-token resolution's success determination, read by
+        /// the `OnSkillTestResolution` step to gate
+        /// outcome-specific triggers.
+        succeeded: bool,
+    },
+    /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
+    /// iteration discards committed cards, emits
+    /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
+    /// the in-flight record.
+    PostOnResolution {
+        /// Carried through to the after-resolution reactive trigger
+        /// window (#64), which will gate on outcome at the
+        /// `SkillTestEnded` boundary.
+        succeeded: bool,
+    },
 }
 
 /// What to do after the bracketing skill test resolves, depending on
@@ -190,6 +310,101 @@ pub enum SkillTestFollowUp {
         /// The enemy the Evade action targeted.
         enemy: EnemyId,
     },
+}
+
+/// An open reaction window with a list of pending triggers waiting
+/// for the player to fire or skip.
+///
+/// Created by the engine's `queue_reaction_window` helper when a
+/// triggering event fires inside an action handler and at least one
+/// in-play card's [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
+/// ability matches `kind`. The top-level dispatcher opens the window
+/// at the end of the action's apply call (emits
+/// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
+/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)). The player
+/// drives resolution via
+/// [`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput):
+/// [`InputResponse::PickIndex`](crate::action::InputResponse::PickIndex)
+/// fires the i-th pending trigger;
+/// [`InputResponse::Skip`](crate::action::InputResponse::Skip) closes
+/// the window provided no forced triggers remain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ReactionWindow {
+    /// What kind of window is open; carries the IDs the triggering
+    /// event named (defeated enemy + attacker, etc.) so pending
+    /// triggers' effects can resolve against the same payload.
+    pub kind: WindowKind,
+    /// Triggers in resolution order. Active investigator's matching
+    /// triggers come first (Arkham's "active player priority"), then
+    /// other investigators' in turn order. Within a single
+    /// investigator, listed in `cards_in_play` order, then by
+    /// `ability_index`. Empty `pending` is never stored — the engine
+    /// closes the window immediately at scan time.
+    pub pending: Vec<PendingTrigger>,
+}
+
+/// Discriminant of an open [`ReactionWindow`].
+///
+/// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
+/// pattern: when the engine emits a matching
+/// [`Event`](crate::Event), it queues a window of the corresponding
+/// kind. Phase-3 starts with one variant; later cards add
+/// patterns and the engine queues their matching window kind. The
+/// after-skill-test reactive window
+/// ([#64](https://github.com/talelburg/eldritch/issues/64)) is the
+/// next planned variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum WindowKind {
+    /// Fires after an enemy was defeated. Pairs with
+    /// [`EventPattern::EnemyDefeated`](crate::dsl::EventPattern::EnemyDefeated)
+    /// with [`EventTiming::After`](crate::dsl::EventTiming::After).
+    AfterEnemyDefeated {
+        /// The defeated enemy. Carried so trigger effects keying on
+        /// "the defeated enemy" can route against the right id even
+        /// after `state.enemies` has dropped the entry.
+        enemy: EnemyId,
+        /// Who defeated it, if attributable. Mirrors the
+        /// [`Event::EnemyDefeated`](crate::Event::EnemyDefeated)
+        /// `by` field. `None` for non-investigator-attributed defeats.
+        by: Option<InvestigatorId>,
+    },
+}
+
+/// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
+/// ability waiting to fire inside a [`ReactionWindow`].
+///
+/// Resolved by [`InputResponse::PickIndex`](crate::action::InputResponse::PickIndex)
+/// — the index addresses into `ReactionWindow::pending`. After firing,
+/// the entry is removed; the window stays open while any entries remain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct PendingTrigger {
+    /// The investigator whose card in play carries this trigger. The
+    /// trigger's effect resolves with this investigator as the
+    /// controller.
+    pub controller: InvestigatorId,
+    /// Which in-play instance is the source. Plumbed onto the trigger
+    /// record so identical card codes across investigators (or across
+    /// copies for the same investigator) resolve unambiguously.
+    pub instance_id: CardInstanceId,
+    /// Zero-based index into the card's
+    /// [`abilities`](crate::dsl::Ability) vec. Cards may carry
+    /// multiple `Trigger::OnEvent` abilities; this names which one
+    /// fires.
+    pub ability_index: u8,
+    /// Whether the player may skip this trigger when closing the
+    /// window. `false` (optional) for `[reaction]` abilities; `true`
+    /// (forced) for "Forced — when …" abilities.
+    ///
+    /// **Phase-3 scope**: the DSL surface has no forced primitive yet
+    /// (no in-scope card carries forced text), so the engine always
+    /// constructs `forced: false`. The field exists so the resolution
+    /// loop already understands the distinction — when the first
+    /// forced card lands, only the DSL→engine translation and the
+    /// scanner need to start setting this `true`.
+    pub forced: bool,
 }
 
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
