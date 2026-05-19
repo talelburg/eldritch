@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 19 closed / 4 open as of 2026-05-18.
+🟡 In progress. 20 closed / 3 open as of 2026-05-19.
 
 ## Goal
 
@@ -10,7 +10,7 @@ Full skill test sequence runs through the engine in tests — with real-card met
 
 ## Issues
 
-### Closed (19)
+### Closed (20)
 
 | # | Title | Notes |
 |---|---|---|
@@ -25,6 +25,7 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#49` | skill-test resolution flow | `resolve_skill_test`. |
 | `#50` | Move action + action-point spending | First non-trivial player action. |
 | `#51` | Investigate action | First skill-test-initiating action. |
+| `#52` | reaction windows + trigger ordering | Engine machinery for `Trigger::OnEvent` reactions, mid-action firing per Rules Reference, state-machine refactor of `finish_skill_test` via `FinishContinuation`. First consumer is `#55`. |
 | `#53` | DSL Activated trigger + cost primitives | `Trigger::Activated`, `Cost` enum, `Ability.costs`. |
 | `#87` | per-instance card state | `CardInPlay` struct + `CardInstanceId` + counter. |
 | `#88` | cards-registry binding | Cross-crate bridge. Option 3 (static `OnceLock` + `fn`-pointer struct). |
@@ -34,14 +35,13 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#112` | DSL `Trigger::OnSkillTestResolution` + tested-location plumbing | Split out of `#39` so the trigger variant lands on its own; `#39` consumes it. |
 | `#54` | DSL `OnEvent` trigger | DSL surface only — `Trigger::OnEvent` + `EventPattern::EnemyDefeated` + `EventTiming::{Before, After}` + `on_event` builder. Firing (engine reaction-window machinery) lands in `#52`. |
 
-### Open (4)
+### Open (3)
 
 | # | Title | Notes |
 |---|---|---|
-| `#52` | reaction windows + trigger ordering | Needs `#19`; consumes `#54`. The largest remaining engine piece. |
-| `#55` | Roland Banks investigator (01001) | Needs `#52`; consumes `#54`. |
+| `#55` | Roland Banks investigator (01001) | Needs `#52` (✅) + `#54` (✅). First consumer of the reaction-window machinery. |
 | `#56` | Study location (01111) | Needs a location-state shape decision; thinnest issue body. |
-| `#64` | skill-test after-resolution trigger window | Needs `#54` (OnEvent) + `#19`. Distinct semantic from `#112` — `#64` is a player-window-driven reactive trigger after the test ends; `#112` is a resolution-machinery trigger on committed cards. |
+| `#64` | skill-test after-resolution trigger window | Needs `#54` (OnEvent) + `#19`. Distinct semantic from `#112` — `#64` is a player-window-driven reactive trigger after the test ends; `#112` is a resolution-machinery trigger on committed cards. The `FinishContinuation::PostOnResolution` seat (added in `#52`) is the natural step boundary. |
 
 ## Ordering (Shape B)
 
@@ -74,7 +74,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 | 9 | `#112` `Trigger::OnSkillTestResolution` + tested-location plumbing | ✅ PR #113 |
 | 10 | `#39` Deduction | ✅ PR #114 |
 | 11 | `#54` OnEvent trigger | ✅ PR #115 |
-| 12 | `#52` reaction windows | needs `#54` + `#19`; largest remaining piece |
+| 12 | `#52` reaction windows | ✅ PR #116 |
 | 13 | `#55` Roland Banks | needs `#54` + `#52` |
 | 14 | `#56` Study | needs location-state design; defer or build alongside Phase 4 |
 | 15 | `#64` after-resolution trigger window | distinct from `#112`; reactive trigger window for OnEvent-style "after this test succeeds, …" cards |
@@ -99,6 +99,11 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 - **Upkeep hand-size limit tracked as `#111` (`#63`, PR #110).** `InputResponse::CommitCards` carries `u32` indices for wire-format symmetry with `PickIndex`. The engine assumes hand size stays below 256 (a `u8::try_from(...).expect(...)` justified by the preceding bound check); `#111` makes that structural by implementing the Arkham upkeep discard-to-max-hand-size step.
 - **`Trigger::OnEvent` ships with both `Before` and `After` timings (`#54`, PR #115).** Reaction-window machinery in `#52` pre-committed to the natural "scan Before triggers, fire event, scan After triggers" shape. Shipping only `After` would force `#52` to grow the variant before it can do the canonical loop. `EventPattern` starts at one variant (`EnemyDefeated { by_controller: bool }`) since only Roland Banks (`#55`) consumes it in Phase 3; `by_controller: bool` instead of a `By` enum because a single-variant enum is noise — swap to enum the day a second "by" qualifier lands.
 - **`Trigger::OnSkillTestResolution` is resolution-machinery, not a reaction window (`#112`, PR #113).** Deduction-shaped text ("if this skill test is successful while investigating, discover 1 additional clue at that location") doesn't fit `OnCommit` (outcome unknown at commit) and doesn't fit `#64`'s reactive window (no player decision). New variant fires inside `finish_skill_test` for committed cards, gated on actual outcome. Settles `#39` Deduction's routing question; keeps `#64` strictly for player-window-driven "after a test succeeds, you may …" cards. Event order pinned by `investigate_canonical_event_order_with_on_resolution`: action follow-up before OnResolution before discards, load-bearing for `#64` listeners that key off `SkillTestEnded` as "all sub-effects applied."
+- **Reaction windows fire mid-action, not post-action (`#52`, PR #116).** Per the Rules Reference's "after… may be used immediately after that triggering condition's impact upon the game state has resolved," windows open between the impact and the surrounding action's next step. A first pass deferred windows to the action's outer apply boundary; this was rules-incorrect and got fixed mid-PR after the user asked for a rules-citation pass. `#64` (after-resolution reactive window) and any future card whose timing interacts with sibling effects depend on this shape — don't revert to the deferred design without re-litigating the rules clause.
+- **`finish_skill_test` is a resumable state machine (`#52`, PR #116).** Mid-action window suspension needs the skill-test resolver to be re-entrant. The shape: `finish_skill_test` is now a commit-stage entry that runs validate → chaos token → action follow-up, advances `InFlightSkillTest.continuation`, and delegates to a `drive_skill_test` loop. The driver checks for queued reaction windows before each step and suspends/resumes via `close_reaction_window`. `FinishContinuation::{AwaitingCommit, PostFollowUp { succeeded }, PostOnResolution { succeeded }}` carries the outcome as variant payload so "outcome known iff past commit" is structural. The `PostOnResolution` step is the natural seat `#64` will hang its reactive window off.
+- **All triggers route through the player; forced vs. optional is a flag, not auto-resolve (`#52`, PR #116).** Reaction-window resolution presents every pending trigger through `AwaitingInput`; `InputResponse::PickIndex(i)` fires the i-th, `Skip` closes the window. `PendingTrigger.forced` is enforced by `close_reaction_window` (Skip rejects while forced remain). Phase-3 has no Forced cards; the engine constructs `forced: false` everywhere and the DSL has no surface for setting it. The first Forced card adds the DSL primitive without engine churn — the scaffold is intentionally ready.
+- **Rules Reference vendored at `data/rules-reference/` (`#52`, PR #116).** The PDF is in-repo with a `SOURCE.md` naming the upstream URL — FFG's `filer_public` CDN has restructured several times so a stable local path beats a link. The CLAUDE.md directive on consulting it for procedural-rules claims points at the local path. Quote-handling clause says "load-bearing clause verbatim; elision OK on decorative surrounding clauses; never substitute words" — that's the standard for engine doc-comments citing the Rules Reference.
+- **Trigger indexing is a follow-up, not Phase 3 (`#52`, PR #116).** `scan_pending_triggers` walks every investigator's `cards_in_play` per window emission. For Phase-3 board sizes (a handful of cards per investigator) this is negligible. An index keyed by trigger kind becomes worth the invariant-maintenance cost when boards grow in Phase 4+. Tracked as a separate issue.
 
 ## Open questions
 
