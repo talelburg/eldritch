@@ -343,16 +343,18 @@ pub enum Event {
     /// one. Pairs with the preceding [`WindowOpened`](Self::WindowOpened)
     /// of the same kind.
     ///
-    /// A window with no matching triggers opens and closes back-to-back
-    /// (no [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)
-    /// suspension); downstream listeners should treat
-    /// `WindowOpened`/`WindowClosed` pairs as definitive even when no
-    /// reaction effects ran between them.
+    /// A window with **no** matching triggers is not opened at all —
+    /// no [`WindowOpened`]/`WindowClosed` pair fires for it. Listeners
+    /// can treat the presence of a `WindowOpened` event as proof that
+    /// at least one trigger was offered to the player; the matching
+    /// `WindowClosed` follows once the player resolves the window.
     ///
     /// After this fires, the surrounding action's driver resumes
     /// (e.g. the skill-test driver advances from
     /// [`FinishContinuation::PostFollowUp`](crate::state::FinishContinuation::PostFollowUp)
     /// to the `OnSkillTestResolution` step).
+    ///
+    /// [`WindowOpened`]: Self::WindowOpened
     WindowClosed {
         /// The kind of window that closed.
         kind: WindowKind,

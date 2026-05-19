@@ -455,7 +455,6 @@ mod tests {
             tested_location: None,
             follow_up: SkillTestFollowUp::None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
-            succeeded: None,
         });
         state
     }

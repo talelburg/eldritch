@@ -501,7 +501,6 @@ pub(super) fn start_skill_test(
         tested_location,
         follow_up,
         continuation: FinishContinuation::AwaitingCommit,
-        succeeded: None,
     });
     events.push(Event::SkillTestStarted {
         investigator,
@@ -602,15 +601,15 @@ fn finish_skill_test(
         apply_skill_test_follow_up(state, events, investigator, follow_up);
     }
 
-    // Step 2 is complete. Advance the continuation and let the driver
-    // handle the remaining steps (including the possibly-queued
-    // reaction window from inside the follow-up).
-    let in_flight = state
+    // Step 2 is complete. Advance the continuation (carrying the
+    // outcome forward) and let the driver handle the remaining
+    // steps (including the possibly-queued reaction window from
+    // inside the follow-up).
+    state
         .in_flight_skill_test
         .as_mut()
-        .expect("in_flight_skill_test was Some immediately above");
-    in_flight.succeeded = Some(succeeded);
-    in_flight.continuation = FinishContinuation::PostFollowUp;
+        .expect("in_flight_skill_test was Some immediately above")
+        .continuation = FinishContinuation::PostFollowUp { succeeded };
 
     drive_skill_test(state, events)
 }
@@ -644,7 +643,7 @@ fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOut
             return open_queued_reaction_window(state, events);
         }
 
-        let (continuation, investigator, succeeded, indices_u8) = {
+        let (continuation, investigator, indices_u8) = {
             let in_flight = state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
                 unreachable!(
                     "drive_skill_test: in_flight_skill_test must exist while driver is active; \
@@ -654,12 +653,6 @@ fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOut
             (
                 in_flight.continuation,
                 in_flight.investigator,
-                in_flight.succeeded.unwrap_or_else(|| {
-                    unreachable!(
-                        "drive_skill_test: succeeded must be set before driver entry; \
-                         state-corruption invariant violation"
-                    )
-                }),
                 in_flight.committed_by_active.clone(),
             )
         };
@@ -671,15 +664,15 @@ fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOut
                      (finish_skill_test) advances past this before delegating"
                 );
             }
-            FinishContinuation::PostFollowUp => {
+            FinishContinuation::PostFollowUp { succeeded } => {
                 fire_on_skill_test_resolution(state, events, investigator, &indices_u8, succeeded);
                 state
                     .in_flight_skill_test
                     .as_mut()
                     .expect("in_flight_skill_test must persist across driver steps")
-                    .continuation = FinishContinuation::PostOnResolution;
+                    .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
-            FinishContinuation::PostOnResolution => {
+            FinishContinuation::PostOnResolution { succeeded: _ } => {
                 discard_committed_cards(state, events, investigator, &indices_u8);
                 events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when
@@ -1011,12 +1004,17 @@ fn fire_on_skill_test_resolution(
 /// Dispatch a [`PlayerAction::ResolveInput`].
 ///
 /// Routes to the right resume handler based on which suspension is
-/// outstanding: the skill-test commit window
-/// ([`finish_skill_test`]) or an open reaction window
-/// ([`resume_reaction_window`]). Rejects when nothing is outstanding.
-/// The two are mutually exclusive — a reaction window only opens after
-/// the surrounding action (including its skill test, if any) has
-/// completed.
+/// outstanding: an open reaction window ([`resume_reaction_window`])
+/// or the skill-test commit window ([`finish_skill_test`]). Rejects
+/// when nothing is outstanding.
+///
+/// Both `in_flight_reaction_window` and `in_flight_skill_test` may be
+/// `Some` simultaneously — that's the mid-skill-test reaction case:
+/// the skill-test driver is parked at a step boundary waiting for the
+/// reaction window to close before continuing. The reaction window
+/// takes routing priority; once it closes,
+/// [`close_reaction_window`] re-enters [`drive_skill_test`] to finish
+/// the test.
 fn resolve_input(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -1169,9 +1167,10 @@ fn trigger_matches(
 }
 
 /// Emit [`Event::WindowOpened`] for the queued window and return
-/// [`AwaitingInput`]. Called by [`apply_player_action`] when an
-/// action's resolution queued a window via
-/// [`queue_reaction_window`].
+/// [`AwaitingInput`]. Called by [`drive_skill_test`] at a
+/// step boundary when an earlier step queued a window via
+/// [`queue_reaction_window`]. Future non-skill-test handlers that
+/// queue windows will call this from their own boundaries.
 fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let window = state
         .in_flight_reaction_window
@@ -1303,7 +1302,13 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
         })
         .clone();
 
-    let ctx = EvalContext::for_controller(trigger.controller);
+    // Thread the source instance into the EvalContext so effects that
+    // push `PendingSkillModifier`s (or any other source-attributed
+    // state) can attribute them to the firing card. Phase-3 reaction
+    // effects (`discover_clue`, `gain_resources`) don't read this,
+    // but the first source-attributing reaction effect will, and the
+    // information is already on the trigger record.
+    let ctx = EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
     let result = apply_effect(state, events, &ability.effect, ctx);
     if let EngineOutcome::Rejected { reason } = result {
         // Card-impl bugs surface loudly — same policy as
@@ -1856,9 +1861,10 @@ fn damage_enemy(
             by,
         });
         state.enemies.remove(&enemy_id);
-        // Queue the post-defeat reaction window. The top-level
-        // dispatcher opens it after the surrounding action's apply
-        // finishes; see `open_queued_reaction_window`.
+        // Queue the post-defeat reaction window. The skill-test
+        // driver opens it at the next step boundary (between
+        // `apply_skill_test_follow_up` and `fire_on_skill_test_resolution`);
+        // see `drive_skill_test`.
         queue_reaction_window(
             state,
             WindowKind::AfterEnemyDefeated {

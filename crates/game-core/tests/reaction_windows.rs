@@ -753,3 +753,132 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     assert_eq!(resumed.state.locations[&loc_id].clues, 2);
     assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
 }
+
+#[test]
+fn pending_triggers_order_active_investigator_first_then_turn_order() {
+    // Two investigators both carry a `by_controller: false` reaction
+    // (so the defeat — credited to the active investigator — matches
+    // for both). The pending list must put the active investigator's
+    // trigger first, followed by the other investigator's, per
+    // Arkham's active-investigator-first / turn-order priority for
+    // reaction windows.
+    install_mock_registry();
+    let active = InvestigatorId(1);
+    let other = InvestigatorId(2);
+    let enemy_id = EnemyId(100);
+    let loc_id = LocationId(10);
+
+    let mut atk = test_investigator(1);
+    atk.current_location = Some(loc_id);
+    atk.skills.combat = 3;
+    atk.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(BYSTANDER_REACTION),
+        CardInstanceId(1),
+    ));
+    let mut byst = test_investigator(2);
+    byst.current_location = Some(loc_id);
+    byst.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(BYSTANDER_REACTION),
+        CardInstanceId(2),
+    ));
+    let mut enemy = test_enemy(100, "Mock Ghoul");
+    enemy.fight = 3;
+    enemy.max_health = 2;
+    enemy.damage = 1;
+    enemy.engaged_with = Some(active);
+    let state = TestGame::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(active)
+        .with_turn_order([active, other])
+        .with_investigator(atk)
+        .with_investigator(byst)
+        .with_enemy(enemy)
+        .with_location(test_location(10, "Mock Location"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    let paused = fight_through_commit_window(state, fight_action(active, enemy_id));
+    assert!(matches!(
+        paused.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
+    let window = paused
+        .state
+        .in_flight_reaction_window
+        .as_ref()
+        .expect("window must populate when both investigators carry triggers");
+
+    assert_eq!(window.pending.len(), 2);
+    assert_eq!(
+        window.pending[0].controller, active,
+        "active investigator's trigger must come first",
+    );
+    assert_eq!(window.pending[0].instance_id, CardInstanceId(1));
+    assert_eq!(
+        window.pending[1].controller, other,
+        "non-active investigator's trigger comes after, in turn order",
+    );
+    assert_eq!(window.pending[1].instance_id, CardInstanceId(2));
+}
+
+#[test]
+fn skip_after_firing_one_drops_remaining_optionals() {
+    // TWO_REACTIONS has two optional triggers. Fire PickIndex(0)
+    // (consuming the first), then Skip. The second optional must NOT
+    // fire — its effect (gain 1 resource) leaves resources unchanged
+    // from the post-first-fire baseline. The window closes cleanly.
+    let (inv_id, enemy_id, loc_id, state) = fight_to_defeat_scenario(&[(TWO_REACTIONS, 1)]);
+    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    assert!(matches!(
+        paused.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
+    assert_eq!(
+        paused
+            .state
+            .in_flight_reaction_window
+            .as_ref()
+            .expect("window populated")
+            .pending
+            .len(),
+        2,
+    );
+
+    let after_first = game_core::engine::apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickIndex(0),
+        }),
+    );
+    assert!(
+        matches!(after_first.outcome, EngineOutcome::AwaitingInput { .. }),
+        "one optional fired, one remains pending",
+    );
+    let resources_after_first = after_first.state.investigators[&inv_id].resources;
+
+    let skipped = game_core::engine::apply(
+        after_first.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Skip,
+        }),
+    );
+    assert_eq!(skipped.outcome, EngineOutcome::Done);
+    assert_event!(
+        skipped.events,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
+    // The skipped optional was the resource-gain — its effect didn't fire.
+    assert_eq!(
+        skipped.state.investigators[&inv_id].resources, resources_after_first,
+        "Skip must not fire the remaining optional's effect",
+    );
+    // Sanity: the first optional did fire — the location lost a clue
+    // (TWO_REACTIONS' first ability discovers 1 clue at the
+    // controller's location).
+    assert_eq!(skipped.state.locations[&loc_id].clues, 2);
+    assert_eq!(skipped.state.investigators[&inv_id].clues, 1);
+    assert!(skipped.state.in_flight_reaction_window.is_none());
+}

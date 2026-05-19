@@ -194,18 +194,11 @@ pub struct InFlightSkillTest {
     /// `drive_skill_test`. Initialized to
     /// [`FinishContinuation::AwaitingCommit`] at
     /// `start_skill_test`; advanced in lock-step as the resolution
-    /// sequence runs. A reaction window opening mid-resolution stores
-    /// the *next* continuation here before suspending so a later
-    /// resume can pick up at the right step.
+    /// sequence runs. Post-commit variants carry the test's outcome
+    /// as a `succeeded` payload (see [`FinishContinuation`]) so the
+    /// invariant "outcome is known iff the test is past the commit
+    /// window" is structural.
     pub continuation: FinishContinuation,
-    /// Whether the chaos-token resolution determined success.
-    /// Populated by the commit-stage entry once
-    /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) has been
-    /// emitted; read by every subsequent step (`OnSkillTestResolution`
-    /// gating, `#64`'s reactive after-resolution window). `None` while
-    /// `continuation == AwaitingCommit`.
-    pub succeeded: Option<bool>,
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -239,6 +232,14 @@ pub struct InFlightSkillTest {
 /// triggering condition's impact has resolved" clause: the reaction
 /// fires between steps 2 and 3, not after the entire action ends.
 ///
+/// Variants past [`AwaitingCommit`](Self::AwaitingCommit) carry the
+/// `succeeded` payload because the test's outcome is determined in
+/// step 1 and read by every subsequent step
+/// (`OnSkillTestResolution` gating, `#64`'s reactive after-resolution
+/// window). Embedding it in the continuation makes the invariant
+/// "succeeded is known iff the test is past the commit window"
+/// structural.
+///
 /// Variants:
 ///
 /// - [`AwaitingCommit`](Self::AwaitingCommit) — initial state at
@@ -260,12 +261,22 @@ pub enum FinishContinuation {
     AwaitingCommit,
     /// Steps 1–2 are complete (chaos token + action follow-up).
     /// The next driver iteration runs `OnSkillTestResolution` triggers.
-    PostFollowUp,
+    PostFollowUp {
+        /// The chaos-token resolution's success determination, read by
+        /// the `OnSkillTestResolution` step to gate
+        /// outcome-specific triggers.
+        succeeded: bool,
+    },
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration discards committed cards, emits
     /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
     /// the in-flight record.
-    PostOnResolution,
+    PostOnResolution {
+        /// Carried through to the after-resolution reactive trigger
+        /// window (#64), which will gate on outcome at the
+        /// `SkillTestEnded` boundary.
+        succeeded: bool,
+    },
 }
 
 /// What to do after the bracketing skill test resolves, depending on
