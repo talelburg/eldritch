@@ -13,12 +13,15 @@ use std::collections::BTreeSet;
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
 use crate::card_data::CardType;
 use crate::card_registry;
-use crate::dsl::{discover_clue, Cost, LocationTarget, SkillTestKind, Trigger};
+use crate::dsl::{
+    discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Trigger,
+};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId, GameState,
-    InFlightSkillTest, Investigator, InvestigatorId, LocationId, Phase, SkillKind,
-    SkillTestFollowUp, Status, TokenResolution, Zone,
+    resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId,
+    FinishContinuation, GameState, InFlightSkillTest, Investigator, InvestigatorId, LocationId,
+    PendingTrigger, Phase, ReactionWindow, SkillKind, SkillTestFollowUp, Status, TokenResolution,
+    WindowKind, Zone,
 };
 
 use super::evaluator::{
@@ -66,9 +69,29 @@ pub fn apply_player_action(
         };
     }
 
-    // While a skill test is paused at its commit window, only
-    // `ResolveInput` can advance the engine. Mirrors the
-    // `mulligan_window` guard above.
+    // Reaction-window guard runs BEFORE the skill-test guard: when a
+    // window opens mid-skill-test (e.g. Roland's "after you defeat an
+    // enemy" firing during a Fight that defeats), both
+    // `in_flight_skill_test` and `in_flight_reaction_window` are
+    // populated — the test is mid-resolution, parked at the window
+    // boundary inside `drive_skill_test`. The reaction-window message
+    // is the one the client needs.
+    if state.in_flight_reaction_window.is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason: "a reaction window is open; submit a \
+                     PlayerAction::ResolveInput with an InputResponse::PickIndex \
+                     to fire a pending trigger, or InputResponse::Skip to close \
+                     the window (rejected if forced triggers remain) before any \
+                     other action"
+                .into(),
+        };
+    }
+
+    // While a skill test is paused at its commit window (no reaction
+    // window open yet), only `ResolveInput` can advance the engine.
+    // Mirrors the `mulligan_window` guard above.
     if state.in_flight_skill_test.is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
@@ -129,6 +152,16 @@ pub fn apply_player_action(
     {
         state.mulligan_window = false;
     }
+
+    // Reaction windows open at the step boundary inside the handler
+    // that queued them (see `drive_skill_test`), not at this outer
+    // boundary — the Rules Reference clause "after… may be used
+    // immediately after that triggering condition's impact upon the
+    // game state has resolved" is mid-action, not post-action. Any
+    // future action that queues a window outside the skill-test
+    // driver must add its own boundary check; there's no fallback
+    // here.
+
     outcome
 }
 
@@ -467,6 +500,8 @@ pub(super) fn start_skill_test(
         committed_by_active: Vec::new(),
         tested_location,
         follow_up,
+        continuation: FinishContinuation::AwaitingCommit,
+        succeeded: None,
     });
     events.push(Event::SkillTestStarted {
         investigator,
@@ -489,20 +524,29 @@ pub(super) fn start_skill_test(
     }
 }
 
-/// Finish the in-flight skill test using the supplied commit indices.
+/// Commit-stage entry to the skill-test resolution driver. Handles
+/// the response to the
+/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine
+/// emitted at the commit window: validate the supplied indices, sum
+/// the committed cards' icon contribution (matching skill + wild),
+/// draw a chaos token, emit the success/failure events, apply the
+/// action-specific [`SkillTestFollowUp`] on success, then hand off to
+/// [`drive_skill_test`] for the remaining steps.
 ///
-/// Drives the rest of the resolution sequence the legacy
-/// `resolve_skill_test` did synchronously: validate the commit
-/// indices, sum the committed cards' icon contribution (matching
-/// skill + wild), draw a chaos token, compute the clamped total,
-/// emit the per-step events, apply the action-specific
-/// [`SkillTestFollowUp`] on success, discard the committed cards, and
-/// drain the in-flight record plus stale pending modifiers.
+/// The split between this entry and [`drive_skill_test`] exists so
+/// that a reaction window opening *inside*
+/// [`apply_skill_test_follow_up`] (the canonical case:
+/// `damage_enemy` emitting [`EnemyDefeated`](crate::Event::EnemyDefeated)
+/// queues an [`AfterEnemyDefeated`](crate::state::WindowKind::AfterEnemyDefeated)
+/// window) suspends correctly: this entry advances the continuation
+/// to [`FinishContinuation::PostFollowUp`] before delegating, so a
+/// resume from `close_reaction_window` re-enters the driver and picks
+/// up at the `OnSkillTestResolution` step.
 ///
-/// On invalid input (no in-flight test, malformed indices) returns
-/// [`EngineOutcome::Rejected`] with no state change and no events
-/// pushed — the engine stays paused at the commit window so the
-/// caller can submit a fixed-up response.
+/// On invalid input (no in-flight test, malformed indices, or
+/// continuation already advanced) returns [`EngineOutcome::Rejected`]
+/// with no state change and no events pushed — the engine stays
+/// paused so the caller can submit a fixed-up response.
 fn finish_skill_test(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -515,6 +559,16 @@ fn finish_skill_test(
             reason: "ResolveInput::CommitCards: no in-flight skill test to resume".into(),
         };
     };
+    if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput::CommitCards: commit window already closed (continuation {:?}); \
+                 the engine is mid-resolution, not at the commit step",
+                in_flight.continuation,
+            )
+            .into(),
+        };
+    }
     let investigator = in_flight.investigator;
     let skill = in_flight.skill;
     let kind = in_flight.kind;
@@ -547,20 +601,99 @@ fn finish_skill_test(
     if succeeded {
         apply_skill_test_follow_up(state, events, investigator, follow_up);
     }
-    fire_on_skill_test_resolution(state, events, investigator, &indices_u8, succeeded);
-    discard_committed_cards(state, events, investigator, &indices_u8);
 
-    events.push(Event::SkillTestEnded { investigator });
+    // Step 2 is complete. Advance the continuation and let the driver
+    // handle the remaining steps (including the possibly-queued
+    // reaction window from inside the follow-up).
+    let in_flight = state
+        .in_flight_skill_test
+        .as_mut()
+        .expect("in_flight_skill_test was Some immediately above");
+    in_flight.succeeded = Some(succeeded);
+    in_flight.continuation = FinishContinuation::PostFollowUp;
 
-    // ModifierScope::ThisSkillTest contributions expire when the
-    // test ends. Drain pending entries for *this* investigator only —
-    // entries queued for other investigators' future tests stay.
-    state
-        .pending_skill_modifiers
-        .retain(|m| m.investigator != investigator);
-    state.in_flight_skill_test = None;
+    drive_skill_test(state, events)
+}
 
-    EngineOutcome::Done
+/// Walk the skill-test resolution sequence from the current
+/// [`FinishContinuation`] onward, suspending if a reaction window
+/// queues mid-step.
+///
+/// Each loop iteration starts by checking for a queued reaction
+/// window: if one is pending, the driver emits
+/// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
+/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
+/// close path ([`close_reaction_window`]) re-enters this driver on
+/// resume.
+///
+/// Step → next-continuation mapping (current Phase-3 set; #64 will
+/// add the post-`SkillTestEnded` window between
+/// [`PostOnResolution`](FinishContinuation::PostOnResolution) and
+/// teardown):
+///
+/// - [`PostFollowUp`](FinishContinuation::PostFollowUp) → fire
+///   `OnSkillTestResolution` triggers; advance to
+///   [`PostOnResolution`](FinishContinuation::PostOnResolution).
+/// - [`PostOnResolution`](FinishContinuation::PostOnResolution) →
+///   discard committed cards, emit
+///   [`SkillTestEnded`](crate::Event::SkillTestEnded), drain pending
+///   modifiers, clear in-flight, return `Done`.
+fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    loop {
+        if state.in_flight_reaction_window.is_some() {
+            return open_queued_reaction_window(state, events);
+        }
+
+        let (continuation, investigator, succeeded, indices_u8) = {
+            let in_flight = state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
+                unreachable!(
+                    "drive_skill_test: in_flight_skill_test must exist while driver is active; \
+                     state-corruption invariant violation"
+                )
+            });
+            (
+                in_flight.continuation,
+                in_flight.investigator,
+                in_flight.succeeded.unwrap_or_else(|| {
+                    unreachable!(
+                        "drive_skill_test: succeeded must be set before driver entry; \
+                         state-corruption invariant violation"
+                    )
+                }),
+                in_flight.committed_by_active.clone(),
+            )
+        };
+
+        match continuation {
+            FinishContinuation::AwaitingCommit => {
+                unreachable!(
+                    "drive_skill_test: entered with AwaitingCommit; the commit-stage entry \
+                     (finish_skill_test) advances past this before delegating"
+                );
+            }
+            FinishContinuation::PostFollowUp => {
+                fire_on_skill_test_resolution(state, events, investigator, &indices_u8, succeeded);
+                state
+                    .in_flight_skill_test
+                    .as_mut()
+                    .expect("in_flight_skill_test must persist across driver steps")
+                    .continuation = FinishContinuation::PostOnResolution;
+            }
+            FinishContinuation::PostOnResolution => {
+                discard_committed_cards(state, events, investigator, &indices_u8);
+                events.push(Event::SkillTestEnded { investigator });
+                // ModifierScope::ThisSkillTest contributions expire when
+                // the test ends. Drain pending entries for *this*
+                // investigator only — entries queued for other
+                // investigators' future tests stay.
+                state
+                    .pending_skill_modifiers
+                    .retain(|m| m.investigator != investigator);
+                state.in_flight_skill_test = None;
+                return EngineOutcome::Done;
+            }
+        }
+    }
 }
 
 /// Validate that every entry in `indices` is a unique in-bounds hand
@@ -877,16 +1010,21 @@ fn fire_on_skill_test_resolution(
 
 /// Dispatch a [`PlayerAction::ResolveInput`].
 ///
-/// Today the only `AwaitingInput` site is the skill-test commit
-/// window, so this routes [`InputResponse::CommitCards`] through
-/// [`finish_skill_test`] and rejects everything else. Future
-/// `AwaitingInput` sites (`ChooseOne`, target picks, …) extend this
-/// dispatch.
+/// Routes to the right resume handler based on which suspension is
+/// outstanding: the skill-test commit window
+/// ([`finish_skill_test`]) or an open reaction window
+/// ([`resume_reaction_window`]). Rejects when nothing is outstanding.
+/// The two are mutually exclusive — a reaction window only opens after
+/// the surrounding action (including its skill test, if any) has
+/// completed.
 fn resolve_input(
     state: &mut GameState,
     events: &mut Vec<Event>,
     response: &InputResponse,
 ) -> EngineOutcome {
+    if state.in_flight_reaction_window.is_some() {
+        return resume_reaction_window(state, events, response);
+    }
     if state.in_flight_skill_test.is_none() {
         return EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
@@ -902,6 +1040,344 @@ fn resolve_input(
             .into(),
         },
     }
+}
+
+/// Queue a reaction window of the given `kind` if any in-play card
+/// has a matching `Trigger::OnEvent` ability. No-op when the registry
+/// isn't installed or no card matches.
+///
+/// The window doesn't open here — the surrounding handler's driver
+/// (today, [`drive_skill_test`]) checks for queued windows at its
+/// next step boundary and either opens them via
+/// [`open_queued_reaction_window`] or proceeds to the next step.
+/// Splitting queue and open keeps the event-emitter
+/// (`damage_enemy` and future callers) free of suspension logic —
+/// they just signal "this impact happened, scan for reactions" and
+/// the driver decides when to actually pause.
+///
+/// Idempotency: if a window is already queued for this apply, the new
+/// `kind` overwrites it. Phase-3 actions only emit one defeating
+/// event per apply (a single Fight's `damage_enemy` call), so this case
+/// doesn't arise; the overwrite is a loud-on-debug placeholder
+/// rather than silent stacking — multi-window queueing lands when a
+/// multi-defeat effect arrives.
+fn queue_reaction_window(state: &mut GameState, kind: WindowKind) {
+    let pending = scan_pending_triggers(state, kind);
+    if pending.is_empty() {
+        return;
+    }
+    debug_assert!(
+        state.in_flight_reaction_window.is_none(),
+        "queue_reaction_window: overwriting an already-queued window; \
+         multi-window queueing isn't supported yet",
+    );
+    state.in_flight_reaction_window = Some(ReactionWindow { kind, pending });
+}
+
+/// Scan every investigator's `cards_in_play` for
+/// `Trigger::OnEvent` abilities matching `kind`, building a pending-
+/// trigger list in active-investigator-first / turn-order resolution
+/// order.
+///
+/// Returns an empty vec when the registry isn't installed (tests that
+/// don't touch card data) or no cards match.
+fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrigger> {
+    let Some(reg) = card_registry::current() else {
+        return Vec::new();
+    };
+    // Active investigator first, then the rest of turn_order in their
+    // listed order. Investigators not in turn_order are skipped
+    // entirely — the bare PerformSkillTest path can run without a
+    // turn order populated, but no scenario opens a reaction window
+    // outside an action initiated by a turn-order investigator.
+    let mut order: Vec<InvestigatorId> = Vec::with_capacity(state.turn_order.len());
+    if let Some(active) = state.active_investigator {
+        order.push(active);
+    }
+    for id in &state.turn_order {
+        if Some(*id) != state.active_investigator {
+            order.push(*id);
+        }
+    }
+
+    let mut pending: Vec<PendingTrigger> = Vec::new();
+    for id in order {
+        let Some(inv) = state.investigators.get(&id) else {
+            continue;
+        };
+        for card in &inv.cards_in_play {
+            let Some(abilities) = (reg.abilities_for)(&card.code) else {
+                continue;
+            };
+            for (idx, ability) in abilities.iter().enumerate() {
+                let Trigger::OnEvent { pattern, timing } = ability.trigger else {
+                    continue;
+                };
+                if !trigger_matches(kind, pattern, timing, id) {
+                    continue;
+                }
+                let ability_index = u8::try_from(idx)
+                    .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
+                // Phase-3 scope: every queued trigger is optional.
+                // The DSL has no forced primitive yet (#52 doc).
+                pending.push(PendingTrigger {
+                    controller: id,
+                    instance_id: card.instance_id,
+                    ability_index,
+                    forced: false,
+                });
+            }
+        }
+    }
+    pending
+}
+
+/// Returns whether an [`Trigger::OnEvent`] ability with the given
+/// `pattern` and `timing`, owned by `controller`, matches a window of
+/// the given `kind`.
+///
+/// Phase-3 mapping:
+/// - [`WindowKind::AfterEnemyDefeated`] matches
+///   [`EventPattern::EnemyDefeated`] with
+///   [`EventTiming::After`]. The `by_controller` qualifier narrows to
+///   defeats credited to this ability's controller.
+///
+/// `EventTiming::Before` doesn't fire on these windows yet — the
+/// "Forced — when X would Y" timing needs a separate pre-event
+/// scanning hook when the first such card lands.
+fn trigger_matches(
+    kind: WindowKind,
+    pattern: EventPattern,
+    timing: EventTiming,
+    controller: InvestigatorId,
+) -> bool {
+    if timing != EventTiming::After {
+        return false;
+    }
+    match (kind, pattern) {
+        (
+            WindowKind::AfterEnemyDefeated { by, .. },
+            EventPattern::EnemyDefeated { by_controller },
+        ) => {
+            if by_controller {
+                by == Some(controller)
+            } else {
+                true
+            }
+        }
+    }
+}
+
+/// Emit [`Event::WindowOpened`] for the queued window and return
+/// [`AwaitingInput`]. Called by [`apply_player_action`] when an
+/// action's resolution queued a window via
+/// [`queue_reaction_window`].
+fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    let window = state
+        .in_flight_reaction_window
+        .as_ref()
+        .expect("open_queued_reaction_window: caller checked is_some");
+    events.push(Event::WindowOpened { kind: window.kind });
+    EngineOutcome::AwaitingInput {
+        request: InputRequest {
+            prompt: format!(
+                "Reaction window {:?}: {} trigger(s) pending. \
+                 Submit InputResponse::PickIndex to fire one, or \
+                 InputResponse::Skip to close.",
+                window.kind,
+                window.pending.len(),
+            ),
+        },
+        // No multi-window state to disambiguate — routing keys off
+        // `state.in_flight_reaction_window`. Conventional 0 like the
+        // commit-window's resume token.
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume an open reaction window with the player's response.
+///
+/// - [`InputResponse::PickIndex(i)`]: fires the i-th pending trigger
+///   via the evaluator. After firing, removes the entry. If pending
+///   triggers remain, re-emits [`AwaitingInput`]; else closes the
+///   window.
+/// - [`InputResponse::Skip`]: closes the window provided no forced
+///   triggers remain. Rejects when forced triggers are still pending.
+/// - Other variants reject; the window stays open.
+///
+/// Closing the window emits [`Event::WindowClosed`] with the same
+/// kind, clears [`GameState::in_flight_reaction_window`], and returns
+/// [`Done`].
+fn resume_reaction_window(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    response: &InputResponse,
+) -> EngineOutcome {
+    match response {
+        InputResponse::PickIndex(i) => fire_pending_trigger(state, events, *i),
+        InputResponse::Skip => close_reaction_window(state, events),
+        other => EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: reaction window expects InputResponse::PickIndex \
+                 or InputResponse::Skip, got {other:?}",
+            )
+            .into(),
+        },
+    }
+}
+
+/// Fire the pending trigger at index `i` in the open reaction window.
+/// Rejects out-of-bounds; the window stays open so the client can
+/// retry with a corrected index.
+fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
+    // Snapshot to avoid borrowing state across the apply_effect call.
+    let (trigger, pending_idx) = {
+        let window = state
+            .in_flight_reaction_window
+            .as_ref()
+            .expect("fire_pending_trigger: caller checked is_some");
+        let idx = match usize::try_from(i) {
+            Ok(idx) if idx < window.pending.len() => idx,
+            _ => {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "ResolveInput: reaction-window PickIndex({i}) out of bounds \
+                         (pending size {})",
+                        window.pending.len(),
+                    )
+                    .into(),
+                };
+            }
+        };
+        (window.pending[idx], idx)
+    };
+
+    // Look up the ability fresh from the registry. The card may have
+    // changed state between scan and fire (exhausted, used, …) but
+    // its ability list is static, so registry lookup is sufficient.
+    let Some(reg) = card_registry::current() else {
+        unreachable!(
+            "fire_pending_trigger: registry was installed at scan time but is now \
+             missing; the OnceLock contract guarantees once-set-stays-set"
+        );
+    };
+    let inv = state
+        .investigators
+        .get(&trigger.controller)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "fire_pending_trigger: controller {ctl:?} vanished while reaction window \
+                 was open; this is a state-corruption invariant violation",
+                ctl = trigger.controller,
+            )
+        });
+    let card = inv
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == trigger.instance_id)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "fire_pending_trigger: instance {inst:?} vanished from controller {ctl:?}'s \
+                 cards_in_play while reaction window was open; state-corruption invariant \
+                 violation",
+                inst = trigger.instance_id,
+                ctl = trigger.controller,
+            )
+        });
+    let code = card.code.clone();
+    let abilities = (reg.abilities_for)(&code).unwrap_or_else(|| {
+        unreachable!(
+            "fire_pending_trigger: registry lost abilities for card {code:?} between \
+             scan and fire; the OnceLock contract guarantees stable lookups",
+        )
+    });
+    let ability = abilities
+        .get(usize::from(trigger.ability_index))
+        .unwrap_or_else(|| {
+            unreachable!(
+                "fire_pending_trigger: ability_index {idx} out of range for card {code:?} \
+                 with {n} abilities; state-corruption invariant violation",
+                idx = trigger.ability_index,
+                n = abilities.len(),
+            )
+        })
+        .clone();
+
+    let ctx = EvalContext::for_controller(trigger.controller);
+    let result = apply_effect(state, events, &ability.effect, ctx);
+    if let EngineOutcome::Rejected { reason } = result {
+        // Card-impl bugs surface loudly — same policy as
+        // `fire_on_skill_test_resolution`.
+        unreachable!("OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}");
+    }
+
+    // Drop the fired entry now that resolution succeeded.
+    let window = state
+        .in_flight_reaction_window
+        .as_mut()
+        .expect("fire_pending_trigger: window must still be present after firing");
+    window.pending.remove(pending_idx);
+
+    // If more triggers remain pending, re-emit AwaitingInput so the
+    // player can pick the next one. Otherwise the window closes
+    // automatically.
+    if window.pending.is_empty() {
+        return close_reaction_window(state, events);
+    }
+    let kind = window.kind;
+    let pending_len = window.pending.len();
+    EngineOutcome::AwaitingInput {
+        request: InputRequest {
+            prompt: format!(
+                "Reaction window {kind:?}: {pending_len} trigger(s) pending. \
+                 Submit InputResponse::PickIndex to fire one, or \
+                 InputResponse::Skip to close.",
+            ),
+        },
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Close the open reaction window. Rejects when any forced trigger
+/// is still pending (player must fire them first). On success emits
+/// [`Event::WindowClosed`], clears the window state, and either
+/// resumes a paused skill-test driver (if one was mid-resolution
+/// when the window opened) or returns [`Done`].
+fn close_reaction_window(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    let window = state
+        .in_flight_reaction_window
+        .as_ref()
+        .expect("close_reaction_window: caller checked is_some");
+    if let Some(forced) = window.pending.iter().find(|t| t.forced) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput::Skip: cannot close reaction window while forced trigger \
+                 (controller {ctl:?}, instance {inst:?}, ability {ab}) remains pending; \
+                 fire it first",
+                ctl = forced.controller,
+                inst = forced.instance_id,
+                ab = forced.ability_index,
+            )
+            .into(),
+        };
+    }
+    let kind = window.kind;
+    events.push(Event::WindowClosed { kind });
+    state.in_flight_reaction_window = None;
+
+    // If a skill test was mid-resolution when this window opened,
+    // hand control back to its driver to run the remaining steps.
+    // `AwaitingCommit` means the test is parked at the commit
+    // window (no driver state to resume); this happens when a future
+    // non-skill-test action queues a window — `Done` is the right
+    // terminal outcome.
+    if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+        if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
+            return drive_skill_test(state, events);
+        }
+    }
+
+    EngineOutcome::Done
 }
 
 /// Public dispatch wrapper for [`PlayerAction::PerformSkillTest`].
@@ -1380,6 +1856,16 @@ fn damage_enemy(
             by,
         });
         state.enemies.remove(&enemy_id);
+        // Queue the post-defeat reaction window. The top-level
+        // dispatcher opens it after the surrounding action's apply
+        // finishes; see `open_queued_reaction_window`.
+        queue_reaction_window(
+            state,
+            WindowKind::AfterEnemyDefeated {
+                enemy: enemy_id,
+                by,
+            },
+        );
     }
 }
 
