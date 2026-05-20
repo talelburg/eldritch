@@ -1927,62 +1927,143 @@ fn damage_enemy(
     }
 }
 
-/// Apply `amount` damage to an investigator. If their accumulated
-/// damage reaches `max_health`, flip status to [`Status::Killed`],
-/// emit [`Event::InvestigatorDefeated`], and (if no `Active`
-/// investigators remain) emit [`Event::AllInvestigatorsDefeated`].
+/// Add `amount` to the investigator's `damage` and emit
+/// [`Event::DamageTaken`]. Returns `true` iff the new total reaches
+/// `max_health` (i.e. the investigator now qualifies for defeat under
+/// [`DefeatCause::Damage`]).
+///
+/// Does NOT flip [`Status`] or emit [`Event::InvestigatorDefeated`] —
+/// the caller composes the defeat step via [`apply_investigator_defeat`]
+/// when the return is `true`. This split exists so [`enemy_attack`]
+/// can place damage AND horror on the investigator before either
+/// triggers defeat detection, matching the Rules Reference page 7
+/// "Apply Damage/Horror" clause: *"Any assigned damage/horror that
+/// has not been prevented is now placed on each card to which it has
+/// been assigned, simultaneously."*
 ///
 /// No-ops when `amount == 0` or the investigator is already defeated
 /// (status `!= Active`): defeated investigators are out of play and
 /// don't accumulate more damage.
 ///
-/// All damage-application paths should funnel through this helper so
-/// defeat detection stays consistent. The first caller is
-/// [`enemy_attack`]; future damage-dealing card effects plug in here
-/// too.
-///
-/// [`Status::Killed`]: crate::state::Status::Killed
-fn take_damage(
+/// [`Status`]: crate::state::Status
+fn apply_damage_numeric(
     state: &mut GameState,
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
     amount: u8,
-) {
+) -> bool {
     if amount == 0 {
-        return;
+        return false;
     }
     let inv = state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "take_damage: investigator {investigator:?} is not in the investigators map; \
+                "apply_damage_numeric: investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+            )
+        });
+    if inv.status != Status::Active {
+        return false;
+    }
+    inv.damage = inv.damage.saturating_add(amount);
+    let lethal = inv.damage >= inv.max_health;
+    events.push(Event::DamageTaken {
+        investigator,
+        amount,
+    });
+    lethal
+}
+
+/// Symmetric to [`apply_damage_numeric`] but against `horror` /
+/// `max_sanity`. Returns `true` iff the new total reaches the
+/// max-sanity threshold; defeat application is the caller's
+/// responsibility (see [`apply_investigator_defeat`]).
+fn apply_horror_numeric(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    amount: u8,
+) -> bool {
+    if amount == 0 {
+        return false;
+    }
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "apply_horror_numeric: investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+            )
+        });
+    if inv.status != Status::Active {
+        return false;
+    }
+    inv.horror = inv.horror.saturating_add(amount);
+    let lethal = inv.horror >= inv.max_sanity;
+    events.push(Event::HorrorTaken {
+        investigator,
+        amount,
+    });
+    lethal
+}
+
+/// Flip an Active investigator's status to the appropriate defeated
+/// variant for `cause`, emit [`Event::InvestigatorDefeated`], and run
+/// [`check_all_defeated`]. No-op if the investigator is already
+/// non-Active (an investigator can only be defeated once per attack).
+///
+/// [`Status::Killed`]: crate::state::Status::Killed
+/// [`Status::Insane`]: crate::state::Status::Insane
+fn apply_investigator_defeat(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    cause: DefeatCause,
+) {
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "apply_investigator_defeat: investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
             )
         });
     if inv.status != Status::Active {
         return;
     }
-    inv.damage = inv.damage.saturating_add(amount);
-    let max_health = inv.max_health;
-    let now_defeated = inv.damage >= max_health;
-    events.push(Event::DamageTaken {
+    inv.status = match cause {
+        DefeatCause::Damage => Status::Killed,
+        DefeatCause::Horror => Status::Insane,
+        DefeatCause::Resigned => Status::Resigned,
+    };
+    events.push(Event::InvestigatorDefeated {
         investigator,
-        amount,
+        cause,
     });
-    if now_defeated {
-        inv.status = Status::Killed;
-        events.push(Event::InvestigatorDefeated {
-            investigator,
-            cause: DefeatCause::Damage,
-        });
-        check_all_defeated(state, events);
-    }
+    check_all_defeated(state, events);
 }
 
-/// Apply `amount` horror to an investigator. Symmetric to
-/// [`take_damage`] but against `horror` / `max_sanity`, defeating
-/// with [`Status::Insane`] and [`DefeatCause::Horror`].
+/// Apply `amount` horror to an investigator. If their accumulated
+/// horror reaches `max_sanity`, flip status to [`Status::Insane`],
+/// emit [`Event::InvestigatorDefeated`], and (if no `Active`
+/// investigators remain) emit [`Event::AllInvestigatorsDefeated`].
+///
+/// No-ops when `amount == 0` or the investigator is already defeated.
+///
+/// Single-source horror application (currently the Draw-from-empty-
+/// deck penalty) funnels through this convenience wrapper. Callers
+/// that need to apply both damage AND horror from the SAME source
+/// with simultaneous-placement semantics (i.e. [`enemy_attack`] and
+/// any future card effect that deals both) compose the lower-level
+/// [`apply_damage_numeric`] + [`apply_horror_numeric`] +
+/// [`apply_investigator_defeat`] triple instead. A `take_damage`
+/// twin is not provided because no single-source-damage caller exists
+/// yet; the recipe (numeric helper + defeat application on `true`
+/// return) is one line per call site.
 ///
 /// [`Status::Insane`]: crate::state::Status::Insane
 fn take_horror(
@@ -1991,35 +2072,8 @@ fn take_horror(
     investigator: InvestigatorId,
     amount: u8,
 ) {
-    if amount == 0 {
-        return;
-    }
-    let inv = state
-        .investigators
-        .get_mut(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "take_horror: investigator {investigator:?} is not in the investigators map; \
-             this is a state-corruption invariant violation"
-            )
-        });
-    if inv.status != Status::Active {
-        return;
-    }
-    inv.horror = inv.horror.saturating_add(amount);
-    let max_sanity = inv.max_sanity;
-    let now_defeated = inv.horror >= max_sanity;
-    events.push(Event::HorrorTaken {
-        investigator,
-        amount,
-    });
-    if now_defeated {
-        inv.status = Status::Insane;
-        events.push(Event::InvestigatorDefeated {
-            investigator,
-            cause: DefeatCause::Horror,
-        });
-        check_all_defeated(state, events);
+    if apply_horror_numeric(state, events, investigator, amount) {
+        apply_investigator_defeat(state, events, investigator, DefeatCause::Horror);
     }
 }
 
@@ -2028,12 +2082,13 @@ fn take_horror(
 ///
 /// **Contract for callers:** *any* code path that flips a
 /// `Status::Active` investigator to a non-`Active` status (Killed,
-/// Insane, Resigned) must call this helper afterwards. Currently
-/// only [`take_damage`] / [`take_horror`] flip status, so they're
-/// the only callers; future paths (the Resign action, scenario
-/// effects that defeat directly) need to add a call too — otherwise
-/// the event silently fails to fire when those paths cause the last
-/// `Active` to fall.
+/// Insane, Resigned) must call this helper afterwards. Currently the
+/// only status-flipping path is [`apply_investigator_defeat`], so
+/// that one helper is the only caller; future paths that flip status
+/// outside this helper (a scenario effect that bypasses the standard
+/// defeat-cause routing) need to add a call too — otherwise the event
+/// silently fails to fire when those paths cause the last `Active`
+/// to fall.
 ///
 /// Idempotent on subsequent defeats: the predicate becomes true once
 /// and stays true. Callers only invoke it after a status flip, so it
@@ -2061,12 +2116,30 @@ fn check_all_defeated(state: &GameState, events: &mut Vec<Event>) {
 /// flag — callers that need exhaustion (i.e. the enemy phase) apply
 /// it separately.
 ///
-/// Defeat handling flows through [`take_damage`] / [`take_horror`].
-/// If damage defeats first, horror is a no-op (already defeated);
-/// per rules damage and horror from an attack are simultaneous, so
-/// the practical loss of information is minor (the cause field on
-/// [`Event::InvestigatorDefeated`] still identifies the lethal
-/// stat).
+/// Damage and horror are placed on the investigator **simultaneously**
+/// per Rules Reference page 7 ("Apply Damage/Horror"): *"Any assigned
+/// damage/horror that has not been prevented is now placed on each
+/// card to which it has been assigned, simultaneously. … After
+/// applying damage/horror, if an investigator has damage equal to or
+/// higher than his or her health or horror equal to or higher than
+/// his or her sanity, he or she is defeated."* So `inv.damage` and
+/// `inv.horror` BOTH update before any defeat check, even when one
+/// alone would be lethal — campaign-log accounting needs both numeric
+/// values to land. Only one [`Event::InvestigatorDefeated`] fires per
+/// attack regardless of how many stats crossed.
+///
+/// Tie-break when both stats cross simultaneously: [`DefeatCause::Damage`].
+/// Per Rules Reference page 6, an investigator simultaneously defeated
+/// by damage and horror *"chooses which type of trauma to suffer"* —
+/// physical vs. mental in the campaign log, and the corresponding
+/// in-scenario status flip follows. The engine doesn't model campaign
+/// trauma yet and has no [`AwaitingInput`] prompt for "pick trauma
+/// type," so `DefeatCause::Damage` is a deterministic placeholder for
+/// the status flip. Route the choice through `AwaitingInput` (and pick
+/// the corresponding [`Status`] variant) when trauma lands; out of
+/// scope for `#83`.
+///
+/// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
 fn enemy_attack(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -2082,8 +2155,16 @@ fn enemy_attack(
     let damage = enemy.attack_damage;
     let horror = enemy.attack_horror;
 
-    take_damage(state, events, investigator, damage);
-    take_horror(state, events, investigator, horror);
+    let damage_lethal = apply_damage_numeric(state, events, investigator, damage);
+    let horror_lethal = apply_horror_numeric(state, events, investigator, horror);
+    if damage_lethal || horror_lethal {
+        let cause = if damage_lethal {
+            DefeatCause::Damage
+        } else {
+            DefeatCause::Horror
+        };
+        apply_investigator_defeat(state, events, investigator, cause);
+    }
 }
 
 /// Fire attacks of opportunity from every ready enemy engaged with
