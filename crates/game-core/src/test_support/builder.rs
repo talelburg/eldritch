@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 
 use crate::rng::RngState;
 use crate::state::{
-    ChaosBag, Enemy, EnemyId, GameState, Investigator, InvestigatorId, Location, Phase,
+    ChaosBag, Enemy, EnemyId, GameState, Investigator, InvestigatorId, Location, LocationId, Phase,
     TokenModifiers,
 };
 
@@ -76,6 +76,46 @@ impl TestGame {
     /// Add an investigator to the state. Replaces any existing entry
     /// with the same id.
     pub fn with_investigator(mut self, investigator: Investigator) -> Self {
+        self.investigators.insert(investigator.id, investigator);
+        self
+    }
+
+    /// Add an investigator placed at `location`. Sets the investigator's
+    /// `current_location` to `Some(location)` then inserts; equivalent to
+    /// the pre-existing two-step `let mut inv = …; inv.current_location =
+    /// Some(loc); .with_investigator(inv)` shape. Replaces any existing
+    /// investigator entry with the same id, like [`with_investigator`].
+    /// The named location itself must still be added separately via
+    /// [`with_location`] (this helper does not insert one — most tests
+    /// already have a fixture builder for the location with its specific
+    /// shroud / connections / clues).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use game_core::{
+    ///     InvestigatorId, LocationId,
+    ///     test_support::{test_investigator, test_location, TestGame},
+    /// };
+    ///
+    /// let state = TestGame::new()
+    ///     .with_investigator_at(test_investigator(1), LocationId(10))
+    ///     .with_location(test_location(10, "Study"))
+    ///     .build();
+    /// assert_eq!(
+    ///     state.investigators[&InvestigatorId(1)].current_location,
+    ///     Some(LocationId(10)),
+    /// );
+    /// ```
+    ///
+    /// [`with_investigator`]: Self::with_investigator
+    /// [`with_location`]: Self::with_location
+    pub fn with_investigator_at(
+        mut self,
+        mut investigator: Investigator,
+        location: LocationId,
+    ) -> Self {
+        investigator.current_location = Some(location);
         self.investigators.insert(investigator.id, investigator);
         self
     }
