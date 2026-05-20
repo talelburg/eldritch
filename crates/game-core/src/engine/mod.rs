@@ -2130,7 +2130,7 @@ mod tests {
     fn defeated_investigator_does_not_take_further_damage() {
         // Two engaged ready enemies, both with attack_damage = 5.
         // Investigator has max_health = 1. The first AoO defeats;
-        // the second is a no-op (take_damage skips defeated).
+        // the second is a no-op (apply_damage_numeric skips defeated).
         let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
         state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
         state.enemies.get_mut(&EnemyId(200)).unwrap().attack_damage = 5;

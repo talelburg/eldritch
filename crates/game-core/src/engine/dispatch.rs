@@ -2128,15 +2128,18 @@ fn check_all_defeated(state: &GameState, events: &mut Vec<Event>) {
 /// values to land. Only one [`Event::InvestigatorDefeated`] fires per
 /// attack regardless of how many stats crossed.
 ///
-/// Tie-break when both stats cross simultaneously: the cause is
-/// [`DefeatCause::Damage`]. The Rules Reference does not disambiguate
-/// the simultaneous-lethal case; a deterministic choice is the
-/// requirement here, and damage-first matches the most common
-/// implementation convention. Revisit if a FAQ ruling surfaces or if
-/// campaign trauma needs to charge both physical and mental at once
-/// (Rules Reference page 8 frames the trauma rules around the singular
-/// "defeated by taking damage" / "by taking horror" cases, but doesn't
-/// rule out both).
+/// Tie-break when both stats cross simultaneously: [`DefeatCause::Damage`].
+/// Per Rules Reference page 6, an investigator simultaneously defeated
+/// by damage and horror *"chooses which type of trauma to suffer"* —
+/// physical vs. mental in the campaign log, and the corresponding
+/// in-scenario status flip follows. The engine doesn't model campaign
+/// trauma yet and has no [`AwaitingInput`] prompt for "pick trauma
+/// type," so `DefeatCause::Damage` is a deterministic placeholder for
+/// the status flip. Route the choice through `AwaitingInput` (and pick
+/// the corresponding [`Status`] variant) when trauma lands; out of
+/// scope for `#83`.
+///
+/// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
 fn enemy_attack(
     state: &mut GameState,
     events: &mut Vec<Event>,
