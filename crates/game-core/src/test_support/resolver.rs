@@ -682,7 +682,7 @@ mod tests {
             &mut resolver,
             applier,
         );
-        assert_eq!(result.events.len(), 2);
+        crate::assert_total_event_count!(result.events, 2);
         assert!(matches!(
             result.events[0],
             Event::ResourcesGained { amount: 1, .. }
