@@ -132,24 +132,26 @@ mod tests {
         // Phase-2 PR-I: Holy Rosary (01059), Working a Hunch (01037).
         // Phase-3 #37: Magnifying Glass (01030).
         // Phase-3 #38: Hyperawareness (01034).
+        // Phase-3 #39: Deduction (01039).
+        // Phase-3 #55: Roland Banks (01001).
         assert!(is_playable("01037"));
         assert!(is_playable("01059"));
         assert!(is_playable("01030"));
         assert!(is_playable("01034"));
         assert!(is_playable("01039"));
+        assert!(is_playable("01001"));
     }
 
     #[test]
     fn unimplemented_cards_are_not_playable() {
         // Phase-3 doesn't touch most of the corpus.
-        assert!(!is_playable("01001")); // Roland Banks
         assert!(!is_playable("01017")); // Physical Training
         assert!(!is_playable("99999")); // unknown code
     }
 
     #[test]
     fn abilities_for_returns_some_for_implemented() {
-        for code in ["01030", "01034", "01037", "01039", "01059"] {
+        for code in ["01001", "01030", "01034", "01037", "01039", "01059"] {
             let abilities = super::abilities_for(code)
                 .unwrap_or_else(|| panic!("expected abilities for {code}"));
             assert!(

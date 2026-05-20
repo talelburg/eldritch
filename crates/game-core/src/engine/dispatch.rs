@@ -1116,6 +1116,12 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
                 }
                 let ability_index = u8::try_from(idx)
                     .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
+                // "Limit X per [period]" — skip triggers whose per-
+                // instance counter has already reached the cap this
+                // round. Rules Reference page 14.
+                if card.is_usage_exhausted(ability_index, ability.usage_limit, state.round) {
+                    continue;
+                }
                 // Phase-3 scope: every queued trigger is optional.
                 // The DSL has no forced primitive yet (#52 doc).
                 pending.push(PendingTrigger {
@@ -1309,11 +1315,16 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
     // but the first source-attributing reaction effect will, and the
     // information is already on the trigger record.
     let ctx = EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    let usage_limit = ability.usage_limit;
     let result = apply_effect(state, events, &ability.effect, ctx);
     if let EngineOutcome::Rejected { reason } = result {
         // Card-impl bugs surface loudly — same policy as
         // `fire_on_skill_test_resolution`.
         unreachable!("OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}");
+    }
+
+    if usage_limit.is_some() {
+        bump_usage_counter(state, &trigger);
     }
 
     // Drop the fired entry now that resolution succeeded.
@@ -1341,6 +1352,47 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
         },
         resume_token: ResumeToken(0),
     }
+}
+
+/// Bump the per-instance ability-usage counter for the just-fired
+/// trigger. Called by [`fire_pending_trigger`] only for abilities
+/// whose `usage_limit` is `Some(_)`; for abilities with no limit
+/// nothing tracks them.
+///
+/// **TODO (cancellation-counts-against-limit).** Rules Reference
+/// page 14: *"If the effects of a card or ability with a limit or
+/// maximum are canceled, it is still counted against the
+/// limit/maximum, because the ability has been initiated."* Phase-3
+/// has no cancellation primitive, so today we only bump on successful
+/// resolution. When cancellation lands, the bump call must move
+/// before the effect resolves (or fork into both paths) so canceled
+/// fires still count.
+fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
+    let current_round = state.round;
+    let inv = state
+        .investigators
+        .get_mut(&trigger.controller)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "bump_usage_counter: controller {ctl:?} vanished while reaction window \
+                 was open; state-corruption invariant violation",
+                ctl = trigger.controller,
+            )
+        });
+    let card = inv
+        .cards_in_play
+        .iter_mut()
+        .find(|c| c.instance_id == trigger.instance_id)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "bump_usage_counter: instance {inst:?} vanished from controller {ctl:?}'s \
+                 cards_in_play while reaction window was open; state-corruption invariant \
+                 violation",
+                inst = trigger.instance_id,
+                ctl = trigger.controller,
+            )
+        });
+    card.bump_ability_usage(trigger.ability_index, current_round);
 }
 
 /// Close the open reaction window. Rejects when any forced trigger

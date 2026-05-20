@@ -227,6 +227,49 @@ pub enum Cost {
     DiscardCardFromHand,
 }
 
+// ---- usage limits ----------------------------------------------
+
+/// A "Limit X per \[period\]" cap on how often an ability may fire.
+///
+/// Per the Rules Reference page 14: *"Each instance of an ability with
+/// such a limit may be initiated X times during the designated period.
+/// If a card leaves play and re-enters play during the same period,
+/// the card is considered to be bringing a new instance of the ability
+/// to the game."*
+///
+/// Canonical motivating card: Roland Banks (01001) —
+/// `[reaction] After you defeat an enemy: Discover 1 clue at your
+/// location. (Limit once per round.)` compiles to
+/// `UsageLimit { count: 1, period: UsagePeriod::Round }`.
+///
+/// Storage of the per-instance counter lives on
+/// [`CardInPlay`](crate::state::CardInPlay): see
+/// [`ability_usage`](crate::state::CardInPlay::ability_usage). When a
+/// card leaves play, its `CardInPlay` is dropped, so a re-entering
+/// instance starts fresh as the rules require.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct UsageLimit {
+    /// Maximum number of times the ability may fire during one period.
+    pub count: u8,
+    /// Which period the count is measured over.
+    pub period: UsagePeriod,
+}
+
+/// The period a [`UsageLimit`] is measured over.
+///
+/// Phase-3 minimal set: `Round` (Roland's "Limit once per round").
+/// `Phase` ("limit once per turn") and `Game` ("limit once per game"
+/// — group or player) land when the first consumer appears.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum UsagePeriod {
+    /// A game round, as defined by the framework: begins at 1.1 Mythos,
+    /// ends at 4.6 Upkeep (Rules Reference page 23). Counter resets
+    /// when [`GameState::round`](crate::state::GameState::round)
+    /// advances.
+    Round,
+}
+
 // ---- abilities -------------------------------------------------
 
 /// One ability on a card: a trigger paired with payment costs and
@@ -240,6 +283,11 @@ pub enum Cost {
 /// commit abilities use an empty `costs` vec. Activated abilities
 /// list their payment here in addition to the `action_cost` baked
 /// into [`Trigger::Activated`].
+///
+/// `usage_limit` carries the "Limit X per period" cap on firing — see
+/// [`UsageLimit`]. `None` means "unlimited within the rules' default
+/// once-per-occurrence cap on reaction abilities" (Rules Reference
+/// page 2). A `Some(...)` value applies the stronger printed cap.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Ability {
@@ -249,6 +297,24 @@ pub struct Ability {
     #[serde(default)]
     pub costs: Vec<Cost>,
     pub effect: Effect,
+    /// "Limit X per \[period\]" cap. `None` for abilities with no
+    /// printed cap. Defaults to `None` on deserialize so older saved
+    /// logs still load cleanly.
+    #[serde(default)]
+    pub usage_limit: Option<UsageLimit>,
+}
+
+impl Ability {
+    /// Attach a [`UsageLimit`] to this ability. Builder-style sugar so
+    /// card impls can chain off the `on_event(...)` / `activated(...)`
+    /// constructors instead of mutating fields by name (which the
+    /// `cards` crate can't do anyway — [`Ability`] is
+    /// `#[non_exhaustive]`).
+    #[must_use]
+    pub fn with_usage_limit(mut self, limit: UsageLimit) -> Self {
+        self.usage_limit = Some(limit);
+        self
+    }
 }
 
 // ---- effects ---------------------------------------------------
@@ -473,6 +539,7 @@ pub fn constant(effect: Effect) -> Ability {
         trigger: Trigger::Constant,
         costs: Vec::new(),
         effect,
+        usage_limit: None,
     }
 }
 
@@ -486,6 +553,7 @@ pub fn on_play(effect: Effect) -> Ability {
         trigger: Trigger::OnPlay,
         costs: Vec::new(),
         effect,
+        usage_limit: None,
     }
 }
 
@@ -497,6 +565,7 @@ pub fn on_commit(effect: Effect) -> Ability {
         trigger: Trigger::OnCommit,
         costs: Vec::new(),
         effect,
+        usage_limit: None,
     }
 }
 
@@ -510,6 +579,7 @@ pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability
         trigger: Trigger::OnSkillTestResolution { outcome },
         costs: Vec::new(),
         effect,
+        usage_limit: None,
     }
 }
 
@@ -522,6 +592,7 @@ pub fn on_event(pattern: EventPattern, timing: EventTiming, effect: Effect) -> A
         trigger: Trigger::OnEvent { pattern, timing },
         costs: Vec::new(),
         effect,
+        usage_limit: None,
     }
 }
 
@@ -540,6 +611,7 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
         trigger: Trigger::Activated { action_cost },
         costs,
         effect,
+        usage_limit: None,
     }
 }
 

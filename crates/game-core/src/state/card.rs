@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::dsl::{UsageLimit, UsagePeriod};
+
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
 ///
 /// Newtype over `String` so we can't accidentally pass arbitrary strings
@@ -143,6 +145,51 @@ pub struct CardInPlay {
     /// Horror accumulated on this asset (for horror-soak / ally
     /// sanity). Distinct from the controlling investigator's horror.
     pub accumulated_horror: u8,
+    /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
+    /// is the ability index within the card's `abilities()`; value
+    /// records the last round the ability fired and how many times.
+    ///
+    /// Reset is **lazy** — when a query needs the count for the current
+    /// round, it reads the record; if the stored `round` doesn't match
+    /// [`GameState::round`](crate::state::GameState::round), the count
+    /// is treated as 0 (and overwritten on next fire). No explicit
+    /// round-end hook is required, which matters because Phase 3 has
+    /// no round-cycling framework yet — rounds tick by a test or future
+    /// scenario action mutating `state.round`.
+    ///
+    /// Empty for cards with no [`UsageLimit`] on any ability.
+    ///
+    /// [`UsageLimit`]: crate::dsl::UsageLimit
+    #[serde(default)]
+    pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
+}
+
+/// One ability's firing record for "Limit X per \[period\]" tracking.
+///
+/// `round` is the value of
+/// [`GameState::round`](crate::state::GameState::round) at last fire.
+/// `count` is the number of fires during that round (compared against
+/// the ability's [`UsageLimit::count`](crate::dsl::UsageLimit::count)
+/// to gate further fires).
+///
+/// `#[non_exhaustive]` so future periods (`Phase`, `Game`) can add
+/// fields without breaking downstream construction. Use
+/// [`AbilityUsageRecord::new`] to construct from outside the crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct AbilityUsageRecord {
+    pub round: u32,
+    pub count: u8,
+}
+
+impl AbilityUsageRecord {
+    /// Construct a usage record. The fields are `pub`, but the struct
+    /// is `#[non_exhaustive]` so downstream code (tests, future
+    /// scenario modules) must go through this constructor.
+    #[must_use]
+    pub fn new(round: u32, count: u8) -> Self {
+        Self { round, count }
+    }
 }
 
 impl CardInPlay {
@@ -158,6 +205,57 @@ impl CardInPlay {
             uses: BTreeMap::new(),
             accumulated_damage: 0,
             accumulated_horror: 0,
+            ability_usage: BTreeMap::new(),
         }
+    }
+
+    /// Returns `true` if the ability at `ability_index` has already
+    /// reached its [`UsageLimit::count`] for the current period.
+    ///
+    /// `None` for `limit` (the ability has no printed "Limit X per …"
+    /// clause) always returns `false` — that ability has no per-period
+    /// cap; the rules' default once-per-occurrence cap on reaction
+    /// abilities is enforced by the reaction-window dispatch itself,
+    /// not by this counter.
+    #[must_use]
+    pub fn is_usage_exhausted(
+        &self,
+        ability_index: u8,
+        limit: Option<UsageLimit>,
+        current_round: u32,
+    ) -> bool {
+        let Some(limit) = limit else {
+            return false;
+        };
+        match limit.period {
+            UsagePeriod::Round => {
+                let Some(record) = self.ability_usage.get(&ability_index) else {
+                    return false;
+                };
+                if record.round != current_round {
+                    return false;
+                }
+                record.count >= limit.count
+            }
+        }
+    }
+
+    /// Record one firing of the ability at `ability_index` against the
+    /// current period. Resets the counter if the stored record is for
+    /// a stale period (lazy reset — see the field-level docs on
+    /// [`ability_usage`](Self::ability_usage)).
+    pub fn bump_ability_usage(&mut self, ability_index: u8, current_round: u32) {
+        let record = self
+            .ability_usage
+            .entry(ability_index)
+            .or_insert(AbilityUsageRecord {
+                round: current_round,
+                count: 0,
+            });
+        if record.round != current_round {
+            record.round = current_round;
+            record.count = 0;
+        }
+        record.count = record.count.saturating_add(1);
     }
 }

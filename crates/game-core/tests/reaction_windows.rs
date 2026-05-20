@@ -6,9 +6,11 @@
 //! a mock registry without colliding with game-core's in-crate tests or
 //! with other `tests/*.rs` files. Mirrors `on_skill_test_resolution.rs`.
 //!
-//! No real card carries [`Trigger::OnEvent`](game_core::dsl::Trigger::OnEvent)
-//! yet — the follow-up issue (#55 Roland Banks) is the first consumer.
-//! Until then, mock cards are the only way to exercise the full path.
+//! Roland Banks (01001, #55) is the first real-card `Trigger::OnEvent`
+//! consumer; that card's end-to-end test lives in
+//! `crates/cards/tests/roland_banks.rs`. This file keeps mock cards to
+//! exercise edge cases (multi-controller defeats, two abilities on one
+//! card, `by_controller: false`) that no real Phase-3 card hits.
 
 use std::sync::OnceLock;
 

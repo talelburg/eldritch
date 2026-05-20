@@ -32,10 +32,13 @@
 //!   `Modify`.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
+//! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
+//!   reaction (`EnemyDefeated { by_controller: true }`, `After`) +
+//!   `UsageLimit { count: 1, period: Round }` for "Limit once per
+//!   round." Elder-sign half stubbed pending #118.
 //!
-//! Remaining Phase-3 cards (Roland Banks #55, Study #56) each block
-//! on a DSL primitive the cards crate doesn't yet emit — `OnEvent`
-//! reactions, location-state shape.
+//! The remaining Phase-3 card (Study #56) blocks on the
+//! location-state shape.
 
 use game_core::dsl::Ability;
 
@@ -43,6 +46,7 @@ pub mod deduction;
 pub mod holy_rosary;
 pub mod hyperawareness;
 pub mod magnifying_glass;
+pub mod roland_banks;
 pub mod working_a_hunch;
 
 /// Look up a card's hand-implemented abilities by code. Returns
@@ -54,6 +58,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
+        roland_banks::CODE => Some(roland_banks::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
         _ => None,
     }
