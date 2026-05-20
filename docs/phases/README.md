@@ -15,7 +15,7 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 | 0 | Foundations | ✅ closed | [phase-0-foundations.md](phase-0-foundations.md) |
 | 1 | Engine bones | ✅ closed | [phase-1-engine-bones.md](phase-1-engine-bones.md) |
 | 2 | Card data + DSL | ✅ closed | [phase-2-card-data-and-dsl.md](phase-2-card-data-and-dsl.md) |
-| 3 | Skill-test end-to-end | 🟡 in progress | [phase-3-skill-test-end-to-end.md](phase-3-skill-test-end-to-end.md) |
+| 3 | Skill-test end-to-end | ✅ closed | [phase-3-skill-test-end-to-end.md](phase-3-skill-test-end-to-end.md) |
 | 4 | Scenario plumbing | ⏳ planned | [phase-4-scenario-plumbing.md](phase-4-scenario-plumbing.md) |
 | 5 | Server + persistence | 📐 architecture only | [phase-5-server-and-persistence.md](phase-5-server-and-persistence.md) |
 | 6 | Web client v0 | 📐 architecture only | [phase-6-web-client-v0.md](phase-6-web-client-v0.md) |

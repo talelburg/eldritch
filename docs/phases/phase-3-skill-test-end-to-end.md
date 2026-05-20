@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 21 closed / 2 open as of 2026-05-20.
+✅ Closed 2026-05-21. 21 issues shipped; 2 deferred (see Decisions).
 
 ## Goal
 
@@ -36,12 +36,14 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#112` | DSL `Trigger::OnSkillTestResolution` + tested-location plumbing | Split out of `#39` so the trigger variant lands on its own; `#39` consumes it. |
 | `#54` | DSL `OnEvent` trigger | DSL surface only — `Trigger::OnEvent` + `EventPattern::EnemyDefeated` + `EventTiming::{Before, After}` + `on_event` builder. Firing (engine reaction-window machinery) lands in `#52`. |
 
-### Open (2)
+### Deferred (2)
 
-| # | Title | Notes |
+Moved out of the Phase-3 milestone at close (see Decisions, "Phase-3 closure deferred #56 and #64").
+
+| # | Title | New home |
 |---|---|---|
-| `#56` | Study location (01111) | Needs a location-state shape decision; thinnest issue body. |
-| `#64` | skill-test after-resolution trigger window | Needs `#54` (OnEvent) + `#19`. Distinct semantic from `#112` — `#64` is a player-window-driven reactive trigger after the test ends; `#112` is a resolution-machinery trigger on committed cards. The `FinishContinuation::PostOnResolution` seat (added in `#52`) is the natural step boundary. |
+| `#56` | Study location (01111) | Phase 4, alongside `#74` (location-state + scenario-module shape). |
+| `#64` | skill-test after-resolution trigger window | Held unmilestoned until a concrete card needs the player-window-driven reactive trigger. The `FinishContinuation::PostOnResolution` seat (added in `#52`) is preserved as the hookup point. |
 
 ## Ordering (Shape B)
 
@@ -57,7 +59,7 @@ Three PRs to demonstrate "skill test runs through the engine on real cards":
 
 End state: Holy Rosary's `+1 willpower` applies during a real willpower skill test; Working a Hunch resolves on-play end-to-end.
 
-### Arc 2: completing the milestone (in progress)
+### Arc 2: completing the milestone (closed 2026-05-15 to 2026-05-21)
 
 Cards rather than infra-first. Build the minimal infra each card needs, ship the card, repeat. Gives steady "new card works" wins instead of ~8 infra PRs before any new card lands.
 
@@ -76,8 +78,8 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 | 11 | `#54` OnEvent trigger | ✅ PR #115 |
 | 12 | `#52` reaction windows | ✅ PR #116 |
 | 13 | `#55` Roland Banks reaction | ✅ PR #120 |
-| 14 | `#56` Study | needs location-state design; defer or build alongside Phase 4 |
-| 15 | `#64` after-resolution trigger window | distinct from `#112`; reactive trigger window for OnEvent-style "after this test succeeds, …" cards |
+| 14 | `#56` Study | ⏭️ deferred to Phase 4 (waits on `#74` location shape) |
+| 15 | `#64` after-resolution trigger window | ⏭️ deferred to first card consumer (unmilestoned) |
 
 ## Decisions made
 
@@ -107,10 +109,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 - **`#55` split into reaction (Phase 3) + elder-sign (Phase 7, `#118`) (PR #120).** Roland's `[reaction]` is the load-bearing Phase-3 piece (first real-card consumer of `#52` reaction windows). His `[elder_sign]` needs a `Trigger::ElderSign` variant plus a dynamic skill-test modifier DSL surface (numeric expressions over state — clues at controller's location), whose shape benefits from a second consumer (likely `.45 Automatic` / Cover Up in Phase 7). Single-PR Roland would have lumped two unrelated DSL additions; the split keeps each PR focused and avoids locking the dynamic-modifier shape on one consumer. The broader unification of damage/horror/clues onto `CardInPlay` is `#119` (unmilestoned cross-cutting).
 - **Investigator card is a `CardInPlay` placed at scenario setup (`#55`, PR #120).** Per Rules Reference pages 4 ("Attach To") and 6 ("Clues"), the investigator card is a card in play under its owner's control. Putting it in `cards_in_play` lets the existing reaction-window scan, constant-modifier query, and any future ability walk pick up investigator abilities uniformly with assets — no bespoke "investigator-abilities" path. An earlier draft added `Investigator.card_code` as a back-pointer; removed during review because nothing reads it (the `CardInPlay.code` is the canonical identifier). When `#119` lands and the investigator's damage/horror/clues migrate to that `CardInPlay`, a `CardInstanceId` pointer may be wanted then — concrete consumer first.
 - **`UsageLimit` primitive lives on `Ability`, counter lives on `CardInPlay` (`#55`, PR #120).** `Ability.usage_limit: Option<UsageLimit { count, period }>` with `UsagePeriod::Round` for "Limit once per round" (Rules Reference page 14). Per-instance storage on `CardInPlay::ability_usage` (keyed by ability index) matches the page-14 rule that a card leaving and re-entering play brings a new ability instance — the counter drops with the `CardInPlay` automatically. Lazy round-keyed reset (mismatched-round records read as 0) avoids needing a round-end hook, which matters because Phase 3 doesn't cycle rounds yet. `Skip` doesn't bump the counter — page 14 ties the count to *initiation*. Cancellation-counts-against-limit (also page 14) is flagged with a TODO near `bump_usage_counter` for when a cancellation primitive lands.
-
-## Open questions
-
-- **`#56` Study (location).** Locations have a state shape (shroud, clues, connections), but printed locations also have abilities — Reveal effects, on-enter triggers. The shape for location abilities isn't yet decided. Could land alongside Phase-4 scenario plumbing (`#74` scenario module skeleton) where the location-handling shape gets settled.
+- **Phase-3 closure deferred `#56` and `#64`.** With the Roland-Banks reaction shipped (PR #120), the Phase-3 demo goal is satisfied: Magnifying Glass, Hyperawareness, Deduction, and Roland's reaction all run end-to-end against real card metadata + abilities. The remaining two issues each lack a concrete near-term consumer — `#56` Study needs a location-abilities shape that Phase 4's `#74` is the natural home for; `#64` is scaffolding for a player-window-driven reactive trigger with no card-in-scope wanting it. Holding both follows the codebase's "concrete consumer first" pattern (cf. the `#52` trigger-indexing deferral, the `#63` max-1-commit deferral, and the `#55` elder-sign split to Phase 7). The `FinishContinuation::PostOnResolution` seat already exists from `#52`, so `#64`'s hookup point survives untouched.
 
 ## Dependencies
 
@@ -118,14 +117,12 @@ Phases 0–2.
 
 ## What "done" looks like
 
-Skill test runs through the engine in tests against real-card metadata + abilities, with the full Phase-3-tagged card set implemented:
+Skill tests run through the engine against real-card metadata + abilities, demonstrated by integration tests in `crates/cards/tests/`:
 - Magnifying Glass `+1 intellect while investigating` ✓
 - Hyperawareness `[fast] Spend 1 resource: +1 stat for this skill test` ✓
-- Deduction commit-from-hand triggered effect
-- Roland Banks investigator with his reaction ability
-- Study location with whatever its printed abilities require
-
-End-to-end integration tests in `crates/cards/tests/` cover each card.
+- Deduction commit-from-hand triggered effect ✓
+- Roland Banks investigator with his reaction ability ✓
+- ~~Study location~~ → deferred to Phase 4 (`#74`)
 
 ## Side work shipped during the Phase-3 timeline
 

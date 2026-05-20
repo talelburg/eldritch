@@ -2157,6 +2157,121 @@ mod tests {
     }
 
     #[test]
+    fn aoo_with_lethal_damage_and_sublethal_horror_applies_both_numerically() {
+        // Rules Reference page 7: damage and horror from a single
+        // attack are applied simultaneously. Lethal damage MUST NOT
+        // short-circuit the horror application.
+        let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
+        state.investigators.get_mut(&inv_id).unwrap().max_health = 5;
+        // Plenty of sanity headroom so the horror is sub-lethal.
+        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 8;
+        let enemy = state.enemies.get_mut(&enemy_id).unwrap();
+        enemy.attack_damage = 5;
+        enemy.attack_horror = 1;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // Both events fire and both numeric fields land.
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 5 } if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+        assert_eq!(result.state.investigators[&inv_id].damage, 5);
+        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        // Exactly one InvestigatorDefeated, caused by Damage.
+        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
+        assert_event!(
+            result.events,
+            Event::InvestigatorDefeated {
+                investigator,
+                cause: DefeatCause::Damage,
+            } if *investigator == inv_id
+        );
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
+    }
+
+    #[test]
+    fn aoo_with_sublethal_damage_and_lethal_horror_applies_both_numerically() {
+        // Symmetric to the lethal-damage case: lethal horror MUST NOT
+        // short-circuit the damage application.
+        let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
+        state.investigators.get_mut(&inv_id).unwrap().max_health = 8;
+        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 1;
+        let enemy = state.enemies.get_mut(&enemy_id).unwrap();
+        enemy.attack_damage = 1;
+        enemy.attack_horror = 5;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+        assert_event!(
+            result.events,
+            Event::HorrorTaken { investigator, amount: 5 } if *investigator == inv_id
+        );
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].horror, 5);
+        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
+        assert_event!(
+            result.events,
+            Event::InvestigatorDefeated {
+                investigator,
+                cause: DefeatCause::Horror,
+            } if *investigator == inv_id
+        );
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Insane);
+    }
+
+    #[test]
+    fn aoo_with_both_lethal_defeats_once_with_damage_cause() {
+        // Both stats cross their threshold from the same attack. Per
+        // the enemy_attack doc comment, the tie-break is
+        // DefeatCause::Damage (Rules Reference is silent on the
+        // simultaneous-lethal case; damage-first is the convention).
+        let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
+        state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
+        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 1;
+        let enemy = state.enemies.get_mut(&enemy_id).unwrap();
+        enemy.attack_damage = 1;
+        enemy.attack_horror = 1;
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
+        assert_event!(
+            result.events,
+            Event::InvestigatorDefeated {
+                investigator,
+                cause: DefeatCause::Damage,
+            } if *investigator == inv_id
+        );
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
+    }
+
+    #[test]
     fn all_investigators_defeated_fires_only_when_last_active_falls() {
         // Two investigators, one defeated, then the second defeated.
         // AllInvestigatorsDefeated should fire only on the second.
