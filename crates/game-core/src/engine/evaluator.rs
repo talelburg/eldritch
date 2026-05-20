@@ -1272,6 +1272,7 @@ mod tests {
                 trigger: Trigger::OnPlay,
                 costs: Vec::new(),
                 effect: modify(Stat::Willpower, 5, ModifierScope::WhileInPlay),
+                usage_limit: None,
             }]),
             "max-health-plus-1" => Some(vec![constant(modify(
                 Stat::MaxHealth,
