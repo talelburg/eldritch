@@ -72,16 +72,7 @@ fn run() -> Result<(), String> {
         let cards: Vec<RawCard> =
             serde_json::from_str(&raw).map_err(|e| format!("parsing {}: {e}", path.display()))?;
         for raw in cards {
-            // Skip skeleton entries (codes reserved upstream but no
-            // populated card data — name is the cheap presence check).
-            if raw.name.is_none() {
-                continue;
-            }
-            let normalized = normalize(raw)
-                .map_err(|e| format!("normalizing card in {}: {e}", path.display()))?;
-            if let Some(prev) = all.insert(normalized.code.clone(), normalized) {
-                return Err(format!("duplicate card code: {}", prev.code));
-            }
+            process_raw(raw, &mut all, &path)?;
         }
     }
 
@@ -95,6 +86,28 @@ fn run() -> Result<(), String> {
         all.len(),
         out_path.display()
     );
+    Ok(())
+}
+
+/// Per-card pipeline step: skip skeleton entries (no `name`),
+/// normalize, then insert deduplicated into the accumulator. The
+/// `path` is purely for error-context formatting on `normalize`
+/// failures.
+fn process_raw(
+    raw: RawCard,
+    all: &mut BTreeMap<String, NormalizedCard>,
+    path: &Path,
+) -> Result<(), String> {
+    // Skip skeleton entries (codes reserved upstream but no populated
+    // card data — name is the cheap presence check).
+    if raw.name.is_none() {
+        return Ok(());
+    }
+    let normalized =
+        normalize(raw).map_err(|e| format!("normalizing card in {}: {e}", path.display()))?;
+    if let Some(prev) = all.insert(normalized.code.clone(), normalized) {
+        return Err(format!("duplicate card code: {}", prev.code));
+    }
     Ok(())
 }
 
@@ -410,7 +423,43 @@ const GENERATED_HEADER: &str = "\
 
 #[cfg(test)]
 mod tests {
-    use super::parse_slots;
+    use super::{
+        map_card_type, map_class, normalize, parse_slots, parse_traits, process_raw, RawCard,
+    };
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
+    /// Minimal `RawCard` fixture with the required fields populated and
+    /// optional fields cleared. Tweak by mutating the returned value
+    /// before passing to `normalize` / `process_raw`.
+    fn raw_card(code: &str) -> RawCard {
+        RawCard {
+            code: code.to_owned(),
+            name: Some(format!("Card {code}")),
+            text: None,
+            flavor: None,
+            illustrator: None,
+            traits: None,
+            slot: None,
+            cost: None,
+            xp: None,
+            health: None,
+            sanity: None,
+            deck_limit: None,
+            quantity: None,
+            pack_code: "core".to_owned(),
+            position: 1,
+            faction_code: Some("seeker".to_owned()),
+            type_code: Some("asset".to_owned()),
+            skill_willpower: None,
+            skill_intellect: None,
+            skill_combat: None,
+            skill_agility: None,
+            skill_wild: None,
+        }
+    }
+
+    // ---- parse_slots (pre-existing tests) ----------------------------
 
     #[test]
     fn parses_bare_slot() {
@@ -459,5 +508,259 @@ mod tests {
         // No real card has this; just guard against panics on weird
         // upstream data.
         assert_eq!(parse_slots(Some("Hand x10")).len(), 10);
+    }
+
+    // ---- map_class ---------------------------------------------------
+
+    #[test]
+    fn map_class_maps_all_known_factions() {
+        for (faction, expected) in [
+            ("guardian", "Guardian"),
+            ("seeker", "Seeker"),
+            ("rogue", "Rogue"),
+            ("mystic", "Mystic"),
+            ("survivor", "Survivor"),
+            ("neutral", "Neutral"),
+            ("mythos", "Mythos"),
+        ] {
+            assert_eq!(map_class(Some(faction), "01001").unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn map_class_errors_on_unknown_faction() {
+        let err = map_class(Some("wibble"), "01001").unwrap_err();
+        assert!(err.contains("wibble"), "{err}");
+        assert!(err.contains("01001"), "{err}");
+    }
+
+    #[test]
+    fn map_class_errors_on_missing_faction() {
+        let err = map_class(None, "01001").unwrap_err();
+        assert!(err.contains("missing"), "{err}");
+        assert!(err.contains("01001"), "{err}");
+    }
+
+    // ---- map_card_type -----------------------------------------------
+
+    #[test]
+    fn map_card_type_maps_all_known_types() {
+        for (type_code, expected) in [
+            ("investigator", "Investigator"),
+            ("asset", "Asset"),
+            ("event", "Event"),
+            ("skill", "Skill"),
+            ("treachery", "Treachery"),
+            ("enemy", "Enemy"),
+            ("location", "Location"),
+            ("agenda", "Agenda"),
+            ("act", "Act"),
+            ("scenario", "Scenario"),
+            ("story", "Story"),
+        ] {
+            assert_eq!(map_card_type(Some(type_code), "01001").unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn map_card_type_errors_on_unknown_type() {
+        let err = map_card_type(Some("wibble"), "01001").unwrap_err();
+        assert!(err.contains("wibble"), "{err}");
+        assert!(err.contains("01001"), "{err}");
+    }
+
+    #[test]
+    fn map_card_type_errors_on_missing_type() {
+        let err = map_card_type(None, "01001").unwrap_err();
+        assert!(err.contains("missing"), "{err}");
+        assert!(err.contains("01001"), "{err}");
+    }
+
+    // ---- parse_traits ------------------------------------------------
+
+    #[test]
+    fn parse_traits_handles_missing_and_empty() {
+        assert!(parse_traits(None).is_empty());
+        assert!(parse_traits(Some("")).is_empty());
+        assert!(parse_traits(Some("   ")).is_empty());
+    }
+
+    #[test]
+    fn parse_traits_single_trait() {
+        assert_eq!(parse_traits(Some("Detective.")), vec!["Detective"]);
+    }
+
+    #[test]
+    fn parse_traits_multi_trait_dot_separated() {
+        // ArkhamDB convention: trailing dot on each trait.
+        assert_eq!(
+            parse_traits(Some("Item. Tool. Relic.")),
+            vec!["Item", "Tool", "Relic"]
+        );
+    }
+
+    #[test]
+    fn parse_traits_trims_whitespace_and_skips_empties() {
+        // The split on '.' produces an empty trailing element after
+        // the final dot; the filter drops it. Also drop interior
+        // whitespace-only fragments. Not a known real upstream shape,
+        // just defensive against malformed data.
+        assert_eq!(parse_traits(Some("Item.  . Tool.")), vec!["Item", "Tool"]);
+    }
+
+    // ---- normalize ---------------------------------------------------
+
+    #[test]
+    fn normalize_happy_path_populates_all_fields() {
+        // Synthetic fixture; values are not meant to match any real
+        // ArkhamDB card. Exercises the field-by-field normalize path
+        // without coupling to snapshot data.
+        let mut raw = raw_card("TEST01");
+        raw.name = Some("Test Card".to_owned());
+        raw.text = Some("Test ability text.".to_owned());
+        raw.flavor = Some("Test flavor.".to_owned());
+        raw.illustrator = Some("Test Artist".to_owned());
+        raw.traits = Some("Alpha. Beta.".to_owned());
+        raw.slot = None;
+        raw.cost = Some(0);
+        raw.xp = Some(0);
+        raw.faction_code = Some("seeker".to_owned());
+        raw.type_code = Some("skill".to_owned());
+        raw.deck_limit = Some(2);
+        raw.quantity = Some(2);
+        raw.skill_intellect = Some(1);
+
+        let n = normalize(raw).expect("happy-path RawCard normalizes");
+        assert_eq!(n.code, "TEST01");
+        assert_eq!(n.name, "Test Card");
+        assert_eq!(n.class, "Seeker");
+        assert_eq!(n.card_type, "Skill");
+        assert_eq!(n.cost, Some(0));
+        assert_eq!(n.xp, Some(0));
+        assert_eq!(n.text.as_deref(), Some("Test ability text."));
+        assert_eq!(n.flavor.as_deref(), Some("Test flavor."));
+        assert_eq!(n.illustrator.as_deref(), Some("Test Artist"));
+        assert_eq!(n.traits, vec!["Alpha", "Beta"]);
+        assert!(n.slots.is_empty());
+        assert_eq!(n.skill_intellect, 1);
+        assert_eq!(n.skill_willpower, 0);
+        assert_eq!(n.deck_limit, 2);
+        assert_eq!(n.quantity, 2);
+    }
+
+    #[test]
+    fn normalize_defaults_optional_skills_to_zero() {
+        let raw = raw_card("01001");
+        // All skill_* fields are None on the fixture; normalize should
+        // unwrap_or(0) without complaint. Also pins the asymmetric
+        // deck_limit / quantity defaults — deck_limit defaults to 0
+        // (no copies allowed), quantity defaults to 1 (one copy in the
+        // physical product), and a future swap of those would be a
+        // real bug.
+        let n = normalize(raw).expect("fixture normalizes");
+        assert_eq!(n.skill_willpower, 0);
+        assert_eq!(n.skill_intellect, 0);
+        assert_eq!(n.skill_combat, 0);
+        assert_eq!(n.skill_agility, 0);
+        assert_eq!(n.skill_wild, 0);
+        assert_eq!(n.deck_limit, 0);
+        assert_eq!(n.quantity, 1);
+    }
+
+    #[test]
+    fn normalize_errors_on_missing_name() {
+        let mut raw = raw_card("01001");
+        raw.name = None;
+        let err = normalize(raw).unwrap_err();
+        assert!(err.contains("name"), "{err}");
+    }
+
+    #[test]
+    fn normalize_propagates_unknown_faction_error() {
+        let mut raw = raw_card("01001");
+        raw.faction_code = Some("wibble".to_owned());
+        let err = normalize(raw).unwrap_err();
+        assert!(err.contains("faction_code"), "{err}");
+        assert!(err.contains("wibble"), "{err}");
+    }
+
+    #[test]
+    fn normalize_propagates_unknown_type_error() {
+        let mut raw = raw_card("01001");
+        raw.type_code = Some("wibble".to_owned());
+        let err = normalize(raw).unwrap_err();
+        assert!(err.contains("type_code"), "{err}");
+        assert!(err.contains("wibble"), "{err}");
+    }
+
+    #[test]
+    fn normalize_errors_on_cost_overflow() {
+        // i8 max is 127; upstream cost is read as i32, so 200 is a
+        // valid input that doesn't fit. The branch returns an
+        // explanatory error; pin the message shape so the diagnostic
+        // doesn't quietly become "doesn't fit" with no context.
+        let mut raw = raw_card("01001");
+        raw.cost = Some(200);
+        let err = normalize(raw).unwrap_err();
+        assert!(err.contains("cost"), "{err}");
+        assert!(err.contains("200"), "{err}");
+        assert!(err.contains("01001"), "{err}");
+    }
+
+    #[test]
+    fn normalize_silently_drops_xp_overflow() {
+        // xp is u8 in the normalized shape; values that don't fit
+        // (which the snapshot never produces today) are silently
+        // dropped to None via `and_then(|n| u8::try_from(n).ok())`.
+        // Pin the silent-drop behavior so a future "error instead"
+        // change is a conscious decision.
+        let mut raw = raw_card("01001");
+        raw.xp = Some(300);
+        let n = normalize(raw).expect("xp overflow does not error");
+        assert_eq!(n.xp, None);
+    }
+
+    // ---- process_raw -------------------------------------------------
+
+    #[test]
+    fn process_raw_skips_skeleton_entries_silently() {
+        // Skeleton entries (no `name`) are reserved-code placeholders
+        // upstream; the pipeline should ignore them rather than error.
+        let mut raw = raw_card("01999");
+        raw.name = None;
+        let mut all = BTreeMap::new();
+        process_raw(raw, &mut all, Path::new("fixture.json"))
+            .expect("skeleton entries are not an error");
+        assert!(all.is_empty(), "skipped entry should not be inserted");
+    }
+
+    #[test]
+    fn process_raw_rejects_duplicate_code() {
+        let mut all = BTreeMap::new();
+        process_raw(raw_card("01001"), &mut all, Path::new("fixture.json"))
+            .expect("first insert succeeds");
+        let err = process_raw(raw_card("01001"), &mut all, Path::new("fixture.json"))
+            .expect_err("second insert with same code errors");
+        assert!(err.contains("duplicate"), "{err}");
+        assert!(err.contains("01001"), "{err}");
+    }
+
+    #[test]
+    fn process_raw_inserts_normalized_card() {
+        let mut all = BTreeMap::new();
+        process_raw(raw_card("01001"), &mut all, Path::new("fixture.json")).unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains_key("01001"));
+    }
+
+    #[test]
+    fn process_raw_wraps_normalize_error_with_path() {
+        let mut raw = raw_card("01001");
+        raw.faction_code = Some("wibble".to_owned());
+        let mut all = BTreeMap::new();
+        let err = process_raw(raw, &mut all, Path::new("fixture.json")).unwrap_err();
+        // The wrapping format is "normalizing card in <path>: <inner>"
+        assert!(err.contains("fixture.json"), "{err}");
+        assert!(err.contains("wibble"), "{err}");
     }
 }
