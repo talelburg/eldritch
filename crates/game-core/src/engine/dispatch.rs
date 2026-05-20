@@ -1358,6 +1358,15 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
 /// trigger. Called by [`fire_pending_trigger`] only for abilities
 /// whose `usage_limit` is `Some(_)`; for abilities with no limit
 /// nothing tracks them.
+///
+/// **TODO (cancellation-counts-against-limit).** Rules Reference
+/// page 14: *"If the effects of a card or ability with a limit or
+/// maximum are canceled, it is still counted against the
+/// limit/maximum, because the ability has been initiated."* Phase-3
+/// has no cancellation primitive, so today we only bump on successful
+/// resolution. When cancellation lands, the bump call must move
+/// before the effect resolves (or fork into both paths) so canceled
+/// fires still count.
 fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
     let current_round = state.round;
     let inv = state

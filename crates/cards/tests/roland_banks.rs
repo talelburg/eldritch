@@ -140,7 +140,7 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
         .expect("Roland's investigator card stayed in cards_in_play");
     assert_eq!(
         roland_card.ability_usage.get(&0),
-        Some(&AbilityUsageRecord { round: 0, count: 1 }),
+        Some(&AbilityUsageRecord::new(0, 1)),
         "Roland's reaction (ability index 0) should have recorded one fire \
          in round 0",
     );
@@ -226,7 +226,7 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
         .unwrap();
     assert_eq!(
         roland_card.ability_usage.get(&0),
-        Some(&AbilityUsageRecord { round: 1, count: 1 }),
+        Some(&AbilityUsageRecord::new(1, 1)),
     );
 }
 

@@ -171,10 +171,25 @@ pub struct CardInPlay {
 /// `count` is the number of fires during that round (compared against
 /// the ability's [`UsageLimit::count`](crate::dsl::UsageLimit::count)
 /// to gate further fires).
+///
+/// `#[non_exhaustive]` so future periods (`Phase`, `Game`) can add
+/// fields without breaking downstream construction. Use
+/// [`AbilityUsageRecord::new`] to construct from outside the crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AbilityUsageRecord {
     pub round: u32,
     pub count: u8,
+}
+
+impl AbilityUsageRecord {
+    /// Construct a usage record. The fields are `pub`, but the struct
+    /// is `#[non_exhaustive]` so downstream code (tests, future
+    /// scenario modules) must go through this constructor.
+    #[must_use]
+    pub fn new(round: u32, count: u8) -> Self {
+        Self { round, count }
+    }
 }
 
 impl CardInPlay {
