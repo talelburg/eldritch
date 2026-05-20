@@ -7,6 +7,12 @@
 //! optional `if` guard) as the second. Most tests assert on what
 //! happened, not on the order events fired in; reach for these first.
 //!
+//! When a test cares about the *total* number of events emitted
+//! (independent of kind), use
+//! [`assert_total_event_count!`](crate::assert_total_event_count)
+//! — it's the wildcard form of `assert_event_count!` without the
+//! easy-to-miss `_` pattern.
+//!
 //! **When event order matters** between a few specific events with
 //! others interleaved (e.g. "`CardPlayed` precedes `CluePlaced`
 //! precedes `CardDiscarded`, with arbitrary events in between"), use
@@ -73,6 +79,33 @@ macro_rules! assert_no_event {
                 stringify!($pat $(if $guard)?),
                 matched,
                 events,
+            );
+        }
+    }};
+}
+
+/// Assert that the slice contains exactly `$count` events in total
+/// (regardless of kind).
+///
+/// Use this when a test asserts on the *number* of events emitted by
+/// an action — e.g. "the engine emitted exactly these N events." For
+/// per-pattern counts ("exactly N `CluePlaced` events"), reach for
+/// [`assert_event_count!`](crate::assert_event_count) instead;
+/// `assert_event_count!(events, N, _)` reads ambiguously because the
+/// wildcard pattern is easy to miss at the call site.
+///
+/// On failure, panics with the expected count, the actual count, and
+/// a debug-printed list of all events.
+#[macro_export]
+macro_rules! assert_total_event_count {
+    ($events:expr, $count:expr $(,)?) => {{
+        let events = &$events;
+        let expected: usize = $count;
+        let actual = events.len();
+        if actual != expected {
+            panic!(
+                "assert_total_event_count!: expected {} events total, found {}, in:\n{:#?}",
+                expected, actual, events,
             );
         }
     }};
@@ -189,6 +222,32 @@ mod tests {
             },
             Event::TurnEnded { investigator: id },
         ]
+    }
+
+    #[test]
+    fn assert_total_event_count_passes_on_exact_match() {
+        let events = sample_events();
+        crate::assert_total_event_count!(events, 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected 3 events total, found 4")]
+    fn assert_total_event_count_panics_on_undercount() {
+        let events = sample_events();
+        crate::assert_total_event_count!(events, 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected 5 events total, found 4")]
+    fn assert_total_event_count_panics_on_overcount() {
+        let events = sample_events();
+        crate::assert_total_event_count!(events, 5);
+    }
+
+    #[test]
+    fn assert_total_event_count_zero_passes_on_empty() {
+        let events: Vec<Event> = Vec::new();
+        crate::assert_total_event_count!(events, 0);
     }
 
     #[test]
