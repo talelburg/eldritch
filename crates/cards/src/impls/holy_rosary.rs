@@ -22,7 +22,7 @@
 //! the willpower ability; soak missing means the card is mechanically
 //! weaker than printed in the simulator until the gap closes.
 
-use game_core::dsl::{constant, modify, Ability, ModifierScope, Stat};
+use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01059";
@@ -40,7 +40,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use game_core::dsl::{Effect, ModifierScope, Stat, Trigger};
+    use card_dsl::dsl::{Effect, ModifierScope, Stat, Trigger};
 
     #[test]
     fn abilities_are_one_constant_willpower_modifier() {

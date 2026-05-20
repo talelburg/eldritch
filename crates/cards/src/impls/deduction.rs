@@ -25,14 +25,14 @@
 //! location, so card-derived Investigate variants that test at a
 //! different location still resolve correctly.
 //!
-//! [`Trigger::OnSkillTestResolution`]: game_core::dsl::Trigger::OnSkillTestResolution
-//! [`TestOutcome::Success`]: game_core::dsl::TestOutcome::Success
-//! [`if_`]: game_core::dsl::if_
-//! [`Condition::SkillTestKind`]: game_core::dsl::Condition::SkillTestKind
-//! [`SkillTestKind::Investigate`]: game_core::dsl::SkillTestKind::Investigate
-//! [`LocationTarget::TestedLocation`]: game_core::dsl::LocationTarget::TestedLocation
+//! [`Trigger::OnSkillTestResolution`]: card_dsl::dsl::Trigger::OnSkillTestResolution
+//! [`TestOutcome::Success`]: card_dsl::dsl::TestOutcome::Success
+//! [`if_`]: card_dsl::dsl::if_
+//! [`Condition::SkillTestKind`]: card_dsl::dsl::Condition::SkillTestKind
+//! [`SkillTestKind::Investigate`]: card_dsl::dsl::SkillTestKind::Investigate
+//! [`LocationTarget::TestedLocation`]: card_dsl::dsl::LocationTarget::TestedLocation
 
-use game_core::dsl::{
+use card_dsl::dsl::{
     discover_clue, if_, on_skill_test_resolution, Ability, Condition, LocationTarget,
     SkillTestKind, TestOutcome,
 };
@@ -55,7 +55,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use game_core::dsl::{Condition, Effect, LocationTarget, SkillTestKind, TestOutcome, Trigger};
+    use card_dsl::dsl::{Condition, Effect, LocationTarget, SkillTestKind, TestOutcome, Trigger};
 
     #[test]
     fn abilities_are_one_resolution_trigger_with_kind_narrowing() {

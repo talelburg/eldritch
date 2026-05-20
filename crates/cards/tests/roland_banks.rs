@@ -16,7 +16,7 @@
 
 use std::sync::Once;
 
-use game_core::dsl::{UsageLimit, UsagePeriod};
+use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{

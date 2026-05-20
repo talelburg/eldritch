@@ -11,6 +11,7 @@ description = "Eldritch card definitions: hybrid DSL + Rust impls, plus generate
 workspace = true
 
 [dependencies]
+card-dsl = { path = "../card-dsl" }
 game-core = { path = "../game-core" }
 serde = { version = "1", features = ["derive"] }
 

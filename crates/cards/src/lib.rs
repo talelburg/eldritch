@@ -4,7 +4,7 @@
 //!
 //! - **Metadata** — what's printed on a card (name, class, cost,
 //!   traits, skill icons, …). The shape lives in
-//!   [`game_core::card_data::CardMetadata`]; the corpus is generated
+//!   [`card_dsl::card_data::CardMetadata`]; the corpus is generated
 //!   by the [`card-data-pipeline`] CLI from the pinned `ArkhamDB`
 //!   snapshot at `data/arkhamdb-snapshot/`. The generated constants
 //!   live in [`generated`]; access them via [`all`] or [`by_code`].
@@ -31,14 +31,14 @@
 
 use std::sync::OnceLock;
 
-use game_core::card_data::CardMetadata;
+use card_dsl::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::state::CardCode;
 
 pub mod generated;
 pub mod impls;
 
-pub use game_core::card_data::{CardType, Class, SkillIcons, Slot};
+pub use card_dsl::card_data::{CardType, Class, SkillIcons, Slot};
 
 /// All card metadata in the Eldritch corpus, lazily initialized on
 /// first access. Sorted by [`CardMetadata::code`].
@@ -60,7 +60,7 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
 /// `None` for unimplemented cards. Re-exported from
 /// [`impls::abilities_for`].
 #[must_use]
-pub fn abilities_for(code: &str) -> Option<Vec<game_core::dsl::Ability>> {
+pub fn abilities_for(code: &str) -> Option<Vec<card_dsl::dsl::Ability>> {
     impls::abilities_for(code)
 }
 
@@ -80,7 +80,7 @@ fn registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 }
 
 /// Adapter from [`CardCode`] to [`abilities_for`].
-fn registry_abilities_for(code: &CardCode) -> Option<Vec<game_core::dsl::Ability>> {
+fn registry_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>> {
     abilities_for(code.as_str())
 }
 

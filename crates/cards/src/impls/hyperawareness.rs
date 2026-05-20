@@ -29,7 +29,7 @@
 //!
 //! [`PlayerAction::ActivateAbility`]: game_core::PlayerAction::ActivateAbility
 
-use game_core::dsl::{activated, modify, Ability, Cost, ModifierScope, Stat};
+use card_dsl::dsl::{activated, modify, Ability, Cost, ModifierScope, Stat};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01034";
@@ -55,7 +55,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use game_core::dsl::{Cost, Effect, ModifierScope, Stat, Trigger};
+    use card_dsl::dsl::{Cost, Effect, ModifierScope, Stat, Trigger};
 
     #[test]
     fn abilities_are_two_fast_activated_resource_costed_modifies() {

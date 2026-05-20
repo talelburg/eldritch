@@ -198,9 +198,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "card-dsl"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cards"
 version = "0.1.0"
 dependencies = [
+ "card-dsl",
  "game-core",
  "serde",
 ]
@@ -539,6 +548,7 @@ dependencies = [
 name = "game-core"
 version = "0.1.0"
 dependencies = [
+ "card-dsl",
  "rand_chacha",
  "serde",
  "serde_json",

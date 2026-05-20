@@ -26,13 +26,13 @@
 //! clause attaches as a [`UsageLimit`] with `count: 1, period:
 //! UsagePeriod::Round`.
 //!
-//! [`Trigger::OnEvent`]: game_core::dsl::Trigger::OnEvent
-//! [`EventPattern::EnemyDefeated`]: game_core::dsl::EventPattern::EnemyDefeated
-//! [`EventTiming::After`]: game_core::dsl::EventTiming::After
-//! [`LocationTarget::ControllerLocation`]: game_core::dsl::LocationTarget::ControllerLocation
-//! [`UsageLimit`]: game_core::dsl::UsageLimit
+//! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
+//! [`EventPattern::EnemyDefeated`]: card_dsl::dsl::EventPattern::EnemyDefeated
+//! [`EventTiming::After`]: card_dsl::dsl::EventTiming::After
+//! [`LocationTarget::ControllerLocation`]: card_dsl::dsl::LocationTarget::ControllerLocation
+//! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 
-use game_core::dsl::{
+use card_dsl::dsl::{
     discover_clue, on_event, Ability, EventPattern, EventTiming, LocationTarget, UsageLimit,
     UsagePeriod,
 };
@@ -60,7 +60,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use game_core::dsl::{
+    use card_dsl::dsl::{
         Effect, EventPattern, EventTiming, LocationTarget, Trigger, UsageLimit, UsagePeriod,
     };
 

@@ -24,7 +24,7 @@
 //! rules. `WhileInPlayDuring(SkillTestKind::Investigate)` (#45) gates
 //! the contribution to the Investigate action's intellect test.
 
-use game_core::dsl::{constant, modify, Ability, ModifierScope, SkillTestKind, Stat};
+use card_dsl::dsl::{constant, modify, Ability, ModifierScope, SkillTestKind, Stat};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01030";
@@ -41,7 +41,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use game_core::dsl::{Effect, ModifierScope, SkillTestKind, Stat, Trigger};
+    use card_dsl::dsl::{Effect, ModifierScope, SkillTestKind, Stat, Trigger};
 
     #[test]
     fn abilities_are_one_constant_intellect_while_investigating_modifier() {

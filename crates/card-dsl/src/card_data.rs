@@ -6,7 +6,7 @@
 //! resolving actions — e.g. `PlayCard` reads [`CardMetadata::card_type`]
 //! to choose where the played card lands. The `cards` crate populates
 //! the corpus (generated from the pinned `ArkhamDB` snapshot) and
-//! installs it via [`crate::card_registry`].
+//! installs it via `game_core::card_registry`.
 //!
 //! Card *effect logic* (hand-implemented abilities) is separate; it's
 //! looked up through the registry too but lives in
@@ -34,7 +34,6 @@ pub enum Class {
 
 /// Top-level card type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum CardType {
     Investigator,
     Asset,
@@ -54,7 +53,6 @@ pub enum CardType {
 /// Multi-slot items (e.g. two-handed weapons) appear in
 /// [`CardMetadata::slots`] as multiple entries of the same variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum Slot {
     Hand,
     Accessory,
