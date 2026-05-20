@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. 20 closed / 3 open as of 2026-05-19.
+🟡 In progress. 21 closed / 2 open as of 2026-05-20.
 
 ## Goal
 
@@ -10,11 +10,12 @@ Full skill test sequence runs through the engine in tests — with real-card met
 
 ## Issues
 
-### Closed (20)
+### Closed (21)
 
 | # | Title | Notes |
 |---|---|---|
 | `#19` | deterministic `ChoiceResolver` | Test infra; ships ahead of first engine consumer (`#63`). `commit_cards` stubbed pending commit-window response shape. |
+| `#55` | Roland Banks reaction (01001) | Reaction half only. Elder-sign + dynamic skill-test modifier DSL spun off to `#118` (Phase 7). First real-card consumer of `#52` reaction-window machinery; introduced `Ability.usage_limit` primitive. |
 | `#63` | skill-test card commits from hand | First engine consumer of `#19`. Splits `resolve_skill_test` → `start_skill_test` + `finish_skill_test`; adds `state.in_flight_skill_test`, `SkillTestFollowUp`, `InputResponse::CommitCards`. |
 | `#37` | Magnifying Glass (01030) | First new card after the Phase-3 demo; composes `#87` + `#45`. |
 | `#38` | Hyperawareness (01034) | Exercises `Trigger::Activated` + `ThisSkillTest` push end-to-end. |
@@ -35,11 +36,10 @@ Full skill test sequence runs through the engine in tests — with real-card met
 | `#112` | DSL `Trigger::OnSkillTestResolution` + tested-location plumbing | Split out of `#39` so the trigger variant lands on its own; `#39` consumes it. |
 | `#54` | DSL `OnEvent` trigger | DSL surface only — `Trigger::OnEvent` + `EventPattern::EnemyDefeated` + `EventTiming::{Before, After}` + `on_event` builder. Firing (engine reaction-window machinery) lands in `#52`. |
 
-### Open (3)
+### Open (2)
 
 | # | Title | Notes |
 |---|---|---|
-| `#55` | Roland Banks investigator (01001) | Needs `#52` (✅) + `#54` (✅). First consumer of the reaction-window machinery. |
 | `#56` | Study location (01111) | Needs a location-state shape decision; thinnest issue body. |
 | `#64` | skill-test after-resolution trigger window | Needs `#54` (OnEvent) + `#19`. Distinct semantic from `#112` — `#64` is a player-window-driven reactive trigger after the test ends; `#112` is a resolution-machinery trigger on committed cards. The `FinishContinuation::PostOnResolution` seat (added in `#52`) is the natural step boundary. |
 
@@ -75,7 +75,7 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 | 10 | `#39` Deduction | ✅ PR #114 |
 | 11 | `#54` OnEvent trigger | ✅ PR #115 |
 | 12 | `#52` reaction windows | ✅ PR #116 |
-| 13 | `#55` Roland Banks | needs `#54` + `#52` |
+| 13 | `#55` Roland Banks reaction | ✅ PR #120 |
 | 14 | `#56` Study | needs location-state design; defer or build alongside Phase 4 |
 | 15 | `#64` after-resolution trigger window | distinct from `#112`; reactive trigger window for OnEvent-style "after this test succeeds, …" cards |
 
@@ -104,6 +104,9 @@ Cards rather than infra-first. Build the minimal infra each card needs, ship the
 - **All triggers route through the player; forced vs. optional is a flag, not auto-resolve (`#52`, PR #116).** Reaction-window resolution presents every pending trigger through `AwaitingInput`; `InputResponse::PickIndex(i)` fires the i-th, `Skip` closes the window. `PendingTrigger.forced` is enforced by `close_reaction_window` (Skip rejects while forced remain). Phase-3 has no Forced cards; the engine constructs `forced: false` everywhere and the DSL has no surface for setting it. The first Forced card adds the DSL primitive without engine churn — the scaffold is intentionally ready.
 - **Rules Reference vendored at `data/rules-reference/` (`#52`, PR #116).** The PDF is in-repo with a `SOURCE.md` naming the upstream URL — FFG's `filer_public` CDN has restructured several times so a stable local path beats a link. The CLAUDE.md directive on consulting it for procedural-rules claims points at the local path. Quote-handling clause says "load-bearing clause verbatim; elision OK on decorative surrounding clauses; never substitute words" — that's the standard for engine doc-comments citing the Rules Reference.
 - **Trigger indexing is a follow-up, not Phase 3 (`#52`, PR #116).** `scan_pending_triggers` walks every investigator's `cards_in_play` per window emission. For Phase-3 board sizes (a handful of cards per investigator) this is negligible. An index keyed by trigger kind becomes worth the invariant-maintenance cost when boards grow in Phase 4+. Tracked as a separate issue.
+- **`#55` split into reaction (Phase 3) + elder-sign (Phase 7, `#118`) (PR #120).** Roland's `[reaction]` is the load-bearing Phase-3 piece (first real-card consumer of `#52` reaction windows). His `[elder_sign]` needs a `Trigger::ElderSign` variant plus a dynamic skill-test modifier DSL surface (numeric expressions over state — clues at controller's location), whose shape benefits from a second consumer (likely `.45 Automatic` / Cover Up in Phase 7). Single-PR Roland would have lumped two unrelated DSL additions; the split keeps each PR focused and avoids locking the dynamic-modifier shape on one consumer. The broader unification of damage/horror/clues onto `CardInPlay` is `#119` (unmilestoned cross-cutting).
+- **Investigator card is a `CardInPlay` placed at scenario setup (`#55`, PR #120).** Per Rules Reference pages 4 ("Attach To") and 6 ("Clues"), the investigator card is a card in play under its owner's control. Putting it in `cards_in_play` lets the existing reaction-window scan, constant-modifier query, and any future ability walk pick up investigator abilities uniformly with assets — no bespoke "investigator-abilities" path. An earlier draft added `Investigator.card_code` as a back-pointer; removed during review because nothing reads it (the `CardInPlay.code` is the canonical identifier). When `#119` lands and the investigator's damage/horror/clues migrate to that `CardInPlay`, a `CardInstanceId` pointer may be wanted then — concrete consumer first.
+- **`UsageLimit` primitive lives on `Ability`, counter lives on `CardInPlay` (`#55`, PR #120).** `Ability.usage_limit: Option<UsageLimit { count, period }>` with `UsagePeriod::Round` for "Limit once per round" (Rules Reference page 14). Per-instance storage on `CardInPlay::ability_usage` (keyed by ability index) matches the page-14 rule that a card leaving and re-entering play brings a new ability instance — the counter drops with the `CardInPlay` automatically. Lazy round-keyed reset (mismatched-round records read as 0) avoids needing a round-end hook, which matters because Phase 3 doesn't cycle rounds yet. `Skip` doesn't bump the counter — page 14 ties the count to *initiation*. Cancellation-counts-against-limit (also page 14) is flagged with a TODO near `bump_usage_counter` for when a cancellation primitive lands.
 
 ## Open questions
 
