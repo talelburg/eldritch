@@ -83,17 +83,18 @@ impl TestGame {
     /// Add an investigator placed at `location`. Sets the investigator's
     /// `current_location` to `Some(location)` then inserts; equivalent to
     /// the pre-existing two-step `let mut inv = …; inv.current_location =
-    /// Some(loc); .with_investigator(inv)` shape. The named location
-    /// itself must still be added separately via [`with_location`] (this
-    /// helper does not insert one — most tests already have a fixture
-    /// builder for the location with its specific shroud / connections /
-    /// clues).
+    /// Some(loc); .with_investigator(inv)` shape. Replaces any existing
+    /// investigator entry with the same id, like [`with_investigator`].
+    /// The named location itself must still be added separately via
+    /// [`with_location`] (this helper does not insert one — most tests
+    /// already have a fixture builder for the location with its specific
+    /// shroud / connections / clues).
     ///
     /// # Example
     ///
     /// ```
     /// use game_core::{
-    ///     state::LocationId,
+    ///     InvestigatorId, LocationId,
     ///     test_support::{test_investigator, test_location, TestGame},
     /// };
     ///
@@ -102,11 +103,12 @@ impl TestGame {
     ///     .with_location(test_location(10, "Study"))
     ///     .build();
     /// assert_eq!(
-    ///     state.investigators[&game_core::InvestigatorId(1)].current_location,
+    ///     state.investigators[&InvestigatorId(1)].current_location,
     ///     Some(LocationId(10)),
     /// );
     /// ```
     ///
+    /// [`with_investigator`]: Self::with_investigator
     /// [`with_location`]: Self::with_location
     pub fn with_investigator_at(
         mut self,
