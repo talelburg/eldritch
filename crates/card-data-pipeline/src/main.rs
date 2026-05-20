@@ -603,7 +603,8 @@ mod tests {
     fn parse_traits_trims_whitespace_and_skips_empties() {
         // The split on '.' produces an empty trailing element after
         // the final dot; the filter drops it. Also drop interior
-        // whitespace-only fragments.
+        // whitespace-only fragments. Not a known real upstream shape,
+        // just defensive against malformed data.
         assert_eq!(parse_traits(Some("Item.  . Tool.")), vec!["Item", "Tool"]);
     }
 
@@ -611,13 +612,16 @@ mod tests {
 
     #[test]
     fn normalize_happy_path_populates_all_fields() {
-        let mut raw = raw_card("01039");
-        raw.name = Some("Deduction".to_owned());
-        raw.text = Some("If your investigation is successful, …".to_owned());
-        raw.flavor = Some("Elementary.".to_owned());
-        raw.illustrator = Some("Aaron J. Riley".to_owned());
-        raw.traits = Some("Insight. Practiced.".to_owned());
-        raw.slot = None; // skills carry no slot
+        // Synthetic fixture; values are not meant to match any real
+        // ArkhamDB card. Exercises the field-by-field normalize path
+        // without coupling to snapshot data.
+        let mut raw = raw_card("TEST01");
+        raw.name = Some("Test Card".to_owned());
+        raw.text = Some("Test ability text.".to_owned());
+        raw.flavor = Some("Test flavor.".to_owned());
+        raw.illustrator = Some("Test Artist".to_owned());
+        raw.traits = Some("Alpha. Beta.".to_owned());
+        raw.slot = None;
         raw.cost = Some(0);
         raw.xp = Some(0);
         raw.faction_code = Some("seeker".to_owned());
@@ -627,17 +631,16 @@ mod tests {
         raw.skill_intellect = Some(1);
 
         let n = normalize(raw).expect("happy-path RawCard normalizes");
-        assert_eq!(n.code, "01039");
-        assert_eq!(n.name, "Deduction");
+        assert_eq!(n.code, "TEST01");
+        assert_eq!(n.name, "Test Card");
         assert_eq!(n.class, "Seeker");
         assert_eq!(n.card_type, "Skill");
         assert_eq!(n.cost, Some(0));
         assert_eq!(n.xp, Some(0));
-        assert_eq!(
-            n.text.as_deref(),
-            Some("If your investigation is successful, …")
-        );
-        assert_eq!(n.traits, vec!["Insight", "Practiced"]);
+        assert_eq!(n.text.as_deref(), Some("Test ability text."));
+        assert_eq!(n.flavor.as_deref(), Some("Test flavor."));
+        assert_eq!(n.illustrator.as_deref(), Some("Test Artist"));
+        assert_eq!(n.traits, vec!["Alpha", "Beta"]);
         assert!(n.slots.is_empty());
         assert_eq!(n.skill_intellect, 1);
         assert_eq!(n.skill_willpower, 0);
@@ -649,13 +652,19 @@ mod tests {
     fn normalize_defaults_optional_skills_to_zero() {
         let raw = raw_card("01001");
         // All skill_* fields are None on the fixture; normalize should
-        // unwrap_or(0) without complaint.
+        // unwrap_or(0) without complaint. Also pins the asymmetric
+        // deck_limit / quantity defaults — deck_limit defaults to 0
+        // (no copies allowed), quantity defaults to 1 (one copy in the
+        // physical product), and a future swap of those would be a
+        // real bug.
         let n = normalize(raw).expect("fixture normalizes");
         assert_eq!(n.skill_willpower, 0);
         assert_eq!(n.skill_intellect, 0);
         assert_eq!(n.skill_combat, 0);
         assert_eq!(n.skill_agility, 0);
         assert_eq!(n.skill_wild, 0);
+        assert_eq!(n.deck_limit, 0);
+        assert_eq!(n.quantity, 1);
     }
 
     #[test]
@@ -682,6 +691,33 @@ mod tests {
         let err = normalize(raw).unwrap_err();
         assert!(err.contains("type_code"), "{err}");
         assert!(err.contains("wibble"), "{err}");
+    }
+
+    #[test]
+    fn normalize_errors_on_cost_overflow() {
+        // i8 max is 127; upstream cost is read as i32, so 200 is a
+        // valid input that doesn't fit. The branch returns an
+        // explanatory error; pin the message shape so the diagnostic
+        // doesn't quietly become "doesn't fit" with no context.
+        let mut raw = raw_card("01001");
+        raw.cost = Some(200);
+        let err = normalize(raw).unwrap_err();
+        assert!(err.contains("cost"), "{err}");
+        assert!(err.contains("200"), "{err}");
+        assert!(err.contains("01001"), "{err}");
+    }
+
+    #[test]
+    fn normalize_silently_drops_xp_overflow() {
+        // xp is u8 in the normalized shape; values that don't fit
+        // (which the snapshot never produces today) are silently
+        // dropped to None via `and_then(|n| u8::try_from(n).ok())`.
+        // Pin the silent-drop behavior so a future "error instead"
+        // change is a conscious decision.
+        let mut raw = raw_card("01001");
+        raw.xp = Some(300);
+        let n = normalize(raw).expect("xp overflow does not error");
+        assert_eq!(n.xp, None);
     }
 
     // ---- process_raw -------------------------------------------------
