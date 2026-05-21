@@ -179,6 +179,7 @@ struct NormalizedCard {
     quantity: u8,
     pack_code: String,
     position: u32,
+    is_fast: bool,
 }
 
 fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
@@ -191,6 +192,11 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
             i8::try_from(n).map_err(|_| format!("cost {n} on card {} doesn't fit in i8", raw.code))
         })
         .transpose()?;
+
+    let is_fast = raw
+        .text
+        .as_deref()
+        .is_some_and(|t| t.starts_with("Fast.") || t.starts_with("Fast "));
 
     Ok(NormalizedCard {
         code: raw.code,
@@ -215,6 +221,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         quantity: raw.quantity.unwrap_or(1),
         pack_code: raw.pack_code,
         position: raw.position,
+        is_fast,
     })
 }
 
@@ -356,6 +363,7 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
         str_lit(&c.pack_code)
     );
     let _ = writeln!(out, "            position: {},", c.position);
+    let _ = writeln!(out, "            is_fast: {},", c.is_fast);
     let _ = writeln!(out, "        }},");
 }
 
@@ -762,5 +770,67 @@ mod tests {
         // The wrapping format is "normalizing card in <path>: <inner>"
         assert!(err.contains("fixture.json"), "{err}");
         assert!(err.contains("wibble"), "{err}");
+    }
+
+    // ---- is_fast detection ------------------------------------------
+
+    #[test]
+    fn fast_prefix_detected_at_start_of_text() {
+        let raw = RawCard {
+            code: "01030".into(),
+            name: Some("Magnifying Glass".into()),
+            text: Some("Fast.\nYou get +1 [intellect] while investigating.".into()),
+            flavor: None,
+            illustrator: None,
+            traits: None,
+            slot: Some("Hand".into()),
+            cost: Some(1),
+            xp: Some(0),
+            health: None,
+            sanity: None,
+            deck_limit: Some(2),
+            quantity: Some(1),
+            pack_code: "core".into(),
+            position: 30,
+            faction_code: Some("seeker".into()),
+            type_code: Some("asset".into()),
+            skill_willpower: None,
+            skill_intellect: Some(1),
+            skill_combat: None,
+            skill_agility: None,
+            skill_wild: None,
+        };
+        let norm = normalize(raw).expect("normalize");
+        assert!(norm.is_fast, "card text begins with \"Fast.\", expected is_fast=true");
+    }
+
+    #[test]
+    fn fast_marker_inside_text_is_not_a_fast_card() {
+        let raw = RawCard {
+            code: "01034".into(),
+            name: Some("Hyperawareness".into()),
+            text: Some("[fast] Spend 1 resource: You get +1 [intellect] for this skill test.".into()),
+            flavor: None,
+            illustrator: None,
+            traits: None,
+            slot: None,
+            cost: Some(2),
+            xp: Some(0),
+            health: None,
+            sanity: None,
+            deck_limit: Some(2),
+            quantity: Some(1),
+            pack_code: "core".into(),
+            position: 34,
+            faction_code: Some("seeker".into()),
+            type_code: Some("asset".into()),
+            skill_willpower: None,
+            skill_intellect: Some(1),
+            skill_combat: None,
+            skill_agility: Some(1),
+            skill_wild: None,
+        };
+        let norm = normalize(raw).expect("normalize");
+        assert!(!norm.is_fast, "card text does NOT begin with \"Fast.\"; [fast] inside text is unrelated");
     }
 }
