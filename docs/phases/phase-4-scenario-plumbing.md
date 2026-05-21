@@ -2,7 +2,7 @@
 
 ## Status
 
-⏳ Planned. Design pass complete 2026-05-21 (this doc reflects that pass — see Decisions). Issues filed: `#126` Revelation DSL, `#127` spawn rules, `#128` Hunter movement; `#69` / `#71` / `#103` rescoped; `#75` migrated to Phase 9. Work begins with `#103` (the unified window stack refactor).
+🟡 In progress. Design pass complete 2026-05-21. First PR (`#103` unified window stack) merged 2026-05-21 as PR #129. Remaining: `#74`, `#72`, `#126`, `#127`, `#69`, `#70`, `#71`, `#128`, `#73`.
 
 ## Goal
 
@@ -38,7 +38,7 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 
 | # | PR / planned step | Why this slot |
 |---|---|---|
-| 1 | `#103` unified window stack | Foundational refactor of `#52` machinery. Every subsequent phase-content PR opens windows; doing this first means each plugs into a stable shape rather than retrofitting twice. |
+| 1 | `#103` unified window stack | ✅ PR #129. Foundational refactor of `#52` machinery. Every subsequent phase-content PR opens windows; doing this first means each plugs into a stable shape rather than retrofitting twice. |
 | 2 | `#74` `ScenarioModule` + registry + synthetic fixture stub | Defines the shape every later issue conforms to. Fixture starts as `setup() = empty state with 1 location`, `detect_resolution = None`. Engine learns to call `detect_resolution` post-`apply`. |
 | 3 | `#72` encounter deck state | Independent of `#74`'s API beyond GameState. Sets up the data Mythos will draw from. |
 | 4 | `#126` DSL `Trigger::Revelation` + on-draw path | Lands the DSL primitive in isolation. First consumer is a synthetic treachery in the fixture. |
@@ -53,6 +53,11 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 `#72`, `#126`, `#127` are independent of each other and could land in parallel. `#73` is independent of phase content and could slip earlier. `#103` and `#74` could swap, but `#103`-first means `#74`'s engine integration uses the unified window stack directly.
 
 ## Decisions made (design pass 2026-05-21)
+
+- **Unified window stack shape (`#103`, PR #129).** `GameState.open_windows: Vec<OpenWindow>` replaces the old `in_flight_reaction_window: Option<ReactionWindow>` shape. Multi-window nesting is structural. Phase-content PRs (`#69` / `#70` / `#71`) plug into this stack via `queue_reaction_window` (push) and `close_reaction_window_at` (remove by index); the `WindowKind` enum is `#[non_exhaustive]`, so adding new variants (`BetweenInvestigatorTurns`, `BeforeEnemyAttack`, etc.) at consumer-PR time is non-breaking.
+- **`close_reaction_window_at` takes an explicit window index (`#103`, PR #129).** Phase-content PRs that push pure-Fast-gating windows (`BetweenPhases`, etc.) on top of a draining reaction window MUST resolve the close target via `GameState::top_reaction_window_index()`, not via `last()` / `pop()`. The stack would otherwise corrupt: `top_reaction_window_mut()` skips empty-`pending_triggers` windows but `pop` doesn't, so a `BetweenPhases-on-top-of-ReactionWindow` stack would close the wrong window.
+- **Card-level Fast restrictions are NOT engine-enforced (`#103`, PR #129).** The engine's PlayCard gate enforces the type-level Fast rules from Rules Reference page 11 (events: any window where `fast_actors` permits; assets: owner-only). Card-level restrictions like Working a Hunch's "Play only during your turn" are out of scope — a future DSL primitive will enforce them. Don't assume the engine prevents a Fast event from being played by a non-owner when a window permits.
+
 
 - **Toy scenario = synthetic fixture, not The Gathering.** A 1-location, 1-enemy, 1-act, 1-agenda fixture lives under `crates/scenarios/src/test_fixtures/` (gated `#[cfg(any(test, feature = "test_fixtures"))]`) and serves only as Phase-4's demo. The Gathering stays the Phase-7 content goal. Rationale: keeps Phase 4 infra-focused — synthetic content needs only the primitives, not Study / Hallway / Attic / Cellar / Parlor / Ghoul Priest / specific NotZ-I treacheries. Mirrors Phase 3's "build minimal infra each card needs, ship the card" pattern flipped to infra-side.
 - **Unified window stack (`#103` × `#52`).** `Vec<OpenWindow>` on `GameState` replaces the single `in_flight_reaction_window: Option<...>`. Each `OpenWindow` carries (a) kind/timing, (b) queue of pending reaction triggers, (c) the set of investigators who may submit Fast actions during it. Rules Reference treats "player window" as the umbrella; the engine should too. `#52`'s `FinishContinuation` machinery survives — driver pushes/pops instead of manipulating an Option. Worth the refactor cost up-front because every Phase-4 phase-content PR opens windows; retrofitting twice is worse than once.
