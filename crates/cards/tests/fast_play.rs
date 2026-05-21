@@ -86,7 +86,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
     let reason = match result.outcome {
         EngineOutcome::Rejected { reason } => reason,
         other => {
-            panic!("Holy Rosary is not Fast — non-active investigator must not play it: {other:?}",)
+            panic!("Holy Rosary is not Fast — non-active investigator must not play it: {other:?}")
         }
     };
     // Make sure the rejection cites the Fast/active-investigator gate,
