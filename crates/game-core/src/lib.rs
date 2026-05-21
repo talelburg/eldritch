@@ -42,7 +42,9 @@ pub use card_dsl::dsl;
 pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
 pub use card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};
 pub use card_registry::CardRegistry;
-pub use engine::{apply, ApplyResult, EngineOutcome, InputRequest, ResumeToken};
+pub use engine::{
+    apply, apply_with_scenario_registry, ApplyResult, EngineOutcome, InputRequest, ResumeToken,
+};
 pub use event::{Event, FailureReason};
 pub use rng::RngState;
 pub use scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
