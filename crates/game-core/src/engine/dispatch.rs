@@ -2593,11 +2593,24 @@ fn play_card(
 
 /// Handler for [`PlayerAction::ActivateAbility`].
 ///
-/// Validates the standard player-action prefix, the named card
-/// instance, the indexed ability's trigger, and every cost-payability
-/// precondition. On success, pays every cost (emitting cost events
-/// per primitive), emits [`Event::AbilityActivated`], and dispatches
-/// the ability's effect through the DSL evaluator.
+/// Validates the named card instance, the indexed ability's trigger,
+/// and every cost-payability precondition. On success, pays every cost
+/// (emitting cost events per primitive), emits [`Event::AbilityActivated`],
+/// and dispatches the ability's effect through the DSL evaluator.
+///
+/// # Timing gate
+///
+/// The gate branches on `action_cost` from `Trigger::Activated`:
+///
+/// - **Action-cost abilities** (`action_cost > 0`): require Investigation
+///   phase + active investigator + sufficient actions remaining. These consume
+///   one of the investigator's limited per-turn actions.
+/// - **Fast abilities** (`action_cost == 0`): per the Rules Reference, "Fast
+///   abilities may be used at any player window." This handler permits them
+///   when either (a) the acting investigator is the active investigator during
+///   the Investigation phase, or (b) an open window's `fast_actors` scope
+///   permits the acting investigator. The `open_windows` stack is pushed by
+///   callers (scenario/server) when a player window opens.
 ///
 /// # Cost coverage
 ///
@@ -2621,18 +2634,6 @@ fn play_card(
 /// stream on rejection. Phase-3 in-scope effects (`GainResources`,
 /// `DiscoverClue`, `Seq` of those, future `Modify`/`ThisSkillTest`
 /// push) can't reject mid-flight once the standard prefix passes.
-///
-/// # Known simplification: Investigation-phase + active-investigator gate
-///
-/// This handler requires the acting investigator to be the active
-/// one during the Investigation phase. That's correct for
-/// `[action]`-cost abilities, but **overly strict for `[fast]` ones**
-/// (`Trigger::Activated { action_cost: 0 }`): in real Arkham, Fast
-/// abilities are legal in any player window — between phases,
-/// during another investigator's turn, between enemy attacks. No
-/// phase outside Investigation exists yet, so this simplification
-/// is a no-op for Phase-3 scope; #103 lifts the gate when phase
-/// content (#69 / #70 / #71) lands.
 fn activate_ability(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -2640,24 +2641,6 @@ fn activate_ability(
     instance_id: CardInstanceId,
     ability_index: u8,
 ) -> EngineOutcome {
-    if state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility is only valid during the Investigation phase (was {:?})",
-                state.phase,
-            )
-            .into(),
-        };
-    }
-    if state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: {investigator:?} is not the active investigator ({:?})",
-                state.active_investigator,
-            )
-            .into(),
-        };
-    }
     let Some(inv) = state.investigators.get(&investigator) else {
         return EngineOutcome::Rejected {
             reason: format!("ActivateAbility: investigator {investigator:?} is not in state")
@@ -2693,6 +2676,41 @@ fn activate_ability(
         Ok(v) => v,
         Err(reject) => return reject,
     };
+
+    // Gate: branch on action_cost now that we have it.
+    // Fast abilities (action_cost == 0) may be used at any player window.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let in_permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    if action_cost > 0 {
+        // Action-cost ability: requires Investigation phase + active investigator.
+        if !active_during_investigation {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ActivateAbility: action-cost ability requires Investigation phase + \
+                     active investigator (phase was {:?}, active {:?})",
+                    state.phase, state.active_investigator,
+                )
+                .into(),
+            };
+        }
+    } else {
+        // Fast ability: active during Investigation OR permissive window.
+        if !active_during_investigation && !in_permissive_window {
+            return EngineOutcome::Rejected {
+                reason: "ActivateAbility: Fast ability requires either active investigator \
+                         during Investigation, or an open window whose fast_actors permits \
+                         this investigator"
+                    .into(),
+            };
+        }
+    }
+
+    // Re-borrow inv after state borrows above.
+    let inv = state.investigators.get(&investigator).expect("checked");
 
     // Action-economy check.
     if inv.actions_remaining < action_cost {

@@ -9,7 +9,9 @@ use std::sync::Once;
 
 use game_core::action::{Action, PlayerAction};
 use game_core::engine::{apply, EngineOutcome};
-use game_core::state::{CardCode, FastActorScope, InvestigatorId, Phase, WindowKind};
+use game_core::state::{
+    CardCode, CardInPlay, CardInstanceId, FastActorScope, InvestigatorId, Phase, WindowKind,
+};
 use game_core::test_support::{test_investigator, TestGame};
 
 fn install_cards_registry() {
@@ -121,5 +123,82 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
         matches!(result.outcome, EngineOutcome::Done),
         "Magnifying Glass plays normally for active investigator (Phase-3 behavior preserved): {:?}",
         result.outcome,
+    );
+}
+
+#[test]
+fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
+    install_cards_registry();
+    let a = test_investigator(1);
+    let mut b = test_investigator(2);
+    b.resources = 5; // Hyperawareness's [fast] cost is 1 resource per use.
+                     // Place Hyperawareness (01034) into play for investigator B.
+    b.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("01034"),
+        CardInstanceId(1),
+    ));
+    let state = TestGame::new()
+        .with_investigator(a)
+        .with_investigator(b)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_open_window(
+            WindowKind::BetweenPhases {
+                from: Phase::Mythos,
+                to: Phase::Investigation,
+            },
+            FastActorScope::Any,
+        )
+        .build();
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: InvestigatorId(2),
+            instance_id: CardInstanceId(1),
+            ability_index: 0,
+        }),
+    );
+    assert!(
+        matches!(result.outcome, EngineOutcome::Done),
+        "Hyperawareness [fast] ability should activate from non-active investigator: {:?}",
+        result.outcome,
+    );
+    // Verify the resource was spent.
+    let b_after = result.state.investigators.get(&InvestigatorId(2)).unwrap();
+    assert_eq!(b_after.resources, 4, "1 resource should have been spent");
+}
+
+#[test]
+fn fast_activated_ability_rejected_when_no_permissive_window() {
+    install_cards_registry();
+    let a = test_investigator(1);
+    let mut b = test_investigator(2);
+    b.resources = 5;
+    b.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("01034"),
+        CardInstanceId(1),
+    ));
+    let state = TestGame::new()
+        .with_investigator(a)
+        .with_investigator(b)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        // No open window.
+        .build();
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: InvestigatorId(2),
+            instance_id: CardInstanceId(1),
+            ability_index: 0,
+        }),
+    );
+    let reason = match result.outcome {
+        EngineOutcome::Rejected { reason } => reason,
+        other => panic!("non-active investigator with no permissive window must reject: {other:?}"),
+    };
+    assert!(
+        reason.contains("Fast") || reason.contains("active") || reason.contains("Investigation"),
+        "expected gate-rejection wording; got: {reason}",
     );
 }
