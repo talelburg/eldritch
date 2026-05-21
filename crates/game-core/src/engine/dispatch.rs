@@ -19,9 +19,9 @@ use crate::dsl::{
 use crate::event::{Event, FailureReason};
 use crate::state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId,
-    FinishContinuation, GameState, InFlightSkillTest, Investigator, InvestigatorId, LocationId,
-    PendingTrigger, Phase, ReactionWindow, SkillKind, SkillTestFollowUp, Status, TokenResolution,
-    WindowKind, Zone,
+    FastActorScope, FinishContinuation, GameState, InFlightSkillTest, Investigator, InvestigatorId,
+    LocationId, OpenWindow, PendingTrigger, Phase, SkillKind, SkillTestFollowUp, Status,
+    TokenResolution, WindowKind, Zone,
 };
 
 use super::evaluator::{
@@ -72,12 +72,11 @@ pub fn apply_player_action(
     // Reaction-window guard runs BEFORE the skill-test guard: when a
     // window opens mid-skill-test (e.g. Roland's "after you defeat an
     // enemy" firing during a Fight that defeats), both
-    // `in_flight_skill_test` and `in_flight_reaction_window` are
-    // populated — the test is mid-resolution, parked at the window
-    // boundary inside `drive_skill_test`. The reaction-window message
-    // is the one the client needs.
-    if state.in_flight_reaction_window.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
+    // `in_flight_skill_test` and the open reaction window on
+    // `state.open_windows` are populated — the test is mid-resolution,
+    // parked at the window boundary inside `drive_skill_test`. The
+    // reaction-window message is the one the client needs.
+    if state.top_reaction_window().is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "a reaction window is open; submit a \
@@ -639,7 +638,7 @@ fn finish_skill_test(
 ///   modifiers, clear in-flight, return `Done`.
 fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     loop {
-        if state.in_flight_reaction_window.is_some() {
+        if state.top_reaction_window().is_some() {
             return open_queued_reaction_window(state, events);
         }
 
@@ -1008,11 +1007,11 @@ fn fire_on_skill_test_resolution(
 /// or the skill-test commit window ([`finish_skill_test`]). Rejects
 /// when nothing is outstanding.
 ///
-/// Both `in_flight_reaction_window` and `in_flight_skill_test` may be
-/// `Some` simultaneously — that's the mid-skill-test reaction case:
-/// the skill-test driver is parked at a step boundary waiting for the
-/// reaction window to close before continuing. The reaction window
-/// takes routing priority; once it closes,
+/// A reaction window on `state.open_windows` and `in_flight_skill_test`
+/// may both be present simultaneously — that's the mid-skill-test
+/// reaction case: the skill-test driver is parked at a step boundary
+/// waiting for the reaction window to close before continuing. The
+/// reaction window takes routing priority; once it closes,
 /// [`close_reaction_window`] re-enters [`drive_skill_test`] to finish
 /// the test.
 fn resolve_input(
@@ -1020,7 +1019,7 @@ fn resolve_input(
     events: &mut Vec<Event>,
     response: &InputResponse,
 ) -> EngineOutcome {
-    if state.in_flight_reaction_window.is_some() {
+    if state.top_reaction_window().is_some() {
         return resume_reaction_window(state, events, response);
     }
     if state.in_flight_skill_test.is_none() {
@@ -1060,16 +1059,18 @@ fn resolve_input(
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
 fn queue_reaction_window(state: &mut GameState, kind: WindowKind) {
-    let pending = scan_pending_triggers(state, kind);
-    if pending.is_empty() {
+    let pending_triggers = scan_pending_triggers(state, kind);
+    if pending_triggers.is_empty() {
         return;
     }
-    debug_assert!(
-        state.in_flight_reaction_window.is_none(),
-        "queue_reaction_window: overwriting an already-queued window; \
-         multi-window queueing isn't supported yet",
-    );
-    state.in_flight_reaction_window = Some(ReactionWindow { kind, pending });
+    // Reaction windows admit any investigator's Fast actions
+    // (Rules Reference: Fast may be played at any player window).
+    // Multi-window nesting is now structural — push twice is valid.
+    state.open_windows.push(OpenWindow {
+        kind,
+        pending_triggers,
+        fast_actors: FastActorScope::Any,
+    });
 }
 
 /// Scan every investigator's `cards_in_play` for
@@ -1183,8 +1184,7 @@ fn trigger_matches(
 /// queue windows will call this from their own boundaries.
 fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let window = state
-        .in_flight_reaction_window
-        .as_ref()
+        .top_reaction_window()
         .expect("open_queued_reaction_window: caller checked is_some");
     events.push(Event::WindowOpened { kind: window.kind });
     EngineOutcome::AwaitingInput {
@@ -1194,11 +1194,11 @@ fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> En
                  Submit InputResponse::PickIndex to fire one, or \
                  InputResponse::Skip to close.",
                 window.kind,
-                window.pending.len(),
+                window.pending_triggers.len(),
             ),
         },
         // No multi-window state to disambiguate — routing keys off
-        // `state.in_flight_reaction_window`. Conventional 0 like the
+        // the top of `state.open_windows`. Conventional 0 like the
         // commit-window's resume token.
         resume_token: ResumeToken(0),
     }
@@ -1215,8 +1215,8 @@ fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> En
 /// - Other variants reject; the window stays open.
 ///
 /// Closing the window emits [`Event::WindowClosed`] with the same
-/// kind, clears [`GameState::in_flight_reaction_window`], and returns
-/// [`Done`].
+/// kind, pops the top entry from [`GameState::open_windows`], and
+/// returns [`Done`].
 fn resume_reaction_window(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -1242,23 +1242,22 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
         let window = state
-            .in_flight_reaction_window
-            .as_ref()
+            .top_reaction_window()
             .expect("fire_pending_trigger: caller checked is_some");
         let idx = match usize::try_from(i) {
-            Ok(idx) if idx < window.pending.len() => idx,
+            Ok(idx) if idx < window.pending_triggers.len() => idx,
             _ => {
                 return EngineOutcome::Rejected {
                     reason: format!(
                         "ResolveInput: reaction-window PickIndex({i}) out of bounds \
                          (pending size {})",
-                        window.pending.len(),
+                        window.pending_triggers.len(),
                     )
                     .into(),
                 };
             }
         };
-        (window.pending[idx], idx)
+        (window.pending_triggers[idx], idx)
     };
 
     // Look up the ability fresh from the registry. The card may have
@@ -1333,19 +1332,18 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
 
     // Drop the fired entry now that resolution succeeded.
     let window = state
-        .in_flight_reaction_window
-        .as_mut()
+        .top_reaction_window_mut()
         .expect("fire_pending_trigger: window must still be present after firing");
-    window.pending.remove(pending_idx);
+    window.pending_triggers.remove(pending_idx);
 
     // If more triggers remain pending, re-emit AwaitingInput so the
     // player can pick the next one. Otherwise the window closes
     // automatically.
-    if window.pending.is_empty() {
+    if window.pending_triggers.is_empty() {
         return close_reaction_window(state, events);
     }
     let kind = window.kind;
-    let pending_len = window.pending.len();
+    let pending_len = window.pending_triggers.len();
     EngineOutcome::AwaitingInput {
         request: InputRequest {
             prompt: format!(
@@ -1405,26 +1403,36 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
 /// resumes a paused skill-test driver (if one was mid-resolution
 /// when the window opened) or returns [`Done`].
 fn close_reaction_window(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
-    let window = state
-        .in_flight_reaction_window
-        .as_ref()
-        .expect("close_reaction_window: caller checked is_some");
-    if let Some(forced) = window.pending.iter().find(|t| t.forced) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ResolveInput::Skip: cannot close reaction window while forced trigger \
-                 (controller {ctl:?}, instance {inst:?}, ability {ab}) remains pending; \
-                 fire it first",
-                ctl = forced.controller,
-                inst = forced.instance_id,
-                ab = forced.ability_index,
-            )
-            .into(),
-        };
+    // Borrow the top window to check for forced-trigger remaining
+    // before popping — Rejected must leave state untouched. We use
+    // `open_windows.last()` (not `top_reaction_window`) here because
+    // the caller may have just drained the last pending trigger —
+    // the window is still on the stack and needs to be popped.
+    {
+        let window = state
+            .open_windows
+            .last()
+            .expect("close_reaction_window: caller checked stack non-empty");
+        if let Some(forced) = window.pending_triggers.iter().find(|t| t.forced) {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ResolveInput::Skip: cannot close reaction window while forced trigger \
+                     (controller {ctl:?}, instance {inst:?}, ability {ab}) remains pending; \
+                     fire it first",
+                    ctl = forced.controller,
+                    inst = forced.instance_id,
+                    ab = forced.ability_index,
+                )
+                .into(),
+            };
+        }
     }
+    let window = state
+        .open_windows
+        .pop()
+        .expect("close_reaction_window: caller checked stack non-empty");
     let kind = window.kind;
     events.push(Event::WindowClosed { kind });
-    state.in_flight_reaction_window = None;
 
     // If a skill test was mid-resolution when this window opened,
     // hand control back to its driver to run the remaining steps.

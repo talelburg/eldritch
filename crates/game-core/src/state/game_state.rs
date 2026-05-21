@@ -541,6 +541,28 @@ pub struct PendingSkillModifier {
     pub source: Option<CardInstanceId>,
 }
 
+impl GameState {
+    /// The topmost open window that has unresolved reaction triggers,
+    /// if any. Used by the dispatcher's "is reaction work pending?"
+    /// guards. Pure Fast-gating windows (empty `pending_triggers`)
+    /// are skipped — they don't block dispatch.
+    #[must_use]
+    pub fn top_reaction_window(&self) -> Option<&OpenWindow> {
+        self.open_windows
+            .iter()
+            .rev()
+            .find(|w| !w.pending_triggers.is_empty())
+    }
+
+    /// Mutable counterpart to `top_reaction_window`.
+    pub fn top_reaction_window_mut(&mut self) -> Option<&mut OpenWindow> {
+        self.open_windows
+            .iter_mut()
+            .rev()
+            .find(|w| !w.pending_triggers.is_empty())
+    }
+}
+
 #[cfg(test)]
 mod open_window_tests {
     use super::*;

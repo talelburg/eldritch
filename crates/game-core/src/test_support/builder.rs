@@ -209,7 +209,6 @@ impl TestGame {
     /// The pushed window has no pending triggers (test paths that
     /// also need a reaction queue should manipulate `state` after
     /// `build()` rather than complicate this builder).
-    #[must_use]
     pub fn with_open_window(mut self, kind: WindowKind, fast_actors: FastActorScope) -> Self {
         self.open_windows.push(OpenWindow {
             kind,
