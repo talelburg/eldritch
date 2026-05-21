@@ -801,7 +801,10 @@ mod tests {
             skill_wild: None,
         };
         let norm = normalize(raw).expect("normalize");
-        assert!(norm.is_fast, "card text begins with \"Fast.\", expected is_fast=true");
+        assert!(
+            norm.is_fast,
+            "card text begins with \"Fast.\", expected is_fast=true"
+        );
     }
 
     #[test]
@@ -809,7 +812,9 @@ mod tests {
         let raw = RawCard {
             code: "01034".into(),
             name: Some("Hyperawareness".into()),
-            text: Some("[fast] Spend 1 resource: You get +1 [intellect] for this skill test.".into()),
+            text: Some(
+                "[fast] Spend 1 resource: You get +1 [intellect] for this skill test.".into(),
+            ),
             flavor: None,
             illustrator: None,
             traits: None,
@@ -831,6 +836,9 @@ mod tests {
             skill_wild: None,
         };
         let norm = normalize(raw).expect("normalize");
-        assert!(!norm.is_fast, "card text does NOT begin with \"Fast.\"; [fast] inside text is unrelated");
+        assert!(
+            !norm.is_fast,
+            "card text does NOT begin with \"Fast.\"; [fast] inside text is unrelated"
+        );
     }
 }
