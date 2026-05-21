@@ -345,3 +345,92 @@ fn fast_event_playable_by_active_investigator_outside_investigation_in_permissiv
         "location clue should have moved to the investigator",
     );
 }
+
+#[test]
+fn fast_event_playable_by_non_owner_when_window_permits() {
+    // Working a Hunch (01037) text: "Fast. Play only during your turn.
+    // Discover 1 clue at your location."
+    // The "Play only during your turn" clause is a CARD-LEVEL constraint
+    // not yet enforced by the engine. The engine's Fast-event gate per
+    // Rules Reference p. 11 ("A fast event card may be played ... any
+    // time its play instructions specify") permits ANY actor when a
+    // window allows. This test locks in the engine-vs-card-level
+    // boundary so a future PR adding card-level enforcement doesn't
+    // accidentally tighten the engine gate.
+    install_cards_registry();
+    let a = test_investigator(1);
+    let loc = LocationId(101);
+    let mut b = test_investigator(2);
+    b.resources = 5;
+    b.current_location = Some(loc);
+    b.hand.push(CardCode::new("01037"));
+    let mut location = test_location(101, "Study");
+    location.clues = 1;
+    let state = TestGame::new()
+        .with_investigator(a)
+        .with_investigator(b)
+        .with_location(location)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_open_window(
+            WindowKind::BetweenPhases {
+                from: Phase::Mythos,
+                to: Phase::Investigation,
+            },
+            FastActorScope::Any,
+        )
+        .build();
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: InvestigatorId(2),
+            hand_index: 0,
+        }),
+    );
+    assert!(
+        matches!(result.outcome, EngineOutcome::Done),
+        "engine permits Fast event by non-owner when window allows; \
+         card-level 'Play only during your turn' is a separate concern: {:?}",
+        result.outcome,
+    );
+}
+
+#[test]
+fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
+    // Fast assets need EITHER active_during_investigation OR
+    // (owner_is_active && permissive_window). Owner-during-non-
+    // Investigation with no window meets neither — must reject.
+    //
+    // Magnifying Glass (01030) text: "Fast.\nYou get +1 [intellect]
+    // while investigating."
+    install_cards_registry();
+    let mut a = test_investigator(1);
+    a.resources = 5;
+    a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast asset.
+    let state = TestGame::new()
+        .with_investigator(a)
+        .with_phase(Phase::Mythos)
+        .with_active_investigator(InvestigatorId(1))
+        // No open window.
+        .build();
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: InvestigatorId(1),
+            hand_index: 0,
+        }),
+    );
+    let reason = match result.outcome {
+        EngineOutcome::Rejected { reason } => reason,
+        other => panic!(
+            "Fast asset by owner outside Investigation with no window must reject: {other:?}"
+        ),
+    };
+    assert!(
+        reason.contains("Fast")
+            || reason.contains("active")
+            || reason.contains("Investigation")
+            || reason.contains("window"),
+        "expected gate-rejection wording; got: {reason}",
+    );
+}
