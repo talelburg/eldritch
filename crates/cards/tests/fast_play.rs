@@ -13,11 +13,9 @@
 //!   an action and may be used during any player window." → activated
 //!   abilities have no owner restriction.
 //!
-//! These tests cover the asset gate via Magnifying Glass (01030) and the
-//! activated-ability gate via Hyperawareness (01034). We do not yet have
-//! a Fast *event* implemented in the corpus, so the Fast-event branch of
-//! the gate is exercised only by `game-core` unit tests; that gap is
-//! tracked alongside the next Fast-event card to land.
+//! These tests cover the asset gate via Magnifying Glass (01030), the
+//! event gate via Working a Hunch (01037), and the activated-ability gate
+//! via Hyperawareness (01034).
 //!
 //! Note: we use `Phase::Mythos` (a non-Investigation phase) in the
 //! "owner during permissive window" test so the open-window branch is
@@ -36,9 +34,10 @@ use std::sync::Once;
 use game_core::action::{Action, PlayerAction};
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, FastActorScope, InvestigatorId, Phase, WindowKind,
+    CardCode, CardInPlay, CardInstanceId, FastActorScope, InvestigatorId, LocationId, Phase,
+    WindowKind,
 };
-use game_core::test_support::{test_investigator, TestGame};
+use game_core::test_support::{test_investigator, test_location, TestGame};
 
 fn install_cards_registry() {
     static INSTALL: Once = Once::new();
@@ -279,5 +278,57 @@ fn fast_activated_ability_rejected_when_no_permissive_window() {
     assert!(
         reason.contains("Fast") || reason.contains("active") || reason.contains("Investigation"),
         "expected gate-rejection wording; got: {reason}",
+    );
+}
+
+#[test]
+fn fast_event_playable_by_active_investigator_outside_investigation_in_permissive_window() {
+    // Working a Hunch (01037): Fast event, "Play only during your turn.
+    // Discover 1 clue at your location." Rules Reference page 11:
+    // "A fast event card may be played from a player's hand any time
+    // its play instructions specify." The card-level "Play only during
+    // your turn" constraint is a *card-level* restriction not yet
+    // modeled in the DSL; this test exercises the *engine gate* which
+    // permits Fast events when the open window's fast_actors permits
+    // the actor. Pre-#103 the strict gate rejected for `phase !=
+    // Investigation` regardless of windows; the loosened gate accepts.
+    install_cards_registry();
+    let loc = LocationId(101);
+    let mut a = test_investigator(1);
+    a.resources = 5;
+    a.current_location = Some(loc);
+    a.hand.push(CardCode::new("01037"));
+    let state = TestGame::new()
+        .with_investigator(a)
+        .with_location(test_location(101, "Study"))
+        .with_phase(Phase::Mythos)
+        .with_active_investigator(InvestigatorId(1))
+        .with_open_window(
+            WindowKind::BetweenPhases {
+                from: Phase::Mythos,
+                to: Phase::Investigation,
+            },
+            FastActorScope::Any,
+        )
+        .build();
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: InvestigatorId(1),
+            hand_index: 0,
+        }),
+    );
+    assert!(
+        matches!(result.outcome, EngineOutcome::Done),
+        "Working a Hunch should play Fast for the active investigator during a permissive \
+         non-Investigation window: {:?}",
+        result.outcome,
+    );
+    let a_after = result.state.investigators.get(&InvestigatorId(1)).unwrap();
+    assert_eq!(a_after.hand.len(), 0, "card should have left hand");
+    assert_eq!(
+        a_after.discard.len(),
+        1,
+        "event lands in discard after OnPlay resolves",
     );
 }
