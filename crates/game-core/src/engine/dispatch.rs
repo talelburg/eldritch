@@ -2494,6 +2494,36 @@ fn resolve_play_target(
 /// [`CardType`](crate::card_data::CardType), and runs every
 /// [`Trigger::OnPlay`] ability through the DSL evaluator.
 ///
+/// # Timing gate
+///
+/// The gate branches on `is_fast` (from [`CardMetadata`](crate::card_data::CardMetadata))
+/// and [`CardType`](crate::card_data::CardType), per Rules Reference p. 11:
+///
+/// - **Non-Fast cards** (asset or event without the ⚡ icon): require
+///   Investigation phase + the active investigator. The standard
+///   "your turn, your action" constraint.
+///
+/// - **Fast events** (Rules Reference p. 11: *"A fast event card may be
+///   played from a player's hand any time its play instructions
+///   specify"*): permitted when `active_during_investigation` OR when
+///   the top open window's `fast_actors` scope permits the acting
+///   investigator. Any eligible investigator in a permissive window
+///   qualifies — card-level "Play only during your turn" constraints
+///   (e.g. Working a Hunch 01037) are a separate per-card concern
+///   **not** enforced here.
+///
+/// - **Fast assets** (Rules Reference p. 11: *"A fast asset may be
+///   played by an investigator during any player window on his or her
+///   turn"*): the "his or her turn" clause restricts to the **owner**,
+///   modeled as the active investigator. Permitted when
+///   `active_during_investigation` OR when the owner is the active
+///   investigator AND the top open window permits them. Non-owner plays
+///   remain illegal even in a permissive window.
+///
+/// Card-level play constraints (e.g. "Play only during your turn",
+/// "Play only if …") are **not** enforced by this gate; they are a
+/// future per-card concern.
+///
 /// # Ordering
 ///
 /// [`Event::CardPlayed`] fires first (the play *causes* any on-play
@@ -2554,16 +2584,7 @@ fn play_card(
         Ok(v) => v,
         Err(reject) => return reject,
     };
-    // Gate: per Rules Reference p. 11:
-    //   - "A fast event card may be played from a player's hand any time
-    //     its play instructions specify." → permitted by any investigator
-    //     whom the open window's `fast_actors` scope allows.
-    //   - "A fast asset may be played by an investigator during any
-    //     player window on his or her turn." → restricted to the OWNER
-    //     (which we model as `active_investigator`) during a permissive
-    //     window; non-owner plays remain illegal even in a window.
-    //   - Non-Fast cards still require the standard Investigation-phase +
-    //     active-investigator timing.
+    // Timing gate — see doc-comment "# Timing gate" section above.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
     let owner_is_active = state.active_investigator == Some(investigator);
