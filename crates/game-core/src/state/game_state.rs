@@ -344,6 +344,48 @@ pub struct ReactionWindow {
     pub pending: Vec<PendingTrigger>,
 }
 
+/// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
+/// actions while an `OpenWindow` is the top of `GameState::open_windows`.
+///
+/// Modeled per Rules Reference: a reaction window allows any
+/// investigator to fire a triggered reaction or play a Fast card.
+/// An investigator's own turn opens an `ActiveInvestigator` window
+/// that still permits other investigators to play Fast cards (per the
+/// "Fast may be played at any player window" rule); concrete window
+/// kinds choose the right scope at the open-window site.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum FastActorScope {
+    /// Only the named investigator may submit Fast actions during
+    /// this window. Used for narrow Investigation-phase windows (the
+    /// turn's owner) where Fast actions are still bounded to one
+    /// actor; pair with `Any` for windows where other investigators
+    /// may interject.
+    ActiveInvestigator(InvestigatorId),
+    /// Any investigator may submit Fast actions. Used for reaction
+    /// windows and between-phase windows.
+    Any,
+    /// Only the named set may submit Fast actions. Reserved for
+    /// scenario-specific windows that restrict actors by criterion
+    /// (e.g. only investigators at a given location). No Phase-3
+    /// or Phase-4 site constructs this variant yet; the variant
+    /// exists so future cards can grow it without engine churn.
+    Specific(std::collections::BTreeSet<InvestigatorId>),
+}
+
+impl FastActorScope {
+    /// True if `investigator` is permitted to submit a Fast action
+    /// during the window carrying this scope.
+    #[must_use]
+    pub fn permits(&self, investigator: InvestigatorId) -> bool {
+        match self {
+            Self::ActiveInvestigator(id) => *id == investigator,
+            Self::Any => true,
+            Self::Specific(set) => set.contains(&investigator),
+        }
+    }
+}
+
 /// Discriminant of an open [`ReactionWindow`].
 ///
 /// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
@@ -432,4 +474,50 @@ pub struct PendingSkillModifier {
     /// per-test logic in later cycles (Roland Banks, Hard Knocks
     /// upgrades) will key off this.
     pub source: Option<CardInstanceId>,
+}
+
+#[cfg(test)]
+mod fast_actor_scope_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn active_investigator_permits_only_named() {
+        let scope = FastActorScope::ActiveInvestigator(InvestigatorId(1));
+        assert!(scope.permits(InvestigatorId(1)));
+        assert!(!scope.permits(InvestigatorId(2)));
+    }
+
+    #[test]
+    fn any_permits_everyone() {
+        let scope = FastActorScope::Any;
+        assert!(scope.permits(InvestigatorId(1)));
+        assert!(scope.permits(InvestigatorId(42)));
+    }
+
+    #[test]
+    fn specific_permits_only_the_named_set() {
+        let mut set = BTreeSet::new();
+        set.insert(InvestigatorId(1));
+        set.insert(InvestigatorId(3));
+        let scope = FastActorScope::Specific(set);
+        assert!(scope.permits(InvestigatorId(1)));
+        assert!(!scope.permits(InvestigatorId(2)));
+        assert!(scope.permits(InvestigatorId(3)));
+    }
+
+    #[test]
+    fn fast_actor_scope_serde_roundtrip() {
+        let mut set = BTreeSet::new();
+        set.insert(InvestigatorId(7));
+        for scope in [
+            FastActorScope::Any,
+            FastActorScope::ActiveInvestigator(InvestigatorId(1)),
+            FastActorScope::Specific(set),
+        ] {
+            let json = serde_json::to_string(&scope).expect("serialize");
+            let back: FastActorScope = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(back, scope);
+        }
+    }
 }
