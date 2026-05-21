@@ -1,9 +1,35 @@
-//! Integration tests for the Fast play-card gate loosening from #103.
+//! Integration tests for the Fast play-card and activated-ability gates
+//! introduced in #103.
 //!
-//! Verifies that a Fast card (Magnifying Glass, 01030) can be played
-//! by a non-active investigator when an open window's `fast_actors`
-//! scope permits, and that a non-Fast asset (Holy Rosary, 01059) in
-//! the same setup is still rejected.
+//! Per the Arkham Horror LCG Rules Reference (page 11):
+//!
+//! - "A fast event card may be played from a player's hand any time its
+//!   play instructions specify." → permitted by any investigator a
+//!   window's `fast_actors` scope allows.
+//! - "A fast asset may be played by an investigator during any player
+//!   window on his or her turn." → restricted to the OWNER (the active
+//!   investigator); non-owner plays remain illegal even in a window.
+//! - "The ⚡ icon indicates a free triggered ability that does not cost
+//!   an action and may be used during any player window." → activated
+//!   abilities have no owner restriction.
+//!
+//! These tests cover the asset gate via Magnifying Glass (01030) and the
+//! activated-ability gate via Hyperawareness (01034). We do not yet have
+//! a Fast *event* implemented in the corpus, so the Fast-event branch of
+//! the gate is exercised only by `game-core` unit tests; that gap is
+//! tracked alongside the next Fast-event card to land.
+//!
+//! Note: we use `Phase::Mythos` (a non-Investigation phase) in the
+//! "owner during permissive window" test so the open-window branch is
+//! the load-bearing condition for permission — Investigation phase alone
+//! is enough to play under the active-investigator branch and would mask
+//! the actual rule being tested.
+//!
+//! Why this file exists at the `cards/tests/` layer: it needs real card
+//! metadata + abilities from the `cards` corpus, which `game-core` itself
+//! cannot reach by crate-dependency direction. Each `tests/*.rs` is its
+//! own process so `install(cards::REGISTRY)` does not collide with the
+//! other integration test binaries.
 
 use std::sync::Once;
 
@@ -22,7 +48,53 @@ fn install_cards_registry() {
 }
 
 #[test]
-fn fast_asset_playable_by_non_active_investigator_when_window_permits() {
+fn fast_asset_playable_by_owner_during_permissive_window() {
+    // Owner-as-active-investigator with a window open during a
+    // non-Investigation phase: the strict pre-#103 gate would reject
+    // (phase != Investigation), but the loosened gate must accept
+    // because the window permits and the owner IS the active
+    // investigator. This is the rules-correct positive case for
+    // Fast assets.
+    install_cards_registry();
+    let mut a = test_investigator(1);
+    a.resources = 5;
+    a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
+    let state = TestGame::new()
+        .with_investigator(a)
+        .with_phase(Phase::Mythos)
+        .with_active_investigator(InvestigatorId(1))
+        .with_open_window(
+            WindowKind::BetweenPhases {
+                from: Phase::Mythos,
+                to: Phase::Investigation,
+            },
+            FastActorScope::Any,
+        )
+        .build();
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: InvestigatorId(1),
+            hand_index: 0,
+        }),
+    );
+    assert!(
+        matches!(result.outcome, EngineOutcome::Done),
+        "Magnifying Glass plays Fast for the owner (= active investigator) during a \
+         permissive window in Mythos: {:?}",
+        result.outcome,
+    );
+    let a_after = result.state.investigators.get(&InvestigatorId(1)).unwrap();
+    assert_eq!(a_after.hand.len(), 0, "card should have left hand");
+    assert_eq!(a_after.cards_in_play.len(), 1, "card should be in play");
+}
+
+#[test]
+fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
+    // Per Rules Reference p. 11: a Fast asset may only be played by its
+    // owner (i.e. on the owner's turn — the active investigator). A
+    // non-owner attempting the Fast play remains illegal even if an
+    // open window's `fast_actors` scope permits the actor.
     install_cards_registry();
     let a = test_investigator(1);
     let mut b = test_investigator(2);
@@ -48,14 +120,20 @@ fn fast_asset_playable_by_non_active_investigator_when_window_permits() {
             hand_index: 0,
         }),
     );
+    let reason = match result.outcome {
+        EngineOutcome::Rejected { reason } => reason,
+        other => panic!(
+            "Fast asset by NON-owner must reject per Rules Reference p. 11, even in a \
+             permissive window: {other:?}",
+        ),
+    };
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "Magnifying Glass should play Fast from non-active investigator's hand: {:?}",
-        result.outcome,
+        reason.contains("owner")
+            || reason.contains("asset")
+            || reason.contains("active")
+            || reason.contains("Fast"),
+        "expected gate rejection citing Fast-asset owner restriction; got: {reason}",
     );
-    let b_after = result.state.investigators.get(&InvestigatorId(2)).unwrap();
-    assert_eq!(b_after.hand.len(), 0, "card should have left hand");
-    assert_eq!(b_after.cards_in_play.len(), 1, "card should be in play");
 }
 
 #[test]
@@ -91,12 +169,13 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
             panic!("Holy Rosary is not Fast — non-active investigator must not play it: {other:?}")
         }
     };
-    // Make sure the rejection cites the Fast/active-investigator gate,
+    // Make sure the rejection cites the timing-window gate,
     // not (for instance) the missing-from-hand or resource-shortage paths.
     assert!(
         reason.contains("non-Fast")
             || reason.contains("Investigation")
-            || reason.contains("active"),
+            || reason.contains("active")
+            || reason.contains("timing"),
         "expected non-Fast gate rejection; got: {reason}",
     );
 }

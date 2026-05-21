@@ -2421,7 +2421,7 @@ enum PlayDestination {
 /// separate from the state-side prefix.
 fn resolve_play_target(
     code: &CardCode,
-) -> Result<(PlayDestination, Vec<crate::dsl::Ability>, bool), EngineOutcome> {
+) -> Result<(PlayDestination, Vec<crate::dsl::Ability>, bool, CardType), EngineOutcome> {
     let Some(registry) = card_registry::current() else {
         return Err(EngineOutcome::Rejected {
             reason: "PlayCard: no card registry installed; engine cannot resolve card \
@@ -2436,7 +2436,8 @@ fn resolve_play_target(
         });
     };
     let is_fast = metadata.is_fast;
-    let destination = match metadata.card_type {
+    let card_type = metadata.card_type;
+    let destination = match card_type {
         CardType::Asset => PlayDestination::InPlay,
         CardType::Event => PlayDestination::Discard,
         other => {
@@ -2457,7 +2458,7 @@ fn resolve_play_target(
             .into(),
         });
     };
-    Ok((destination, abilities, is_fast))
+    Ok((destination, abilities, is_fast, card_type))
 }
 
 /// Handler for [`PlayerAction::PlayCard`].
@@ -2521,37 +2522,65 @@ fn play_card(
         };
     }
     let code: CardCode = inv.hand[idx].clone();
-    // Resolve card type and abilities (also yields is_fast) before applying
-    // the phase/active-investigator gate so the gate can branch on is_fast.
-    let (destination, abilities, is_fast) = match resolve_play_target(&code) {
+    // Resolve card type and abilities (also yields is_fast + card_type) before
+    // applying the phase/active-investigator gate so the gate can branch on
+    // is_fast AND card_type per the Rules Reference (p. 11).
+    let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
         Ok(v) => v,
         Err(reject) => return reject,
     };
-    // Gate: non-Fast cards require the standard Investigation-phase +
-    // active-investigator timing. Fast cards additionally accept any open
-    // window whose fast_actors scope permits this investigator.
+    // Gate: per Rules Reference p. 11:
+    //   - "A fast event card may be played from a player's hand any time
+    //     its play instructions specify." → permitted by any investigator
+    //     whom the open window's `fast_actors` scope allows.
+    //   - "A fast asset may be played by an investigator during any
+    //     player window on his or her turn." → restricted to the OWNER
+    //     (which we model as `active_investigator`) during a permissive
+    //     window; non-owner plays remain illegal even in a window.
+    //   - Non-Fast cards still require the standard Investigation-phase +
+    //     active-investigator timing.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
-    let in_permissive_window = state
+    let owner_is_active = state.active_investigator == Some(investigator);
+    let permissive_window = state
         .open_windows
         .last()
         .is_some_and(|w| w.fast_actors.permits(investigator));
-    if !is_fast && !active_during_investigation {
+    // Non-asset/non-event card types are filtered out by
+    // `resolve_play_target` above, so `card_type` here is always one of
+    // `Asset` or `Event`. The non-Fast arm collapses both into the
+    // strict gate; the Fast arms split because Rules Reference p. 11
+    // gives events and assets different scopes (any vs owner-only).
+    let allowed = if is_fast {
+        match card_type {
+            CardType::Event => active_during_investigation || permissive_window,
+            CardType::Asset => {
+                active_during_investigation || (owner_is_active && permissive_window)
+            }
+            // Unreachable: `resolve_play_target` rejects every other
+            // `CardType` before we get here. Fall back to the strict
+            // gate so a future relaxation of `resolve_play_target` does
+            // not silently over-permit anything.
+            _ => active_during_investigation,
+        }
+    } else {
+        active_during_investigation
+    };
+    if !allowed {
         return EngineOutcome::Rejected {
             reason: format!(
-                "PlayCard: non-Fast card requires Investigation phase + active investigator \
-                 (phase was {:?}, active {:?})",
-                state.phase, state.active_investigator,
+                "PlayCard: card not playable in this timing window. \
+                 Rules Reference p. 11: non-Fast cards require Investigation + active \
+                 investigator; Fast events require active investigator or a window whose \
+                 fast_actors permits the actor; Fast assets additionally require the OWNER \
+                 (active investigator) to act. \
+                 Got is_fast={is_fast}, card_type={card_type:?}, phase={phase:?}, \
+                 active={active:?}, actor={investigator:?}, owner_is_active={owner_is_active}, \
+                 permissive_window={permissive_window}.",
+                phase = state.phase,
+                active = state.active_investigator,
             )
             .into(),
-        };
-    }
-    if is_fast && !active_during_investigation && !in_permissive_window {
-        return EngineOutcome::Rejected {
-            reason: "PlayCard: Fast card requires either active investigator during \
-                     Investigation, or an open window whose fast_actors permits this \
-                     investigator"
-                .into(),
         };
     }
 
