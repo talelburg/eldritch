@@ -210,7 +210,7 @@ pub struct InFlightSkillTest {
 /// checks `state.open_windows` via `GameState::top_reaction_window()`; if a window is
 /// pending it suspends with
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). On resume
-/// (via `close_reaction_window`) the driver reads this field and
+/// (via `close_reaction_window_at`) the driver reads this field and
 /// jumps to the matching step. This is the rules-correct shape per
 /// the Rules Reference's "after… initiates immediately after that
 /// triggering condition's impact has resolved" clause: the reaction
@@ -498,6 +498,24 @@ impl GameState {
             .iter_mut()
             .rev()
             .find(|w| !w.pending_triggers.is_empty())
+    }
+
+    /// Index into [`Self::open_windows`] of the topmost window with
+    /// non-empty `pending_triggers`, matching the window that
+    /// [`Self::top_reaction_window`] / [`Self::top_reaction_window_mut`]
+    /// resolve to.
+    ///
+    /// Callers driving the reaction window pass this index to
+    /// `close_reaction_window_at` so the close path removes the same
+    /// entry the driver was operating on, rather than blindly popping
+    /// the top of the stack — a `BetweenPhases` window with empty
+    /// `pending_triggers` can sit above an active reaction window,
+    /// which would corrupt the stack on naive `pop()`.
+    #[must_use]
+    pub fn top_reaction_window_index(&self) -> Option<usize> {
+        self.open_windows
+            .iter()
+            .rposition(|w| !w.pending_triggers.is_empty())
     }
 }
 

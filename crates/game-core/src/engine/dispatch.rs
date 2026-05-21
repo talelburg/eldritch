@@ -538,7 +538,7 @@ pub(super) fn start_skill_test(
 /// queues an [`AfterEnemyDefeated`](crate::state::WindowKind::AfterEnemyDefeated)
 /// window) suspends correctly: this entry advances the continuation
 /// to [`FinishContinuation::PostFollowUp`] before delegating, so a
-/// resume from `close_reaction_window` re-enters the driver and picks
+/// resume from `close_reaction_window_at` re-enters the driver and picks
 /// up at the `OnSkillTestResolution` step.
 ///
 /// On invalid input (no in-flight test, malformed indices, or
@@ -621,7 +621,7 @@ fn finish_skill_test(
 /// window: if one is pending, the driver emits
 /// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
-/// close path ([`close_reaction_window`]) re-enters this driver on
+/// close path ([`close_reaction_window_at`]) re-enters this driver on
 /// resume.
 ///
 /// Step → next-continuation mapping (current Phase-3 set; #64 will
@@ -1012,7 +1012,7 @@ fn fire_on_skill_test_resolution(
 /// reaction case: the skill-test driver is parked at a step boundary
 /// waiting for the reaction window to close before continuing. The
 /// reaction window takes routing priority; once it closes,
-/// [`close_reaction_window`] re-enters [`drive_skill_test`] to finish
+/// [`close_reaction_window_at`] re-enters [`drive_skill_test`] to finish
 /// the test.
 fn resolve_input(
     state: &mut GameState,
@@ -1224,7 +1224,17 @@ fn resume_reaction_window(
 ) -> EngineOutcome {
     match response {
         InputResponse::PickIndex(i) => fire_pending_trigger(state, events, *i),
-        InputResponse::Skip => close_reaction_window(state, events),
+        InputResponse::Skip => {
+            // Resolve the active reaction-window index up-front so the
+            // close path operates on the same window the driver had
+            // been driving (not the absolute top of `open_windows`,
+            // which may be an empty-pending_triggers window sitting
+            // above it).
+            let idx = state
+                .top_reaction_window_index()
+                .expect("resume_reaction_window: caller checked is_some");
+            close_reaction_window_at(state, events, idx)
+        }
         other => EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: reaction window expects InputResponse::PickIndex \
@@ -1239,11 +1249,16 @@ fn resume_reaction_window(
 /// Rejects out-of-bounds; the window stays open so the client can
 /// retry with a corrected index.
 fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
+    // Capture the index of the reaction window we're driving up-front
+    // so the close path removes the same entry (not the absolute top of
+    // the stack, which may be a different, empty-pending_triggers
+    // window once non-reaction windows can sit above one).
+    let window_idx = state
+        .top_reaction_window_index()
+        .expect("fire_pending_trigger: caller checked is_some");
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
-        let window = state
-            .top_reaction_window()
-            .expect("fire_pending_trigger: caller checked is_some");
+        let window = &state.open_windows[window_idx];
         let idx = match usize::try_from(i) {
             Ok(idx) if idx < window.pending_triggers.len() => idx,
             _ => {
@@ -1330,17 +1345,17 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
         bump_usage_counter(state, &trigger);
     }
 
-    // Drop the fired entry now that resolution succeeded.
-    let window = state
-        .top_reaction_window_mut()
-        .expect("fire_pending_trigger: window must still be present after firing");
+    // Drop the fired entry now that resolution succeeded. The window
+    // we drove sits at `window_idx` — apply_effect does not push or
+    // pop `open_windows` entries, so the index remains valid.
+    let window = &mut state.open_windows[window_idx];
     window.pending_triggers.remove(pending_idx);
 
     // If more triggers remain pending, re-emit AwaitingInput so the
     // player can pick the next one. Otherwise the window closes
     // automatically.
     if window.pending_triggers.is_empty() {
-        return close_reaction_window(state, events);
+        return close_reaction_window_at(state, events, window_idx);
     }
     let kind = window.kind;
     let pending_len = window.pending_triggers.len();
@@ -1397,22 +1412,35 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
     card.bump_ability_usage(trigger.ability_index, current_round);
 }
 
-/// Close the open reaction window. Rejects when any forced trigger
-/// is still pending (player must fire them first). On success emits
-/// [`Event::WindowClosed`], clears the window state, and either
-/// resumes a paused skill-test driver (if one was mid-resolution
-/// when the window opened) or returns [`Done`].
-fn close_reaction_window(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
-    // Borrow the top window to check for forced-trigger remaining
-    // before popping — Rejected must leave state untouched. We use
-    // `open_windows.last()` (not `top_reaction_window`) here because
-    // the caller may have just drained the last pending trigger —
-    // the window is still on the stack and needs to be popped.
+/// Close the reaction window at `idx` in [`GameState::open_windows`].
+/// Rejects when any forced trigger is still pending (player must fire
+/// them first). On success emits [`Event::WindowClosed`], removes the
+/// window at the specified index (not necessarily the top of the
+/// stack), and either resumes a paused skill-test driver (if one was
+/// mid-resolution when the window opened) or returns [`Done`].
+///
+/// # Why an explicit index
+///
+/// `top_reaction_window_mut` skips empty-`pending_triggers` windows
+/// when finding the active reaction window. The close path must
+/// remove the same window the driver operated on, not the absolute
+/// top of the stack — once `BetweenPhases` (or any other
+/// non-reaction) window can sit above an active reaction window
+/// (#69/#70/#71), a naive `open_windows.pop()` would remove the wrong
+/// entry. Callers compute the index via
+/// [`GameState::top_reaction_window_index`].
+fn close_reaction_window_at(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    idx: usize,
+) -> EngineOutcome {
+    // Borrow the window at `idx` to check for forced triggers remaining
+    // before removing — Rejected must leave state untouched.
     {
         let window = state
             .open_windows
-            .last()
-            .expect("close_reaction_window: caller checked stack non-empty");
+            .get(idx)
+            .expect("close_reaction_window_at: caller-supplied index must be in bounds");
         if let Some(forced) = window.pending_triggers.iter().find(|t| t.forced) {
             return EngineOutcome::Rejected {
                 reason: format!(
@@ -1427,10 +1455,7 @@ fn close_reaction_window(state: &mut GameState, events: &mut Vec<Event>) -> Engi
             };
         }
     }
-    let window = state
-        .open_windows
-        .pop()
-        .expect("close_reaction_window: caller checked stack non-empty");
+    let window = state.open_windows.remove(idx);
     let kind = window.kind;
     events.push(Event::WindowClosed { kind });
 
