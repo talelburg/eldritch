@@ -298,9 +298,11 @@ fn fast_event_playable_by_active_investigator_outside_investigation_in_permissiv
     a.resources = 5;
     a.current_location = Some(loc);
     a.hand.push(CardCode::new("01037"));
+    let mut location = test_location(101, "Study");
+    location.clues = 1;
     let state = TestGame::new()
         .with_investigator(a)
-        .with_location(test_location(101, "Study"))
+        .with_location(location)
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
@@ -330,5 +332,16 @@ fn fast_event_playable_by_active_investigator_outside_investigation_in_permissiv
         a_after.discard.len(),
         1,
         "event lands in discard after OnPlay resolves",
+    );
+    // Assert the OnPlay effect actually fired: clue moved from location to investigator.
+    assert_eq!(
+        a_after.clues,
+        1,
+        "investigator should have picked up the clue from Working a Hunch's OnPlay effect",
+    );
+    assert_eq!(
+        result.state.locations.get(&loc).unwrap().clues,
+        0,
+        "location clue should have moved to the investigator",
     );
 }
