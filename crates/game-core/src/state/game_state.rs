@@ -101,44 +101,12 @@ pub struct GameState {
     /// [`ChaosTokenRevealed`]: crate::Event::ChaosTokenRevealed
     /// [`EngineOutcome::AwaitingInput`]: crate::EngineOutcome::AwaitingInput
     pub in_flight_skill_test: Option<InFlightSkillTest>,
-    /// An open reaction window the engine is waiting on input for.
-    /// `Some` between the moment the engine emits
-    /// [`Event::WindowOpened`](crate::Event::WindowOpened) for a
-    /// reaction window with at least one matching trigger and the
-    /// moment the player has resolved every forced trigger and either
-    /// fired or skipped each optional one (closing the window).
-    ///
-    /// While set, every non-[`ResolveInput`](crate::action::PlayerAction::ResolveInput)
-    /// player action rejects, mirroring the
-    /// [`in_flight_skill_test`](Self::in_flight_skill_test) and
-    /// [`mulligan_window`](Self::mulligan_window) guards.
-    ///
-    /// **Timing relative to the surrounding action.** Per the Rules
-    /// Reference, an "after…" reaction "may be used immediately after
-    /// that triggering condition's impact upon the game state has
-    /// resolved" — i.e. mid-action, not at action's end. The engine
-    /// honors this: the triggering event-emitter (e.g.
-    /// `damage_enemy` emitting [`EnemyDefeated`](crate::Event::EnemyDefeated))
-    /// queues the window via `queue_reaction_window`, and the next
-    /// step boundary inside the current handler (the skill-test
-    /// driver between [`FinishContinuation::PostFollowUp`] and the
-    /// `OnSkillTestResolution` step) checks for queued windows and
-    /// suspends.
-    ///
-    /// On resume the window's close path (`close_reaction_window`)
-    /// re-enters the surrounding handler's driver at the saved
-    /// [`continuation`](InFlightSkillTest::continuation) so the rest
-    /// of the action's events fire in their canonical order.
-    ///
-    /// Single-slot today: actions in scope queue at most one window
-    /// per apply. Multi-window queueing (e.g. a card effect that
-    /// defeats two enemies) lands when the first such effect arrives.
-    pub in_flight_reaction_window: Option<ReactionWindow>,
     /// Stack of currently-open windows. The top (`last()`) is the
     /// most recently-opened; closing pops the top. Carries pending
-    /// reaction triggers (will replace the old `in_flight_reaction_window`
-    /// single-slot shape once T7 migrates the helpers) and the
-    /// Fast-action gate for each window.
+    /// reaction triggers and the Fast-action gate for each window.
+    /// Replaced the earlier single-slot `in_flight_reaction_window:
+    /// Option<ReactionWindow>` shape — multi-window nesting is now
+    /// structural.
     ///
     /// Window kinds open at canonical timing points:
     /// - `AfterEnemyDefeated` — queued by `damage_enemy` when an
@@ -239,7 +207,7 @@ pub struct InFlightSkillTest {
 ///    pending modifiers
 ///
 /// After each step that *can* queue a reaction window, the driver
-/// checks [`GameState::in_flight_reaction_window`]; if a window is
+/// checks `state.open_windows` via `GameState::top_reaction_window()`; if a window is
 /// pending it suspends with
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). On resume
 /// (via `close_reaction_window`) the driver reads this field and
@@ -328,38 +296,6 @@ pub enum SkillTestFollowUp {
     },
 }
 
-/// An open reaction window with a list of pending triggers waiting
-/// for the player to fire or skip.
-///
-/// Created by the engine's `queue_reaction_window` helper when a
-/// triggering event fires inside an action handler and at least one
-/// in-play card's [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// ability matches `kind`. The top-level dispatcher opens the window
-/// at the end of the action's apply call (emits
-/// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)). The player
-/// drives resolution via
-/// [`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput):
-/// [`InputResponse::PickIndex`](crate::action::InputResponse::PickIndex)
-/// fires the i-th pending trigger;
-/// [`InputResponse::Skip`](crate::action::InputResponse::Skip) closes
-/// the window provided no forced triggers remain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct ReactionWindow {
-    /// What kind of window is open; carries the IDs the triggering
-    /// event named (defeated enemy + attacker, etc.) so pending
-    /// triggers' effects can resolve against the same payload.
-    pub kind: WindowKind,
-    /// Triggers in resolution order. Active investigator's matching
-    /// triggers come first (Arkham's "active player priority"), then
-    /// other investigators' in turn order. Within a single
-    /// investigator, listed in `cards_in_play` order, then by
-    /// `ability_index`. Empty `pending` is never stored — the engine
-    /// closes the window immediately at scan time.
-    pub pending: Vec<PendingTrigger>,
-}
-
 /// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
 /// actions while an `OpenWindow` is the top of `GameState::open_windows`.
 ///
@@ -404,9 +340,9 @@ impl FastActorScope {
 
 /// A currently-open window on the action stack.
 ///
-/// Replaces the old single-Option `in_flight_reaction_window` shape
-/// once the migration is complete (currently both exist side by
-/// side — T7/T8 finish the transition).
+/// Replaces the older single-slot `in_flight_reaction_window: Option<ReactionWindow>` shape;
+/// reaction-window machinery now operates on this stack via
+/// `GameState::top_reaction_window()` and `top_reaction_window_mut()`.
 ///
 /// Each window carries (a) what kind it is and which IDs the
 /// triggering event/phase-transition named, (b) the queue of
@@ -441,7 +377,7 @@ pub struct OpenWindow {
     pub fast_actors: FastActorScope,
 }
 
-/// Discriminant of an open [`ReactionWindow`].
+/// Discriminant of an open `OpenWindow`.
 ///
 /// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
 /// pattern: when the engine emits a matching
@@ -480,10 +416,10 @@ pub enum WindowKind {
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// ability waiting to fire inside a [`ReactionWindow`].
+/// ability waiting to fire inside an `OpenWindow`.
 ///
 /// Resolved by [`InputResponse::PickIndex`](crate::action::InputResponse::PickIndex)
-/// — the index addresses into `ReactionWindow::pending`. After firing,
+/// — the index addresses into `OpenWindow::pending_triggers`. After firing,
 /// the entry is removed; the window stays open while any entries remain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -554,7 +490,9 @@ impl GameState {
             .find(|w| !w.pending_triggers.is_empty())
     }
 
-    /// Mutable counterpart to `top_reaction_window`.
+    /// Mutable counterpart to `top_reaction_window`. Same skip rule
+    /// applies: windows with empty `pending_triggers` are skipped —
+    /// phase-gate-only windows are not exposed as reaction-work.
     pub fn top_reaction_window_mut(&mut self) -> Option<&mut OpenWindow> {
         self.open_windows
             .iter_mut()

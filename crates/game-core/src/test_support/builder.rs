@@ -248,7 +248,6 @@ impl TestGame {
             next_card_instance_id: 0,
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
-            in_flight_reaction_window: None,
             open_windows: self.open_windows,
         }
     }
