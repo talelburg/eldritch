@@ -2421,7 +2421,7 @@ enum PlayDestination {
 /// separate from the state-side prefix.
 fn resolve_play_target(
     code: &CardCode,
-) -> Result<(PlayDestination, Vec<crate::dsl::Ability>), EngineOutcome> {
+) -> Result<(PlayDestination, Vec<crate::dsl::Ability>, bool), EngineOutcome> {
     let Some(registry) = card_registry::current() else {
         return Err(EngineOutcome::Rejected {
             reason: "PlayCard: no card registry installed; engine cannot resolve card \
@@ -2435,6 +2435,7 @@ fn resolve_play_target(
             reason: format!("PlayCard: unknown card code {code}").into(),
         });
     };
+    let is_fast = metadata.is_fast;
     let destination = match metadata.card_type {
         CardType::Asset => PlayDestination::InPlay,
         CardType::Event => PlayDestination::Discard,
@@ -2456,7 +2457,7 @@ fn resolve_play_target(
             .into(),
         });
     };
-    Ok((destination, abilities))
+    Ok((destination, abilities, is_fast))
 }
 
 /// Handler for [`PlayerAction::PlayCard`].
@@ -2494,24 +2495,7 @@ fn play_card(
     investigator: InvestigatorId,
     hand_index: u8,
 ) -> EngineOutcome {
-    if state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard is only valid during the Investigation phase (was {:?})",
-                state.phase,
-            )
-            .into(),
-        };
-    }
-    if state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: {investigator:?} is not the active investigator ({:?})",
-                state.active_investigator,
-            )
-            .into(),
-        };
-    }
+    // Validate the investigator's presence and status before any card lookup.
     let Some(inv) = state.investigators.get(&investigator) else {
         return EngineOutcome::Rejected {
             reason: format!("PlayCard: investigator {investigator:?} is not in state").into(),
@@ -2537,10 +2521,39 @@ fn play_card(
         };
     }
     let code: CardCode = inv.hand[idx].clone();
-    let (destination, abilities) = match resolve_play_target(&code) {
+    // Resolve card type and abilities (also yields is_fast) before applying
+    // the phase/active-investigator gate so the gate can branch on is_fast.
+    let (destination, abilities, is_fast) = match resolve_play_target(&code) {
         Ok(v) => v,
         Err(reject) => return reject,
     };
+    // Gate: non-Fast cards require the standard Investigation-phase +
+    // active-investigator timing. Fast cards additionally accept any open
+    // window whose fast_actors scope permits this investigator.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let in_permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    if !is_fast && !active_during_investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "PlayCard: non-Fast card requires Investigation phase + active investigator \
+                 (phase was {:?}, active {:?})",
+                state.phase, state.active_investigator,
+            )
+            .into(),
+        };
+    }
+    if is_fast && !active_during_investigation && !in_permissive_window {
+        return EngineOutcome::Rejected {
+            reason: "PlayCard: Fast card requires either active investigator during \
+                     Investigation, or an open window whose fast_actors permits this \
+                     investigator"
+                .into(),
+        };
+    }
 
     // Mutate.
     events.push(Event::CardPlayed {
