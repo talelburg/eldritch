@@ -162,10 +162,11 @@ pub enum Trigger {
 
 /// Which engine event(s) an [`Trigger::OnEvent`] ability listens for.
 ///
-/// Phase-3 minimal set: just the variant Roland Banks needs. The enum
-/// is `#[non_exhaustive]` and grows as later cards demand new
-/// patterns (skill-test outcomes, investigator movement, clue
-/// placement, …).
+/// Phase-3 minimal set: just the variant Roland Banks needs. Grows as
+/// later cards demand new patterns (skill-test outcomes, investigator
+/// movement, clue placement, …); the engine evaluator exhaustively
+/// matches on this enum so adding a variant is a deliberate change
+/// rather than a silent broadening.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EventPattern {
     /// An enemy was defeated. `by_controller` narrows the match to
@@ -174,9 +175,9 @@ pub enum EventPattern {
     /// unqualified "after an enemy is defeated" would set it `false`.
     EnemyDefeated {
         /// If `true`, only fires when the controller of this ability
-        /// is credited with the defeat (the
-        /// `by` field of the event (see `game_core::Event::EnemyDefeated`).
-        /// If `false`, any defeat matches.
+        /// is credited with the defeat (the `by` field of
+        /// `game_core::Event::EnemyDefeated`). If `false`, any defeat
+        /// matches.
         by_controller: bool,
     },
 }
@@ -859,8 +860,8 @@ mod tests {
     }
 
     /// A deeply-nested effect tree round-trips through `serde_json`.
-    /// Cheap insurance against `Box<Effect>` × `#[non_exhaustive]` ×
-    /// serde derive surprises.
+    /// Cheap insurance against `Box<Effect>` × nested-variant × serde
+    /// derive surprises.
     #[test]
     fn deeply_nested_effect_round_trips_through_serde_json() {
         let original = seq([
@@ -951,13 +952,12 @@ mod tests {
     }
 
     /// An `OnEvent`-triggered ability round-trips through `serde_json`
-    /// — `#[non_exhaustive]` × struct-variant × serde derive can
-    /// surprise; pin the wire shape now so #52's persistence doesn't
-    /// re-discover problems later. Both [`EventTiming`] variants
-    /// (`After` and `Before`) are exercised independently since
-    /// `#[non_exhaustive]` × unit-variant × serde can fail on either
-    /// alone (very rare, but the test rationale explicitly covers
-    /// this surface).
+    /// — struct-variant × serde derive can surprise; pin the wire
+    /// shape now so #52's persistence doesn't re-discover problems
+    /// later. Both [`EventTiming`] variants (`After` and `Before`) are
+    /// exercised independently since unit-variant × serde can fail on
+    /// either alone (very rare, but the test rationale explicitly
+    /// covers this surface).
     #[test]
     fn on_event_ability_round_trips_through_serde_json() {
         for timing in [EventTiming::After, EventTiming::Before] {

@@ -1,12 +1,14 @@
 //! Static card metadata types.
 //!
 //! These types describe a card as printed: code, name, class, type,
-//! cost, traits, skill icons, etc. They live in `game-core` (not the
-//! `cards` crate) because the engine needs to query metadata when
-//! resolving actions — e.g. `PlayCard` reads [`CardMetadata::card_type`]
-//! to choose where the played card lands. The `cards` crate populates
-//! the corpus (generated from the pinned `ArkhamDB` snapshot) and
-//! installs it via `game_core::card_registry`.
+//! cost, traits, skill icons, etc. They live in `card-dsl` so both
+//! sides of the engine-corpus boundary can construct and consume them
+//! without one depending on the other: the engine (in `game-core`)
+//! queries metadata when resolving actions — e.g. `PlayCard` reads
+//! [`CardMetadata::card_type`] to choose where the played card lands
+//! — while the `cards` crate populates the corpus (generated from the
+//! pinned `ArkhamDB` snapshot) and installs it via
+//! `game_core::card_registry`.
 //!
 //! Card *effect logic* (hand-implemented abilities) is separate; it's
 //! looked up through the registry too but lives in
