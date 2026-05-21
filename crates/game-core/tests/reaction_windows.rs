@@ -912,7 +912,11 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
         },
         FastActorScope::Any,
     ));
-    assert_eq!(paused.state.open_windows.len(), 2, "stack is [R, B] after injection");
+    assert_eq!(
+        paused.state.open_windows.len(),
+        2,
+        "stack is [R, B] after injection"
+    );
 
     // Skip the reaction window. close_reaction_window_at must remove R
     // (the reaction window that has pending triggers) and leave B intact.

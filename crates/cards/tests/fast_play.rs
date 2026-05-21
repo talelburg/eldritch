@@ -335,8 +335,7 @@ fn fast_event_playable_by_active_investigator_outside_investigation_in_permissiv
     );
     // Assert the OnPlay effect actually fired: clue moved from location to investigator.
     assert_eq!(
-        a_after.clues,
-        1,
+        a_after.clues, 1,
         "investigator should have picked up the clue from Working a Hunch's OnPlay effect",
     );
     assert_eq!(
