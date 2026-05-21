@@ -2,7 +2,7 @@
 //!
 //! Each implemented card lives in its own submodule, exposing a
 //! [`CODE`](holy_rosary::CODE) constant and an `abilities()` function
-//! returning that card's [`Vec<Ability>`](game_core::dsl::Ability).
+//! returning that card's [`Vec<Ability>`](card_dsl::dsl::Ability).
 //!
 //! The registry is the [`abilities_for`] dispatch — adding a card
 //! means: drop a `crates/cards/src/impls/<name>.rs` file, declare the
@@ -40,7 +40,7 @@
 //! The remaining Phase-3 card (Study #56) blocks on the
 //! location-state shape.
 
-use game_core::dsl::Ability;
+use card_dsl::dsl::Ability;
 
 pub mod deduction;
 pub mod holy_rosary;

@@ -18,15 +18,24 @@
 //! Subsequent PRs add the RNG, phase machine, and test harness.
 
 pub mod action;
-pub mod card_data;
 pub mod card_registry;
-pub mod dsl;
 pub mod engine;
 pub mod event;
 pub mod rng;
 pub mod state;
 
 pub mod test_support;
+
+/// Re-exports of the [`card_dsl::card_data`] module, kept under the
+/// historical `game_core::card_data` path so downstream code that
+/// imports via `game_core::card_data::*` keeps compiling. The
+/// definitions themselves live in [`card_dsl`].
+pub use card_dsl::card_data;
+/// Re-exports of the [`card_dsl::dsl`] module, kept under the
+/// historical `game_core::dsl` path so downstream code that imports
+/// via `game_core::dsl::*` keeps compiling. The definitions themselves
+/// live in [`card_dsl`].
+pub use card_dsl::dsl;
 
 pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
 pub use card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};

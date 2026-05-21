@@ -11,7 +11,7 @@
 //! exists; for now `abilities()` only describes what the `OnPlay`
 //! trigger does.
 
-use game_core::dsl::{discover_clue, on_play, Ability, LocationTarget};
+use card_dsl::dsl::{discover_clue, on_play, Ability, LocationTarget};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01037";
@@ -27,7 +27,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use game_core::dsl::{Effect, LocationTarget, Trigger};
+    use card_dsl::dsl::{Effect, LocationTarget, Trigger};
 
     #[test]
     fn abilities_are_one_on_play_discover_clue() {

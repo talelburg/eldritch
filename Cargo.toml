@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/card-dsl",
     "crates/game-core",
     "crates/cards",
     "crates/scenarios",

@@ -50,7 +50,7 @@
 //! to build effect trees readably:
 //!
 //! ```
-//! use game_core::dsl::{constant, modify, ModifierScope, Stat};
+//! use card_dsl::{constant, modify, ModifierScope, Stat};
 //!
 //! // Holy Rosary: while in play, +1 willpower.
 //! let ability = constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay));
@@ -65,7 +65,6 @@ use serde::{Deserialize, Serialize};
 /// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
 /// `OnLeavePlay`, and additional reactive patterns as cards demand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum Trigger {
     /// Always-on while the card is in play. The ability's `effect`
     /// describes a passive contribution to engine queries (most
@@ -84,7 +83,7 @@ pub enum Trigger {
     /// "if your skill test is successful while investigating, …").
     OnCommit,
     /// Fires when the controller activates the ability via
-    /// [`PlayerAction::ActivateAbility`](crate::action::PlayerAction::ActivateAbility).
+    /// `PlayerAction::ActivateAbility` (in `game_core::action`).
     ///
     /// `action_cost` mirrors the printed activation cost: `0` for the
     /// `[fast]` symbol (no action), `1` for `[action]`, `N` for multi-
@@ -103,7 +102,7 @@ pub enum Trigger {
     /// This is not a reaction window (no player decision, no "may");
     /// it's part of the test's own resolution machinery. The effect
     /// evaluates after the action-specific
-    /// [`SkillTestFollowUp`](crate::state::SkillTestFollowUp) and
+    /// `SkillTestFollowUp` (in `game_core::state`) and
     /// before the committed cards discard, so the source card is
     /// still in hand at evaluation time and
     /// [`LocationTarget::TestedLocation`] resolves against the
@@ -131,7 +130,7 @@ pub enum Trigger {
         /// resolving test.
         outcome: TestOutcome,
     },
-    /// Fires when an engine [`Event`](crate::Event) matching `pattern`
+    /// Fires when an engine `Event` (in `game_core`) matching `pattern`
     /// is emitted, in the reaction window opened by the engine for
     /// the corresponding `timing`.
     ///
@@ -163,12 +162,12 @@ pub enum Trigger {
 
 /// Which engine event(s) an [`Trigger::OnEvent`] ability listens for.
 ///
-/// Phase-3 minimal set: just the variant Roland Banks needs. The enum
-/// is `#[non_exhaustive]` and grows as later cards demand new
-/// patterns (skill-test outcomes, investigator movement, clue
-/// placement, …).
+/// Phase-3 minimal set: just the variant Roland Banks needs. Grows as
+/// later cards demand new patterns (skill-test outcomes, investigator
+/// movement, clue placement, …); the engine evaluator exhaustively
+/// matches on this enum so adding a variant is a deliberate change
+/// rather than a silent broadening.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum EventPattern {
     /// An enemy was defeated. `by_controller` narrows the match to
     /// defeats credited to the ability's controller — Roland Banks's
@@ -176,9 +175,9 @@ pub enum EventPattern {
     /// unqualified "after an enemy is defeated" would set it `false`.
     EnemyDefeated {
         /// If `true`, only fires when the controller of this ability
-        /// is credited with the defeat (the
-        /// [`by`](crate::Event::EnemyDefeated) field of the event).
-        /// If `false`, any defeat matches.
+        /// is credited with the defeat (the `by` field of
+        /// `game_core::Event::EnemyDefeated`). If `false`, any defeat
+        /// matches.
         by_controller: bool,
     },
 }
@@ -193,7 +192,6 @@ pub enum EventPattern {
 /// is included so #52's reaction-window machinery can hang both
 /// windows off the same trigger surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum EventTiming {
     /// Resolves before the triggering event finalizes.
     Before,
@@ -209,7 +207,6 @@ pub enum EventTiming {
 /// ability's effect resolves. The engine validates every cost is
 /// payable *before* mutating any state, then pays them in order.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum Cost {
     /// Spend `n` resources from the controller's wallet. Insufficient
     /// resources reject the activation.
@@ -219,11 +216,11 @@ pub enum Cost {
     /// with a `[fast] no exhaust` ability simply don't list this cost.)
     Exhaust,
     /// Discard a card from the controller's hand. Requires a target
-    /// selection via [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)
+    /// selection via `AwaitingInput` (the `game_core::EngineOutcome` variant)
     /// and a `ResolveInput` dispatch. No card uses this cost yet, so
     /// the engine consumer hasn't landed; activations with this cost
     /// reject with a TODO. Test-side seam is
-    /// [`ChoiceResolver`](crate::test_support::ChoiceResolver).
+    /// `ChoiceResolver` (in `game_core::test_support`).
     DiscardCardFromHand,
 }
 
@@ -243,8 +240,8 @@ pub enum Cost {
 /// `UsageLimit { count: 1, period: UsagePeriod::Round }`.
 ///
 /// Storage of the per-instance counter lives on
-/// [`CardInPlay`](crate::state::CardInPlay): see
-/// [`ability_usage`](crate::state::CardInPlay::ability_usage). When a
+/// `CardInPlay` (in `game_core::state`): see
+/// `ability_usage` (its per-instance counter map). When a
 /// card leaves play, its `CardInPlay` is dropped, so a re-entering
 /// instance starts fresh as the rules require.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -261,11 +258,10 @@ pub struct UsageLimit {
 /// `Phase` ("limit once per turn") and `Game` ("limit once per game"
 /// — group or player) land when the first consumer appears.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum UsagePeriod {
     /// A game round, as defined by the framework: begins at 1.1 Mythos,
     /// ends at 4.6 Upkeep (Rules Reference page 23). Counter resets
-    /// when [`GameState::round`](crate::state::GameState::round)
+    /// when `GameState::round` (in `game_core::state`)
     /// advances.
     Round,
 }
@@ -326,7 +322,6 @@ impl Ability {
 /// per resolved target, [`Effect::ChooseOne`] presents alternatives
 /// to the controller.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum Effect {
     /// Add resources to the wallet of the resolved target investigator.
     GainResources {
@@ -376,7 +371,6 @@ pub enum Effect {
 /// (needed for ally assets like Beat Cop). Action points and other
 /// "current" counters get added when cards in later cycles touch them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum Stat {
     Willpower,
     Intellect,
@@ -394,7 +388,6 @@ pub enum Stat {
 /// that gates most +stat assets in Core+Dunwich). Commit-time and
 /// turn-scoped buffs use `ThisSkillTest` / `ThisTurn`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum ModifierScope {
     /// Active for as long as the source card is in play. Used by
     /// unqualified constant abilities (Holy Rosary).
@@ -418,14 +411,13 @@ pub enum ModifierScope {
 /// investigating" applies to Investigate but **not** to a treachery
 /// that tests intellect. Engine-side, every test-initiating action
 /// (Investigate, Fight, Evade, the generic
-/// [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest))
+/// `PerformSkillTest` (in `game_core::action::PlayerAction`))
 /// passes the matching kind to skill-test resolution.
 ///
 /// Add a variant when a new test-initiating action lands (Parley /
 /// Engage will need their own; treacheries that *force* an investigate-
 /// flavored test could reuse `Investigate`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum SkillTestKind {
     /// The Investigate action's intellect test against a location's
     /// shroud.
@@ -435,7 +427,7 @@ pub enum SkillTestKind {
     /// The Evade action's agility test against an enemy.
     Evade,
     /// Any other skill test: treachery effects, agenda effects, or
-    /// [`PlayerAction::PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest)
+    /// `PlayerAction::PerformSkillTest` (in `game_core::action`)
     /// invoked directly. Cards qualifying their bonus with one of the
     /// named-action variants will NOT contribute here.
     Plain,
@@ -445,7 +437,6 @@ pub enum SkillTestKind {
 
 /// Single-investigator target spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum InvestigatorTarget {
     /// The controller of the ability — the investigator who played /
     /// activated this card.
@@ -460,7 +451,6 @@ pub enum InvestigatorTarget {
 
 /// Set-of-investigators target spec for [`Effect::ForEach`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum InvestigatorTargetSet {
     /// All investigators currently in the scenario, in turn order.
     All,
@@ -470,7 +460,6 @@ pub enum InvestigatorTargetSet {
 
 /// Single-location target spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum LocationTarget {
     /// The location the controller is currently at.
     ControllerLocation,
@@ -479,13 +468,13 @@ pub enum LocationTarget {
     /// The location associated with the in-flight skill test. For
     /// Investigate that's the location being investigated; the engine
     /// snapshots it onto
-    /// [`InFlightSkillTest`](crate::state::InFlightSkillTest) at the
+    /// `InFlightSkillTest` (in `game_core::state`) at the
     /// commit window. The
     /// [`OnSkillTestResolution`](Trigger::OnSkillTestResolution)
     /// firing path reads this snapshot. Rejects when
     /// no skill test is in flight or when the snapshotted location
     /// is absent (controller was between locations at test start —
-    /// only reachable via [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest)
+    /// only reachable via `PlayerAction::PerformSkillTest` (in `game_core::action`)
     /// from outside an Investigate path).
     TestedLocation,
 }
@@ -498,7 +487,6 @@ pub enum LocationTarget {
 /// `LocationHasClues`, `AnyEnemyEngaged`, comparisons against
 /// stat values, etc.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum Condition {
     /// Outcome of the most recent skill test in the current
     /// resolution stack. Failure-triggered cards (some Survivor
@@ -522,7 +510,6 @@ pub enum Condition {
 /// can add `SuccessBy(u8)` / `FailureBy(u8)` variants when the first
 /// margin-sensitive card lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum TestOutcome {
     Success,
     Failure,
@@ -873,8 +860,8 @@ mod tests {
     }
 
     /// A deeply-nested effect tree round-trips through `serde_json`.
-    /// Cheap insurance against `Box<Effect>` × `#[non_exhaustive]` ×
-    /// serde derive surprises.
+    /// Cheap insurance against `Box<Effect>` × nested-variant × serde
+    /// derive surprises.
     #[test]
     fn deeply_nested_effect_round_trips_through_serde_json() {
         let original = seq([
@@ -965,13 +952,12 @@ mod tests {
     }
 
     /// An `OnEvent`-triggered ability round-trips through `serde_json`
-    /// — `#[non_exhaustive]` × struct-variant × serde derive can
-    /// surprise; pin the wire shape now so #52's persistence doesn't
-    /// re-discover problems later. Both [`EventTiming`] variants
-    /// (`After` and `Before`) are exercised independently since
-    /// `#[non_exhaustive]` × unit-variant × serde can fail on either
-    /// alone (very rare, but the test rationale explicitly covers
-    /// this surface).
+    /// — struct-variant × serde derive can surprise; pin the wire
+    /// shape now so #52's persistence doesn't re-discover problems
+    /// later. Both [`EventTiming`] variants (`After` and `Before`) are
+    /// exercised independently since unit-variant × serde can fail on
+    /// either alone (very rare, but the test rationale explicitly
+    /// covers this surface).
     #[test]
     fn on_event_ability_round_trips_through_serde_json() {
         for timing in [EventTiming::After, EventTiming::Before] {

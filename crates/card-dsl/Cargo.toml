@@ -1,19 +1,17 @@
 [package]
-name = "game-core"
+name = "card-dsl"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Eldritch rules engine: game state, actions, events, effect system. No I/O, no async."
+description = "Pure data types for Eldritch card declarations: effect DSL + static card metadata."
 
 [lints]
 workspace = true
 
 [dependencies]
-card-dsl = { path = "../card-dsl" }
 serde = { version = "1", features = ["derive"] }
-rand_chacha = { version = "0.10", default-features = false }
 
 [dev-dependencies]
 serde_json = "1"

@@ -31,13 +31,15 @@ cd crates/web && trunk serve --proxy-backend=http://localhost:8000   # WASM on :
 ### Crate layering — strict kernel/content separation
 
 ```
-game-core   ←  cards          ←  scenarios
-     ↑           ↑                  ↑
-     └───  server, web (consume both)
-     └───  card-data-pipeline (consumes game-core only — emits cards/src/generated/)
+card-dsl  ←  game-core   ←  cards          ←  scenarios
+                ↑              ↑                  ↑
+                └───────  server, web (consume both)
+                └───────  card-data-pipeline (consumes card-dsl only — emits cards/src/generated/)
 ```
 
-`game-core` is the **kernel**: state, action enum, event enum, apply loop, DSL types, evaluator. No I/O, no async, compiles to `wasm32`. Never depends on `cards`, `scenarios`, or anything above it. `cards` is **content** built atop the kernel.
+- `card-dsl` — pure data types: the effect DSL (`Ability`, `Effect`, `Trigger`, builders) and static card metadata (`CardMetadata`, `CardType`, `Class`, …). No I/O, no state, no engine behavior. Both `game-core` and `cards` depend on it.
+- `game-core` is the **kernel**: state, action enum, event enum, apply loop, evaluator. No I/O, no async, compiles to `wasm32`. Never depends on `cards`, `scenarios`, or anything above it. Re-exports `card_dsl::{dsl, card_data}` under the historical `game_core::dsl` / `game_core::card_data` paths for source-stability.
+- `cards` is **content** built atop both: card-data-pipeline-generated corpus + hand-written `Ability` declarations.
 
 Why the direction matters: editing the engine must not trigger a recompile of 5600 lines of generated card data. Scenarios and tests must be able to consume the engine without the full corpus. If you find yourself wanting `game-core` to call into `cards` directly, you want the **card registry** (below).
 
@@ -51,7 +53,7 @@ let _ = game_core::card_registry::install(cards::REGISTRY);
 
 Engine handlers that need card data (`PlayCard`, future constant-modifier queries during skill tests) call `card_registry::current()` and reject cleanly on `None`. Tests that don't touch card data never install — most rejection paths short-circuit before the registry lookup.
 
-A future `card-dsl` crate split is tracked in #93; the registry survives that refactor unchanged.
+The registry survived the `card-dsl` crate split (#93) unchanged — the function pointers reference `card_dsl::{CardMetadata, Ability}` and `game_core::state::CardCode` directly.
 
 ### Event-sourced state — Action → apply → ApplyResult
 
@@ -70,7 +72,7 @@ Note this is enforced **by convention, not yet structurally** — the `apply()` 
 
 ### Hybrid card-effect DSL
 
-`crates/game-core/src/dsl.rs` defines the DSL: `Ability { trigger: Trigger, effect: Effect }`. Triggers: `Constant`, `OnPlay`, `OnCommit` (with `OnEvent` / `Activated` / reaction triggers landing in later issues). Effects: `GainResources`, `DiscoverClue`, `Modify`, `Seq`, `If`, `ForEach`, `ChooseOne`. The evaluator (`crates/game-core/src/engine/evaluator.rs`) walks effect trees and mutates state, with the same validate-first contract.
+`crates/card-dsl/src/dsl.rs` defines the DSL: `Ability { trigger: Trigger, effect: Effect }`. Triggers: `Constant`, `OnPlay`, `OnCommit` (with `OnEvent` / `Activated` / reaction triggers landing in later issues). Effects: `GainResources`, `DiscoverClue`, `Modify`, `Seq`, `If`, `ForEach`, `ChooseOne`. The evaluator (`crates/game-core/src/engine/evaluator.rs`) walks effect trees and mutates state, with the same validate-first contract.
 
 Cards are declared in **Rust source files** (typed, compiler-checked), not JSON. Each card has a module in `crates/cards/src/impls/<name>.rs` exposing a `CODE: &str` and an `abilities() -> Vec<Ability>` function. The DSL handles common patterns; cards needing primitives the DSL doesn't yet support get a Rust trait impl until the DSL grows the relevant verbs. **Do not add DSL primitives speculatively** — wait until two or more hand-written cards want the same pattern.
 

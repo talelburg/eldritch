@@ -631,8 +631,8 @@ fn stat_matches_skill(stat: Stat, skill: SkillKind) -> bool {
 mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        constant, discover_clue, gain_resources, modify, seq, Ability, Effect, InvestigatorTarget,
-        LocationTarget, ModifierScope, SkillTestKind, Stat, Trigger,
+        constant, discover_clue, gain_resources, modify, on_play, seq, Ability, Effect,
+        InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
@@ -1268,12 +1268,11 @@ mod tests {
                 -1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "non-constant-willpower" => Some(vec![Ability {
-                trigger: Trigger::OnPlay,
-                costs: Vec::new(),
-                effect: modify(Stat::Willpower, 5, ModifierScope::WhileInPlay),
-                usage_limit: None,
-            }]),
+            "non-constant-willpower" => Some(vec![on_play(modify(
+                Stat::Willpower,
+                5,
+                ModifierScope::WhileInPlay,
+            ))]),
             "max-health-plus-1" => Some(vec![constant(modify(
                 Stat::MaxHealth,
                 1,
