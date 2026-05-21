@@ -37,6 +37,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 15,
             pack_code: "core".to_owned(),
             position: 1000,
+            is_fast: false,
         },
         CardMetadata {
             code: "01001".to_owned(),
@@ -63,6 +64,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 1,
+            is_fast: false,
         },
         CardMetadata {
             code: "01002".to_owned(),
@@ -89,6 +91,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 2,
+            is_fast: false,
         },
         CardMetadata {
             code: "01003".to_owned(),
@@ -115,6 +118,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 3,
+            is_fast: false,
         },
         CardMetadata {
             code: "01004".to_owned(),
@@ -141,6 +145,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 4,
+            is_fast: false,
         },
         CardMetadata {
             code: "01005".to_owned(),
@@ -167,6 +172,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 5,
+            is_fast: false,
         },
         CardMetadata {
             code: "01006".to_owned(),
@@ -193,6 +199,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 6,
+            is_fast: false,
         },
         CardMetadata {
             code: "01007".to_owned(),
@@ -219,6 +226,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 7,
+            is_fast: false,
         },
         CardMetadata {
             code: "01008".to_owned(),
@@ -245,6 +253,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 8,
+            is_fast: false,
         },
         CardMetadata {
             code: "01009".to_owned(),
@@ -271,6 +280,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 9,
+            is_fast: false,
         },
         CardMetadata {
             code: "01010".to_owned(),
@@ -297,6 +307,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 10,
+            is_fast: false,
         },
         CardMetadata {
             code: "01011".to_owned(),
@@ -323,6 +334,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 11,
+            is_fast: false,
         },
         CardMetadata {
             code: "01012".to_owned(),
@@ -349,6 +361,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 12,
+            is_fast: false,
         },
         CardMetadata {
             code: "01013".to_owned(),
@@ -375,6 +388,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 13,
+            is_fast: false,
         },
         CardMetadata {
             code: "01014".to_owned(),
@@ -401,6 +415,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 14,
+            is_fast: false,
         },
         CardMetadata {
             code: "01015".to_owned(),
@@ -427,6 +442,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 15,
+            is_fast: false,
         },
         CardMetadata {
             code: "01016".to_owned(),
@@ -453,6 +469,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 16,
+            is_fast: false,
         },
         CardMetadata {
             code: "01017".to_owned(),
@@ -479,6 +496,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 17,
+            is_fast: false,
         },
         CardMetadata {
             code: "01018".to_owned(),
@@ -505,6 +523,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 18,
+            is_fast: false,
         },
         CardMetadata {
             code: "01019".to_owned(),
@@ -531,6 +550,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 19,
+            is_fast: false,
         },
         CardMetadata {
             code: "01020".to_owned(),
@@ -557,6 +577,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 20,
+            is_fast: false,
         },
         CardMetadata {
             code: "01021".to_owned(),
@@ -583,6 +604,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 21,
+            is_fast: false,
         },
         CardMetadata {
             code: "01022".to_owned(),
@@ -609,6 +631,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 22,
+            is_fast: true,
         },
         CardMetadata {
             code: "01023".to_owned(),
@@ -635,6 +658,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 23,
+            is_fast: true,
         },
         CardMetadata {
             code: "01024".to_owned(),
@@ -661,6 +685,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 24,
+            is_fast: false,
         },
         CardMetadata {
             code: "01025".to_owned(),
@@ -687,6 +712,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 25,
+            is_fast: false,
         },
         CardMetadata {
             code: "01026".to_owned(),
@@ -713,6 +739,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 26,
+            is_fast: false,
         },
         CardMetadata {
             code: "01027".to_owned(),
@@ -739,6 +766,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 27,
+            is_fast: false,
         },
         CardMetadata {
             code: "01028".to_owned(),
@@ -765,6 +793,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 28,
+            is_fast: false,
         },
         CardMetadata {
             code: "01029".to_owned(),
@@ -791,6 +820,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 29,
+            is_fast: false,
         },
         CardMetadata {
             code: "01030".to_owned(),
@@ -817,6 +847,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 30,
+            is_fast: true,
         },
         CardMetadata {
             code: "01031".to_owned(),
@@ -843,6 +874,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 31,
+            is_fast: false,
         },
         CardMetadata {
             code: "01032".to_owned(),
@@ -869,6 +901,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 32,
+            is_fast: false,
         },
         CardMetadata {
             code: "01033".to_owned(),
@@ -895,6 +928,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 33,
+            is_fast: false,
         },
         CardMetadata {
             code: "01034".to_owned(),
@@ -921,6 +955,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 34,
+            is_fast: false,
         },
         CardMetadata {
             code: "01035".to_owned(),
@@ -947,6 +982,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 35,
+            is_fast: false,
         },
         CardMetadata {
             code: "01036".to_owned(),
@@ -973,6 +1009,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 36,
+            is_fast: true,
         },
         CardMetadata {
             code: "01037".to_owned(),
@@ -999,6 +1036,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 37,
+            is_fast: true,
         },
         CardMetadata {
             code: "01038".to_owned(),
@@ -1025,6 +1063,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 38,
+            is_fast: false,
         },
         CardMetadata {
             code: "01039".to_owned(),
@@ -1051,6 +1090,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 39,
+            is_fast: false,
         },
         CardMetadata {
             code: "01040".to_owned(),
@@ -1077,6 +1117,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 40,
+            is_fast: true,
         },
         CardMetadata {
             code: "01041".to_owned(),
@@ -1103,6 +1144,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 41,
+            is_fast: false,
         },
         CardMetadata {
             code: "01042".to_owned(),
@@ -1129,6 +1171,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 42,
+            is_fast: false,
         },
         CardMetadata {
             code: "01043".to_owned(),
@@ -1155,6 +1198,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 43,
+            is_fast: true,
         },
         CardMetadata {
             code: "01044".to_owned(),
@@ -1181,6 +1225,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 44,
+            is_fast: true,
         },
         CardMetadata {
             code: "01045".to_owned(),
@@ -1207,6 +1252,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 45,
+            is_fast: false,
         },
         CardMetadata {
             code: "01046".to_owned(),
@@ -1233,6 +1279,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 46,
+            is_fast: false,
         },
         CardMetadata {
             code: "01047".to_owned(),
@@ -1259,6 +1306,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 47,
+            is_fast: false,
         },
         CardMetadata {
             code: "01048".to_owned(),
@@ -1285,6 +1333,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 48,
+            is_fast: false,
         },
         CardMetadata {
             code: "01049".to_owned(),
@@ -1311,6 +1360,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 49,
+            is_fast: false,
         },
         CardMetadata {
             code: "01050".to_owned(),
@@ -1337,6 +1387,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 50,
+            is_fast: true,
         },
         CardMetadata {
             code: "01051".to_owned(),
@@ -1363,6 +1414,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 51,
+            is_fast: false,
         },
         CardMetadata {
             code: "01052".to_owned(),
@@ -1389,6 +1441,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 52,
+            is_fast: false,
         },
         CardMetadata {
             code: "01053".to_owned(),
@@ -1415,6 +1468,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 53,
+            is_fast: false,
         },
         CardMetadata {
             code: "01054".to_owned(),
@@ -1441,6 +1495,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 54,
+            is_fast: false,
         },
         CardMetadata {
             code: "01055".to_owned(),
@@ -1467,6 +1522,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 55,
+            is_fast: false,
         },
         CardMetadata {
             code: "01056".to_owned(),
@@ -1493,6 +1549,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 56,
+            is_fast: true,
         },
         CardMetadata {
             code: "01057".to_owned(),
@@ -1519,6 +1576,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 57,
+            is_fast: false,
         },
         CardMetadata {
             code: "01058".to_owned(),
@@ -1545,6 +1603,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 58,
+            is_fast: false,
         },
         CardMetadata {
             code: "01059".to_owned(),
@@ -1571,6 +1630,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 59,
+            is_fast: false,
         },
         CardMetadata {
             code: "01060".to_owned(),
@@ -1597,6 +1657,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 60,
+            is_fast: false,
         },
         CardMetadata {
             code: "01061".to_owned(),
@@ -1623,6 +1684,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 61,
+            is_fast: false,
         },
         CardMetadata {
             code: "01062".to_owned(),
@@ -1649,6 +1711,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 62,
+            is_fast: false,
         },
         CardMetadata {
             code: "01063".to_owned(),
@@ -1675,6 +1738,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 63,
+            is_fast: false,
         },
         CardMetadata {
             code: "01064".to_owned(),
@@ -1701,6 +1765,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 64,
+            is_fast: false,
         },
         CardMetadata {
             code: "01065".to_owned(),
@@ -1727,6 +1792,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 65,
+            is_fast: true,
         },
         CardMetadata {
             code: "01066".to_owned(),
@@ -1753,6 +1819,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 66,
+            is_fast: false,
         },
         CardMetadata {
             code: "01067".to_owned(),
@@ -1779,6 +1846,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 67,
+            is_fast: false,
         },
         CardMetadata {
             code: "01068".to_owned(),
@@ -1805,6 +1873,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 68,
+            is_fast: true,
         },
         CardMetadata {
             code: "01069".to_owned(),
@@ -1831,6 +1900,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 69,
+            is_fast: false,
         },
         CardMetadata {
             code: "01070".to_owned(),
@@ -1857,6 +1927,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 70,
+            is_fast: false,
         },
         CardMetadata {
             code: "01071".to_owned(),
@@ -1883,6 +1954,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 71,
+            is_fast: false,
         },
         CardMetadata {
             code: "01072".to_owned(),
@@ -1909,6 +1981,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 72,
+            is_fast: false,
         },
         CardMetadata {
             code: "01073".to_owned(),
@@ -1935,6 +2008,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 73,
+            is_fast: false,
         },
         CardMetadata {
             code: "01074".to_owned(),
@@ -1961,6 +2035,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 74,
+            is_fast: false,
         },
         CardMetadata {
             code: "01075".to_owned(),
@@ -1987,6 +2062,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 75,
+            is_fast: false,
         },
         CardMetadata {
             code: "01076".to_owned(),
@@ -2013,6 +2089,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 76,
+            is_fast: false,
         },
         CardMetadata {
             code: "01077".to_owned(),
@@ -2039,6 +2116,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 77,
+            is_fast: false,
         },
         CardMetadata {
             code: "01078".to_owned(),
@@ -2065,6 +2143,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 78,
+            is_fast: false,
         },
         CardMetadata {
             code: "01079".to_owned(),
@@ -2091,6 +2170,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 79,
+            is_fast: true,
         },
         CardMetadata {
             code: "01080".to_owned(),
@@ -2117,6 +2197,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 80,
+            is_fast: true,
         },
         CardMetadata {
             code: "01081".to_owned(),
@@ -2143,6 +2224,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 81,
+            is_fast: false,
         },
         CardMetadata {
             code: "01082".to_owned(),
@@ -2169,6 +2251,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 82,
+            is_fast: false,
         },
         CardMetadata {
             code: "01083".to_owned(),
@@ -2195,6 +2278,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 83,
+            is_fast: true,
         },
         CardMetadata {
             code: "01084".to_owned(),
@@ -2221,6 +2305,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 84,
+            is_fast: true,
         },
         CardMetadata {
             code: "01085".to_owned(),
@@ -2247,6 +2332,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 85,
+            is_fast: true,
         },
         CardMetadata {
             code: "01086".to_owned(),
@@ -2273,6 +2359,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 4,
             pack_code: "core".to_owned(),
             position: 86,
+            is_fast: false,
         },
         CardMetadata {
             code: "01087".to_owned(),
@@ -2299,6 +2386,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 4,
             pack_code: "core".to_owned(),
             position: 87,
+            is_fast: false,
         },
         CardMetadata {
             code: "01088".to_owned(),
@@ -2325,6 +2413,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 4,
             pack_code: "core".to_owned(),
             position: 88,
+            is_fast: false,
         },
         CardMetadata {
             code: "01089".to_owned(),
@@ -2351,6 +2440,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 89,
+            is_fast: false,
         },
         CardMetadata {
             code: "01090".to_owned(),
@@ -2377,6 +2467,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 90,
+            is_fast: false,
         },
         CardMetadata {
             code: "01091".to_owned(),
@@ -2403,6 +2494,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 91,
+            is_fast: false,
         },
         CardMetadata {
             code: "01092".to_owned(),
@@ -2429,6 +2521,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 92,
+            is_fast: false,
         },
         CardMetadata {
             code: "01093".to_owned(),
@@ -2455,6 +2548,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 93,
+            is_fast: false,
         },
         CardMetadata {
             code: "01094".to_owned(),
@@ -2481,6 +2575,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 94,
+            is_fast: false,
         },
         CardMetadata {
             code: "01095".to_owned(),
@@ -2507,6 +2602,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 95,
+            is_fast: false,
         },
         CardMetadata {
             code: "01096".to_owned(),
@@ -2533,6 +2629,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 96,
+            is_fast: false,
         },
         CardMetadata {
             code: "01097".to_owned(),
@@ -2559,6 +2656,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "core".to_owned(),
             position: 97,
+            is_fast: false,
         },
         CardMetadata {
             code: "01098".to_owned(),
@@ -2585,6 +2683,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 98,
+            is_fast: false,
         },
         CardMetadata {
             code: "01099".to_owned(),
@@ -2611,6 +2710,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 99,
+            is_fast: false,
         },
         CardMetadata {
             code: "01100".to_owned(),
@@ -2637,6 +2737,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 100,
+            is_fast: false,
         },
         CardMetadata {
             code: "01101".to_owned(),
@@ -2663,6 +2764,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 101,
+            is_fast: false,
         },
         CardMetadata {
             code: "01102".to_owned(),
@@ -2689,6 +2791,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 102,
+            is_fast: false,
         },
         CardMetadata {
             code: "01103".to_owned(),
@@ -2715,6 +2818,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "core".to_owned(),
             position: 103,
+            is_fast: false,
         },
         CardMetadata {
             code: "02001".to_owned(),
@@ -2741,6 +2845,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 1,
+            is_fast: false,
         },
         CardMetadata {
             code: "02002".to_owned(),
@@ -2767,6 +2872,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 2,
+            is_fast: false,
         },
         CardMetadata {
             code: "02003".to_owned(),
@@ -2793,6 +2899,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 3,
+            is_fast: false,
         },
         CardMetadata {
             code: "02004".to_owned(),
@@ -2819,6 +2926,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 4,
+            is_fast: false,
         },
         CardMetadata {
             code: "02005".to_owned(),
@@ -2845,6 +2953,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 5,
+            is_fast: false,
         },
         CardMetadata {
             code: "02006".to_owned(),
@@ -2871,6 +2980,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 6,
+            is_fast: false,
         },
         CardMetadata {
             code: "02007".to_owned(),
@@ -2897,6 +3007,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 7,
+            is_fast: false,
         },
         CardMetadata {
             code: "02008".to_owned(),
@@ -2923,6 +3034,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 8,
+            is_fast: false,
         },
         CardMetadata {
             code: "02009".to_owned(),
@@ -2949,6 +3061,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 9,
+            is_fast: false,
         },
         CardMetadata {
             code: "02010".to_owned(),
@@ -2975,6 +3088,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 10,
+            is_fast: false,
         },
         CardMetadata {
             code: "02011".to_owned(),
@@ -3001,6 +3115,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 11,
+            is_fast: false,
         },
         CardMetadata {
             code: "02012".to_owned(),
@@ -3027,6 +3142,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 12,
+            is_fast: false,
         },
         CardMetadata {
             code: "02013".to_owned(),
@@ -3053,6 +3169,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 13,
+            is_fast: false,
         },
         CardMetadata {
             code: "02014".to_owned(),
@@ -3079,6 +3196,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 14,
+            is_fast: false,
         },
         CardMetadata {
             code: "02015".to_owned(),
@@ -3105,6 +3223,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 1,
             pack_code: "dwl".to_owned(),
             position: 15,
+            is_fast: false,
         },
         CardMetadata {
             code: "02016".to_owned(),
@@ -3131,6 +3250,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 16,
+            is_fast: false,
         },
         CardMetadata {
             code: "02017".to_owned(),
@@ -3157,6 +3277,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 17,
+            is_fast: true,
         },
         CardMetadata {
             code: "02018".to_owned(),
@@ -3183,6 +3304,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 18,
+            is_fast: false,
         },
         CardMetadata {
             code: "02019".to_owned(),
@@ -3209,6 +3331,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 19,
+            is_fast: true,
         },
         CardMetadata {
             code: "02020".to_owned(),
@@ -3235,6 +3358,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 20,
+            is_fast: false,
         },
         CardMetadata {
             code: "02021".to_owned(),
@@ -3261,6 +3385,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 21,
+            is_fast: false,
         },
         CardMetadata {
             code: "02022".to_owned(),
@@ -3287,6 +3412,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 22,
+            is_fast: true,
         },
         CardMetadata {
             code: "02023".to_owned(),
@@ -3313,6 +3439,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 23,
+            is_fast: false,
         },
         CardMetadata {
             code: "02024".to_owned(),
@@ -3339,6 +3466,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 24,
+            is_fast: false,
         },
         CardMetadata {
             code: "02025".to_owned(),
@@ -3365,6 +3493,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 25,
+            is_fast: true,
         },
         CardMetadata {
             code: "02026".to_owned(),
@@ -3391,6 +3520,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 26,
+            is_fast: false,
         },
         CardMetadata {
             code: "02027".to_owned(),
@@ -3417,6 +3547,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 27,
+            is_fast: false,
         },
         CardMetadata {
             code: "02028".to_owned(),
@@ -3443,6 +3574,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 28,
+            is_fast: false,
         },
         CardMetadata {
             code: "02029".to_owned(),
@@ -3469,6 +3601,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 29,
+            is_fast: false,
         },
         CardMetadata {
             code: "02030".to_owned(),
@@ -3495,6 +3628,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 30,
+            is_fast: false,
         },
         CardMetadata {
             code: "02031".to_owned(),
@@ -3521,6 +3655,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 31,
+            is_fast: false,
         },
         CardMetadata {
             code: "02032".to_owned(),
@@ -3547,6 +3682,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 32,
+            is_fast: false,
         },
         CardMetadata {
             code: "02033".to_owned(),
@@ -3573,6 +3709,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 33,
+            is_fast: false,
         },
         CardMetadata {
             code: "02034".to_owned(),
@@ -3599,6 +3736,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 34,
+            is_fast: false,
         },
         CardMetadata {
             code: "02035".to_owned(),
@@ -3625,6 +3763,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 35,
+            is_fast: false,
         },
         CardMetadata {
             code: "02036".to_owned(),
@@ -3651,6 +3790,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 36,
+            is_fast: false,
         },
         CardMetadata {
             code: "02037".to_owned(),
@@ -3677,6 +3817,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 37,
+            is_fast: false,
         },
         CardMetadata {
             code: "02038".to_owned(),
@@ -3703,6 +3844,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 38,
+            is_fast: false,
         },
         CardMetadata {
             code: "02039".to_owned(),
@@ -3729,6 +3871,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "dwl".to_owned(),
             position: 39,
+            is_fast: false,
         },
         CardMetadata {
             code: "02105".to_owned(),
@@ -3755,6 +3898,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 105,
+            is_fast: false,
         },
         CardMetadata {
             code: "02106".to_owned(),
@@ -3781,6 +3925,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 106,
+            is_fast: false,
         },
         CardMetadata {
             code: "02107".to_owned(),
@@ -3807,6 +3952,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 107,
+            is_fast: false,
         },
         CardMetadata {
             code: "02108".to_owned(),
@@ -3833,6 +3979,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 108,
+            is_fast: false,
         },
         CardMetadata {
             code: "02109".to_owned(),
@@ -3859,6 +4006,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 109,
+            is_fast: false,
         },
         CardMetadata {
             code: "02110".to_owned(),
@@ -3885,6 +4033,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 110,
+            is_fast: false,
         },
         CardMetadata {
             code: "02111".to_owned(),
@@ -3911,6 +4060,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 111,
+            is_fast: false,
         },
         CardMetadata {
             code: "02112".to_owned(),
@@ -3937,6 +4087,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 112,
+            is_fast: false,
         },
         CardMetadata {
             code: "02113".to_owned(),
@@ -3963,6 +4114,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 113,
+            is_fast: true,
         },
         CardMetadata {
             code: "02114".to_owned(),
@@ -3989,6 +4141,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 114,
+            is_fast: false,
         },
         CardMetadata {
             code: "02115".to_owned(),
@@ -4015,6 +4168,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 115,
+            is_fast: false,
         },
         CardMetadata {
             code: "02116".to_owned(),
@@ -4041,6 +4195,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 116,
+            is_fast: false,
         },
         CardMetadata {
             code: "02117".to_owned(),
@@ -4067,6 +4222,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tmm".to_owned(),
             position: 117,
+            is_fast: false,
         },
         CardMetadata {
             code: "02147".to_owned(),
@@ -4093,6 +4249,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 147,
+            is_fast: false,
         },
         CardMetadata {
             code: "02148".to_owned(),
@@ -4119,6 +4276,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 148,
+            is_fast: false,
         },
         CardMetadata {
             code: "02149".to_owned(),
@@ -4145,6 +4303,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 149,
+            is_fast: false,
         },
         CardMetadata {
             code: "02150".to_owned(),
@@ -4171,6 +4330,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 150,
+            is_fast: false,
         },
         CardMetadata {
             code: "02151".to_owned(),
@@ -4197,6 +4357,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 151,
+            is_fast: false,
         },
         CardMetadata {
             code: "02152".to_owned(),
@@ -4223,6 +4384,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 152,
+            is_fast: true,
         },
         CardMetadata {
             code: "02153".to_owned(),
@@ -4249,6 +4411,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 153,
+            is_fast: true,
         },
         CardMetadata {
             code: "02154".to_owned(),
@@ -4275,6 +4438,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 154,
+            is_fast: false,
         },
         CardMetadata {
             code: "02155".to_owned(),
@@ -4301,6 +4465,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 155,
+            is_fast: false,
         },
         CardMetadata {
             code: "02156".to_owned(),
@@ -4327,6 +4492,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 156,
+            is_fast: false,
         },
         CardMetadata {
             code: "02157".to_owned(),
@@ -4353,6 +4519,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 157,
+            is_fast: false,
         },
         CardMetadata {
             code: "02158".to_owned(),
@@ -4379,6 +4546,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "tece".to_owned(),
             position: 158,
+            is_fast: false,
         },
         CardMetadata {
             code: "02184".to_owned(),
@@ -4405,6 +4573,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 184,
+            is_fast: false,
         },
         CardMetadata {
             code: "02185".to_owned(),
@@ -4431,6 +4600,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 185,
+            is_fast: false,
         },
         CardMetadata {
             code: "02186".to_owned(),
@@ -4457,6 +4627,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 186,
+            is_fast: false,
         },
         CardMetadata {
             code: "02187".to_owned(),
@@ -4483,6 +4654,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 187,
+            is_fast: false,
         },
         CardMetadata {
             code: "02188".to_owned(),
@@ -4509,6 +4681,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 188,
+            is_fast: false,
         },
         CardMetadata {
             code: "02189".to_owned(),
@@ -4535,6 +4708,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 189,
+            is_fast: false,
         },
         CardMetadata {
             code: "02190".to_owned(),
@@ -4561,6 +4735,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 190,
+            is_fast: false,
         },
         CardMetadata {
             code: "02191".to_owned(),
@@ -4587,6 +4762,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 191,
+            is_fast: false,
         },
         CardMetadata {
             code: "02192".to_owned(),
@@ -4613,6 +4789,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 192,
+            is_fast: false,
         },
         CardMetadata {
             code: "02193".to_owned(),
@@ -4639,6 +4816,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 193,
+            is_fast: false,
         },
         CardMetadata {
             code: "02194".to_owned(),
@@ -4665,6 +4843,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "bota".to_owned(),
             position: 194,
+            is_fast: false,
         },
         CardMetadata {
             code: "02225".to_owned(),
@@ -4691,6 +4870,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 225,
+            is_fast: true,
         },
         CardMetadata {
             code: "02226".to_owned(),
@@ -4717,6 +4897,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 226,
+            is_fast: false,
         },
         CardMetadata {
             code: "02227".to_owned(),
@@ -4743,6 +4924,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 227,
+            is_fast: false,
         },
         CardMetadata {
             code: "02228".to_owned(),
@@ -4769,6 +4951,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 228,
+            is_fast: true,
         },
         CardMetadata {
             code: "02229".to_owned(),
@@ -4795,6 +4978,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 229,
+            is_fast: false,
         },
         CardMetadata {
             code: "02230".to_owned(),
@@ -4821,6 +5005,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 230,
+            is_fast: false,
         },
         CardMetadata {
             code: "02231".to_owned(),
@@ -4847,6 +5032,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 231,
+            is_fast: false,
         },
         CardMetadata {
             code: "02232".to_owned(),
@@ -4873,6 +5059,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 232,
+            is_fast: false,
         },
         CardMetadata {
             code: "02233".to_owned(),
@@ -4899,6 +5086,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 233,
+            is_fast: false,
         },
         CardMetadata {
             code: "02234".to_owned(),
@@ -4925,6 +5113,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 234,
+            is_fast: false,
         },
         CardMetadata {
             code: "02235".to_owned(),
@@ -4951,6 +5140,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "uau".to_owned(),
             position: 235,
+            is_fast: false,
         },
         CardMetadata {
             code: "02260".to_owned(),
@@ -4977,6 +5167,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 260,
+            is_fast: false,
         },
         CardMetadata {
             code: "02261".to_owned(),
@@ -5003,6 +5194,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 261,
+            is_fast: true,
         },
         CardMetadata {
             code: "02262".to_owned(),
@@ -5029,6 +5221,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 262,
+            is_fast: false,
         },
         CardMetadata {
             code: "02263".to_owned(),
@@ -5055,6 +5248,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 263,
+            is_fast: false,
         },
         CardMetadata {
             code: "02264".to_owned(),
@@ -5081,6 +5275,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 264,
+            is_fast: false,
         },
         CardMetadata {
             code: "02265".to_owned(),
@@ -5107,6 +5302,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 265,
+            is_fast: false,
         },
         CardMetadata {
             code: "02266".to_owned(),
@@ -5133,6 +5329,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 266,
+            is_fast: false,
         },
         CardMetadata {
             code: "02267".to_owned(),
@@ -5159,6 +5356,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 267,
+            is_fast: false,
         },
         CardMetadata {
             code: "02268".to_owned(),
@@ -5185,6 +5383,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 268,
+            is_fast: false,
         },
         CardMetadata {
             code: "02269".to_owned(),
@@ -5211,6 +5410,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 269,
+            is_fast: false,
         },
         CardMetadata {
             code: "02270".to_owned(),
@@ -5237,6 +5437,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 270,
+            is_fast: false,
         },
         CardMetadata {
             code: "02271".to_owned(),
@@ -5263,6 +5464,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 271,
+            is_fast: false,
         },
         CardMetadata {
             code: "02272".to_owned(),
@@ -5289,6 +5491,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 272,
+            is_fast: false,
         },
         CardMetadata {
             code: "02273".to_owned(),
@@ -5315,6 +5518,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "wda".to_owned(),
             position: 273,
+            is_fast: false,
         },
         CardMetadata {
             code: "02299".to_owned(),
@@ -5341,6 +5545,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 299,
+            is_fast: false,
         },
         CardMetadata {
             code: "02300".to_owned(),
@@ -5367,6 +5572,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 300,
+            is_fast: false,
         },
         CardMetadata {
             code: "02301".to_owned(),
@@ -5393,6 +5599,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 301,
+            is_fast: false,
         },
         CardMetadata {
             code: "02302".to_owned(),
@@ -5419,6 +5626,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 302,
+            is_fast: false,
         },
         CardMetadata {
             code: "02303".to_owned(),
@@ -5445,6 +5653,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 303,
+            is_fast: false,
         },
         CardMetadata {
             code: "02304".to_owned(),
@@ -5471,6 +5680,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 304,
+            is_fast: false,
         },
         CardMetadata {
             code: "02305".to_owned(),
@@ -5497,6 +5707,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 305,
+            is_fast: false,
         },
         CardMetadata {
             code: "02306".to_owned(),
@@ -5523,6 +5734,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 306,
+            is_fast: false,
         },
         CardMetadata {
             code: "02307".to_owned(),
@@ -5549,6 +5761,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 307,
+            is_fast: true,
         },
         CardMetadata {
             code: "02308".to_owned(),
@@ -5575,6 +5788,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 308,
+            is_fast: false,
         },
         CardMetadata {
             code: "02309".to_owned(),
@@ -5601,6 +5815,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 309,
+            is_fast: false,
         },
         CardMetadata {
             code: "02310".to_owned(),
@@ -5627,6 +5842,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             quantity: 2,
             pack_code: "litas".to_owned(),
             position: 310,
+            is_fast: true,
         },
     ]
 }

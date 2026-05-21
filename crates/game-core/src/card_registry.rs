@@ -109,6 +109,7 @@ mod tests {
             quantity: 1,
             pack_code: "test".to_string(),
             position: 1,
+            is_fast: false,
         }
     }
 

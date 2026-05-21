@@ -27,8 +27,8 @@ use std::collections::BTreeMap;
 
 use crate::rng::RngState;
 use crate::state::{
-    ChaosBag, Enemy, EnemyId, GameState, Investigator, InvestigatorId, Location, LocationId, Phase,
-    TokenModifiers,
+    ChaosBag, Enemy, EnemyId, FastActorScope, GameState, Investigator, InvestigatorId, Location,
+    LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -50,6 +50,7 @@ pub struct TestGame {
     turn_order: Vec<InvestigatorId>,
     rng: RngState,
     mulligan_window: bool,
+    open_windows: Vec<OpenWindow>,
 }
 
 impl TestGame {
@@ -70,6 +71,7 @@ impl TestGame {
             turn_order: Vec::new(),
             rng: RngState::new(0),
             mulligan_window: false,
+            open_windows: Vec::new(),
         }
     }
 
@@ -201,6 +203,21 @@ impl TestGame {
         self
     }
 
+    /// Push an [`OpenWindow`] onto the build's `open_windows` stack
+    /// for tests that need a specific window-state shape.
+    ///
+    /// The pushed window has no pending triggers (test paths that
+    /// also need a reaction queue should manipulate `state` after
+    /// `build()` rather than complicate this builder).
+    pub fn with_open_window(mut self, kind: WindowKind, fast_actors: FastActorScope) -> Self {
+        self.open_windows.push(OpenWindow {
+            kind,
+            pending_triggers: Vec::new(),
+            fast_actors,
+        });
+        self
+    }
+
     /// Build into a [`TestSession`] for driving the engine with a
     /// scripted [`ChoiceResolver`].
     ///
@@ -231,7 +248,7 @@ impl TestGame {
             next_card_instance_id: 0,
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
-            in_flight_reaction_window: None,
+            open_windows: self.open_windows,
         }
     }
 }
@@ -239,5 +256,57 @@ impl TestGame {
 impl Default for TestGame {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod with_open_window_tests {
+    use super::*;
+    use crate::test_support::test_investigator;
+
+    #[test]
+    fn with_open_window_pushes_onto_the_stack() {
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_open_window(
+                WindowKind::BetweenPhases {
+                    from: Phase::Mythos,
+                    to: Phase::Investigation,
+                },
+                FastActorScope::Any,
+            )
+            .build();
+        assert_eq!(state.open_windows.len(), 1);
+        assert_eq!(state.open_windows[0].fast_actors, FastActorScope::Any);
+        assert!(state.open_windows[0].pending_triggers.is_empty());
+    }
+
+    #[test]
+    fn with_open_window_stacks_in_order() {
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_open_window(
+                WindowKind::BetweenPhases {
+                    from: Phase::Mythos,
+                    to: Phase::Investigation,
+                },
+                FastActorScope::Any,
+            )
+            .with_open_window(
+                WindowKind::BetweenPhases {
+                    from: Phase::Investigation,
+                    to: Phase::Enemy,
+                },
+                FastActorScope::ActiveInvestigator(InvestigatorId(1)),
+            )
+            .build();
+        assert_eq!(state.open_windows.len(), 2);
+        assert!(matches!(
+            state.open_windows[1].kind,
+            WindowKind::BetweenPhases {
+                to: Phase::Enemy,
+                ..
+            }
+        ));
     }
 }

@@ -23,8 +23,8 @@ use game_core::dsl::{
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, InvestigatorId,
-    LocationId, Phase, TokenModifiers, WindowKind,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
+    InvestigatorId, LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, TestGame,
@@ -195,7 +195,7 @@ fn no_in_play_reaction_means_no_window_opens() {
     );
     assert_no_event!(result.events, Event::WindowOpened { .. });
     assert_no_event!(result.events, Event::WindowClosed { .. });
-    assert!(result.state.in_flight_reaction_window.is_none());
+    assert!(result.state.top_reaction_window().is_none());
 }
 
 #[test]
@@ -230,8 +230,7 @@ fn matching_reaction_opens_window_and_suspends() {
 
     let window = result
         .state
-        .in_flight_reaction_window
-        .as_ref()
+        .top_reaction_window()
         .expect("reaction window must be populated while suspended");
     assert_eq!(
         window.kind,
@@ -240,11 +239,11 @@ fn matching_reaction_opens_window_and_suspends() {
             by: Some(inv_id),
         },
     );
-    assert_eq!(window.pending.len(), 1);
-    assert_eq!(window.pending[0].controller, inv_id);
-    assert_eq!(window.pending[0].instance_id, CardInstanceId(1));
-    assert_eq!(window.pending[0].ability_index, 0);
-    assert!(!window.pending[0].forced);
+    assert_eq!(window.pending_triggers.len(), 1);
+    assert_eq!(window.pending_triggers[0].controller, inv_id);
+    assert_eq!(window.pending_triggers[0].instance_id, CardInstanceId(1));
+    assert_eq!(window.pending_triggers[0].ability_index, 0);
+    assert!(!window.pending_triggers[0].forced);
 }
 
 #[test]
@@ -279,7 +278,7 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
     );
     assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
     assert_eq!(resumed.state.locations[&loc_id].clues, 2);
-    assert!(resumed.state.in_flight_reaction_window.is_none());
+    assert!(resumed.state.top_reaction_window().is_none());
 }
 
 #[test]
@@ -310,7 +309,7 @@ fn skip_closes_an_optional_only_window_without_firing() {
     );
     assert_eq!(resumed.state.investigators[&inv_id].clues, 0);
     assert_eq!(resumed.state.locations[&loc_id].clues, 3);
-    assert!(resumed.state.in_flight_reaction_window.is_none());
+    assert!(resumed.state.top_reaction_window().is_none());
 }
 
 #[test]
@@ -357,7 +356,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_no_event!(result.events, Event::WindowOpened { .. });
-    assert!(result.state.in_flight_reaction_window.is_none());
+    assert!(result.state.top_reaction_window().is_none());
 }
 
 #[test]
@@ -406,11 +405,10 @@ fn unqualified_pattern_matches_any_defeat() {
     ));
     let window = paused
         .state
-        .in_flight_reaction_window
-        .as_ref()
+        .top_reaction_window()
         .expect("window must open for an unqualified pattern");
-    assert_eq!(window.pending.len(), 1);
-    assert_eq!(window.pending[0].controller, bystander);
+    assert_eq!(window.pending_triggers.len(), 1);
+    assert_eq!(window.pending_triggers[0].controller, bystander);
 
     let resumed = game_core::engine::apply(
         paused.state,
@@ -452,7 +450,7 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
         other => panic!("expected Rejected, got {other:?}"),
     }
     assert!(
-        bad.state.in_flight_reaction_window.is_some(),
+        bad.state.top_reaction_window().is_some(),
         "window must survive a rejected pick so the client can retry"
     );
 }
@@ -479,7 +477,7 @@ fn non_resolve_input_action_rejects_while_window_open() {
         }
         other => panic!("expected Rejected, got {other:?}"),
     }
-    assert!(rejected.state.in_flight_reaction_window.is_some());
+    assert!(rejected.state.top_reaction_window().is_some());
 }
 
 #[test]
@@ -497,10 +495,9 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     assert_eq!(
         paused
             .state
-            .in_flight_reaction_window
-            .as_ref()
+            .top_reaction_window()
             .expect("window populated")
-            .pending
+            .pending_triggers
             .len(),
         2,
     );
@@ -523,10 +520,9 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     assert_eq!(
         after_first
             .state
-            .in_flight_reaction_window
-            .as_ref()
+            .top_reaction_window()
             .expect("window still populated")
-            .pending
+            .pending_triggers
             .len(),
         1,
     );
@@ -554,7 +550,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
         after_second.state.investigators[&inv_id].resources,
         resources_before + 1,
     );
-    assert!(after_second.state.in_flight_reaction_window.is_none());
+    assert!(after_second.state.top_reaction_window().is_none());
 }
 
 #[test]
@@ -807,21 +803,20 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     ));
     let window = paused
         .state
-        .in_flight_reaction_window
-        .as_ref()
+        .top_reaction_window()
         .expect("window must populate when both investigators carry triggers");
 
-    assert_eq!(window.pending.len(), 2);
+    assert_eq!(window.pending_triggers.len(), 2);
     assert_eq!(
-        window.pending[0].controller, active,
+        window.pending_triggers[0].controller, active,
         "active investigator's trigger must come first",
     );
-    assert_eq!(window.pending[0].instance_id, CardInstanceId(1));
+    assert_eq!(window.pending_triggers[0].instance_id, CardInstanceId(1));
     assert_eq!(
-        window.pending[1].controller, other,
+        window.pending_triggers[1].controller, other,
         "non-active investigator's trigger comes after, in turn order",
     );
-    assert_eq!(window.pending[1].instance_id, CardInstanceId(2));
+    assert_eq!(window.pending_triggers[1].instance_id, CardInstanceId(2));
 }
 
 #[test]
@@ -839,10 +834,9 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     assert_eq!(
         paused
             .state
-            .in_flight_reaction_window
-            .as_ref()
+            .top_reaction_window()
             .expect("window populated")
-            .pending
+            .pending_triggers
             .len(),
         2,
     );
@@ -882,5 +876,80 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     // controller's location).
     assert_eq!(skipped.state.locations[&loc_id].clues, 2);
     assert_eq!(skipped.state.investigators[&inv_id].clues, 1);
-    assert!(skipped.state.in_flight_reaction_window.is_none());
+    assert!(skipped.state.top_reaction_window().is_none());
+}
+
+#[test]
+fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top() {
+    // Regression for the structural fix in a3958c6: when the stack is
+    //   [AfterEnemyDefeated R (with pending triggers), BetweenPhases B (empty)]
+    // a naive open_windows.pop() would remove B (the top), leaving R
+    // unresolved and leaking. close_reaction_window_at takes an explicit
+    // index so it removes R and leaves B intact.
+    //
+    // Setup: drive a Fight to the reaction-window AwaitingInput, then
+    // manually push an empty BetweenPhases window on top of the stack
+    // to replicate the stack shape Phase-4 phase-content PRs (#69/#70/#71)
+    // will produce in production paths.
+    let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
+    let mut paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "Fight must suspend at the reaction window, got {:?}",
+        paused.outcome,
+    );
+    // Confirm the stack before the injection: one reaction window with
+    // one pending trigger.
+    assert_eq!(paused.state.open_windows.len(), 1);
+    assert!(!paused.state.open_windows[0].pending_triggers.is_empty());
+
+    // Inject an empty BetweenPhases window on top to create the
+    // [R (pending), B (empty)] shape.
+    paused.state.open_windows.push(OpenWindow::new_empty(
+        WindowKind::BetweenPhases {
+            from: Phase::Investigation,
+            to: Phase::Mythos,
+        },
+        FastActorScope::Any,
+    ));
+    assert_eq!(
+        paused.state.open_windows.len(),
+        2,
+        "stack is [R, B] after injection"
+    );
+
+    // Skip the reaction window. close_reaction_window_at must remove R
+    // (the reaction window that has pending triggers) and leave B intact.
+    let resumed = game_core::engine::apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Skip,
+        }),
+    );
+
+    // The BetweenPhases window (B) must still be on the stack.
+    assert_eq!(
+        resumed.state.open_windows.len(),
+        1,
+        "after closing R the stack must contain exactly one window (B), \
+         got {:?}",
+        resumed.state.open_windows,
+    );
+    assert_eq!(
+        resumed.state.open_windows[0].kind,
+        WindowKind::BetweenPhases {
+            from: Phase::Investigation,
+            to: Phase::Mythos,
+        },
+        "the surviving window must be the BetweenPhases gate, not the reaction window",
+    );
+    // R must have emitted WindowClosed.
+    assert_event!(
+        resumed.events,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
+        } if *e == enemy_id
+    );
+    // B must still be open — no second WindowClosed.
+    assert_event_count!(resumed.events, 1, Event::WindowClosed { .. });
 }

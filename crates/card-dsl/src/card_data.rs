@@ -129,4 +129,48 @@ pub struct CardMetadata {
     pub pack_code: String,
     /// 1-based card position within the pack.
     pub position: u32,
+    /// True if the card text begins with a "Fast." paragraph — i.e.
+    /// the card may be played as a Fast action, outside the normal
+    /// Investigation-phase + active-investigator timing. Detected by
+    /// the card-data-pipeline from raw `text` ("Fast." paragraph
+    /// prefix). Phase-3 / Phase-4 scope: only asset and event cards
+    /// can carry Fast (skill and treachery use is irrelevant to
+    /// `PlayCard`); the field is populated on every card for
+    /// uniformity. See `engine::dispatch::play_card` for the gate it
+    /// drives.
+    pub is_fast: bool,
+}
+
+#[cfg(test)]
+mod is_fast_tests {
+    use super::*;
+
+    #[test]
+    fn metadata_serde_roundtrip_preserves_is_fast() {
+        let original = CardMetadata {
+            code: "01030".into(),
+            name: "Magnifying Glass".into(),
+            class: Class::Seeker,
+            card_type: CardType::Asset,
+            cost: Some(1),
+            xp: Some(0),
+            text: Some("Fast.\nYou get +1 [intellect] while investigating.".into()),
+            flavor: None,
+            illustrator: None,
+            traits: vec!["Item".into(), "Tool".into()],
+            slots: vec![Slot::Hand],
+            skill_icons: SkillIcons::default(),
+            health: None,
+            sanity: None,
+            deck_limit: 2,
+            quantity: 1,
+            pack_code: "core".into(),
+            position: 30,
+            is_fast: true,
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+        assert!(back.is_fast);
+    }
 }

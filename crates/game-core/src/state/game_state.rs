@@ -101,39 +101,23 @@ pub struct GameState {
     /// [`ChaosTokenRevealed`]: crate::Event::ChaosTokenRevealed
     /// [`EngineOutcome::AwaitingInput`]: crate::EngineOutcome::AwaitingInput
     pub in_flight_skill_test: Option<InFlightSkillTest>,
-    /// An open reaction window the engine is waiting on input for.
-    /// `Some` between the moment the engine emits
-    /// [`Event::WindowOpened`](crate::Event::WindowOpened) for a
-    /// reaction window with at least one matching trigger and the
-    /// moment the player has resolved every forced trigger and either
-    /// fired or skipped each optional one (closing the window).
+    /// Stack of currently-open windows. The top (`last()`) is the
+    /// most recently-opened; closing pops the top. Carries pending
+    /// reaction triggers and the Fast-action gate for each window.
+    /// Replaced the earlier single-slot `in_flight_reaction_window:
+    /// Option<ReactionWindow>` shape — multi-window nesting is now
+    /// structural.
     ///
-    /// While set, every non-[`ResolveInput`](crate::action::PlayerAction::ResolveInput)
-    /// player action rejects, mirroring the
-    /// [`in_flight_skill_test`](Self::in_flight_skill_test) and
-    /// [`mulligan_window`](Self::mulligan_window) guards.
+    /// Window kinds open at canonical timing points:
+    /// - `AfterEnemyDefeated` — queued by `damage_enemy` when an
+    ///   enemy reaches 0 health.
+    /// - `BetweenPhases` — opened by the phase machine at every
+    ///   phase transition (Phase-4 phase-content PRs wire this).
     ///
-    /// **Timing relative to the surrounding action.** Per the Rules
-    /// Reference, an "after…" reaction "may be used immediately after
-    /// that triggering condition's impact upon the game state has
-    /// resolved" — i.e. mid-action, not at action's end. The engine
-    /// honors this: the triggering event-emitter (e.g.
-    /// `damage_enemy` emitting [`EnemyDefeated`](crate::Event::EnemyDefeated))
-    /// queues the window via `queue_reaction_window`, and the next
-    /// step boundary inside the current handler (the skill-test
-    /// driver between [`FinishContinuation::PostFollowUp`] and the
-    /// `OnSkillTestResolution` step) checks for queued windows and
-    /// suspends.
-    ///
-    /// On resume the window's close path (`close_reaction_window`)
-    /// re-enters the surrounding handler's driver at the saved
-    /// [`continuation`](InFlightSkillTest::continuation) so the rest
-    /// of the action's events fire in their canonical order.
-    ///
-    /// Single-slot today: actions in scope queue at most one window
-    /// per apply. Multi-window queueing (e.g. a card effect that
-    /// defeats two enemies) lands when the first such effect arrives.
-    pub in_flight_reaction_window: Option<ReactionWindow>,
+    /// Multi-window queueing (one effect that queues two windows in
+    /// the same apply) is now structural — push twice, drive resumes
+    /// in reverse open order.
+    pub open_windows: Vec<OpenWindow>,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -223,10 +207,10 @@ pub struct InFlightSkillTest {
 ///    pending modifiers
 ///
 /// After each step that *can* queue a reaction window, the driver
-/// checks [`GameState::in_flight_reaction_window`]; if a window is
+/// checks `state.open_windows` via `GameState::top_reaction_window()`; if a window is
 /// pending it suspends with
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). On resume
-/// (via `close_reaction_window`) the driver reads this field and
+/// (via `close_reaction_window_at`) the driver reads this field and
 /// jumps to the matching step. This is the rules-correct shape per
 /// the Rules Reference's "after… initiates immediately after that
 /// triggering condition's impact has resolved" clause: the reaction
@@ -312,39 +296,106 @@ pub enum SkillTestFollowUp {
     },
 }
 
-/// An open reaction window with a list of pending triggers waiting
-/// for the player to fire or skip.
+/// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
+/// actions while an `OpenWindow` is the top of `GameState::open_windows`.
 ///
-/// Created by the engine's `queue_reaction_window` helper when a
-/// triggering event fires inside an action handler and at least one
-/// in-play card's [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// ability matches `kind`. The top-level dispatcher opens the window
-/// at the end of the action's apply call (emits
-/// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)). The player
-/// drives resolution via
-/// [`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput):
-/// [`InputResponse::PickIndex`](crate::action::InputResponse::PickIndex)
-/// fires the i-th pending trigger;
-/// [`InputResponse::Skip`](crate::action::InputResponse::Skip) closes
-/// the window provided no forced triggers remain.
+/// Modeled per Rules Reference: a reaction window allows any
+/// investigator to fire a triggered reaction or play a Fast card.
+/// An investigator's own turn opens an `ActiveInvestigator` window
+/// that still permits other investigators to play Fast cards (per the
+/// "Fast may be played at any player window" rule); concrete window
+/// kinds choose the right scope at the open-window site.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct ReactionWindow {
+pub enum FastActorScope {
+    /// Only the named investigator may submit Fast actions during
+    /// this window. Used for narrow Investigation-phase windows (the
+    /// turn's owner) where Fast actions are still bounded to one
+    /// actor; pair with `Any` for windows where other investigators
+    /// may interject.
+    ActiveInvestigator(InvestigatorId),
+    /// Any investigator may submit Fast actions. Used for reaction
+    /// windows and between-phase windows.
+    Any,
+    /// Only the named set may submit Fast actions. Reserved for
+    /// scenario-specific windows that restrict actors by criterion
+    /// (e.g. only investigators at a given location). No Phase-3
+    /// or Phase-4 site constructs this variant yet; the variant
+    /// exists so future cards can grow it without engine churn.
+    Specific(std::collections::BTreeSet<InvestigatorId>),
+}
+
+impl FastActorScope {
+    /// True if `investigator` is permitted to submit a Fast action
+    /// during the window carrying this scope.
+    #[must_use]
+    pub fn permits(&self, investigator: InvestigatorId) -> bool {
+        match self {
+            Self::ActiveInvestigator(id) => *id == investigator,
+            Self::Any => true,
+            Self::Specific(set) => set.contains(&investigator),
+        }
+    }
+}
+
+/// A currently-open window on the action stack.
+///
+/// Replaces the older single-slot `in_flight_reaction_window: Option<ReactionWindow>` shape;
+/// reaction-window machinery now operates on this stack via
+/// `GameState::top_reaction_window()` and `top_reaction_window_mut()`.
+///
+/// Each window carries (a) what kind it is and which IDs the
+/// triggering event/phase-transition named, (b) the queue of
+/// `Trigger::OnEvent` reactions waiting to fire, and (c) which
+/// investigators may submit Fast `PlayCard` / `ActivateAbility`
+/// actions while this window is the top of `GameState::open_windows`.
+///
+/// Windows nest: a reaction firing inside another window may itself
+/// trigger sub-reactions that open further windows on top of this
+/// one. The dispatcher always reads / mutates the top of the stack
+/// (`open_windows.last_mut()` / `open_windows.pop()`); closing a
+/// window simply pops the top.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OpenWindow {
     /// What kind of window is open; carries the IDs the triggering
-    /// event named (defeated enemy + attacker, etc.) so pending
-    /// triggers' effects can resolve against the same payload.
+    /// event named (defeated enemy + attacker, phase transition,
+    /// etc.) so pending triggers' effects can resolve against the
+    /// same payload.
     pub kind: WindowKind,
     /// Triggers in resolution order. Active investigator's matching
     /// triggers come first (Arkham's "active player priority"), then
     /// other investigators' in turn order. Within a single
     /// investigator, listed in `cards_in_play` order, then by
-    /// `ability_index`. Empty `pending` is never stored — the engine
-    /// closes the window immediately at scan time.
-    pub pending: Vec<PendingTrigger>,
+    /// `ability_index`. Empty `pending_triggers` is permitted —
+    /// windows opened for phase/timing reasons (not reaction-driven)
+    /// may have no triggers but still gate Fast actions.
+    pub pending_triggers: Vec<PendingTrigger>,
+    /// Which investigators may submit Fast `PlayCard` /
+    /// `ActivateAbility` actions while this window is the top of
+    /// the stack.
+    pub fast_actors: FastActorScope,
 }
 
-/// Discriminant of an open [`ReactionWindow`].
+impl OpenWindow {
+    /// Construct an empty [`OpenWindow`] (no pending triggers) for the
+    /// given `kind` and `fast_actors` scope.
+    ///
+    /// Provided so integration tests outside the crate (where the
+    /// `#[non_exhaustive]` attribute blocks struct-literal construction)
+    /// can inject a window directly onto
+    /// [`GameState::open_windows`] for stack-shape regression tests.
+    #[must_use]
+    pub fn new_empty(kind: WindowKind, fast_actors: FastActorScope) -> Self {
+        Self {
+            kind,
+            pending_triggers: Vec::new(),
+            fast_actors,
+        }
+    }
+}
+
+/// Discriminant of an open `OpenWindow`.
 ///
 /// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
 /// pattern: when the engine emits a matching
@@ -370,13 +421,23 @@ pub enum WindowKind {
         /// `by` field. `None` for non-investigator-attributed defeats.
         by: Option<InvestigatorId>,
     },
+    /// A window opened between two phases. Phase-4 phase-content PRs
+    /// open this at each canonical transition (e.g. before Mythos,
+    /// between Investigation and Enemy) so Fast cards + cross-phase
+    /// reactions fire correctly. `fast_actors` is typically `Any`.
+    BetweenPhases {
+        /// The phase we're leaving.
+        from: Phase,
+        /// The phase we're entering.
+        to: Phase,
+    },
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// ability waiting to fire inside a [`ReactionWindow`].
+/// ability waiting to fire inside an `OpenWindow`.
 ///
 /// Resolved by [`InputResponse::PickIndex`](crate::action::InputResponse::PickIndex)
-/// — the index addresses into `ReactionWindow::pending`. After firing,
+/// — the index addresses into `OpenWindow::pending_triggers`. After firing,
 /// the entry is removed; the window stays open while any entries remain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -432,4 +493,123 @@ pub struct PendingSkillModifier {
     /// per-test logic in later cycles (Roland Banks, Hard Knocks
     /// upgrades) will key off this.
     pub source: Option<CardInstanceId>,
+}
+
+impl GameState {
+    /// The topmost open window that has unresolved reaction triggers,
+    /// if any. Used by the dispatcher's "is reaction work pending?"
+    /// guards. Pure Fast-gating windows (empty `pending_triggers`)
+    /// are skipped — they don't block dispatch.
+    #[must_use]
+    pub fn top_reaction_window(&self) -> Option<&OpenWindow> {
+        self.open_windows
+            .iter()
+            .rev()
+            .find(|w| !w.pending_triggers.is_empty())
+    }
+
+    /// Mutable counterpart to `top_reaction_window`. Same skip rule
+    /// applies: windows with empty `pending_triggers` are skipped —
+    /// phase-gate-only windows are not exposed as reaction-work.
+    pub fn top_reaction_window_mut(&mut self) -> Option<&mut OpenWindow> {
+        self.open_windows
+            .iter_mut()
+            .rev()
+            .find(|w| !w.pending_triggers.is_empty())
+    }
+
+    /// Index into [`Self::open_windows`] of the topmost window with
+    /// non-empty `pending_triggers`, matching the window that
+    /// [`Self::top_reaction_window`] / [`Self::top_reaction_window_mut`]
+    /// resolve to.
+    ///
+    /// Callers driving the reaction window pass this index to
+    /// `close_reaction_window_at` so the close path removes the same
+    /// entry the driver was operating on, rather than blindly popping
+    /// the top of the stack — a `BetweenPhases` window with empty
+    /// `pending_triggers` can sit above an active reaction window,
+    /// which would corrupt the stack on naive `pop()`.
+    #[must_use]
+    pub fn top_reaction_window_index(&self) -> Option<usize> {
+        self.open_windows
+            .iter()
+            .rposition(|w| !w.pending_triggers.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod open_window_tests {
+    use super::*;
+
+    #[test]
+    fn open_window_serde_roundtrip() {
+        let window = OpenWindow {
+            kind: WindowKind::AfterEnemyDefeated {
+                enemy: EnemyId(7),
+                by: Some(InvestigatorId(1)),
+            },
+            pending_triggers: Vec::new(),
+            fast_actors: FastActorScope::Any,
+        };
+        let json = serde_json::to_string(&window).expect("serialize");
+        let back: OpenWindow = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, window);
+    }
+
+    #[test]
+    fn between_phases_window_kind_serde_roundtrip() {
+        let kind = WindowKind::BetweenPhases {
+            from: Phase::Mythos,
+            to: Phase::Investigation,
+        };
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+}
+
+#[cfg(test)]
+mod fast_actor_scope_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn active_investigator_permits_only_named() {
+        let scope = FastActorScope::ActiveInvestigator(InvestigatorId(1));
+        assert!(scope.permits(InvestigatorId(1)));
+        assert!(!scope.permits(InvestigatorId(2)));
+    }
+
+    #[test]
+    fn any_permits_everyone() {
+        let scope = FastActorScope::Any;
+        assert!(scope.permits(InvestigatorId(1)));
+        assert!(scope.permits(InvestigatorId(42)));
+    }
+
+    #[test]
+    fn specific_permits_only_the_named_set() {
+        let mut set = BTreeSet::new();
+        set.insert(InvestigatorId(1));
+        set.insert(InvestigatorId(3));
+        let scope = FastActorScope::Specific(set);
+        assert!(scope.permits(InvestigatorId(1)));
+        assert!(!scope.permits(InvestigatorId(2)));
+        assert!(scope.permits(InvestigatorId(3)));
+    }
+
+    #[test]
+    fn fast_actor_scope_serde_roundtrip() {
+        let mut set = BTreeSet::new();
+        set.insert(InvestigatorId(7));
+        for scope in [
+            FastActorScope::Any,
+            FastActorScope::ActiveInvestigator(InvestigatorId(1)),
+            FastActorScope::Specific(set),
+        ] {
+            let json = serde_json::to_string(&scope).expect("serialize");
+            let back: FastActorScope = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(back, scope);
+        }
+    }
 }

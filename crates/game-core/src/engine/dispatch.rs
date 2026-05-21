@@ -19,9 +19,9 @@ use crate::dsl::{
 use crate::event::{Event, FailureReason};
 use crate::state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId,
-    FinishContinuation, GameState, InFlightSkillTest, Investigator, InvestigatorId, LocationId,
-    PendingTrigger, Phase, ReactionWindow, SkillKind, SkillTestFollowUp, Status, TokenResolution,
-    WindowKind, Zone,
+    FastActorScope, FinishContinuation, GameState, InFlightSkillTest, Investigator, InvestigatorId,
+    LocationId, OpenWindow, PendingTrigger, Phase, SkillKind, SkillTestFollowUp, Status,
+    TokenResolution, WindowKind, Zone,
 };
 
 use super::evaluator::{
@@ -72,12 +72,11 @@ pub fn apply_player_action(
     // Reaction-window guard runs BEFORE the skill-test guard: when a
     // window opens mid-skill-test (e.g. Roland's "after you defeat an
     // enemy" firing during a Fight that defeats), both
-    // `in_flight_skill_test` and `in_flight_reaction_window` are
-    // populated — the test is mid-resolution, parked at the window
-    // boundary inside `drive_skill_test`. The reaction-window message
-    // is the one the client needs.
-    if state.in_flight_reaction_window.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
+    // `in_flight_skill_test` and the open reaction window on
+    // `state.open_windows` are populated — the test is mid-resolution,
+    // parked at the window boundary inside `drive_skill_test`. The
+    // reaction-window message is the one the client needs.
+    if state.top_reaction_window().is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "a reaction window is open; submit a \
@@ -539,7 +538,7 @@ pub(super) fn start_skill_test(
 /// queues an [`AfterEnemyDefeated`](crate::state::WindowKind::AfterEnemyDefeated)
 /// window) suspends correctly: this entry advances the continuation
 /// to [`FinishContinuation::PostFollowUp`] before delegating, so a
-/// resume from `close_reaction_window` re-enters the driver and picks
+/// resume from `close_reaction_window_at` re-enters the driver and picks
 /// up at the `OnSkillTestResolution` step.
 ///
 /// On invalid input (no in-flight test, malformed indices, or
@@ -622,7 +621,7 @@ fn finish_skill_test(
 /// window: if one is pending, the driver emits
 /// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
-/// close path ([`close_reaction_window`]) re-enters this driver on
+/// close path ([`close_reaction_window_at`]) re-enters this driver on
 /// resume.
 ///
 /// Step → next-continuation mapping (current Phase-3 set; #64 will
@@ -639,7 +638,7 @@ fn finish_skill_test(
 ///   modifiers, clear in-flight, return `Done`.
 fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     loop {
-        if state.in_flight_reaction_window.is_some() {
+        if state.top_reaction_window().is_some() {
             return open_queued_reaction_window(state, events);
         }
 
@@ -1008,19 +1007,19 @@ fn fire_on_skill_test_resolution(
 /// or the skill-test commit window ([`finish_skill_test`]). Rejects
 /// when nothing is outstanding.
 ///
-/// Both `in_flight_reaction_window` and `in_flight_skill_test` may be
-/// `Some` simultaneously — that's the mid-skill-test reaction case:
-/// the skill-test driver is parked at a step boundary waiting for the
-/// reaction window to close before continuing. The reaction window
-/// takes routing priority; once it closes,
-/// [`close_reaction_window`] re-enters [`drive_skill_test`] to finish
+/// A reaction window on `state.open_windows` and `in_flight_skill_test`
+/// may both be present simultaneously — that's the mid-skill-test
+/// reaction case: the skill-test driver is parked at a step boundary
+/// waiting for the reaction window to close before continuing. The
+/// reaction window takes routing priority; once it closes,
+/// [`close_reaction_window_at`] re-enters [`drive_skill_test`] to finish
 /// the test.
 fn resolve_input(
     state: &mut GameState,
     events: &mut Vec<Event>,
     response: &InputResponse,
 ) -> EngineOutcome {
-    if state.in_flight_reaction_window.is_some() {
+    if state.top_reaction_window().is_some() {
         return resume_reaction_window(state, events, response);
     }
     if state.in_flight_skill_test.is_none() {
@@ -1060,16 +1059,18 @@ fn resolve_input(
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
 fn queue_reaction_window(state: &mut GameState, kind: WindowKind) {
-    let pending = scan_pending_triggers(state, kind);
-    if pending.is_empty() {
+    let pending_triggers = scan_pending_triggers(state, kind);
+    if pending_triggers.is_empty() {
         return;
     }
-    debug_assert!(
-        state.in_flight_reaction_window.is_none(),
-        "queue_reaction_window: overwriting an already-queued window; \
-         multi-window queueing isn't supported yet",
-    );
-    state.in_flight_reaction_window = Some(ReactionWindow { kind, pending });
+    // Reaction windows admit any investigator's Fast actions
+    // (Rules Reference: Fast may be played at any player window).
+    // Multi-window nesting is now structural — push twice is valid.
+    state.open_windows.push(OpenWindow {
+        kind,
+        pending_triggers,
+        fast_actors: FastActorScope::Any,
+    });
 }
 
 /// Scan every investigator's `cards_in_play` for
@@ -1169,6 +1170,10 @@ fn trigger_matches(
                 true
             }
         }
+        // BetweenPhases windows open for phase-transition timing; no
+        // Trigger::OnEvent pattern matches a phase-transition window —
+        // those windows gate Fast actions, not after-event reactions.
+        (WindowKind::BetweenPhases { .. }, _) => false,
     }
 }
 
@@ -1179,8 +1184,7 @@ fn trigger_matches(
 /// queue windows will call this from their own boundaries.
 fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let window = state
-        .in_flight_reaction_window
-        .as_ref()
+        .top_reaction_window()
         .expect("open_queued_reaction_window: caller checked is_some");
     events.push(Event::WindowOpened { kind: window.kind });
     EngineOutcome::AwaitingInput {
@@ -1190,11 +1194,11 @@ fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> En
                  Submit InputResponse::PickIndex to fire one, or \
                  InputResponse::Skip to close.",
                 window.kind,
-                window.pending.len(),
+                window.pending_triggers.len(),
             ),
         },
         // No multi-window state to disambiguate — routing keys off
-        // `state.in_flight_reaction_window`. Conventional 0 like the
+        // the top of `state.open_windows`. Conventional 0 like the
         // commit-window's resume token.
         resume_token: ResumeToken(0),
     }
@@ -1211,8 +1215,8 @@ fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> En
 /// - Other variants reject; the window stays open.
 ///
 /// Closing the window emits [`Event::WindowClosed`] with the same
-/// kind, clears [`GameState::in_flight_reaction_window`], and returns
-/// [`Done`].
+/// kind, pops the top entry from [`GameState::open_windows`], and
+/// returns [`Done`].
 fn resume_reaction_window(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -1220,7 +1224,17 @@ fn resume_reaction_window(
 ) -> EngineOutcome {
     match response {
         InputResponse::PickIndex(i) => fire_pending_trigger(state, events, *i),
-        InputResponse::Skip => close_reaction_window(state, events),
+        InputResponse::Skip => {
+            // Resolve the active reaction-window index up-front so the
+            // close path operates on the same window the driver had
+            // been driving (not the absolute top of `open_windows`,
+            // which may be an empty-pending_triggers window sitting
+            // above it).
+            let idx = state
+                .top_reaction_window_index()
+                .expect("resume_reaction_window: caller checked is_some");
+            close_reaction_window_at(state, events, idx)
+        }
         other => EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: reaction window expects InputResponse::PickIndex \
@@ -1235,26 +1249,30 @@ fn resume_reaction_window(
 /// Rejects out-of-bounds; the window stays open so the client can
 /// retry with a corrected index.
 fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
+    // Capture the index of the reaction window we're driving up-front
+    // so the close path removes the same entry (not the absolute top of
+    // the stack, which may be a different, empty-pending_triggers
+    // window once non-reaction windows can sit above one).
+    let window_idx = state
+        .top_reaction_window_index()
+        .expect("fire_pending_trigger: caller checked is_some");
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
-        let window = state
-            .in_flight_reaction_window
-            .as_ref()
-            .expect("fire_pending_trigger: caller checked is_some");
+        let window = &state.open_windows[window_idx];
         let idx = match usize::try_from(i) {
-            Ok(idx) if idx < window.pending.len() => idx,
+            Ok(idx) if idx < window.pending_triggers.len() => idx,
             _ => {
                 return EngineOutcome::Rejected {
                     reason: format!(
                         "ResolveInput: reaction-window PickIndex({i}) out of bounds \
                          (pending size {})",
-                        window.pending.len(),
+                        window.pending_triggers.len(),
                     )
                     .into(),
                 };
             }
         };
-        (window.pending[idx], idx)
+        (window.pending_triggers[idx], idx)
     };
 
     // Look up the ability fresh from the registry. The card may have
@@ -1327,21 +1345,20 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
         bump_usage_counter(state, &trigger);
     }
 
-    // Drop the fired entry now that resolution succeeded.
-    let window = state
-        .in_flight_reaction_window
-        .as_mut()
-        .expect("fire_pending_trigger: window must still be present after firing");
-    window.pending.remove(pending_idx);
+    // Drop the fired entry now that resolution succeeded. The window
+    // we drove sits at `window_idx` — apply_effect does not push or
+    // pop `open_windows` entries, so the index remains valid.
+    let window = &mut state.open_windows[window_idx];
+    window.pending_triggers.remove(pending_idx);
 
     // If more triggers remain pending, re-emit AwaitingInput so the
     // player can pick the next one. Otherwise the window closes
     // automatically.
-    if window.pending.is_empty() {
-        return close_reaction_window(state, events);
+    if window.pending_triggers.is_empty() {
+        return close_reaction_window_at(state, events, window_idx);
     }
     let kind = window.kind;
-    let pending_len = window.pending.len();
+    let pending_len = window.pending_triggers.len();
     EngineOutcome::AwaitingInput {
         request: InputRequest {
             prompt: format!(
@@ -1395,32 +1412,52 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
     card.bump_ability_usage(trigger.ability_index, current_round);
 }
 
-/// Close the open reaction window. Rejects when any forced trigger
-/// is still pending (player must fire them first). On success emits
-/// [`Event::WindowClosed`], clears the window state, and either
-/// resumes a paused skill-test driver (if one was mid-resolution
-/// when the window opened) or returns [`Done`].
-fn close_reaction_window(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
-    let window = state
-        .in_flight_reaction_window
-        .as_ref()
-        .expect("close_reaction_window: caller checked is_some");
-    if let Some(forced) = window.pending.iter().find(|t| t.forced) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ResolveInput::Skip: cannot close reaction window while forced trigger \
-                 (controller {ctl:?}, instance {inst:?}, ability {ab}) remains pending; \
-                 fire it first",
-                ctl = forced.controller,
-                inst = forced.instance_id,
-                ab = forced.ability_index,
-            )
-            .into(),
-        };
+/// Close the reaction window at `idx` in [`GameState::open_windows`].
+/// Rejects when any forced trigger is still pending (player must fire
+/// them first). On success emits [`Event::WindowClosed`], removes the
+/// window at the specified index (not necessarily the top of the
+/// stack), and either resumes a paused skill-test driver (if one was
+/// mid-resolution when the window opened) or returns [`Done`].
+///
+/// # Why an explicit index
+///
+/// `top_reaction_window_mut` skips empty-`pending_triggers` windows
+/// when finding the active reaction window. The close path must
+/// remove the same window the driver operated on, not the absolute
+/// top of the stack — once `BetweenPhases` (or any other
+/// non-reaction) window can sit above an active reaction window
+/// (#69/#70/#71), a naive `open_windows.pop()` would remove the wrong
+/// entry. Callers compute the index via
+/// [`GameState::top_reaction_window_index`].
+fn close_reaction_window_at(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    idx: usize,
+) -> EngineOutcome {
+    // Borrow the window at `idx` to check for forced triggers remaining
+    // before removing — Rejected must leave state untouched.
+    {
+        let window = state
+            .open_windows
+            .get(idx)
+            .expect("close_reaction_window_at: caller-supplied index must be in bounds");
+        if let Some(forced) = window.pending_triggers.iter().find(|t| t.forced) {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ResolveInput::Skip: cannot close reaction window while forced trigger \
+                     (controller {ctl:?}, instance {inst:?}, ability {ab}) remains pending; \
+                     fire it first",
+                    ctl = forced.controller,
+                    inst = forced.instance_id,
+                    ab = forced.ability_index,
+                )
+                .into(),
+            };
+        }
     }
+    let window = state.open_windows.remove(idx);
     let kind = window.kind;
     events.push(Event::WindowClosed { kind });
-    state.in_flight_reaction_window = None;
 
     // If a skill test was mid-resolution when this window opened,
     // hand control back to its driver to run the remaining steps.
@@ -2409,7 +2446,7 @@ enum PlayDestination {
 /// separate from the state-side prefix.
 fn resolve_play_target(
     code: &CardCode,
-) -> Result<(PlayDestination, Vec<crate::dsl::Ability>), EngineOutcome> {
+) -> Result<(PlayDestination, Vec<crate::dsl::Ability>, bool, CardType), EngineOutcome> {
     let Some(registry) = card_registry::current() else {
         return Err(EngineOutcome::Rejected {
             reason: "PlayCard: no card registry installed; engine cannot resolve card \
@@ -2423,7 +2460,9 @@ fn resolve_play_target(
             reason: format!("PlayCard: unknown card code {code}").into(),
         });
     };
-    let destination = match metadata.card_type {
+    let is_fast = metadata.is_fast;
+    let card_type = metadata.card_type;
+    let destination = match card_type {
         CardType::Asset => PlayDestination::InPlay,
         CardType::Event => PlayDestination::Discard,
         other => {
@@ -2444,7 +2483,7 @@ fn resolve_play_target(
             .into(),
         });
     };
-    Ok((destination, abilities))
+    Ok((destination, abilities, is_fast, card_type))
 }
 
 /// Handler for [`PlayerAction::PlayCard`].
@@ -2454,6 +2493,36 @@ fn resolve_play_target(
 /// the card to its destination zone based on its
 /// [`CardType`](crate::card_data::CardType), and runs every
 /// [`Trigger::OnPlay`] ability through the DSL evaluator.
+///
+/// # Timing gate
+///
+/// The gate branches on `is_fast` (from [`CardMetadata`](crate::card_data::CardMetadata))
+/// and [`CardType`](crate::card_data::CardType), per Rules Reference p. 11:
+///
+/// - **Non-Fast cards** (asset or event without the ⚡ icon): require
+///   Investigation phase + the active investigator. The standard
+///   "your turn, your action" constraint.
+///
+/// - **Fast events** (Rules Reference p. 11: *"A fast event card may be
+///   played from a player's hand any time its play instructions
+///   specify"*): permitted when `active_during_investigation` OR when
+///   the top open window's `fast_actors` scope permits the acting
+///   investigator. Any eligible investigator in a permissive window
+///   qualifies — card-level "Play only during your turn" constraints
+///   (e.g. Working a Hunch 01037) are a separate per-card concern
+///   **not** enforced here.
+///
+/// - **Fast assets** (Rules Reference p. 11: *"A fast asset may be
+///   played by an investigator during any player window on his or her
+///   turn"*): the "his or her turn" clause restricts to the **owner**,
+///   modeled as the active investigator. Permitted when
+///   `active_during_investigation` OR when the owner is the active
+///   investigator AND the top open window permits them. Non-owner plays
+///   remain illegal even in a permissive window.
+///
+/// Card-level play constraints (e.g. "Play only during your turn",
+/// "Play only if …") are **not** enforced by this gate; they are a
+/// future per-card concern.
 ///
 /// # Ordering
 ///
@@ -2482,24 +2551,7 @@ fn play_card(
     investigator: InvestigatorId,
     hand_index: u8,
 ) -> EngineOutcome {
-    if state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard is only valid during the Investigation phase (was {:?})",
-                state.phase,
-            )
-            .into(),
-        };
-    }
-    if state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: {investigator:?} is not the active investigator ({:?})",
-                state.active_investigator,
-            )
-            .into(),
-        };
-    }
+    // Validate the investigator's presence and status before any card lookup.
     let Some(inv) = state.investigators.get(&investigator) else {
         return EngineOutcome::Rejected {
             reason: format!("PlayCard: investigator {investigator:?} is not in state").into(),
@@ -2525,10 +2577,58 @@ fn play_card(
         };
     }
     let code: CardCode = inv.hand[idx].clone();
-    let (destination, abilities) = match resolve_play_target(&code) {
+    // Resolve card type and abilities (also yields is_fast + card_type) before
+    // applying the phase/active-investigator gate so the gate can branch on
+    // is_fast AND card_type per the Rules Reference (p. 11).
+    let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
         Ok(v) => v,
         Err(reject) => return reject,
     };
+    // Timing gate — see doc-comment "# Timing gate" section above.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let owner_is_active = state.active_investigator == Some(investigator);
+    let permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    // Non-asset/non-event card types are filtered out by
+    // `resolve_play_target` above, so `card_type` here is always one of
+    // `Asset` or `Event`. The non-Fast arm collapses both into the
+    // strict gate; the Fast arms split because Rules Reference p. 11
+    // gives events and assets different scopes (any vs owner-only).
+    let allowed = if is_fast {
+        match card_type {
+            CardType::Event => active_during_investigation || permissive_window,
+            CardType::Asset => {
+                active_during_investigation || (owner_is_active && permissive_window)
+            }
+            // Unreachable: `resolve_play_target` rejects every other
+            // `CardType` before we get here. Fall back to the strict
+            // gate so a future relaxation of `resolve_play_target` does
+            // not silently over-permit anything.
+            _ => active_during_investigation,
+        }
+    } else {
+        active_during_investigation
+    };
+    if !allowed {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "PlayCard: card not playable in this timing window. \
+                 Rules Reference p. 11: non-Fast cards require Investigation + active \
+                 investigator; Fast events require active investigator or a window whose \
+                 fast_actors permits the actor; Fast assets additionally require the OWNER \
+                 (active investigator) to act. \
+                 Got is_fast={is_fast}, card_type={card_type:?}, phase={phase:?}, \
+                 active={active:?}, actor={investigator:?}, owner_is_active={owner_is_active}, \
+                 permissive_window={permissive_window}.",
+                phase = state.phase,
+                active = state.active_investigator,
+            )
+            .into(),
+        };
+    }
 
     // Mutate.
     events.push(Event::CardPlayed {
@@ -2568,11 +2668,24 @@ fn play_card(
 
 /// Handler for [`PlayerAction::ActivateAbility`].
 ///
-/// Validates the standard player-action prefix, the named card
-/// instance, the indexed ability's trigger, and every cost-payability
-/// precondition. On success, pays every cost (emitting cost events
-/// per primitive), emits [`Event::AbilityActivated`], and dispatches
-/// the ability's effect through the DSL evaluator.
+/// Validates the named card instance, the indexed ability's trigger,
+/// and every cost-payability precondition. On success, pays every cost
+/// (emitting cost events per primitive), emits [`Event::AbilityActivated`],
+/// and dispatches the ability's effect through the DSL evaluator.
+///
+/// # Timing gate
+///
+/// The gate branches on `action_cost` from `Trigger::Activated`:
+///
+/// - **Action-cost abilities** (`action_cost > 0`): require Investigation
+///   phase + active investigator + sufficient actions remaining. These consume
+///   one of the investigator's limited per-turn actions.
+/// - **Fast abilities** (`action_cost == 0`): per the Rules Reference, "Fast
+///   abilities may be used at any player window." This handler permits them
+///   when either (a) the acting investigator is the active investigator during
+///   the Investigation phase, or (b) an open window's `fast_actors` scope
+///   permits the acting investigator. The `open_windows` stack is pushed by
+///   callers (scenario/server) when a player window opens.
 ///
 /// # Cost coverage
 ///
@@ -2596,18 +2709,6 @@ fn play_card(
 /// stream on rejection. Phase-3 in-scope effects (`GainResources`,
 /// `DiscoverClue`, `Seq` of those, future `Modify`/`ThisSkillTest`
 /// push) can't reject mid-flight once the standard prefix passes.
-///
-/// # Known simplification: Investigation-phase + active-investigator gate
-///
-/// This handler requires the acting investigator to be the active
-/// one during the Investigation phase. That's correct for
-/// `[action]`-cost abilities, but **overly strict for `[fast]` ones**
-/// (`Trigger::Activated { action_cost: 0 }`): in real Arkham, Fast
-/// abilities are legal in any player window — between phases,
-/// during another investigator's turn, between enemy attacks. No
-/// phase outside Investigation exists yet, so this simplification
-/// is a no-op for Phase-3 scope; #103 lifts the gate when phase
-/// content (#69 / #70 / #71) lands.
 fn activate_ability(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -2615,24 +2716,6 @@ fn activate_ability(
     instance_id: CardInstanceId,
     ability_index: u8,
 ) -> EngineOutcome {
-    if state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility is only valid during the Investigation phase (was {:?})",
-                state.phase,
-            )
-            .into(),
-        };
-    }
-    if state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: {investigator:?} is not the active investigator ({:?})",
-                state.active_investigator,
-            )
-            .into(),
-        };
-    }
     let Some(inv) = state.investigators.get(&investigator) else {
         return EngineOutcome::Rejected {
             reason: format!("ActivateAbility: investigator {investigator:?} is not in state")
@@ -2668,6 +2751,41 @@ fn activate_ability(
         Ok(v) => v,
         Err(reject) => return reject,
     };
+
+    // Gate: branch on action_cost now that we have it.
+    // Fast abilities (action_cost == 0) may be used at any player window.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let in_permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    if action_cost > 0 {
+        // Action-cost ability: requires Investigation phase + active investigator.
+        if !active_during_investigation {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ActivateAbility: action-cost ability requires Investigation phase + \
+                     active investigator (phase was {:?}, active {:?})",
+                    state.phase, state.active_investigator,
+                )
+                .into(),
+            };
+        }
+    } else {
+        // Fast ability: active during Investigation OR permissive window.
+        if !active_during_investigation && !in_permissive_window {
+            return EngineOutcome::Rejected {
+                reason: "ActivateAbility: Fast ability requires either active investigator \
+                         during Investigation, or an open window whose fast_actors permits \
+                         this investigator"
+                    .into(),
+            };
+        }
+    }
+
+    // Re-borrow inv after state borrows above.
+    let inv = state.investigators.get(&investigator).expect("checked");
 
     // Action-economy check.
     if inv.actions_remaining < action_cost {
