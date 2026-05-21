@@ -134,6 +134,22 @@ pub struct GameState {
     /// per apply. Multi-window queueing (e.g. a card effect that
     /// defeats two enemies) lands when the first such effect arrives.
     pub in_flight_reaction_window: Option<ReactionWindow>,
+    /// Stack of currently-open windows. The top (`last()`) is the
+    /// most recently-opened; closing pops the top. Carries pending
+    /// reaction triggers (will replace the old `in_flight_reaction_window`
+    /// single-slot shape once T7 migrates the helpers) and the
+    /// Fast-action gate for each window.
+    ///
+    /// Window kinds open at canonical timing points:
+    /// - `AfterEnemyDefeated` — queued by `damage_enemy` when an
+    ///   enemy reaches 0 health.
+    /// - `BetweenPhases` — opened by the phase machine at every
+    ///   phase transition (Phase-4 phase-content PRs wire this).
+    ///
+    /// Multi-window queueing (one effect that queues two windows in
+    /// the same apply) is now structural — push twice, drive resumes
+    /// in reverse open order.
+    pub open_windows: Vec<OpenWindow>,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -386,6 +402,45 @@ impl FastActorScope {
     }
 }
 
+/// A currently-open window on the action stack.
+///
+/// Replaces the old single-Option `in_flight_reaction_window` shape
+/// once the migration is complete (currently both exist side by
+/// side — T7/T8 finish the transition).
+///
+/// Each window carries (a) what kind it is and which IDs the
+/// triggering event/phase-transition named, (b) the queue of
+/// `Trigger::OnEvent` reactions waiting to fire, and (c) which
+/// investigators may submit Fast `PlayCard` / `ActivateAbility`
+/// actions while this window is the top of `GameState::open_windows`.
+///
+/// Windows nest: a reaction firing inside another window may itself
+/// trigger sub-reactions that open further windows on top of this
+/// one. The dispatcher always reads / mutates the top of the stack
+/// (`open_windows.last_mut()` / `open_windows.pop()`); closing a
+/// window simply pops the top.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OpenWindow {
+    /// What kind of window is open; carries the IDs the triggering
+    /// event named (defeated enemy + attacker, phase transition,
+    /// etc.) so pending triggers' effects can resolve against the
+    /// same payload.
+    pub kind: WindowKind,
+    /// Triggers in resolution order. Active investigator's matching
+    /// triggers come first (Arkham's "active player priority"), then
+    /// other investigators' in turn order. Within a single
+    /// investigator, listed in `cards_in_play` order, then by
+    /// `ability_index`. Empty `pending_triggers` is permitted —
+    /// windows opened for phase/timing reasons (not reaction-driven)
+    /// may have no triggers but still gate Fast actions.
+    pub pending_triggers: Vec<PendingTrigger>,
+    /// Which investigators may submit Fast `PlayCard` /
+    /// `ActivateAbility` actions while this window is the top of
+    /// the stack.
+    pub fast_actors: FastActorScope,
+}
+
 /// Discriminant of an open [`ReactionWindow`].
 ///
 /// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
@@ -411,6 +466,16 @@ pub enum WindowKind {
         /// [`Event::EnemyDefeated`](crate::Event::EnemyDefeated)
         /// `by` field. `None` for non-investigator-attributed defeats.
         by: Option<InvestigatorId>,
+    },
+    /// A window opened between two phases. Phase-4 phase-content PRs
+    /// open this at each canonical transition (e.g. before Mythos,
+    /// between Investigation and Enemy) so Fast cards + cross-phase
+    /// reactions fire correctly. `fast_actors` is typically `Any`.
+    BetweenPhases {
+        /// The phase we're leaving.
+        from: Phase,
+        /// The phase we're entering.
+        to: Phase,
     },
 }
 
@@ -474,6 +539,37 @@ pub struct PendingSkillModifier {
     /// per-test logic in later cycles (Roland Banks, Hard Knocks
     /// upgrades) will key off this.
     pub source: Option<CardInstanceId>,
+}
+
+#[cfg(test)]
+mod open_window_tests {
+    use super::*;
+
+    #[test]
+    fn open_window_serde_roundtrip() {
+        let window = OpenWindow {
+            kind: WindowKind::AfterEnemyDefeated {
+                enemy: EnemyId(7),
+                by: Some(InvestigatorId(1)),
+            },
+            pending_triggers: Vec::new(),
+            fast_actors: FastActorScope::Any,
+        };
+        let json = serde_json::to_string(&window).expect("serialize");
+        let back: OpenWindow = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, window);
+    }
+
+    #[test]
+    fn between_phases_window_kind_serde_roundtrip() {
+        let kind = WindowKind::BetweenPhases {
+            from: Phase::Mythos,
+            to: Phase::Investigation,
+        };
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
 }
 
 #[cfg(test)]

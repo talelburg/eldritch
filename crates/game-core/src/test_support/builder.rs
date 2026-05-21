@@ -232,6 +232,7 @@ impl TestGame {
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
             in_flight_reaction_window: None,
+            open_windows: Vec::new(),
         }
     }
 }

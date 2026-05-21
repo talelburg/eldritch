@@ -1169,6 +1169,10 @@ fn trigger_matches(
                 true
             }
         }
+        // BetweenPhases windows open for phase-transition timing; no
+        // Trigger::OnEvent pattern matches a phase-transition window —
+        // those windows gate Fast actions, not after-event reactions.
+        (WindowKind::BetweenPhases { .. }, _) => false,
     }
 }
 
