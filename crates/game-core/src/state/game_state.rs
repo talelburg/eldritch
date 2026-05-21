@@ -377,6 +377,24 @@ pub struct OpenWindow {
     pub fast_actors: FastActorScope,
 }
 
+impl OpenWindow {
+    /// Construct an empty [`OpenWindow`] (no pending triggers) for the
+    /// given `kind` and `fast_actors` scope.
+    ///
+    /// Provided so integration tests outside the crate (where the
+    /// `#[non_exhaustive]` attribute blocks struct-literal construction)
+    /// can inject a window directly onto
+    /// [`GameState::open_windows`] for stack-shape regression tests.
+    #[must_use]
+    pub fn new_empty(kind: WindowKind, fast_actors: FastActorScope) -> Self {
+        Self {
+            kind,
+            pending_triggers: Vec::new(),
+            fast_actors,
+        }
+    }
+}
+
 /// Discriminant of an open `OpenWindow`.
 ///
 /// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)

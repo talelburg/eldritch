@@ -23,8 +23,8 @@ use game_core::dsl::{
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, InvestigatorId,
-    LocationId, Phase, TokenModifiers, WindowKind,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
+    InvestigatorId, LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, TestGame,
@@ -877,4 +877,75 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     assert_eq!(skipped.state.locations[&loc_id].clues, 2);
     assert_eq!(skipped.state.investigators[&inv_id].clues, 1);
     assert!(skipped.state.top_reaction_window().is_none());
+}
+
+#[test]
+fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top() {
+    // Regression for the structural fix in a3958c6: when the stack is
+    //   [AfterEnemyDefeated R (with pending triggers), BetweenPhases B (empty)]
+    // a naive open_windows.pop() would remove B (the top), leaving R
+    // unresolved and leaking. close_reaction_window_at takes an explicit
+    // index so it removes R and leaves B intact.
+    //
+    // Setup: drive a Fight to the reaction-window AwaitingInput, then
+    // manually push an empty BetweenPhases window on top of the stack
+    // to replicate the stack shape Phase-4 phase-content PRs (#69/#70/#71)
+    // will produce in production paths.
+    let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
+    let mut paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "Fight must suspend at the reaction window, got {:?}",
+        paused.outcome,
+    );
+    // Confirm the stack before the injection: one reaction window with
+    // one pending trigger.
+    assert_eq!(paused.state.open_windows.len(), 1);
+    assert!(!paused.state.open_windows[0].pending_triggers.is_empty());
+
+    // Inject an empty BetweenPhases window on top to create the
+    // [R (pending), B (empty)] shape.
+    paused.state.open_windows.push(OpenWindow::new_empty(
+        WindowKind::BetweenPhases {
+            from: Phase::Investigation,
+            to: Phase::Mythos,
+        },
+        FastActorScope::Any,
+    ));
+    assert_eq!(paused.state.open_windows.len(), 2, "stack is [R, B] after injection");
+
+    // Skip the reaction window. close_reaction_window_at must remove R
+    // (the reaction window that has pending triggers) and leave B intact.
+    let resumed = game_core::engine::apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Skip,
+        }),
+    );
+
+    // The BetweenPhases window (B) must still be on the stack.
+    assert_eq!(
+        resumed.state.open_windows.len(),
+        1,
+        "after closing R the stack must contain exactly one window (B), \
+         got {:?}",
+        resumed.state.open_windows,
+    );
+    assert_eq!(
+        resumed.state.open_windows[0].kind,
+        WindowKind::BetweenPhases {
+            from: Phase::Investigation,
+            to: Phase::Mythos,
+        },
+        "the surviving window must be the BetweenPhases gate, not the reaction window",
+    );
+    // R must have emitted WindowClosed.
+    assert_event!(
+        resumed.events,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
+        } if *e == enemy_id
+    );
+    // B must still be open — no second WindowClosed.
+    assert_event_count!(resumed.events, 1, Event::WindowClosed { .. });
 }
