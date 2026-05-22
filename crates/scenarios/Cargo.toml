@@ -13,3 +13,11 @@ workspace = true
 [dependencies]
 game-core = { path = "../game-core" }
 cards = { path = "../cards" }
+
+[features]
+# Compile the `test_fixtures` module (synthetic / minimal scenarios)
+# into the crate. Used by `crates/scenarios/tests/` integration tests
+# (always enabled there via `cfg(test)`) and may be enabled by
+# downstream crates (server / web integration tests) that want the
+# fixture without writing their own.
+test_fixtures = []
