@@ -259,6 +259,21 @@ pub enum EngineRecord {
     /// `engine::dispatch`) happens as an in-handler side effect and
     /// does NOT push this variant. No payload — the deck is shared.
     EncounterDeckShuffled,
+    /// The named investigator reveals the top card of the encounter
+    /// deck. Emitted by #69's Mythos draw loop when it lands; in
+    /// #126's tests, issued directly to exercise the on-draw path.
+    ///
+    /// The reveal flow: the dispatch handler (`encounter_card_revealed`
+    /// in `engine::dispatch`, landing in the next commit on this
+    /// branch) draws the top of the deck (transparently reshuffling
+    /// discard if needed), emits `Event::CardRevealed`, runs any
+    /// `Trigger::Revelation` abilities through the DSL evaluator,
+    /// then routes by card type (treachery -> discard; enemy -> spawn
+    /// handler from #127).
+    EncounterCardRevealed {
+        /// The investigator whose draw produced this reveal.
+        investigator: InvestigatorId,
+    },
 }
 
 /// The shape of a response to an `AwaitingInput` prompt.
@@ -296,4 +311,19 @@ pub enum InputResponse {
         /// Hand indices to commit.
         indices: Vec<u32>,
     },
+}
+
+#[cfg(test)]
+mod encounter_card_revealed_action_tests {
+    use super::*;
+
+    #[test]
+    fn encounter_card_revealed_engine_record_serde_roundtrip() {
+        let rec = EngineRecord::EncounterCardRevealed {
+            investigator: InvestigatorId(1),
+        };
+        let json = serde_json::to_string(&rec).expect("serialize");
+        let back: EngineRecord = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, rec);
+    }
 }

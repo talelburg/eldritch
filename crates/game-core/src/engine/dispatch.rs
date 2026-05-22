@@ -173,6 +173,9 @@ pub fn apply_engine_record(
     match record {
         EngineRecord::DeckShuffled { investigator } => deck_shuffled(state, events, *investigator),
         EngineRecord::EncounterDeckShuffled => encounter_deck_shuffled(state, events),
+        EngineRecord::EncounterCardRevealed { .. } => EngineOutcome::Rejected {
+            reason: "EncounterCardRevealed handler lands in the next commit".into(),
+        },
     }
 }
 
