@@ -238,6 +238,37 @@ pub(super) fn shuffle_player_deck(
     events.push(Event::DeckShuffled { investigator });
 }
 
+/// Fisher-Yates shuffle of the shared encounter deck using the
+/// shared deterministic RNG. Used by [`encounter_deck_shuffled`] and
+/// by [`reshuffle_encounter_discard`].
+///
+/// Emits [`Event::EncounterDeckShuffled`] iff the deck had at least
+/// 2 cards (a 0- or 1-card deck has nothing to permute).
+#[allow(dead_code)]
+pub(super) fn shuffle_encounter_deck(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+) {
+    let deck_len = state.encounter_deck.len();
+    if deck_len < 2 {
+        return;
+    }
+    // Mirror shuffle_player_deck's "collect swaps then apply" pattern:
+    // RngState::next_index borrows &mut state.rng, which would conflict
+    // with a &mut borrow on state.encounter_deck inline.
+    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
+    let mut i = deck_len - 1;
+    while i >= 1 {
+        let j = state.rng.next_index(i + 1);
+        swaps.push((i, j));
+        i -= 1;
+    }
+    for (a, b) in swaps {
+        state.encounter_deck.swap(a, b);
+    }
+    events.push(Event::EncounterDeckShuffled);
+}
+
 /// Draw up to `count` cards from the named investigator's deck top
 /// into their hand. Stops early (without panic) if the deck runs out
 /// — this helper is just the structural move; reshuffle / horror
@@ -2960,5 +2991,45 @@ fn check_cost_payable(
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."
                 .to_string(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod encounter_deck_helper_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::rng::RngState;
+    use crate::state::CardCode;
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(42);
+        state.encounter_deck.push_back(CardCode("a".into()));
+        state.encounter_deck.push_back(CardCode("b".into()));
+        state.encounter_deck.push_back(CardCode("c".into()));
+
+        let mut events = Vec::new();
+        shuffle_encounter_deck(&mut state, &mut events);
+
+        assert!(matches!(events.as_slice(), [Event::EncounterDeckShuffled]));
+        assert_eq!(state.encounter_deck.len(), 3);
+        let mut codes: Vec<_> = state.encounter_deck.iter().cloned().collect();
+        codes.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(codes, vec![CardCode("a".into()), CardCode("b".into()), CardCode("c".into())]);
+    }
+
+    #[test]
+    fn shuffle_encounter_deck_is_silent_on_zero_or_one_card() {
+        for n in 0..=1 {
+            let mut state = TestGame::new().build();
+            for i in 0..n {
+                state.encounter_deck.push_back(CardCode(format!("c{i}")));
+            }
+            let mut events = Vec::new();
+            shuffle_encounter_deck(&mut state, &mut events);
+            assert!(events.is_empty(), "expected no event for n={n} deck");
+        }
     }
 }
