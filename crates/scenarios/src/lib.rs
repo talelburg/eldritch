@@ -70,3 +70,23 @@ mod tests {
         assert!((REGISTRY.module_for)(&id).is_some());
     }
 }
+
+#[cfg(test)]
+mod setup_seeds_encounter_deck_tests {
+    use super::test_fixtures::{synth_cards::SYNTH_TREACHERY_CODE, synthetic};
+    use game_core::state::CardCode;
+
+    #[test]
+    fn synthetic_setup_seeds_encounter_deck_with_synth_treachery() {
+        let state = synthetic::setup();
+        assert_eq!(
+            state.encounter_deck.len(),
+            1,
+            "synthetic fixture must seed exactly one encounter card",
+        );
+        assert_eq!(
+            state.encounter_deck[0],
+            CardCode(SYNTH_TREACHERY_CODE.into()),
+        );
+    }
+}
