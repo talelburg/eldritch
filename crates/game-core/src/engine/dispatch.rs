@@ -201,10 +201,7 @@ fn deck_shuffled(
 /// emits [`Event::EncounterDeckShuffled`] (when ≥ 2 cards). No
 /// validation — the encounter deck is shared, so there's no
 /// per-investigator existence check.
-fn encounter_deck_shuffled(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-) -> EngineOutcome {
+fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     shuffle_encounter_deck(state, events);
     EngineOutcome::Done
 }
@@ -259,10 +256,7 @@ pub(super) fn shuffle_player_deck(
 ///
 /// Emits [`Event::EncounterDeckShuffled`] iff the deck had at least
 /// 2 cards (a 0- or 1-card deck has nothing to permute).
-pub(super) fn shuffle_encounter_deck(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-) {
+pub(super) fn shuffle_encounter_deck(state: &mut GameState, events: &mut Vec<Event>) {
     let deck_len = state.encounter_deck.len();
     if deck_len < 2 {
         return;
@@ -293,12 +287,12 @@ pub(super) fn shuffle_encounter_deck(
 /// player-deck pattern. The `EngineRecord` variant is reserved for
 /// explicit shuffle actions (future "shuffle X into the encounter
 /// deck" effects).
+// Real (non-test) callers land in #126's on-draw resolution path.
 #[allow(dead_code)]
-pub(super) fn reshuffle_encounter_discard(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-) {
-    state.encounter_deck.extend(state.encounter_discard.drain(..));
+pub(super) fn reshuffle_encounter_discard(state: &mut GameState, events: &mut Vec<Event>) {
+    state
+        .encounter_deck
+        .extend(state.encounter_discard.drain(..));
     shuffle_encounter_deck(state, events);
 }
 
@@ -310,6 +304,7 @@ pub(super) fn reshuffle_encounter_discard(
 /// the deck and the discard are empty — callers decide how to
 /// interpret this (#69's Mythos loop treats it as a scenario
 /// condition rather than an engine error).
+// Real (non-test) callers land in #126's on-draw resolution path.
 #[allow(dead_code)]
 pub(super) fn draw_encounter_top(
     state: &mut GameState,
@@ -3072,7 +3067,14 @@ mod encounter_deck_helper_tests {
         assert_eq!(state.encounter_deck.len(), 3);
         let mut codes: Vec<_> = state.encounter_deck.iter().cloned().collect();
         codes.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(codes, vec![CardCode("a".into()), CardCode("b".into()), CardCode("c".into())]);
+        assert_eq!(
+            codes,
+            vec![
+                CardCode("a".into()),
+                CardCode("b".into()),
+                CardCode("c".into())
+            ]
+        );
     }
 
     #[test]
@@ -3099,7 +3101,10 @@ mod encounter_deck_helper_tests {
         let mut events = Vec::new();
         reshuffle_encounter_discard(&mut state, &mut events);
 
-        assert!(state.encounter_discard.is_empty(), "discard should be drained");
+        assert!(
+            state.encounter_discard.is_empty(),
+            "discard should be drained"
+        );
         assert_eq!(state.encounter_deck.len(), 5, "all 5 cards moved into deck");
         assert!(
             matches!(events.as_slice(), [Event::EncounterDeckShuffled]),
@@ -3129,11 +3134,23 @@ mod encounter_deck_helper_tests {
 
         let mut events = Vec::new();
 
-        assert_eq!(draw_encounter_top(&mut state, &mut events), Some(CardCode("a".into())));
-        assert_eq!(draw_encounter_top(&mut state, &mut events), Some(CardCode("b".into())));
-        assert_eq!(draw_encounter_top(&mut state, &mut events), Some(CardCode("c".into())));
+        assert_eq!(
+            draw_encounter_top(&mut state, &mut events),
+            Some(CardCode("a".into()))
+        );
+        assert_eq!(
+            draw_encounter_top(&mut state, &mut events),
+            Some(CardCode("b".into()))
+        );
+        assert_eq!(
+            draw_encounter_top(&mut state, &mut events),
+            Some(CardCode("c".into()))
+        );
         assert_eq!(draw_encounter_top(&mut state, &mut events), None);
-        assert!(events.is_empty(), "no events when draining a non-empty deck");
+        assert!(
+            events.is_empty(),
+            "no events when draining a non-empty deck"
+        );
     }
 
     #[test]
@@ -3148,7 +3165,11 @@ mod encounter_deck_helper_tests {
         let drawn = draw_encounter_top(&mut state, &mut events);
 
         assert!(drawn.is_some(), "should reshuffle and draw");
-        assert_eq!(state.encounter_deck.len(), 2, "2 cards remain in deck post-draw");
+        assert_eq!(
+            state.encounter_deck.len(),
+            2,
+            "2 cards remain in deck post-draw"
+        );
         assert!(state.encounter_discard.is_empty(), "discard drained");
         assert!(
             matches!(events.as_slice(), [Event::EncounterDeckShuffled]),
@@ -3188,7 +3209,10 @@ mod encounter_deck_helper_tests {
         shuffled.sort_by(|a, b| a.0.cmp(&b.0));
         orig_sorted.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(shuffled, orig_sorted);
-        assert!(result.events.iter().any(|e| matches!(e, Event::EncounterDeckShuffled)));
+        assert!(result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::EncounterDeckShuffled)));
     }
 
     #[test]
@@ -3209,6 +3233,9 @@ mod encounter_deck_helper_tests {
         assert_eq!(a, b, "same seed must produce same shuffle order");
 
         let c = shuffle_with_seed(42);
-        assert_ne!(a, c, "different seeds should produce different orders (smoke test)");
+        assert_ne!(
+            a, c,
+            "different seeds should produce different orders (smoke test)"
+        );
     }
 }

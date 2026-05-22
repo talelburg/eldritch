@@ -255,9 +255,9 @@ pub enum EngineRecord {
     },
     /// Shuffle the shared encounter deck. Reserved for explicit
     /// shuffle effects ("shuffle X into the encounter deck") — the
-    /// empty-deck reshuffle inside [`draw_encounter_top`](crate::engine::dispatch::draw_encounter_top)
-    /// happens as an in-handler side effect and does NOT push this
-    /// variant. No payload — the deck is shared.
+    /// empty-deck reshuffle inside `draw_encounter_top` (in
+    /// `engine::dispatch`) happens as an in-handler side effect and
+    /// does NOT push this variant. No payload — the deck is shared.
     EncounterDeckShuffled,
 }
 

@@ -244,10 +244,10 @@ pub enum Event {
         investigator: InvestigatorId,
     },
     /// A shuffle of the shared encounter deck occurred. Emitted by
-    /// [`shuffle_encounter_deck`](crate::engine::dispatch::shuffle_encounter_deck)
-    /// iff the deck had ≥ 2 cards (a 0- or 1-card shuffle is a no-op
-    /// and emits nothing). Has no payload — the encounter deck is
-    /// shared, so no investigator ID is needed.
+    /// `shuffle_encounter_deck` (in `engine::dispatch`) iff the deck
+    /// had ≥ 2 cards (a 0- or 1-card shuffle is a no-op and emits
+    /// nothing). Has no payload — the encounter deck is shared, so
+    /// no investigator ID is needed.
     EncounterDeckShuffled,
     /// An investigator drew `count` cards from their player deck. The
     /// cards have already been moved from deck to hand by the time

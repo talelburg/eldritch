@@ -132,7 +132,7 @@ pub struct GameState {
     pub scenario_id: Option<crate::scenario::ScenarioId>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
-    /// deck runs out, [`draw_encounter_top`](crate::engine::dispatch::draw_encounter_top)
+    /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
     /// transparently reshuffles `encounter_discard` back in via the
     /// deterministic RNG path.
     ///
@@ -145,8 +145,8 @@ pub struct GameState {
     /// encounter content) land here in later issues.
     ///
     /// Drained back into [`encounter_deck`](Self::encounter_deck) by
-    /// [`reshuffle_encounter_discard`](crate::engine::dispatch::reshuffle_encounter_discard)
-    /// when the deck runs empty.
+    /// `reshuffle_encounter_discard` (in `engine::dispatch`) when
+    /// the deck runs empty.
     pub encounter_discard: Vec<CardCode>,
 }
 
