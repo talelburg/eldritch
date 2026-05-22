@@ -68,7 +68,7 @@ Real setup wiring (populated encounter sets via `ScenarioModule::setup`) lands i
 ## Test plan
 1. **State serde roundtrip.** `GameState` with non-empty `encounter_deck` + `encounter_discard` serializes and deserializes losslessly.
 2. **Drain to empty.** Build a known deck of N codes via direct mutation, call `draw_encounter_top` N times → each returns `Some(code)` in order, the (N+1)th returns `None`.
-3. **Empty-deck reshuffle.** Build deck of 0, push K codes to discard, call `draw_encounter_top` → asserts `Event::EncounterDeckShuffled` fires, `EngineRecord::EncounterDeckShuffled` lands on the action log, returns one of the K codes, the remaining (K−1) stay in the deck.
+3. **Empty-deck reshuffle.** Build deck of 0, push K codes to discard, call `draw_encounter_top` → asserts `Event::EncounterDeckShuffled` fires, returns one of the K codes, the remaining (K−1) stay in the deck. The mid-handler reshuffle does NOT push an `EngineRecord` (per the design above) — the helper does not maintain the action log directly, the caller does.
 4. **Empty-on-both.** Empty deck + empty discard → `draw_encounter_top` returns `None`, no shuffle event emitted.
 5. **Determinism.** Two identical `GameState`s with the same `RngState` seed and the same K-card discard reshuffle → produce identical post-shuffle order. Confirms reshuffle uses the seeded RNG path.
 

@@ -133,8 +133,8 @@ pub struct GameState {
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
-    /// transparently reshuffles `encounter_discard` back in via the
-    /// deterministic RNG path.
+    /// transparently reshuffles [`encounter_discard`](Self::encounter_discard)
+    /// back in via the deterministic RNG path.
     ///
     /// Empty at the start of every scenario; populated by scenario
     /// setup (the first wiring lands in #126 alongside the synthetic

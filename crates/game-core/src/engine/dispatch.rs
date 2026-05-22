@@ -3149,7 +3149,7 @@ mod encounter_deck_helper_tests {
         assert_eq!(draw_encounter_top(&mut state, &mut events), None);
         assert!(
             events.is_empty(),
-            "no events when draining a non-empty deck"
+            "no events for any draw — discard is always empty, no reshuffle is triggered"
         );
     }
 
@@ -3164,7 +3164,16 @@ mod encounter_deck_helper_tests {
         let mut events = Vec::new();
         let drawn = draw_encounter_top(&mut state, &mut events);
 
-        assert!(drawn.is_some(), "should reshuffle and draw");
+        let drawn_code = drawn.expect("should reshuffle and draw");
+        assert!(
+            [
+                CardCode("x".into()),
+                CardCode("y".into()),
+                CardCode("z".into())
+            ]
+            .contains(&drawn_code),
+            "drawn card must be one of the three discard cards, got {drawn_code:?}"
+        );
         assert_eq!(
             state.encounter_deck.len(),
             2,
