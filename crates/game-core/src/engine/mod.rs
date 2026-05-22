@@ -118,7 +118,7 @@ pub fn apply_with_scenario_registry(
 /// resolution has already fired. A scenario whose `detect_resolution`
 /// keeps returning `Some` will keep emitting `ScenarioResolved` on
 /// every subsequent apply. Phase 9 adds the guard alongside the
-/// first non-trivial `apply_resolution` body.
+/// first non-trivial `apply_resolution` body — tracked as #131.
 fn fire_scenario_resolution(
     state: &mut GameState,
     events: &mut Vec<Event>,

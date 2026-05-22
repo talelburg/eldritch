@@ -98,7 +98,7 @@ pub struct ScenarioModule {
     /// skeleton this is acceptable because `apply_resolution` is a
     /// no-op. Phase 9 will add a guard (likely
     /// `GameState.resolution: Option<Resolution>`) when the first
-    /// non-trivial `apply_resolution` lands.
+    /// non-trivial `apply_resolution` lands — tracked as #131.
     pub detect_resolution: fn(&GameState) -> Option<Resolution>,
     /// Apply the resolution's effects (XP, trauma, scenario-end
     /// cleanup). Receives the events buffer so changes are observable

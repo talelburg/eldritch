@@ -372,7 +372,7 @@ pub enum Event {
     /// `detect_resolution` keeps returning `Some` will keep re-emitting
     /// `ScenarioResolved` on each subsequent apply. Phase 9 will add
     /// the idempotency guard alongside the first non-trivial
-    /// `apply_resolution`.
+    /// `apply_resolution` — tracked as #131.
     ScenarioResolved {
         /// The resolution returned by the scenario module.
         resolution: Resolution,

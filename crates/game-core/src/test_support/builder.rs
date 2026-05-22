@@ -223,10 +223,11 @@ impl TestGame {
 
     /// Set the scenario id this state belongs to. `None` (the
     /// default from [`TestGame::new`]) means the engine's post-apply
-    /// resolution hook will short-circuit; passing a `ScenarioId`
+    /// resolution hook will short-circuit. Passing a `ScenarioId`
     /// means a `ScenarioRegistry` capable of resolving it must be
-    /// installed (or the resolution lookup will silently no-op when
-    /// `module_for` returns `None`).
+    /// installed *if you want resolutions to fire* — the resolution
+    /// lookup silently no-ops when no registry is installed or when
+    /// `module_for` returns `None`.
     pub fn with_scenario_id(mut self, id: ScenarioId) -> Self {
         self.scenario_id = Some(id);
         self
