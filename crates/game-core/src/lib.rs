@@ -22,6 +22,8 @@ pub mod card_registry;
 pub mod engine;
 pub mod event;
 pub mod rng;
+pub mod scenario;
+pub mod scenario_registry;
 pub mod state;
 
 pub mod test_support;
@@ -43,6 +45,7 @@ pub use card_registry::CardRegistry;
 pub use engine::{apply, ApplyResult, EngineOutcome, InputRequest, ResumeToken};
 pub use event::{Event, FailureReason};
 pub use rng::RngState;
+pub use scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
 pub use state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DefeatCause, Enemy,
     EnemyId, GameState, Investigator, InvestigatorId, Location, LocationId, PendingSkillModifier,

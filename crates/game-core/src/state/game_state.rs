@@ -118,6 +118,18 @@ pub struct GameState {
     /// the same apply) is now structural — push twice, drive resumes
     /// in reverse open order.
     pub open_windows: Vec<OpenWindow>,
+    /// Identifier of the scenario this state belongs to, if any.
+    ///
+    /// `None` for tests and fixtures that don't care about scenario
+    /// resolution; in that case the engine's post-apply resolution
+    /// hook short-circuits. `Some(id)` is the normal case: the
+    /// engine looks up the module via
+    /// [`scenario_registry::current`](crate::scenario_registry::current)
+    /// and asks it whether the new state has resolved.
+    ///
+    /// Serializable so action-log replay reproduces the lookup
+    /// deterministically across host restarts.
+    pub scenario_id: Option<crate::scenario::ScenarioId>,
 }
 
 /// A skill test paused mid-resolution at the commit window.

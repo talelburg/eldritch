@@ -13,6 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::scenario::Resolution;
 use crate::state::{
     CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
     SkillKind, TokenResolution, WindowKind, Zone,
@@ -358,6 +359,23 @@ pub enum Event {
     WindowClosed {
         /// The kind of window that closed.
         kind: WindowKind,
+    },
+    /// A scenario resolved (won or lost). Emitted by
+    /// [`apply`](crate::engine::apply) after a `Done` outcome when the
+    /// active scenario module's `detect_resolution` returns `Some`.
+    /// Followed immediately by any events the scenario's
+    /// `apply_resolution` pushes — XP / trauma changes will appear
+    /// after this event once Phase 9 lands real bodies.
+    ///
+    /// This event is **terminal-ish** for the scenario, but the
+    /// Phase-4 engine does not latch on it: a scenario whose
+    /// `detect_resolution` keeps returning `Some` will keep re-emitting
+    /// `ScenarioResolved` on each subsequent apply. Phase 9 will add
+    /// the idempotency guard alongside the first non-trivial
+    /// `apply_resolution` — tracked as #131.
+    ScenarioResolved {
+        /// The resolution returned by the scenario module.
+        resolution: Resolution,
     },
 }
 

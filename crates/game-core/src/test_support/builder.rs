@@ -26,6 +26,7 @@
 use std::collections::BTreeMap;
 
 use crate::rng::RngState;
+use crate::scenario::ScenarioId;
 use crate::state::{
     ChaosBag, Enemy, EnemyId, FastActorScope, GameState, Investigator, InvestigatorId, Location,
     LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
@@ -51,6 +52,7 @@ pub struct TestGame {
     rng: RngState,
     mulligan_window: bool,
     open_windows: Vec<OpenWindow>,
+    scenario_id: Option<ScenarioId>,
 }
 
 impl TestGame {
@@ -72,6 +74,7 @@ impl TestGame {
             rng: RngState::new(0),
             mulligan_window: false,
             open_windows: Vec::new(),
+            scenario_id: None,
         }
     }
 
@@ -218,6 +221,18 @@ impl TestGame {
         self
     }
 
+    /// Set the scenario id this state belongs to. `None` (the
+    /// default from [`TestGame::new`]) means the engine's post-apply
+    /// resolution hook will short-circuit. Passing a `ScenarioId`
+    /// means a `ScenarioRegistry` capable of resolving it must be
+    /// installed *if you want resolutions to fire* — the resolution
+    /// lookup silently no-ops when no registry is installed or when
+    /// `module_for` returns `None`.
+    pub fn with_scenario_id(mut self, id: ScenarioId) -> Self {
+        self.scenario_id = Some(id);
+        self
+    }
+
     /// Build into a [`TestSession`] for driving the engine with a
     /// scripted [`ChoiceResolver`].
     ///
@@ -249,6 +264,7 @@ impl TestGame {
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
             open_windows: self.open_windows,
+            scenario_id: self.scenario_id,
         }
     }
 }
