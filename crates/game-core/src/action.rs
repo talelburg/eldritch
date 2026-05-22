@@ -253,6 +253,12 @@ pub enum EngineRecord {
         /// Whose deck to shuffle.
         investigator: InvestigatorId,
     },
+    /// Shuffle the shared encounter deck. Reserved for explicit
+    /// shuffle effects ("shuffle X into the encounter deck") — the
+    /// empty-deck reshuffle inside `draw_encounter_top` (in
+    /// `engine::dispatch`) happens as an in-handler side effect and
+    /// does NOT push this variant. No payload — the deck is shared.
+    EncounterDeckShuffled,
 }
 
 /// The shape of a response to an `AwaitingInput` prompt.

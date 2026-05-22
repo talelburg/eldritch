@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. Design pass complete 2026-05-21. First two PRs merged: `#103` unified window stack as PR #129 and `#74` ScenarioModule skeleton as PR #130. Remaining: `#72`, `#126`, `#127`, `#69`, `#70`, `#71`, `#128`, `#73`.
+🟡 In progress. Design pass complete 2026-05-21. First three PRs merged: `#103` unified window stack as PR #129, `#74` ScenarioModule skeleton as PR #130, and `#72` encounter deck state as PR #132. Remaining: `#126`, `#127`, `#69`, `#70`, `#71`, `#128`, `#73`.
 
 ## Goal
 
@@ -12,7 +12,6 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 
 | # | Title | Notes |
 |---|---|---|
-| `#72` | encounter deck state | Shuffled deck of treacheries + enemies; deterministic via the deck-shuffle RNG path. Empty → shuffle discard back. |
 | `#126` | DSL `Trigger::Revelation` + `EventPattern::CardRevealed` + on-draw resolution path | Split out of `#69`. First consumer is a synthetic treachery in the test fixture (e.g. "lose 1 resource"). |
 | `#127` | enemy spawn rules (`Spawn { location: SpawnLocation }`, engagement-on-spawn, `EventPattern::EnemySpawned`) | Split out of `#69`. First consumer is a synthetic spawn-bearing enemy. |
 | `#69` | Mythos phase content (draw + resolve + Surge) | Composes `#72` + `#126` + `#127`: each investigator draws 1 from the encounter deck, resolves it as treachery or enemy spawn, handles Surge by drawing another. |
@@ -27,6 +26,7 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 |---|---|---|---|
 | `#103` | unified window stack (player + reaction) | #129 | Foundational refactor of #52 machinery; ships unified `open_windows` stack. |
 | `#74` | scenario module skeleton: `ScenarioModule` + `ScenarioRegistry` | #130 | `ScenarioId` / `Resolution` / `ScenarioModule` / `ScenarioRegistry` in `game-core`; synthetic fixture in `scenarios`; engine post-apply hook with parameterized `apply_with_scenario_registry` helper for test mocking. |
+| `#72` | encounter deck state | #132 | `GameState.encounter_deck: VecDeque<CardCode>` + `encounter_discard: Vec<CardCode>`. Helpers `shuffle_encounter_deck` / `reshuffle_encounter_discard` / `draw_encounter_top` mirror the existing player-deck pattern in `engine/dispatch.rs`. `EngineRecord::EncounterDeckShuffled` + `Event::EncounterDeckShuffled` are additive siblings to the existing `DeckShuffled` (which stays player-deck-only). |
 
 ### Moved out of Phase 4
 
@@ -45,7 +45,7 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 |---|---|---|
 | 1 | `#103` unified window stack | ✅ PR #129. Foundational refactor of `#52` machinery. Every subsequent phase-content PR opens windows; doing this first means each plugs into a stable shape rather than retrofitting twice. |
 | 2 | `#74` `ScenarioModule` + registry + synthetic fixture stub | ✅ PR #130. Defines the shape every later issue conforms to. Synthetic fixture: 1 location, 1 investigator, one-line resolution predicate (`phase == Investigation && round >= 1`). Engine learns to call `detect_resolution` post-`apply`. |
-| 3 | `#72` encounter deck state | Independent of `#74`'s API beyond GameState. Sets up the data Mythos will draw from. |
+| 3 | `#72` encounter deck state | ✅ PR #132. Sets up the data Mythos will draw from. Helpers in `crates/game-core/src/engine/dispatch.rs` mirror the existing player-deck shape. |
 | 4 | `#126` DSL `Trigger::Revelation` + on-draw path | Lands the DSL primitive in isolation. First consumer is a synthetic treachery in the fixture. |
 | 5 | `#127` enemy spawn rules | First consumer is a synthetic spawn-bearing card. |
 | 6 | `#69` Mythos phase content | Composes 3 + 4 + 5. |
@@ -67,6 +67,8 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 - **`Resolution` is `Won { id: String } / Lost { reason: String }` (`#74`, PR #130).** String payloads stand in for Phase-9's typed campaign-log `Fact` enum. Both variants kept `#[non_exhaustive]` so Phase 9 can extend without breaking Phase-4 consumers. `id` was chosen over `branch` / `resolution_id` because ArkhamDB's resolution identifiers (`R1` / `R2` / `R3` / `R4`) are conventionally called "resolution IDs" in the source data, and `id` reads cleanly in pattern-match positions (`Won { id }` vs `Won { branch }`). The `#[non_exhaustive]` annotation protects variant shape but not field names — a future rename would be breaking. Worth re-examining when the first real scenario (Phase 7 Gathering) lands enough resolution variants to confirm the name in context.
 - **`apply_resolution` is called by the engine right after `ScenarioResolved` (`#74`, PR #130).** Same `apply()` call, same events buffer. Action-log replay reproduces XP / trauma changes deterministically. `apply_resolution` is a `fn` (not `Fn`/`FnMut`), so by signature it cannot reject — Phase 9 inherits the constraint that resolution effects must be infallible at the type level. If Phase 9 needs to surface "couldn't apply trauma because X," it'll need either a degraded `Event::ScenarioResolutionFailed` and continue-anyway, or engine-side pre-validation before the call. Idempotency latch is deferred — see `#131`.
 - **`scenarios::test_fixtures` defaults on, including in `server` (`#74`, PR #130).** Empirically necessary: cargo compiles `scenarios` as a normal dependency of `scenarios/tests/*.rs` integration binaries (not with `cfg(test)`), so the `#[cfg(any(test, feature = "test_fixtures"))]` gate would otherwise be inactive there. As a side effect, `crates/server/Cargo.toml` (which has `scenarios = { path = "../scenarios" }` without `default-features = false`) compiles the synthetic fixture into the production binary. Today it's harmless dead code; the cleanup window is **when Phase 7 ships the first real scenario** — at that point `server` should add `default-features = false` and the fixture stays test-only. File-grep anchor: `default = ["test_fixtures"]` in `crates/scenarios/Cargo.toml`.
+
+- **Additive sibling for `DeckShuffled` (`#72`, PR #132).** Encounter deck shuffles ride a new `EngineRecord::EncounterDeckShuffled` / `Event::EncounterDeckShuffled` rather than renaming or tagging the existing `DeckShuffled` (which stays player-deck-only). Trade-off: one variant says "player" implicitly, the other says "encounter" explicitly. Worth re-examining if act / agenda decks join the family — at that point a tagged `DeckKind` refactor becomes load-bearing. Companion convention: the mid-handler reshuffle path (`reshuffle_encounter_discard` called from `draw_encounter_top` on empty deck) does NOT push the `EngineRecord` — mirrors the player-deck pattern where replay determinism comes from the seeded RNG, not log entries. The `EngineRecord` variant is reserved for explicit "shuffle X into the encounter deck" effects.
 
 
 - **Toy scenario = synthetic fixture, not The Gathering.** A 1-location, 1-enemy, 1-act, 1-agenda fixture lives under `crates/scenarios/src/test_fixtures/` (gated `#[cfg(any(test, feature = "test_fixtures"))]`) and serves only as Phase-4's demo. The Gathering stays the Phase-7 content goal. Rationale: keeps Phase 4 infra-focused — synthetic content needs only the primitives, not Study / Hallway / Attic / Cellar / Parlor / Ghoul Priest / specific NotZ-I treacheries. Mirrors Phase 3's "build minimal infra each card needs, ship the card" pattern flipped to infra-side.

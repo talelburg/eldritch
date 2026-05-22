@@ -172,6 +172,7 @@ pub fn apply_engine_record(
 ) -> EngineOutcome {
     match record {
         EngineRecord::DeckShuffled { investigator } => deck_shuffled(state, events, *investigator),
+        EngineRecord::EncounterDeckShuffled => encounter_deck_shuffled(state, events),
     }
 }
 
@@ -191,6 +192,17 @@ fn deck_shuffled(
         };
     }
     shuffle_player_deck(state, events, investigator);
+    EngineOutcome::Done
+}
+
+/// Handler for [`EngineRecord::EncounterDeckShuffled`].
+///
+/// Permutes the shared encounter deck via the deterministic RNG and
+/// emits [`Event::EncounterDeckShuffled`] (when ≥ 2 cards). No
+/// validation — the encounter deck is shared, so there's no
+/// per-investigator existence check.
+fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    shuffle_encounter_deck(state, events);
     EngineOutcome::Done
 }
 
@@ -236,6 +248,75 @@ pub(super) fn shuffle_player_deck(
         inv.deck.swap(a, b);
     }
     events.push(Event::DeckShuffled { investigator });
+}
+
+/// Fisher-Yates shuffle of the shared encounter deck using the
+/// shared deterministic RNG. Used by [`encounter_deck_shuffled`] and
+/// by [`reshuffle_encounter_discard`].
+///
+/// Emits [`Event::EncounterDeckShuffled`] iff the deck had at least
+/// 2 cards (a 0- or 1-card deck has nothing to permute).
+pub(super) fn shuffle_encounter_deck(state: &mut GameState, events: &mut Vec<Event>) {
+    let deck_len = state.encounter_deck.len();
+    if deck_len < 2 {
+        return;
+    }
+    // Mirror shuffle_player_deck's "collect swaps then apply" pattern:
+    // RngState::next_index borrows &mut state.rng, which would conflict
+    // with a &mut borrow on state.encounter_deck inline.
+    let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
+    let mut i = deck_len - 1;
+    while i >= 1 {
+        let j = state.rng.next_index(i + 1);
+        swaps.push((i, j));
+        i -= 1;
+    }
+    for (a, b) in swaps {
+        state.encounter_deck.swap(a, b);
+    }
+    events.push(Event::EncounterDeckShuffled);
+}
+
+/// Drain `state.encounter_discard` into `state.encounter_deck` and
+/// shuffle the resulting deck. Called by
+/// [`draw_encounter_top`] when the deck runs empty.
+///
+/// Does NOT push an `EngineRecord::EncounterDeckShuffled` to the
+/// action log — mid-handler reshuffles rely on RNG determinism for
+/// replay rather than log entries, mirroring the existing
+/// player-deck pattern. The `EngineRecord` variant is reserved for
+/// explicit shuffle actions (future "shuffle X into the encounter
+/// deck" effects).
+// Real (non-test) callers land in #126's on-draw resolution path.
+#[allow(dead_code)]
+pub(super) fn reshuffle_encounter_discard(state: &mut GameState, events: &mut Vec<Event>) {
+    state
+        .encounter_deck
+        .extend(state.encounter_discard.drain(..));
+    shuffle_encounter_deck(state, events);
+}
+
+/// Draw the top card of the encounter deck, transparently reshuffling
+/// the discard back in if the deck is empty.
+///
+/// Returns `Some(code)` when a card was available (either from the
+/// deck directly or after the reshuffle). Returns `None` when both
+/// the deck and the discard are empty — callers decide how to
+/// interpret this (#69's Mythos loop treats it as a scenario
+/// condition rather than an engine error).
+// Real (non-test) callers land in #126's on-draw resolution path.
+#[allow(dead_code)]
+pub(super) fn draw_encounter_top(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+) -> Option<CardCode> {
+    if state.encounter_deck.is_empty() {
+        if state.encounter_discard.is_empty() {
+            return None;
+        }
+        reshuffle_encounter_discard(state, events);
+    }
+    state.encounter_deck.pop_front()
 }
 
 /// Draw up to `count` cards from the named investigator's deck top
@@ -2960,5 +3041,210 @@ fn check_cost_payable(
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."
                 .to_string(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod encounter_deck_helper_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::rng::RngState;
+    use crate::state::CardCode;
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(42);
+        state.encounter_deck.push_back(CardCode("a".into()));
+        state.encounter_deck.push_back(CardCode("b".into()));
+        state.encounter_deck.push_back(CardCode("c".into()));
+
+        let mut events = Vec::new();
+        shuffle_encounter_deck(&mut state, &mut events);
+
+        assert!(matches!(events.as_slice(), [Event::EncounterDeckShuffled]));
+        assert_eq!(state.encounter_deck.len(), 3);
+        let mut codes: Vec<_> = state.encounter_deck.iter().cloned().collect();
+        codes.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            codes,
+            vec![
+                CardCode("a".into()),
+                CardCode("b".into()),
+                CardCode("c".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn shuffle_encounter_deck_is_silent_on_zero_or_one_card() {
+        for n in 0..=1 {
+            let mut state = TestGame::new().build();
+            for i in 0..n {
+                state.encounter_deck.push_back(CardCode(format!("c{i}")));
+            }
+            let mut events = Vec::new();
+            shuffle_encounter_deck(&mut state, &mut events);
+            assert!(events.is_empty(), "expected no event for n={n} deck");
+        }
+    }
+
+    #[test]
+    fn reshuffle_encounter_discard_moves_discard_into_deck_and_shuffles() {
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(7);
+        for i in 0..5 {
+            state.encounter_discard.push(CardCode(format!("d{i}")));
+        }
+
+        let mut events = Vec::new();
+        reshuffle_encounter_discard(&mut state, &mut events);
+
+        assert!(
+            state.encounter_discard.is_empty(),
+            "discard should be drained"
+        );
+        assert_eq!(state.encounter_deck.len(), 5, "all 5 cards moved into deck");
+        assert!(
+            matches!(events.as_slice(), [Event::EncounterDeckShuffled]),
+            "expected EncounterDeckShuffled (≥ 2 cards moved)"
+        );
+    }
+
+    #[test]
+    fn reshuffle_encounter_discard_is_silent_when_discard_has_one_card() {
+        let mut state = TestGame::new().build();
+        state.encounter_discard.push(CardCode("solo".into()));
+
+        let mut events = Vec::new();
+        reshuffle_encounter_discard(&mut state, &mut events);
+
+        assert!(state.encounter_discard.is_empty());
+        assert_eq!(state.encounter_deck.len(), 1);
+        assert!(events.is_empty(), "1-card shuffle emits no event");
+    }
+
+    #[test]
+    fn draw_encounter_top_drains_deck_then_returns_none() {
+        let mut state = TestGame::new().build();
+        state.encounter_deck.push_back(CardCode("a".into()));
+        state.encounter_deck.push_back(CardCode("b".into()));
+        state.encounter_deck.push_back(CardCode("c".into()));
+
+        let mut events = Vec::new();
+
+        assert_eq!(
+            draw_encounter_top(&mut state, &mut events),
+            Some(CardCode("a".into()))
+        );
+        assert_eq!(
+            draw_encounter_top(&mut state, &mut events),
+            Some(CardCode("b".into()))
+        );
+        assert_eq!(
+            draw_encounter_top(&mut state, &mut events),
+            Some(CardCode("c".into()))
+        );
+        assert_eq!(draw_encounter_top(&mut state, &mut events), None);
+        assert!(
+            events.is_empty(),
+            "no events for any draw — discard is always empty, no reshuffle is triggered"
+        );
+    }
+
+    #[test]
+    fn draw_encounter_top_reshuffles_discard_on_empty_deck() {
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(13);
+        state.encounter_discard.push(CardCode("x".into()));
+        state.encounter_discard.push(CardCode("y".into()));
+        state.encounter_discard.push(CardCode("z".into()));
+
+        let mut events = Vec::new();
+        let drawn = draw_encounter_top(&mut state, &mut events);
+
+        let drawn_code = drawn.expect("should reshuffle and draw");
+        assert!(
+            [
+                CardCode("x".into()),
+                CardCode("y".into()),
+                CardCode("z".into())
+            ]
+            .contains(&drawn_code),
+            "drawn card must be one of the three discard cards, got {drawn_code:?}"
+        );
+        assert_eq!(
+            state.encounter_deck.len(),
+            2,
+            "2 cards remain in deck post-draw"
+        );
+        assert!(state.encounter_discard.is_empty(), "discard drained");
+        assert!(
+            matches!(events.as_slice(), [Event::EncounterDeckShuffled]),
+            "reshuffle emits one event"
+        );
+    }
+
+    #[test]
+    fn draw_encounter_top_returns_none_when_deck_and_discard_both_empty() {
+        let mut state = TestGame::new().build();
+        let mut events = Vec::new();
+        assert_eq!(draw_encounter_top(&mut state, &mut events), None);
+        assert!(events.is_empty(), "no events on empty-on-both");
+    }
+
+    #[test]
+    fn engine_record_encounter_deck_shuffled_drives_shuffle() {
+        use crate::action::{Action, EngineRecord};
+        use crate::engine::apply;
+
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(99);
+        for i in 0..4 {
+            state.encounter_deck.push_back(CardCode(format!("c{i}")));
+        }
+        let original: Vec<_> = state.encounter_deck.iter().cloned().collect();
+
+        let result = apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
+
+        assert!(
+            matches!(result.outcome, crate::EngineOutcome::Done),
+            "expected Done, got {:?}",
+            result.outcome
+        );
+        let mut shuffled: Vec<_> = result.state.encounter_deck.iter().cloned().collect();
+        let mut orig_sorted = original.clone();
+        shuffled.sort_by(|a, b| a.0.cmp(&b.0));
+        orig_sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(shuffled, orig_sorted);
+        assert!(result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::EncounterDeckShuffled)));
+    }
+
+    #[test]
+    fn encounter_deck_shuffle_is_deterministic_from_seed() {
+        fn shuffle_with_seed(seed: u64) -> Vec<CardCode> {
+            let mut state = TestGame::new().build();
+            state.rng = RngState::new(seed);
+            for i in 0..10 {
+                state.encounter_deck.push_back(CardCode(format!("c{i:02}")));
+            }
+            let mut events = Vec::new();
+            shuffle_encounter_deck(&mut state, &mut events);
+            state.encounter_deck.iter().cloned().collect()
+        }
+
+        let a = shuffle_with_seed(2026);
+        let b = shuffle_with_seed(2026);
+        assert_eq!(a, b, "same seed must produce same shuffle order");
+
+        let c = shuffle_with_seed(42);
+        assert_ne!(
+            a, c,
+            "different seeds should produce different orders (smoke test)"
+        );
     }
 }

@@ -23,7 +23,7 @@
 //! let result = apply(state, Action::Player(PlayerAction::EndTurn));
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
@@ -265,6 +265,8 @@ impl TestGame {
             in_flight_skill_test: None,
             open_windows: self.open_windows,
             scenario_id: self.scenario_id,
+            encounter_deck: VecDeque::new(),
+            encounter_discard: Vec::new(),
         }
     }
 }
