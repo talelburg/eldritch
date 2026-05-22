@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress. Design pass complete 2026-05-21. First PR (`#103` unified window stack) merged 2026-05-21 as PR #129. Remaining: `#74`, `#72`, `#126`, `#127`, `#69`, `#70`, `#71`, `#128`, `#73`.
+🟡 In progress. Design pass complete 2026-05-21. First two PRs merged: `#103` unified window stack as PR #129 and `#74` ScenarioModule skeleton as PR #130. Remaining: `#72`, `#126`, `#127`, `#69`, `#70`, `#71`, `#128`, `#73`.
 
 ## Goal
 
@@ -12,8 +12,6 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 
 | # | Title | Notes |
 |---|---|---|
-| `#103` | unified window stack (player + reaction) | **Rescoped** to subsume `#52`'s `in_flight_reaction_window` Option into a `Vec<OpenWindow>` stack carrying queued reaction triggers AND the Fast-action gate. First step in Phase 4; every later phase-content PR plugs into the new shape. |
-| `#74` | scenario module skeleton: `ScenarioModule` + `ScenarioRegistry` | `ScenarioModule` is a static struct of `fn` pointers mirroring `CardRegistry`; `ScenarioRegistry` looks up modules by `ScenarioId`. Engine calls `detect_resolution` after each `apply`. Ships with a synthetic test fixture under `crates/scenarios/src/test_fixtures/`. |
 | `#72` | encounter deck state | Shuffled deck of treacheries + enemies; deterministic via the deck-shuffle RNG path. Empty → shuffle discard back. |
 | `#126` | DSL `Trigger::Revelation` + `EventPattern::CardRevealed` + on-draw resolution path | Split out of `#69`. First consumer is a synthetic treachery in the test fixture (e.g. "lose 1 resource"). |
 | `#127` | enemy spawn rules (`Spawn { location: SpawnLocation }`, engagement-on-spawn, `EventPattern::EnemySpawned`) | Split out of `#69`. First consumer is a synthetic spawn-bearing enemy. |
@@ -22,6 +20,13 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 | `#71` | Enemy phase: engagement attacks | **Rescoped** to engagement-attacks only (small PR). Iterates engaged enemies, fires each one's `enemy_attack`. |
 | `#128` | Hunter movement | Split out of `#71`. `Prey` enum on `Enemy`; BFS over location-connection graph; move + engage-on-arrival. Ambiguous shortest paths prompt the active investigator via `AwaitingInput` + `InputResponse::PickLocation`. |
 | `#73` | act + agenda + doom + threshold-advance | Kept whole. Doom +1 at Mythos start, threshold-driven agenda advance, act-advance condition emits `ActAdvanced`, end-of-deck → `ScenarioWon` / `ScenarioLost`. |
+
+### Closed
+
+| # | Title | PR | Notes |
+|---|---|---|---|
+| `#103` | unified window stack (player + reaction) | #129 | Foundational refactor of #52 machinery; ships unified `open_windows` stack. |
+| `#74` | scenario module skeleton: `ScenarioModule` + `ScenarioRegistry` | #130 | `ScenarioId` / `Resolution` / `ScenarioModule` / `ScenarioRegistry` in `game-core`; synthetic fixture in `scenarios`; engine post-apply hook with parameterized `apply_with_scenario_registry` helper for test mocking. |
 
 ### Moved out of Phase 4
 
@@ -39,7 +44,7 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 | # | PR / planned step | Why this slot |
 |---|---|---|
 | 1 | `#103` unified window stack | ✅ PR #129. Foundational refactor of `#52` machinery. Every subsequent phase-content PR opens windows; doing this first means each plugs into a stable shape rather than retrofitting twice. |
-| 2 | `#74` `ScenarioModule` + registry + synthetic fixture stub | Defines the shape every later issue conforms to. Fixture starts as `setup() = empty state with 1 location`, `detect_resolution = None`. Engine learns to call `detect_resolution` post-`apply`. |
+| 2 | `#74` `ScenarioModule` + registry + synthetic fixture stub | ✅ PR #130. Defines the shape every later issue conforms to. Synthetic fixture: 1 location, 1 investigator, one-line resolution predicate (`phase == Investigation && round >= 1`). Engine learns to call `detect_resolution` post-`apply`. |
 | 3 | `#72` encounter deck state | Independent of `#74`'s API beyond GameState. Sets up the data Mythos will draw from. |
 | 4 | `#126` DSL `Trigger::Revelation` + on-draw path | Lands the DSL primitive in isolation. First consumer is a synthetic treachery in the fixture. |
 | 5 | `#127` enemy spawn rules | First consumer is a synthetic spawn-bearing card. |
@@ -58,6 +63,11 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 - **`close_reaction_window_at` takes an explicit window index (`#103`, PR #129).** Phase-content PRs that push pure-Fast-gating windows (`BetweenPhases`, etc.) on top of a draining reaction window MUST resolve the close target via `GameState::top_reaction_window_index()`, not via `last()` / `pop()`. The stack would otherwise corrupt: `top_reaction_window_mut()` skips empty-`pending_triggers` windows but `pop` doesn't, so a `BetweenPhases-on-top-of-ReactionWindow` stack would close the wrong window.
 - **Card-level Fast restrictions are NOT engine-enforced (`#103`, PR #129).** The engine's PlayCard gate enforces the type-level Fast rules from Rules Reference page 11 (events: any window where `fast_actors` permits; assets: owner-only). Card-level restrictions like Working a Hunch's "Play only during your turn" are out of scope — a future DSL primitive will enforce them. Don't assume the engine prevents a Fast event from being played by a non-owner when a window permits.
 
+- **Engine resolution hook is a parameterized helper (`#74`, PR #130).** `apply()` is a one-liner over `apply_with_scenario_registry(state, action, scenario_registry::current())`. Engine unit tests pass a locally-constructed mock `ScenarioRegistry` to the parameterized variant; the process-global `OnceLock` is only touched by one test (the idempotent-install test in `scenario_registry`) and by the `scenarios::tests::synthetic_resolution` integration test. The parameterized helper is intentionally **not** re-exported at `game_core`'s crate root — it lives at `game_core::engine::apply_with_scenario_registry`, signalling it's a test-mocking escape hatch rather than a peer to `apply()`. Pattern is the recommended shape for future engine ↔ registry interactions where unit tests would otherwise contend on `OnceLock`.
+- **`Resolution` is `Won { id: String } / Lost { reason: String }` (`#74`, PR #130).** String payloads stand in for Phase-9's typed campaign-log `Fact` enum. Both variants kept `#[non_exhaustive]` so Phase 9 can extend without breaking Phase-4 consumers. `id` was chosen over `branch` / `resolution_id` because ArkhamDB's resolution identifiers (`R1` / `R2` / `R3` / `R4`) are conventionally called "resolution IDs" in the source data, and `id` reads cleanly in pattern-match positions (`Won { id }` vs `Won { branch }`). The `#[non_exhaustive]` annotation protects variant shape but not field names — a future rename would be breaking. Worth re-examining when the first real scenario (Phase 7 Gathering) lands enough resolution variants to confirm the name in context.
+- **`apply_resolution` is called by the engine right after `ScenarioResolved` (`#74`, PR #130).** Same `apply()` call, same events buffer. Action-log replay reproduces XP / trauma changes deterministically. `apply_resolution` is a `fn` (not `Fn`/`FnMut`), so by signature it cannot reject — Phase 9 inherits the constraint that resolution effects must be infallible at the type level. If Phase 9 needs to surface "couldn't apply trauma because X," it'll need either a degraded `Event::ScenarioResolutionFailed` and continue-anyway, or engine-side pre-validation before the call. Idempotency latch is deferred — see `#131`.
+- **`scenarios::test_fixtures` defaults on, including in `server` (`#74`, PR #130).** Empirically necessary: cargo compiles `scenarios` as a normal dependency of `scenarios/tests/*.rs` integration binaries (not with `cfg(test)`), so the `#[cfg(any(test, feature = "test_fixtures"))]` gate would otherwise be inactive there. As a side effect, `crates/server/Cargo.toml` (which has `scenarios = { path = "../scenarios" }` without `default-features = false`) compiles the synthetic fixture into the production binary. Today it's harmless dead code; the cleanup window is **when Phase 7 ships the first real scenario** — at that point `server` should add `default-features = false` and the fixture stays test-only. File-grep anchor: `default = ["test_fixtures"]` in `crates/scenarios/Cargo.toml`.
+
 
 - **Toy scenario = synthetic fixture, not The Gathering.** A 1-location, 1-enemy, 1-act, 1-agenda fixture lives under `crates/scenarios/src/test_fixtures/` (gated `#[cfg(any(test, feature = "test_fixtures"))]`) and serves only as Phase-4's demo. The Gathering stays the Phase-7 content goal. Rationale: keeps Phase 4 infra-focused — synthetic content needs only the primitives, not Study / Hallway / Attic / Cellar / Parlor / Ghoul Priest / specific NotZ-I treacheries. Mirrors Phase 3's "build minimal infra each card needs, ship the card" pattern flipped to infra-side.
 - **Unified window stack (`#103` × `#52`).** `Vec<OpenWindow>` on `GameState` replaces the single `in_flight_reaction_window: Option<...>`. Each `OpenWindow` carries (a) kind/timing, (b) queue of pending reaction triggers, (c) the set of investigators who may submit Fast actions during it. Rules Reference treats "player window" as the umbrella; the engine should too. `#52`'s `FinishContinuation` machinery survives — driver pushes/pops instead of manipulating an Option. Worth the refactor cost up-front because every Phase-4 phase-content PR opens windows; retrofitting twice is worse than once.
@@ -73,10 +83,8 @@ A synthetic toy scenario plays setup → resolution in tests, demonstrating that
 
 - **Window-stack invariants.** Exact push/pop points beyond phase boundaries and the reaction points `#52` already opens. Acceptable to start with that minimal set; expand when a card forces it.
 - **Hunter target-selection details (`#128`).** Default `Prey { Lowest(Stat), Highest(Stat), LeadInvestigator, Bearer, Custom(fn) }`. BFS shortest path; ambiguous-path resolution via `InputResponse::PickLocation` from the active investigator (cite the exact Rules Reference clause in the PR description before locking the shape).
-- **`detect_resolution` polling frequency.** Currently "after each `apply`." Correct but potentially expensive at scale. Defer perf concern until a real scenario is observable; flag inline like `#52`'s trigger-indexing deferral.
-- **`Resolution` value shape.** Enum like `Resolution::{Won { resolution_id }, Lost { reason }}`. XP/trauma application reads off the resolution; the typed `Fact` log is Phase 9's job. How `apply_resolution` hands surviving-investigator state to Phase 9 is Phase-9's design (probably a `ScenarioOutcome` return value).
-- **Mid-scenario serialization.** Action-log replay must reproduce final state. Function pointers don't serialize; serializable `ScenarioId` + registry lookup keeps replay deterministic, mirroring `CardCode` / `CardRegistry`. Document explicitly in `#74`.
-- **Synthetic fixture as a teaching example.** Worth a small comment budget explaining "this is the minimum a scenario needs to exist." Helps the Phase-7 Gathering implementer see the shape without grokking The Gathering's content first.
+- **Resolution-fired idempotency latch.** `apply()` re-calls `detect_resolution` on every `Done` outcome with no engine-side guard (tracked as `#131`). Acceptable for Phase 4 (synthetic fixture's `apply_resolution` is a no-op) but the first real `apply_resolution` (Phase 9 XP / trauma) will stack effects unless the latch lands first. Likely shape: `GameState.resolution: Option<Resolution>` checked at the top of `fire_scenario_resolution`. Defer until Phase 9.
+- **`AwaitingInput`-skip contract isn't positively tested.** The hook fires on `Done` only; `AwaitingInput` and `Rejected` both skip. `Rejected` has a positive test, `AwaitingInput` does not (the cleanest `AwaitingInput`-producer in dispatch is `PerformSkillTest` at the commit window, which needs a fuller `TestGame` setup than the existing scenario-resolution tests use). Worth adding when a future PR is already touching that area; not blocking.
 
 ## Dependencies
 
