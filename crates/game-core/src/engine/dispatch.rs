@@ -288,6 +288,28 @@ pub(super) fn reshuffle_encounter_discard(
     shuffle_encounter_deck(state, events);
 }
 
+/// Draw the top card of the encounter deck, transparently reshuffling
+/// the discard back in if the deck is empty.
+///
+/// Returns `Some(code)` when a card was available (either from the
+/// deck directly or after the reshuffle). Returns `None` when both
+/// the deck and the discard are empty — callers decide how to
+/// interpret this (#69's Mythos loop treats it as a scenario
+/// condition rather than an engine error).
+#[allow(dead_code)]
+pub(super) fn draw_encounter_top(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+) -> Option<CardCode> {
+    if state.encounter_deck.is_empty() {
+        if state.encounter_discard.is_empty() {
+            return None;
+        }
+        reshuffle_encounter_discard(state, events);
+    }
+    state.encounter_deck.pop_front()
+}
+
 /// Draw up to `count` cards from the named investigator's deck top
 /// into their hand. Stops early (without panic) if the deck runs out
 /// — this helper is just the structural move; reshuffle / horror
@@ -3082,5 +3104,49 @@ mod encounter_deck_helper_tests {
         assert!(state.encounter_discard.is_empty());
         assert_eq!(state.encounter_deck.len(), 1);
         assert!(events.is_empty(), "1-card shuffle emits no event");
+    }
+
+    #[test]
+    fn draw_encounter_top_drains_deck_then_returns_none() {
+        let mut state = TestGame::new().build();
+        state.encounter_deck.push_back(CardCode("a".into()));
+        state.encounter_deck.push_back(CardCode("b".into()));
+        state.encounter_deck.push_back(CardCode("c".into()));
+
+        let mut events = Vec::new();
+
+        assert_eq!(draw_encounter_top(&mut state, &mut events), Some(CardCode("a".into())));
+        assert_eq!(draw_encounter_top(&mut state, &mut events), Some(CardCode("b".into())));
+        assert_eq!(draw_encounter_top(&mut state, &mut events), Some(CardCode("c".into())));
+        assert_eq!(draw_encounter_top(&mut state, &mut events), None);
+        assert!(events.is_empty(), "no events when draining a non-empty deck");
+    }
+
+    #[test]
+    fn draw_encounter_top_reshuffles_discard_on_empty_deck() {
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(13);
+        state.encounter_discard.push(CardCode("x".into()));
+        state.encounter_discard.push(CardCode("y".into()));
+        state.encounter_discard.push(CardCode("z".into()));
+
+        let mut events = Vec::new();
+        let drawn = draw_encounter_top(&mut state, &mut events);
+
+        assert!(drawn.is_some(), "should reshuffle and draw");
+        assert_eq!(state.encounter_deck.len(), 2, "2 cards remain in deck post-draw");
+        assert!(state.encounter_discard.is_empty(), "discard drained");
+        assert!(
+            matches!(events.as_slice(), [Event::EncounterDeckShuffled]),
+            "reshuffle emits one event"
+        );
+    }
+
+    #[test]
+    fn draw_encounter_top_returns_none_when_deck_and_discard_both_empty() {
+        let mut state = TestGame::new().build();
+        let mut events = Vec::new();
+        assert_eq!(draw_encounter_top(&mut state, &mut events), None);
+        assert!(events.is_empty(), "no events on empty-on-both");
     }
 }
