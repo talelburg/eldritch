@@ -10,8 +10,9 @@
 //!
 //! The primitive set grows as cards demand. Today the DSL covers
 //! constant modifiers, on-play and on-commit triggers, activated
-//! abilities with action / payment costs, and a skill-test-resolution
-//! trigger. Reaction-style abilities have a DSL surface
+//! abilities with action / payment costs, a skill-test-resolution
+//! trigger, and a revelation trigger for encounter-card-reveal effects.
+//! Reaction-style abilities have a DSL surface
 //! ([`Trigger::OnEvent`]) but no engine machinery yet (see below).
 //! Cards needing primitives the DSL doesn't yet express get a Rust
 //! trait impl until the verb lands.
@@ -89,7 +90,7 @@ pub enum Trigger {
     /// cards will replace the synthetic fixture's role as primary
     /// consumer.
     ///
-    /// Distinct from `OnPlay` — Revelation fires for engine-driven
+    /// Distinct from [`OnPlay`](Self::OnPlay) — Revelation fires for engine-driven
     /// encounter draws (Mythos phase, scenario forced effects), not
     /// for cards played from a player's hand. Treacheries are never
     /// in a player's hand; they're encounter-bag content.
