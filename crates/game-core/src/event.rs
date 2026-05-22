@@ -243,6 +243,12 @@ pub enum Event {
         /// Whose deck was shuffled.
         investigator: InvestigatorId,
     },
+    /// A shuffle of the shared encounter deck occurred. Emitted by
+    /// [`shuffle_encounter_deck`](crate::engine::dispatch::shuffle_encounter_deck)
+    /// iff the deck had ≥ 2 cards (a 0- or 1-card shuffle is a no-op
+    /// and emits nothing). Has no payload — the encounter deck is
+    /// shared, so no investigator ID is needed.
+    EncounterDeckShuffled,
     /// An investigator drew `count` cards from their player deck. The
     /// cards have already been moved from deck to hand by the time
     /// this event fires; the specific card codes are not in the event
@@ -393,4 +399,17 @@ pub enum FailureReason {
     /// An `AutoFail` chaos token forced the total to 0, regardless of
     /// skill value or other modifiers.
     AutoFail,
+}
+
+#[cfg(test)]
+mod encounter_deck_event_tests {
+    use super::*;
+
+    #[test]
+    fn encounter_deck_shuffled_serde_roundtrip() {
+        let ev = Event::EncounterDeckShuffled;
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, ev);
+    }
 }
