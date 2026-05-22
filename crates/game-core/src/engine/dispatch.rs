@@ -172,6 +172,7 @@ pub fn apply_engine_record(
 ) -> EngineOutcome {
     match record {
         EngineRecord::DeckShuffled { investigator } => deck_shuffled(state, events, *investigator),
+        EngineRecord::EncounterDeckShuffled => encounter_deck_shuffled(state, events),
     }
 }
 
@@ -191,6 +192,20 @@ fn deck_shuffled(
         };
     }
     shuffle_player_deck(state, events, investigator);
+    EngineOutcome::Done
+}
+
+/// Handler for [`EngineRecord::EncounterDeckShuffled`].
+///
+/// Permutes the shared encounter deck via the deterministic RNG and
+/// emits [`Event::EncounterDeckShuffled`] (when ≥ 2 cards). No
+/// validation — the encounter deck is shared, so there's no
+/// per-investigator existence check.
+fn encounter_deck_shuffled(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+) -> EngineOutcome {
+    shuffle_encounter_deck(state, events);
     EngineOutcome::Done
 }
 
@@ -244,7 +259,6 @@ pub(super) fn shuffle_player_deck(
 ///
 /// Emits [`Event::EncounterDeckShuffled`] iff the deck had at least
 /// 2 cards (a 0- or 1-card deck has nothing to permute).
-#[allow(dead_code)]
 pub(super) fn shuffle_encounter_deck(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -3148,5 +3162,32 @@ mod encounter_deck_helper_tests {
         let mut events = Vec::new();
         assert_eq!(draw_encounter_top(&mut state, &mut events), None);
         assert!(events.is_empty(), "no events on empty-on-both");
+    }
+
+    #[test]
+    fn engine_record_encounter_deck_shuffled_drives_shuffle() {
+        use crate::action::{Action, EngineRecord};
+        use crate::engine::apply;
+
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(99);
+        for i in 0..4 {
+            state.encounter_deck.push_back(CardCode(format!("c{i}")));
+        }
+        let original: Vec<_> = state.encounter_deck.iter().cloned().collect();
+
+        let result = apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
+
+        assert!(
+            matches!(result.outcome, crate::EngineOutcome::Done),
+            "expected Done, got {:?}",
+            result.outcome
+        );
+        let mut shuffled: Vec<_> = result.state.encounter_deck.iter().cloned().collect();
+        let mut orig_sorted = original.clone();
+        shuffled.sort_by(|a, b| a.0.cmp(&b.0));
+        orig_sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(shuffled, orig_sorted);
+        assert!(result.events.iter().any(|e| matches!(e, Event::EncounterDeckShuffled)));
     }
 }
