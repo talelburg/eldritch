@@ -239,10 +239,11 @@ fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> En
 ///
 /// # Validate-first contract caveat
 ///
-/// `draw_encounter_top` mutates `state.encounter_deck` and
-/// `state.encounter_discard`, and `Event::CardRevealed` emits, all
-/// BEFORE the enemy / unknown-type rejects fire. This is a
-/// documented exception to the project's validate-first /
+/// `draw_encounter_top` mutates `state.encounter_deck` /
+/// `state.encounter_discard` BEFORE the unknown-code reject can
+/// fire; `Event::CardRevealed` then emits BEFORE the enemy /
+/// invalid-type rejects fire. All three early-reject paths are
+/// documented exceptions to the project's validate-first /
 /// mutate-second convention. Two reasons it's acceptable:
 ///
 /// 1. The enemy arm is unreachable in #126's intended scope (the

@@ -264,10 +264,9 @@ pub enum EngineRecord {
     /// #126's tests, issued directly to exercise the on-draw path.
     ///
     /// The reveal flow: the dispatch handler (`encounter_card_revealed`
-    /// in `engine::dispatch`, landing in the next commit on this
-    /// branch) draws the top of the deck (transparently reshuffling
-    /// discard if needed), emits `Event::CardRevealed`, runs any
-    /// `Trigger::Revelation` abilities through the DSL evaluator,
+    /// in `engine::dispatch`) draws the top of the deck (transparently
+    /// reshuffling discard if needed), emits `Event::CardRevealed`, runs
+    /// any `Trigger::Revelation` abilities through the DSL evaluator,
     /// then routes by card type (treachery → discard; enemy → spawn
     /// handler from #127).
     EncounterCardRevealed {

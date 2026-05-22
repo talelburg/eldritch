@@ -323,8 +323,7 @@ pub enum Event {
     /// wired in Phase 4) hook this point to interpose or cancel.
     ///
     /// Emitted by `encounter_card_revealed` (in `engine::dispatch`) in
-    /// response to `EngineRecord::EncounterCardRevealed`
-    /// (lands in Task 5).
+    /// response to `EngineRecord::EncounterCardRevealed`.
     CardRevealed {
         /// The investigator whose draw produced this reveal. For
         /// Phase-4 Mythos draws, this is the investigator taking their

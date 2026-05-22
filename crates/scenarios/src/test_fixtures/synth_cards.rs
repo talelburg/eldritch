@@ -6,8 +6,12 @@
 //! guarantee no collision with `ArkhamDB`'s digit-prefixed codes.
 //!
 //! Exposed alongside [`TEST_REGISTRY`] — integration tests install
-//! this registry instead of `cards::REGISTRY` so they don't pull in
-//! the full 5600-line corpus.
+//! this registry so the on-draw path resolves against synthetic cards
+//! that are guaranteed not to collide with real `ArkhamDB` codes
+//! (underscore-prefix), rather than depending on a specific corpus
+//! card existing. The `cards` crate is still compiled in as a
+//! workspace dep — what `TEST_REGISTRY` isolates is the *runtime*
+//! registry lookup, not the compile-time footprint.
 
 use std::sync::OnceLock;
 

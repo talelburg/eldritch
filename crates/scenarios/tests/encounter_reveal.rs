@@ -1,8 +1,11 @@
 //! End-to-end test of the on-draw resolution path.
 //!
 //! Installs the synthetic `TEST_REGISTRY` (NOT the real
-//! `cards::REGISTRY`) so this binary doesn't pull in the full
-//! corpus. The test exercises:
+//! `cards::REGISTRY`) so the on-draw path resolves against the
+//! synthetic treachery code rather than depending on a real corpus
+//! card. The `cards` crate is still compiled in as a workspace dep —
+//! what `TEST_REGISTRY` isolates is the runtime registry lookup, not
+//! the compile-time footprint. The test exercises:
 //!
 //! - Happy path: revealing the synthetic treachery emits
 //!   `Event::CardRevealed`, resolves its Revelation effect
