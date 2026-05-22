@@ -55,6 +55,7 @@ fn synth_treachery_metadata() -> CardMetadata {
         pack_code: "_synth".to_owned(),
         position: 1,
         is_fast: false,
+        spawn: None,
     }
 }
 

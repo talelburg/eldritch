@@ -110,6 +110,7 @@ mod tests {
             pack_code: "test".to_string(),
             position: 1,
             is_fast: false,
+            spawn: None,
         }
     }
 
