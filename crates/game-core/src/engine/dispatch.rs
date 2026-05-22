@@ -269,6 +269,25 @@ pub(super) fn shuffle_encounter_deck(
     events.push(Event::EncounterDeckShuffled);
 }
 
+/// Drain `state.encounter_discard` into `state.encounter_deck` and
+/// shuffle the resulting deck. Called by
+/// [`draw_encounter_top`] when the deck runs empty.
+///
+/// Does NOT push an `EngineRecord::EncounterDeckShuffled` to the
+/// action log — mid-handler reshuffles rely on RNG determinism for
+/// replay rather than log entries, mirroring the existing
+/// player-deck pattern. The `EngineRecord` variant is reserved for
+/// explicit shuffle actions (future "shuffle X into the encounter
+/// deck" effects).
+#[allow(dead_code)]
+pub(super) fn reshuffle_encounter_discard(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+) {
+    state.encounter_deck.extend(state.encounter_discard.drain(..));
+    shuffle_encounter_deck(state, events);
+}
+
 /// Draw up to `count` cards from the named investigator's deck top
 /// into their hand. Stops early (without panic) if the deck runs out
 /// — this helper is just the structural move; reshuffle / horror
@@ -3031,5 +3050,37 @@ mod encounter_deck_helper_tests {
             shuffle_encounter_deck(&mut state, &mut events);
             assert!(events.is_empty(), "expected no event for n={n} deck");
         }
+    }
+
+    #[test]
+    fn reshuffle_encounter_discard_moves_discard_into_deck_and_shuffles() {
+        let mut state = TestGame::new().build();
+        state.rng = RngState::new(7);
+        for i in 0..5 {
+            state.encounter_discard.push(CardCode(format!("d{i}")));
+        }
+
+        let mut events = Vec::new();
+        reshuffle_encounter_discard(&mut state, &mut events);
+
+        assert!(state.encounter_discard.is_empty(), "discard should be drained");
+        assert_eq!(state.encounter_deck.len(), 5, "all 5 cards moved into deck");
+        assert!(
+            matches!(events.as_slice(), [Event::EncounterDeckShuffled]),
+            "expected EncounterDeckShuffled (≥ 2 cards moved)"
+        );
+    }
+
+    #[test]
+    fn reshuffle_encounter_discard_is_silent_when_discard_has_one_card() {
+        let mut state = TestGame::new().build();
+        state.encounter_discard.push(CardCode("solo".into()));
+
+        let mut events = Vec::new();
+        reshuffle_encounter_discard(&mut state, &mut events);
+
+        assert!(state.encounter_discard.is_empty());
+        assert_eq!(state.encounter_deck.len(), 1);
+        assert!(events.is_empty(), "1-card shuffle emits no event");
     }
 }
