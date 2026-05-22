@@ -3190,4 +3190,25 @@ mod encounter_deck_helper_tests {
         assert_eq!(shuffled, orig_sorted);
         assert!(result.events.iter().any(|e| matches!(e, Event::EncounterDeckShuffled)));
     }
+
+    #[test]
+    fn encounter_deck_shuffle_is_deterministic_from_seed() {
+        fn shuffle_with_seed(seed: u64) -> Vec<CardCode> {
+            let mut state = TestGame::new().build();
+            state.rng = RngState::new(seed);
+            for i in 0..10 {
+                state.encounter_deck.push_back(CardCode(format!("c{i:02}")));
+            }
+            let mut events = Vec::new();
+            shuffle_encounter_deck(&mut state, &mut events);
+            state.encounter_deck.iter().cloned().collect()
+        }
+
+        let a = shuffle_with_seed(2026);
+        let b = shuffle_with_seed(2026);
+        assert_eq!(a, b, "same seed must produce same shuffle order");
+
+        let c = shuffle_with_seed(42);
+        assert_ne!(a, c, "different seeds should produce different orders (smoke test)");
+    }
 }
