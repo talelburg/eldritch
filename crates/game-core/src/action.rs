@@ -268,7 +268,7 @@ pub enum EngineRecord {
     /// branch) draws the top of the deck (transparently reshuffling
     /// discard if needed), emits `Event::CardRevealed`, runs any
     /// `Trigger::Revelation` abilities through the DSL evaluator,
-    /// then routes by card type (treachery -> discard; enemy -> spawn
+    /// then routes by card type (treachery → discard; enemy → spawn
     /// handler from #127).
     EncounterCardRevealed {
         /// The investigator whose draw produced this reveal.
