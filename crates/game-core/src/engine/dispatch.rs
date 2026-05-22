@@ -1254,7 +1254,10 @@ fn trigger_matches(
         // BetweenPhases windows open for phase-transition timing; no
         // Trigger::OnEvent pattern matches a phase-transition window —
         // those windows gate Fast actions, not after-event reactions.
-        (WindowKind::BetweenPhases { .. }, _) => false,
+        // AfterEnemyDefeated windows only match EnemyDefeated patterns
+        // (handled above); encounter-reveal and any future unmatched
+        // patterns return false.
+        (WindowKind::BetweenPhases { .. } | WindowKind::AfterEnemyDefeated { .. }, _) => false,
     }
 }
 

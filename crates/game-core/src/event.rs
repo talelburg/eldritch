@@ -13,6 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use card_dsl::card_data::CardType;
+
 use crate::scenario::Resolution;
 use crate::state::{
     CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
@@ -313,6 +315,29 @@ pub enum Event {
         /// The card code (for log readability; redundant with state).
         code: CardCode,
     },
+    /// An encounter card was revealed from the encounter deck. Fires
+    /// before any [`Trigger::Revelation`](card_dsl::dsl::Trigger::Revelation)
+    /// effects on the card resolve — the card has been drawn off the
+    /// deck and identified, but its Revelation effect has not yet
+    /// applied. Before-timing reaction listeners (#52's machinery, not
+    /// wired in Phase 4) hook this point to interpose or cancel.
+    ///
+    /// Emitted by `encounter_card_revealed` (in `engine::dispatch`) in
+    /// response to `EngineRecord::EncounterCardRevealed`
+    /// (lands in Task 5).
+    CardRevealed {
+        /// The investigator whose draw produced this reveal. For
+        /// Phase-4 Mythos draws, this is the investigator taking their
+        /// Mythos turn; for forced reveals (scenario effects), the
+        /// scenario module names the controller.
+        investigator: InvestigatorId,
+        /// The revealed card's code.
+        code: CardCode,
+        /// The card's type, as resolved by the card registry at reveal
+        /// time. Redundant with the metadata lookup but baked into the
+        /// event so consumers don't need the registry to filter.
+        card_type: CardType,
+    },
     /// An activated ability resolved its costs and is about to apply
     /// its effect. Fires after every cost-payment event and before
     /// the ability's own effect events. Downstream reactions that
@@ -408,6 +433,25 @@ mod encounter_deck_event_tests {
     #[test]
     fn encounter_deck_shuffled_serde_roundtrip() {
         let ev = Event::EncounterDeckShuffled;
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, ev);
+    }
+}
+
+#[cfg(test)]
+mod card_revealed_event_tests {
+    use super::*;
+    use crate::state::CardCode;
+    use card_dsl::card_data::CardType;
+
+    #[test]
+    fn card_revealed_event_serde_roundtrip() {
+        let ev = Event::CardRevealed {
+            investigator: InvestigatorId(1),
+            code: CardCode("_synth_treachery".into()),
+            card_type: CardType::Treachery,
+        };
         let json = serde_json::to_string(&ev).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, ev);
