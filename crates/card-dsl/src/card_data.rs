@@ -76,6 +76,45 @@ pub struct SkillIcons {
     pub wild: u8,
 }
 
+/// Where on the location map an encounter enemy spawns.
+///
+/// Phase-4 minimal set: just a printed location code. Future variants
+/// (`LeadInvestigator`, `LowestSanityInvestigator`, `NearestUnexplored`,
+/// etc.) land with the first Phase-7+ card that needs them.
+///
+/// **Why a [`String`] code rather than a `LocationCode` newtype.**
+/// Locations in Arkham are cards with `ArkhamDB` codes; the namespace
+/// is shared at the data level. Introducing a distinct
+/// `LocationCode` newtype would block accidental cross-use at the
+/// engine level without a concrete consumer asking for that
+/// distinction. Reuse `CardCode` (which is a [`String`] newtype in
+/// `game-core::state::card`) by passing the bare string here; the
+/// engine's spawn handler wraps it on lookup.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SpawnLocation {
+    /// Fixed-location spawn — the named location's printed code.
+    Specific(String),
+}
+
+/// Spawn rule for an encounter-deck enemy.
+///
+/// `None` on [`CardMetadata::spawn`] means "no spawn instruction" — per
+/// Rules Reference p.24, the enemy spawns engaged with the drawing
+/// investigator, placed in that investigator's threat area.
+///
+/// **Why a nested struct, not flat fields on `CardMetadata`.** So
+/// spawn-related fields can grow (e.g. `engagement:
+/// EngagementOnSpawn` for Aloof / "spawn unengaged" cards,
+/// `also_spawn_doom_at: ...` for the rare multi-effect spawns)
+/// without churning every enemy declaration in the generated corpus.
+/// Phase-4 ships only `location`; later variants land alongside the
+/// cards that force them.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Spawn {
+    /// Where the enemy spawns.
+    pub location: SpawnLocation,
+}
+
 /// Static metadata for one card as printed.
 ///
 /// This is the universal shape; type-specific data (location shroud,
@@ -139,6 +178,12 @@ pub struct CardMetadata {
     /// uniformity. See `engine::dispatch::play_card` for the gate it
     /// drives.
     pub is_fast: bool,
+    /// Spawn rule for encounter-deck enemies. `None` for enemies
+    /// that don't spawn from the encounter deck (placed at scenario
+    /// setup directly), for non-enemy card types, and as the
+    /// pipeline's default for all generated entries until Phase-7's
+    /// structured-spawn-text parsing lands.
+    pub spawn: Option<Spawn>,
 }
 
 #[cfg(test)]
@@ -167,10 +212,87 @@ mod is_fast_tests {
             pack_code: "core".into(),
             position: 30,
             is_fast: true,
+            spawn: None,
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
         assert!(back.is_fast);
+    }
+}
+
+#[cfg(test)]
+mod spawn_tests {
+    use super::*;
+
+    #[test]
+    fn spawn_specific_round_trips_through_serde_json() {
+        let original = Spawn {
+            location: SpawnLocation::Specific("01112".to_owned()),
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let recovered: Spawn = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn card_metadata_serde_roundtrip_preserves_spawn_specific() {
+        let original = CardMetadata {
+            code: "_synth_enemy".into(),
+            name: "Synth Enemy".into(),
+            class: Class::Mythos,
+            card_type: CardType::Enemy,
+            cost: None,
+            xp: None,
+            text: None,
+            flavor: None,
+            illustrator: None,
+            traits: Vec::new(),
+            slots: Vec::new(),
+            skill_icons: SkillIcons::default(),
+            health: Some(1),
+            sanity: None,
+            deck_limit: 1,
+            quantity: 1,
+            pack_code: "_synth".into(),
+            position: 1,
+            is_fast: false,
+            spawn: Some(Spawn {
+                location: SpawnLocation::Specific("_synth_loc".into()),
+            }),
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn card_metadata_serde_roundtrip_preserves_spawn_none() {
+        let original = CardMetadata {
+            code: "01000".into(),
+            name: "Random Basic Weakness".into(),
+            class: Class::Neutral,
+            card_type: CardType::Treachery,
+            cost: None,
+            xp: None,
+            text: None,
+            flavor: None,
+            illustrator: None,
+            traits: Vec::new(),
+            slots: Vec::new(),
+            skill_icons: SkillIcons::default(),
+            health: None,
+            sanity: None,
+            deck_limit: 0,
+            quantity: 1,
+            pack_code: "core".into(),
+            position: 0,
+            is_fast: false,
+            spawn: None,
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+        assert!(back.spawn.is_none());
     }
 }
