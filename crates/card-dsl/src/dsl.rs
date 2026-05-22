@@ -199,6 +199,26 @@ pub enum EventPattern {
         /// matches.
         by_controller: bool,
     },
+    /// An encounter card was revealed (drawn from the encounter deck
+    /// and announced via the engine's on-draw path). `card_type`
+    /// narrows the match: `None` matches any reveal, `Some(card_type)`
+    /// matches only reveals whose card type equals the given value.
+    ///
+    /// Canonical listener shape: a hypothetical Forewarned-style
+    /// cancellation effect would set `card_type: Some(CardType::Treachery)`
+    /// to react only to treachery reveals. No card uses this pattern in
+    /// the Phase-4 scope; the DSL surface lands here, the engine's
+    /// reaction-window machinery (#52) fires it.
+    ///
+    /// **Why `card_type` not `by_controller`:** encounter draws are
+    /// engine-driven, not card-controlled. The `EnemyDefeated`-style
+    /// `by_controller: bool` qualifier doesn't fit. Treachery-vs-enemy
+    /// narrowing is the load-bearing distinction for hypothetical
+    /// listener cards instead.
+    CardRevealed {
+        /// Narrow the match by card type. `None` = any reveal.
+        card_type: Option<crate::card_data::CardType>,
+    },
 }
 
 /// When an [`Trigger::OnEvent`] ability fires relative to the
@@ -1039,6 +1059,36 @@ mod tests {
         let json = serde_json::to_string(&original).expect("serialize");
         let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(original, recovered);
+    }
+
+    /// `EventPattern::CardRevealed { card_type: Some(...) }` and
+    /// `{ card_type: None }` are distinct variants with serde
+    /// round-tripping. Locks the wire shape now so #52's persistence
+    /// doesn't surprise later.
+    #[test]
+    fn card_revealed_pattern_round_trips_through_serde_json() {
+        use crate::card_data::CardType;
+        let any = EventPattern::CardRevealed { card_type: None };
+        let treachery = EventPattern::CardRevealed {
+            card_type: Some(CardType::Treachery),
+        };
+        for original in [any, treachery] {
+            let json = serde_json::to_string(&original).expect("serialize");
+            let recovered: EventPattern = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(original, recovered);
+        }
+    }
+
+    #[test]
+    fn card_revealed_distinct_from_enemy_defeated() {
+        use crate::card_data::CardType;
+        let revealed_treachery = EventPattern::CardRevealed {
+            card_type: Some(CardType::Treachery),
+        };
+        let enemy_defeated = EventPattern::EnemyDefeated {
+            by_controller: true,
+        };
+        assert_ne!(revealed_treachery, enemy_defeated);
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).
