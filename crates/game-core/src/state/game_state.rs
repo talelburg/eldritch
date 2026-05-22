@@ -1,11 +1,11 @@
 //! Top-level game state.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
 use super::{
-    card::CardInstanceId,
+    card::{CardCode, CardInstanceId},
     chaos_bag::{ChaosBag, TokenModifiers},
     enemy::{Enemy, EnemyId},
     investigator::{Investigator, InvestigatorId, SkillKind},
@@ -130,6 +130,24 @@ pub struct GameState {
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.
     pub scenario_id: Option<crate::scenario::ScenarioId>,
+    /// Shared encounter deck (top = front). Built at scenario setup
+    /// from encounter-set codes; drawn from during Mythos. When the
+    /// deck runs out, [`draw_encounter_top`](crate::engine::dispatch::draw_encounter_top)
+    /// transparently reshuffles `encounter_discard` back in via the
+    /// deterministic RNG path.
+    ///
+    /// Empty at the start of every scenario; populated by scenario
+    /// setup (the first wiring lands in #126 alongside the synthetic
+    /// fixture's encounter-set composition).
+    pub encounter_deck: VecDeque<CardCode>,
+    /// Encounter discard pile. Treacheries land here after Revelation
+    /// resolves; defeated enemies (and other "discarded from play"
+    /// encounter content) land here in later issues.
+    ///
+    /// Drained back into [`encounter_deck`](Self::encounter_deck) by
+    /// [`reshuffle_encounter_discard`](crate::engine::dispatch::reshuffle_encounter_discard)
+    /// when the deck runs empty.
+    pub encounter_discard: Vec<CardCode>,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -623,5 +641,36 @@ mod fast_actor_scope_tests {
             let back: FastActorScope = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(back, scope);
         }
+    }
+}
+
+#[cfg(test)]
+mod encounter_deck_tests {
+    use super::*;
+    use crate::state::CardCode;
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn encounter_deck_and_discard_serde_roundtrip() {
+        let mut state = TestGame::new().build();
+        state.encounter_deck.push_back(CardCode("01001".into()));
+        state.encounter_deck.push_back(CardCode("01002".into()));
+        state.encounter_discard.push(CardCode("01099".into()));
+
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(back.encounter_deck.len(), 2);
+        assert_eq!(back.encounter_deck[0], CardCode("01001".into()));
+        assert_eq!(back.encounter_deck[1], CardCode("01002".into()));
+        assert_eq!(back.encounter_discard.len(), 1);
+        assert_eq!(back.encounter_discard[0], CardCode("01099".into()));
+    }
+
+    #[test]
+    fn fresh_state_has_empty_encounter_deck_and_discard() {
+        let state = TestGame::new().build();
+        assert!(state.encounter_deck.is_empty());
+        assert!(state.encounter_discard.is_empty());
     }
 }
