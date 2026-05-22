@@ -214,13 +214,13 @@ fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> En
 /// Drives the on-draw resolution path for one encounter card:
 ///
 /// 1. Validate that a card registry is installed (reject with
-///    `"no card registry installed"` if not).
+///    `"EncounterCardRevealed: no card registry installed"` if not).
 /// 2. Draw the top of the encounter deck via [`draw_encounter_top`]
 ///    (transparently reshuffles discard back in if the deck is
-///    empty). Reject with `"encounter deck and discard both empty"`
+///    empty). Reject with `"EncounterCardRevealed: encounter deck and discard both empty"`
 ///    if both piles are exhausted.
 /// 3. Look up the drawn card's metadata via the installed registry.
-///    Reject with `"unknown card code: {code}"` if the registry
+///    Reject with `"EncounterCardRevealed: unknown card code: {code}"` if the registry
 ///    doesn't know the code.
 /// 4. Emit [`Event::CardRevealed`] with the drawn code and the
 ///    metadata's `card_type`.
@@ -230,11 +230,11 @@ fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> En
 ///      = drawing investigator, no source instance — matches the
 ///      `play_card` path for events), then push the code onto
 ///      `state.encounter_discard`.
-///    - `CardType::Enemy`: reject with `"encounter enemy spawn
+///    - `CardType::Enemy`: reject with `"EncounterCardRevealed: encounter enemy spawn
 ///      lands in #127"`. Stub for #127 to replace with the real
 ///      spawn handler.
-///    - Any other type: reject with `"invalid encounter card type:
-///      {kind:?}"`. Encounter decks should only contain treachery
+///    - Any other type: reject with `"EncounterCardRevealed: invalid encounter card type {kind:?}"`.
+///      Encounter decks should only contain treachery
 ///      and enemy cards per the Rules Reference.
 ///
 /// # Validate-first contract caveat
@@ -293,7 +293,10 @@ fn encounter_card_revealed(
         CardType::Treachery => {
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
             let ctx = EvalContext::for_controller(investigator);
-            for ability in abilities.iter().filter(|a| a.trigger == Trigger::Revelation) {
+            for ability in abilities
+                .iter()
+                .filter(|a| a.trigger == Trigger::Revelation)
+            {
                 let outcome = apply_effect(state, events, &ability.effect, ctx);
                 if !matches!(outcome, EngineOutcome::Done) {
                     return outcome;
