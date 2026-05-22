@@ -82,6 +82,24 @@ pub enum Trigger {
     /// of player cards with commit-time effects (e.g. Deduction's
     /// "if your skill test is successful while investigating, …").
     OnCommit,
+    /// Fires when the owning card is revealed from the encounter deck.
+    ///
+    /// First consumer: the synthetic treachery in
+    /// `scenarios::test_fixtures::synth_cards`. Real Phase-7+ treachery
+    /// cards will replace the synthetic fixture's role as primary
+    /// consumer.
+    ///
+    /// Distinct from `OnPlay` — Revelation fires for engine-driven
+    /// encounter draws (Mythos phase, scenario forced effects), not
+    /// for cards played from a player's hand. Treacheries are never
+    /// in a player's hand; they're encounter-bag content.
+    ///
+    /// The engine's on-draw resolution path (`encounter_card_revealed`
+    /// in `game-core`'s `engine::dispatch`) runs every
+    /// `Trigger::Revelation` ability on the drawn card through the DSL
+    /// evaluator, then discards the treachery (or hands off to the
+    /// spawn handler for enemies — landing in #127).
+    Revelation,
     /// Fires when the controller activates the ability via
     /// `PlayerAction::ActivateAbility` (in `game_core::action`).
     ///
@@ -583,6 +601,21 @@ pub fn on_event(pattern: EventPattern, timing: EventTiming, effect: Effect) -> A
     }
 }
 
+/// Construct a [`Trigger::Revelation`]-driven [`Ability`] wrapping
+/// the given effect. Mirrors [`on_play`] / [`on_commit`]; costs and
+/// usage limits are empty (Revelation effects pay nothing and have
+/// no per-period cap — the rules treat each draw as a fresh
+/// occurrence).
+#[must_use]
+pub fn revelation(effect: Effect) -> Ability {
+    Ability {
+        trigger: Trigger::Revelation,
+        costs: Vec::new(),
+        effect,
+        usage_limit: None,
+    }
+}
+
 /// Construct a [`Trigger::Activated`] ability with the given action
 /// cost, payment costs, and effect.
 ///
@@ -972,6 +1005,39 @@ mod tests {
             let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(original, recovered);
         }
+    }
+
+    /// The `revelation` builder produces the new Trigger variant with
+    /// the given effect. Distinct from `OnPlay` / `OnCommit` at the type
+    /// level so the compiler enforces the difference at every match site.
+    #[test]
+    fn revelation_builder_constructs_treachery_shape() {
+        let ability = revelation(gain_resources(InvestigatorTarget::Controller, 1));
+        assert_eq!(ability.trigger, Trigger::Revelation);
+        assert!(matches!(
+            ability.effect,
+            Effect::GainResources {
+                target: InvestigatorTarget::Controller,
+                amount: 1,
+            },
+        ));
+        assert!(ability.costs.is_empty());
+        assert!(ability.usage_limit.is_none());
+    }
+
+    #[test]
+    fn revelation_distinct_from_other_triggers() {
+        assert_ne!(Trigger::Revelation, Trigger::OnPlay);
+        assert_ne!(Trigger::Revelation, Trigger::OnCommit);
+        assert_ne!(Trigger::Revelation, Trigger::Constant);
+    }
+
+    #[test]
+    fn revelation_ability_round_trips_through_serde_json() {
+        let original = revelation(gain_resources(InvestigatorTarget::Controller, 1));
+        let json = serde_json::to_string(&original).expect("serialize");
+        let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(original, recovered);
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).
