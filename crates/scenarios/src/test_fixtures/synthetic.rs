@@ -7,8 +7,10 @@
 
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
-use game_core::state::{GameState, InvestigatorId, Phase};
+use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
 use game_core::test_support::{test_investigator, test_location, TestGame};
+
+use super::synth_cards::SYNTH_TREACHERY_CODE;
 
 /// String id used to look this module up in
 /// [`crate::REGISTRY`].
@@ -16,15 +18,30 @@ pub const ID: &str = "synthetic";
 
 /// Build the initial [`GameState`] for this fixture: one
 /// investigator, one location, `scenario_id` set, `turn_order`
-/// populated. Phase = Mythos, round = 0 — ready for
+/// populated, encounter deck seeded with one copy of
+/// [`synth_cards::SYNTH_TREACHERY_CODE`]. Phase = Mythos, round =
+/// 0 — ready for
 /// [`PlayerAction::StartScenario`](game_core::PlayerAction::StartScenario).
+///
+/// The encounter-deck seeding gives #126's `encounter_reveal.rs`
+/// integration test something to draw from when it exercises the
+/// on-draw resolution path. The pre-existing `StartScenario` →
+/// `Resolution::Won` flow (see `synthetic_resolution.rs`) is
+/// unaffected because the auto-resolved demo path doesn't draw
+/// encounter cards.
+///
+/// [`synth_cards::SYNTH_TREACHERY_CODE`]: super::synth_cards::SYNTH_TREACHERY_CODE
 pub fn setup() -> GameState {
-    TestGame::new()
+    let mut state = TestGame::new()
         .with_investigator(test_investigator(1))
         .with_location(test_location(10, "Demo Location"))
         .with_turn_order([InvestigatorId(1)])
         .with_scenario_id(ScenarioId::new(ID))
-        .build()
+        .build();
+    state
+        .encounter_deck
+        .push_back(CardCode(SYNTH_TREACHERY_CODE.into()));
+    state
 }
 
 /// Resolves with [`Resolution::Won`] once the engine has stepped

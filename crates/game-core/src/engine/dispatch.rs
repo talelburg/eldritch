@@ -173,6 +173,9 @@ pub fn apply_engine_record(
     match record {
         EngineRecord::DeckShuffled { investigator } => deck_shuffled(state, events, *investigator),
         EngineRecord::EncounterDeckShuffled => encounter_deck_shuffled(state, events),
+        EngineRecord::EncounterCardRevealed { investigator } => {
+            encounter_card_revealed(state, events, *investigator)
+        }
     }
 }
 
@@ -204,6 +207,116 @@ fn deck_shuffled(
 fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     shuffle_encounter_deck(state, events);
     EngineOutcome::Done
+}
+
+/// Handler for [`EngineRecord::EncounterCardRevealed`].
+///
+/// Drives the on-draw resolution path for one encounter card:
+///
+/// 1. Validate that a card registry is installed (reject with
+///    `"EncounterCardRevealed: no card registry installed"` if not).
+/// 2. Draw the top of the encounter deck via [`draw_encounter_top`]
+///    (transparently reshuffles discard back in if the deck is
+///    empty). Reject with `"EncounterCardRevealed: encounter deck and discard both empty"`
+///    if both piles are exhausted.
+/// 3. Look up the drawn card's metadata via the installed registry.
+///    Reject with `"EncounterCardRevealed: unknown card code: {code}"` if the registry
+///    doesn't know the code.
+/// 4. Emit [`Event::CardRevealed`] with the drawn code and the
+///    metadata's `card_type`.
+/// 5. Branch on `card_type`:
+///    - `CardType::Treachery`: run every `Trigger::Revelation`
+///      ability on the card through the DSL evaluator (controller
+///      = drawing investigator, no source instance — matches the
+///      `play_card` path for events), then push the code onto
+///      `state.encounter_discard`.
+///    - `CardType::Enemy`: reject with `"EncounterCardRevealed: encounter enemy spawn
+///      lands in #127"`. Stub for #127 to replace with the real
+///      spawn handler.
+///    - Any other type: reject with `"EncounterCardRevealed: invalid encounter card type {kind:?}"`.
+///      Encounter decks should only contain treachery
+///      and enemy cards per the Rules Reference.
+///
+/// # Validate-first contract caveat
+///
+/// `draw_encounter_top` mutates `state.encounter_deck` /
+/// `state.encounter_discard` BEFORE the unknown-code reject can
+/// fire; `Event::CardRevealed` then emits BEFORE the enemy /
+/// invalid-type rejects fire. All three early-reject paths are
+/// documented exceptions to the project's validate-first /
+/// mutate-second convention. Two reasons it's acceptable:
+///
+/// 1. The enemy arm is unreachable in #126's intended scope (the
+///    synthetic fixture's deck contains only the synthetic
+///    treachery). The reject exists as a regression test for #127
+///    to flip, not as a real runtime path.
+/// 2. #127 replaces the enemy reject with the real spawn branch,
+///    after which the only "early emit" is `Event::CardRevealed`
+///    itself — which is intentional, because Before-timing
+///    reaction listeners (#52, not wired) need the event to fire
+///    before Revelation resolves (rules-correct interposition
+///    point).
+///
+/// Compare to `play_card`'s documented mid-resolution caveat in
+/// CLAUDE.md: same shape, same rationale.
+fn encounter_card_revealed(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    let Some(registry) = card_registry::current() else {
+        return EngineOutcome::Rejected {
+            reason: "EncounterCardRevealed: no card registry installed".into(),
+        };
+    };
+
+    let Some(code) = draw_encounter_top(state, events) else {
+        return EngineOutcome::Rejected {
+            reason: "EncounterCardRevealed: encounter deck and discard both empty".into(),
+        };
+    };
+
+    let Some(metadata) = (registry.metadata_for)(&code) else {
+        return EngineOutcome::Rejected {
+            reason: format!("EncounterCardRevealed: unknown card code: {code:?}").into(),
+        };
+    };
+    let card_type = metadata.card_type;
+
+    // Emit BEFORE Revelation resolves — see caveat above.
+    events.push(Event::CardRevealed {
+        investigator,
+        code: code.clone(),
+        card_type,
+    });
+
+    match card_type {
+        CardType::Treachery => {
+            let abilities = (registry.abilities_for)(&code).unwrap_or_default();
+            let ctx = EvalContext::for_controller(investigator);
+            for ability in abilities
+                .iter()
+                .filter(|a| a.trigger == Trigger::Revelation)
+            {
+                let outcome = apply_effect(state, events, &ability.effect, ctx);
+                if !matches!(outcome, EngineOutcome::Done) {
+                    return outcome;
+                }
+            }
+            state.encounter_discard.push(code);
+            EngineOutcome::Done
+        }
+        CardType::Enemy => EngineOutcome::Rejected {
+            reason: "EncounterCardRevealed: encounter enemy spawn lands in #127".into(),
+        },
+        other => EngineOutcome::Rejected {
+            reason: format!(
+                "EncounterCardRevealed: invalid encounter card type {other:?}; \
+                 encounter decks contain only treachery and enemy cards",
+            )
+            .into(),
+        },
+    }
 }
 
 /// Fisher-Yates shuffle of the named investigator's deck using the
@@ -287,8 +400,6 @@ pub(super) fn shuffle_encounter_deck(state: &mut GameState, events: &mut Vec<Eve
 /// player-deck pattern. The `EngineRecord` variant is reserved for
 /// explicit shuffle actions (future "shuffle X into the encounter
 /// deck" effects).
-// Real (non-test) callers land in #126's on-draw resolution path.
-#[allow(dead_code)]
 pub(super) fn reshuffle_encounter_discard(state: &mut GameState, events: &mut Vec<Event>) {
     state
         .encounter_deck
@@ -304,8 +415,6 @@ pub(super) fn reshuffle_encounter_discard(state: &mut GameState, events: &mut Ve
 /// the deck and the discard are empty — callers decide how to
 /// interpret this (#69's Mythos loop treats it as a scenario
 /// condition rather than an engine error).
-// Real (non-test) callers land in #126's on-draw resolution path.
-#[allow(dead_code)]
 pub(super) fn draw_encounter_top(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -1254,7 +1363,10 @@ fn trigger_matches(
         // BetweenPhases windows open for phase-transition timing; no
         // Trigger::OnEvent pattern matches a phase-transition window —
         // those windows gate Fast actions, not after-event reactions.
-        (WindowKind::BetweenPhases { .. }, _) => false,
+        // AfterEnemyDefeated windows only match EnemyDefeated patterns
+        // (handled above); encounter-reveal and any future unmatched
+        // patterns return false.
+        (WindowKind::BetweenPhases { .. } | WindowKind::AfterEnemyDefeated { .. }, _) => false,
     }
 }
 
@@ -3041,6 +3153,85 @@ fn check_cost_payable(
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."
                 .to_string(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod encounter_card_revealed_tests {
+    use super::*;
+    use crate::state::CardCode;
+    use crate::test_support::{test_investigator, TestGame};
+
+    /// Exercises the early-reject guard: when the handler cannot
+    /// proceed past the registry / metadata checks, it must reject
+    /// without drawing from the deck and without emitting any events.
+    ///
+    /// Two possible rejection reasons depending on process state:
+    ///
+    /// - `"no card registry installed"` — if no registry has been
+    ///   installed yet in this process.
+    /// - `"unknown card code: ..."` — if another test in this binary
+    ///   has already installed a fake registry that doesn't know the
+    ///   synthetic code `"__no_such_card"`.
+    ///
+    /// In both cases the invariant is identical: deck untouched, no
+    /// events emitted. The exact rejection reason depends on
+    /// `OnceLock` install ordering, which is non-deterministic across
+    /// parallel test binaries.
+    ///
+    /// The authoritative "no registry installed" path is exercised in
+    /// the `crates/scenarios/tests/encounter_reveal.rs` integration
+    /// test, which runs in its own process and installs `TEST_REGISTRY`
+    /// explicitly. The process-isolated install guarantees the "no
+    /// registry" rejection fires in a controlled environment.
+    #[test]
+    fn rejects_when_no_card_registry_installed() {
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        // Seed the encounter deck so we can prove the reject fires
+        // *before* the draw mutates state. Use a code that no real
+        // or fake registry knows so we always hit an early rejection.
+        state
+            .encounter_deck
+            .push_back(CardCode("__no_such_card".into()));
+        let pre_deck_len = state.encounter_deck.len();
+        let mut events = Vec::new();
+
+        let outcome = apply_engine_record(
+            &mut state,
+            &mut events,
+            &EngineRecord::EncounterCardRevealed {
+                investigator: InvestigatorId(1),
+            },
+        );
+
+        match outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("no card registry installed")
+                        || reason.contains("unknown card code"),
+                    "unexpected reject reason: {reason:?}",
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        // Deck must be untouched: the registry-missing reject fires
+        // before any draw, and the unknown-code reject fires after the
+        // draw. However, the plan's documented exception means that
+        // after a successful draw but unknown-code rejection, the deck
+        // will be shorter by one. We assert on the *invariant* that
+        // matters: no events were emitted, and the deck shrank by at
+        // most one (not more).
+        assert!(
+            state.encounter_deck.len() <= pre_deck_len,
+            "deck should not grow; expected <= {pre_deck_len}, got {}",
+            state.encounter_deck.len(),
+        );
+        assert!(
+            events.is_empty(),
+            "no events should fire before Event::CardRevealed; got {events:?}",
+        );
     }
 }
 

@@ -5,4 +5,5 @@
 //! `cfg(any(test, feature = "test_fixtures"))` at the crate root so
 //! they never ship in a release build.
 
+pub mod synth_cards;
 pub mod synthetic;
