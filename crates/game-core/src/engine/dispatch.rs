@@ -1364,9 +1364,18 @@ fn trigger_matches(
         // Trigger::OnEvent pattern matches a phase-transition window —
         // those windows gate Fast actions, not after-event reactions.
         // AfterEnemyDefeated windows only match EnemyDefeated patterns
-        // (handled above); encounter-reveal and any future unmatched
-        // patterns return false.
-        (WindowKind::BetweenPhases { .. } | WindowKind::AfterEnemyDefeated { .. }, _) => false,
+        // (handled above); encounter-reveal patterns return false.
+        //
+        // EnemySpawned: no WindowKind opens specifically for "enemy
+        // spawned" in Phase 4. A future PR (likely Phase-7+) that wants
+        // to react to spawns will add the corresponding WindowKind
+        // variant and update this arm.
+        (
+            WindowKind::BetweenPhases { .. } | WindowKind::AfterEnemyDefeated { .. },
+            EventPattern::EnemyDefeated { .. }
+            | EventPattern::CardRevealed { .. }
+            | EventPattern::EnemySpawned,
+        ) => false,
     }
 }
 
