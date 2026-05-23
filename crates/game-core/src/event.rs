@@ -162,15 +162,26 @@ pub enum Event {
         /// Investigator the test was for.
         investigator: InvestigatorId,
     },
-    /// An enemy entered play at a location. (Spawning logic lands
-    /// with the encounter deck and Mythos phase; this event slot
-    /// exists so card effects that react to spawns have something to
-    /// listen for from day one.)
+    /// An enemy entered play at a location from the encounter deck.
+    ///
+    /// Emitted by `spawn_enemy` (in `engine::dispatch`) when an
+    /// encounter card resolved as an enemy lands in
+    /// [`GameState::enemies`](crate::state::GameState::enemies).
+    /// `engaged_with` is `Some(investigator)` when the spawn caused
+    /// engagement-on-spawn (Rules Reference p.10) and `None` when the
+    /// enemy spawned at an empty location.
     EnemySpawned {
-        /// The newly-spawned enemy.
+        /// The newly-spawned enemy's stable id (freshly minted from
+        /// [`GameState::next_enemy_id`](crate::state::GameState::next_enemy_id)).
         enemy: EnemyId,
-        /// Where it spawned.
+        /// Printed code of the spawned enemy.
+        code: CardCode,
+        /// Where the enemy spawned on the location map.
         location: LocationId,
+        /// If the spawn engaged an investigator on arrival, who.
+        /// `None` if the enemy spawned at a location with no
+        /// investigators.
+        engaged_with: Option<InvestigatorId>,
     },
     /// An enemy became engaged with an investigator.
     EnemyEngaged {
@@ -423,6 +434,38 @@ pub enum FailureReason {
     /// An `AutoFail` chaos token forced the total to 0, regardless of
     /// skill value or other modifiers.
     AutoFail,
+}
+
+#[cfg(test)]
+mod enemy_spawned_event_tests {
+    use super::*;
+    use crate::state::{CardCode, EnemyId, InvestigatorId, LocationId};
+
+    #[test]
+    fn enemy_spawned_with_engagement_serde_roundtrip() {
+        let ev = Event::EnemySpawned {
+            enemy: EnemyId(7),
+            code: CardCode("_synth_enemy".into()),
+            location: LocationId(10),
+            engaged_with: Some(InvestigatorId(1)),
+        };
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, ev);
+    }
+
+    #[test]
+    fn enemy_spawned_without_engagement_serde_roundtrip() {
+        let ev = Event::EnemySpawned {
+            enemy: EnemyId(8),
+            code: CardCode("_synth_enemy".into()),
+            location: LocationId(10),
+            engaged_with: None,
+        };
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, ev);
+    }
 }
 
 #[cfg(test)]
