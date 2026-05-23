@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
-use crate::card_data::CardType;
+use crate::card_data::{CardMetadata, CardType, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::{
     discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Trigger,
@@ -230,9 +230,10 @@ fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> En
 ///      = drawing investigator, no source instance — matches the
 ///      `play_card` path for events), then push the code onto
 ///      `state.encounter_discard`.
-///    - `CardType::Enemy`: reject with `"EncounterCardRevealed: encounter enemy spawn
-///      lands in #127"`. Stub for #127 to replace with the real
-///      spawn handler.
+///    - `CardType::Enemy`: run every `Trigger::Revelation` ability
+///      (rare on enemies; structural for Phase-7+), then call
+///      [`spawn_enemy`] to resolve spawn location and
+///      engagement-on-spawn.
 ///    - Any other type: reject with `"EncounterCardRevealed: invalid encounter card type {kind:?}"`.
 ///      Encounter decks should only contain treachery
 ///      and enemy cards per the Rules Reference.
@@ -241,21 +242,15 @@ fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> En
 ///
 /// `draw_encounter_top` mutates `state.encounter_deck` /
 /// `state.encounter_discard` BEFORE the unknown-code reject can
-/// fire; `Event::CardRevealed` then emits BEFORE the enemy /
-/// invalid-type rejects fire. All three early-reject paths are
-/// documented exceptions to the project's validate-first /
-/// mutate-second convention. Two reasons it's acceptable:
-///
-/// 1. The enemy arm is unreachable in #126's intended scope (the
-///    synthetic fixture's deck contains only the synthetic
-///    treachery). The reject exists as a regression test for #127
-///    to flip, not as a real runtime path.
-/// 2. #127 replaces the enemy reject with the real spawn branch,
-///    after which the only "early emit" is `Event::CardRevealed`
-///    itself — which is intentional, because Before-timing
-///    reaction listeners (#52, not wired) need the event to fire
-///    before Revelation resolves (rules-correct interposition
-///    point).
+/// fire; `Event::CardRevealed` then emits BEFORE Revelation /
+/// spawn resolve. The draw is a documented exception to the
+/// validate-first convention — the card must be removed from the
+/// deck before the reaction window opens (Before-timing listeners
+/// in #52 need to see the revealed-but-not-yet-resolved state).
+/// `Event::CardRevealed` emits before Revelation for the same
+/// reason: Before-timing reaction listeners (#52, not wired) need
+/// the event to fire before Revelation resolves (rules-correct
+/// interposition point).
 ///
 /// Compare to `play_card`'s documented mid-resolution caveat in
 /// CLAUDE.md: same shape, same rationale.
@@ -306,9 +301,30 @@ fn encounter_card_revealed(
             state.encounter_discard.push(code);
             EngineOutcome::Done
         }
-        CardType::Enemy => EngineOutcome::Rejected {
-            reason: "EncounterCardRevealed: encounter enemy spawn lands in #127".into(),
-        },
+        CardType::Enemy => {
+            // Revelation effects on enemies (rare, but printed on
+            // some encounter enemies — e.g. "Revelation - Discard
+            // 1 card from your hand at random.") fire BEFORE the
+            // enemy spawns into play, per Rules Reference p.24:
+            // "1. Resolve the revelation ability on the drawn card."
+            // followed by "4. If the card is an enemy, spawn it
+            // following any spawn instruction the card bears."
+            //
+            // No Phase-4-scope enemy has a Revelation effect; this
+            // loop is structural for Phase-7+ enemies.
+            let abilities = (registry.abilities_for)(&code).unwrap_or_default();
+            let ctx = EvalContext::for_controller(investigator);
+            for ability in abilities
+                .iter()
+                .filter(|a| a.trigger == Trigger::Revelation)
+            {
+                let outcome = apply_effect(state, events, &ability.effect, ctx);
+                if !matches!(outcome, EngineOutcome::Done) {
+                    return outcome;
+                }
+            }
+            spawn_enemy(state, events, investigator, code, metadata)
+        }
         other => EngineOutcome::Rejected {
             reason: format!(
                 "EncounterCardRevealed: invalid encounter card type {other:?}; \
@@ -317,6 +333,159 @@ fn encounter_card_revealed(
             .into(),
         },
     }
+}
+
+/// Spawn one encounter-deck enemy into play.
+///
+/// Called by [`encounter_card_revealed`] after `Event::CardRevealed`
+/// has fired and any [`Trigger::Revelation`](crate::dsl::Trigger::Revelation)
+/// abilities on the enemy have resolved.
+///
+/// # Spawn-location resolution
+///
+/// Rules Reference page 24, step 4 (1.4 Each investigator draws 1
+/// encounter card):
+///
+/// > If the card is an **enemy**, spawn it following any spawn
+/// > instruction the card bears. (A spawn instruction is any text
+/// > bearing a "spawn" precursor.) If the encountered enemy has no
+/// > spawn instruction, the enemy spawns engaged with the investigator
+/// > encountering the card and is placed in that investigator's threat
+/// > area.
+///
+/// We model threat-area placement as
+/// `enemy.current_location = drawing investigator's location` +
+/// `engaged_with = drawing investigator`. The named-location case
+/// (`SpawnLocation::Specific`) looks the location up by its
+/// printed [`code`](crate::state::Location::code).
+///
+/// # Engagement-on-spawn
+///
+/// Rules Reference page 10 (Enemy Engagement):
+///
+/// > Any time a ready unengaged enemy is at the same location as an
+/// > investigator, it engages that investigator, and is placed in that
+/// > investigator's threat area. If there are multiple investigators
+/// > at the same location as a ready unengaged enemy, follow the
+/// > enemy's prey instructions to determine which investigator is
+/// > engaged.
+///
+/// Phase-4 handles the 0- and 1-investigator cases inline. The
+/// multi-investigator case requires `Prey` resolution — the same
+/// machinery #128 will land for hunter-movement target selection —
+/// and rejects here with a reason pointing at #128. #128's author
+/// inherits the work of unifying the prey resolver across spawn and
+/// hunter-movement.
+///
+/// # Stat fields TODO
+///
+/// `CardMetadata` doesn't yet carry per-enemy `fight` / `evade` /
+/// `attack_damage` / `attack_horror`. This handler hardcodes
+/// `fight: 1, evade: 1, attack_damage: 0, attack_horror: 0` until
+/// a future PR (Phase-7+, alongside the first real spawn-bearing
+/// enemy) extends `CardMetadata` with enemy-specific stat fields and
+/// this handler reads them. Health uses `metadata.health.unwrap_or(1)`
+/// because `CardMetadata.health` already exists.
+///
+/// # Validate-first contract
+///
+/// All preconditions (location resolution, engagement resolution) are
+/// checked before any mutation. Reject paths leave `state` and
+/// `events` unchanged from the caller's perspective; only the happy
+/// path inserts into `state.enemies`, bumps `next_enemy_id`, and
+/// pushes `Event::EnemySpawned`.
+#[allow(clippy::too_many_lines)]
+fn spawn_enemy(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    code: CardCode,
+    metadata: &CardMetadata,
+) -> EngineOutcome {
+    // 1. Resolve spawn location (validate-first).
+    let location_id = match &metadata.spawn {
+        Some(Spawn {
+            location: SpawnLocation::Specific(loc_code),
+        }) => match state
+            .locations
+            .iter()
+            .find(|(_, loc)| loc.code.as_str() == loc_code.as_str())
+        {
+            Some((id, _)) => *id,
+            None => {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "spawn_enemy: spawn location not in play (code {loc_code:?})",
+                    )
+                    .into(),
+                };
+            }
+        },
+        None => match state
+            .investigators
+            .get(&investigator)
+            .and_then(|inv| inv.current_location)
+        {
+            Some(loc) => loc,
+            None => {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "spawn_enemy: drawing investigator has no location \
+                         (investigator {investigator:?})",
+                    )
+                    .into(),
+                };
+            }
+        },
+    };
+
+    // 2. Resolve engagement-on-spawn (validate-first).
+    let investigators_at_loc: Vec<InvestigatorId> = state
+        .investigators
+        .iter()
+        .filter(|(_, inv)| inv.current_location == Some(location_id))
+        .map(|(id, _)| *id)
+        .collect();
+    let engaged_with = match investigators_at_loc.as_slice() {
+        [] => None,
+        [single] => Some(*single),
+        _ => {
+            return EngineOutcome::Rejected {
+                reason: "spawn_enemy: multi-investigator engagement-on-spawn requires Prey \
+                         (lands in #128)"
+                    .into(),
+            };
+        }
+    };
+
+    // 3. Mint and place (mutate-second).
+    let enemy_id = EnemyId(state.next_enemy_id);
+    state.next_enemy_id = state.next_enemy_id.saturating_add(1);
+
+    let enemy = Enemy {
+        id: enemy_id,
+        name: metadata.name.clone(),
+        fight: 1,
+        evade: 1,
+        max_health: metadata.health.unwrap_or(1),
+        damage: 0,
+        attack_damage: 0,
+        attack_horror: 0,
+        current_location: Some(location_id),
+        exhausted: false,
+        traits: metadata.traits.clone(),
+        engaged_with,
+    };
+    state.enemies.insert(enemy_id, enemy);
+
+    events.push(Event::EnemySpawned {
+        enemy: enemy_id,
+        code,
+        location: location_id,
+        engaged_with,
+    });
+
+    EngineOutcome::Done
 }
 
 /// Fisher-Yates shuffle of the named investigator's deck using the
@@ -3445,6 +3614,280 @@ mod encounter_deck_helper_tests {
         assert_ne!(
             a, c,
             "different seeds should produce different orders (smoke test)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod spawn_enemy_tests {
+    use super::*;
+    use crate::assert_event;
+    use crate::state::{CardCode, LocationId};
+    use crate::test_support::{test_investigator, test_location, TestGame};
+    use card_dsl::card_data::{CardMetadata, CardType, Class, SkillIcons, Spawn, SpawnLocation};
+
+    fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
+        CardMetadata {
+            code: "_synth_enemy".into(),
+            name: "Synth Enemy".into(),
+            class: Class::Mythos,
+            card_type: CardType::Enemy,
+            cost: None,
+            xp: None,
+            text: None,
+            flavor: None,
+            illustrator: None,
+            traits: Vec::new(),
+            slots: Vec::new(),
+            skill_icons: SkillIcons::default(),
+            health: Some(1),
+            sanity: None,
+            deck_limit: 1,
+            quantity: 1,
+            pack_code: "_synth".into(),
+            position: 1,
+            is_fast: false,
+            spawn,
+        }
+    }
+
+    #[test]
+    fn spawn_at_specific_location_with_one_investigator_engages_them() {
+        let mut loc = test_location(10, "Synth Loc");
+        loc.code = CardCode("_synth_loc".into());
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .build();
+        // Place investigator 1 at location 10.
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+
+        let metadata = synth_enemy_metadata(Some(Spawn {
+            location: SpawnLocation::Specific("_synth_loc".into()),
+        }));
+        let mut events = Vec::new();
+
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
+        assert_eq!(state.enemies.len(), 1);
+        let (_, enemy) = state.enemies.iter().next().unwrap();
+        assert_eq!(enemy.current_location, Some(LocationId(10)));
+        assert_eq!(enemy.engaged_with, Some(InvestigatorId(1)));
+
+        assert_event!(
+            events,
+            Event::EnemySpawned { code, location, engaged_with, .. }
+                if *code == CardCode("_synth_enemy".into())
+                    && *location == LocationId(10)
+                    && *engaged_with == Some(InvestigatorId(1))
+        );
+    }
+
+    #[test]
+    fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
+        let mut loc = test_location(10, "Synth Loc");
+        loc.code = CardCode("_synth_loc".into());
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .build();
+        // Investigator 1 is NOT at location 10 (current_location is None).
+
+        let metadata = synth_enemy_metadata(Some(Spawn {
+            location: SpawnLocation::Specific("_synth_loc".into()),
+        }));
+        let mut events = Vec::new();
+
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
+        let (_, enemy) = state.enemies.iter().next().unwrap();
+        assert_eq!(enemy.engaged_with, None);
+    }
+
+    #[test]
+    fn spawn_at_specific_location_rejects_when_location_not_in_play() {
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let metadata = synth_enemy_metadata(Some(Spawn {
+            location: SpawnLocation::Specific("_nonexistent_loc".into()),
+        }));
+        let mut events = Vec::new();
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+        match outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("spawn location not in play"),
+                    "unexpected reason: {reason:?}",
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        assert!(state.enemies.is_empty());
+    }
+
+    #[test]
+    fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
+        let mut loc = test_location(10, "Demo");
+        loc.code = CardCode("_demo_loc".into());
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+        let metadata = synth_enemy_metadata(None);
+        let mut events = Vec::new();
+
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
+        let (_, enemy) = state.enemies.iter().next().unwrap();
+        assert_eq!(enemy.current_location, Some(LocationId(10)));
+        assert_eq!(enemy.engaged_with, Some(InvestigatorId(1)));
+    }
+
+    #[test]
+    fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location() {
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        // Investigator has no current_location.
+        let metadata = synth_enemy_metadata(None);
+        let mut events = Vec::new();
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+        match outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("drawing investigator has no location"),
+                    "unexpected reason: {reason:?}",
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn spawn_with_multi_investigator_engagement_rejects_until_128() {
+        let mut loc = test_location(10, "Crowded");
+        loc.code = CardCode("_crowded_loc".into());
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(loc)
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+        let metadata = synth_enemy_metadata(Some(Spawn {
+            location: SpawnLocation::Specific("_crowded_loc".into()),
+        }));
+        let mut events = Vec::new();
+
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        match outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("#128") && reason.contains("Prey"),
+                    "unexpected reason: {reason:?}",
+                );
+            }
+            other => {
+                panic!("expected Rejected for multi-investigator engagement, got {other:?}")
+            }
+        }
+        assert!(state.enemies.is_empty(), "no enemy should be placed on reject");
+    }
+
+    #[test]
+    fn spawn_mints_distinct_enemy_ids() {
+        let mut loc = test_location(10, "L");
+        loc.code = CardCode("_l".into());
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+        let metadata = synth_enemy_metadata(Some(Spawn {
+            location: SpawnLocation::Specific("_l".into()),
+        }));
+        let mut events = Vec::new();
+
+        let _ = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+        let _ = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+        assert_eq!(
+            state.enemies.len(),
+            2,
+            "two spawns should produce two distinct enemies"
         );
     }
 }
