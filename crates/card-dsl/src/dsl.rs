@@ -219,6 +219,17 @@ pub enum EventPattern {
         /// Narrow the match by card type. `None` = any reveal.
         card_type: Option<crate::card_data::CardType>,
     },
+    /// An enemy spawned at a location (entered play from the
+    /// encounter deck via the on-draw resolution path).
+    ///
+    /// Intentionally bare (no narrowing fields). YAGNI on
+    /// `by_controller` / `card_type` / `location_filter` until a
+    /// real listener forces a shape. Concrete-consumer-first.
+    ///
+    /// First listener will likely be a Phase-7+ "after an enemy
+    /// spawns at your location" reaction; that PR gets to extend
+    /// this variant with whatever narrowing field it needs.
+    EnemySpawned,
 }
 
 /// When an [`Trigger::OnEvent`] ability fires relative to the
@@ -1089,6 +1100,25 @@ mod tests {
             by_controller: true,
         };
         assert_ne!(revealed_treachery, enemy_defeated);
+    }
+
+    #[test]
+    fn enemy_spawned_pattern_round_trips_through_serde_json() {
+        let original = EventPattern::EnemySpawned;
+        let json = serde_json::to_string(&original).expect("serialize");
+        let recovered: EventPattern = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn enemy_spawned_distinct_from_other_patterns() {
+        let spawned = EventPattern::EnemySpawned;
+        let defeated = EventPattern::EnemyDefeated {
+            by_controller: true,
+        };
+        let revealed = EventPattern::CardRevealed { card_type: None };
+        assert_ne!(spawned, defeated);
+        assert_ne!(spawned, revealed);
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).

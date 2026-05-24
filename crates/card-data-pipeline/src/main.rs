@@ -321,6 +321,16 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     out
 }
 
+/// Write a single [`CardMetadata`] literal into `out`.
+///
+/// Split out from [`render_card`] so the snapshot test can call it
+/// against a synthetic [`NormalizedCard`] without running the full
+/// pipeline.
+#[cfg(test)]
+fn emit_card(out: &mut String, c: &NormalizedCard) {
+    render_card(out, c);
+}
+
 fn render_card(out: &mut String, c: &NormalizedCard) {
     let _ = writeln!(out, "        CardMetadata {{");
     let _ = writeln!(out, "            code: {}.to_owned(),", str_lit(&c.code));
@@ -364,6 +374,13 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
     );
     let _ = writeln!(out, "            position: {},", c.position);
     let _ = writeln!(out, "            is_fast: {},", c.is_fast);
+    // spawn: None for every generated card. Pipeline doesn't yet
+    // parse upstream spawn text — the first Phase-7+ PR that needs
+    // structured spawn data adds the parser and starts emitting
+    // Some(...) for spawn-bearing enemies. Until then, the corpus
+    // expresses "default spawn (engaged with drawing investigator)"
+    // for every enemy, which is the Rules Reference p.24 fallback.
+    let _ = writeln!(out, "            spawn: None,");
     let _ = writeln!(out, "        }},");
 }
 
@@ -432,7 +449,8 @@ const GENERATED_HEADER: &str = "\
 #[cfg(test)]
 mod tests {
     use super::{
-        map_card_type, map_class, normalize, parse_slots, parse_traits, process_raw, RawCard,
+        emit_card, map_card_type, map_class, normalize, parse_slots, parse_traits, process_raw,
+        NormalizedCard, RawCard,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -804,6 +822,44 @@ mod tests {
         assert!(
             norm.is_fast,
             "card text begins with \"Fast.\", expected is_fast=true"
+        );
+    }
+
+    #[test]
+    fn emitted_card_includes_spawn_none_field() {
+        // Pipeline should emit `spawn: None,` as the last field of
+        // every generated card literal so the cards crate compiles
+        // against the new CardMetadata.spawn field.
+        let card = NormalizedCard {
+            code: "01001".into(),
+            name: "Test".into(),
+            class: "Mythos",
+            card_type: "Treachery",
+            cost: None,
+            xp: None,
+            text: None,
+            flavor: None,
+            illustrator: None,
+            traits: Vec::new(),
+            slots: Vec::new(),
+            skill_willpower: 0,
+            skill_intellect: 0,
+            skill_combat: 0,
+            skill_agility: 0,
+            skill_wild: 0,
+            health: None,
+            sanity: None,
+            deck_limit: 0,
+            quantity: 1,
+            pack_code: "core".into(),
+            position: 1,
+            is_fast: false,
+        };
+        let mut buf = String::new();
+        emit_card(&mut buf, &card);
+        assert!(
+            buf.contains("spawn: None,"),
+            "emitted card should include `spawn: None,` field; got:\n{buf}",
         );
     }
 

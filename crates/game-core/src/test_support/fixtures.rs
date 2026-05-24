@@ -18,7 +18,7 @@
 //! when a field addition lands.
 
 use crate::state::{
-    Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
+    CardCode, Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
 };
 
 /// A stock investigator with reasonable defaults.
@@ -61,10 +61,15 @@ pub fn test_investigator(id: u32) -> Investigator {
 ///
 /// - Shroud 2, 0 clues, revealed.
 /// - No connections (caller adds them).
+/// - `code` defaults to `CardCode("_test_loc_{id}")` — underscore-
+///   prefixed so it can't collide with real `ArkhamDB` codes. Callers
+///   that care about the code (encounter-spawn tests, etc.) should
+///   mutate it directly after construction.
 #[must_use]
 pub fn test_location(id: u32, name: impl Into<String>) -> Location {
     Location {
         id: LocationId(id),
+        code: CardCode(format!("_test_loc_{id}")),
         name: name.into(),
         shroud: 2,
         clues: 0,

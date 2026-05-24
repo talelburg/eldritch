@@ -76,6 +76,16 @@ pub struct GameState {
     /// guarantees uniqueness within a scenario and deterministic ids
     /// across replays.
     pub next_card_instance_id: u32,
+    /// Monotonic counter for assigning [`EnemyId`]s when enemies
+    /// enter play via the encounter deck (see
+    /// `crate::engine::dispatch::spawn_enemy`). Starts at 0 and
+    /// increments after each assignment; guarantees uniqueness within
+    /// a scenario and deterministic ids across replays.
+    ///
+    /// Distinct from [`next_card_instance_id`](Self::next_card_instance_id)
+    /// because [`EnemyId`] and [`CardInstanceId`] are distinct types —
+    /// enemies aren't tracked in the `CardInPlay` registry.
+    pub next_enemy_id: u32,
     /// In-flight skill modifiers contributed by activated / triggered
     /// abilities with [`ModifierScope::ThisSkillTest`] scope.
     /// Accumulates between activation and skill-test resolution; the
@@ -641,6 +651,27 @@ mod fast_actor_scope_tests {
             let back: FastActorScope = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(back, scope);
         }
+    }
+}
+
+#[cfg(test)]
+mod next_enemy_id_tests {
+    use super::*;
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn game_state_has_next_enemy_id_counter_starting_at_zero() {
+        let state = TestGame::new().build();
+        assert_eq!(state.next_enemy_id, 0);
+    }
+
+    #[test]
+    fn next_enemy_id_round_trips_through_serde() {
+        let mut state = TestGame::new().build();
+        state.next_enemy_id = 42;
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.next_enemy_id, 42);
     }
 }
 
