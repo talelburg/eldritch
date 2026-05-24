@@ -1408,14 +1408,16 @@ fn resolve_input(
 /// has a matching `Trigger::OnEvent` ability. No-op when the registry
 /// isn't installed or no card matches.
 ///
-/// The window doesn't open here — the surrounding handler's driver
-/// (today, [`drive_skill_test`]) checks for queued windows at its
-/// next step boundary and either opens them via
-/// [`open_queued_reaction_window`] or proceeds to the next step.
-/// Splitting queue and open keeps the event-emitter
-/// (`damage_enemy` and future callers) free of suspension logic —
-/// they just signal "this impact happened, scan for reactions" and
-/// the driver decides when to actually pause.
+/// Emits [`Event::WindowOpened`] before pushing onto
+/// [`GameState::open_windows`] so reaction-window observability is
+/// symmetric with the Fast-window path ([`open_fast_window`]).
+/// If no triggers are pending the function returns early without
+/// emitting anything — the window never opens.
+///
+/// The window suspends the surrounding driver
+/// (today, [`drive_skill_test`]) at its next step boundary: after the
+/// emit here the driver sees a non-empty `open_windows` stack and
+/// returns [`EngineOutcome::AwaitingInput`] so the player can act.
 ///
 /// Idempotency: if a window is already queued for this apply, the new
 /// `kind` overwrites it. Phase-3 actions only emit one defeating
@@ -1423,11 +1425,12 @@ fn resolve_input(
 /// doesn't arise; the overwrite is a loud-on-debug placeholder
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
-fn queue_reaction_window(state: &mut GameState, kind: WindowKind) {
+fn queue_reaction_window(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     let pending_triggers = scan_pending_triggers(state, kind);
     if pending_triggers.is_empty() {
         return;
     }
+    events.push(Event::WindowOpened { kind });
     // Reaction windows admit any investigator's Fast actions
     // (Rules Reference: Fast may be played at any player window).
     // Multi-window nesting is now structural — push twice is valid.
@@ -1556,16 +1559,18 @@ fn trigger_matches(
     }
 }
 
-/// Emit [`Event::WindowOpened`] for the queued window and return
-/// [`AwaitingInput`]. Called by [`drive_skill_test`] at a
-/// step boundary when an earlier step queued a window via
-/// [`queue_reaction_window`]. Future non-skill-test handlers that
-/// queue windows will call this from their own boundaries.
-fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> EngineOutcome {
+/// Return [`AwaitingInput`] for the already-open reaction window at
+/// the top of [`GameState::open_windows`]. Called by [`drive_skill_test`]
+/// at a step boundary when an earlier step queued a window via
+/// [`queue_reaction_window`].
+///
+/// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
+/// (not here) so the event appears at queue time and is symmetric with
+/// the [`open_fast_window`] path.
+fn open_queued_reaction_window(state: &GameState, _events: &mut Vec<Event>) -> EngineOutcome {
     let window = state
         .top_reaction_window()
         .expect("open_queued_reaction_window: caller checked is_some");
-    events.push(Event::WindowOpened { kind: window.kind });
     EngineOutcome::AwaitingInput {
         request: InputRequest {
             prompt: format!(
@@ -1837,6 +1842,11 @@ fn close_reaction_window_at(
     let window = state.open_windows.remove(idx);
     let kind = window.kind;
     events.push(Event::WindowClosed { kind });
+
+    // Run any kind-specific continuation (e.g. MythosAfterDraws →
+    // mythos_phase_end). For reaction windows that have no continuation
+    // (AfterEnemyDefeated, BetweenPhases) this is a no-op.
+    run_window_continuation(state, events, kind);
 
     // If a skill test was mid-resolution when this window opened,
     // hand control back to its driver to run the remaining steps.
@@ -2329,12 +2339,15 @@ fn damage_enemy(
             by,
         });
         state.enemies.remove(&enemy_id);
-        // Queue the post-defeat reaction window. The skill-test
-        // driver opens it at the next step boundary (between
-        // `apply_skill_test_follow_up` and `fire_on_skill_test_resolution`);
-        // see `drive_skill_test`.
+        // Queue the post-defeat reaction window. Emits
+        // `Event::WindowOpened` immediately (inside queue_reaction_window);
+        // the skill-test driver then suspends at the next step boundary
+        // (between `apply_skill_test_follow_up` and
+        // `fire_on_skill_test_resolution`) returning AwaitingInput so the
+        // player can fire their reaction triggers; see `drive_skill_test`.
         queue_reaction_window(
             state,
+            events,
             WindowKind::AfterEnemyDefeated {
                 enemy: enemy_id,
                 by,
@@ -2924,9 +2937,7 @@ pub(super) fn check_play_card(
     let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
         Ok(v) => v,
         Err(EngineOutcome::Rejected { reason }) => return Err(reason),
-        Err(other) => unreachable!(
-            "resolve_play_target returned non-Rejected outcome: {other:?}"
-        ),
+        Err(other) => unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}"),
     };
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
@@ -3159,14 +3170,14 @@ pub(super) fn check_activate_ability(
     let source_code = inv.cards_in_play[in_play_pos].code.clone();
     let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
 
-    let (action_cost, costs, effect) =
-        match resolve_activated_ability(&source_code, ability_index) {
-            Ok(v) => v,
-            Err(EngineOutcome::Rejected { reason }) => return Err(reason),
-            Err(other) => unreachable!(
-                "resolve_activated_ability returned non-Rejected outcome: {other:?}"
-            ),
-        };
+    let (action_cost, costs, effect) = match resolve_activated_ability(&source_code, ability_index)
+    {
+        Ok(v) => v,
+        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+        Err(other) => {
+            unreachable!("resolve_activated_ability returned non-Rejected outcome: {other:?}")
+        }
+    };
 
     // Gate: branch on action_cost now that we have it.
     // Fast abilities (action_cost == 0) may be used at any player window.
@@ -3232,8 +3243,8 @@ pub(super) fn check_activate_ability(
 /// Returns `true` if any investigator has at least one playable Fast
 /// option in the current state — either a Fast card in hand or a
 /// non-exhausted 0-action Activated ability on a card in play.
-/// Used by [`open_fast_window`] (lands in next task) to short-circuit
-/// windows where nobody can act.
+/// Used by [`open_fast_window`] to short-circuit windows where nobody
+/// can act.
 ///
 /// Eligibility uses the extracted [`check_play_card`] /
 /// [`check_activate_ability`] validators so the gate is exactly the
@@ -3243,10 +3254,6 @@ pub(super) fn check_activate_ability(
 /// Returns `false` when the card registry isn't installed (tests
 /// that don't touch card data) — same fallback as
 /// [`scan_pending_triggers`].
-///
-/// `#[allow(dead_code)]`: wired up by [`open_fast_window`] in the next
-/// task; keeping the allow here avoids a clippy break on this branch.
-#[allow(dead_code)]
 pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
     let Some(reg) = crate::card_registry::current() else {
         return false;
@@ -3282,6 +3289,72 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
         }
     }
     false
+}
+
+/// Stub — real body lands in Task 9. Until then, behave like the
+/// vanilla phase transition [`step_phase`] performs: emit
+/// `PhaseEnded(Mythos)` then advance to Investigation. No tests
+/// currently reach this code path (nothing pushes
+/// [`WindowKind::MythosAfterDraws`] onto the window stack until Task 9
+/// wires `mythos_phase` to do it), so the stub's only job is to
+/// preserve correct semantics if anyone calls it.
+///
+/// Task 9 replaces this with the real body that doesn't call
+/// `step_phase` directly (because `investigation_phase` will handle
+/// the transition).
+fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+    step_phase(state, events);
+}
+
+/// Kind-aware continuation called when a window closes (whether
+/// inline via [`open_fast_window`]'s auto-skip path or via the
+/// [`close_reaction_window_at`] pop path). For
+/// [`WindowKind::MythosAfterDraws`], runs [`mythos_phase_end`].
+/// Other window kinds have no continuation — this is a no-op that
+/// preserves the existing [`close_reaction_window_at`] behavior for
+/// `AfterEnemyDefeated` and `BetweenPhases` windows.
+fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
+    match kind {
+        WindowKind::MythosAfterDraws => mythos_phase_end(state, events),
+        WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
+    }
+}
+
+/// Open a printed Fast-play window of the given kind. Always emits
+/// [`Event::WindowOpened`] for observability. Then either:
+///
+/// - Pushes the [`OpenWindow`] onto [`GameState::open_windows`] if any
+///   pending reaction triggers or Fast-eligible plays are detected. The
+///   apply loop's existing "pending reactions → `AwaitingInput`" path
+///   then surfaces the wait at the dispatch tail.
+/// - Or emits [`Event::WindowClosed`] immediately and runs
+///   [`run_window_continuation`] inline. The window never lands on
+///   `state.open_windows`. Auto-skip is the common case for the
+///   synthetic fixture (no Fast cards in any hand, no 0-cost Activated
+///   abilities on any in-play card) and saves a UI round-trip when
+///   nobody can act.
+///
+/// `#[allow(dead_code)]`: wired up by the caller in Task 9
+/// (`mythos_phase`); keeping the allow here avoids a clippy break on
+/// this branch.
+#[allow(dead_code)]
+pub(super) fn open_fast_window(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
+    events.push(Event::WindowOpened { kind });
+
+    let pending_triggers = scan_pending_triggers(state, kind);
+    let has_fast_eligible = any_fast_play_eligible(state);
+
+    if pending_triggers.is_empty() && !has_fast_eligible {
+        events.push(Event::WindowClosed { kind });
+        run_window_continuation(state, events, kind);
+        return;
+    }
+
+    state.open_windows.push(OpenWindow {
+        kind,
+        pending_triggers,
+        fast_actors: FastActorScope::Any,
+    });
 }
 
 /// Handler for [`PlayerAction::ActivateAbility`].
@@ -4084,9 +4157,12 @@ mod check_play_card_tests {
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
-        let err = check_play_card(&state, InvestigatorId(1), 0)
-            .expect_err("empty hand should reject");
-        assert!(err.contains("hand_index"), "error should mention hand_index, got: {err}");
+        let err =
+            check_play_card(&state, InvestigatorId(1), 0).expect_err("empty hand should reject");
+        assert!(
+            err.contains("hand_index"),
+            "error should mention hand_index, got: {err}"
+        );
     }
 
     #[test]
@@ -4094,7 +4170,10 @@ mod check_play_card_tests {
         let state = TestGame::default().build();
         let err = check_play_card(&state, InvestigatorId(99), 0)
             .expect_err("missing investigator should reject");
-        assert!(err.contains("not in state"), "error should say not in state, got: {err}");
+        assert!(
+            err.contains("not in state"),
+            "error should say not in state, got: {err}"
+        );
     }
 }
 
@@ -4146,5 +4225,68 @@ mod any_fast_play_eligible_tests {
             .with_investigator(test_investigator(1))
             .build();
         assert!(!any_fast_play_eligible(&state));
+    }
+}
+
+#[cfg(test)]
+mod open_fast_window_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::state::{EnemyId, WindowKind};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn open_fast_window_with_no_eligibility_emits_open_then_close_inline() {
+        // No reactions, no Fast-eligible cards → auto-skip: window
+        // opens and closes without ever landing on state.open_windows.
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        open_fast_window(&mut state, &mut events, WindowKind::MythosAfterDraws);
+
+        assert!(
+            state.open_windows.is_empty(),
+            "auto-skip must not leave the window on the stack"
+        );
+        assert!(
+            matches!(
+                events.first(),
+                Some(Event::WindowOpened {
+                    kind: WindowKind::MythosAfterDraws
+                })
+            ),
+            "first event must be WindowOpened; got {:?}",
+            events.first()
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::MythosAfterDraws
+                }
+            )),
+            "must emit WindowClosed for MythosAfterDraws; events = {events:?}"
+        );
+    }
+
+    #[test]
+    fn run_window_continuation_for_no_continuation_kind_does_nothing() {
+        // AfterEnemyDefeated has no continuation. Calling it must be a
+        // no-op (no events, no state change).
+        let mut state = TestGame::default().build();
+        let mut events = Vec::new();
+        run_window_continuation(
+            &mut state,
+            &mut events,
+            WindowKind::AfterEnemyDefeated {
+                enemy: EnemyId(1),
+                by: None,
+            },
+        );
+        assert!(
+            events.is_empty(),
+            "AfterEnemyDefeated continuation must be a no-op; events = {events:?}"
+        );
     }
 }
