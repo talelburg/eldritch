@@ -1535,9 +1535,9 @@ fn trigger_matches(
                 true
             }
         }
-        // BetweenPhases windows open for phase-transition timing; no
-        // Trigger::OnEvent pattern matches a phase-transition window —
-        // those windows gate Fast actions, not after-event reactions.
+        // BetweenPhases and MythosAfterDraws windows open for timing
+        // reasons; no Trigger::OnEvent pattern matches them — those
+        // windows gate Fast actions, not after-event reactions.
         // AfterEnemyDefeated windows only match EnemyDefeated patterns
         // (handled above); encounter-reveal patterns return false.
         //
@@ -1546,7 +1546,9 @@ fn trigger_matches(
         // to react to spawns will add the corresponding WindowKind
         // variant and update this arm.
         (
-            WindowKind::BetweenPhases { .. } | WindowKind::AfterEnemyDefeated { .. },
+            WindowKind::BetweenPhases { .. }
+            | WindowKind::AfterEnemyDefeated { .. }
+            | WindowKind::MythosAfterDraws,
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned,
