@@ -8,6 +8,7 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
@@ -2807,7 +2808,8 @@ fn mulligan(
 /// Internal helper: where a played card lands after on-play effects
 /// resolve. Mirrors the Arkham rule that assets stay in play while
 /// events resolve and go to the discard.
-enum PlayDestination {
+#[derive(Debug)]
+pub(super) enum PlayDestination {
     /// Card stays in play (asset).
     InPlay,
     /// Card moves to the discard after on-play effects resolve (event).
@@ -2860,6 +2862,115 @@ fn resolve_play_target(
         });
     };
     Ok((destination, abilities, is_fast, card_type))
+}
+
+/// Validated payload returned by [`check_play_card`] on success.
+/// Carries the data `play_card`'s mutation step needs without
+/// re-running the validation.
+///
+/// `is_fast` and `card_type` are unused by `play_card` itself (it
+/// doesn't need them after validation) but are consumed by
+/// `any_fast_play_eligible` in the next task.
+#[derive(Debug)]
+#[allow(dead_code)]
+pub(super) struct PlayCheckResult {
+    pub destination: PlayDestination,
+    pub abilities: Vec<crate::dsl::Ability>,
+    pub is_fast: bool,
+    pub card_type: CardType,
+}
+
+/// Pure-validation peer to [`play_card`]. Returns `Ok` if the named
+/// card is currently playable by `investigator`, `Err(reason)` if
+/// not. The check is the existing `play_card` validation block lifted
+/// verbatim — no behavior change at `play_card`'s call site.
+///
+/// Used by [`play_card`] (which then runs the mutation block on the
+/// `Ok` payload) and by `any_fast_play_eligible` (which only
+/// inspects `Ok` vs `Err`).
+pub(super) fn check_play_card(
+    state: &GameState,
+    investigator: InvestigatorId,
+    hand_index: u8,
+) -> Result<PlayCheckResult, Cow<'static, str>> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
+    };
+    if inv.status != Status::Active {
+        return Err(format!(
+            "PlayCard: {investigator:?} is not Active (status {:?})",
+            inv.status,
+        )
+        .into());
+    }
+    let idx = usize::from(hand_index);
+    if idx >= inv.hand.len() {
+        return Err(format!(
+            "PlayCard: hand_index {hand_index} out of bounds (hand size {})",
+            inv.hand.len(),
+        )
+        .into());
+    }
+    let code: CardCode = inv.hand[idx].clone();
+    // Resolve card type and abilities (also yields is_fast + card_type) before
+    // applying the phase/active-investigator gate so the gate can branch on
+    // is_fast AND card_type per the Rules Reference (p. 11).
+    let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
+        Ok(v) => v,
+        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+        Err(other) => unreachable!(
+            "resolve_play_target returned non-Rejected outcome: {other:?}"
+        ),
+    };
+    // Timing gate — see play_card doc-comment "# Timing gate" section.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let owner_is_active = state.active_investigator == Some(investigator);
+    let permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    // Non-asset/non-event card types are filtered out by
+    // `resolve_play_target` above, so `card_type` here is always one of
+    // `Asset` or `Event`. The non-Fast arm collapses both into the
+    // strict gate; the Fast arms split because Rules Reference p. 11
+    // gives events and assets different scopes (any vs owner-only).
+    let allowed = if is_fast {
+        match card_type {
+            CardType::Event => active_during_investigation || permissive_window,
+            CardType::Asset => {
+                active_during_investigation || (owner_is_active && permissive_window)
+            }
+            // Unreachable: `resolve_play_target` rejects every other
+            // `CardType` before we get here. Fall back to the strict
+            // gate so a future relaxation of `resolve_play_target` does
+            // not silently over-permit anything.
+            _ => active_during_investigation,
+        }
+    } else {
+        active_during_investigation
+    };
+    if !allowed {
+        return Err(format!(
+            "PlayCard: card not playable in this timing window. \
+             Rules Reference p. 11: non-Fast cards require Investigation + active \
+             investigator; Fast events require active investigator or a window whose \
+             fast_actors permits the actor; Fast assets additionally require the OWNER \
+             (active investigator) to act. \
+             Got is_fast={is_fast}, card_type={card_type:?}, phase={phase:?}, \
+             active={active:?}, actor={investigator:?}, owner_is_active={owner_is_active}, \
+             permissive_window={permissive_window}.",
+            phase = state.phase,
+            active = state.active_investigator,
+        )
+        .into());
+    }
+    Ok(PlayCheckResult {
+        destination,
+        abilities,
+        is_fast,
+        card_type,
+    })
 }
 
 /// Handler for [`PlayerAction::PlayCard`].
@@ -2927,84 +3038,25 @@ fn play_card(
     investigator: InvestigatorId,
     hand_index: u8,
 ) -> EngineOutcome {
-    // Validate the investigator's presence and status before any card lookup.
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("PlayCard: investigator {investigator:?} is not in state").into(),
-        };
+    let PlayCheckResult {
+        destination,
+        abilities,
+        is_fast: _,
+        card_type: _,
+    } = match check_play_card(state, investigator, hand_index) {
+        Ok(r) => r,
+        Err(reason) => return EngineOutcome::Rejected { reason },
     };
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: {investigator:?} is not Active (status {:?})",
-                inv.status,
-            )
-            .into(),
-        };
-    }
+    // The code is re-read from state here so we don't pass it through
+    // the result (avoiding the lifetime question). The validator already
+    // confirmed the hand_index is in bounds and the investigator exists.
     let idx = usize::from(hand_index);
-    if idx >= inv.hand.len() {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: hand_index {hand_index} out of bounds (hand size {})",
-                inv.hand.len(),
-            )
-            .into(),
-        };
-    }
-    let code: CardCode = inv.hand[idx].clone();
-    // Resolve card type and abilities (also yields is_fast + card_type) before
-    // applying the phase/active-investigator gate so the gate can branch on
-    // is_fast AND card_type per the Rules Reference (p. 11).
-    let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
-        Ok(v) => v,
-        Err(reject) => return reject,
-    };
-    // Timing gate — see doc-comment "# Timing gate" section above.
-    let active_during_investigation =
-        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
-    let owner_is_active = state.active_investigator == Some(investigator);
-    let permissive_window = state
-        .open_windows
-        .last()
-        .is_some_and(|w| w.fast_actors.permits(investigator));
-    // Non-asset/non-event card types are filtered out by
-    // `resolve_play_target` above, so `card_type` here is always one of
-    // `Asset` or `Event`. The non-Fast arm collapses both into the
-    // strict gate; the Fast arms split because Rules Reference p. 11
-    // gives events and assets different scopes (any vs owner-only).
-    let allowed = if is_fast {
-        match card_type {
-            CardType::Event => active_during_investigation || permissive_window,
-            CardType::Asset => {
-                active_during_investigation || (owner_is_active && permissive_window)
-            }
-            // Unreachable: `resolve_play_target` rejects every other
-            // `CardType` before we get here. Fall back to the strict
-            // gate so a future relaxation of `resolve_play_target` does
-            // not silently over-permit anything.
-            _ => active_during_investigation,
-        }
-    } else {
-        active_during_investigation
-    };
-    if !allowed {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: card not playable in this timing window. \
-                 Rules Reference p. 11: non-Fast cards require Investigation + active \
-                 investigator; Fast events require active investigator or a window whose \
-                 fast_actors permits the actor; Fast assets additionally require the OWNER \
-                 (active investigator) to act. \
-                 Got is_fast={is_fast}, card_type={card_type:?}, phase={phase:?}, \
-                 active={active:?}, actor={investigator:?}, owner_is_active={owner_is_active}, \
-                 permissive_window={permissive_window}.",
-                phase = state.phase,
-                active = state.active_investigator,
-            )
-            .into(),
-        };
-    }
+    let code: CardCode = state
+        .investigators
+        .get(&investigator)
+        .expect("checked in validator")
+        .hand[idx]
+        .clone();
 
     // Mutate.
     events.push(Event::CardPlayed {
@@ -3909,5 +3961,30 @@ mod spawn_enemy_tests {
             2,
             "two spawns should produce two distinct enemies"
         );
+    }
+}
+
+#[cfg(test)]
+mod check_play_card_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn check_play_card_returns_err_for_unknown_hand_index() {
+        let state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let err = check_play_card(&state, InvestigatorId(1), 0)
+            .expect_err("empty hand should reject");
+        assert!(err.contains("hand_index"), "error should mention hand_index, got: {err}");
+    }
+
+    #[test]
+    fn check_play_card_returns_err_when_investigator_missing() {
+        let state = TestGame::default().build();
+        let err = check_play_card(&state, InvestigatorId(99), 0)
+            .expect_err("missing investigator should reject");
+        assert!(err.contains("not in state"), "error should say not in state, got: {err}");
     }
 }
