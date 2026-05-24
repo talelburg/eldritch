@@ -3653,6 +3653,8 @@ mod spawn_enemy_tests {
             position: 1,
             is_fast: false,
             spawn,
+            surge: false,
+            peril: false,
         }
     }
 

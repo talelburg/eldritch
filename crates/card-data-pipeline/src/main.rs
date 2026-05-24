@@ -381,6 +381,8 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
     // expresses "default spawn (engaged with drawing investigator)"
     // for every enemy, which is the Rules Reference p.24 fallback.
     let _ = writeln!(out, "            spawn: None,");
+    let _ = writeln!(out, "            surge: false,");
+    let _ = writeln!(out, "            peril: false,");
     let _ = writeln!(out, "        }},");
 }
 

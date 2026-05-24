@@ -73,6 +73,8 @@ fn synth_treachery_metadata() -> CardMetadata {
         position: 1,
         is_fast: false,
         spawn: None,
+        surge: false,
+        peril: false,
     }
 }
 
@@ -111,6 +113,8 @@ fn synth_enemy_metadata() -> CardMetadata {
         spawn: Some(Spawn {
             location: SpawnLocation::Specific(SYNTH_LOC_CODE.to_owned()),
         }),
+        surge: false,
+        peril: false,
     }
 }
 
