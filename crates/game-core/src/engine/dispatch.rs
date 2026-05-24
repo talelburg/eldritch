@@ -2868,9 +2868,13 @@ fn resolve_play_target(
 /// Carries the data `play_card`'s mutation step needs without
 /// re-running the validation.
 ///
-/// `is_fast` and `card_type` are unused by `play_card` itself (it
-/// doesn't need them after validation) but are consumed by
-/// `any_fast_play_eligible` in the next task.
+/// `is_fast` is consumed by [`any_fast_play_eligible`]; `card_type`
+/// is currently destructured with `_` in `play_card` but kept for
+/// future consumers (e.g. reaction-window dispatch).
+///
+/// `#[allow(dead_code)]` covers `card_type` (not yet read outside
+/// validation) and suppresses the rustc `dead_code` lint on struct fields
+/// that are only read by a `pub(super)` function not yet wired up.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(super) struct PlayCheckResult {
@@ -3221,6 +3225,61 @@ pub(super) fn check_activate_ability(
         effect,
         source_exhausted,
     })
+}
+
+/// Returns `true` if any investigator has at least one playable Fast
+/// option in the current state — either a Fast card in hand or a
+/// non-exhausted 0-action Activated ability on a card in play.
+/// Used by [`open_fast_window`] (lands in next task) to short-circuit
+/// windows where nobody can act.
+///
+/// Eligibility uses the extracted [`check_play_card`] /
+/// [`check_activate_ability`] validators so the gate is exactly the
+/// existing `PlayCard` / `ActivateAbility` gate — no parallel
+/// implementation, no drift.
+///
+/// Returns `false` when the card registry isn't installed (tests
+/// that don't touch card data) — same fallback as
+/// [`scan_pending_triggers`].
+///
+/// `#[allow(dead_code)]`: wired up by [`open_fast_window`] in the next
+/// task; keeping the allow here avoids a clippy break on this branch.
+#[allow(dead_code)]
+pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
+    let Some(reg) = crate::card_registry::current() else {
+        return false;
+    };
+    for (&inv_id, inv) in &state.investigators {
+        // Fast events / Fast assets in hand.
+        for hand_idx_usize in 0..inv.hand.len() {
+            let Ok(hand_idx) = u8::try_from(hand_idx_usize) else {
+                break;
+            };
+            if let Ok(result) = check_play_card(state, inv_id, hand_idx) {
+                if result.is_fast {
+                    return true;
+                }
+            }
+        }
+        // 0-action Activated abilities on cards in play.
+        for card in &inv.cards_in_play {
+            let Some(abilities) = (reg.abilities_for)(&card.code) else {
+                continue;
+            };
+            for (ab_idx, ability) in abilities.iter().enumerate() {
+                let Trigger::Activated { action_cost: 0 } = ability.trigger else {
+                    continue;
+                };
+                let Ok(ab_idx_u8) = u8::try_from(ab_idx) else {
+                    break;
+                };
+                if check_activate_ability(state, inv_id, card.instance_id, ab_idx_u8).is_ok() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Handler for [`PlayerAction::ActivateAbility`].
@@ -4065,5 +4124,25 @@ mod check_activate_ability_tests {
             err.contains("not in state"),
             "error should say not in state, got: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod any_fast_play_eligible_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn returns_false_when_no_investigators() {
+        let state = TestGame::default().build();
+        assert!(!any_fast_play_eligible(&state));
+    }
+
+    #[test]
+    fn returns_false_when_hands_and_in_play_empty() {
+        let state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        assert!(!any_fast_play_eligible(&state));
     }
 }
