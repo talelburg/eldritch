@@ -414,10 +414,8 @@ fn spawn_enemy(
             Some((id, _)) => *id,
             None => {
                 return EngineOutcome::Rejected {
-                    reason: format!(
-                        "spawn_enemy: spawn location not in play (code {loc_code:?})",
-                    )
-                    .into(),
+                    reason: format!("spawn_enemy: spawn location not in play (code {loc_code:?})",)
+                        .into(),
                 };
             }
         },
@@ -3849,7 +3847,10 @@ mod spawn_enemy_tests {
                 panic!("expected Rejected for multi-investigator engagement, got {other:?}")
             }
         }
-        assert!(state.enemies.is_empty(), "no enemy should be placed on reject");
+        assert!(
+            state.enemies.is_empty(),
+            "no enemy should be placed on reject"
+        );
     }
 
     #[test]
