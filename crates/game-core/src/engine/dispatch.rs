@@ -305,8 +305,9 @@ fn encounter_card_revealed(
             // Revelation effects on enemies (rare, but printed on
             // some encounter enemies — e.g. "Revelation - Discard
             // 1 card from your hand at random.") fire BEFORE the
-            // enemy spawns into play, per Rules Reference p.24:
-            // "1. Resolve the revelation ability on the drawn card."
+            // enemy spawns into play, per Rules Reference p.24
+            // ("1.4 Each investigator draws 1 encounter card"):
+            // "3. Resolve the revelation ability on the drawn card."
             // followed by "4. If the card is an enemy, spawn it
             // following any spawn instruction the card bears."
             //
@@ -482,6 +483,12 @@ fn spawn_enemy(
         location: location_id,
         engaged_with,
     });
+    if let Some(target) = engaged_with {
+        events.push(Event::EnemyEngaged {
+            enemy: enemy_id,
+            investigator: target,
+        });
+    }
 
     EngineOutcome::Done
 }
@@ -3619,9 +3626,9 @@ mod encounter_deck_helper_tests {
 #[cfg(test)]
 mod spawn_enemy_tests {
     use super::*;
-    use crate::assert_event;
     use crate::state::{CardCode, LocationId};
     use crate::test_support::{test_investigator, test_location, TestGame};
+    use crate::{assert_event, assert_event_sequence, assert_no_event};
     use card_dsl::card_data::{CardMetadata, CardType, Class, SkillIcons, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
@@ -3683,12 +3690,14 @@ mod spawn_enemy_tests {
         assert_eq!(enemy.current_location, Some(LocationId(10)));
         assert_eq!(enemy.engaged_with, Some(InvestigatorId(1)));
 
-        assert_event!(
+        assert_event_sequence!(
             events,
             Event::EnemySpawned { code, location, engaged_with, .. }
                 if *code == CardCode("_synth_enemy".into())
                     && *location == LocationId(10)
-                    && *engaged_with == Some(InvestigatorId(1))
+                    && *engaged_with == Some(InvestigatorId(1)),
+            Event::EnemyEngaged { investigator, .. }
+                if *investigator == InvestigatorId(1),
         );
     }
 
@@ -3718,6 +3727,8 @@ mod spawn_enemy_tests {
         assert!(matches!(outcome, EngineOutcome::Done), "{outcome:?}");
         let (_, enemy) = state.enemies.iter().next().unwrap();
         assert_eq!(enemy.engaged_with, None);
+        // No engagement happened, so no EnemyEngaged event fires.
+        assert_no_event!(events, Event::EnemyEngaged { .. });
     }
 
     #[test]
@@ -3776,6 +3787,12 @@ mod spawn_enemy_tests {
         let (_, enemy) = state.enemies.iter().next().unwrap();
         assert_eq!(enemy.current_location, Some(LocationId(10)));
         assert_eq!(enemy.engaged_with, Some(InvestigatorId(1)));
+        // Default-spawn engagement fires the paired EnemyEngaged event.
+        assert_event!(
+            events,
+            Event::EnemyEngaged { investigator, .. }
+                if *investigator == InvestigatorId(1)
+        );
     }
 
     #[test]

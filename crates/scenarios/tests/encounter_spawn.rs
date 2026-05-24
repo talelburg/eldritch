@@ -81,6 +81,8 @@ fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
             if *code == CardCode(SYNTH_ENEMY_CODE.into())
                 && *location == LocationId(10)
                 && *engaged_with == Some(InvestigatorId(1)),
+        Event::EnemyEngaged { investigator, .. }
+            if *investigator == InvestigatorId(1),
     );
 
     // Enemy is in play.

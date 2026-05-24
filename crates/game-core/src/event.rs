@@ -170,6 +170,11 @@ pub enum Event {
     /// `engaged_with` is `Some(investigator)` when the spawn caused
     /// engagement-on-spawn (Rules Reference p.10) and `None` when the
     /// enemy spawned at an empty location.
+    ///
+    /// When `engaged_with == Some(_)`, the spawn handler also emits
+    /// [`EnemyEngaged`](Self::EnemyEngaged) immediately after this
+    /// event, so listeners that key off engagement transitions see
+    /// the on-spawn engagement uniformly with mid-game engagements.
     EnemySpawned {
         /// The newly-spawned enemy's stable id (freshly minted from
         /// [`GameState::next_enemy_id`](crate::state::GameState::next_enemy_id)).
