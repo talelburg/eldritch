@@ -3094,6 +3094,135 @@ fn play_card(
     EngineOutcome::Done
 }
 
+/// Validated payload returned by [`check_activate_ability`] on success.
+/// Carries the data `activate_ability`'s mutation step needs without
+/// re-running the validation.
+#[derive(Debug)]
+#[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
+pub(super) struct ActivateCheckResult {
+    /// Position of the source card in the investigator's `cards_in_play`.
+    pub in_play_pos: usize,
+    /// The card code of the source card.
+    pub source_code: CardCode,
+    /// Action cost from the ability's `Trigger::Activated`.
+    pub action_cost: u8,
+    /// Payment costs (beyond the action cost).
+    pub costs: Vec<crate::dsl::Cost>,
+    /// The effect to dispatch after paying costs.
+    pub effect: crate::dsl::Effect,
+    /// Whether the source card was exhausted at validation time —
+    /// load-bearing for activated abilities whose payment includes
+    /// `Cost::Exhaust`.
+    pub source_exhausted: bool,
+}
+
+/// Pure-validation peer to [`activate_ability`]. Mirrors
+/// [`check_play_card`]: validation block lifted verbatim, no behavior
+/// change at the call site.
+///
+/// Returns `Ok(ActivateCheckResult)` if the ability is currently
+/// activatable, `Err(reason)` otherwise. Does not mutate state.
+pub(super) fn check_activate_ability(
+    state: &GameState,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+    ability_index: u8,
+) -> Result<ActivateCheckResult, Cow<'static, str>> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Err(
+            format!("ActivateAbility: investigator {investigator:?} is not in state").into(),
+        );
+    };
+    if inv.status != Status::Active {
+        return Err(format!(
+            "ActivateAbility: {investigator:?} is not Active (status {:?})",
+            inv.status,
+        )
+        .into());
+    }
+    let Some(in_play_pos) = inv
+        .cards_in_play
+        .iter()
+        .position(|c| c.instance_id == instance_id)
+    else {
+        return Err(format!(
+            "ActivateAbility: {investigator:?} has no in-play instance {instance_id:?}",
+        )
+        .into());
+    };
+    let source_code = inv.cards_in_play[in_play_pos].code.clone();
+    let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
+
+    let (action_cost, costs, effect) =
+        match resolve_activated_ability(&source_code, ability_index) {
+            Ok(v) => v,
+            Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+            Err(other) => unreachable!(
+                "resolve_activated_ability returned non-Rejected outcome: {other:?}"
+            ),
+        };
+
+    // Gate: branch on action_cost now that we have it.
+    // Fast abilities (action_cost == 0) may be used at any player window.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let in_permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    if action_cost > 0 {
+        // Action-cost ability: requires Investigation phase + active investigator.
+        if !active_during_investigation {
+            return Err(format!(
+                "ActivateAbility: action-cost ability requires Investigation phase + \
+                 active investigator (phase was {:?}, active {:?})",
+                state.phase, state.active_investigator,
+            )
+            .into());
+        }
+    } else {
+        // Fast ability: active during Investigation OR permissive window.
+        if !active_during_investigation && !in_permissive_window {
+            return Err(
+                "ActivateAbility: Fast ability requires either active investigator \
+                         during Investigation, or an open window whose fast_actors permits \
+                         this investigator"
+                    .into(),
+            );
+        }
+    }
+
+    // Re-borrow inv after state borrows above.
+    let inv = state.investigators.get(&investigator).expect("checked");
+
+    // Action-economy check.
+    if inv.actions_remaining < action_cost {
+        return Err(format!(
+            "ActivateAbility: needs {action_cost} action(s); investigator has {}",
+            inv.actions_remaining,
+        )
+        .into());
+    }
+
+    // Validate every payment cost is payable. Done as a pure read
+    // before any mutation so an all-or-nothing reject leaves state
+    // untouched.
+    for cost in &costs {
+        if let Err(reason) = check_cost_payable(cost, inv, source_exhausted) {
+            return Err(reason.into());
+        }
+    }
+
+    Ok(ActivateCheckResult {
+        in_play_pos,
+        source_code,
+        action_cost,
+        costs,
+        effect,
+        source_exhausted,
+    })
+}
+
 /// Handler for [`PlayerAction::ActivateAbility`].
 ///
 /// Validates the named card instance, the indexed ability's trigger,
@@ -3144,98 +3273,17 @@ fn activate_ability(
     instance_id: CardInstanceId,
     ability_index: u8,
 ) -> EngineOutcome {
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("ActivateAbility: investigator {investigator:?} is not in state")
-                .into(),
-        };
+    let ActivateCheckResult {
+        in_play_pos,
+        source_code,
+        action_cost,
+        costs,
+        effect,
+        source_exhausted: _,
+    } = match check_activate_ability(state, investigator, instance_id, ability_index) {
+        Ok(r) => r,
+        Err(reason) => return EngineOutcome::Rejected { reason },
     };
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: {investigator:?} is not Active (status {:?})",
-                inv.status,
-            )
-            .into(),
-        };
-    }
-    let Some(in_play_pos) = inv
-        .cards_in_play
-        .iter()
-        .position(|c| c.instance_id == instance_id)
-    else {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: {investigator:?} has no in-play instance {instance_id:?}",
-            )
-            .into(),
-        };
-    };
-    let source_code = inv.cards_in_play[in_play_pos].code.clone();
-    let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
-
-    let (action_cost, costs, effect) = match resolve_activated_ability(&source_code, ability_index)
-    {
-        Ok(v) => v,
-        Err(reject) => return reject,
-    };
-
-    // Gate: branch on action_cost now that we have it.
-    // Fast abilities (action_cost == 0) may be used at any player window.
-    let active_during_investigation =
-        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
-    let in_permissive_window = state
-        .open_windows
-        .last()
-        .is_some_and(|w| w.fast_actors.permits(investigator));
-    if action_cost > 0 {
-        // Action-cost ability: requires Investigation phase + active investigator.
-        if !active_during_investigation {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "ActivateAbility: action-cost ability requires Investigation phase + \
-                     active investigator (phase was {:?}, active {:?})",
-                    state.phase, state.active_investigator,
-                )
-                .into(),
-            };
-        }
-    } else {
-        // Fast ability: active during Investigation OR permissive window.
-        if !active_during_investigation && !in_permissive_window {
-            return EngineOutcome::Rejected {
-                reason: "ActivateAbility: Fast ability requires either active investigator \
-                         during Investigation, or an open window whose fast_actors permits \
-                         this investigator"
-                    .into(),
-            };
-        }
-    }
-
-    // Re-borrow inv after state borrows above.
-    let inv = state.investigators.get(&investigator).expect("checked");
-
-    // Action-economy check.
-    if inv.actions_remaining < action_cost {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: needs {action_cost} action(s); investigator has {}",
-                inv.actions_remaining,
-            )
-            .into(),
-        };
-    }
-
-    // Validate every payment cost is payable. Done as a pure read
-    // before any mutation so an all-or-nothing reject leaves state
-    // untouched.
-    for cost in &costs {
-        if let Err(reason) = check_cost_payable(cost, inv, source_exhausted) {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            };
-        }
-    }
 
     // Mutate.
     pay_activation_costs(
@@ -3986,5 +4034,36 @@ mod check_play_card_tests {
         let err = check_play_card(&state, InvestigatorId(99), 0)
             .expect_err("missing investigator should reject");
         assert!(err.contains("not in state"), "error should say not in state, got: {err}");
+    }
+}
+
+#[cfg(test)]
+mod check_activate_ability_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn check_activate_ability_returns_err_for_missing_instance() {
+        let state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let err = check_activate_ability(&state, InvestigatorId(1), CardInstanceId(999), 0)
+            .expect_err("missing instance should reject");
+        assert!(
+            err.contains("no in-play instance"),
+            "error should say no in-play instance, got: {err}"
+        );
+    }
+
+    #[test]
+    fn check_activate_ability_returns_err_when_investigator_missing() {
+        let state = TestGame::default().build();
+        let err = check_activate_ability(&state, InvestigatorId(99), CardInstanceId(1), 0)
+            .expect_err("missing investigator should reject");
+        assert!(
+            err.contains("not in state"),
+            "error should say not in state, got: {err}"
+        );
     }
 }
