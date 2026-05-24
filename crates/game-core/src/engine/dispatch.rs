@@ -414,7 +414,7 @@ fn spawn_enemy(
             Some((id, _)) => *id,
             None => {
                 return EngineOutcome::Rejected {
-                    reason: format!("spawn_enemy: spawn location not in play (code {loc_code:?})",)
+                    reason: format!("spawn_enemy: spawn location not in play (code {loc_code:?})")
                         .into(),
                 };
             }
