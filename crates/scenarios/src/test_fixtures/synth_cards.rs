@@ -15,10 +15,27 @@
 
 use std::sync::OnceLock;
 
-use game_core::card_data::{CardMetadata, CardType, Class, SkillIcons};
+use game_core::card_data::{CardMetadata, CardType, Class, SkillIcons, Spawn, SpawnLocation};
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{gain_resources, revelation, Ability, InvestigatorTarget};
 use game_core::state::CardCode;
+
+/// Code for the synthetic location used by the synth-enemy's spawn
+/// rule. Underscore prefix guarantees no collision with
+/// `ArkhamDB`'s digit-prefixed real codes. Referenced from
+/// [`crate::test_fixtures::synthetic::setup`] when stamping the demo
+/// location's `code` field.
+pub const SYNTH_LOC_CODE: &str = "_synth_loc";
+
+/// Code for the synthetic spawn-bearing enemy.
+///
+/// Carries `SpawnLocation::Specific(SYNTH_LOC_CODE)` so the on-draw
+/// path's enemy arm has something to spawn during the integration
+/// test in `crates/scenarios/tests/encounter_spawn.rs`. No abilities
+/// (no Revelation, no Activated triggers) — the proof we need is
+/// "enemy spawns at the right location, engages the right
+/// investigator," not anything ability-driven.
+pub const SYNTH_ENEMY_CODE: &str = "_synth_enemy";
 
 /// Code for the synthetic treachery. Underscore prefix guarantees no
 /// collision with `ArkhamDB`'s digit-prefixed five-char codes.
@@ -64,12 +81,50 @@ fn synth_treachery_metadata_static() -> &'static CardMetadata {
     M.get_or_init(synth_treachery_metadata)
 }
 
+fn synth_enemy_metadata() -> CardMetadata {
+    CardMetadata {
+        code: SYNTH_ENEMY_CODE.to_owned(),
+        name: "Synthetic Enemy".to_owned(),
+        class: Class::Mythos,
+        card_type: CardType::Enemy,
+        cost: None,
+        xp: None,
+        text: Some("Spawn: Synthetic Location. (Synthetic; not a printed card.)".to_owned()),
+        flavor: None,
+        illustrator: None,
+        traits: Vec::new(),
+        slots: Vec::new(),
+        skill_icons: SkillIcons {
+            willpower: 0,
+            intellect: 0,
+            combat: 0,
+            agility: 0,
+            wild: 0,
+        },
+        health: Some(1),
+        sanity: None,
+        deck_limit: 1,
+        quantity: 1,
+        pack_code: "_synth".to_owned(),
+        position: 2,
+        is_fast: false,
+        spawn: Some(Spawn {
+            location: SpawnLocation::Specific(SYNTH_LOC_CODE.to_owned()),
+        }),
+    }
+}
+
+fn synth_enemy_metadata_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(synth_enemy_metadata)
+}
+
 /// `metadata_for` function pointer used by [`TEST_REGISTRY`].
 fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    if code.as_str() == SYNTH_TREACHERY_CODE {
-        Some(synth_treachery_metadata_static())
-    } else {
-        None
+    match code.as_str() {
+        SYNTH_TREACHERY_CODE => Some(synth_treachery_metadata_static()),
+        SYNTH_ENEMY_CODE => Some(synth_enemy_metadata_static()),
+        _ => None,
     }
 }
 
@@ -80,6 +135,9 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             InvestigatorTarget::Controller,
             1,
         ))]),
+        // SYNTH_ENEMY_CODE intentionally returns None — the synthetic
+        // enemy has no Revelation effect; the spawn handler is the
+        // only thing exercised by the integration test.
         _ => None,
     }
 }
@@ -128,5 +186,28 @@ mod tests {
         let code = CardCode(SYNTH_TREACHERY_CODE.into());
         assert!((TEST_REGISTRY.metadata_for)(&code).is_some());
         assert!((TEST_REGISTRY.abilities_for)(&code).is_some());
+    }
+
+    #[test]
+    fn metadata_for_resolves_synth_enemy() {
+        let code = CardCode(SYNTH_ENEMY_CODE.into());
+        let meta = metadata_for(&code).expect("synth enemy must resolve");
+        assert_eq!(meta.code, SYNTH_ENEMY_CODE);
+        assert_eq!(meta.card_type, game_core::card_data::CardType::Enemy);
+        let spawn = meta
+            .spawn
+            .as_ref()
+            .expect("synth enemy must carry a spawn rule");
+        match &spawn.location {
+            game_core::card_data::SpawnLocation::Specific(code) => {
+                assert_eq!(code, SYNTH_LOC_CODE);
+            }
+        }
+    }
+
+    #[test]
+    fn abilities_for_synth_enemy_returns_none() {
+        let code = CardCode(SYNTH_ENEMY_CODE.into());
+        assert!(abilities_for(&code).is_none());
     }
 }
