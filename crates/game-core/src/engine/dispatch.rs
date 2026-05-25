@@ -884,13 +884,17 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// `PhaseStarted` emit). For phases without a driver, emits
 /// `PhaseStarted` directly.
 ///
-/// **`PhaseEnded` suppression:** when the from-phase has a driver
-/// whose `*_end` helper owns the `PhaseEnded` emit, `step_phase`
-/// suppresses it. Currently only `Phase::Mythos` is suppressed —
-/// `mythos_phase_end` emits `PhaseEnded(Mythos)` and callers leaving
-/// Mythos must go through it. This is consistent: `end_turn` calls
-/// `mythos_phase_end` explicitly after the Upkeep→Mythos
-/// `step_phase` call.
+/// **`PhaseEnded(Mythos)` suppression invariant:** when
+/// `from == Phase::Mythos`, `step_phase` does NOT emit
+/// `PhaseEnded(Mythos)` — `mythos_phase_end` (the canonical owner of
+/// step 1.5's emit) is responsible. `mythos_phase_end` is invoked via
+/// [`run_window_continuation`] when a [`WindowKind::MythosAfterDraws`]
+/// window closes (either inline via [`open_fast_window`]'s auto-skip
+/// path when no Fast plays are eligible, or via `ResolveInput::Skip`
+/// after the player declines further Fast plays). `start_scenario`'s
+/// first-round-skip path bypasses the entire Mythos phase — no
+/// `PhaseStarted(Mythos)` / `PhaseEnded(Mythos)` events fire on round 1
+/// — per Rules Reference p.24 ("skip the mythos phase").
 ///
 /// **Round-bump invariant:** bumps `state.round` when entering
 /// [`Phase::Mythos`] (which is the boundary between rounds).
@@ -3117,6 +3121,15 @@ pub(super) fn check_play_card(
     // Resolve card type and abilities (also yields is_fast + card_type) before
     // applying the phase/active-investigator gate so the gate can branch on
     // is_fast AND card_type per the Rules Reference (p. 11).
+    // Invariant: `resolve_play_target` currently returns only `Ok(...)` (success)
+    // or `Err(EngineOutcome::Rejected { ... })` (validation failure). If a future
+    // PR extends it to return `AwaitingInput` (e.g. for a card requiring in-
+    // validation target selection), this `unreachable!()` will panic; the
+    // validator's caller chain in `play_card` would need to be redesigned to
+    // thread the `AwaitingInput` outcome back through `check_play_card`'s
+    // `Result` shape. Pinning the invariant loudly here is intentional —
+    // silent `AwaitingInput` propagation through a `Result<_, Cow>` would
+    // produce wrong gameplay.
     let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
         Ok(v) => v,
         Err(EngineOutcome::Rejected { reason }) => return Err(reason),
@@ -3353,6 +3366,14 @@ pub(super) fn check_activate_ability(
     let source_code = inv.cards_in_play[in_play_pos].code.clone();
     let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
 
+    // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
+    // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
+    // If a future PR extends it to return `AwaitingInput` (e.g. for an ability
+    // requiring target selection during validation), this `unreachable!()` will
+    // panic; the validator's caller chain in `activate_ability` would need to be
+    // redesigned to thread the `AwaitingInput` outcome back through
+    // `check_activate_ability`'s `Result` shape. Mirrors the same invariant
+    // comment on `resolve_play_target` in `check_play_card`.
     let (action_cost, costs, effect) = match resolve_activated_ability(&source_code, ability_index)
     {
         Ok(v) => v,
@@ -4704,6 +4725,19 @@ pub(super) fn draw_encounter_card(
 /// Called by [`draw_encounter_card`] with the pending-drawer's id.
 /// Returns Done on success (chain completed, `mythos_draw_pending`
 /// advanced).
+///
+/// # Mid-chain rejection caveat
+///
+/// `mythos_draw_for` follows the same pattern as `play_card` (CLAUDE.md
+/// documents it): if [`resolve_encounter_card`] rejects mid-chain — e.g.
+/// [`spawn_enemy`] rejecting because the drawing investigator has no
+/// location — the card has already been drawn from `encounter_deck` by
+/// [`draw_encounter_top`], and the apply loop's `events.clear()` on
+/// `Rejected` wipes the event stream but does **not** roll back the state
+/// mutation. The card is silently lost from the encounter deck. In Phase 4
+/// scope this can't happen because the synthetic fixture ensures every
+/// investigator has a location at scenario start; revisit if a future
+/// scenario lets investigators reach a location-less state during play.
 fn mythos_draw_for(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -4739,10 +4773,15 @@ fn mythos_draw_for(
             }
             unreachable!(
                 "Mythos draw chain hit empty encounter deck AND empty discard for \
-                 investigator {:?} at chain position {}. Indicates a malformed \
-                 scenario where surging enemies exhausted the encounter universe \
-                 within one chain (enemies spawn to play, not discard, so p.10 \
-                 reshuffle has nothing to pull).",
+                 investigator {:?} at chain position {}. Two independent mechanisms \
+                 can reach this: (a) a small encounter deck of only surging \
+                 treacheries can loop infinitely via the Rules Reference p.18/p.10 \
+                 cycle (treachery discard precedes surge re-draw, so the \
+                 just-discarded card gets reshuffled and re-drawn) — caught earlier \
+                 by MAX_SURGE_CHAIN; (b) a small encounter deck of only surging \
+                 enemies exhausts the encounter universe within one chain (enemies \
+                 spawn to play, not discard, so the p.10 reshuffle has nothing to \
+                 pull). Both are scenario-data malformation, not legitimate play.",
                 investigator, chain_count,
             );
         };
