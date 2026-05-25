@@ -584,6 +584,12 @@ impl GameState {
     /// the top of the stack — a `BetweenPhases` window with empty
     /// `pending_triggers` can sit above an active reaction window,
     /// which would corrupt the stack on naive `pop()`.
+    ///
+    /// Note: the `Skip` path in `resolve_input` also handles **pure-Fast
+    /// windows** (empty `pending_triggers`, pushed by `open_fast_window`)
+    /// by closing the literal top-of-stack index directly rather than
+    /// going through this helper. That path is safe because a pure-Fast
+    /// window, by construction, has no forced triggers to guard against.
     #[must_use]
     pub fn top_reaction_window_index(&self) -> Option<usize> {
         self.open_windows

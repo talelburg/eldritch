@@ -1521,6 +1521,17 @@ fn fire_on_skill_test_resolution(
 /// reaction window takes routing priority; once it closes,
 /// [`close_reaction_window_at`] re-enters [`drive_skill_test`] to finish
 /// the test.
+///
+/// # Pure-Fast window closing
+///
+/// A pure-Fast window (pushed by [`open_fast_window`], empty
+/// `pending_triggers`) is **not** returned by [`GameState::top_reaction_window`]
+/// because that helper filters out empty-`pending_triggers` windows.
+/// When such a window is the only entry on the stack (no
+/// reaction-driven window below it), `InputResponse::Skip` closes it
+/// directly via [`close_reaction_window_at`] on the literal top-of-stack
+/// index. This covers the `MythosAfterDraws` window after all Fast
+/// plays have been made and the player is done.
 fn resolve_input(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -1529,6 +1540,25 @@ fn resolve_input(
     if state.top_reaction_window().is_some() {
         return resume_reaction_window(state, events, response);
     }
+
+    // Pure-Fast window path (Option B): no reaction-driven window is
+    // pending, but a window (e.g. MythosAfterDraws) may still be on the
+    // stack with empty pending_triggers. Skip is the only valid response
+    // here — PickIndex / CommitCards reject below.
+    if !state.open_windows.is_empty() {
+        if matches!(response, InputResponse::Skip) {
+            let idx = state.open_windows.len() - 1;
+            return close_reaction_window_at(state, events, idx);
+        }
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: a Fast-play window is open (no pending triggers); \
+                 submit InputResponse::Skip to close it, got {response:?}",
+            )
+            .into(),
+        };
+    }
+
     if state.in_flight_skill_test.is_none() {
         return EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
@@ -3473,30 +3503,56 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
 ///   pending reaction triggers or Fast-eligible plays are detected. The
 ///   apply loop's existing "pending reactions → `AwaitingInput`" path
 ///   then surfaces the wait at the dispatch tail.
-/// - Or emits [`Event::WindowClosed`] immediately and runs
-///   [`run_window_continuation`] inline. The window never lands on
-///   `state.open_windows`. Auto-skip is the common case for the
-///   synthetic fixture (no Fast cards in any hand, no 0-cost Activated
-///   abilities on any in-play card) and saves a UI round-trip when
-///   nobody can act.
+/// - Or emits [`Event::WindowClosed`] immediately, pops the transiently
+///   pushed window, and runs [`run_window_continuation`] inline. This
+///   **auto-skip** path saves a UI round-trip when nobody can act.
 ///
+/// # Push-then-scan ordering
+///
+/// The window is pushed onto [`GameState::open_windows`] **before**
+/// [`any_fast_play_eligible`] is called. This is load-bearing:
+/// [`check_play_card`]'s timing gate reads
+/// `state.open_windows.last()` to decide whether a Fast card is
+/// eligible (`permissive_window`). If the window weren't on the stack
+/// yet, any Fast event held during the Mythos phase would be evaluated
+/// as ineligible (`active_during_investigation = false`,
+/// `permissive_window = false`) and the window would auto-skip even
+/// though Fast plays are available.
+///
+/// On the auto-skip path the window is popped before returning so the
+/// net effect on `state.open_windows` is identical to the pre-fix
+/// behaviour (window never lands persistently on the stack).
 pub(super) fn open_fast_window(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     events.push(Event::WindowOpened { kind });
 
+    // Push first so any_fast_play_eligible's check_play_card call sees
+    // this window in state.open_windows when evaluating permissive_window.
     let pending_triggers = scan_pending_triggers(state, kind);
-    let has_fast_eligible = any_fast_play_eligible(state);
-
-    if pending_triggers.is_empty() && !has_fast_eligible {
-        events.push(Event::WindowClosed { kind });
-        run_window_continuation(state, events, kind);
-        return;
-    }
-
     state.open_windows.push(OpenWindow {
         kind,
         pending_triggers,
         fast_actors: FastActorScope::Any,
     });
+
+    let has_pending = !state
+        .open_windows
+        .last()
+        .expect("just pushed; cannot be empty")
+        .pending_triggers
+        .is_empty();
+    let has_fast_eligible = any_fast_play_eligible(state);
+
+    if !has_pending && !has_fast_eligible {
+        // Auto-skip: nothing to do. Pop the window we just pushed,
+        // emit WindowClosed, and run the continuation inline, so the
+        // net effect on state.open_windows is the same as before the fix.
+        let _ = state.open_windows.pop();
+        events.push(Event::WindowClosed { kind });
+        run_window_continuation(state, events, kind);
+    }
+    // Otherwise the window stays on the stack. The guard at the top of
+    // apply() and resume_reaction_window / resolve_input handle the
+    // wait + close path.
 }
 
 /// Handler for [`PlayerAction::ActivateAbility`].

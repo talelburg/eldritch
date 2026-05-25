@@ -25,10 +25,11 @@ use std::sync::Once;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::{assert_event, assert_event_sequence, Action, PlayerAction};
+use game_core::state::{CardCode, InvestigatorId, LocationId, Phase, WindowKind};
+use game_core::{assert_event, assert_event_sequence, Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::{
-    SYNTH_ENEMY_CODE, SYNTH_SURGE_TREACHERY_CODE, SYNTH_TREACHERY_CODE, TEST_REGISTRY,
+    SYNTH_ENEMY_CODE, SYNTH_FAST_EVENT_CODE, SYNTH_SURGE_TREACHERY_CODE, SYNTH_TREACHERY_CODE,
+    TEST_REGISTRY,
 };
 use scenarios::test_fixtures::synthetic;
 
@@ -493,5 +494,171 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
         result.events.is_empty(),
         "no events should fire on empty-deck reject; got {:?}",
         result.events,
+    );
+}
+
+// ------------------------------------------------------------------
+// Fast-window push-then-scan fix (defect A + B from pre-PR review)
+// ------------------------------------------------------------------
+
+/// Regression test for the push-then-scan ordering fix in
+/// `open_fast_window`. Before the fix, `any_fast_play_eligible` was
+/// called BEFORE the `MythosAfterDraws` window was pushed onto
+/// `state.open_windows`, so `check_play_card`'s `permissive_window`
+/// check saw an empty stack and evaluated every Fast card as
+/// ineligible. The window would auto-skip even when the player had a
+/// Fast event in hand — silently denying plays in the post-1.4 window.
+///
+/// This test puts a synthetic Fast event in inv1's hand, drives
+/// `DrawEncounterCard` to trigger `open_fast_window`, and asserts that
+/// the window STAYS OPEN (not auto-skipped): `WindowOpened` is emitted
+/// but `WindowClosed` is NOT, and the window is on `state.open_windows`.
+#[test]
+fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
+    install_test_registry();
+    let base = synthetic::setup();
+
+    let mut state = setup_at_mythos_draw(base);
+    // Insert the synthetic Fast event into inv1's hand AFTER setup so it
+    // doesn't interact with the player-deck draw during StartScenario.
+    state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .expect("inv1 must be present")
+        .hand
+        .push(CardCode(SYNTH_FAST_EVENT_CODE.into()));
+
+    assert_eq!(state.phase, Phase::Mythos);
+    assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+
+    let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+
+    // DrawEncounterCard should complete normally (Done) — the window
+    // opens but doesn't block the draw action's completion.
+    assert_eq!(
+        result.outcome,
+        EngineOutcome::Done,
+        "DrawEncounterCard should return Done even when window stays open"
+    );
+
+    // The window must remain on the stack — it was NOT auto-skipped.
+    assert!(
+        !result.state.open_windows.is_empty(),
+        "MythosAfterDraws window must stay on stack when Fast event is in hand; \
+         pre-fix this would have been empty (window auto-skipped)"
+    );
+    assert!(
+        matches!(
+            result.state.open_windows.last(),
+            Some(w) if w.kind == WindowKind::MythosAfterDraws
+        ),
+        "top open window must be MythosAfterDraws; got {:?}",
+        result.state.open_windows.last()
+    );
+
+    // Phase must still be Mythos — the window continuation (mythos_phase_end)
+    // has NOT fired yet.
+    assert_eq!(
+        result.state.phase,
+        Phase::Mythos,
+        "phase must still be Mythos while MythosAfterDraws window is open"
+    );
+
+    // WindowOpened must be in the event stream.
+    assert_event!(
+        result.events,
+        Event::WindowOpened {
+            kind: WindowKind::MythosAfterDraws
+        }
+    );
+
+    // WindowClosed must NOT be in the event stream — the window is still open.
+    assert!(
+        !result.events.iter().any(|e| matches!(
+            e,
+            Event::WindowClosed {
+                kind: WindowKind::MythosAfterDraws
+            }
+        )),
+        "WindowClosed(MythosAfterDraws) must not fire while window is open; \
+         pre-fix this would have been emitted (window incorrectly auto-skipped)"
+    );
+}
+
+/// Continuation of the push-then-scan regression: after `DrawEncounterCard`
+/// leaves the `MythosAfterDraws` window open (because a Fast event is in
+/// hand), `ResolveInput::Skip` must close the window, run
+/// `mythos_phase_end`, and transition to Investigation.
+///
+/// Before the fix for defect B, `resolve_input`'s Skip arm used
+/// `top_reaction_window_index()` which filters out empty-`pending_triggers`
+/// windows. A pure-Fast `MythosAfterDraws` window would not be found, and
+/// `Skip` would reject with "no `AwaitingInput` prompt is currently
+/// outstanding" — leaving the window stuck on the stack forever.
+#[test]
+fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
+    install_test_registry();
+    let base = synthetic::setup();
+
+    let mut state = setup_at_mythos_draw(base);
+    state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .expect("inv1 must be present")
+        .hand
+        .push(CardCode(SYNTH_FAST_EVENT_CODE.into()));
+
+    // Advance through the draw to land in the open-window state.
+    let draw_result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    assert_eq!(draw_result.outcome, EngineOutcome::Done);
+    assert!(
+        !draw_result.state.open_windows.is_empty(),
+        "window must be open before Skip test"
+    );
+
+    // Now close the window with Skip (player decides not to play the Fast card).
+    let skip_result = apply(
+        draw_result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Skip,
+        }),
+    );
+
+    assert_eq!(
+        skip_result.outcome,
+        EngineOutcome::Done,
+        "Skip must return Done after closing MythosAfterDraws"
+    );
+
+    // Window must be closed — no open windows remaining.
+    assert!(
+        skip_result.state.open_windows.is_empty(),
+        "open_windows must be empty after Skip closes MythosAfterDraws; \
+         pre-fix this window could not be closed via Skip"
+    );
+
+    // mythos_phase_end ran: phase transitioned to Investigation, lead
+    // investigator is active, round is still 2.
+    assert_eq!(
+        skip_result.state.phase,
+        Phase::Investigation,
+        "phase must be Investigation after MythosAfterDraws window closes"
+    );
+    assert_eq!(
+        skip_result.state.active_investigator,
+        Some(InvestigatorId(1)),
+        "investigation_phase must rotate to the lead investigator"
+    );
+    assert_eq!(
+        skip_result.state.round, 2,
+        "round stays 2 — it bumped on Mythos entry"
+    );
+
+    // WindowClosed event must be in the stream.
+    assert_event!(
+        skip_result.events,
+        Event::WindowClosed {
+            kind: WindowKind::MythosAfterDraws
+        }
     );
 }
