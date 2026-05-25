@@ -39,6 +39,18 @@ const ACTIONS_PER_TURN: u8 = 3;
 /// each investigator draws 5 cards before mulligan.
 const INITIAL_HAND_SIZE: u8 = 5;
 
+/// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
+/// in a chain; the cap exists purely to guarantee termination on
+/// malformed encounter decks (e.g. a deck small enough for surge to
+/// loop via the Rules Reference p.10 reshuffle). `unreachable!`-class
+/// — never reached in legitimate play.
+///
+/// `#[allow(dead_code)]`: read by `mythos_draw_for` (lands in T11);
+/// the wiring through `PlayerAction::DrawEncounterCard` completes
+/// in T12, after which the lint comes off.
+#[allow(dead_code)]
+const MAX_SURGE_CHAIN: usize = 64;
+
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
 /// Phase-1 minimal coverage: [`StartScenario`](PlayerAction::StartScenario)
@@ -3464,10 +3476,6 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
 ///   abilities on any in-play card) and saves a UI round-trip when
 ///   nobody can act.
 ///
-/// `#[allow(dead_code)]`: wired up by the caller in Task 9
-/// (`mythos_phase`); keeping the allow here avoids a clippy break on
-/// this branch.
-#[allow(dead_code)]
 pub(super) fn open_fast_window(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     events.push(Event::WindowOpened { kind });
 
@@ -4509,6 +4517,194 @@ mod investigation_phase_tests {
                 .iter()
                 .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
             "no rotate must happen with empty turn_order"
+        );
+    }
+}
+
+/// Per-card 5-step sub-sequence's step 2 (Rules Reference p.24 1.4
+/// step 2): peril keyword check. When `is_peril` is true, the
+/// drawing investigator's conferral and other players' interactions
+/// (playing cards, triggering abilities, committing to skill tests)
+/// are restricted during resolution. **Enforcement not yet wired**
+/// — no machinery exists for cross-investigator commit blocking,
+/// and Phase 4 is single-investigator-focused. The function call
+/// site exists so the rule step is grep-able and the future
+/// peril-enforcement PR plugs in here without changing the driver
+/// shape.
+///
+/// `#[allow(dead_code)]`: called by `mythos_draw_for`; the full
+/// call chain becomes reachable in T12 via `DrawEncounterCard`.
+#[allow(dead_code)]
+fn peril_check(
+    _state: &mut GameState,
+    _events: &mut Vec<Event>,
+    _code: &CardCode,
+    _investigator: InvestigatorId,
+    _is_peril: bool,
+) {
+    // TODO(future-peril-PR): if `is_peril`, install a temporary
+    //   restriction on `state` such that other investigators cannot
+    //   (a) play cards, (b) trigger abilities, or (c) commit to the
+    //   drawing investigator's skill tests until this card's
+    //   resolution completes.
+}
+
+/// Resolves one investigator's full Mythos encounter draw — the
+/// per-card 5-step sub-sequence from Rules Reference p.24, with
+/// surge re-draws looping until the chain ends.
+///
+/// Called by the `PlayerAction::DrawEncounterCard` handler (lands
+/// in T12) with the pending-drawer's id. Returns Done on success
+/// (chain completed, `mythos_draw_pending` advanced).
+///
+/// `#[allow(dead_code)]`: wired to `PlayerAction::DrawEncounterCard`
+/// in T12; allow comes off then.
+#[allow(dead_code)]
+fn mythos_draw_for(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    let Some(reg) = crate::card_registry::current() else {
+        return EngineOutcome::Rejected {
+            reason: "DrawEncounterCard: no card registry installed".into(),
+        };
+    };
+
+    let mut chain_count: usize = 0;
+    loop {
+        chain_count += 1;
+        if chain_count > MAX_SURGE_CHAIN {
+            unreachable!(
+                "Mythos draw chain exceeded MAX_SURGE_CHAIN ({}) for \
+                 investigator {:?}. Indicates either an infinite reshuffle \
+                 loop (Rules Reference p.18: treachery discard precedes surge \
+                 re-draw, so a surging treachery in a too-small deck cycles \
+                 via the p.10 reshuffle path) or a malformed scenario encounter \
+                 deck. Real scenarios don't surge >{} cards in one chain.",
+                MAX_SURGE_CHAIN, investigator, MAX_SURGE_CHAIN,
+            );
+        }
+
+        // Step 1: Draw the card from the encounter deck.
+        let Some(code) = draw_encounter_top(state, events) else {
+            if chain_count == 1 {
+                return EngineOutcome::Rejected {
+                    reason: "DrawEncounterCard: encounter deck and discard both empty".into(),
+                };
+            }
+            unreachable!(
+                "Mythos draw chain hit empty encounter deck AND empty discard for \
+                 investigator {:?} at chain position {}. Indicates a malformed \
+                 scenario where surging enemies exhausted the encounter universe \
+                 within one chain (enemies spawn to play, not discard, so p.10 \
+                 reshuffle has nothing to pull).",
+                investigator, chain_count,
+            );
+        };
+
+        let Some(metadata) = (reg.metadata_for)(&code) else {
+            return EngineOutcome::Rejected {
+                reason: format!("DrawEncounterCard: unknown card code: {code:?}").into(),
+            };
+        };
+
+        // Step 2: Check for the peril keyword on the drawn card.
+        peril_check(state, events, &code, investigator, metadata.peril);
+
+        // Step 3 + 4: Resolve revelation, then enemy-spawn if applicable.
+        let outcome = resolve_encounter_card(state, events, investigator, code.clone(), metadata);
+        if !matches!(outcome, EngineOutcome::Done) {
+            return outcome;
+        }
+
+        // Step 5: If the drawn card has the surge keyword, loop.
+        if !metadata.surge {
+            break;
+        }
+    }
+
+    // Chain complete — advance the cursor.
+    advance_mythos_draw_pending(state, events);
+    EngineOutcome::Done
+}
+
+/// Advance `state.mythos_draw_pending` after a completed chain. If
+/// a next investigator exists in turn order, set to that id.
+/// Otherwise set to None and open the post-1.4 window.
+///
+/// `#[allow(dead_code)]`: called by `mythos_draw_for`; reachable
+/// once T12 wires `DrawEncounterCard`.
+#[allow(dead_code)]
+fn advance_mythos_draw_pending(state: &mut GameState, events: &mut Vec<Event>) {
+    let current = state
+        .mythos_draw_pending
+        .expect("advance_mythos_draw_pending called only after a successful chain");
+    let next = state
+        .turn_order
+        .iter()
+        .position(|id| *id == current)
+        .and_then(|idx| state.turn_order.get(idx + 1).copied());
+
+    state.mythos_draw_pending = next;
+    if next.is_none() {
+        open_fast_window(state, events, WindowKind::MythosAfterDraws);
+    }
+}
+
+#[cfg(test)]
+mod mythos_draw_for_tests {
+    use super::*;
+    use crate::state::CardCode;
+    use crate::test_support::{test_investigator, TestGame};
+
+    /// Exercises the early-reject guard for the registry / unknown-card
+    /// checks. Depending on which tests have run in this process:
+    ///
+    /// - `"no card registry installed"` — if no registry has been
+    ///   installed yet in this process.
+    /// - `"unknown card code: ..."` — if another test has installed a
+    ///   registry that doesn't know the synthetic code `"__no_such_card"`.
+    ///
+    /// In both cases the invariant is identical: state is not further
+    /// mutated, the card remains in the encounter deck (the draw was
+    /// either blocked before or after the draw). The deck-length
+    /// assertion allows for the draw-then-reject case (deck shrinks by
+    /// at most one) matching the `encounter_card_revealed_tests` pattern.
+    #[test]
+    fn rejects_when_registry_not_installed_or_unknown_code() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        // Seed the encounter deck with an unknown code so we prove the
+        // reject fires at the registry or unknown-code check, not at the
+        // empty-deck check.
+        state
+            .encounter_deck
+            .push_back(CardCode("__no_such_card".into()));
+        let pre_deck_len = state.encounter_deck.len();
+        let mut events = Vec::new();
+        let outcome = mythos_draw_for(&mut state, &mut events, InvestigatorId(1));
+        match outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("no card registry installed")
+                        || reason.contains("unknown card code"),
+                    "unexpected reject reason: {reason:?}",
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        // Deck must not grow; may shrink by 1 if draw happened before
+        // the unknown-code reject (documented exception matching the
+        // encounter_card_revealed validate-first caveat).
+        assert!(
+            state.encounter_deck.len() <= pre_deck_len,
+            "deck should not grow; expected <= {pre_deck_len}, got {}",
+            state.encounter_deck.len(),
         );
     }
 }
