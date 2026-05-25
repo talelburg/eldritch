@@ -650,15 +650,14 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
             reason: "StartScenario applied to a state that is already in progress".into(),
         };
     }
-    // Round 1 begins at Mythos. We emit the entry event explicitly here
-    // (rather than letting `step_phase` do it) because there is no
-    // "previous" phase to emit a `PhaseEnded` for.
+    // Round 1: scenario starts directly in Investigation phase —
+    // Mythos is skipped entirely per Rules Reference p.24 "During
+    // the first round of the game, skip the mythos phase." No
+    // PhaseStarted(Mythos) / PhaseEnded(Mythos) fire — the phase
+    // doesn't happen.
     state.round = 1;
-    state.phase = Phase::Mythos;
+    state.phase = Phase::Investigation;
     events.push(Event::ScenarioStarted);
-    events.push(Event::PhaseStarted {
-        phase: Phase::Mythos,
-    });
 
     // For each investigator (sorted by id for determinism), shuffle
     // their deck and deal an initial hand of up to 5.
@@ -675,13 +674,10 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
     // player actions are rejected until then.
     state.mulligan_window = true;
 
-    // Phase 1: Mythos / Enemy / Upkeep have no content yet, so we
-    // tick straight through them. Once the engine grows real Mythos
-    // draws and Enemy attacks, these phases stop being free skips.
-    step_phase(state, events); // Mythos → Investigation
-    if let Some(&first) = state.turn_order.first() {
-        rotate_to_active(state, events, first);
-    }
+    // investigation_phase emits PhaseStarted(Investigation) + rotates
+    // to the lead investigator (Rules Reference p.24 step 2.1 / 2.2).
+    investigation_phase(state, events);
+
     EngineOutcome::Done
 }
 
@@ -736,35 +732,98 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
         state.active_investigator = None;
         step_phase(state, events); // Investigation → Enemy
         step_phase(state, events); // Enemy → Upkeep
-        step_phase(state, events); // Upkeep → Mythos (round bumps)
-        step_phase(state, events); // Mythos → Investigation
-        if let Some(&first) = state.turn_order.first() {
-            rotate_to_active(state, events, first);
-        }
+        step_phase(state, events); // Upkeep → Mythos (round bumps; mythos_phase stub fires)
+                                   // Use mythos_phase_end rather than step_phase here: it emits
+                                   // PhaseEnded(Mythos), then advances to Investigation which
+                                   // dispatches into investigation_phase (emits
+                                   // PhaseStarted(Investigation) + rotates to lead). Task 9 will
+                                   // replace this call with a pause-on-mythos_draw_pending check
+                                   // once the real mythos_phase body sets the cursor.
+        mythos_phase_end(state, events);
+        // Trailing rotate_to_active removed — investigation_phase owns
+        // step 2.2 rotation (called via step_phase inside
+        // mythos_phase_end above).
     }
 
     EngineOutcome::Done
 }
 
-/// Transition to the next phase: emit `PhaseEnded` for the current
-/// phase, advance, emit `PhaseStarted` for the new one. Bumps the
-/// round counter when entering [`Phase::Mythos`] (which is the start
-/// of a new round).
+/// Entered by [`step_phase`] on any-to-Investigation transition.
+/// Owns the `PhaseStarted(Investigation)` emit (Rules Reference
+/// p.24 step 2.1) and the initial rotation to the active
+/// investigator (step 2.2).
 ///
-/// **Round-bump invariant:** this is the only path that bumps
-/// `state.round` post-`StartScenario`. A future caller that wants to
-/// step phases for a non-round-cycle reason (e.g. a scenario effect
-/// that skips a phase) will need to suppress the bump here, or the
-/// round counter will drift. Revisit when such a use case appears.
+/// **Rotation policy (Phase 4):** lead-first by default.
+/// Rules Reference p.24 step 2.2: "The investigators may take their
+/// turns in any order. The investigators choose among themselves
+/// who…will take this turn." Phase 4 hardcodes lead-first as the
+/// table convention; the future full Investigation driver PR adds
+/// a player-pick action within an opened post-2.1 window.
+fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
+    // 2.1 Investigation phase begins.
+    events.push(Event::PhaseStarted {
+        phase: Phase::Investigation,
+    });
+
+    // [Post-2.1 player window not opened in #69 — the future
+    //  Investigation full driver PR adds open_fast_window here.]
+
+    // 2.2 Next investigator's turn begins. (First turn of the phase.)
+    if let Some(&first) = state.turn_order.first() {
+        rotate_to_active(state, events, first);
+    }
+}
+
+/// Stub — real body lands in Task 9. Emits `PhaseStarted(Mythos)`
+/// only, preserving [`step_phase`]'s pre-#69 behavior for the Mythos
+/// transition. Task 9 adds the 1.1 marker, 1.2/1.3 TODO stubs, 1.4
+/// cursor seed, and the degenerate `open_fast_window` fallback, along
+/// with the `end_turn` refactor that pauses on `mythos_draw_pending`.
+fn mythos_phase(_state: &mut GameState, events: &mut Vec<Event>) {
+    events.push(Event::PhaseStarted {
+        phase: Phase::Mythos,
+    });
+}
+
+/// Transition to the next phase. Dispatches into phase driver
+/// functions when they exist (each driver owns its own
+/// `PhaseStarted` emit). For phases without a driver, emits
+/// `PhaseStarted` directly.
+///
+/// **`PhaseEnded` suppression:** when the from-phase has a driver
+/// whose `*_end` helper owns the `PhaseEnded` emit, `step_phase`
+/// suppresses it. Currently only `Phase::Mythos` is suppressed —
+/// `mythos_phase_end` emits `PhaseEnded(Mythos)` and callers leaving
+/// Mythos must go through it. This is consistent: `end_turn` calls
+/// `mythos_phase_end` explicitly after the Upkeep→Mythos
+/// `step_phase` call.
+///
+/// **Round-bump invariant:** bumps `state.round` when entering
+/// [`Phase::Mythos`] (which is the boundary between rounds).
+/// Unchanged from pre-#69.
 fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     let from = state.phase;
     let to = from.next();
-    events.push(Event::PhaseEnded { phase: from });
-    state.phase = to;
-    if to == Phase::Mythos {
-        state.round += 1;
+
+    // PhaseEnded: suppressed when the from-phase's *_end helper owns
+    // the emit. Currently only Mythos has an end helper.
+    if from != Phase::Mythos {
+        events.push(Event::PhaseEnded { phase: from });
     }
-    events.push(Event::PhaseStarted { phase: to });
+
+    state.phase = to;
+    // Round-bump invariant: bump when entering Mythos. Unchanged.
+    if to == Phase::Mythos {
+        state.round = state.round.saturating_add(1);
+    }
+
+    // Dispatch to phase driver if one exists; otherwise emit
+    // PhaseStarted directly (for phases without a driver yet).
+    match to {
+        Phase::Mythos if from != Phase::Mythos => mythos_phase(state, events),
+        Phase::Investigation if from != Phase::Investigation => investigation_phase(state, events),
+        _ => events.push(Event::PhaseStarted { phase: to }),
+    }
 }
 
 /// Set `active_investigator` to `id` and refresh that investigator's
@@ -3291,19 +3350,23 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
     false
 }
 
-/// Stub — real body lands in Task 9. Until then, behave like the
-/// vanilla phase transition [`step_phase`] performs: emit
-/// `PhaseEnded(Mythos)` then advance to Investigation. No tests
-/// currently reach this code path (nothing pushes
-/// [`WindowKind::MythosAfterDraws`] onto the window stack until Task 9
-/// wires `mythos_phase` to do it), so the stub's only job is to
-/// preserve correct semantics if anyone calls it.
+/// Stub — real body lands in Task 9. Emits `PhaseEnded(Mythos)`
+/// (which [`step_phase`] now suppresses when leaving Mythos) then
+/// calls `step_phase(Mythos→Investigation)`, which dispatches into
+/// [`investigation_phase`] (emits `PhaseStarted(Investigation)` +
+/// rotates to lead).
 ///
-/// Task 9 replaces this with the real body that doesn't call
-/// `step_phase` directly (because `investigation_phase` will handle
-/// the transition).
+/// Task 9 replaces this with the real body that adds the
+/// `mythos_draw_pending` pause logic; the `step_phase` call below
+/// becomes a call to `investigation_phase` directly once the full
+/// Mythos body is in place.
 fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
-    step_phase(state, events);
+    // step_phase suppresses PhaseEnded(Mythos) when from == Mythos,
+    // so we emit it here before handing off.
+    events.push(Event::PhaseEnded {
+        phase: Phase::Mythos,
+    });
+    step_phase(state, events); // Mythos → Investigation (investigation_phase fires)
 }
 
 /// Kind-aware continuation called when a window closes (whether
@@ -4287,6 +4350,98 @@ mod open_fast_window_tests {
         assert!(
             events.is_empty(),
             "AfterEnemyDefeated continuation must be a no-op; events = {events:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod investigation_phase_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::state::{InvestigatorId, Phase};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
+        // Two investigators; investigation_phase should emit
+        // PhaseStarted(Investigation) and then rotate to the first
+        // investigator in turn_order (Rules Reference p.24 step 2.1 +
+        // step 2.2 lead-first convention).
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        investigation_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.active_investigator,
+            Some(InvestigatorId(1)),
+            "investigation_phase must rotate to the lead (first in turn_order)"
+        );
+        // PhaseStarted(Investigation) must appear before ActionsRemainingChanged
+        // (which rotate_to_active emits).
+        let phase_started_idx = events
+            .iter()
+            .position(|e| {
+                matches!(
+                    e,
+                    Event::PhaseStarted {
+                        phase: Phase::Investigation
+                    }
+                )
+            })
+            .expect("PhaseStarted(Investigation) must be emitted");
+        let rotate_idx = events
+            .iter()
+            .position(|e| {
+                matches!(
+                    e,
+                    Event::ActionsRemainingChanged { investigator, .. }
+                        if *investigator == InvestigatorId(1)
+                )
+            })
+            .expect("ActionsRemainingChanged for lead must be emitted after rotate");
+        assert!(
+            phase_started_idx < rotate_idx,
+            "PhaseStarted(Investigation) must precede the ActionsRemainingChanged rotate event"
+        );
+    }
+
+    #[test]
+    fn investigation_phase_with_empty_turn_order_is_noop_rotate() {
+        // Degenerate: no investigators in turn_order. investigation_phase
+        // still emits PhaseStarted(Investigation) but cannot rotate, so
+        // active_investigator stays None and no ActionsRemainingChanged fires.
+        let mut state = TestGame::default().with_phase(Phase::Mythos).build();
+        state.turn_order.clear();
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        investigation_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.active_investigator, None,
+            "empty turn_order must leave active_investigator as None"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "PhaseStarted(Investigation) must still be emitted with empty turn_order"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
+            "no rotate must happen with empty turn_order"
         );
     }
 }

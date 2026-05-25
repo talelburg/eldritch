@@ -172,13 +172,16 @@ mod tests {
         assert_eq!(result.state.investigators[&id].actions_remaining, 3);
 
         assert_event!(result.events, Event::ScenarioStarted);
-        assert_event!(
+        // Round 1: Mythos is skipped entirely — no PhaseStarted(Mythos) or
+        // PhaseEnded(Mythos) fire (Rules Reference p.24: first round skips
+        // the Mythos phase; the phase doesn't happen, not "runs empty").
+        assert_no_event!(
             result.events,
             Event::PhaseStarted {
                 phase: Phase::Mythos
             }
         );
-        assert_event!(
+        assert_no_event!(
             result.events,
             Event::PhaseEnded {
                 phase: Phase::Mythos
