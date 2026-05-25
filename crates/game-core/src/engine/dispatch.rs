@@ -145,14 +145,14 @@ pub fn apply_player_action(
             instance_id,
             ability_index,
         } => activate_ability(state, events, *investigator, *instance_id, *ability_index),
-        PlayerAction::DrawEncounterCard => {
+        PlayerAction::DrawEncounterCard => match state.mythos_draw_pending {
             // DrawEncounterCard carries no investigator payload — the
-            // acting investigator IS the pending cursor. Pass the cursor
-            // value (or a sentinel that will be rejected) to the handler,
-            // which validates phase + pending state before delegating.
-            let acting = state.mythos_draw_pending.unwrap_or(InvestigatorId(0));
-            draw_encounter_card(state, events, acting)
-        }
+            // acting investigator IS the pending cursor.
+            Some(actor) => draw_encounter_card(state, events, actor),
+            None => EngineOutcome::Rejected {
+                reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
+            },
+        },
         PlayerAction::ResolveInput { response } => resolve_input(state, events, response),
     };
 
@@ -320,7 +320,7 @@ fn resolve_encounter_card(
         CardType::Treachery => {
             let Some(registry) = card_registry::current() else {
                 return EngineOutcome::Rejected {
-                    reason: "resolve_encounter_card: no card registry installed".into(),
+                    reason: "encounter card resolution: no card registry installed".into(),
                 };
             };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
@@ -351,7 +351,7 @@ fn resolve_encounter_card(
             // loop is structural for Phase-7+ enemies.
             let Some(registry) = card_registry::current() else {
                 return EngineOutcome::Rejected {
-                    reason: "resolve_encounter_card: no card registry installed".into(),
+                    reason: "encounter card resolution: no card registry installed".into(),
                 };
             };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
@@ -812,8 +812,19 @@ fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
     //  Investigation full driver PR adds open_fast_window here.]
 
     // 2.2 Next investigator's turn begins. (First turn of the phase.)
-    if let Some(&first) = state.turn_order.first() {
-        rotate_to_active(state, events, first);
+    // Skip any non-Active investigators (Killed, Insane, Resigned) at
+    // the front of turn_order so a defeated lead doesn't become the
+    // active cursor. PlayerAction guards check Status::Active before
+    // accepting inputs, but placing the cursor on a defeated
+    // investigator would still be wrong.
+    let first_active = state.turn_order.iter().copied().find(|id| {
+        state
+            .investigators
+            .get(id)
+            .is_some_and(|inv| inv.status == Status::Active)
+    });
+    if let Some(id) = first_active {
+        rotate_to_active(state, events, id);
     }
 }
 
@@ -3491,7 +3502,30 @@ fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
 /// `AfterEnemyDefeated` and `BetweenPhases` windows.
 fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     match kind {
-        WindowKind::MythosAfterDraws => mythos_phase_end(state, events),
+        WindowKind::MythosAfterDraws => {
+            // Phase-transitioning continuation: cannot run while a skill
+            // test is mid-resolution (would resume the test in the wrong
+            // phase). Phase 4 has no Mythos-phase skill-test sources, so
+            // this branch is structurally unreachable today. A future PR
+            // adding a Mythos-phase Revelation that initiates a skill
+            // test must redesign the close-window + phase-transition
+            // ordering before this assertion fires.
+            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+                if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
+                    unreachable!(
+                        "MythosAfterDraws window closed while a skill test is \
+                         mid-resolution (continuation={:?}). Phase transition would \
+                         resume the test in the wrong phase. Phase 4 has no \
+                         Mythos-phase skill test sources; if a future PR adds one \
+                         (e.g. a treachery whose Revelation initiates a skill test), \
+                         the window-close + phase-transition ordering needs redesign \
+                         to avoid this.",
+                        in_flight.continuation,
+                    );
+                }
+            }
+            mythos_phase_end(state, events);
+        }
         WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
     }
 }
@@ -4493,7 +4527,7 @@ mod open_fast_window_tests {
 mod investigation_phase_tests {
     use super::*;
     use crate::event::Event;
-    use crate::state::{InvestigatorId, Phase};
+    use crate::state::{InvestigatorId, Phase, Status};
     use crate::test_support::{test_investigator, TestGame};
 
     #[test]
@@ -4577,6 +4611,33 @@ mod investigation_phase_tests {
                 .iter()
                 .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
             "no rotate must happen with empty turn_order"
+        );
+    }
+
+    #[test]
+    fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
+        // Investigator 1 (lead) is Killed; investigator 2 is Active.
+        // investigation_phase must skip Id(1) and rotate to Id(2).
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        investigation_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.active_investigator,
+            Some(InvestigatorId(2)),
+            "investigation_phase must skip the Killed lead and rotate to the first Active investigator"
         );
     }
 }
