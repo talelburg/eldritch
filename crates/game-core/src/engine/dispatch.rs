@@ -732,17 +732,20 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
         state.active_investigator = None;
         step_phase(state, events); // Investigation → Enemy
         step_phase(state, events); // Enemy → Upkeep
-        step_phase(state, events); // Upkeep → Mythos (round bumps; mythos_phase stub fires)
-                                   // Use mythos_phase_end rather than step_phase here: it emits
-                                   // PhaseEnded(Mythos), then advances to Investigation which
-                                   // dispatches into investigation_phase (emits
-                                   // PhaseStarted(Investigation) + rotates to lead). Task 9 will
-                                   // replace this call with a pause-on-mythos_draw_pending check
-                                   // once the real mythos_phase body sets the cursor.
-        mythos_phase_end(state, events);
-        // Trailing rotate_to_active removed — investigation_phase owns
-        // step 2.2 rotation (called via step_phase inside
-        // mythos_phase_end above).
+        step_phase(state, events); // Upkeep → Mythos (round bumps + mythos_phase runs, seeds mythos_draw_pending)
+        if state.mythos_draw_pending.is_some() {
+            // Chain pauses here; the player's DrawEncounterCard
+            // actions advance Mythos. mythos_phase_end (triggered
+            // later via close_reaction_window_at's continuation
+            // dispatch after the post-1.4 window closes) handles
+            // the transition into Investigation.
+            return EngineOutcome::Done;
+        }
+        // Degenerate state (no investigators in turn_order):
+        // mythos_phase opened+closed MythosAfterDraws inline, which
+        // fired mythos_phase_end as the continuation; that emitted
+        // PhaseEnded(Mythos) and stepped into Investigation via
+        // investigation_phase. Nothing left to do.
     }
 
     EngineOutcome::Done
@@ -774,15 +777,55 @@ fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
     }
 }
 
-/// Stub — real body lands in Task 9. Emits `PhaseStarted(Mythos)`
-/// only, preserving [`step_phase`]'s pre-#69 behavior for the Mythos
-/// transition. Task 9 adds the 1.1 marker, 1.2/1.3 TODO stubs, 1.4
-/// cursor seed, and the degenerate `open_fast_window` fallback, along
-/// with the `end_turn` refactor that pauses on `mythos_draw_pending`.
-fn mythos_phase(_state: &mut GameState, events: &mut Vec<Event>) {
+/// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
+/// out the Rules Reference p.24 sub-steps as discrete named call
+/// sites so the rule structure is grep-able and #73 / future-peril-PR
+/// fills in TODO bodies without changing the driver shape.
+fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
+    // 1.1 Round begins. Mythos phase begins.
+    //     `step_phase` has already emitted PhaseEnded(Upkeep),
+    //     updated state.phase to Mythos, and bumped the round
+    //     counter. The PhaseStarted(Mythos) emit lives HERE rather
+    //     than in step_phase so step 1.1 has explicit ownership in
+    //     the driver — Rules Reference p.24: "This step formalizes
+    //     the beginning of the mythos phase."
     events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });
+
+    // 1.2 Place 1 doom on the current agenda.
+    place_doom_on_agenda(state, events);
+
+    // 1.3 Check doom threshold.
+    check_doom_threshold(state, events);
+
+    // 1.4 Each investigator draws 1 encounter card.
+    //     Seed the cursor; the actual draws are player-driven via
+    //     PlayerAction::DrawEncounterCard (lands in T12). The
+    //     dispatch handler advances the cursor after each chain.
+    state.mythos_draw_pending = state.turn_order.first().copied();
+    if state.mythos_draw_pending.is_none() {
+        // Degenerate state — no investigators to draw. Open the
+        // post-1.4 window immediately; open_fast_window's auto-skip
+        // path triggers because nothing is eligible, runs the
+        // MythosAfterDraws continuation (mythos_phase_end), which
+        // transitions to Investigation. All in this same apply.
+        open_fast_window(state, events, WindowKind::MythosAfterDraws);
+    }
+}
+
+fn place_doom_on_agenda(_state: &mut GameState, _events: &mut Vec<Event>) {
+    // TODO(#73): place 1 doom on the current agenda per Rules
+    //            Reference p.24 step 1.2. Currently no agenda state
+    //            exists; #73 lands the agenda struct + doom counter
+    //            + this body.
+}
+
+fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
+    // TODO(#73): compare total doom in play to current agenda's
+    //            threshold; advance if met. Rules Reference p.24
+    //            step 1.3. Same reason as above: no agenda state
+    //            yet.
 }
 
 /// Transition to the next phase. Dispatches into phase driver
@@ -3350,23 +3393,23 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
     false
 }
 
-/// Stub — real body lands in Task 9. Emits `PhaseEnded(Mythos)`
-/// (which [`step_phase`] now suppresses when leaving Mythos) then
-/// calls `step_phase(Mythos→Investigation)`, which dispatches into
-/// [`investigation_phase`] (emits `PhaseStarted(Investigation)` +
-/// rotates to lead).
-///
-/// Task 9 replaces this with the real body that adds the
-/// `mythos_draw_pending` pause logic; the `step_phase` call below
-/// becomes a call to `investigation_phase` directly once the full
-/// Mythos body is in place.
+/// Called after the post-1.4 window closes. Emits 1.5's
+/// `PhaseEnded(Mythos)` marker, then transitions to Investigation.
+/// Rotation is owned by `investigation_phase` (step 2.2), not by
+/// `mythos_phase_end`. Invoked from `close_reaction_window_at`'s
+/// kind-aware tail when a `MythosAfterDraws` window pops, and from
+/// `open_fast_window`'s auto-skip path inline.
 fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
-    // step_phase suppresses PhaseEnded(Mythos) when from == Mythos,
-    // so we emit it here before handing off.
+    // 1.5 Mythos phase ends.
+    //     The PhaseEnded(Mythos) emit lives HERE rather than in
+    //     step_phase so step 1.5 has explicit ownership in the
+    //     driver — mirror of step 1.1's PhaseStarted ownership in
+    //     mythos_phase. Rules Reference p.24: "This step formalizes
+    //     the end of the mythos phase."
     events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });
-    step_phase(state, events); // Mythos → Investigation (investigation_phase fires)
+    step_phase(state, events); // Mythos → Investigation; calls investigation_phase
 }
 
 /// Kind-aware continuation called when a window closes (whether
@@ -4442,6 +4485,121 @@ mod investigation_phase_tests {
                 .iter()
                 .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
             "no rotate must happen with empty turn_order"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mythos_phase_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn mythos_phase_emits_phase_started_and_seeds_draw_pending() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Mythos
+                }
+            )),
+            "must emit PhaseStarted(Mythos); events = {events:?}"
+        );
+    }
+
+    #[test]
+    fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
+        let mut state = TestGame::default().with_phase(Phase::Mythos).build();
+        state.turn_order.clear();
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        // No drawers → open_fast_window runs for MythosAfterDraws,
+        // which auto-skips (no Fast eligibility), runs continuation
+        // (mythos_phase_end), which steps into Investigation.
+        assert_eq!(state.mythos_draw_pending, None);
+        assert_eq!(state.phase, Phase::Investigation);
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::MythosAfterDraws
+                }
+            )),
+            "must emit WindowOpened(MythosAfterDraws); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::MythosAfterDraws
+                }
+            )),
+            "must emit WindowClosed(MythosAfterDraws); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Mythos
+                }
+            )),
+            "must emit PhaseEnded(Mythos); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "must emit PhaseStarted(Investigation); events = {events:?}"
+        );
+    }
+
+    #[test]
+    fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        let mut events = Vec::new();
+
+        mythos_phase_end(&mut state, &mut events);
+
+        assert_eq!(state.phase, Phase::Investigation);
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Mythos
+                }
+            )),
+            "must emit PhaseEnded(Mythos); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "must emit PhaseStarted(Investigation); events = {events:?}"
         );
     }
 }
