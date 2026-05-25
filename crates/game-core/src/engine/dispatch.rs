@@ -223,21 +223,9 @@ fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> En
 /// 3. Look up the drawn card's metadata via the installed registry.
 ///    Reject with `"EncounterCardRevealed: unknown card code: {code}"` if the registry
 ///    doesn't know the code.
-/// 4. Emit [`Event::CardRevealed`] with the drawn code and the
-///    metadata's `card_type`.
-/// 5. Branch on `card_type`:
-///    - `CardType::Treachery`: run every `Trigger::Revelation`
-///      ability on the card through the DSL evaluator (controller
-///      = drawing investigator, no source instance — matches the
-///      `play_card` path for events), then push the code onto
-///      `state.encounter_discard`.
-///    - `CardType::Enemy`: run every `Trigger::Revelation` ability
-///      (rare on enemies; structural for Phase-7+), then call
-///      [`spawn_enemy`] to resolve spawn location and
-///      engagement-on-spawn.
-///    - Any other type: reject with `"EncounterCardRevealed: invalid encounter card type {kind:?}"`.
-///      Encounter decks should only contain treachery
-///      and enemy cards per the Rules Reference.
+/// 4. Delegate to [`resolve_encounter_card`] for the post-draw
+///    resolution prefix (emit [`Event::CardRevealed`] + type-dispatch
+///    to Revelation / spawn / reject).
 ///
 /// # Validate-first contract caveat
 ///
@@ -277,9 +265,35 @@ fn encounter_card_revealed(
             reason: format!("EncounterCardRevealed: unknown card code: {code:?}").into(),
         };
     };
+    resolve_encounter_card(state, events, investigator, code, metadata)
+}
+
+/// Shared post-draw resolution helper. Resolves the per-card 5-step
+/// sub-sequence's steps 3 (Revelation) and 4 (enemy spawn) for an
+/// already-drawn encounter card. Called by [`encounter_card_revealed`]
+/// (the `EngineRecord::EncounterCardRevealed` path) and by
+/// `mythos_draw_for` (Mythos 1.4 player-driven draws, lands in T11).
+///
+/// Body: emits [`Event::CardRevealed`], then dispatches on
+/// `metadata.card_type` — treachery → run Revelation abilities →
+/// push card to `encounter_discard`;
+/// enemy → run Revelation abilities → call [`spawn_enemy`];
+/// any other type → return `Rejected`.
+///
+/// **Mid-resolution caveat:** [`Event::CardRevealed`] emits before
+/// Revelation runs (Before-timing reactions need that ordering,
+/// per #126's design decision). The apply loop's `events.clear()`
+/// on Rejected still wipes the event stream on rejection.
+fn resolve_encounter_card(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    code: CardCode,
+    metadata: &CardMetadata,
+) -> EngineOutcome {
     let card_type = metadata.card_type;
 
-    // Emit BEFORE Revelation resolves — see caveat above.
+    // Emit BEFORE Revelation resolves — see caveat in encounter_card_revealed.
     events.push(Event::CardRevealed {
         investigator,
         code: code.clone(),
@@ -288,6 +302,11 @@ fn encounter_card_revealed(
 
     match card_type {
         CardType::Treachery => {
+            let Some(registry) = card_registry::current() else {
+                return EngineOutcome::Rejected {
+                    reason: "resolve_encounter_card: no card registry installed".into(),
+                };
+            };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
             let ctx = EvalContext::for_controller(investigator);
             for ability in abilities
@@ -314,6 +333,11 @@ fn encounter_card_revealed(
             //
             // No Phase-4-scope enemy has a Revelation effect; this
             // loop is structural for Phase-7+ enemies.
+            let Some(registry) = card_registry::current() else {
+                return EngineOutcome::Rejected {
+                    reason: "resolve_encounter_card: no card registry installed".into(),
+                };
+            };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
             let ctx = EvalContext::for_controller(investigator);
             for ability in abilities
