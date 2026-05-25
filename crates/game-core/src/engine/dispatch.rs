@@ -854,13 +854,22 @@ fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     //     Seed the cursor; the actual draws are player-driven via
     //     PlayerAction::DrawEncounterCard (lands in T12). The
     //     dispatch handler advances the cursor after each chain.
-    state.mythos_draw_pending = state.turn_order.first().copied();
+    //     Per Rules Reference p.10 (Elimination), eliminated
+    //     investigators (Killed, Insane, Resigned) do not draw
+    //     encounter cards — skip to the first Active investigator.
+    state.mythos_draw_pending = state.turn_order.iter().copied().find(|id| {
+        state
+            .investigators
+            .get(id)
+            .is_some_and(|inv| inv.status == Status::Active)
+    });
     if state.mythos_draw_pending.is_none() {
-        // Degenerate state — no investigators to draw. Open the
-        // post-1.4 window immediately; open_fast_window's auto-skip
-        // path triggers because nothing is eligible, runs the
-        // MythosAfterDraws continuation (mythos_phase_end), which
-        // transitions to Investigation. All in this same apply.
+        // No Active investigators to draw (turn_order is empty or all
+        // investigators are eliminated). Open the post-1.4 window
+        // immediately; open_fast_window's auto-skip path triggers
+        // because nothing is eligible, runs the MythosAfterDraws
+        // continuation (mythos_phase_end), which transitions to
+        // Investigation. All in this same apply.
         open_fast_window(state, events, WindowKind::MythosAfterDraws);
     }
 }
@@ -4819,11 +4828,21 @@ fn advance_mythos_draw_pending(state: &mut GameState, events: &mut Vec<Event>) {
     let current = state
         .mythos_draw_pending
         .expect("advance_mythos_draw_pending called only after a successful chain");
+    // Per Rules Reference p.10 (Elimination), eliminated investigators
+    // do not draw encounter cards. Skip any non-Active entries after
+    // the current position rather than blindly taking turn_order[idx+1].
     let next = state
         .turn_order
         .iter()
         .position(|id| *id == current)
-        .and_then(|idx| state.turn_order.get(idx + 1).copied());
+        .and_then(|idx| {
+            state.turn_order.iter().skip(idx + 1).copied().find(|id| {
+                state
+                    .investigators
+                    .get(id)
+                    .is_some_and(|inv| inv.status == Status::Active)
+            })
+        });
 
     state.mythos_draw_pending = next;
     if next.is_none() {
@@ -5052,6 +5071,98 @@ mod mythos_phase_tests {
                 }
             )),
             "must emit PhaseStarted(Investigation); events = {events:?}"
+        );
+    }
+
+    /// Site 1 fix (Rules Reference p.10): when the lead investigator in
+    /// `turn_order` is eliminated, `mythos_phase` must seed
+    /// `mythos_draw_pending` with the first Active investigator rather
+    /// than blindly taking `turn_order.first()`.
+    #[test]
+    fn mythos_phase_skips_eliminated_lead_when_seeding_cursor() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.mythos_draw_pending,
+            Some(InvestigatorId(2)),
+            "cursor must point to the first Active investigator, not the Killed lead"
+        );
+    }
+
+    /// All investigators in `turn_order` are eliminated. `mythos_phase`
+    /// must treat this the same as an empty `turn_order`: seed to None
+    /// and open `MythosAfterDraws` inline, which auto-skips and drives
+    /// `mythos_phase_end`, transitioning to Investigation.
+    ///
+    /// This is the non-empty-`turn_order` analogue of
+    /// `mythos_phase_with_empty_turn_order_opens_after_draws_window_inline`.
+    #[test]
+    fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        assert_eq!(state.mythos_draw_pending, None);
+        assert_eq!(
+            state.phase,
+            Phase::Investigation,
+            "no Active drawers → MythosAfterDraws fires inline → Investigation"
+        );
+    }
+
+    /// Site 2 fix (Rules Reference p.10): when advancing the cursor
+    /// after a completed draw, eliminated investigators in the middle of
+    /// `turn_order` must be skipped. Here inv2 is Killed; the cursor must
+    /// advance from inv1 to inv3.
+    #[test]
+    fn advance_mythos_draw_pending_skips_eliminated_middle_investigator() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_investigator(test_investigator(3))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .status = Status::Killed;
+        // Simulate: inv1 has just completed their draw chain.
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let mut events = Vec::new();
+
+        advance_mythos_draw_pending(&mut state, &mut events);
+
+        assert_eq!(
+            state.mythos_draw_pending,
+            Some(InvestigatorId(3)),
+            "cursor must skip the Killed inv2 and land on Active inv3"
         );
     }
 }
