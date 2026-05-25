@@ -854,15 +854,23 @@ mod tests {
         assert!(result.events.is_empty());
     }
 
-    // T09 changed end_turn to pause at Mythos when mythos_draw_pending is
-    // Some(_). Driving DrawEncounterCard (T12) through the Mythos draw
-    // requires a card registry installed, which game-core unit tests cannot
-    // do (process-global OnceLock; installation in one test contaminates
-    // others). The round-cycle scenario with a real registry lives in
-    // T14's integration tests (crates/scenarios/tests/mythos_phase.rs).
+    // After T09, end_turn pauses at Mythos when mythos_draw_pending is
+    // Some(_). The player-driven DrawEncounterCard action (T12) is what
+    // completes the Mythos phase; it requires a card registry which
+    // game-core unit tests cannot install (process-global OnceLock;
+    // installing in one test would contaminate others). The full
+    // round-cycle coverage — including DrawEncounterCard completing the
+    // phase and transitioning to Investigation — lives in the T14
+    // integration tests at crates/scenarios/tests/mythos_phase.rs.
+    //
+    // These two tests verify the pause-at-Mythos shape: the last EndTurn
+    // in a round must land in Mythos with mythos_draw_pending populated,
+    // with the correct partial event chain (Investigation/Enemy/Upkeep
+    // boundaries + PhaseStarted(Mythos)). PhaseEnded(Mythos) and
+    // PhaseStarted(Investigation) do NOT fire here — they fire later via
+    // the DrawEncounterCard → mythos_phase_end continuation.
     #[test]
-    #[ignore = "needs card registry; covered by T14 integration tests in crates/scenarios/tests/mythos_phase.rs"]
-    fn full_round_advances_through_all_phases_with_two_investigators() {
+    fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let state = TestGame::new()
@@ -901,7 +909,8 @@ mod tests {
         )
         .state;
 
-        // First EndTurn: rotate to inv2 within Investigation.
+        // First EndTurn (inv1): rotates to inv2 within Investigation.
+        // No phase transitions yet.
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
         let state = result.state;
         assert_eq!(state.round, 1);
@@ -917,60 +926,63 @@ mod tests {
             result.events,
             Event::ActionsRemainingChanged { investigator, new_count: 3 } if *investigator == inv2
         );
-        // No phase transition yet, and EndTurn must never re-emit
-        // ScenarioStarted.
+        // No phase transition on a mid-round EndTurn.
         assert_no_event!(result.events, Event::PhaseEnded { .. });
         assert_no_event!(result.events, Event::PhaseStarted { .. });
         assert_no_event!(result.events, Event::ScenarioStarted);
 
-        // Second EndTurn: tick through Enemy → Upkeep → Mythos (round
-        // bumps) → Investigation, with inv1 active again at full
-        // actions.
+        // Second EndTurn (inv2, last in turn_order): auto-advances through
+        // Investigation → Enemy → Upkeep → Mythos and then PAUSES because
+        // mythos_draw_pending is now Some(inv1). The phase chain does NOT
+        // continue to Investigation — that waits for DrawEncounterCard.
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
         let state = result.state;
-        assert_eq!(state.round, 2);
-        assert_eq!(state.phase, Phase::Investigation);
-        assert_eq!(state.active_investigator, Some(inv1));
-        assert_eq!(state.investigators[&inv1].actions_remaining, 3);
-        assert_eq!(state.investigators[&inv2].actions_remaining, 0);
+        assert_eq!(state.round, 2, "round bumps on Mythos entry");
+        assert_eq!(state.phase, Phase::Mythos);
+        assert_eq!(
+            state.mythos_draw_pending,
+            Some(inv1),
+            "lead investigator (inv1) draws first"
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
 
-        // All four phase-end / phase-start pairs fired during the
-        // second EndTurn's auto-advance — exactly four of each, no more
-        // and no less.
-        assert_event_count!(result.events, 4, Event::PhaseEnded { .. });
-        assert_event_count!(result.events, 4, Event::PhaseStarted { .. });
-        for phase in [
-            Phase::Investigation,
-            Phase::Enemy,
-            Phase::Upkeep,
-            Phase::Mythos,
-        ] {
+        // Exactly 3 PhaseEnded events fire (Investigation, Enemy, Upkeep).
+        // PhaseEnded(Mythos) does NOT fire here — mythos_phase_end owns it
+        // and runs only after DrawEncounterCard completes the chain.
+        assert_event_count!(result.events, 3, Event::PhaseEnded { .. });
+        for phase in [Phase::Investigation, Phase::Enemy, Phase::Upkeep] {
             assert_event!(result.events, Event::PhaseEnded { phase: p } if *p == phase);
         }
-        for phase in [
-            Phase::Enemy,
-            Phase::Upkeep,
-            Phase::Mythos,
-            Phase::Investigation,
-        ] {
+        assert_no_event!(
+            result.events,
+            Event::PhaseEnded { phase: p } if *p == Phase::Mythos
+        );
+
+        // Exactly 3 PhaseStarted events fire (Enemy, Upkeep, Mythos).
+        // PhaseStarted(Investigation) does NOT fire here — investigation_phase
+        // runs only after mythos_phase_end, which runs after DrawEncounterCard.
+        assert_event_count!(result.events, 3, Event::PhaseStarted { .. });
+        for phase in [Phase::Enemy, Phase::Upkeep, Phase::Mythos] {
             assert_event!(result.events, Event::PhaseStarted { phase: p } if *p == phase);
         }
+        assert_no_event!(
+            result.events,
+            Event::PhaseStarted { phase: p } if *p == Phase::Investigation
+        );
+
         // EndTurn must never re-emit ScenarioStarted.
         assert_no_event!(result.events, Event::ScenarioStarted);
     }
 
-    // T09 changed end_turn to pause at Mythos when mythos_draw_pending is
-    // Some(_). Driving DrawEncounterCard (T12) through the Mythos draw
-    // requires a card registry installed, which game-core unit tests cannot
-    // do (process-global OnceLock; installation in one test contaminates
-    // others). The round-cycle scenario with a real registry lives in
-    // T14's integration tests (crates/scenarios/tests/mythos_phase.rs).
     #[test]
-    #[ignore = "needs card registry; covered by T14 integration tests in crates/scenarios/tests/mythos_phase.rs"]
-    fn solo_investigator_round_advances_on_single_end_turn() {
+    fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
         // Degenerate edge: with only one investigator in turn_order,
-        // their EndTurn is also the *last* EndTurn, so it must trigger
-        // the full phase auto-advance plus round bump in one step.
+        // their single EndTurn is also the *last* EndTurn of the round.
+        // It must auto-advance Investigation → Enemy → Upkeep → Mythos,
+        // bump the round, seed mythos_draw_pending = Some(id), and then
+        // PAUSE. It does NOT complete the full cycle — that requires the
+        // subsequent DrawEncounterCard action (needs registry, covered by
+        // crates/scenarios/tests/mythos_phase.rs).
         let id = InvestigatorId(1);
         let state = TestGame::new()
             .with_investigator(test_investigator(1))
@@ -993,12 +1005,34 @@ mod tests {
 
         let result = apply(after_mulligan, Action::Player(PlayerAction::EndTurn));
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(result.state.round, 2);
-        assert_eq!(result.state.phase, Phase::Investigation);
-        assert_eq!(result.state.active_investigator, Some(id));
-        assert_eq!(result.state.investigators[&id].actions_remaining, 3);
-        assert_event_count!(result.events, 4, Event::PhaseEnded { .. });
-        assert_event_count!(result.events, 4, Event::PhaseStarted { .. });
+        assert_eq!(result.state.round, 2, "round bumps on Mythos entry");
+        assert_eq!(result.state.phase, Phase::Mythos);
+        assert_eq!(
+            result.state.mythos_draw_pending,
+            Some(id),
+            "sole investigator is the pending drawer"
+        );
+
+        // The partial event chain: 3 PhaseEnded (Investigation, Enemy, Upkeep)
+        // and 3 PhaseStarted (Enemy, Upkeep, Mythos). The Mythos-side
+        // pair (PhaseEnded(Mythos) + PhaseStarted(Investigation)) fires
+        // later via mythos_phase_end after DrawEncounterCard resolves.
+        assert_event_count!(result.events, 3, Event::PhaseEnded { .. });
+        assert_event_count!(result.events, 3, Event::PhaseStarted { .. });
+        for phase in [Phase::Investigation, Phase::Enemy, Phase::Upkeep] {
+            assert_event!(result.events, Event::PhaseEnded { phase: p } if *p == phase);
+        }
+        assert_no_event!(
+            result.events,
+            Event::PhaseEnded { phase: p } if *p == Phase::Mythos
+        );
+        for phase in [Phase::Enemy, Phase::Upkeep, Phase::Mythos] {
+            assert_event!(result.events, Event::PhaseStarted { phase: p } if *p == phase);
+        }
+        assert_no_event!(
+            result.events,
+            Event::PhaseStarted { phase: p } if *p == Phase::Investigation
+        );
     }
 
     #[test]

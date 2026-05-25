@@ -326,6 +326,131 @@ fn mythos_phase_full_round_chain() {
 }
 
 // ------------------------------------------------------------------
+// Multi-investigator surge isolation
+// ------------------------------------------------------------------
+
+#[test]
+fn mythos_phase_multi_investigator_surge_does_not_spill() {
+    // Verifies that a surge in inv1's draw chain resolves entirely within
+    // inv1's DrawEncounterCard apply — consuming two cards from the shared
+    // encounter deck — without disrupting inv2's subsequent draw.
+    //
+    // Encounter deck (top → bottom):
+    //   [SYNTH_SURGE_TREACHERY, SYNTH_TREACHERY, SYNTH_TREACHERY]
+    //
+    // Drive: StartScenario → mulligans → EndTurn(inv1) → EndTurn(inv2)
+    //        → DrawEncounterCard(inv1) → DrawEncounterCard(inv2)
+    //
+    // Expected:
+    //   - inv1's DrawEncounterCard: draws the surge treachery, which
+    //     triggers an immediate chain-draw of the next card (plain
+    //     treachery). Both cards resolve, 2× CardRevealed, discard grows
+    //     by 2. Still Mythos after; mythos_draw_pending = Some(inv2).
+    //   - inv2's DrawEncounterCard: draws the third card (plain treachery),
+    //     1× CardRevealed, discard grows by 1 more (3 total).
+    //     Phase transitions to Investigation; mythos_draw_pending = None.
+    install_test_registry();
+
+    let mut base = synthetic::setup();
+    let mut inv2 = game_core::test_support::test_investigator(2);
+    inv2.current_location = Some(LocationId(10));
+    base.investigators.insert(InvestigatorId(2), inv2);
+    base.turn_order.push(InvestigatorId(2));
+
+    // Deck: surge on top, then two plain treacheries.
+    synthetic::with_encounter_deck(
+        &mut base,
+        vec![
+            CardCode(SYNTH_SURGE_TREACHERY_CODE.into()),
+            CardCode(SYNTH_TREACHERY_CODE.into()),
+            CardCode(SYNTH_TREACHERY_CODE.into()),
+        ],
+    );
+
+    let inv1 = InvestigatorId(1);
+    let inv2 = InvestigatorId(2);
+
+    // StartScenario + mulligan both investigators + both EndTurns.
+    let (state, _) = drive(
+        base,
+        vec![
+            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::Mulligan {
+                investigator: inv1,
+                indices_to_redraw: vec![],
+            }),
+            Action::Player(PlayerAction::Mulligan {
+                investigator: inv2,
+                indices_to_redraw: vec![],
+            }),
+            // inv1 ends turn → rotates to inv2.
+            Action::Player(PlayerAction::EndTurn),
+            // inv2 is last in turn_order → auto-advances into Mythos.
+            Action::Player(PlayerAction::EndTurn),
+        ],
+    );
+
+    assert_eq!(state.phase, Phase::Mythos);
+    assert_eq!(state.mythos_draw_pending, Some(inv1), "inv1 draws first");
+
+    // inv1 draws: surge chain pulls TWO cards (surge + plain treachery).
+    let result1 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    assert_eq!(result1.outcome, EngineOutcome::Done);
+    // The surge chain resolves within inv1's single apply; still Mythos
+    // because inv2 still needs to draw.
+    assert_eq!(result1.state.phase, Phase::Mythos);
+    assert_eq!(
+        result1.state.mythos_draw_pending,
+        Some(inv2),
+        "cursor advances to inv2 after inv1's chain completes"
+    );
+    assert_eq!(
+        result1.state.encounter_discard.len(),
+        2,
+        "surge + plain treachery both discarded after inv1's chain"
+    );
+    assert_eq!(
+        result1.state.encounter_deck.len(),
+        1,
+        "one card remains for inv2"
+    );
+    // Both cards emitted CardRevealed attributed to inv1.
+    assert_event!(
+        result1.events,
+        Event::CardRevealed { investigator, code, .. }
+            if *investigator == inv1
+                && *code == CardCode(SYNTH_SURGE_TREACHERY_CODE.into())
+    );
+    assert_event!(
+        result1.events,
+        Event::CardRevealed { investigator, code, .. }
+            if *investigator == inv1
+                && *code == CardCode(SYNTH_TREACHERY_CODE.into())
+    );
+
+    // inv2 draws: one plain treachery, no surge.
+    let result2 = apply(
+        result1.state,
+        Action::Player(PlayerAction::DrawEncounterCard),
+    );
+    assert_eq!(result2.outcome, EngineOutcome::Done);
+    assert_eq!(result2.state.phase, Phase::Investigation);
+    assert_eq!(result2.state.mythos_draw_pending, None);
+    assert!(result2.state.encounter_deck.is_empty());
+    assert_eq!(
+        result2.state.encounter_discard.len(),
+        3,
+        "all three cards in discard after both investigators draw"
+    );
+    assert_event!(
+        result2.events,
+        Event::CardRevealed { investigator, code, .. }
+            if *investigator == inv2
+                && *code == CardCode(SYNTH_TREACHERY_CODE.into())
+    );
+}
+
+// ------------------------------------------------------------------
 // Empty-deck rejection
 // ------------------------------------------------------------------
 
