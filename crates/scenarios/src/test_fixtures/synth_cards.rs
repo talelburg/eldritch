@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 
 use game_core::card_data::{CardMetadata, CardType, Class, SkillIcons, Spawn, SpawnLocation};
 use game_core::card_registry::CardRegistry;
-use game_core::dsl::{gain_resources, revelation, Ability, InvestigatorTarget};
+use game_core::dsl::{gain_resources, on_play, revelation, Ability, InvestigatorTarget};
 use game_core::state::CardCode;
 
 /// Code for the synthetic location used by the synth-enemy's spawn
@@ -40,6 +40,25 @@ pub const SYNTH_ENEMY_CODE: &str = "_synth_enemy";
 /// Code for the synthetic treachery. Underscore prefix guarantees no
 /// collision with `ArkhamDB`'s digit-prefixed five-char codes.
 pub const SYNTH_TREACHERY_CODE: &str = "_synth_treachery";
+
+/// Code for the synthetic surge-bearing treachery. Its Revelation
+/// is the same trivial "gain 1 resource" as [`SYNTH_TREACHERY_CODE`];
+/// the load-bearing difference is `surge: true` on the metadata,
+/// which drives the surge re-draw path in the per-card sub-sequence
+/// (Rules Reference p.19, p.24 1.4 step 5).
+pub const SYNTH_SURGE_TREACHERY_CODE: &str = "_synth_surge_treachery";
+
+/// Code for the synthetic Fast event. Used to test the `MythosAfterDraws`
+/// window's push-then-scan ordering fix: a Fast event in hand during
+/// Mythos must keep the window open (not auto-skip) and must be
+/// closeable via `ResolveInput::Skip` after playing (or without
+/// playing, per the player's choice).
+///
+/// The card's `OnPlay` effect is trivially "gain 1 resource" — the
+/// effect itself is unimportant; what matters is `is_fast: true` and
+/// `card_type: Event` so `check_play_card`'s timing gate allows it
+/// inside a permissive window.
+pub const SYNTH_FAST_EVENT_CODE: &str = "_synth_fast_event";
 
 /// Static metadata for the synthetic treachery. Fields populated with
 /// trivial defaults — only `code`, `name`, `card_type`, and
@@ -73,6 +92,8 @@ fn synth_treachery_metadata() -> CardMetadata {
         position: 1,
         is_fast: false,
         spawn: None,
+        surge: false,
+        peril: false,
     }
 }
 
@@ -111,6 +132,8 @@ fn synth_enemy_metadata() -> CardMetadata {
         spawn: Some(Spawn {
             location: SpawnLocation::Specific(SYNTH_LOC_CODE.to_owned()),
         }),
+        surge: false,
+        peril: false,
     }
 }
 
@@ -119,11 +142,97 @@ fn synth_enemy_metadata_static() -> &'static CardMetadata {
     M.get_or_init(synth_enemy_metadata)
 }
 
+fn synth_surge_treachery_metadata() -> CardMetadata {
+    CardMetadata {
+        code: SYNTH_SURGE_TREACHERY_CODE.to_owned(),
+        name: "Synthetic Surge Treachery".to_owned(),
+        class: Class::Mythos,
+        card_type: CardType::Treachery,
+        cost: None,
+        xp: None,
+        text: Some(
+            "Revelation - You gain 1 resource. Surge. \
+             (Synthetic; not a printed card.)"
+                .to_owned(),
+        ),
+        flavor: None,
+        illustrator: None,
+        traits: Vec::new(),
+        slots: Vec::new(),
+        skill_icons: SkillIcons {
+            willpower: 0,
+            intellect: 0,
+            combat: 0,
+            agility: 0,
+            wild: 0,
+        },
+        health: None,
+        sanity: None,
+        deck_limit: 1,
+        quantity: 1,
+        pack_code: "_synth".to_owned(),
+        position: 3,
+        is_fast: false,
+        spawn: None,
+        surge: true,
+        peril: false,
+    }
+}
+
+fn synth_surge_treachery_metadata_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(synth_surge_treachery_metadata)
+}
+
+fn synth_fast_event_metadata() -> CardMetadata {
+    CardMetadata {
+        code: SYNTH_FAST_EVENT_CODE.to_owned(),
+        name: "Synthetic Fast Event".to_owned(),
+        class: Class::Neutral,
+        card_type: CardType::Event,
+        cost: Some(0),
+        xp: None,
+        text: Some(
+            "Fast. Play at any player window. \
+             You gain 1 resource. (Synthetic; not a printed card.)"
+                .to_owned(),
+        ),
+        flavor: None,
+        illustrator: None,
+        traits: Vec::new(),
+        slots: Vec::new(),
+        skill_icons: SkillIcons {
+            willpower: 0,
+            intellect: 0,
+            combat: 0,
+            agility: 0,
+            wild: 0,
+        },
+        health: None,
+        sanity: None,
+        deck_limit: 3,
+        quantity: 3,
+        pack_code: "_synth".to_owned(),
+        position: 4,
+        is_fast: true,
+        spawn: None,
+        surge: false,
+        peril: false,
+    }
+}
+
+fn synth_fast_event_metadata_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(synth_fast_event_metadata)
+}
+
 /// `metadata_for` function pointer used by [`TEST_REGISTRY`].
 fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     match code.as_str() {
         SYNTH_TREACHERY_CODE => Some(synth_treachery_metadata_static()),
         SYNTH_ENEMY_CODE => Some(synth_enemy_metadata_static()),
+        SYNTH_SURGE_TREACHERY_CODE => Some(synth_surge_treachery_metadata_static()),
+        SYNTH_FAST_EVENT_CODE => Some(synth_fast_event_metadata_static()),
         _ => None,
     }
 }
@@ -131,7 +240,10 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 /// `abilities_for` function pointer used by [`TEST_REGISTRY`].
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
-        SYNTH_TREACHERY_CODE => Some(vec![revelation(gain_resources(
+        SYNTH_TREACHERY_CODE | SYNTH_SURGE_TREACHERY_CODE => Some(vec![revelation(
+            gain_resources(InvestigatorTarget::Controller, 1),
+        )]),
+        SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(
             InvestigatorTarget::Controller,
             1,
         ))]),

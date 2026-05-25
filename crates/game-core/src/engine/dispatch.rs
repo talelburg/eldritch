@@ -8,6 +8,7 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
@@ -37,6 +38,14 @@ const ACTIONS_PER_TURN: u8 = 3;
 /// Starting hand size at scenario setup. Per the Rules Reference,
 /// each investigator draws 5 cards before mulligan.
 const INITIAL_HAND_SIZE: u8 = 5;
+
+/// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
+/// in a chain; the cap exists purely to guarantee termination on
+/// malformed encounter decks (e.g. a deck small enough for surge to
+/// loop via the Rules Reference p.10 reshuffle). `unreachable!`-class
+/// — never reached in legitimate play.
+///
+const MAX_SURGE_CHAIN: usize = 64;
 
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
@@ -136,6 +145,14 @@ pub fn apply_player_action(
             instance_id,
             ability_index,
         } => activate_ability(state, events, *investigator, *instance_id, *ability_index),
+        PlayerAction::DrawEncounterCard => match state.mythos_draw_pending {
+            // DrawEncounterCard carries no investigator payload — the
+            // acting investigator IS the pending cursor.
+            Some(actor) => draw_encounter_card(state, events, actor),
+            None => EngineOutcome::Rejected {
+                reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
+            },
+        },
         PlayerAction::ResolveInput { response } => resolve_input(state, events, response),
     };
 
@@ -222,21 +239,9 @@ fn encounter_deck_shuffled(state: &mut GameState, events: &mut Vec<Event>) -> En
 /// 3. Look up the drawn card's metadata via the installed registry.
 ///    Reject with `"EncounterCardRevealed: unknown card code: {code}"` if the registry
 ///    doesn't know the code.
-/// 4. Emit [`Event::CardRevealed`] with the drawn code and the
-///    metadata's `card_type`.
-/// 5. Branch on `card_type`:
-///    - `CardType::Treachery`: run every `Trigger::Revelation`
-///      ability on the card through the DSL evaluator (controller
-///      = drawing investigator, no source instance — matches the
-///      `play_card` path for events), then push the code onto
-///      `state.encounter_discard`.
-///    - `CardType::Enemy`: run every `Trigger::Revelation` ability
-///      (rare on enemies; structural for Phase-7+), then call
-///      [`spawn_enemy`] to resolve spawn location and
-///      engagement-on-spawn.
-///    - Any other type: reject with `"EncounterCardRevealed: invalid encounter card type {kind:?}"`.
-///      Encounter decks should only contain treachery
-///      and enemy cards per the Rules Reference.
+/// 4. Delegate to [`resolve_encounter_card`] for the post-draw
+///    resolution prefix (emit [`Event::CardRevealed`] + type-dispatch
+///    to Revelation / spawn / reject).
 ///
 /// # Validate-first contract caveat
 ///
@@ -276,9 +281,35 @@ fn encounter_card_revealed(
             reason: format!("EncounterCardRevealed: unknown card code: {code:?}").into(),
         };
     };
+    resolve_encounter_card(state, events, investigator, code, metadata)
+}
+
+/// Shared post-draw resolution helper. Resolves the per-card 5-step
+/// sub-sequence's steps 3 (Revelation) and 4 (enemy spawn) for an
+/// already-drawn encounter card. Called by [`encounter_card_revealed`]
+/// (the `EngineRecord::EncounterCardRevealed` path) and by
+/// `mythos_draw_for` (Mythos 1.4 player-driven draws, lands in T11).
+///
+/// Body: emits [`Event::CardRevealed`], then dispatches on
+/// `metadata.card_type` — treachery → run Revelation abilities →
+/// push card to `encounter_discard`;
+/// enemy → run Revelation abilities → call [`spawn_enemy`];
+/// any other type → return `Rejected`.
+///
+/// **Mid-resolution caveat:** [`Event::CardRevealed`] emits before
+/// Revelation runs (Before-timing reactions need that ordering,
+/// per #126's design decision). The apply loop's `events.clear()`
+/// on Rejected still wipes the event stream on rejection.
+fn resolve_encounter_card(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    code: CardCode,
+    metadata: &CardMetadata,
+) -> EngineOutcome {
     let card_type = metadata.card_type;
 
-    // Emit BEFORE Revelation resolves — see caveat above.
+    // Emit BEFORE Revelation resolves — see caveat in encounter_card_revealed.
     events.push(Event::CardRevealed {
         investigator,
         code: code.clone(),
@@ -287,6 +318,11 @@ fn encounter_card_revealed(
 
     match card_type {
         CardType::Treachery => {
+            let Some(registry) = card_registry::current() else {
+                return EngineOutcome::Rejected {
+                    reason: "encounter card resolution: no card registry installed".into(),
+                };
+            };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
             let ctx = EvalContext::for_controller(investigator);
             for ability in abilities
@@ -313,6 +349,11 @@ fn encounter_card_revealed(
             //
             // No Phase-4-scope enemy has a Revelation effect; this
             // loop is structural for Phase-7+ enemies.
+            let Some(registry) = card_registry::current() else {
+                return EngineOutcome::Rejected {
+                    reason: "encounter card resolution: no card registry installed".into(),
+                };
+            };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
             let ctx = EvalContext::for_controller(investigator);
             for ability in abilities
@@ -649,15 +690,14 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
             reason: "StartScenario applied to a state that is already in progress".into(),
         };
     }
-    // Round 1 begins at Mythos. We emit the entry event explicitly here
-    // (rather than letting `step_phase` do it) because there is no
-    // "previous" phase to emit a `PhaseEnded` for.
+    // Round 1: scenario starts directly in Investigation phase —
+    // Mythos is skipped entirely per Rules Reference p.24 "During
+    // the first round of the game, skip the mythos phase." No
+    // PhaseStarted(Mythos) / PhaseEnded(Mythos) fire — the phase
+    // doesn't happen.
     state.round = 1;
-    state.phase = Phase::Mythos;
+    state.phase = Phase::Investigation;
     events.push(Event::ScenarioStarted);
-    events.push(Event::PhaseStarted {
-        phase: Phase::Mythos,
-    });
 
     // For each investigator (sorted by id for determinism), shuffle
     // their deck and deal an initial hand of up to 5.
@@ -674,13 +714,10 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
     // player actions are rejected until then.
     state.mulligan_window = true;
 
-    // Phase 1: Mythos / Enemy / Upkeep have no content yet, so we
-    // tick straight through them. Once the engine grows real Mythos
-    // draws and Enemy attacks, these phases stop being free skips.
-    step_phase(state, events); // Mythos → Investigation
-    if let Some(&first) = state.turn_order.first() {
-        rotate_to_active(state, events, first);
-    }
+    // investigation_phase emits PhaseStarted(Investigation) + rotates
+    // to the lead investigator (Rules Reference p.24 step 2.1 / 2.2).
+    investigation_phase(state, events);
+
     EngineOutcome::Done
 }
 
@@ -735,35 +772,165 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
         state.active_investigator = None;
         step_phase(state, events); // Investigation → Enemy
         step_phase(state, events); // Enemy → Upkeep
-        step_phase(state, events); // Upkeep → Mythos (round bumps)
-        step_phase(state, events); // Mythos → Investigation
-        if let Some(&first) = state.turn_order.first() {
-            rotate_to_active(state, events, first);
+        step_phase(state, events); // Upkeep → Mythos (round bumps + mythos_phase runs, seeds mythos_draw_pending)
+        if state.mythos_draw_pending.is_some() {
+            // Chain pauses here; the player's DrawEncounterCard
+            // actions advance Mythos. mythos_phase_end (triggered
+            // later via close_reaction_window_at's continuation
+            // dispatch after the post-1.4 window closes) handles
+            // the transition into Investigation.
+            return EngineOutcome::Done;
         }
+        // Degenerate state (no investigators in turn_order):
+        // mythos_phase opened+closed MythosAfterDraws inline, which
+        // fired mythos_phase_end as the continuation; that emitted
+        // PhaseEnded(Mythos) and stepped into Investigation via
+        // investigation_phase. Nothing left to do.
     }
 
     EngineOutcome::Done
 }
 
-/// Transition to the next phase: emit `PhaseEnded` for the current
-/// phase, advance, emit `PhaseStarted` for the new one. Bumps the
-/// round counter when entering [`Phase::Mythos`] (which is the start
-/// of a new round).
+/// Entered by [`step_phase`] on any-to-Investigation transition.
+/// Owns the `PhaseStarted(Investigation)` emit (Rules Reference
+/// p.24 step 2.1) and the initial rotation to the active
+/// investigator (step 2.2).
 ///
-/// **Round-bump invariant:** this is the only path that bumps
-/// `state.round` post-`StartScenario`. A future caller that wants to
-/// step phases for a non-round-cycle reason (e.g. a scenario effect
-/// that skips a phase) will need to suppress the bump here, or the
-/// round counter will drift. Revisit when such a use case appears.
+/// **Rotation policy (Phase 4):** lead-first by default.
+/// Rules Reference p.24 step 2.2: "The investigators may take their
+/// turns in any order. The investigators choose among themselves
+/// who…will take this turn." Phase 4 hardcodes lead-first as the
+/// table convention; the future full Investigation driver PR adds
+/// a player-pick action within an opened post-2.1 window.
+fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
+    // 2.1 Investigation phase begins.
+    events.push(Event::PhaseStarted {
+        phase: Phase::Investigation,
+    });
+
+    // [Post-2.1 player window not opened in #69 — the future
+    //  Investigation full driver PR adds open_fast_window here.]
+
+    // 2.2 Next investigator's turn begins. (First turn of the phase.)
+    // Skip any non-Active investigators (Killed, Insane, Resigned) at
+    // the front of turn_order so a defeated lead doesn't become the
+    // active cursor. PlayerAction guards check Status::Active before
+    // accepting inputs, but placing the cursor on a defeated
+    // investigator would still be wrong.
+    let first_active = state.turn_order.iter().copied().find(|id| {
+        state
+            .investigators
+            .get(id)
+            .is_some_and(|inv| inv.status == Status::Active)
+    });
+    if let Some(id) = first_active {
+        rotate_to_active(state, events, id);
+    }
+}
+
+/// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
+/// out the Rules Reference p.24 sub-steps as discrete named call
+/// sites so the rule structure is grep-able and #73 / future-peril-PR
+/// fills in TODO bodies without changing the driver shape.
+fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
+    // 1.1 Round begins. Mythos phase begins.
+    //     `step_phase` has already emitted PhaseEnded(Upkeep),
+    //     updated state.phase to Mythos, and bumped the round
+    //     counter. The PhaseStarted(Mythos) emit lives HERE rather
+    //     than in step_phase so step 1.1 has explicit ownership in
+    //     the driver — Rules Reference p.24: "This step formalizes
+    //     the beginning of the mythos phase."
+    events.push(Event::PhaseStarted {
+        phase: Phase::Mythos,
+    });
+
+    // 1.2 Place 1 doom on the current agenda.
+    place_doom_on_agenda(state, events);
+
+    // 1.3 Check doom threshold.
+    check_doom_threshold(state, events);
+
+    // 1.4 Each investigator draws 1 encounter card.
+    //     Seed the cursor; the actual draws are player-driven via
+    //     PlayerAction::DrawEncounterCard (lands in T12). The
+    //     dispatch handler advances the cursor after each chain.
+    //     Per Rules Reference p.10 (Elimination), eliminated
+    //     investigators (Killed, Insane, Resigned) do not draw
+    //     encounter cards — skip to the first Active investigator.
+    state.mythos_draw_pending = state.turn_order.iter().copied().find(|id| {
+        state
+            .investigators
+            .get(id)
+            .is_some_and(|inv| inv.status == Status::Active)
+    });
+    if state.mythos_draw_pending.is_none() {
+        // No Active investigators to draw (turn_order is empty or all
+        // investigators are eliminated). Open the post-1.4 window
+        // immediately; open_fast_window's auto-skip path triggers
+        // because nothing is eligible, runs the MythosAfterDraws
+        // continuation (mythos_phase_end), which transitions to
+        // Investigation. All in this same apply.
+        open_fast_window(state, events, WindowKind::MythosAfterDraws);
+    }
+}
+
+fn place_doom_on_agenda(_state: &mut GameState, _events: &mut Vec<Event>) {
+    // TODO(#73): place 1 doom on the current agenda per Rules
+    //            Reference p.24 step 1.2. Currently no agenda state
+    //            exists; #73 lands the agenda struct + doom counter
+    //            + this body.
+}
+
+fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
+    // TODO(#73): compare total doom in play to current agenda's
+    //            threshold; advance if met. Rules Reference p.24
+    //            step 1.3. Same reason as above: no agenda state
+    //            yet.
+}
+
+/// Transition to the next phase. Dispatches into phase driver
+/// functions when they exist (each driver owns its own
+/// `PhaseStarted` emit). For phases without a driver, emits
+/// `PhaseStarted` directly.
+///
+/// **`PhaseEnded(Mythos)` suppression invariant:** when
+/// `from == Phase::Mythos`, `step_phase` does NOT emit
+/// `PhaseEnded(Mythos)` — `mythos_phase_end` (the canonical owner of
+/// step 1.5's emit) is responsible. `mythos_phase_end` is invoked via
+/// [`run_window_continuation`] when a [`WindowKind::MythosAfterDraws`]
+/// window closes (either inline via [`open_fast_window`]'s auto-skip
+/// path when no Fast plays are eligible, or via `ResolveInput::Skip`
+/// after the player declines further Fast plays). `start_scenario`'s
+/// first-round-skip path bypasses the entire Mythos phase — no
+/// `PhaseStarted(Mythos)` / `PhaseEnded(Mythos)` events fire on round 1
+/// — per Rules Reference p.24 ("skip the mythos phase").
+///
+/// **Round-bump invariant:** bumps `state.round` when entering
+/// [`Phase::Mythos`] (which is the boundary between rounds).
+/// Unchanged from pre-#69.
 fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     let from = state.phase;
     let to = from.next();
-    events.push(Event::PhaseEnded { phase: from });
-    state.phase = to;
-    if to == Phase::Mythos {
-        state.round += 1;
+
+    // PhaseEnded: suppressed when the from-phase's *_end helper owns
+    // the emit. Currently only Mythos has an end helper.
+    if from != Phase::Mythos {
+        events.push(Event::PhaseEnded { phase: from });
     }
-    events.push(Event::PhaseStarted { phase: to });
+
+    state.phase = to;
+    // Round-bump invariant: bump when entering Mythos. Unchanged.
+    if to == Phase::Mythos {
+        state.round = state.round.saturating_add(1);
+    }
+
+    // Dispatch to phase driver if one exists; otherwise emit
+    // PhaseStarted directly (for phases without a driver yet).
+    match to {
+        Phase::Mythos if from != Phase::Mythos => mythos_phase(state, events),
+        Phase::Investigation if from != Phase::Investigation => investigation_phase(state, events),
+        _ => events.push(Event::PhaseStarted { phase: to }),
+    }
 }
 
 /// Set `active_investigator` to `id` and refresh that investigator's
@@ -1378,6 +1545,17 @@ fn fire_on_skill_test_resolution(
 /// reaction window takes routing priority; once it closes,
 /// [`close_reaction_window_at`] re-enters [`drive_skill_test`] to finish
 /// the test.
+///
+/// # Pure-Fast window closing
+///
+/// A pure-Fast window (pushed by [`open_fast_window`], empty
+/// `pending_triggers`) is **not** returned by [`GameState::top_reaction_window`]
+/// because that helper filters out empty-`pending_triggers` windows.
+/// When such a window is the only entry on the stack (no
+/// reaction-driven window below it), `InputResponse::Skip` closes it
+/// directly via [`close_reaction_window_at`] on the literal top-of-stack
+/// index. This covers the `MythosAfterDraws` window after all Fast
+/// plays have been made and the player is done.
 fn resolve_input(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -1386,6 +1564,25 @@ fn resolve_input(
     if state.top_reaction_window().is_some() {
         return resume_reaction_window(state, events, response);
     }
+
+    // Pure-Fast window path (Option B): no reaction-driven window is
+    // pending, but a window (e.g. MythosAfterDraws) may still be on the
+    // stack with empty pending_triggers. Skip is the only valid response
+    // here — PickIndex / CommitCards reject below.
+    if !state.open_windows.is_empty() {
+        if matches!(response, InputResponse::Skip) {
+            let idx = state.open_windows.len() - 1;
+            return close_reaction_window_at(state, events, idx);
+        }
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: a Fast-play window is open (no pending triggers); \
+                 submit InputResponse::Skip to close it, got {response:?}",
+            )
+            .into(),
+        };
+    }
+
     if state.in_flight_skill_test.is_none() {
         return EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
@@ -1407,14 +1604,16 @@ fn resolve_input(
 /// has a matching `Trigger::OnEvent` ability. No-op when the registry
 /// isn't installed or no card matches.
 ///
-/// The window doesn't open here — the surrounding handler's driver
-/// (today, [`drive_skill_test`]) checks for queued windows at its
-/// next step boundary and either opens them via
-/// [`open_queued_reaction_window`] or proceeds to the next step.
-/// Splitting queue and open keeps the event-emitter
-/// (`damage_enemy` and future callers) free of suspension logic —
-/// they just signal "this impact happened, scan for reactions" and
-/// the driver decides when to actually pause.
+/// Emits [`Event::WindowOpened`] before pushing onto
+/// [`GameState::open_windows`] so reaction-window observability is
+/// symmetric with the Fast-window path ([`open_fast_window`]).
+/// If no triggers are pending the function returns early without
+/// emitting anything — the window never opens.
+///
+/// The window suspends the surrounding driver
+/// (today, [`drive_skill_test`]) at its next step boundary: after the
+/// emit here the driver sees a non-empty `open_windows` stack and
+/// returns [`EngineOutcome::AwaitingInput`] so the player can act.
 ///
 /// Idempotency: if a window is already queued for this apply, the new
 /// `kind` overwrites it. Phase-3 actions only emit one defeating
@@ -1422,11 +1621,12 @@ fn resolve_input(
 /// doesn't arise; the overwrite is a loud-on-debug placeholder
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
-fn queue_reaction_window(state: &mut GameState, kind: WindowKind) {
+fn queue_reaction_window(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     let pending_triggers = scan_pending_triggers(state, kind);
     if pending_triggers.is_empty() {
         return;
     }
+    events.push(Event::WindowOpened { kind });
     // Reaction windows admit any investigator's Fast actions
     // (Rules Reference: Fast may be played at any player window).
     // Multi-window nesting is now structural — push twice is valid.
@@ -1534,9 +1734,9 @@ fn trigger_matches(
                 true
             }
         }
-        // BetweenPhases windows open for phase-transition timing; no
-        // Trigger::OnEvent pattern matches a phase-transition window —
-        // those windows gate Fast actions, not after-event reactions.
+        // BetweenPhases and MythosAfterDraws windows open for timing
+        // reasons; no Trigger::OnEvent pattern matches them — those
+        // windows gate Fast actions, not after-event reactions.
         // AfterEnemyDefeated windows only match EnemyDefeated patterns
         // (handled above); encounter-reveal patterns return false.
         //
@@ -1545,7 +1745,9 @@ fn trigger_matches(
         // to react to spawns will add the corresponding WindowKind
         // variant and update this arm.
         (
-            WindowKind::BetweenPhases { .. } | WindowKind::AfterEnemyDefeated { .. },
+            WindowKind::BetweenPhases { .. }
+            | WindowKind::AfterEnemyDefeated { .. }
+            | WindowKind::MythosAfterDraws,
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned,
@@ -1553,16 +1755,18 @@ fn trigger_matches(
     }
 }
 
-/// Emit [`Event::WindowOpened`] for the queued window and return
-/// [`AwaitingInput`]. Called by [`drive_skill_test`] at a
-/// step boundary when an earlier step queued a window via
-/// [`queue_reaction_window`]. Future non-skill-test handlers that
-/// queue windows will call this from their own boundaries.
-fn open_queued_reaction_window(state: &GameState, events: &mut Vec<Event>) -> EngineOutcome {
+/// Return [`AwaitingInput`] for the already-open reaction window at
+/// the top of [`GameState::open_windows`]. Called by [`drive_skill_test`]
+/// at a step boundary when an earlier step queued a window via
+/// [`queue_reaction_window`].
+///
+/// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
+/// (not here) so the event appears at queue time and is symmetric with
+/// the [`open_fast_window`] path.
+fn open_queued_reaction_window(state: &GameState, _events: &mut Vec<Event>) -> EngineOutcome {
     let window = state
         .top_reaction_window()
         .expect("open_queued_reaction_window: caller checked is_some");
-    events.push(Event::WindowOpened { kind: window.kind });
     EngineOutcome::AwaitingInput {
         request: InputRequest {
             prompt: format!(
@@ -1834,6 +2038,11 @@ fn close_reaction_window_at(
     let window = state.open_windows.remove(idx);
     let kind = window.kind;
     events.push(Event::WindowClosed { kind });
+
+    // Run any kind-specific continuation (e.g. MythosAfterDraws →
+    // mythos_phase_end). For reaction windows that have no continuation
+    // (AfterEnemyDefeated, BetweenPhases) this is a no-op.
+    run_window_continuation(state, events, kind);
 
     // If a skill test was mid-resolution when this window opened,
     // hand control back to its driver to run the remaining steps.
@@ -2326,12 +2535,15 @@ fn damage_enemy(
             by,
         });
         state.enemies.remove(&enemy_id);
-        // Queue the post-defeat reaction window. The skill-test
-        // driver opens it at the next step boundary (between
-        // `apply_skill_test_follow_up` and `fire_on_skill_test_resolution`);
-        // see `drive_skill_test`.
+        // Queue the post-defeat reaction window. Emits
+        // `Event::WindowOpened` immediately (inside queue_reaction_window);
+        // the skill-test driver then suspends at the next step boundary
+        // (between `apply_skill_test_follow_up` and
+        // `fire_on_skill_test_resolution`) returning AwaitingInput so the
+        // player can fire their reaction triggers; see `drive_skill_test`.
         queue_reaction_window(
             state,
+            events,
             WindowKind::AfterEnemyDefeated {
                 enemy: enemy_id,
                 by,
@@ -2807,7 +3019,8 @@ fn mulligan(
 /// Internal helper: where a played card lands after on-play effects
 /// resolve. Mirrors the Arkham rule that assets stay in play while
 /// events resolve and go to the discard.
-enum PlayDestination {
+#[derive(Debug)]
+pub(super) enum PlayDestination {
     /// Card stays in play (asset).
     InPlay,
     /// Card moves to the discard after on-play effects resolve (event).
@@ -2860,6 +3073,126 @@ fn resolve_play_target(
         });
     };
     Ok((destination, abilities, is_fast, card_type))
+}
+
+/// Validated payload returned by [`check_play_card`] on success.
+/// Carries the data `play_card`'s mutation step needs without
+/// re-running the validation.
+///
+/// `is_fast` is consumed by [`any_fast_play_eligible`]; `card_type`
+/// is currently destructured with `_` in `play_card` but kept for
+/// future consumers (e.g. reaction-window dispatch).
+///
+/// `#[allow(dead_code)]` covers `card_type` (not yet read outside
+/// validation) and suppresses the rustc `dead_code` lint on struct fields
+/// that are only read by a `pub(super)` function not yet wired up.
+#[derive(Debug)]
+#[allow(dead_code)]
+pub(super) struct PlayCheckResult {
+    pub destination: PlayDestination,
+    pub abilities: Vec<crate::dsl::Ability>,
+    pub is_fast: bool,
+    pub card_type: CardType,
+}
+
+/// Pure-validation peer to [`play_card`]. Returns `Ok` if the named
+/// card is currently playable by `investigator`, `Err(reason)` if
+/// not. The check is the existing `play_card` validation block lifted
+/// verbatim — no behavior change at `play_card`'s call site.
+///
+/// Used by [`play_card`] (which then runs the mutation block on the
+/// `Ok` payload) and by `any_fast_play_eligible` (which only
+/// inspects `Ok` vs `Err`).
+pub(super) fn check_play_card(
+    state: &GameState,
+    investigator: InvestigatorId,
+    hand_index: u8,
+) -> Result<PlayCheckResult, Cow<'static, str>> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
+    };
+    if inv.status != Status::Active {
+        return Err(format!(
+            "PlayCard: {investigator:?} is not Active (status {:?})",
+            inv.status,
+        )
+        .into());
+    }
+    let idx = usize::from(hand_index);
+    if idx >= inv.hand.len() {
+        return Err(format!(
+            "PlayCard: hand_index {hand_index} out of bounds (hand size {})",
+            inv.hand.len(),
+        )
+        .into());
+    }
+    let code: CardCode = inv.hand[idx].clone();
+    // Resolve card type and abilities (also yields is_fast + card_type) before
+    // applying the phase/active-investigator gate so the gate can branch on
+    // is_fast AND card_type per the Rules Reference (p. 11).
+    // Invariant: `resolve_play_target` currently returns only `Ok(...)` (success)
+    // or `Err(EngineOutcome::Rejected { ... })` (validation failure). If a future
+    // PR extends it to return `AwaitingInput` (e.g. for a card requiring in-
+    // validation target selection), this `unreachable!()` will panic; the
+    // validator's caller chain in `play_card` would need to be redesigned to
+    // thread the `AwaitingInput` outcome back through `check_play_card`'s
+    // `Result` shape. Pinning the invariant loudly here is intentional —
+    // silent `AwaitingInput` propagation through a `Result<_, Cow>` would
+    // produce wrong gameplay.
+    let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
+        Ok(v) => v,
+        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+        Err(other) => unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}"),
+    };
+    // Timing gate — see play_card doc-comment "# Timing gate" section.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let owner_is_active = state.active_investigator == Some(investigator);
+    let permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    // Non-asset/non-event card types are filtered out by
+    // `resolve_play_target` above, so `card_type` here is always one of
+    // `Asset` or `Event`. The non-Fast arm collapses both into the
+    // strict gate; the Fast arms split because Rules Reference p. 11
+    // gives events and assets different scopes (any vs owner-only).
+    let allowed = if is_fast {
+        match card_type {
+            CardType::Event => active_during_investigation || permissive_window,
+            CardType::Asset => {
+                active_during_investigation || (owner_is_active && permissive_window)
+            }
+            // Unreachable: `resolve_play_target` rejects every other
+            // `CardType` before we get here. Fall back to the strict
+            // gate so a future relaxation of `resolve_play_target` does
+            // not silently over-permit anything.
+            _ => active_during_investigation,
+        }
+    } else {
+        active_during_investigation
+    };
+    if !allowed {
+        return Err(format!(
+            "PlayCard: card not playable in this timing window. \
+             Rules Reference p. 11: non-Fast cards require Investigation + active \
+             investigator; Fast events require active investigator or a window whose \
+             fast_actors permits the actor; Fast assets additionally require the OWNER \
+             (active investigator) to act. \
+             Got is_fast={is_fast}, card_type={card_type:?}, phase={phase:?}, \
+             active={active:?}, actor={investigator:?}, owner_is_active={owner_is_active}, \
+             permissive_window={permissive_window}.",
+            phase = state.phase,
+            active = state.active_investigator,
+        )
+        .into());
+    }
+    Ok(PlayCheckResult {
+        destination,
+        abilities,
+        is_fast,
+        card_type,
+    })
 }
 
 /// Handler for [`PlayerAction::PlayCard`].
@@ -2927,84 +3260,25 @@ fn play_card(
     investigator: InvestigatorId,
     hand_index: u8,
 ) -> EngineOutcome {
-    // Validate the investigator's presence and status before any card lookup.
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("PlayCard: investigator {investigator:?} is not in state").into(),
-        };
+    let PlayCheckResult {
+        destination,
+        abilities,
+        is_fast: _,
+        card_type: _,
+    } = match check_play_card(state, investigator, hand_index) {
+        Ok(r) => r,
+        Err(reason) => return EngineOutcome::Rejected { reason },
     };
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: {investigator:?} is not Active (status {:?})",
-                inv.status,
-            )
-            .into(),
-        };
-    }
+    // The code is re-read from state here so we don't pass it through
+    // the result (avoiding the lifetime question). The validator already
+    // confirmed the hand_index is in bounds and the investigator exists.
     let idx = usize::from(hand_index);
-    if idx >= inv.hand.len() {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: hand_index {hand_index} out of bounds (hand size {})",
-                inv.hand.len(),
-            )
-            .into(),
-        };
-    }
-    let code: CardCode = inv.hand[idx].clone();
-    // Resolve card type and abilities (also yields is_fast + card_type) before
-    // applying the phase/active-investigator gate so the gate can branch on
-    // is_fast AND card_type per the Rules Reference (p. 11).
-    let (destination, abilities, is_fast, card_type) = match resolve_play_target(&code) {
-        Ok(v) => v,
-        Err(reject) => return reject,
-    };
-    // Timing gate — see doc-comment "# Timing gate" section above.
-    let active_during_investigation =
-        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
-    let owner_is_active = state.active_investigator == Some(investigator);
-    let permissive_window = state
-        .open_windows
-        .last()
-        .is_some_and(|w| w.fast_actors.permits(investigator));
-    // Non-asset/non-event card types are filtered out by
-    // `resolve_play_target` above, so `card_type` here is always one of
-    // `Asset` or `Event`. The non-Fast arm collapses both into the
-    // strict gate; the Fast arms split because Rules Reference p. 11
-    // gives events and assets different scopes (any vs owner-only).
-    let allowed = if is_fast {
-        match card_type {
-            CardType::Event => active_during_investigation || permissive_window,
-            CardType::Asset => {
-                active_during_investigation || (owner_is_active && permissive_window)
-            }
-            // Unreachable: `resolve_play_target` rejects every other
-            // `CardType` before we get here. Fall back to the strict
-            // gate so a future relaxation of `resolve_play_target` does
-            // not silently over-permit anything.
-            _ => active_during_investigation,
-        }
-    } else {
-        active_during_investigation
-    };
-    if !allowed {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "PlayCard: card not playable in this timing window. \
-                 Rules Reference p. 11: non-Fast cards require Investigation + active \
-                 investigator; Fast events require active investigator or a window whose \
-                 fast_actors permits the actor; Fast assets additionally require the OWNER \
-                 (active investigator) to act. \
-                 Got is_fast={is_fast}, card_type={card_type:?}, phase={phase:?}, \
-                 active={active:?}, actor={investigator:?}, owner_is_active={owner_is_active}, \
-                 permissive_window={permissive_window}.",
-                phase = state.phase,
-                active = state.active_investigator,
-            )
-            .into(),
-        };
-    }
+    let code: CardCode = state
+        .investigators
+        .get(&investigator)
+        .expect("checked in validator")
+        .hand[idx]
+        .clone();
 
     // Mutate.
     events.push(Event::CardPlayed {
@@ -3040,6 +3314,306 @@ fn play_card(
         }
     }
     EngineOutcome::Done
+}
+
+/// Validated payload returned by [`check_activate_ability`] on success.
+/// Carries the data `activate_ability`'s mutation step needs without
+/// re-running the validation.
+#[derive(Debug)]
+#[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
+pub(super) struct ActivateCheckResult {
+    /// Position of the source card in the investigator's `cards_in_play`.
+    pub in_play_pos: usize,
+    /// The card code of the source card.
+    pub source_code: CardCode,
+    /// Action cost from the ability's `Trigger::Activated`.
+    pub action_cost: u8,
+    /// Payment costs (beyond the action cost).
+    pub costs: Vec<crate::dsl::Cost>,
+    /// The effect to dispatch after paying costs.
+    pub effect: crate::dsl::Effect,
+    /// Whether the source card was exhausted at validation time —
+    /// load-bearing for activated abilities whose payment includes
+    /// `Cost::Exhaust`.
+    pub source_exhausted: bool,
+}
+
+/// Pure-validation peer to [`activate_ability`]. Mirrors
+/// [`check_play_card`]: validation block lifted verbatim, no behavior
+/// change at the call site.
+///
+/// Returns `Ok(ActivateCheckResult)` if the ability is currently
+/// activatable, `Err(reason)` otherwise. Does not mutate state.
+pub(super) fn check_activate_ability(
+    state: &GameState,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+    ability_index: u8,
+) -> Result<ActivateCheckResult, Cow<'static, str>> {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Err(
+            format!("ActivateAbility: investigator {investigator:?} is not in state").into(),
+        );
+    };
+    if inv.status != Status::Active {
+        return Err(format!(
+            "ActivateAbility: {investigator:?} is not Active (status {:?})",
+            inv.status,
+        )
+        .into());
+    }
+    let Some(in_play_pos) = inv
+        .cards_in_play
+        .iter()
+        .position(|c| c.instance_id == instance_id)
+    else {
+        return Err(format!(
+            "ActivateAbility: {investigator:?} has no in-play instance {instance_id:?}",
+        )
+        .into());
+    };
+    let source_code = inv.cards_in_play[in_play_pos].code.clone();
+    let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
+
+    // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
+    // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
+    // If a future PR extends it to return `AwaitingInput` (e.g. for an ability
+    // requiring target selection during validation), this `unreachable!()` will
+    // panic; the validator's caller chain in `activate_ability` would need to be
+    // redesigned to thread the `AwaitingInput` outcome back through
+    // `check_activate_ability`'s `Result` shape. Mirrors the same invariant
+    // comment on `resolve_play_target` in `check_play_card`.
+    let (action_cost, costs, effect) = match resolve_activated_ability(&source_code, ability_index)
+    {
+        Ok(v) => v,
+        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+        Err(other) => {
+            unreachable!("resolve_activated_ability returned non-Rejected outcome: {other:?}")
+        }
+    };
+
+    // Gate: branch on action_cost now that we have it.
+    // Fast abilities (action_cost == 0) may be used at any player window.
+    let active_during_investigation =
+        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
+    let in_permissive_window = state
+        .open_windows
+        .last()
+        .is_some_and(|w| w.fast_actors.permits(investigator));
+    if action_cost > 0 {
+        // Action-cost ability: requires Investigation phase + active investigator.
+        if !active_during_investigation {
+            return Err(format!(
+                "ActivateAbility: action-cost ability requires Investigation phase + \
+                 active investigator (phase was {:?}, active {:?})",
+                state.phase, state.active_investigator,
+            )
+            .into());
+        }
+    } else {
+        // Fast ability: active during Investigation OR permissive window.
+        if !active_during_investigation && !in_permissive_window {
+            return Err(
+                "ActivateAbility: Fast ability requires either active investigator \
+                         during Investigation, or an open window whose fast_actors permits \
+                         this investigator"
+                    .into(),
+            );
+        }
+    }
+
+    // Re-borrow inv after state borrows above.
+    let inv = state.investigators.get(&investigator).expect("checked");
+
+    // Action-economy check.
+    if inv.actions_remaining < action_cost {
+        return Err(format!(
+            "ActivateAbility: needs {action_cost} action(s); investigator has {}",
+            inv.actions_remaining,
+        )
+        .into());
+    }
+
+    // Validate every payment cost is payable. Done as a pure read
+    // before any mutation so an all-or-nothing reject leaves state
+    // untouched.
+    for cost in &costs {
+        if let Err(reason) = check_cost_payable(cost, inv, source_exhausted) {
+            return Err(reason.into());
+        }
+    }
+
+    Ok(ActivateCheckResult {
+        in_play_pos,
+        source_code,
+        action_cost,
+        costs,
+        effect,
+        source_exhausted,
+    })
+}
+
+/// Returns `true` if any investigator has at least one playable Fast
+/// option in the current state — either a Fast card in hand or a
+/// non-exhausted 0-action Activated ability on a card in play.
+/// Used by [`open_fast_window`] to short-circuit windows where nobody
+/// can act.
+///
+/// Eligibility uses the extracted [`check_play_card`] /
+/// [`check_activate_ability`] validators so the gate is exactly the
+/// existing `PlayCard` / `ActivateAbility` gate — no parallel
+/// implementation, no drift.
+///
+/// Returns `false` when the card registry isn't installed (tests
+/// that don't touch card data) — same fallback as
+/// [`scan_pending_triggers`].
+pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
+    let Some(reg) = crate::card_registry::current() else {
+        return false;
+    };
+    for (&inv_id, inv) in &state.investigators {
+        // Fast events / Fast assets in hand.
+        for hand_idx_usize in 0..inv.hand.len() {
+            let Ok(hand_idx) = u8::try_from(hand_idx_usize) else {
+                break;
+            };
+            if let Ok(result) = check_play_card(state, inv_id, hand_idx) {
+                if result.is_fast {
+                    return true;
+                }
+            }
+        }
+        // 0-action Activated abilities on cards in play.
+        for card in &inv.cards_in_play {
+            let Some(abilities) = (reg.abilities_for)(&card.code) else {
+                continue;
+            };
+            for (ab_idx, ability) in abilities.iter().enumerate() {
+                let Trigger::Activated { action_cost: 0 } = ability.trigger else {
+                    continue;
+                };
+                let Ok(ab_idx_u8) = u8::try_from(ab_idx) else {
+                    break;
+                };
+                if check_activate_ability(state, inv_id, card.instance_id, ab_idx_u8).is_ok() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Called after the post-1.4 window closes. Emits 1.5's
+/// `PhaseEnded(Mythos)` marker, then transitions to Investigation.
+/// Rotation is owned by `investigation_phase` (step 2.2), not by
+/// `mythos_phase_end`. Invoked from `close_reaction_window_at`'s
+/// kind-aware tail when a `MythosAfterDraws` window pops, and from
+/// `open_fast_window`'s auto-skip path inline.
+fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+    // 1.5 Mythos phase ends.
+    //     The PhaseEnded(Mythos) emit lives HERE rather than in
+    //     step_phase so step 1.5 has explicit ownership in the
+    //     driver — mirror of step 1.1's PhaseStarted ownership in
+    //     mythos_phase. Rules Reference p.24: "This step formalizes
+    //     the end of the mythos phase."
+    events.push(Event::PhaseEnded {
+        phase: Phase::Mythos,
+    });
+    step_phase(state, events); // Mythos → Investigation; calls investigation_phase
+}
+
+/// Kind-aware continuation called when a window closes (whether
+/// inline via [`open_fast_window`]'s auto-skip path or via the
+/// [`close_reaction_window_at`] pop path). For
+/// [`WindowKind::MythosAfterDraws`], runs [`mythos_phase_end`].
+/// Other window kinds have no continuation — this is a no-op that
+/// preserves the existing [`close_reaction_window_at`] behavior for
+/// `AfterEnemyDefeated` and `BetweenPhases` windows.
+fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
+    match kind {
+        WindowKind::MythosAfterDraws => {
+            // Phase-transitioning continuation: cannot run while a skill
+            // test is in flight (would strand the test in the wrong
+            // phase). Phase 4 has no Mythos-phase skill-test sources, so
+            // this branch is structurally unreachable today. A future PR
+            // adding a Mythos-phase Revelation that initiates a skill
+            // test must redesign the close-window + phase-transition
+            // ordering before this assertion fires.
+            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+                unreachable!(
+                    "MythosAfterDraws window closed while a skill test is in flight \
+                     (continuation={:?}). Phase transition would strand the skill test \
+                     in the wrong phase. Phase 4 has no Mythos-phase skill test sources; \
+                     if a future PR adds one (e.g. a treachery whose Revelation initiates \
+                     a skill test), the window-close + phase-transition ordering needs \
+                     redesign before this assertion can be relaxed.",
+                    in_flight.continuation,
+                );
+            }
+            mythos_phase_end(state, events);
+        }
+        WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
+    }
+}
+
+/// Open a printed Fast-play window of the given kind. Always emits
+/// [`Event::WindowOpened`] for observability. Then either:
+///
+/// - Pushes the [`OpenWindow`] onto [`GameState::open_windows`] if any
+///   pending reaction triggers or Fast-eligible plays are detected. The
+///   apply loop's existing "pending reactions → `AwaitingInput`" path
+///   then surfaces the wait at the dispatch tail.
+/// - Or emits [`Event::WindowClosed`] immediately, pops the transiently
+///   pushed window, and runs [`run_window_continuation`] inline. This
+///   **auto-skip** path saves a UI round-trip when nobody can act.
+///
+/// # Push-then-scan ordering
+///
+/// The window is pushed onto [`GameState::open_windows`] **before**
+/// [`any_fast_play_eligible`] is called. This is load-bearing:
+/// [`check_play_card`]'s timing gate reads
+/// `state.open_windows.last()` to decide whether a Fast card is
+/// eligible (`permissive_window`). If the window weren't on the stack
+/// yet, any Fast event held during the Mythos phase would be evaluated
+/// as ineligible (`active_during_investigation = false`,
+/// `permissive_window = false`) and the window would auto-skip even
+/// though Fast plays are available.
+///
+/// On the auto-skip path the window is popped before returning so the
+/// net effect on `state.open_windows` is identical to the pre-fix
+/// behaviour (window never lands persistently on the stack).
+pub(super) fn open_fast_window(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
+    events.push(Event::WindowOpened { kind });
+
+    // Push first so any_fast_play_eligible's check_play_card call sees
+    // this window in state.open_windows when evaluating permissive_window.
+    let pending_triggers = scan_pending_triggers(state, kind);
+    state.open_windows.push(OpenWindow {
+        kind,
+        pending_triggers,
+        fast_actors: FastActorScope::Any,
+    });
+
+    let has_pending = !state
+        .open_windows
+        .last()
+        .expect("just pushed; cannot be empty")
+        .pending_triggers
+        .is_empty();
+    let has_fast_eligible = any_fast_play_eligible(state);
+
+    if !has_pending && !has_fast_eligible {
+        // Auto-skip: nothing to do. Pop the window we just pushed,
+        // emit WindowClosed, and run the continuation inline, so the
+        // net effect on state.open_windows is the same as before the fix.
+        let _ = state.open_windows.pop();
+        events.push(Event::WindowClosed { kind });
+        run_window_continuation(state, events, kind);
+    }
+    // Otherwise the window stays on the stack. The guard at the top of
+    // apply() and resume_reaction_window / resolve_input handle the
+    // wait + close path.
 }
 
 /// Handler for [`PlayerAction::ActivateAbility`].
@@ -3092,98 +3666,17 @@ fn activate_ability(
     instance_id: CardInstanceId,
     ability_index: u8,
 ) -> EngineOutcome {
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("ActivateAbility: investigator {investigator:?} is not in state")
-                .into(),
-        };
+    let ActivateCheckResult {
+        in_play_pos,
+        source_code,
+        action_cost,
+        costs,
+        effect,
+        source_exhausted: _,
+    } = match check_activate_ability(state, investigator, instance_id, ability_index) {
+        Ok(r) => r,
+        Err(reason) => return EngineOutcome::Rejected { reason },
     };
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: {investigator:?} is not Active (status {:?})",
-                inv.status,
-            )
-            .into(),
-        };
-    }
-    let Some(in_play_pos) = inv
-        .cards_in_play
-        .iter()
-        .position(|c| c.instance_id == instance_id)
-    else {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: {investigator:?} has no in-play instance {instance_id:?}",
-            )
-            .into(),
-        };
-    };
-    let source_code = inv.cards_in_play[in_play_pos].code.clone();
-    let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
-
-    let (action_cost, costs, effect) = match resolve_activated_ability(&source_code, ability_index)
-    {
-        Ok(v) => v,
-        Err(reject) => return reject,
-    };
-
-    // Gate: branch on action_cost now that we have it.
-    // Fast abilities (action_cost == 0) may be used at any player window.
-    let active_during_investigation =
-        state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
-    let in_permissive_window = state
-        .open_windows
-        .last()
-        .is_some_and(|w| w.fast_actors.permits(investigator));
-    if action_cost > 0 {
-        // Action-cost ability: requires Investigation phase + active investigator.
-        if !active_during_investigation {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "ActivateAbility: action-cost ability requires Investigation phase + \
-                     active investigator (phase was {:?}, active {:?})",
-                    state.phase, state.active_investigator,
-                )
-                .into(),
-            };
-        }
-    } else {
-        // Fast ability: active during Investigation OR permissive window.
-        if !active_during_investigation && !in_permissive_window {
-            return EngineOutcome::Rejected {
-                reason: "ActivateAbility: Fast ability requires either active investigator \
-                         during Investigation, or an open window whose fast_actors permits \
-                         this investigator"
-                    .into(),
-            };
-        }
-    }
-
-    // Re-borrow inv after state borrows above.
-    let inv = state.investigators.get(&investigator).expect("checked");
-
-    // Action-economy check.
-    if inv.actions_remaining < action_cost {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ActivateAbility: needs {action_cost} action(s); investigator has {}",
-                inv.actions_remaining,
-            )
-            .into(),
-        };
-    }
-
-    // Validate every payment cost is payable. Done as a pure read
-    // before any mutation so an all-or-nothing reject leaves state
-    // untouched.
-    for cost in &costs {
-        if let Err(reason) = check_cost_payable(cost, inv, source_exhausted) {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            };
-        }
-    }
 
     // Mutate.
     pay_activation_costs(
@@ -3653,6 +4146,8 @@ mod spawn_enemy_tests {
             position: 1,
             is_fast: false,
             spawn,
+            surge: false,
+            peril: false,
         }
     }
 
@@ -3906,6 +4401,765 @@ mod spawn_enemy_tests {
             state.enemies.len(),
             2,
             "two spawns should produce two distinct enemies"
+        );
+    }
+}
+
+#[cfg(test)]
+mod check_play_card_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn check_play_card_returns_err_for_unknown_hand_index() {
+        let state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let err =
+            check_play_card(&state, InvestigatorId(1), 0).expect_err("empty hand should reject");
+        assert!(
+            err.contains("hand_index"),
+            "error should mention hand_index, got: {err}"
+        );
+    }
+
+    #[test]
+    fn check_play_card_returns_err_when_investigator_missing() {
+        let state = TestGame::default().build();
+        let err = check_play_card(&state, InvestigatorId(99), 0)
+            .expect_err("missing investigator should reject");
+        assert!(
+            err.contains("not in state"),
+            "error should say not in state, got: {err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod check_activate_ability_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn check_activate_ability_returns_err_for_missing_instance() {
+        let state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let err = check_activate_ability(&state, InvestigatorId(1), CardInstanceId(999), 0)
+            .expect_err("missing instance should reject");
+        assert!(
+            err.contains("no in-play instance"),
+            "error should say no in-play instance, got: {err}"
+        );
+    }
+
+    #[test]
+    fn check_activate_ability_returns_err_when_investigator_missing() {
+        let state = TestGame::default().build();
+        let err = check_activate_ability(&state, InvestigatorId(99), CardInstanceId(1), 0)
+            .expect_err("missing investigator should reject");
+        assert!(
+            err.contains("not in state"),
+            "error should say not in state, got: {err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod any_fast_play_eligible_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn returns_false_when_no_investigators() {
+        let state = TestGame::default().build();
+        assert!(!any_fast_play_eligible(&state));
+    }
+
+    #[test]
+    fn returns_false_when_hands_and_in_play_empty() {
+        let state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        assert!(!any_fast_play_eligible(&state));
+    }
+}
+
+#[cfg(test)]
+mod open_fast_window_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::state::{EnemyId, WindowKind};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn open_fast_window_with_no_eligibility_emits_open_then_close_inline() {
+        // No reactions, no Fast-eligible cards → auto-skip: window
+        // opens and closes without ever landing on state.open_windows.
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        open_fast_window(&mut state, &mut events, WindowKind::MythosAfterDraws);
+
+        assert!(
+            state.open_windows.is_empty(),
+            "auto-skip must not leave the window on the stack"
+        );
+        assert!(
+            matches!(
+                events.first(),
+                Some(Event::WindowOpened {
+                    kind: WindowKind::MythosAfterDraws
+                })
+            ),
+            "first event must be WindowOpened; got {:?}",
+            events.first()
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::MythosAfterDraws
+                }
+            )),
+            "must emit WindowClosed for MythosAfterDraws; events = {events:?}"
+        );
+    }
+
+    #[test]
+    fn run_window_continuation_for_no_continuation_kind_does_nothing() {
+        // AfterEnemyDefeated has no continuation. Calling it must be a
+        // no-op (no events, no state change).
+        let mut state = TestGame::default().build();
+        let mut events = Vec::new();
+        run_window_continuation(
+            &mut state,
+            &mut events,
+            WindowKind::AfterEnemyDefeated {
+                enemy: EnemyId(1),
+                by: None,
+            },
+        );
+        assert!(
+            events.is_empty(),
+            "AfterEnemyDefeated continuation must be a no-op; events = {events:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod investigation_phase_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::state::{InvestigatorId, Phase, Status};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
+        // Two investigators; investigation_phase should emit
+        // PhaseStarted(Investigation) and then rotate to the first
+        // investigator in turn_order (Rules Reference p.24 step 2.1 +
+        // step 2.2 lead-first convention).
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        investigation_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.active_investigator,
+            Some(InvestigatorId(1)),
+            "investigation_phase must rotate to the lead (first in turn_order)"
+        );
+        // PhaseStarted(Investigation) must appear before ActionsRemainingChanged
+        // (which rotate_to_active emits).
+        let phase_started_idx = events
+            .iter()
+            .position(|e| {
+                matches!(
+                    e,
+                    Event::PhaseStarted {
+                        phase: Phase::Investigation
+                    }
+                )
+            })
+            .expect("PhaseStarted(Investigation) must be emitted");
+        let rotate_idx = events
+            .iter()
+            .position(|e| {
+                matches!(
+                    e,
+                    Event::ActionsRemainingChanged { investigator, .. }
+                        if *investigator == InvestigatorId(1)
+                )
+            })
+            .expect("ActionsRemainingChanged for lead must be emitted after rotate");
+        assert!(
+            phase_started_idx < rotate_idx,
+            "PhaseStarted(Investigation) must precede the ActionsRemainingChanged rotate event"
+        );
+    }
+
+    #[test]
+    fn investigation_phase_with_empty_turn_order_is_noop_rotate() {
+        // Degenerate: no investigators in turn_order. investigation_phase
+        // still emits PhaseStarted(Investigation) but cannot rotate, so
+        // active_investigator stays None and no ActionsRemainingChanged fires.
+        let mut state = TestGame::default().with_phase(Phase::Mythos).build();
+        state.turn_order.clear();
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        investigation_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.active_investigator, None,
+            "empty turn_order must leave active_investigator as None"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "PhaseStarted(Investigation) must still be emitted with empty turn_order"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
+            "no rotate must happen with empty turn_order"
+        );
+    }
+
+    #[test]
+    fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
+        // Investigator 1 (lead) is Killed; investigator 2 is Active.
+        // investigation_phase must skip Id(1) and rotate to Id(2).
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        investigation_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.active_investigator,
+            Some(InvestigatorId(2)),
+            "investigation_phase must skip the Killed lead and rotate to the first Active investigator"
+        );
+    }
+}
+
+/// Per-card 5-step sub-sequence's step 2 (Rules Reference p.24 1.4
+/// step 2): peril keyword check. When `is_peril` is true, the
+/// drawing investigator's conferral and other players' interactions
+/// (playing cards, triggering abilities, committing to skill tests)
+/// are restricted during resolution. **Enforcement not yet wired**
+/// — no machinery exists for cross-investigator commit blocking,
+/// and Phase 4 is single-investigator-focused. The function call
+/// site exists so the rule step is grep-able and the future
+/// peril-enforcement PR plugs in here without changing the driver
+/// shape.
+///
+fn peril_check(
+    _state: &mut GameState,
+    _events: &mut Vec<Event>,
+    _code: &CardCode,
+    _investigator: InvestigatorId,
+    _is_peril: bool,
+) {
+    // TODO(future-peril-PR): if `is_peril`, install a temporary
+    //   restriction on `state` such that other investigators cannot
+    //   (a) play cards, (b) trigger abilities, or (c) commit to the
+    //   drawing investigator's skill tests until this card's
+    //   resolution completes.
+}
+
+/// Handler for [`PlayerAction::DrawEncounterCard`]. Validates phase
+/// + cursor; delegates to [`mythos_draw_for`] on success.
+pub(super) fn draw_encounter_card(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    if state.phase != Phase::Mythos {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "DrawEncounterCard: only valid during Mythos phase, got {:?}",
+                state.phase,
+            )
+            .into(),
+        };
+    }
+    match state.mythos_draw_pending {
+        None => EngineOutcome::Rejected {
+            reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
+        },
+        Some(expected) if expected != investigator => EngineOutcome::Rejected {
+            reason: format!(
+                "DrawEncounterCard: out of order; expected {expected:?}, got {investigator:?}",
+            )
+            .into(),
+        },
+        Some(_) => mythos_draw_for(state, events, investigator),
+    }
+}
+
+/// Resolves one investigator's full Mythos encounter draw — the
+/// per-card 5-step sub-sequence from Rules Reference p.24, with
+/// surge re-draws looping until the chain ends.
+///
+/// Called by [`draw_encounter_card`] with the pending-drawer's id.
+/// Returns Done on success (chain completed, `mythos_draw_pending`
+/// advanced).
+///
+/// # Mid-chain rejection caveat
+///
+/// `mythos_draw_for` follows the same pattern as `play_card` (CLAUDE.md
+/// documents it): if [`resolve_encounter_card`] rejects mid-chain — e.g.
+/// [`spawn_enemy`] rejecting because the drawing investigator has no
+/// location — the card has already been drawn from `encounter_deck` by
+/// [`draw_encounter_top`], and the apply loop's `events.clear()` on
+/// `Rejected` wipes the event stream but does **not** roll back the state
+/// mutation. The card is silently lost from the encounter deck. In Phase 4
+/// scope this can't happen because the synthetic fixture ensures every
+/// investigator has a location at scenario start; revisit if a future
+/// scenario lets investigators reach a location-less state during play.
+fn mythos_draw_for(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    let Some(reg) = crate::card_registry::current() else {
+        return EngineOutcome::Rejected {
+            reason: "DrawEncounterCard: no card registry installed".into(),
+        };
+    };
+
+    let mut chain_count: usize = 0;
+    loop {
+        chain_count += 1;
+        if chain_count > MAX_SURGE_CHAIN {
+            unreachable!(
+                "Mythos draw chain exceeded MAX_SURGE_CHAIN ({}) for \
+                 investigator {:?}. Indicates either an infinite reshuffle \
+                 loop (Rules Reference p.18: treachery discard precedes surge \
+                 re-draw, so a surging treachery in a too-small deck cycles \
+                 via the p.10 reshuffle path) or a malformed scenario encounter \
+                 deck. Real scenarios don't surge >{} cards in one chain.",
+                MAX_SURGE_CHAIN, investigator, MAX_SURGE_CHAIN,
+            );
+        }
+
+        // Step 1: Draw the card from the encounter deck.
+        let Some(code) = draw_encounter_top(state, events) else {
+            if chain_count == 1 {
+                return EngineOutcome::Rejected {
+                    reason: "DrawEncounterCard: encounter deck and discard both empty".into(),
+                };
+            }
+            unreachable!(
+                "Mythos draw chain hit empty encounter deck AND empty discard for \
+                 investigator {:?} at chain position {}. Two independent mechanisms \
+                 can reach this: (a) a small encounter deck of only surging \
+                 treacheries can loop infinitely via the Rules Reference p.18/p.10 \
+                 cycle (treachery discard precedes surge re-draw, so the \
+                 just-discarded card gets reshuffled and re-drawn) — caught earlier \
+                 by MAX_SURGE_CHAIN; (b) a small encounter deck of only surging \
+                 enemies exhausts the encounter universe within one chain (enemies \
+                 spawn to play, not discard, so the p.10 reshuffle has nothing to \
+                 pull). Both are scenario-data malformation, not legitimate play.",
+                investigator, chain_count,
+            );
+        };
+
+        let Some(metadata) = (reg.metadata_for)(&code) else {
+            return EngineOutcome::Rejected {
+                reason: format!("DrawEncounterCard: unknown card code: {code:?}").into(),
+            };
+        };
+
+        // Step 2: Check for the peril keyword on the drawn card.
+        peril_check(state, events, &code, investigator, metadata.peril);
+
+        // Step 3 + 4: Resolve revelation, then enemy-spawn if applicable.
+        let outcome = resolve_encounter_card(state, events, investigator, code.clone(), metadata);
+        if !matches!(outcome, EngineOutcome::Done) {
+            return outcome;
+        }
+
+        // Step 5: If the drawn card has the surge keyword, loop.
+        if !metadata.surge {
+            break;
+        }
+    }
+
+    // Chain complete — advance the cursor.
+    advance_mythos_draw_pending(state, events);
+    EngineOutcome::Done
+}
+
+/// Advance `state.mythos_draw_pending` after a completed chain. If
+/// a next investigator exists in turn order, set to that id.
+/// Otherwise set to None and open the post-1.4 window.
+fn advance_mythos_draw_pending(state: &mut GameState, events: &mut Vec<Event>) {
+    let current = state
+        .mythos_draw_pending
+        .expect("advance_mythos_draw_pending called only after a successful chain");
+    // Per Rules Reference p.10 (Elimination), eliminated investigators
+    // do not draw encounter cards. Skip any non-Active entries after
+    // the current position rather than blindly taking turn_order[idx+1].
+    let next = state
+        .turn_order
+        .iter()
+        .position(|id| *id == current)
+        .and_then(|idx| {
+            state.turn_order.iter().skip(idx + 1).copied().find(|id| {
+                state
+                    .investigators
+                    .get(id)
+                    .is_some_and(|inv| inv.status == Status::Active)
+            })
+        });
+
+    state.mythos_draw_pending = next;
+    if next.is_none() {
+        open_fast_window(state, events, WindowKind::MythosAfterDraws);
+    }
+}
+
+#[cfg(test)]
+mod mythos_draw_for_tests {
+    use super::*;
+    use crate::state::CardCode;
+    use crate::test_support::{test_investigator, TestGame};
+
+    /// Exercises the early-reject guard for the registry / unknown-card
+    /// checks. Depending on which tests have run in this process:
+    ///
+    /// - `"no card registry installed"` — if no registry has been
+    ///   installed yet in this process.
+    /// - `"unknown card code: ..."` — if another test has installed a
+    ///   registry that doesn't know the synthetic code `"__no_such_card"`.
+    ///
+    /// In both cases the invariant is identical: state is not further
+    /// mutated, the card remains in the encounter deck (the draw was
+    /// either blocked before or after the draw). The deck-length
+    /// assertion allows for the draw-then-reject case (deck shrinks by
+    /// at most one) matching the `encounter_card_revealed_tests` pattern.
+    #[test]
+    fn rejects_when_registry_not_installed_or_unknown_code() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        // Seed the encounter deck with an unknown code so we prove the
+        // reject fires at the registry or unknown-code check, not at the
+        // empty-deck check.
+        state
+            .encounter_deck
+            .push_back(CardCode("__no_such_card".into()));
+        let pre_deck_len = state.encounter_deck.len();
+        let mut events = Vec::new();
+        let outcome = mythos_draw_for(&mut state, &mut events, InvestigatorId(1));
+        match outcome {
+            EngineOutcome::Rejected { reason } => {
+                assert!(
+                    reason.contains("no card registry installed")
+                        || reason.contains("unknown card code"),
+                    "unexpected reject reason: {reason:?}",
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        // Deck must not grow; may shrink by 1 if draw happened before
+        // the unknown-code reject (documented exception matching the
+        // encounter_card_revealed validate-first caveat).
+        assert!(
+            state.encounter_deck.len() <= pre_deck_len,
+            "deck should not grow; expected <= {pre_deck_len}, got {}",
+            state.encounter_deck.len(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod draw_encounter_card_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn rejects_outside_mythos_phase() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let mut events = Vec::new();
+        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(1));
+        assert!(matches!(
+            outcome,
+            EngineOutcome::Rejected { reason } if reason.contains("only valid during Mythos")
+        ));
+    }
+
+    #[test]
+    fn rejects_when_no_draw_pending() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(1));
+        assert!(matches!(
+            outcome,
+            EngineOutcome::Rejected { reason } if reason.contains("no draw pending")
+        ));
+    }
+
+    #[test]
+    fn rejects_when_out_of_order() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let mut events = Vec::new();
+        // Inv2 attempts to draw when inv1 is expected.
+        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(2));
+        assert!(matches!(
+            outcome,
+            EngineOutcome::Rejected { reason } if reason.contains("out of order")
+        ));
+    }
+}
+
+#[cfg(test)]
+mod mythos_phase_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn mythos_phase_emits_phase_started_and_seeds_draw_pending() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Mythos
+                }
+            )),
+            "must emit PhaseStarted(Mythos); events = {events:?}"
+        );
+    }
+
+    #[test]
+    fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
+        let mut state = TestGame::default().with_phase(Phase::Mythos).build();
+        state.turn_order.clear();
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        // No drawers → open_fast_window runs for MythosAfterDraws,
+        // which auto-skips (no Fast eligibility), runs continuation
+        // (mythos_phase_end), which steps into Investigation.
+        assert_eq!(state.mythos_draw_pending, None);
+        assert_eq!(state.phase, Phase::Investigation);
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::MythosAfterDraws
+                }
+            )),
+            "must emit WindowOpened(MythosAfterDraws); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::MythosAfterDraws
+                }
+            )),
+            "must emit WindowClosed(MythosAfterDraws); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Mythos
+                }
+            )),
+            "must emit PhaseEnded(Mythos); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "must emit PhaseStarted(Investigation); events = {events:?}"
+        );
+    }
+
+    #[test]
+    fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        let mut events = Vec::new();
+
+        mythos_phase_end(&mut state, &mut events);
+
+        assert_eq!(state.phase, Phase::Investigation);
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Mythos
+                }
+            )),
+            "must emit PhaseEnded(Mythos); events = {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "must emit PhaseStarted(Investigation); events = {events:?}"
+        );
+    }
+
+    /// Site 1 fix (Rules Reference p.10): when the lead investigator in
+    /// `turn_order` is eliminated, `mythos_phase` must seed
+    /// `mythos_draw_pending` with the first Active investigator rather
+    /// than blindly taking `turn_order.first()`.
+    #[test]
+    fn mythos_phase_skips_eliminated_lead_when_seeding_cursor() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        assert_eq!(
+            state.mythos_draw_pending,
+            Some(InvestigatorId(2)),
+            "cursor must point to the first Active investigator, not the Killed lead"
+        );
+    }
+
+    /// All investigators in `turn_order` are eliminated. `mythos_phase`
+    /// must treat this the same as an empty `turn_order`: seed to None
+    /// and open `MythosAfterDraws` inline, which auto-skips and drives
+    /// `mythos_phase_end`, transitioning to Investigation.
+    ///
+    /// This is the non-empty-`turn_order` analogue of
+    /// `mythos_phase_with_empty_turn_order_opens_after_draws_window_inline`.
+    #[test]
+    fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+
+        mythos_phase(&mut state, &mut events);
+
+        assert_eq!(state.mythos_draw_pending, None);
+        assert_eq!(
+            state.phase,
+            Phase::Investigation,
+            "no Active drawers → MythosAfterDraws fires inline → Investigation"
+        );
+    }
+
+    /// Site 2 fix (Rules Reference p.10): when advancing the cursor
+    /// after a completed draw, eliminated investigators in the middle of
+    /// `turn_order` must be skipped. Here inv2 is Killed; the cursor must
+    /// advance from inv1 to inv3.
+    #[test]
+    fn advance_mythos_draw_pending_skips_eliminated_middle_investigator() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_investigator(test_investigator(3))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .status = Status::Killed;
+        // Simulate: inv1 has just completed their draw chain.
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let mut events = Vec::new();
+
+        advance_mythos_draw_pending(&mut state, &mut events);
+
+        assert_eq!(
+            state.mythos_draw_pending,
+            Some(InvestigatorId(3)),
+            "cursor must skip the Killed inv2 and land on Active inv3"
         );
     }
 }

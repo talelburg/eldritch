@@ -111,6 +111,8 @@ mod tests {
             position: 1,
             is_fast: false,
             spawn: None,
+            surge: false,
+            peril: false,
         }
     }
 

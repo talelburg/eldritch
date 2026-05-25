@@ -140,6 +140,14 @@ pub struct GameState {
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.
     pub scenario_id: Option<crate::scenario::ScenarioId>,
+    /// The investigator whose Mythos-phase encounter draw is pending,
+    /// during Rules-Reference p.24 step 1.4. `Some(id)` between
+    /// `mythos_phase` entry and the last drawer's completion; `None`
+    /// otherwise. Advanced after each `PlayerAction::DrawEncounterCard`
+    /// completes its chain (including any surge re-draws). `None`
+    /// once all investigators have drawn — at which point the
+    /// `MythosAfterDraws` window opens.
+    pub mythos_draw_pending: Option<InvestigatorId>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -471,6 +479,13 @@ pub enum WindowKind {
         /// The phase we're entering.
         to: Phase,
     },
+    /// The player window between Rules Reference p.24 step 1.4
+    /// (each investigator draws an encounter card) and step 1.5
+    /// (Mythos phase ends). Carries no payload — there is no
+    /// `EventPattern` today that matches against this specifically;
+    /// the variant exists so the rule's printed timing point is
+    /// addressable when a future card binds to it.
+    MythosAfterDraws,
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
@@ -569,6 +584,12 @@ impl GameState {
     /// the top of the stack — a `BetweenPhases` window with empty
     /// `pending_triggers` can sit above an active reaction window,
     /// which would corrupt the stack on naive `pop()`.
+    ///
+    /// Note: the `Skip` path in `resolve_input` also handles **pure-Fast
+    /// windows** (empty `pending_triggers`, pushed by `open_fast_window`)
+    /// by closing the literal top-of-stack index directly rather than
+    /// going through this helper. That path is safe because a pure-Fast
+    /// window, by construction, has no forced triggers to guard against.
     #[must_use]
     pub fn top_reaction_window_index(&self) -> Option<usize> {
         self.open_windows
@@ -602,6 +623,14 @@ mod open_window_tests {
             from: Phase::Mythos,
             to: Phase::Investigation,
         };
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn mythos_after_draws_window_kind_serde_roundtrip() {
+        let kind = WindowKind::MythosAfterDraws;
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);
@@ -672,6 +701,17 @@ mod next_enemy_id_tests {
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.next_enemy_id, 42);
+    }
+}
+
+#[cfg(test)]
+mod mythos_draw_pending_tests {
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn game_state_default_has_no_mythos_draw_pending() {
+        let state = TestGame::new().build();
+        assert_eq!(state.mythos_draw_pending, None);
     }
 }
 

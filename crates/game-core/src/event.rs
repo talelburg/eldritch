@@ -442,6 +442,25 @@ pub enum FailureReason {
 }
 
 #[cfg(test)]
+mod window_opened_event_tests {
+    use super::*;
+    use crate::state::{Phase, WindowKind};
+
+    #[test]
+    fn window_opened_serde_roundtrip() {
+        let ev = Event::WindowOpened {
+            kind: WindowKind::BetweenPhases {
+                from: Phase::Mythos,
+                to: Phase::Investigation,
+            },
+        };
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, ev);
+    }
+}
+
+#[cfg(test)]
 mod enemy_spawned_event_tests {
     use super::*;
     use crate::state::{CardCode, EnemyId, InvestigatorId, LocationId};

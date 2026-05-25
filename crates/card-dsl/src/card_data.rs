@@ -184,6 +184,23 @@ pub struct CardMetadata {
     /// pipeline's default for all generated entries until Phase-7's
     /// structured-spawn-text parsing lands.
     pub spawn: Option<Spawn>,
+    /// Surge keyword (Rules Reference p.19). When `true`, after the
+    /// card is drawn and resolved during a Mythos encounter draw, the
+    /// drawing investigator immediately draws another encounter card.
+    /// The pipeline emits `false` for every card until the first
+    /// Phase-7+ scenario with a real surge-bearing card forces the
+    /// pipeline-update work; the synthetic fixture sets `true`
+    /// on its surge-bearing treachery to exercise the engine path.
+    pub surge: bool,
+    /// Peril keyword (Rules Reference p.18, referenced in p.24 1.4
+    /// step 2). When `true`, the drawing investigator cannot confer
+    /// and other players cannot play cards / trigger abilities /
+    /// commit to that investigator's skill tests during resolution.
+    /// Enforcement is not yet wired — no machinery exists for
+    /// cross-investigator commit blocking. The field exists so cards
+    /// can carry the keyword and the engine's step-2 call site can
+    /// become load-bearing when the enforcement PR lands.
+    pub peril: bool,
 }
 
 #[cfg(test)]
@@ -213,11 +230,46 @@ mod is_fast_tests {
             position: 30,
             is_fast: true,
             spawn: None,
+            surge: false,
+            peril: false,
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
         assert!(back.is_fast);
+    }
+
+    #[test]
+    fn card_metadata_serde_roundtrip_preserves_surge_and_peril() {
+        let original = CardMetadata {
+            code: "_synth_surge_treachery".into(),
+            name: "Synth Surge Treachery".into(),
+            class: Class::Mythos,
+            card_type: CardType::Treachery,
+            cost: None,
+            xp: None,
+            text: None,
+            flavor: None,
+            illustrator: None,
+            traits: Vec::new(),
+            slots: Vec::new(),
+            skill_icons: SkillIcons::default(),
+            health: None,
+            sanity: None,
+            deck_limit: 1,
+            quantity: 1,
+            pack_code: "_synth".into(),
+            position: 1,
+            is_fast: false,
+            spawn: None,
+            surge: true,
+            peril: false,
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+        assert!(back.surge);
+        assert!(!back.peril);
     }
 }
 
@@ -260,6 +312,8 @@ mod spawn_tests {
             spawn: Some(Spawn {
                 location: SpawnLocation::Specific("_synth_loc".into()),
             }),
+            surge: false,
+            peril: false,
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
@@ -289,6 +343,8 @@ mod spawn_tests {
             position: 0,
             is_fast: false,
             spawn: None,
+            surge: false,
+            peril: false,
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
