@@ -5,6 +5,8 @@
 //! scenario's content. One investigator, one location, a
 //! one-line resolution predicate.
 
+use std::collections::VecDeque;
+
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
 use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
@@ -47,6 +49,17 @@ pub fn setup() -> GameState {
         .encounter_deck
         .push_back(CardCode(SYNTH_TREACHERY_CODE.into()));
     state
+}
+
+/// Seed the encounter deck of `state` with the given card codes,
+/// in draw order (top of deck = index 0). Replaces whatever was
+/// already in the deck.
+///
+/// Used by Phase-4 integration tests that want to drive the Mythos
+/// phase through a deterministic card sequence without pushing codes
+/// one-by-one onto the deck by hand.
+pub fn with_encounter_deck(state: &mut GameState, codes: Vec<CardCode>) {
+    state.encounter_deck = VecDeque::from(codes);
 }
 
 /// Resolves with [`Resolution::Won`] once the engine has stepped
