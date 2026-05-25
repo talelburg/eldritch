@@ -3534,25 +3534,22 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
     match kind {
         WindowKind::MythosAfterDraws => {
             // Phase-transitioning continuation: cannot run while a skill
-            // test is mid-resolution (would resume the test in the wrong
+            // test is in flight (would strand the test in the wrong
             // phase). Phase 4 has no Mythos-phase skill-test sources, so
             // this branch is structurally unreachable today. A future PR
             // adding a Mythos-phase Revelation that initiates a skill
             // test must redesign the close-window + phase-transition
             // ordering before this assertion fires.
             if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
-                if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
-                    unreachable!(
-                        "MythosAfterDraws window closed while a skill test is \
-                         mid-resolution (continuation={:?}). Phase transition would \
-                         resume the test in the wrong phase. Phase 4 has no \
-                         Mythos-phase skill test sources; if a future PR adds one \
-                         (e.g. a treachery whose Revelation initiates a skill test), \
-                         the window-close + phase-transition ordering needs redesign \
-                         to avoid this.",
-                        in_flight.continuation,
-                    );
-                }
+                unreachable!(
+                    "MythosAfterDraws window closed while a skill test is in flight \
+                     (continuation={:?}). Phase transition would strand the skill test \
+                     in the wrong phase. Phase 4 has no Mythos-phase skill test sources; \
+                     if a future PR adds one (e.g. a treachery whose Revelation initiates \
+                     a skill test), the window-close + phase-transition ordering needs \
+                     redesign before this assertion can be relaxed.",
+                    in_flight.continuation,
+                );
             }
             mythos_phase_end(state, events);
         }
