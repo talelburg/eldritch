@@ -45,10 +45,6 @@ const INITIAL_HAND_SIZE: u8 = 5;
 /// loop via the Rules Reference p.10 reshuffle). `unreachable!`-class
 /// — never reached in legitimate play.
 ///
-/// `#[allow(dead_code)]`: read by `mythos_draw_for` (lands in T11);
-/// the wiring through `PlayerAction::DrawEncounterCard` completes
-/// in T12, after which the lint comes off.
-#[allow(dead_code)]
 const MAX_SURGE_CHAIN: usize = 64;
 
 /// Apply a [`PlayerAction`] to the state, pushing events.
@@ -149,6 +145,14 @@ pub fn apply_player_action(
             instance_id,
             ability_index,
         } => activate_ability(state, events, *investigator, *instance_id, *ability_index),
+        PlayerAction::DrawEncounterCard => {
+            // DrawEncounterCard carries no investigator payload — the
+            // acting investigator IS the pending cursor. Pass the cursor
+            // value (or a sentinel that will be rejected) to the handler,
+            // which validates phase + pending state before delegating.
+            let acting = state.mythos_draw_pending.unwrap_or(InvestigatorId(0));
+            draw_encounter_card(state, events, acting)
+        }
         PlayerAction::ResolveInput { response } => resolve_input(state, events, response),
     };
 
@@ -4532,9 +4536,6 @@ mod investigation_phase_tests {
 /// peril-enforcement PR plugs in here without changing the driver
 /// shape.
 ///
-/// `#[allow(dead_code)]`: called by `mythos_draw_for`; the full
-/// call chain becomes reachable in T12 via `DrawEncounterCard`.
-#[allow(dead_code)]
 fn peril_check(
     _state: &mut GameState,
     _events: &mut Vec<Event>,
@@ -4549,17 +4550,43 @@ fn peril_check(
     //   resolution completes.
 }
 
+/// Handler for [`PlayerAction::DrawEncounterCard`]. Validates phase
+/// + cursor; delegates to [`mythos_draw_for`] on success.
+pub(super) fn draw_encounter_card(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    if state.phase != Phase::Mythos {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "DrawEncounterCard: only valid during Mythos phase, got {:?}",
+                state.phase,
+            )
+            .into(),
+        };
+    }
+    match state.mythos_draw_pending {
+        None => EngineOutcome::Rejected {
+            reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
+        },
+        Some(expected) if expected != investigator => EngineOutcome::Rejected {
+            reason: format!(
+                "DrawEncounterCard: out of order; expected {expected:?}, got {investigator:?}",
+            )
+            .into(),
+        },
+        Some(_) => mythos_draw_for(state, events, investigator),
+    }
+}
+
 /// Resolves one investigator's full Mythos encounter draw — the
 /// per-card 5-step sub-sequence from Rules Reference p.24, with
 /// surge re-draws looping until the chain ends.
 ///
-/// Called by the `PlayerAction::DrawEncounterCard` handler (lands
-/// in T12) with the pending-drawer's id. Returns Done on success
-/// (chain completed, `mythos_draw_pending` advanced).
-///
-/// `#[allow(dead_code)]`: wired to `PlayerAction::DrawEncounterCard`
-/// in T12; allow comes off then.
-#[allow(dead_code)]
+/// Called by [`draw_encounter_card`] with the pending-drawer's id.
+/// Returns Done on success (chain completed, `mythos_draw_pending`
+/// advanced).
 fn mythos_draw_for(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -4632,10 +4659,6 @@ fn mythos_draw_for(
 /// Advance `state.mythos_draw_pending` after a completed chain. If
 /// a next investigator exists in turn order, set to that id.
 /// Otherwise set to None and open the post-1.4 window.
-///
-/// `#[allow(dead_code)]`: called by `mythos_draw_for`; reachable
-/// once T12 wires `DrawEncounterCard`.
-#[allow(dead_code)]
 fn advance_mythos_draw_pending(state: &mut GameState, events: &mut Vec<Event>) {
     let current = state
         .mythos_draw_pending
@@ -4706,6 +4729,59 @@ mod mythos_draw_for_tests {
             "deck should not grow; expected <= {pre_deck_len}, got {}",
             state.encounter_deck.len(),
         );
+    }
+}
+
+#[cfg(test)]
+mod draw_encounter_card_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn rejects_outside_mythos_phase() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let mut events = Vec::new();
+        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(1));
+        assert!(matches!(
+            outcome,
+            EngineOutcome::Rejected { reason } if reason.contains("only valid during Mythos")
+        ));
+    }
+
+    #[test]
+    fn rejects_when_no_draw_pending() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.mythos_draw_pending = None;
+        let mut events = Vec::new();
+        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(1));
+        assert!(matches!(
+            outcome,
+            EngineOutcome::Rejected { reason } if reason.contains("no draw pending")
+        ));
+    }
+
+    #[test]
+    fn rejects_when_out_of_order() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let mut events = Vec::new();
+        // Inv2 attempts to draw when inv1 is expected.
+        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(2));
+        assert!(matches!(
+            outcome,
+            EngineOutcome::Rejected { reason } if reason.contains("out of order")
+        ));
     }
 }
 

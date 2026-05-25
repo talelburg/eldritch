@@ -855,12 +855,13 @@ mod tests {
     }
 
     // T09 changed end_turn to pause at Mythos when mythos_draw_pending is
-    // Some(_). This test assumed end_turn auto-cycles all the way back to
-    // Investigation in one apply; it now requires
-    // PlayerAction::DrawEncounterCard (T12) to drive the Mythos draws and
-    // complete the round. Re-enable in T12 once DrawEncounterCard lands.
+    // Some(_). Driving DrawEncounterCard (T12) through the Mythos draw
+    // requires a card registry installed, which game-core unit tests cannot
+    // do (process-global OnceLock; installation in one test contaminates
+    // others). The round-cycle scenario with a real registry lives in
+    // T14's integration tests (crates/scenarios/tests/mythos_phase.rs).
     #[test]
-    #[ignore = "paused at Mythos after T09; re-enable in T12 once DrawEncounterCard lands"]
+    #[ignore = "needs card registry; covered by T14 integration tests in crates/scenarios/tests/mythos_phase.rs"]
     fn full_round_advances_through_all_phases_with_two_investigators() {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
@@ -959,11 +960,13 @@ mod tests {
     }
 
     // T09 changed end_turn to pause at Mythos when mythos_draw_pending is
-    // Some(_). This test assumed end_turn auto-cycles all the way back to
-    // Investigation; it now requires PlayerAction::DrawEncounterCard (T12)
-    // to complete the round. Re-enable in T12 once DrawEncounterCard lands.
+    // Some(_). Driving DrawEncounterCard (T12) through the Mythos draw
+    // requires a card registry installed, which game-core unit tests cannot
+    // do (process-global OnceLock; installation in one test contaminates
+    // others). The round-cycle scenario with a real registry lives in
+    // T14's integration tests (crates/scenarios/tests/mythos_phase.rs).
     #[test]
-    #[ignore = "paused at Mythos after T09; re-enable in T12 once DrawEncounterCard lands"]
+    #[ignore = "needs card registry; covered by T14 integration tests in crates/scenarios/tests/mythos_phase.rs"]
     fn solo_investigator_round_advances_on_single_end_turn() {
         // Degenerate edge: with only one investigator in turn_order,
         // their EndTurn is also the *last* EndTurn, so it must trigger
