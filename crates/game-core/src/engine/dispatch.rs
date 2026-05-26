@@ -3580,11 +3580,11 @@ fn upkeep_phase(state: &mut GameState, events: &mut Vec<Event>) {
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.5 land here as named
-/// call sites; 4.2/4.3/4.4 are wired in by later tasks. Then hands to
+/// call sites; 4.2/4.4 are wired in by later tasks. Then hands to
 /// [`upkeep_phase_end`] for 4.6 + transition.
 fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.2 reset_actions      — wired in a later task (action-refresh relocation)
-    // 4.3 ready_exhausted_cards — wired in a later task
+    ready_exhausted_cards(state, events); // 4.3
     // 4.4 upkeep_draw_and_resource — wired in a later task
     check_hand_size(state, events); // 4.5 (TODO #111)
     upkeep_phase_end(state, events); // 4.6 + transition
@@ -3597,6 +3597,38 @@ fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.6 Upkeep phase ends. Round ends.
     events.push(Event::PhaseEnded { phase: Phase::Upkeep });
     step_phase(state, events); // Upkeep → Mythos; calls mythos_phase
+}
+
+/// 4.3 Ready exhausted cards. Rules Reference p.25: "Simultaneously
+/// ready each exhausted card." "Each exhausted card" is every exhausted
+/// card in play regardless of controller — investigator in-play cards
+/// AND enemies. Simultaneous, so iteration order is immaterial; we
+/// iterate deterministically (investigator id then in-play order; then
+/// enemy id) for reproducible event streams. Already-ready cards emit
+/// nothing.
+fn ready_exhausted_cards(state: &mut GameState, events: &mut Vec<Event>) {
+    let inv_ids: Vec<InvestigatorId> = state.investigators.keys().copied().collect();
+    for id in inv_ids {
+        let inv = state.investigators.get_mut(&id).expect("id from keys");
+        for card in &mut inv.cards_in_play {
+            if card.exhausted {
+                card.exhausted = false;
+                events.push(Event::CardReadied {
+                    investigator: id,
+                    instance_id: card.instance_id,
+                    code: card.code.clone(),
+                });
+            }
+        }
+    }
+    let enemy_ids: Vec<EnemyId> = state.enemies.keys().copied().collect();
+    for eid in enemy_ids {
+        let enemy = state.enemies.get_mut(&eid).expect("id from keys");
+        if enemy.exhausted {
+            enemy.exhausted = false;
+            events.push(Event::EnemyReadied { enemy: eid });
+        }
+    }
 }
 
 /// 4.5 Each investigator checks hand size.
@@ -5331,8 +5363,8 @@ mod draw_one_with_deckout_tests {
 mod upkeep_phase_tests {
     use super::*;
     use crate::event::Event;
-    use crate::state::{InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::state::{CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Phase};
+    use crate::test_support::{test_enemy, test_investigator, TestGame};
 
     #[test]
     fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
@@ -5385,5 +5417,47 @@ mod upkeep_phase_tests {
             state.open_windows.is_empty(),
             "UpkeepBegins must not persist on the stack"
         );
+    }
+
+    #[test]
+    fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
+        let inv_id = InvestigatorId(1);
+        let enemy_id = EnemyId(1);
+        let mut inv = test_investigator(1);
+        let mut card = CardInPlay::enter_play(CardCode("01000".into()), CardInstanceId(1));
+        card.exhausted = true;
+        inv.cards_in_play = vec![card];
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.exhausted = true;
+        let mut state = TestGame::default()
+            .with_investigator(inv)
+            .with_enemy(enemy)
+            .build();
+        let mut events = Vec::new();
+
+        ready_exhausted_cards(&mut state, &mut events);
+
+        assert!(!state.investigators[&inv_id].cards_in_play[0].exhausted, "card readied");
+        assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
+        assert!(events.iter().any(|e| matches!(
+            e, Event::CardReadied { investigator, instance_id, .. }
+            if *investigator == inv_id && *instance_id == CardInstanceId(1))));
+        assert!(events.iter().any(|e| matches!(
+            e, Event::EnemyReadied { enemy } if *enemy == enemy_id)));
+    }
+
+    #[test]
+    fn ready_exhausted_cards_leaves_ready_cards_untouched() {
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.exhausted = false; // already ready
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        let mut events = Vec::new();
+
+        ready_exhausted_cards(&mut state, &mut events);
+
+        assert!(events.is_empty(), "no readying events for already-ready cards");
     }
 }
