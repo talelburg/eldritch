@@ -679,6 +679,33 @@ pub(super) fn draw_cards(
     });
 }
 
+/// Grant `amount` resources to `investigator`: saturating-add to the
+/// wallet and emit [`Event::ResourcesGained`]. The resource-grant core
+/// shared by the DSL `gain_resources` (called after target resolution)
+/// and Upkeep step 4.4. No-op (no event) when `amount == 0`, matching
+/// the existing `gain_resources` zero-amount behavior.
+///
+/// Caller guarantees `investigator` exists in `state.investigators`.
+pub(super) fn grant_resources(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    amount: u8,
+) {
+    if amount == 0 {
+        return;
+    }
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .expect("grant_resources: caller guarantees investigator exists");
+    inv.resources = inv.resources.saturating_add(amount);
+    events.push(Event::ResourcesGained {
+        investigator,
+        amount,
+    });
+}
+
 fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     // The GameState constructor places the world in its initial shape;
     // this action is the explicit "session has begun" marker that lands
@@ -5161,5 +5188,44 @@ mod mythos_phase_tests {
             Some(InvestigatorId(3)),
             "cursor must skip the Killed inv2 and land on Active inv3"
         );
+    }
+}
+
+#[cfg(test)]
+mod grant_resources_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn grant_resources_adds_to_wallet_and_emits() {
+        let id = InvestigatorId(1);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        let before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+
+        grant_resources(&mut state, &mut events, id, 2);
+
+        assert_eq!(state.investigators[&id].resources, before + 2);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::ResourcesGained { investigator, amount: 2 } if *investigator == id
+        )));
+    }
+
+    #[test]
+    fn grant_resources_zero_is_silent_noop() {
+        let id = InvestigatorId(1);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        let before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+
+        grant_resources(&mut state, &mut events, id, 0);
+
+        assert_eq!(state.investigators[&id].resources, before);
+        assert!(events.is_empty());
     }
 }
