@@ -331,6 +331,18 @@ pub enum Event {
         /// The card code (for log readability; redundant with state).
         code: CardCode,
     },
+    /// An investigator's in-play card was readied (flipped from
+    /// exhausted to ready) — e.g. during Upkeep step 4.3. Mirror of
+    /// [`Event::CardExhausted`]. Enemies readying emit
+    /// [`Event::EnemyReadied`] instead.
+    CardReadied {
+        /// The card's controller.
+        investigator: InvestigatorId,
+        /// The readied in-play instance.
+        instance_id: CardInstanceId,
+        /// The card code (for log readability; redundant with state).
+        code: CardCode,
+    },
     /// An encounter card was revealed from the encounter deck. Fires
     /// before any [`Trigger::Revelation`](card_dsl::dsl::Trigger::Revelation)
     /// effects on the card resolve — the card has been drawn off the
