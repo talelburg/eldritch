@@ -1774,7 +1774,8 @@ fn trigger_matches(
         (
             WindowKind::BetweenPhases { .. }
             | WindowKind::AfterEnemyDefeated { .. }
-            | WindowKind::MythosAfterDraws,
+            | WindowKind::MythosAfterDraws
+            | WindowKind::UpkeepBegins,
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned,
@@ -3601,7 +3602,10 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             }
             mythos_phase_end(state, events);
         }
-        WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
+        // TODO(Task 5): wire UpkeepBegins to upkeep_resume
+        WindowKind::AfterEnemyDefeated { .. }
+        | WindowKind::BetweenPhases { .. }
+        | WindowKind::UpkeepBegins => {}
     }
 }
 

@@ -486,6 +486,12 @@ pub enum WindowKind {
     /// the variant exists so the rule's printed timing point is
     /// addressable when a future card binds to it.
     MythosAfterDraws,
+    /// The player window between Rules Reference p.25 step 4.1 (upkeep
+    /// phase begins) and step 4.2 (reset actions). Carries no payload —
+    /// no `EventPattern` matches against it specifically today; the
+    /// variant exists so the rule's printed timing point is addressable
+    /// when a future card binds to it. Mirror of `MythosAfterDraws`.
+    UpkeepBegins,
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
@@ -631,6 +637,14 @@ mod open_window_tests {
     #[test]
     fn mythos_after_draws_window_kind_serde_roundtrip() {
         let kind = WindowKind::MythosAfterDraws;
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn upkeep_begins_window_kind_serde_roundtrip() {
+        let kind = WindowKind::UpkeepBegins;
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);
