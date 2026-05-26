@@ -2867,6 +2867,44 @@ fn reshuffle_discard_into_deck(
     shuffle_player_deck(state, events, investigator);
 }
 
+/// Draw one card for `investigator`, applying the empty-deck rule:
+/// reshuffle the discard into the deck if the deck is empty, draw,
+/// and take 1 horror on any would-draw-from-empty. Extracted verbatim
+/// from the `Draw` action body so the action and Upkeep step 4.4 share
+/// one code path. The deck-out reading (horror on would-draw-from-empty;
+/// no reshuffle of a zero-card discard per Rules Reference p.9) is
+/// inherited unchanged.
+///
+/// Caller guarantees `investigator` exists in `state.investigators`.
+fn draw_one_with_deckout(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) {
+    let inv = state
+        .investigators
+        .get(&investigator)
+        .expect("draw_one_with_deckout: caller guarantees investigator exists");
+    let deck_empty = inv.deck.is_empty();
+    let discard_empty = inv.discard.is_empty();
+    if deck_empty {
+        if !discard_empty {
+            reshuffle_discard_into_deck(state, events, investigator);
+        }
+        // After the (possibly no-op) reshuffle, attempt the draw.
+        // draw_cards handles a still-empty deck by emitting
+        // CardsDrawn { count: 0 } without moving cards.
+        draw_cards(state, events, investigator, 1);
+        // Horror penalty fires on any "would-draw-from-empty-deck"
+        // (the reshuffle did happen if discard was non-empty; if it
+        // was also empty, the rules don't strictly require horror
+        // but we apply it as the safer reading).
+        take_horror(state, events, investigator, 1);
+    } else {
+        draw_cards(state, events, investigator, 1);
+    }
+}
+
 /// Handler for [`PlayerAction::Draw`].
 ///
 /// Validate-first: Investigation phase, investigator is active and
@@ -2885,6 +2923,8 @@ fn reshuffle_discard_into_deck(
 ///   ("would-draw-from-empty triggers the penalty"), and the case
 ///   is rare enough in practice (only high-cycle decks burn through
 ///   both zones) that the difference is mostly theoretical.
+///
+/// The draw logic itself is delegated to [`draw_one_with_deckout`].
 fn draw(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -2931,26 +2971,7 @@ fn draw(
 
     // Mutate.
     spend_one_action(state, events, investigator);
-
-    let inv = state.investigators.get(&investigator).expect("checked");
-    let deck_empty = inv.deck.is_empty();
-    let discard_empty = inv.discard.is_empty();
-    if deck_empty {
-        if !discard_empty {
-            reshuffle_discard_into_deck(state, events, investigator);
-        }
-        // After the (possibly no-op) reshuffle, attempt the draw.
-        // draw_cards handles a still-empty deck by emitting
-        // CardsDrawn { count: 0 } without moving cards.
-        draw_cards(state, events, investigator, 1);
-        // Horror penalty fires on any "would-draw-from-empty-deck"
-        // (the reshuffle did happen if discard was non-empty; if it
-        // was also empty, the rules don't strictly require horror
-        // but we apply it as the safer reading).
-        take_horror(state, events, investigator, 1);
-    } else {
-        draw_cards(state, events, investigator, 1);
-    }
+    draw_one_with_deckout(state, events, investigator);
     EngineOutcome::Done
 }
 
@@ -5227,5 +5248,29 @@ mod grant_resources_tests {
 
         assert_eq!(state.investigators[&id].resources, before);
         assert!(events.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod draw_one_with_deckout_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.deck.clear();
+        inv.discard = vec![CardCode::new("01000"), CardCode::new("01001")];
+        inv.horror = 0;
+        let hand_before = inv.hand.len();
+        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        draw_one_with_deckout(&mut state, &mut events, id);
+
+        assert_eq!(state.investigators[&id].hand.len(), hand_before + 1, "drew 1");
+        assert_eq!(state.investigators[&id].horror, 1, "deck-out costs 1 horror");
+        assert!(events.iter().any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })));
     }
 }
