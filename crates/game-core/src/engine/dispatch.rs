@@ -797,22 +797,14 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
         rotate_to_active(state, events, next_id);
     } else {
         state.active_investigator = None;
-        step_phase(state, events); // Investigation → Enemy
-        step_phase(state, events); // Enemy → Upkeep
-        step_phase(state, events); // Upkeep → Mythos (round bumps + mythos_phase runs, seeds mythos_draw_pending)
-        if state.mythos_draw_pending.is_some() {
-            // Chain pauses here; the player's DrawEncounterCard
-            // actions advance Mythos. mythos_phase_end (triggered
-            // later via close_reaction_window_at's continuation
-            // dispatch after the post-1.4 window closes) handles
-            // the transition into Investigation.
-            return EngineOutcome::Done;
-        }
-        // Degenerate state (no investigators in turn_order):
-        // mythos_phase opened+closed MythosAfterDraws inline, which
-        // fired mythos_phase_end as the continuation; that emitted
-        // PhaseEnded(Mythos) and stepped into Investigation via
-        // investigation_phase. Nothing left to do.
+        step_phase(state, events); // Investigation → Enemy (empty until #71)
+        step_phase(state, events); // Enemy → Upkeep: upkeep_phase opens the
+                                   // post-4.1 window. Auto-skip cascades
+                                   // 4.2–4.6 → Upkeep→Mythos → mythos_phase
+                                   // (seeds mythos_draw_pending). If a Fast
+                                   // play is eligible the window stays open
+                                   // and the cascade pauses in Upkeep. Either
+                                   // way the wait is signalled on state.
     }
 
     EngineOutcome::Done
@@ -939,9 +931,8 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     let from = state.phase;
     let to = from.next();
 
-    // PhaseEnded: suppressed when the from-phase's *_end helper owns
-    // the emit. Currently only Mythos has an end helper.
-    if from != Phase::Mythos {
+    // PhaseEnded suppressed when the from-phase's *_end helper owns it.
+    if from != Phase::Mythos && from != Phase::Upkeep {
         events.push(Event::PhaseEnded { phase: from });
     }
 
@@ -956,6 +947,7 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     match to {
         Phase::Mythos if from != Phase::Mythos => mythos_phase(state, events),
         Phase::Investigation if from != Phase::Investigation => investigation_phase(state, events),
+        Phase::Upkeep if from != Phase::Upkeep => upkeep_phase(state, events),
         _ => events.push(Event::PhaseStarted { phase: to }),
     }
 }
@@ -3572,6 +3564,50 @@ fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     step_phase(state, events); // Mythos → Investigation; calls investigation_phase
 }
 
+/// Entered by [`step_phase`] on the Enemy→Upkeep transition. Owns the
+/// `PhaseStarted(Upkeep)` emit (step 4.1) and opens the post-4.1 player
+/// window. Steps 4.2 onward run as the window's continuation
+/// ([`upkeep_resume`]). Mirror of [`mythos_phase`], inverted: Mythos's
+/// window sits at the END, so its driver runs content then opens;
+/// Upkeep's sits at the START, so the driver opens immediately and the
+/// content is the continuation.
+fn upkeep_phase(state: &mut GameState, events: &mut Vec<Event>) {
+    // 4.1 Upkeep phase begins.
+    events.push(Event::PhaseStarted { phase: Phase::Upkeep });
+    // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
+    // via run_window_continuation) when nothing is Fast-eligible.
+    open_fast_window(state, events, WindowKind::UpkeepBegins);
+}
+
+/// The post-4.1 window continuation. Steps 4.2–4.5 land here as named
+/// call sites; 4.2/4.3/4.4 are wired in by later tasks. Then hands to
+/// [`upkeep_phase_end`] for 4.6 + transition.
+fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
+    // 4.2 reset_actions      — wired in a later task (action-refresh relocation)
+    // 4.3 ready_exhausted_cards — wired in a later task
+    // 4.4 upkeep_draw_and_resource — wired in a later task
+    check_hand_size(state, events); // 4.5 (TODO #111)
+    upkeep_phase_end(state, events); // 4.6 + transition
+}
+
+/// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
+/// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` suppresses
+/// its `PhaseEnded(Upkeep)` fallback when `from == Upkeep`.
+fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+    // 4.6 Upkeep phase ends. Round ends.
+    events.push(Event::PhaseEnded { phase: Phase::Upkeep });
+    step_phase(state, events); // Upkeep → Mythos; calls mythos_phase
+}
+
+/// 4.5 Each investigator checks hand size.
+fn check_hand_size(_state: &mut GameState, _events: &mut Vec<Event>) {
+    // TODO(#111): in player order, each investigator with more than 8
+    //   cards in hand discards down to 8 (Rules Reference p.25 step 4.5).
+    //   Needs an AwaitingInput producer for the discard choice. The call
+    //   site exists so the rule step is grep-able and #111 plugs in here
+    //   without changing the driver shape.
+}
+
 /// Kind-aware continuation called when a window closes (whether
 /// inline via [`open_fast_window`]'s auto-skip path or via the
 /// [`close_reaction_window_at`] pop path). For
@@ -3602,10 +3638,22 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             }
             mythos_phase_end(state, events);
         }
-        // TODO(Task 5): wire UpkeepBegins to upkeep_resume
-        WindowKind::AfterEnemyDefeated { .. }
-        | WindowKind::BetweenPhases { .. }
-        | WindowKind::UpkeepBegins => {}
+        WindowKind::UpkeepBegins => {
+            // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
+            // cannot run while a skill test is in flight. Phase 4 has no
+            // Upkeep-phase skill-test source, so structurally unreachable.
+            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+                unreachable!(
+                    "UpkeepBegins window closed while a skill test is in flight \
+                     (continuation={:?}). Phase 4 has no Upkeep-phase skill-test \
+                     sources; a future PR adding one needs the window-close + \
+                     phase-transition ordering redesigned before this fires.",
+                    in_flight.continuation,
+                );
+            }
+            upkeep_resume(state, events);
+        }
+        WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
     }
 }
 
@@ -5276,5 +5324,66 @@ mod draw_one_with_deckout_tests {
         assert_eq!(state.investigators[&id].hand.len(), hand_before + 1, "drew 1");
         assert_eq!(state.investigators[&id].horror, 1, "deck-out costs 1 horror");
         assert!(events.iter().any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })));
+    }
+}
+
+#[cfg(test)]
+mod upkeep_phase_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::state::{InvestigatorId, Phase};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
+        // No Fast-eligible cards / no reactions installed → the post-4.1
+        // window auto-skips inline, the continuation runs, and the
+        // cascade lands in Mythos.
+        let id = InvestigatorId(1);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Enemy)
+            .build();
+        state.turn_order = vec![id];
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        step_phase(&mut state, &mut events); // Enemy → Upkeep, cascades to Mythos
+
+        let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
+        let started = pos(&|e| matches!(e, Event::PhaseStarted { phase: Phase::Upkeep }))
+            .expect("PhaseStarted(Upkeep)");
+        let w_open = pos(&|e| {
+            matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::UpkeepBegins
+                }
+            )
+        })
+        .expect("WindowOpened(UpkeepBegins)");
+        let w_close = pos(&|e| {
+            matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::UpkeepBegins
+                }
+            )
+        })
+        .expect("WindowClosed(UpkeepBegins)");
+        let ended =
+            pos(&|e| matches!(e, Event::PhaseEnded { phase: Phase::Upkeep })).expect("PhaseEnded(Upkeep)");
+        let mythos = pos(&|e| matches!(e, Event::PhaseStarted { phase: Phase::Mythos }))
+            .expect("PhaseStarted(Mythos)");
+        assert!(
+            started < w_open && w_open < w_close && w_close < ended && ended < mythos,
+            "upkeep sub-step events must be ordered 4.1 → window → 4.6 → Mythos 1.1; \
+             events = {events:?}"
+        );
+        assert_eq!(state.phase, Phase::Mythos, "cascade lands in Mythos");
+        assert!(
+            state.open_windows.is_empty(),
+            "UpkeepBegins must not persist on the stack"
+        );
     }
 }
