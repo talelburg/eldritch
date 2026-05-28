@@ -883,12 +883,7 @@ fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     //     Per Rules Reference p.10 (Elimination), eliminated
     //     investigators (Killed, Insane, Resigned) do not draw
     //     encounter cards — skip to the first Active investigator.
-    state.mythos_draw_pending = state.turn_order.iter().copied().find(|id| {
-        state
-            .investigators
-            .get(id)
-            .is_some_and(|inv| inv.status == Status::Active)
-    });
+    state.mythos_draw_pending = first_active_investigator(state);
     if state.mythos_draw_pending.is_none() {
         // No Active investigators to draw (turn_order is empty or all
         // investigators are eliminated). Open the post-1.4 window
@@ -3660,6 +3655,62 @@ fn active_investigators_in_turn_order(state: &GameState) -> Vec<InvestigatorId> 
         .collect()
 }
 
+/// First investigator in [`turn_order`] whose status is
+/// [`Status::Active`]. Eliminated investigators
+/// ([`Status::Killed`] / [`Status::Insane`] / [`Status::Resigned`])
+/// are skipped per Rules Reference p.10 (Elimination).
+///
+/// Used by per-investigator phase loops to seed their cursor:
+/// Mythos 1.4 draws ([`mythos_phase`] seeds `mythos_draw_pending`),
+/// Enemy 3.3 attacks ([`enemy_phase`] seeds `enemy_attack_pending`).
+///
+/// [`turn_order`]: GameState::turn_order
+fn first_active_investigator(state: &GameState) -> Option<InvestigatorId> {
+    state.turn_order.iter().copied().find(|id| {
+        state
+            .investigators
+            .get(id)
+            .is_some_and(|inv| inv.status == Status::Active)
+    })
+}
+
+/// First investigator in [`turn_order`] whose status is
+/// [`Status::Active`], positioned strictly after `current`. Returns
+/// `None` when no Active investigator follows `current` in
+/// `turn_order`, or when `current` is not in `turn_order` at all.
+///
+/// Eliminated investigators are skipped per Rules Reference p.10
+/// (same predicate as [`first_active_investigator`]).
+///
+/// Used by per-investigator phase loops to advance their cursor:
+/// `advance_mythos_draw_pending` after a draw chain completes, and
+/// `run_window_continuation`'s `BeforeInvestigatorAttacked` arm after
+/// one investigator's engaged-enemy attacks resolve.
+///
+/// Notable: `current` may itself be non-Active (e.g. defeated mid-loop
+/// in Enemy phase) — using `turn_order` as the index basis (rather
+/// than the filtered-Active list) makes this case the same single-pass
+/// lookup.
+///
+/// [`turn_order`]: GameState::turn_order
+fn next_active_investigator_after(
+    state: &GameState,
+    current: InvestigatorId,
+) -> Option<InvestigatorId> {
+    state
+        .turn_order
+        .iter()
+        .position(|id| *id == current)
+        .and_then(|idx| {
+            state.turn_order.iter().skip(idx + 1).copied().find(|id| {
+                state
+                    .investigators
+                    .get(id)
+                    .is_some_and(|inv| inv.status == Status::Active)
+            })
+        })
+}
+
 /// 4.2 Reset actions. Rules Reference p.25: "Flip each investigator's
 /// mini card back to its colored side. This indicates that the
 /// investigator's actions have been reset for his or her next turn."
@@ -5007,22 +5058,8 @@ fn advance_mythos_draw_pending(state: &mut GameState, events: &mut Vec<Event>) {
     let current = state
         .mythos_draw_pending
         .expect("advance_mythos_draw_pending called only after a successful chain");
-    // Per Rules Reference p.10 (Elimination), eliminated investigators
-    // do not draw encounter cards. Skip any non-Active entries after
-    // the current position rather than blindly taking turn_order[idx+1].
-    let next = state
-        .turn_order
-        .iter()
-        .position(|id| *id == current)
-        .and_then(|idx| {
-            state.turn_order.iter().skip(idx + 1).copied().find(|id| {
-                state
-                    .investigators
-                    .get(id)
-                    .is_some_and(|inv| inv.status == Status::Active)
-            })
-        });
-
+    // Eliminated-skip semantics live in `next_active_investigator_after`.
+    let next = next_active_investigator_after(state, current);
     state.mythos_draw_pending = next;
     if next.is_none() {
         open_fast_window(state, events, WindowKind::MythosAfterDraws);
@@ -5342,6 +5379,126 @@ mod mythos_phase_tests {
             state.mythos_draw_pending,
             Some(InvestigatorId(3)),
             "cursor must skip the Killed inv2 and land on Active inv3"
+        );
+    }
+
+    #[test]
+    fn first_active_investigator_finds_first_active_skipping_eliminated() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_investigator(test_investigator(3))
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .status = Status::Insane;
+
+        assert_eq!(
+            first_active_investigator(&state),
+            Some(InvestigatorId(3)),
+            "first Active in turn_order after skipping eliminated"
+        );
+    }
+
+    #[test]
+    fn first_active_investigator_returns_none_when_all_eliminated() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+
+        assert_eq!(first_active_investigator(&state), None);
+    }
+
+    #[test]
+    fn first_active_investigator_returns_none_when_turn_order_empty() {
+        let state = TestGame::default().build();
+        assert_eq!(first_active_investigator(&state), None);
+    }
+
+    #[test]
+    fn next_active_investigator_after_skips_eliminated_middle() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_investigator(test_investigator(3))
+            .with_investigator(test_investigator(4))
+            .build();
+        state.turn_order = vec![
+            InvestigatorId(1),
+            InvestigatorId(2),
+            InvestigatorId(3),
+            InvestigatorId(4),
+        ];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .status = Status::Killed;
+
+        assert_eq!(
+            next_active_investigator_after(&state, InvestigatorId(1)),
+            Some(InvestigatorId(3)),
+            "advance from 1 skips Killed 2, lands on 3"
+        );
+        assert_eq!(
+            next_active_investigator_after(&state, InvestigatorId(3)),
+            Some(InvestigatorId(4)),
+            "advance from 3 lands on 4"
+        );
+        assert_eq!(
+            next_active_investigator_after(&state, InvestigatorId(4)),
+            None,
+            "advance past the last entry returns None"
+        );
+    }
+
+    #[test]
+    fn next_active_investigator_after_returns_none_when_current_not_in_turn_order() {
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+
+        assert_eq!(
+            next_active_investigator_after(&state, InvestigatorId(99)),
+            None
+        );
+    }
+
+    #[test]
+    fn next_active_investigator_after_works_when_current_is_non_active() {
+        // Defeated-mid-loop semantics: `current` may be Killed by the
+        // time we advance from them. The cursor still finds the right
+        // successor.
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .status = Status::Killed;
+
+        assert_eq!(
+            next_active_investigator_after(&state, InvestigatorId(1)),
+            Some(InvestigatorId(2)),
+            "current=1 is non-Active but turn_order still anchors the index"
         );
     }
 }
