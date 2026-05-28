@@ -857,12 +857,15 @@ fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
 /// fills in TODO bodies without changing the driver shape.
 fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // 1.1 Round begins. Mythos phase begins.
-    //     `step_phase` has already emitted PhaseEnded(Upkeep),
-    //     updated state.phase to Mythos, and bumped the round
-    //     counter. The PhaseStarted(Mythos) emit lives HERE rather
-    //     than in step_phase so step 1.1 has explicit ownership in
-    //     the driver — Rules Reference p.24: "This step formalizes
-    //     the beginning of the mythos phase."
+    //     Rules Reference p.24: "As this is the first framework event
+    //     of the round, it [1.1] also formalizes the beginning of a new
+    //     game round." The round-counter increment lives HERE (not in
+    //     step_phase) so the rule's round-begin point has explicit
+    //     driver ownership, mirroring PhaseStarted(Mythos). Round 1 is
+    //     bypassed: start_scenario sets round = 1 directly (Mythos
+    //     skipped). This is also the future home for a RoundStarted
+    //     event when a consumer lands.
+    state.round = state.round.saturating_add(1);
     events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });
@@ -928,9 +931,9 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// `PhaseStarted(Mythos)` / `PhaseEnded(Mythos)` events fire on round 1
 /// — per Rules Reference p.24 ("skip the mythos phase").
 ///
-/// **Round-bump invariant:** bumps `state.round` when entering
-/// [`Phase::Mythos`] (which is the boundary between rounds).
-/// Unchanged from pre-#69.
+/// **Round-bump:** the round-counter increment now lives in
+/// `mythos_phase` step 1.1 — the rules' "round begins" point —
+/// rather than here. `step_phase` no longer touches `state.round`.
 fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     let from = state.phase;
     let to = from.next();
@@ -941,10 +944,8 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     }
 
     state.phase = to;
-    // Round-bump invariant: bump when entering Mythos. Unchanged.
-    if to == Phase::Mythos {
-        state.round = state.round.saturating_add(1);
-    }
+    // The round-counter bump moves into mythos_phase (step 1.1).
+    // step_phase no longer touches state.round.
 
     // Dispatch to phase driver if one exists; otherwise emit
     // PhaseStarted directly (for phases without a driver yet).
@@ -5580,5 +5581,26 @@ mod upkeep_phase_tests {
         assert_eq!(state.active_investigator, Some(id));
         assert_eq!(state.investigators[&id].actions_remaining, 1, "rotate must not refresh actions");
         assert!(events.is_empty(), "rotate no longer emits ActionsRemainingChanged");
+    }
+
+    #[test]
+    fn round_increments_on_mythos_entry_via_driver() {
+        // After the Upkeep→Mythos cascade, state.round bumps by 1.
+        // The bump now lives in mythos_phase step 1.1 (this task);
+        // the test asserts observable behavior, which is unchanged.
+        let id = InvestigatorId(1);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Upkeep)
+            .build();
+        state.turn_order = vec![id];
+        state.active_investigator = None;
+        state.round = 4;
+
+        let mut events = Vec::new();
+        step_phase(&mut state, &mut events); // Upkeep → ... → Mythos via the cascade
+
+        assert_eq!(state.round, 5, "round bumps on Mythos entry");
+        assert_eq!(state.phase, Phase::Mythos);
     }
 }
