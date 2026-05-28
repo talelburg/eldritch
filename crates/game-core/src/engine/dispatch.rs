@@ -3571,7 +3571,9 @@ fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
 /// content is the continuation.
 fn upkeep_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.1 Upkeep phase begins.
-    events.push(Event::PhaseStarted { phase: Phase::Upkeep });
+    events.push(Event::PhaseStarted {
+        phase: Phase::Upkeep,
+    });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
     // via run_window_continuation) when nothing is Fast-eligible.
     open_fast_window(state, events, WindowKind::UpkeepBegins);
@@ -3593,7 +3595,9 @@ fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
 /// its `PhaseEnded(Upkeep)` fallback when `from == Upkeep`.
 fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.6 Upkeep phase ends. Round ends.
-    events.push(Event::PhaseEnded { phase: Phase::Upkeep });
+    events.push(Event::PhaseEnded {
+        phase: Phase::Upkeep,
+    });
     step_phase(state, events); // Upkeep → Mythos; calls mythos_phase
 }
 
@@ -4763,13 +4767,26 @@ mod investigation_phase_tests {
         let mut events = Vec::new();
         investigation_phase(&mut state, &mut events);
 
-        assert_eq!(state.active_investigator, Some(InvestigatorId(1)),
-            "investigation_phase must rotate to the lead (first in turn_order)");
-        assert!(events.iter().any(|e| matches!(e,
-            Event::PhaseStarted { phase: Phase::Investigation })),
-            "PhaseStarted(Investigation) must be emitted");
-        assert!(!events.iter().any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
-            "rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2)");
+        assert_eq!(
+            state.active_investigator,
+            Some(InvestigatorId(1)),
+            "investigation_phase must rotate to the lead (first in turn_order)"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "PhaseStarted(Investigation) must be emitted"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
+            "rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2)"
+        );
     }
 
     #[test]
@@ -5385,17 +5402,30 @@ mod draw_one_with_deckout_tests {
 
         draw_one_with_deckout(&mut state, &mut events, id);
 
-        assert_eq!(state.investigators[&id].hand.len(), hand_before + 1, "drew 1");
-        assert_eq!(state.investigators[&id].horror, 1, "deck-out costs 1 horror");
-        assert!(events.iter().any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })));
+        assert_eq!(
+            state.investigators[&id].hand.len(),
+            hand_before + 1,
+            "drew 1"
+        );
+        assert_eq!(
+            state.investigators[&id].horror, 1,
+            "deck-out costs 1 horror"
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })));
     }
 }
 
 #[cfg(test)]
 mod upkeep_phase_tests {
     use super::*;
+    use crate::action::{Action, PlayerAction};
+    use crate::engine::{apply, EngineOutcome};
     use crate::event::Event;
-    use crate::state::{CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Phase, Status};
+    use crate::state::{
+        CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Phase, Status,
+    };
     use crate::test_support::{test_enemy, test_investigator, TestGame};
 
     #[test]
@@ -5415,8 +5445,15 @@ mod upkeep_phase_tests {
         step_phase(&mut state, &mut events); // Enemy → Upkeep, cascades to Mythos
 
         let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
-        let started = pos(&|e| matches!(e, Event::PhaseStarted { phase: Phase::Upkeep }))
-            .expect("PhaseStarted(Upkeep)");
+        let started = pos(&|e| {
+            matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Upkeep
+                }
+            )
+        })
+        .expect("PhaseStarted(Upkeep)");
         let w_open = pos(&|e| {
             matches!(
                 e,
@@ -5435,10 +5472,24 @@ mod upkeep_phase_tests {
             )
         })
         .expect("WindowClosed(UpkeepBegins)");
-        let ended =
-            pos(&|e| matches!(e, Event::PhaseEnded { phase: Phase::Upkeep })).expect("PhaseEnded(Upkeep)");
-        let mythos = pos(&|e| matches!(e, Event::PhaseStarted { phase: Phase::Mythos }))
-            .expect("PhaseStarted(Mythos)");
+        let ended = pos(&|e| {
+            matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Upkeep
+                }
+            )
+        })
+        .expect("PhaseEnded(Upkeep)");
+        let mythos = pos(&|e| {
+            matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Mythos
+                }
+            )
+        })
+        .expect("PhaseStarted(Mythos)");
         assert!(
             started < w_open && w_open < w_close && w_close < ended && ended < mythos,
             "upkeep sub-step events must be ordered 4.1 → window → 4.6 → Mythos 1.1; \
@@ -5469,7 +5520,10 @@ mod upkeep_phase_tests {
 
         ready_exhausted_cards(&mut state, &mut events);
 
-        assert!(!state.investigators[&inv_id].cards_in_play[0].exhausted, "card readied");
+        assert!(
+            !state.investigators[&inv_id].cards_in_play[0].exhausted,
+            "card readied"
+        );
         assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
         assert!(events.iter().any(|e| matches!(
             e, Event::CardReadied { investigator, instance_id, .. }
@@ -5490,7 +5544,10 @@ mod upkeep_phase_tests {
 
         ready_exhausted_cards(&mut state, &mut events);
 
-        assert!(events.is_empty(), "no readying events for already-ready cards");
+        assert!(
+            events.is_empty(),
+            "no readying events for already-ready cards"
+        );
     }
 
     #[test]
@@ -5508,7 +5565,9 @@ mod upkeep_phase_tests {
         let res_c = inv_c.resources;
         let hand_a = inv_a.hand.len();
         let mut state = TestGame::default()
-            .with_investigator(inv_a).with_investigator(inv_b).with_investigator(inv_c)
+            .with_investigator(inv_a)
+            .with_investigator(inv_b)
+            .with_investigator(inv_c)
             .build();
         state.turn_order = vec![a, b, c];
         let mut events = Vec::new();
@@ -5517,9 +5576,16 @@ mod upkeep_phase_tests {
 
         assert_eq!(state.investigators[&a].resources, res_a + 1);
         assert_eq!(state.investigators[&b].resources, res_b + 1);
-        assert_eq!(state.investigators[&c].resources, res_c, "eliminated investigator skipped");
+        assert_eq!(
+            state.investigators[&c].resources, res_c,
+            "eliminated investigator skipped"
+        );
         assert_eq!(state.investigators[&a].hand.len(), hand_a + 1);
-        assert_eq!(state.investigators[&c].deck.len(), 1, "eliminated investigator did not draw");
+        assert_eq!(
+            state.investigators[&c].deck.len(),
+            1,
+            "eliminated investigator did not draw"
+        );
     }
 
     #[test]
@@ -5531,16 +5597,26 @@ mod upkeep_phase_tests {
         let mut inv_b = test_investigator(2);
         inv_b.deck = vec![CardCode::new("01001")];
         let mut state = TestGame::default()
-            .with_investigator(inv_a).with_investigator(inv_b)
+            .with_investigator(inv_a)
+            .with_investigator(inv_b)
             .build();
         state.turn_order = vec![a, b];
         let mut events = Vec::new();
 
         upkeep_draw_and_resource(&mut state, &mut events);
 
-        let last_draw = events.iter().rposition(|e| matches!(e, Event::CardsDrawn { .. })).expect("draws");
-        let first_gain = events.iter().position(|e| matches!(e, Event::ResourcesGained { .. })).expect("gains");
-        assert!(last_draw < first_gain, "all draws must precede all resource gains");
+        let last_draw = events
+            .iter()
+            .rposition(|e| matches!(e, Event::CardsDrawn { .. }))
+            .expect("draws");
+        let first_gain = events
+            .iter()
+            .position(|e| matches!(e, Event::ResourcesGained { .. }))
+            .expect("gains");
+        assert!(
+            last_draw < first_gain,
+            "all draws must precede all resource gains"
+        );
     }
 
     #[test]
@@ -5552,7 +5628,8 @@ mod upkeep_phase_tests {
         inv_b.actions_remaining = 0;
         inv_b.status = Status::Killed;
         let mut state = TestGame::default()
-            .with_investigator(inv_a).with_investigator(inv_b)
+            .with_investigator(inv_a)
+            .with_investigator(inv_b)
             .build();
         state.turn_order = vec![a, b];
         let mut events = Vec::new();
@@ -5560,7 +5637,10 @@ mod upkeep_phase_tests {
         reset_actions(&mut state, &mut events);
 
         assert_eq!(state.investigators[&a].actions_remaining, ACTIONS_PER_TURN);
-        assert_eq!(state.investigators[&b].actions_remaining, 0, "eliminated skipped");
+        assert_eq!(
+            state.investigators[&b].actions_remaining, 0,
+            "eliminated skipped"
+        );
         assert!(events.iter().any(|e| matches!(
             e, Event::ActionsRemainingChanged { investigator, new_count }
             if *investigator == a && *new_count == ACTIONS_PER_TURN)));
@@ -5579,8 +5659,14 @@ mod upkeep_phase_tests {
         rotate_to_active(&mut state, &mut events, id);
 
         assert_eq!(state.active_investigator, Some(id));
-        assert_eq!(state.investigators[&id].actions_remaining, 1, "rotate must not refresh actions");
-        assert!(events.is_empty(), "rotate no longer emits ActionsRemainingChanged");
+        assert_eq!(
+            state.investigators[&id].actions_remaining, 1,
+            "rotate must not refresh actions"
+        );
+        assert!(
+            events.is_empty(),
+            "rotate no longer emits ActionsRemainingChanged"
+        );
     }
 
     #[test]
@@ -5602,5 +5688,50 @@ mod upkeep_phase_tests {
 
         assert_eq!(state.round, 5, "round bumps on Mythos entry");
         assert_eq!(state.phase, Phase::Mythos);
+    }
+
+    #[test]
+    fn end_turn_cascades_through_upkeep_to_mythos_draw_pending() {
+        // Single investigator, non-empty deck, an exhausted in-play card.
+        // After EndTurn: card readied, hand +1, resources +1, landed in
+        // Mythos with draw pending and round bumped.
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.actions_remaining = 0;
+        inv.deck = vec![CardCode::new("01000"), CardCode::new("01001")];
+        let mut card = CardInPlay::enter_play(CardCode::new("01002"), CardInstanceId(1));
+        card.exhausted = true;
+        inv.cards_in_play = vec![card];
+        let res_before = inv.resources;
+        let hand_before = inv.hand.len();
+        let mut state = TestGame::default()
+            .with_investigator(inv)
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![id];
+        state.active_investigator = Some(id);
+        state.round = 1;
+
+        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.phase, Phase::Mythos);
+        assert_eq!(result.state.round, 2, "round bumped on Mythos entry");
+        assert_eq!(result.state.mythos_draw_pending, Some(id));
+        assert_eq!(result.state.active_investigator, None);
+        assert!(
+            !result.state.investigators[&id].cards_in_play[0].exhausted,
+            "readied"
+        );
+        assert_eq!(
+            result.state.investigators[&id].resources,
+            res_before + 1,
+            "gained 1"
+        );
+        assert_eq!(
+            result.state.investigators[&id].hand.len(),
+            hand_before + 1,
+            "drew 1"
+        );
     }
 }
