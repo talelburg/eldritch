@@ -3704,10 +3704,11 @@ fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
 /// Kind-aware continuation called when a window closes (whether
 /// inline via [`open_fast_window`]'s auto-skip path or via the
 /// [`close_reaction_window_at`] pop path). For
-/// [`WindowKind::MythosAfterDraws`], runs [`mythos_phase_end`].
-/// Other window kinds have no continuation — this is a no-op that
-/// preserves the existing [`close_reaction_window_at`] behavior for
-/// `AfterEnemyDefeated` and `BetweenPhases` windows.
+/// [`WindowKind::MythosAfterDraws`], runs [`mythos_phase_end`]; for
+/// [`WindowKind::UpkeepBegins`], runs [`upkeep_resume`].
+/// `AfterEnemyDefeated` and `BetweenPhases` windows have no
+/// continuation — for them this is a no-op preserving the existing
+/// [`close_reaction_window_at`] behavior.
 fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     match kind {
         WindowKind::MythosAfterDraws => {
@@ -5646,6 +5647,24 @@ mod upkeep_phase_tests {
             if *investigator == a && *new_count == ACTIONS_PER_TURN)));
         assert!(!events.iter().any(|e| matches!(
             e, Event::ActionsRemainingChanged { investigator, .. } if *investigator == b)));
+    }
+
+    #[test]
+    fn reset_actions_emits_nothing_for_already_full() {
+        // Emit-on-change semantics: when actions_remaining already equals
+        // ACTIONS_PER_TURN, reset_actions makes no state change and emits
+        // no ActionsRemainingChanged event.
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.actions_remaining = ACTIONS_PER_TURN;
+        let mut state = TestGame::default().with_investigator(inv).build();
+        state.turn_order = vec![id];
+        let mut events = Vec::new();
+
+        reset_actions(&mut state, &mut events);
+
+        assert_eq!(state.investigators[&id].actions_remaining, ACTIONS_PER_TURN);
+        assert!(events.is_empty(), "no event when value is unchanged");
     }
 
     #[test]
