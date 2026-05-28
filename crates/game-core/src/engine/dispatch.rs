@@ -741,6 +741,10 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
     // player actions are rejected until then.
     state.mulligan_window = true;
 
+    // Round-1 action seed: round 1 skips Mythos, so there's no Upkeep 4.2
+    // to grant the first round's actions. Every Active investigator → ACTIONS_PER_TURN.
+    reset_actions(state, events);
+
     // investigation_phase emits PhaseStarted(Investigation) + rotates
     // to the lead investigator (Rules Reference p.24 step 2.1 / 2.2).
     investigation_phase(state, events);
@@ -952,27 +956,20 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     }
 }
 
-/// Set `active_investigator` to `id` and refresh that investigator's
-/// action points to the per-turn cap (3). Emits `ActionsRemainingChanged`.
+/// Set `active_investigator` to `id`. Does NOT refresh actions —
+/// actions are reset at Upkeep step 4.2 (`reset_actions`) for the whole
+/// next round, and seeded for round 1 by `start_scenario`. By the time
+/// an investigator becomes active, `actions_remaining` already holds
+/// this round's allotment.
 ///
-/// `id` must refer to an investigator in `state.investigators` —
-/// callers that pass an id from `state.turn_order` are guaranteed
-/// this by the whole-program invariant "every id in `turn_order`
-/// exists in `investigators`." A missing entry would be state
-/// corruption, not a normal error.
-fn rotate_to_active(state: &mut GameState, events: &mut Vec<Event>, id: InvestigatorId) {
+/// `id` must refer to an investigator in `state.investigators` (a
+/// whole-program invariant for ids drawn from `turn_order`).
+fn rotate_to_active(state: &mut GameState, _events: &mut Vec<Event>, id: InvestigatorId) {
+    debug_assert!(
+        state.investigators.contains_key(&id),
+        "rotate_to_active: investigator {id:?} not in investigators (state corruption)"
+    );
     state.active_investigator = Some(id);
-    let inv = state.investigators.get_mut(&id).unwrap_or_else(|| {
-        unreachable!(
-            "rotate_to_active: investigator {id:?} is not in the investigators map; \
-             this is a state-corruption invariant violation"
-        )
-    });
-    inv.actions_remaining = ACTIONS_PER_TURN;
-    events.push(Event::ActionsRemainingChanged {
-        investigator: id,
-        new_count: ACTIONS_PER_TURN,
-    });
 }
 
 /// Open the commit window for a skill test.
@@ -3579,11 +3576,11 @@ fn upkeep_phase(state: &mut GameState, events: &mut Vec<Event>) {
     open_fast_window(state, events, WindowKind::UpkeepBegins);
 }
 
-/// The post-4.1 window continuation. Steps 4.2–4.5 land here as named
-/// call sites; 4.2/4.4 are wired in by later tasks. Then hands to
-/// [`upkeep_phase_end`] for 4.6 + transition.
+/// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
+/// call sites; step 4.5 is the [`check_hand_size`] stub (TODO #111).
+/// Then hands to [`upkeep_phase_end`] for 4.6 + transition.
 fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
-    // 4.2 reset_actions      — wired in a later task (action-refresh relocation)
+    reset_actions(state, events); // 4.2
     ready_exhausted_cards(state, events); // 4.3
     upkeep_draw_and_resource(state, events); // 4.4
     check_hand_size(state, events); // 4.5 (TODO #111)
@@ -3656,6 +3653,32 @@ fn active_investigators_in_turn_order(state: &GameState) -> Vec<InvestigatorId> 
                 .is_some_and(|inv| inv.status == Status::Active)
         })
         .collect()
+}
+
+/// 4.2 Reset actions. Rules Reference p.25: "Flip each investigator's
+/// mini card back to its colored side. This indicates that the
+/// investigator's actions have been reset for his or her next turn."
+///
+/// The canonical action-refresh site. Sets `actions_remaining` to
+/// `ACTIONS_PER_TURN` for each Active investigator and emits
+/// `ActionsRemainingChanged` when the value changes. `rotate_to_active`
+/// no longer refreshes (step 2.2 is just "the turn begins");
+/// `start_scenario` seeds round 1. Eliminated investigators are skipped
+/// (Rules Reference p.10).
+fn reset_actions(state: &mut GameState, events: &mut Vec<Event>) {
+    for id in active_investigators_in_turn_order(state) {
+        let inv = state
+            .investigators
+            .get_mut(&id)
+            .expect("id from active_investigators_in_turn_order");
+        if inv.actions_remaining != ACTIONS_PER_TURN {
+            inv.actions_remaining = ACTIONS_PER_TURN;
+            events.push(Event::ActionsRemainingChanged {
+                investigator: id,
+                new_count: ACTIONS_PER_TURN,
+            });
+        }
+    }
 }
 
 /// 4.4 Each investigator draws 1 card and gains 1 resource. Rules
@@ -4739,38 +4762,13 @@ mod investigation_phase_tests {
         let mut events = Vec::new();
         investigation_phase(&mut state, &mut events);
 
-        assert_eq!(
-            state.active_investigator,
-            Some(InvestigatorId(1)),
-            "investigation_phase must rotate to the lead (first in turn_order)"
-        );
-        // PhaseStarted(Investigation) must appear before ActionsRemainingChanged
-        // (which rotate_to_active emits).
-        let phase_started_idx = events
-            .iter()
-            .position(|e| {
-                matches!(
-                    e,
-                    Event::PhaseStarted {
-                        phase: Phase::Investigation
-                    }
-                )
-            })
-            .expect("PhaseStarted(Investigation) must be emitted");
-        let rotate_idx = events
-            .iter()
-            .position(|e| {
-                matches!(
-                    e,
-                    Event::ActionsRemainingChanged { investigator, .. }
-                        if *investigator == InvestigatorId(1)
-                )
-            })
-            .expect("ActionsRemainingChanged for lead must be emitted after rotate");
-        assert!(
-            phase_started_idx < rotate_idx,
-            "PhaseStarted(Investigation) must precede the ActionsRemainingChanged rotate event"
-        );
+        assert_eq!(state.active_investigator, Some(InvestigatorId(1)),
+            "investigation_phase must rotate to the lead (first in turn_order)");
+        assert!(events.iter().any(|e| matches!(e,
+            Event::PhaseStarted { phase: Phase::Investigation })),
+            "PhaseStarted(Investigation) must be emitted");
+        assert!(!events.iter().any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
+            "rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2)");
     }
 
     #[test]
@@ -5396,7 +5394,7 @@ mod draw_one_with_deckout_tests {
 mod upkeep_phase_tests {
     use super::*;
     use crate::event::Event;
-    use crate::state::{CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Phase};
+    use crate::state::{CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Phase, Status};
     use crate::test_support::{test_enemy, test_investigator, TestGame};
 
     #[test]
@@ -5542,5 +5540,45 @@ mod upkeep_phase_tests {
         let last_draw = events.iter().rposition(|e| matches!(e, Event::CardsDrawn { .. })).expect("draws");
         let first_gain = events.iter().position(|e| matches!(e, Event::ResourcesGained { .. })).expect("gains");
         assert!(last_draw < first_gain, "all draws must precede all resource gains");
+    }
+
+    #[test]
+    fn reset_actions_sets_active_to_per_turn_and_skips_eliminated() {
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut inv_a = test_investigator(1);
+        inv_a.actions_remaining = 0;
+        let mut inv_b = test_investigator(2);
+        inv_b.actions_remaining = 0;
+        inv_b.status = Status::Killed;
+        let mut state = TestGame::default()
+            .with_investigator(inv_a).with_investigator(inv_b)
+            .build();
+        state.turn_order = vec![a, b];
+        let mut events = Vec::new();
+
+        reset_actions(&mut state, &mut events);
+
+        assert_eq!(state.investigators[&a].actions_remaining, ACTIONS_PER_TURN);
+        assert_eq!(state.investigators[&b].actions_remaining, 0, "eliminated skipped");
+        assert!(events.iter().any(|e| matches!(
+            e, Event::ActionsRemainingChanged { investigator, new_count }
+            if *investigator == a && *new_count == ACTIONS_PER_TURN)));
+        assert!(!events.iter().any(|e| matches!(
+            e, Event::ActionsRemainingChanged { investigator, .. } if *investigator == b)));
+    }
+
+    #[test]
+    fn rotate_to_active_does_not_refresh_actions() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.actions_remaining = 1;
+        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        rotate_to_active(&mut state, &mut events, id);
+
+        assert_eq!(state.active_investigator, Some(id));
+        assert_eq!(state.investigators[&id].actions_remaining, 1, "rotate must not refresh actions");
+        assert!(events.is_empty(), "rotate no longer emits ActionsRemainingChanged");
     }
 }
