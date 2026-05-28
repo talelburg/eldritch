@@ -3585,7 +3585,7 @@ fn upkeep_phase(state: &mut GameState, events: &mut Vec<Event>) {
 fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.2 reset_actions      — wired in a later task (action-refresh relocation)
     ready_exhausted_cards(state, events); // 4.3
-    // 4.4 upkeep_draw_and_resource — wired in a later task
+    upkeep_draw_and_resource(state, events); // 4.4
     check_hand_size(state, events); // 4.5 (TODO #111)
     upkeep_phase_end(state, events); // 4.6 + transition
 }
@@ -3638,6 +3638,39 @@ fn check_hand_size(_state: &mut GameState, _events: &mut Vec<Event>) {
     //   Needs an AwaitingInput producer for the discard choice. The call
     //   site exists so the rule step is grep-able and #111 plugs in here
     //   without changing the driver shape.
+}
+
+/// `turn_order` entries whose status is `Active`, in turn order. Shared
+/// by per-investigator Upkeep steps (4.2 reset, 4.4 draw + resource).
+/// Eliminated investigators (Killed / Insane / Resigned) are excluded
+/// per Rules Reference p.10.
+fn active_investigators_in_turn_order(state: &GameState) -> Vec<InvestigatorId> {
+    state
+        .turn_order
+        .iter()
+        .copied()
+        .filter(|id| {
+            state
+                .investigators
+                .get(id)
+                .is_some_and(|inv| inv.status == Status::Active)
+        })
+        .collect()
+}
+
+/// 4.4 Each investigator draws 1 card and gains 1 resource. Rules
+/// Reference p.25: "In player order, each investigator draws 1 card.
+/// Once those cards have been drawn, each investigator gains 1
+/// resource." Two passes to honor that ordering: all draws first, then
+/// all resource gains.
+fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
+    let ids = active_investigators_in_turn_order(state);
+    for &id in &ids {
+        draw_one_with_deckout(state, events, id);
+    }
+    for &id in &ids {
+        grant_resources(state, events, id, 1);
+    }
 }
 
 /// Kind-aware continuation called when a window closes (whether
@@ -5459,5 +5492,55 @@ mod upkeep_phase_tests {
         ready_exhausted_cards(&mut state, &mut events);
 
         assert!(events.is_empty(), "no readying events for already-ready cards");
+    }
+
+    #[test]
+    fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
+        let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
+        let mut inv_a = test_investigator(1);
+        inv_a.deck = vec![CardCode::new("01000")];
+        let mut inv_b = test_investigator(2);
+        inv_b.deck = vec![CardCode::new("01001")];
+        let mut inv_c = test_investigator(3);
+        inv_c.status = Status::Resigned; // eliminated → skipped
+        inv_c.deck = vec![CardCode::new("01002")];
+        let res_a = inv_a.resources;
+        let res_b = inv_b.resources;
+        let res_c = inv_c.resources;
+        let hand_a = inv_a.hand.len();
+        let mut state = TestGame::default()
+            .with_investigator(inv_a).with_investigator(inv_b).with_investigator(inv_c)
+            .build();
+        state.turn_order = vec![a, b, c];
+        let mut events = Vec::new();
+
+        upkeep_draw_and_resource(&mut state, &mut events);
+
+        assert_eq!(state.investigators[&a].resources, res_a + 1);
+        assert_eq!(state.investigators[&b].resources, res_b + 1);
+        assert_eq!(state.investigators[&c].resources, res_c, "eliminated investigator skipped");
+        assert_eq!(state.investigators[&a].hand.len(), hand_a + 1);
+        assert_eq!(state.investigators[&c].deck.len(), 1, "eliminated investigator did not draw");
+    }
+
+    #[test]
+    fn upkeep_draw_and_resource_two_pass_ordering() {
+        // All CardsDrawn events precede all ResourcesGained events.
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut inv_a = test_investigator(1);
+        inv_a.deck = vec![CardCode::new("01000")];
+        let mut inv_b = test_investigator(2);
+        inv_b.deck = vec![CardCode::new("01001")];
+        let mut state = TestGame::default()
+            .with_investigator(inv_a).with_investigator(inv_b)
+            .build();
+        state.turn_order = vec![a, b];
+        let mut events = Vec::new();
+
+        upkeep_draw_and_resource(&mut state, &mut events);
+
+        let last_draw = events.iter().rposition(|e| matches!(e, Event::CardsDrawn { .. })).expect("draws");
+        let first_gain = events.iter().position(|e| matches!(e, Event::ResourcesGained { .. })).expect("gains");
+        assert!(last_draw < first_gain, "all draws must precede all resource gains");
     }
 }
