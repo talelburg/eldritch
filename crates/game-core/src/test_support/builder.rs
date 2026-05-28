@@ -267,6 +267,7 @@ impl TestGame {
             open_windows: self.open_windows,
             scenario_id: self.scenario_id,
             mythos_draw_pending: None,
+            enemy_attack_pending: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
         }

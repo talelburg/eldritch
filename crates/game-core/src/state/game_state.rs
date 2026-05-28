@@ -148,6 +148,29 @@ pub struct GameState {
     /// once all investigators have drawn — at which point the
     /// `MythosAfterDraws` window opens.
     pub mythos_draw_pending: Option<InvestigatorId>,
+    /// The next investigator due to resolve engaged-enemy attacks
+    /// during Enemy phase step 3.3. Mirror of [`mythos_draw_pending`]:
+    ///
+    /// - Set to the first [`Status::Active`] investigator in
+    ///   [`turn_order`] when `enemy_phase` runs step 3.3's loop
+    ///   kickoff.
+    /// - Advanced by `run_window_continuation` after each
+    ///   per-investigator attack resolution closes, to the next Active
+    ///   investigator in [`turn_order`] (or `None` when the loop is
+    ///   done).
+    /// - Stays `None` during all phases other than Enemy.
+    ///
+    /// Eliminated investigators ([`Status::Killed`] / [`Status::Insane`]
+    /// / [`Status::Resigned`]) are skipped during advance, mirroring
+    /// the `mythos_draw_pending` semantics established in #69.
+    ///
+    /// [`mythos_draw_pending`]: GameState::mythos_draw_pending
+    /// [`turn_order`]: GameState::turn_order
+    /// [`Status::Active`]: crate::state::Status::Active
+    /// [`Status::Killed`]: crate::state::Status::Killed
+    /// [`Status::Insane`]: crate::state::Status::Insane
+    /// [`Status::Resigned`]: crate::state::Status::Resigned
+    pub enemy_attack_pending: Option<InvestigatorId>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -726,6 +749,28 @@ mod mythos_draw_pending_tests {
     fn game_state_default_has_no_mythos_draw_pending() {
         let state = TestGame::new().build();
         assert_eq!(state.mythos_draw_pending, None);
+    }
+}
+
+#[cfg(test)]
+mod enemy_attack_pending_tests {
+    use super::*;
+    use crate::state::InvestigatorId;
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn game_state_default_has_no_enemy_attack_pending() {
+        let state = TestGame::new().build();
+        assert_eq!(state.enemy_attack_pending, None);
+    }
+
+    #[test]
+    fn enemy_attack_pending_round_trips_through_serde() {
+        let mut state = TestGame::new().build();
+        state.enemy_attack_pending = Some(InvestigatorId(7));
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.enemy_attack_pending, Some(InvestigatorId(7)));
     }
 }
 
