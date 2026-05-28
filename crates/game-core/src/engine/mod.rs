@@ -193,10 +193,8 @@ mod tests {
                 phase: Phase::Investigation
             }
         );
-        assert_event!(
-            result.events,
-            Event::ActionsRemainingChanged { investigator, new_count: 3 } if *investigator == id
-        );
+        // rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2 / start_scenario seed);
+        // actions_remaining == 3 is verified above via assert_eq.
     }
 
     #[test]
@@ -922,9 +920,10 @@ mod tests {
             result.events,
             Event::TurnEnded { investigator } if *investigator == inv1
         );
-        assert_event!(
+        // rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2)
+        assert_no_event!(
             result.events,
-            Event::ActionsRemainingChanged { investigator, new_count: 3 } if *investigator == inv2
+            Event::ActionsRemainingChanged { investigator, .. } if *investigator == inv2
         );
         // No phase transition on a mid-round EndTurn.
         assert_no_event!(result.events, Event::PhaseEnded { .. });

@@ -311,19 +311,12 @@ fn gain_resources(
     // Validate-first: confirm the investigator exists in state before
     // we touch anything. The "active" target may resolve to None if
     // outside the Investigation phase; that's a reject, not a panic.
-    let Some(investigator) = state.investigators.get_mut(&target_id) else {
+    if !state.investigators.contains_key(&target_id) {
         return EngineOutcome::Rejected {
             reason: format!("GainResources: investigator {target_id:?} is not in the state").into(),
         };
-    };
-    // Saturating add: resources are u8; we don't expect cards to push
-    // past 255 in practice but a saturating op is the right defensive
-    // choice for a u8 counter.
-    investigator.resources = investigator.resources.saturating_add(amount);
-    events.push(Event::ResourcesGained {
-        investigator: target_id,
-        amount,
-    });
+    }
+    crate::engine::dispatch::grant_resources(state, events, target_id, amount);
     EngineOutcome::Done
 }
 
