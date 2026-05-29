@@ -6154,7 +6154,11 @@ mod upkeep_phase_tests {
 #[cfg(test)]
 mod enemy_phase_tests {
     use super::*;
-    use crate::state::{EnemyId, InvestigatorId, Phase, Status, WindowKind};
+    use crate::action::Action;
+    use crate::engine::{apply, EngineOutcome};
+    use crate::state::{
+        EnemyId, FastActorScope, InvestigatorId, OpenWindow, Phase, Status, WindowKind,
+    };
     use crate::test_support::{test_enemy, test_investigator, TestGame};
     use crate::Event;
 
@@ -6671,4 +6675,95 @@ mod enemy_phase_tests {
             "step_phase must NOT emit PhaseEnded(Enemy); only enemy_phase_end may. events = {events:?}"
         );
     }
+
+    #[test]
+    fn enemy_phase_resumes_via_skip_input() {
+        // Construct the state mid-pause: a BeforeInvestigatorAttacked
+        // window is on the stack with empty pending_triggers (the
+        // "pure-Fast window" shape that open_fast_window pushes when
+        // Fast play is eligible), and the cursor points at inv1.
+        //
+        // Submitting PlayerAction::ResolveInput(InputResponse::Skip)
+        // routes through resolve_input's "open_windows non-empty +
+        // no reaction triggers" branch → close_reaction_window_at →
+        // run_window_continuation's BeforeInvestigatorAttacked arm →
+        // resolve_attacks_for_investigator → cursor advance to None →
+        // open AfterAllInvestigatorsAttacked → auto-skip continuation
+        // → enemy_phase_end → cascade Upkeep → Mythos.
+        //
+        // The synthetic OpenWindow push fakes the pause point because
+        // a real Fast-eligibility setup would require either a card-
+        // registry install (heavyweight integration test) or a Fast
+        // event card in hand with resources — neither tractable in
+        // the engine layer. The Skip path itself is the load-bearing
+        // resume mechanism this test exercises.
+        let inv_id = InvestigatorId(1);
+        let enemy_id = EnemyId(1);
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 1;
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .with_phase(Phase::Enemy)
+            .build();
+        state.turn_order = vec![inv_id];
+        state.active_investigator = None;
+        state.enemy_attack_pending = Some(inv_id);
+        state.open_windows.push(OpenWindow {
+            kind: WindowKind::BeforeInvestigatorAttacked,
+            pending_triggers: Vec::new(),
+            fast_actors: FastActorScope::Any,
+        });
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
+        );
+
+        match result.outcome {
+            EngineOutcome::Done => {}
+            ref other => panic!(
+                "expected Done after Skip; got {other:?}; events = {:?}",
+                result.events
+            ),
+        }
+        assert_eq!(
+            result.state.phase,
+            Phase::Mythos,
+            "cascade lands in Mythos after Skip resumed the continuation"
+        );
+        assert!(
+            result.events.iter().any(|e| matches!(
+                e,
+                Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+            )),
+            "attack should have landed during the resumed continuation; events = {:?}",
+            result.events
+        );
+        assert!(
+            result.events.iter().any(|e| matches!(
+                e,
+                Event::EnemyExhausted { enemy } if *enemy == enemy_id
+            )),
+            "EnemyExhausted should fire during the resumed continuation; events = {:?}",
+            result.events
+        );
+        assert_eq!(
+            result.state.enemy_attack_pending, None,
+            "cursor must clear after the continuation advances past the last \
+             Active investigator and the AfterAll window auto-skips"
+        );
+    }
+
+    // TODO(#71 follow-up): pause-on-Fast-eligibility test — needs a
+    // tractable Fast-eligibility fixture at the engine layer (Fast
+    // event card in hand + resources + card-registry install, which
+    // would push this into the cards crate's integration tests). The
+    // Skip-resume test above proves the resume path is correct; the
+    // pause shape is exercised indirectly via the existing
+    // any_fast_play_eligible-driven open_fast_window tests at
+    // dispatch.rs's open_fast_window_tests block.
 }
