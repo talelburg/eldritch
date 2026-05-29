@@ -172,6 +172,14 @@ pub fn apply_player_action(
         // begin is Investigation. Kick off its driver HERE, not in
         // start_scenario: setup has "no action windows" (p.27), so the
         // post-2.1 player window must not open until mulligans are done.
+        //
+        // NOTE: investigation_phase may leave an InvestigationBegins
+        // window open (when a Fast-eligible play exists); this function
+        // still returns the Mulligan's `Done`. So this is one of the few
+        // paths where `Done` can accompany a non-empty `state.open_windows`
+        // — hosts check `open_windows` and present `ResolveInput::Skip`
+        // to close it, exactly as for the phase-transition windows the
+        // void `*_phase` drivers open.
         investigation_phase(state, events);
     }
 
@@ -831,9 +839,11 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
 /// [`begin_investigator_turn`], lead-first by default; explicit
 /// player-pick within this window is deferred to #146.
 ///
-/// The window auto-skips inline when nothing is Fast-eligible (no card
-/// registry installed in unit tests), so single-investigator entry still
-/// lands the lead active within the same `apply()` call.
+/// The window auto-skips inline when nothing is Fast-eligible
+/// ([`any_fast_play_eligible`] returns `false` — e.g. no Fast card in any
+/// hand, which is always the case in unit tests with no card registry
+/// installed), so single-investigator entry still lands the lead active
+/// within the same `apply()` call.
 fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // 2.1 Investigation phase begins.
     events.push(Event::PhaseStarted {
@@ -5100,11 +5110,8 @@ mod investigation_phase_tests {
         state.turn_order = vec![InvestigatorId(1)];
         state.active_investigator = None;
         state.mulligan_window = true;
-        state
-            .investigators
-            .get_mut(&InvestigatorId(1))
-            .unwrap()
-            .mulligan_used = false;
+        // test_investigator(1) already defaults mulligan_used = false; this
+        // sets up the "about to complete the last mulligan" state.
 
         let mut events = Vec::new();
         let outcome = apply_player_action(
@@ -5126,14 +5133,31 @@ mod investigation_phase_tests {
             Some(InvestigatorId(1)),
             "Investigation phase kicks off and rotates to the lead after mulligan completes"
         );
-        assert!(
-            events.iter().any(|e| matches!(
+        // PhaseStarted(Investigation) fires at mulligan completion (not
+        // during StartScenario) AND precedes the post-2.1 window — the
+        // printed 2.1 → window order.
+        let phase_started = events.iter().position(|e| {
+            matches!(
                 e,
                 Event::PhaseStarted {
                     phase: Phase::Investigation
                 }
-            )),
-            "PhaseStarted(Investigation) fires at mulligan completion, not during StartScenario"
+            )
+        });
+        let window_opened = events.iter().position(|e| {
+            matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::InvestigationBegins
+                }
+            )
+        });
+        let phase_started = phase_started.expect("PhaseStarted(Investigation) must fire");
+        let window_opened =
+            window_opened.expect("WindowOpened(InvestigationBegins) must fire at phase start");
+        assert!(
+            phase_started < window_opened,
+            "PhaseStarted (2.1) must precede the post-2.1 InvestigationBegins window"
         );
     }
 
