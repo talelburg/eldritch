@@ -2826,9 +2826,10 @@ fn enemy_attack(
 ///
 /// Per the Rules Reference, the active player chooses the order of
 /// `AoOs` from multiple engaged ready enemies; v1 uses deterministic
-/// `EnemyId` order. We'll revisit when an actual ordering choice
-/// matters (e.g. a card reacts to "the second attack of opportunity
-/// this turn").
+/// `EnemyId` order. `TODO(#143)`: player-pick attack order
+/// (unmilestoned) covers this site alongside
+/// [`resolve_attacks_for_investigator`] — both sites share the same
+/// deterministic-order TODO.
 fn fire_attacks_of_opportunity(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -2859,15 +2860,15 @@ fn fire_attacks_of_opportunity(
 ///    ("Each ready, engaged enemy makes an attack" — a disengaged
 ///    enemy is not "engaged").
 ///
-///    Today [`apply_investigator_defeat`] only flips `Status`; the
-///    full disengage + re-engage flow lands in #144 (Phase-4
-///    milestone, blocked on #128 which lands the prey logic needed
-///    for multi-investigator re-engagement). The early-break here
-///    is the rules-correct minimal interpretation: no incorrect
-///    events fire, no behavior anomaly visible at the rules level.
-///    After #144 lands, the `enemy.engaged_with` field is properly
-///    cleared on defeat too; this early-break stays as the simpler
-///    form (one redundant check, harmless).
+///    Today [`apply_investigator_defeat`] only flips `Status`;
+///    `TODO(#144)`: the full disengage + re-engage flow lands in
+///    #144 (Phase-4 milestone, blocked on #128 which lands the prey
+///    logic needed for multi-investigator re-engagement). The
+///    early-break here is the rules-correct minimal interpretation:
+///    no incorrect events fire, no behavior anomaly visible at the
+///    rules level. After #144 lands, the `enemy.engaged_with` field
+///    is properly cleared on defeat too; this early-break stays as
+///    the simpler form (one redundant check, harmless).
 ///
 /// 2. Call [`enemy_attack`] (places damage + horror simultaneously
 ///    per p.7, fires [`apply_investigator_defeat`] if either
@@ -2893,8 +2894,9 @@ fn fire_attacks_of_opportunity(
 /// **Attack order:** deterministic by [`EnemyId`]. Rules Reference
 /// p.25 prescribes "the order of the attacked investigator's
 /// choosing" when an investigator is engaged with multiple enemies;
-/// #143 (unmilestoned) covers both this site and
-/// [`fire_attacks_of_opportunity`] (which has the same TODO).
+/// `TODO(#143)`: player-pick attack order, unmilestoned, covers both
+/// this site and [`fire_attacks_of_opportunity`] (which has the same
+/// TODO).
 fn resolve_attacks_for_investigator(
     state: &mut GameState,
     events: &mut Vec<Event>,
