@@ -3923,10 +3923,18 @@ fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
 /// inline via [`open_fast_window`]'s auto-skip path or via the
 /// [`close_reaction_window_at`] pop path). For
 /// [`WindowKind::MythosAfterDraws`], runs [`mythos_phase_end`]; for
-/// [`WindowKind::UpkeepBegins`], runs [`upkeep_resume`].
-/// `AfterEnemyDefeated` and `BetweenPhases` windows have no
-/// continuation — for them this is a no-op preserving the existing
-/// [`close_reaction_window_at`] behavior.
+/// [`WindowKind::UpkeepBegins`], runs [`upkeep_resume`]. For
+/// [`WindowKind::BeforeInvestigatorAttacked`], resolves the cursor
+/// investigator's engaged-enemy attacks via
+/// [`resolve_attacks_for_investigator`], advances
+/// [`GameState::enemy_attack_pending`] to the next Active investigator
+/// via [`next_active_investigator_after`], and opens the next window
+/// ([`WindowKind::BeforeInvestigatorAttacked`] again if the cursor
+/// advanced to `Some`, otherwise [`WindowKind::AfterAllInvestigatorsAttacked`]).
+/// For [`WindowKind::AfterAllInvestigatorsAttacked`], runs
+/// [`enemy_phase_end`]. `AfterEnemyDefeated` and `BetweenPhases`
+/// windows have no continuation — for them this is a no-op preserving
+/// the existing [`close_reaction_window_at`] behavior.
 fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     match kind {
         WindowKind::MythosAfterDraws => {
