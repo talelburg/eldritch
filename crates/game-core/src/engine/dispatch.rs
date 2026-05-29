@@ -844,8 +844,8 @@ fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
 /// `who` (the chosen/default investigator) and opens the post-2.2
 /// player window. Called from the `InvestigationBegins` continuation
-/// (first turn of the phase) and — once Task 3 / #137 wires it — from
-/// `end_turn` (each subsequent turn, the rules' "return to 2.2"). Step
+/// (first turn of the phase) and from `end_turn` (each subsequent turn,
+/// the rules' "return to 2.2"). Step
 /// 2.2.1 (the active investigator's actions) follows as player-driven
 /// inputs while `InvestigatorTurnBegins` is the "previous player window."
 ///
@@ -3762,8 +3762,8 @@ fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
 }
 
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
-/// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` suppresses
-/// its `PhaseEnded(Upkeep)` fallback when `from == Upkeep`.
+/// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` emits no
+/// `PhaseEnded` itself — every phase's `*_end` helper owns its own.
 fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.6 Upkeep phase ends. Round ends.
     events.push(Event::PhaseEnded {
@@ -5284,12 +5284,21 @@ mod investigation_phase_tests {
         assert_eq!(
             events
                 .iter()
-                .filter(|e| matches!(e, Event::PhaseEnded { phase: Phase::Investigation }))
+                .filter(|e| matches!(
+                    e,
+                    Event::PhaseEnded {
+                        phase: Phase::Investigation
+                    }
+                ))
                 .count(),
             1,
             "exactly one PhaseEnded(Investigation) — step_phase must not also emit it"
         );
-        assert_ne!(state.phase, Phase::Investigation, "phase advanced past Investigation");
+        assert_ne!(
+            state.phase,
+            Phase::Investigation,
+            "phase advanced past Investigation"
+        );
     }
 
     #[test]
@@ -5313,7 +5322,11 @@ mod investigation_phase_tests {
             Some(InvestigatorId(2)),
             "rotates to the next active investigator (return to 2.2)"
         );
-        assert_eq!(state.phase, Phase::Investigation, "phase does not end mid-round");
+        assert_eq!(
+            state.phase,
+            Phase::Investigation,
+            "phase does not end mid-round"
+        );
         assert!(
             !events.iter().any(|e| matches!(
                 e,
