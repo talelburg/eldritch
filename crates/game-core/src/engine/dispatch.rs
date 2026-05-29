@@ -167,6 +167,12 @@ pub fn apply_player_action(
         && state.investigators.values().all(|inv| inv.mulligan_used)
     {
         state.mulligan_window = false;
+        // Setup complete — "the game begins" (Rules Reference p.27).
+        // Round 1 skips the Mythos phase (p.24), so the first phase to
+        // begin is Investigation. Kick off its driver HERE, not in
+        // start_scenario: setup has "no action windows" (p.27), so the
+        // post-2.1 player window must not open until mulligans are done.
+        investigation_phase(state, events);
     }
 
     // Reaction windows open at the step boundary inside the handler
@@ -745,10 +751,9 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
     // to grant the first round's actions. Every Active investigator → ACTIONS_PER_TURN.
     reset_actions(state, events);
 
-    // investigation_phase emits PhaseStarted(Investigation) + rotates
-    // to the lead investigator (Rules Reference p.24 step 2.1 / 2.2).
-    investigation_phase(state, events);
-
+    // NOTE: the Investigation phase is NOT begun here. Setup has no
+    // action windows (Rules Reference p.27); the phase begins after the
+    // mulligan window closes — see the kickoff in apply_player_action.
     EngineOutcome::Done
 }
 
@@ -817,41 +822,30 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Entered by [`step_phase`] on any-to-Investigation transition.
-/// Owns the `PhaseStarted(Investigation)` emit (Rules Reference
-/// p.24 step 2.1) and the initial rotation to the active
-/// investigator (step 2.2).
+/// Entered by [`step_phase`] on any-to-Investigation transition, and by
+/// the mulligan-completion site in [`apply_player_action`] for round 1.
+/// Owns the `PhaseStarted(Investigation)` emit (Rules Reference p.24
+/// step 2.1) and opens the post-2.1 player window. Rotation to the
+/// first active investigator (step 2.2) runs in the
+/// [`WindowKind::InvestigationBegins`] continuation via
+/// [`begin_investigator_turn`], lead-first by default; explicit
+/// player-pick within this window is deferred to #146.
 ///
-/// **Rotation policy (Phase 4):** lead-first by default.
-/// Rules Reference p.24 step 2.2: "The investigators may take their
-/// turns in any order. The investigators choose among themselves
-/// who…will take this turn." Phase 4 hardcodes lead-first as the
-/// table convention; the future full Investigation driver PR adds
-/// a player-pick action within an opened post-2.1 window.
+/// The window auto-skips inline when nothing is Fast-eligible (no card
+/// registry installed in unit tests), so single-investigator entry still
+/// lands the lead active within the same `apply()` call.
 fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // 2.1 Investigation phase begins.
     events.push(Event::PhaseStarted {
         phase: Phase::Investigation,
     });
-
-    // [Post-2.1 player window not opened in #69 — the future
-    //  Investigation full driver PR adds open_fast_window here.]
-
-    // 2.2 Next investigator's turn begins. (First turn of the phase.)
-    // Skip any non-Active investigators (Killed, Insane, Resigned) at
-    // the front of turn_order so a defeated lead doesn't become the
-    // active cursor. PlayerAction guards check Status::Active before
-    // accepting inputs, but placing the cursor on a defeated
-    // investigator would still be wrong.
-    let first_active = state.turn_order.iter().copied().find(|id| {
-        state
-            .investigators
-            .get(id)
-            .is_some_and(|inv| inv.status == Status::Active)
-    });
-    if let Some(id) = first_active {
-        rotate_to_active(state, events, id);
-    }
+    // PLAYER WINDOW (post-2.1). Rotation to the first investigator
+    // (step 2.2) runs in this window's continuation
+    // (`run_window_continuation` → `InvestigationBegins`), so the printed
+    // order 2.1 → window → 2.2 holds. Auto-skips inline when nothing is
+    // Fast-eligible, so single-investigator entry still lands the lead
+    // active within the same apply() call.
+    open_fast_window(state, events, WindowKind::InvestigationBegins);
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
@@ -5091,15 +5085,65 @@ mod open_fast_window_tests {
 mod investigation_phase_tests {
     use super::*;
     use crate::event::Event;
-    use crate::state::{InvestigatorId, Phase, Status};
+    use crate::state::{InvestigatorId, Phase, Status, WindowKind};
     use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn mulligan_completion_kicks_off_investigation_phase() {
+        // After the last investigator mulligans, setup ends and the
+        // Investigation phase begins (Rules Reference p.27: no action
+        // windows during setup; the game begins after mulligans).
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state.active_investigator = None;
+        state.mulligan_window = true;
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .mulligan_used = false;
+
+        let mut events = Vec::new();
+        let outcome = apply_player_action(
+            &mut state,
+            &mut events,
+            &PlayerAction::Mulligan {
+                investigator: InvestigatorId(1),
+                indices_to_redraw: vec![],
+            },
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Done));
+        assert!(
+            !state.mulligan_window,
+            "mulligan window closes once every investigator has mulliganed"
+        );
+        assert_eq!(
+            state.active_investigator,
+            Some(InvestigatorId(1)),
+            "Investigation phase kicks off and rotates to the lead after mulligan completes"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Investigation
+                }
+            )),
+            "PhaseStarted(Investigation) fires at mulligan completion, not during StartScenario"
+        );
+    }
 
     #[test]
     fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
         // Two investigators; investigation_phase should emit
-        // PhaseStarted(Investigation) and then rotate to the first
-        // investigator in turn_order (Rules Reference p.24 step 2.1 +
-        // step 2.2 lead-first convention).
+        // PhaseStarted(Investigation), open the post-2.1 InvestigationBegins
+        // window (which auto-skips in tests — no card registry installed),
+        // and then rotate to the first investigator in turn_order
+        // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
         let mut state = TestGame::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
@@ -5131,14 +5175,29 @@ mod investigation_phase_tests {
                 .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
             "rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2)"
         );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::InvestigationBegins
+                }
+            )),
+            "investigation_phase opens the post-2.1 InvestigationBegins window"
+        );
     }
 
     #[test]
-    fn investigation_phase_with_empty_turn_order_is_noop_rotate() {
-        // Degenerate: no investigators in turn_order. investigation_phase
-        // still emits PhaseStarted(Investigation) but cannot rotate, so
-        // active_investigator stays None and no ActionsRemainingChanged fires.
-        let mut state = TestGame::default().with_phase(Phase::Mythos).build();
+    fn investigation_phase_with_empty_turn_order_parks() {
+        // Degenerate (cannot occur in real gameplay): no investigators.
+        // The InvestigationBegins continuation finds no active
+        // investigator and PARKS — active stays None, no PhaseEnded, no
+        // advance. Locks in the cascade-breaker behavior (see spec
+        // "All-eliminated / no-active-investigator handling").
+        //
+        // Phase starts as Investigation (matching the real call-site
+        // shape: step_phase sets state.phase before calling
+        // investigation_phase).
+        let mut state = TestGame::default().with_phase(Phase::Investigation).build();
         state.turn_order.clear();
         state.active_investigator = None;
 
@@ -5147,22 +5206,17 @@ mod investigation_phase_tests {
 
         assert_eq!(
             state.active_investigator, None,
-            "empty turn_order must leave active_investigator as None"
+            "no investigator to rotate to"
         );
+        assert_eq!(state.phase, Phase::Investigation, "phase must not advance");
         assert!(
-            events.iter().any(|e| matches!(
+            !events.iter().any(|e| matches!(
                 e,
-                Event::PhaseStarted {
+                Event::PhaseEnded {
                     phase: Phase::Investigation
                 }
             )),
-            "PhaseStarted(Investigation) must still be emitted with empty turn_order"
-        );
-        assert!(
-            !events
-                .iter()
-                .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
-            "no rotate must happen with empty turn_order"
+            "parking must NOT end the phase (auto-advancing would loop the round)"
         );
     }
 
