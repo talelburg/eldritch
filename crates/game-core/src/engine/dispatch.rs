@@ -5363,6 +5363,49 @@ mod investigation_phase_tests {
             "step_phase must emit no PhaseEnded(Investigation) — investigation_phase_end owns it. events = {events:?}"
         );
     }
+
+    #[test]
+    fn investigation_entry_emits_phase_started_then_windows_then_lead_active() {
+        // Round ≥2 entry via step_phase (Mythos→Investigation) auto-skips
+        // both windows (no registry → nothing Fast-eligible) and lands
+        // the lead active, with no PhaseEnded yet.
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state.active_investigator = None;
+
+        let mut events = Vec::new();
+        step_phase(&mut state, &mut events); // Mythos→Investigation
+
+        assert_eq!(state.phase, Phase::Investigation);
+        assert_eq!(state.active_investigator, Some(InvestigatorId(1)));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::PhaseStarted {
+                phase: Phase::Investigation
+            }
+        )));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::WindowOpened {
+                kind: WindowKind::InvestigationBegins
+            }
+        )));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::WindowOpened {
+                kind: WindowKind::InvestigatorTurnBegins
+            }
+        )));
+        assert!(!events.iter().any(|e| matches!(
+            e,
+            Event::PhaseEnded {
+                phase: Phase::Investigation
+            }
+        )));
+    }
 }
 
 /// Per-card 5-step sub-sequence's step 2 (Rules Reference p.24 1.4
