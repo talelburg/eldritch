@@ -799,32 +799,15 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
         investigator: active_id,
     });
 
-    // If there's another investigator after this one in turn order,
-    // rotate. Otherwise the Investigation phase ends and we tick
-    // through the rest of the round automatically (Phase 1: empty
-    // Enemy/Upkeep/Mythos), arriving back at Investigation with the
-    // first investigator active.
-    let next = state
-        .turn_order
-        .iter()
-        .position(|id| *id == active_id)
-        .and_then(|idx| state.turn_order.get(idx + 1).copied());
-
-    if let Some(next_id) = next {
-        rotate_to_active(state, events, next_id);
+    // 2.2.2 decision: "return to 2.2" for the next investigator, or
+    // proceed to 2.3. next_active_investigator_after skips eliminated
+    // investigators (Rules Reference p.10) — the same shared helper the
+    // Enemy phase uses.
+    if let Some(next_id) = next_active_investigator_after(state, active_id) {
+        begin_investigator_turn(state, events, next_id);
     } else {
         state.active_investigator = None;
-        // Investigation → Enemy: enemy_phase (#71) seeds the per-
-        // investigator attack loop, then its windows auto-skip-cascade
-        // (when nothing Fast is eligible) through enemy_phase_end →
-        // step_phase(Enemy→Upkeep) → upkeep_phase (opens UpkeepBegins,
-        // auto-skip runs 4.2–4.6) → upkeep_phase_end → step_phase
-        // (Upkeep→Mythos) → mythos_phase (seeds mythos_draw_pending).
-        // If anything Fast is eligible at any of the four windows
-        // (BeforeInvestigatorAttacked × N, AfterAllInvestigatorsAttacked,
-        // UpkeepBegins), the cascade pauses there and the wait is
-        // signalled on state.
-        step_phase(state, events);
+        investigation_phase_end(state, events); // 2.3 → Enemy
     }
 
     EngineOutcome::Done
@@ -871,6 +854,18 @@ fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
 fn begin_investigator_turn(state: &mut GameState, events: &mut Vec<Event>, who: InvestigatorId) {
     rotate_to_active(state, events, who);
     open_fast_window(state, events, WindowKind::InvestigatorTurnBegins);
+}
+
+/// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)`
+/// emit — lifted out of `step_phase`, mirroring `mythos_phase_end` /
+/// `enemy_phase_end` / `upkeep_phase_end` — then transitions to the
+/// Enemy phase. Called only from `end_turn`'s terminal branch (the last
+/// investigator has taken a turn this round).
+fn investigation_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+    events.push(Event::PhaseEnded {
+        phase: Phase::Investigation,
+    });
+    step_phase(state, events); // Investigation → Enemy; calls enemy_phase
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
@@ -936,23 +931,14 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// `PhaseStarted` emit). For phases without a driver, emits
 /// `PhaseStarted` directly.
 ///
-/// **`PhaseEnded` suppression invariant:** when `from` is any phase
-/// whose driver owns its own end emit (`Phase::Mythos`,
-/// `Phase::Upkeep`, `Phase::Enemy`), `step_phase` does NOT emit the
-/// `PhaseEnded(from)` fallback. The phase's `_end` helper
-/// (`mythos_phase_end` / `upkeep_phase_end` / `enemy_phase_end`,
-/// respectively the canonical owners of steps 1.5 / 4.6 / 3.4) is
-/// responsible. Each `_end` helper is invoked via
-/// [`run_window_continuation`] when its corresponding
-/// [`WindowKind`] closes (`MythosAfterDraws` → `mythos_phase_end`;
-/// `UpkeepBegins` → `upkeep_resume` then `upkeep_phase_end`;
-/// `AfterAllInvestigatorsAttacked` → `enemy_phase_end`) — either
-/// inline via [`open_fast_window`]'s auto-skip path when no Fast
-/// plays are eligible, or via `ResolveInput::Skip` after the player
-/// declines further Fast plays. `start_scenario`'s first-round-skip
-/// path bypasses the entire Mythos phase — no
-/// `PhaseStarted(Mythos)` / `PhaseEnded(Mythos)` events fire on
-/// round 1 — per Rules Reference p.24 ("skip the mythos phase").
+/// **`PhaseEnded` invariant:** `step_phase` emits **no** `PhaseEnded`
+/// for any phase. Each phase's `*_end` helper owns its own boundary
+/// emit: `mythos_phase_end` (step 1.5), `investigation_phase_end`
+/// (step 2.3), `enemy_phase_end` (step 3.4), `upkeep_phase_end`
+/// (step 4.6). `start_scenario`'s first-round-skip path bypasses the
+/// entire Mythos phase — no `PhaseStarted(Mythos)` /
+/// `PhaseEnded(Mythos)` events fire on round 1 — per Rules Reference
+/// p.24 ("skip the mythos phase").
 ///
 /// **Round-bump:** the round-counter increment now lives in
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
@@ -960,11 +946,6 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     let from = state.phase;
     let to = from.next();
-
-    // PhaseEnded suppressed when the from-phase's *_end helper owns it.
-    if from != Phase::Mythos && from != Phase::Upkeep && from != Phase::Enemy {
-        events.push(Event::PhaseEnded { phase: from });
-    }
 
     state.phase = to;
     // The round-counter bump moves into mythos_phase (step 1.1).
@@ -5268,6 +5249,105 @@ mod investigation_phase_tests {
             state.active_investigator,
             Some(InvestigatorId(2)),
             "investigation_phase must skip the Killed lead and rotate to the first Active investigator"
+        );
+    }
+
+    #[test]
+    fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
+        // Single investigator ends their turn: TurnEnded (2.2.2), then
+        // PhaseEnded(Investigation) (2.3) from investigation_phase_end,
+        // then the cascade enters the Enemy phase.
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+
+        let mut events = Vec::new();
+        let outcome = end_turn(&mut state, &mut events);
+
+        assert!(matches!(outcome, EngineOutcome::Done));
+        assert!(
+            events.iter().any(|e| matches!(e, Event::TurnEnded { investigator } if *investigator == InvestigatorId(1))),
+            "step 2.2.2 emits TurnEnded"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Investigation
+                }
+            )),
+            "step 2.3 emits PhaseEnded(Investigation) via investigation_phase_end"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::PhaseEnded { phase: Phase::Investigation }))
+                .count(),
+            1,
+            "exactly one PhaseEnded(Investigation) — step_phase must not also emit it"
+        );
+        assert_ne!(state.phase, Phase::Investigation, "phase advanced past Investigation");
+    }
+
+    #[test]
+    fn end_turn_rotates_to_next_active_and_opens_turn_window() {
+        // Two investigators: ending #1's turn returns to 2.2 for #2 and
+        // opens the InvestigatorTurnBegins window for them.
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+
+        let mut events = Vec::new();
+        let outcome = end_turn(&mut state, &mut events);
+
+        assert!(matches!(outcome, EngineOutcome::Done));
+        assert_eq!(
+            state.active_investigator,
+            Some(InvestigatorId(2)),
+            "rotates to the next active investigator (return to 2.2)"
+        );
+        assert_eq!(state.phase, Phase::Investigation, "phase does not end mid-round");
+        assert!(
+            !events.iter().any(|e| matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Investigation
+                }
+            )),
+            "phase must not end while an investigator is still to take a turn"
+        );
+    }
+
+    #[test]
+    fn step_phase_emits_no_phase_ended() {
+        // step_phase no longer emits PhaseEnded for any phase — each
+        // phase's *_end helper owns it. Direct Investigation→Enemy step:
+        // step_phase must NOT emit PhaseEnded(Investigation); the
+        // downstream cascade may emit PhaseEnded for Enemy/Upkeep via
+        // their own *_end helpers, but that's correct and expected.
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+
+        let mut events = Vec::new();
+        step_phase(&mut state, &mut events);
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::PhaseEnded { phase: Phase::Investigation }))
+                .count(),
+            0,
+            "step_phase must emit no PhaseEnded(Investigation) — investigation_phase_end owns it. events = {events:?}"
         );
     }
 }
