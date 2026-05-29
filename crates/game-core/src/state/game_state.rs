@@ -515,6 +515,33 @@ pub enum WindowKind {
     /// variant exists so the rule's printed timing point is addressable
     /// when a future card binds to it. Mirror of `MythosAfterDraws`.
     UpkeepBegins,
+    /// The player window opened before an investigator's engaged
+    /// enemies resolve their attacks (Rules Reference p.25 step 3.3,
+    /// the "previous player window" investigators "return to" between
+    /// resolutions). The investigator to be attacked next is carried
+    /// on [`GameState::enemy_attack_pending`], not in the variant —
+    /// mirror of [`MythosAfterDraws`] + [`GameState::mythos_draw_pending`].
+    ///
+    /// Continuation (in `run_window_continuation`): read the cursor,
+    /// resolve the pending investigator's engaged ready enemies in
+    /// [`EnemyId`] order, exhaust each, advance the cursor to the next
+    /// Active investigator in [`turn_order`] (or `None`), open the next
+    /// window (`BeforeInvestigatorAttacked` if Some,
+    /// `AfterAllInvestigatorsAttacked` if None).
+    ///
+    /// One window per Active investigator in `turn_order`.
+    ///
+    /// [`MythosAfterDraws`]: WindowKind::MythosAfterDraws
+    /// [`turn_order`]: GameState::turn_order
+    BeforeInvestigatorAttacked,
+    /// The player window after all investigators have resolved their
+    /// engaged enemies' attacks (Rules Reference p.25 step 3.3, the
+    /// "next player window" entered after the final investigator).
+    /// Continuation runs `enemy_phase_end` (step 3.4 + transition).
+    /// Mirror of [`MythosAfterDraws`]'s end-of-step shape.
+    ///
+    /// [`MythosAfterDraws`]: WindowKind::MythosAfterDraws
+    AfterAllInvestigatorsAttacked,
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
@@ -668,6 +695,22 @@ mod open_window_tests {
     #[test]
     fn upkeep_begins_window_kind_serde_roundtrip() {
         let kind = WindowKind::UpkeepBegins;
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn before_investigator_attacked_window_kind_serde_roundtrip() {
+        let kind = WindowKind::BeforeInvestigatorAttacked;
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn after_all_investigators_attacked_window_kind_serde_roundtrip() {
+        let kind = WindowKind::AfterAllInvestigatorsAttacked;
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);

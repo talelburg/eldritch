@@ -1746,11 +1746,13 @@ fn trigger_matches(
                 true
             }
         }
-        // BetweenPhases and MythosAfterDraws windows open for timing
-        // reasons; no Trigger::OnEvent pattern matches them — those
-        // windows gate Fast actions, not after-event reactions.
-        // AfterEnemyDefeated windows only match EnemyDefeated patterns
-        // (handled above); encounter-reveal patterns return false.
+        // BetweenPhases, MythosAfterDraws, UpkeepBegins,
+        // BeforeInvestigatorAttacked, and AfterAllInvestigatorsAttacked
+        // windows open for timing reasons; no Trigger::OnEvent pattern
+        // matches them — those windows gate Fast actions, not
+        // after-event reactions. AfterEnemyDefeated windows only match
+        // EnemyDefeated patterns (handled above); encounter-reveal
+        // patterns return false.
         //
         // EnemySpawned: no WindowKind opens specifically for "enemy
         // spawned" in Phase 4. A future PR (likely Phase-7+) that wants
@@ -1760,7 +1762,9 @@ fn trigger_matches(
             WindowKind::BetweenPhases { .. }
             | WindowKind::AfterEnemyDefeated { .. }
             | WindowKind::MythosAfterDraws
-            | WindowKind::UpkeepBegins,
+            | WindowKind::UpkeepBegins
+            | WindowKind::BeforeInvestigatorAttacked
+            | WindowKind::AfterAllInvestigatorsAttacked,
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned,
@@ -3799,6 +3803,17 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             upkeep_resume(state, events);
         }
         WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
+        // Real bodies land in Task 5 of #71; until then these arms are
+        // unreachable in practice (nothing in the engine opens these
+        // window kinds yet).
+        WindowKind::BeforeInvestigatorAttacked | WindowKind::AfterAllInvestigatorsAttacked => {
+            unreachable!(
+                "run_window_continuation: enemy-phase window kinds are \
+                 not yet opened by any engine path (T5 of #71 wires \
+                 enemy_phase + real continuation bodies). If you hit \
+                 this, a task ordering invariant was broken."
+            )
+        }
     }
 }
 
