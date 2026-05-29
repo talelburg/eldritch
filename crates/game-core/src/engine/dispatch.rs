@@ -854,6 +854,21 @@ fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
     }
 }
 
+/// 2.2 Next investigator's turn begins. Rotates the active cursor to
+/// `who` (the chosen/default investigator) and opens the post-2.2
+/// player window. Called from the `InvestigationBegins` continuation
+/// (first turn of the phase) and — once Task 3 / #137 wires it — from
+/// `end_turn` (each subsequent turn, the rules' "return to 2.2"). Step
+/// 2.2.1 (the active investigator's actions) follows as player-driven
+/// inputs while `InvestigatorTurnBegins` is the "previous player window."
+///
+/// `who` must be an `Active` investigator in `turn_order`; callers
+/// resolve it via `first_active_investigator` / `next_active_investigator_after`.
+fn begin_investigator_turn(state: &mut GameState, events: &mut Vec<Event>, who: InvestigatorId) {
+    rotate_to_active(state, events, who);
+    open_fast_window(state, events, WindowKind::InvestigatorTurnBegins);
+}
+
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
 /// out the Rules Reference p.24 sub-steps as discrete named call
 /// sites so the rule structure is grep-able and #73 / future-peril-PR
@@ -1762,8 +1777,9 @@ fn trigger_matches(
             }
         }
         // BetweenPhases, MythosAfterDraws, UpkeepBegins,
-        // BeforeInvestigatorAttacked, and AfterAllInvestigatorsAttacked
-        // windows open for timing reasons; no Trigger::OnEvent pattern
+        // BeforeInvestigatorAttacked, AfterAllInvestigatorsAttacked,
+        // InvestigationBegins, and InvestigatorTurnBegins windows open
+        // for timing reasons; no Trigger::OnEvent pattern
         // matches them — those windows gate Fast actions, not
         // after-event reactions. AfterEnemyDefeated windows only match
         // EnemyDefeated patterns (handled above); encounter-reveal
@@ -1779,7 +1795,9 @@ fn trigger_matches(
             | WindowKind::MythosAfterDraws
             | WindowKind::UpkeepBegins
             | WindowKind::BeforeInvestigatorAttacked
-            | WindowKind::AfterAllInvestigatorsAttacked,
+            | WindowKind::AfterAllInvestigatorsAttacked
+            | WindowKind::InvestigationBegins
+            | WindowKind::InvestigatorTurnBegins,
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned,
@@ -3938,9 +3956,12 @@ fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
 /// ([`WindowKind::BeforeInvestigatorAttacked`] again if the cursor
 /// advanced to `Some`, otherwise [`WindowKind::AfterAllInvestigatorsAttacked`]).
 /// For [`WindowKind::AfterAllInvestigatorsAttacked`], runs
-/// [`enemy_phase_end`]. `AfterEnemyDefeated` and `BetweenPhases`
-/// windows have no continuation — for them this is a no-op preserving
-/// the existing [`close_reaction_window_at`] behavior.
+/// [`enemy_phase_end`]. For [`WindowKind::InvestigationBegins`], starts
+/// the first turn via [`begin_investigator_turn`] for the first Active
+/// investigator (or parks if none). `AfterEnemyDefeated`, `BetweenPhases`,
+/// and [`WindowKind::InvestigatorTurnBegins`] windows have no
+/// continuation — for them this is a no-op preserving the existing
+/// [`close_reaction_window_at`] behavior.
 fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
     match kind {
         WindowKind::MythosAfterDraws => {
@@ -3979,7 +4000,6 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             }
             upkeep_resume(state, events);
         }
-        WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
         WindowKind::BeforeInvestigatorAttacked => {
             // Phase-transitioning continuation (advances to the next
             // window and ultimately to Upkeep) — cannot run while a
@@ -4044,6 +4064,33 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             }
             enemy_phase_end(state, events);
         }
+        WindowKind::InvestigationBegins => {
+            // Post-2.1 window closed; start the first turn (step 2.2).
+            // No skill-test-in-flight guard: this runs at phase start
+            // (no test can be in flight) and does not transition phase.
+            if let Some(id) = first_active_investigator(state) {
+                begin_investigator_turn(state, events, id);
+            }
+            // None branch: no active investigator can take a turn.
+            // TODO(#144): Rules Reference p.10 step 6 — with no
+            // remaining players the scenario ends.
+            // check_all_defeated already emits
+            // AllInvestigatorsDefeated, but the scenario-end
+            // consequence is unwired. Until it lands, park here
+            // (mirrors prior behavior). Auto-advancing would loop
+            // the round forever — every other phase auto-skips
+            // with no active investigators, so Investigation is
+            // the cascade's only natural pause point.
+        }
+        // InvestigatorTurnBegins: 2.2.1 — the active investigator now
+        // takes actions (Investigate / Move / Fight / Evade / PlayCard /
+        // Draw / ActivateAbility) as player-driven inputs, then ends the
+        // turn via EndTurn (2.2.2). No continuation work — the engine
+        // waits. The per-action "return to the previous player window"
+        // re-open (Rules Reference p.24 2.2.1) is deferred to #146.
+        WindowKind::AfterEnemyDefeated { .. }
+        | WindowKind::BetweenPhases { .. }
+        | WindowKind::InvestigatorTurnBegins => {}
     }
 }
 
