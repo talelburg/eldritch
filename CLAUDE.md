@@ -140,7 +140,23 @@ Follow this order for every non-trivial PR. Skipping steps has cost real iterati
 6. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge — and ONLY then.** Do NOT include phase-doc edits in earlier commits on the branch; the doc gets touched exactly once per PR, as the final commit before merge, so it reflects the actually-shipping state (PR number is known, review-driven fixes are folded in, scope changes are settled). Mid-PR doc updates produce churn and "in flight" placeholders that have to be patched again — worse, they invite the doc and the code to drift mid-review. Specifically:
    - Move the closing issue from the **Open** table to the **Closed** table; bump the closed/open counts in the Status section.
    - Flip the Ordering / Arc table's row to `✅ PR #N`.
-   - Add an entry to **Decisions made** ONLY for choices that are load-bearing for future PRs — design-shape choices that constrain later work, intentional divergences from the issue body, significant scope splits, or review-surfaced rephrasings that shift the meaning. Skip routine field additions, mirroring of existing patterns, internal trade-offs settled within the PR, and anything a future contributor could grep from the code. If a future PR-author wouldn't need to know this to make their next decision, leave it out. Decisions entries are not a changelog; they're a context-saver for the next person. Include the PR number on each kept entry.
+   - Add an entry to **Decisions made** ONLY for choices that are load-bearing for future PRs. Decisions entries are not a changelog; they're a context-saver for the next person. Include the PR number on each kept entry. Apply this test ruthlessly:
+
+     > **Test:** would a future PR-author make a different choice if this entry didn't exist? If no — they'd discover the same fact by grepping the code, reading the relevant function's doc-comment, or reading the in-source `TODO(#NNN)` markers — leave it out.
+
+     Include:
+     - Design-shape choices that constrain later work (a new pattern future similar work inherits; a contract a follow-up PR must honor).
+     - Intentional divergences from the issue body or from precedent that aren't self-evident from the code.
+     - Scope splits, follow-up issues filed, or out-of-scope deferrals where the rationale would otherwise be lost (the follow-up issue # in the doc, not the rationale alone in some closed thread).
+     - Review-surfaced rephrasings that shift the meaning of a previously-documented decision.
+
+     Skip:
+     - Routine field additions and mirroring of existing patterns (the next per-investigator phase loop will see Mythos+Enemy and infer the shape; you don't need to spell it out a third time).
+     - Internal trade-offs settled within the PR with no forward implication.
+     - Code-organization choices (where a fn lives, whether something was extracted) — discoverable by grep.
+     - Anything already documented inline at the relevant call site with sufficient context (an `unreachable!` message + a `TODO(#NNN)` is usually enough; don't duplicate to the phase doc).
+
+     If you're unsure, lean toward skipping. A short Decisions section is a successful one — three or four well-chosen entries beats a "comprehensive" list of routine notes.
    - Remove any **Open question** the PR settled.
 
    The `docs/phases/README.md` "Maintaining these docs" section is the authoritative spec; this step is the enforcement.

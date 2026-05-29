@@ -148,6 +148,29 @@ pub struct GameState {
     /// once all investigators have drawn — at which point the
     /// `MythosAfterDraws` window opens.
     pub mythos_draw_pending: Option<InvestigatorId>,
+    /// The next investigator due to resolve engaged-enemy attacks
+    /// during Enemy phase step 3.3. Mirror of [`mythos_draw_pending`]:
+    ///
+    /// - Set to the first [`Status::Active`] investigator in
+    ///   [`turn_order`] when `enemy_phase` runs step 3.3's loop
+    ///   kickoff.
+    /// - Advanced by `run_window_continuation` after each
+    ///   per-investigator attack resolution closes, to the next Active
+    ///   investigator in [`turn_order`] (or `None` when the loop is
+    ///   done).
+    /// - Stays `None` during all phases other than Enemy.
+    ///
+    /// Eliminated investigators ([`Status::Killed`] / [`Status::Insane`]
+    /// / [`Status::Resigned`]) are skipped during advance, mirroring
+    /// the `mythos_draw_pending` semantics established in #69.
+    ///
+    /// [`mythos_draw_pending`]: GameState::mythos_draw_pending
+    /// [`turn_order`]: GameState::turn_order
+    /// [`Status::Active`]: crate::state::Status::Active
+    /// [`Status::Killed`]: crate::state::Status::Killed
+    /// [`Status::Insane`]: crate::state::Status::Insane
+    /// [`Status::Resigned`]: crate::state::Status::Resigned
+    pub enemy_attack_pending: Option<InvestigatorId>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -492,6 +515,33 @@ pub enum WindowKind {
     /// variant exists so the rule's printed timing point is addressable
     /// when a future card binds to it. Mirror of `MythosAfterDraws`.
     UpkeepBegins,
+    /// The player window opened before an investigator's engaged
+    /// enemies resolve their attacks (Rules Reference p.25 step 3.3,
+    /// the "previous player window" investigators "return to" between
+    /// resolutions). The investigator to be attacked next is carried
+    /// on [`GameState::enemy_attack_pending`], not in the variant —
+    /// mirror of [`MythosAfterDraws`] + [`GameState::mythos_draw_pending`].
+    ///
+    /// Continuation (in `run_window_continuation`): read the cursor,
+    /// resolve the pending investigator's engaged ready enemies in
+    /// [`EnemyId`] order, exhaust each, advance the cursor to the next
+    /// Active investigator in [`turn_order`] (or `None`), open the next
+    /// window (`BeforeInvestigatorAttacked` if Some,
+    /// `AfterAllInvestigatorsAttacked` if None).
+    ///
+    /// One window per Active investigator in `turn_order`.
+    ///
+    /// [`MythosAfterDraws`]: WindowKind::MythosAfterDraws
+    /// [`turn_order`]: GameState::turn_order
+    BeforeInvestigatorAttacked,
+    /// The player window after all investigators have resolved their
+    /// engaged enemies' attacks (Rules Reference p.25 step 3.3, the
+    /// "next player window" entered after the final investigator).
+    /// Continuation runs `enemy_phase_end` (step 3.4 + transition).
+    /// Mirror of [`MythosAfterDraws`]'s end-of-step shape.
+    ///
+    /// [`MythosAfterDraws`]: WindowKind::MythosAfterDraws
+    AfterAllInvestigatorsAttacked,
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
@@ -649,6 +699,22 @@ mod open_window_tests {
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);
     }
+
+    #[test]
+    fn before_investigator_attacked_window_kind_serde_roundtrip() {
+        let kind = WindowKind::BeforeInvestigatorAttacked;
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn after_all_investigators_attacked_window_kind_serde_roundtrip() {
+        let kind = WindowKind::AfterAllInvestigatorsAttacked;
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
 }
 
 #[cfg(test)]
@@ -726,6 +792,28 @@ mod mythos_draw_pending_tests {
     fn game_state_default_has_no_mythos_draw_pending() {
         let state = TestGame::new().build();
         assert_eq!(state.mythos_draw_pending, None);
+    }
+}
+
+#[cfg(test)]
+mod enemy_attack_pending_tests {
+    use super::*;
+    use crate::state::InvestigatorId;
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn game_state_default_has_no_enemy_attack_pending() {
+        let state = TestGame::new().build();
+        assert_eq!(state.enemy_attack_pending, None);
+    }
+
+    #[test]
+    fn enemy_attack_pending_round_trips_through_serde() {
+        let mut state = TestGame::new().build();
+        state.enemy_attack_pending = Some(InvestigatorId(7));
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.enemy_attack_pending, Some(InvestigatorId(7)));
     }
 }
 
