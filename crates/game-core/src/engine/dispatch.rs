@@ -2834,6 +2834,101 @@ fn fire_attacks_of_opportunity(
     }
 }
 
+/// Resolve all of one investigator's engaged ready enemies' attacks
+/// (Rules Reference p.25 step 3.3 inner body). Snapshot the attacker
+/// list in [`EnemyId`] order (`BTreeMap` iteration is sorted), then
+/// for each attacker:
+///
+/// 1. Early-break if `investigator` is no longer [`Status::Active`]
+///    (defeated by an earlier attack in the same loop). Remaining
+///    attackers do not attack and do not exhaust, per Rules
+///    Reference p.10 Elimination step 3 ("All enemies engaged with
+///    that player are placed at the location ... unengaged but
+///    otherwise maintaining their current game state") and p.25
+///    ("Each ready, engaged enemy makes an attack" — a disengaged
+///    enemy is not "engaged").
+///
+///    Today [`apply_investigator_defeat`] only flips `Status`; the
+///    full disengage + re-engage flow lands in #144 (Phase-4
+///    milestone, blocked on #128 which lands the prey logic needed
+///    for multi-investigator re-engagement). The early-break here
+///    is the rules-correct minimal interpretation: no incorrect
+///    events fire, no behavior anomaly visible at the rules level.
+///    After #144 lands, the `enemy.engaged_with` field is properly
+///    cleared on defeat too; this early-break stays as the simpler
+///    form (one redundant check, harmless).
+///
+/// 2. Call [`enemy_attack`] (places damage + horror simultaneously
+///    per p.7, fires [`apply_investigator_defeat`] if either
+///    crosses).
+///
+/// 3. Set `enemy.exhausted = true`, emit
+///    [`Event::EnemyExhausted`]. Per Rules Reference p.25,
+///    exhaustion happens "Upon completion of dealing the attack (and
+///    all abilities triggered by the attack)" — no carve-out for
+///    "the attack defeated the target," so an attack that lands and
+///    defeats its target still exhausts the attacker.
+///
+/// **Atomicity invariant:** the snapshot + loop run as a block
+/// within `run_window_continuation`'s `BeforeInvestigatorAttacked`
+/// arm — no Fast plays or reactions interpose mid-loop. The first
+/// PR that adds a reaction `EventPattern` matching events emitted
+/// inside this loop ([`Event::DamageTaken`] / [`Event::HorrorTaken`] /
+/// [`Event::EnemyExhausted`] / [`Event::EnemyDefeated`]-from-attack)
+/// must persist the remaining-attackers list on `GameState`
+/// (analogous to [`GameState::enemy_attack_pending`]) so
+/// resume-after-pause re-enters the right iteration point.
+///
+/// **Attack order:** deterministic by [`EnemyId`]. Rules Reference
+/// p.25 prescribes "the order of the attacked investigator's
+/// choosing" when an investigator is engaged with multiple enemies;
+/// #143 (unmilestoned) covers both this site and
+/// [`fire_attacks_of_opportunity`] (which has the same TODO).
+// `#[allow(dead_code)]` is temporary: the only caller today is the
+// `enemy_phase_tests` module below. T5 of #71 wires the real caller
+// (`run_window_continuation`'s `BeforeInvestigatorAttacked` arm) and
+// this attribute is removed in that PR.
+#[allow(dead_code)]
+fn resolve_attacks_for_investigator(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) {
+    // Snapshot ready engaged attackers in deterministic EnemyId order.
+    // BTreeMap iteration is already key-sorted.
+    let attackers: Vec<EnemyId> = state
+        .enemies
+        .iter()
+        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
+        .map(|(id, _)| *id)
+        .collect();
+
+    for enemy_id in attackers {
+        // Early-break on defeat. See fn doc.
+        let active = state
+            .investigators
+            .get(&investigator)
+            .is_some_and(|inv| inv.status == Status::Active);
+        if !active {
+            break;
+        }
+
+        // Damage + horror placement (simultaneous per p.7) + defeat.
+        enemy_attack(state, events, enemy_id, investigator);
+
+        // Exhaust the attacker post-resolution.
+        let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+            unreachable!(
+                "resolve_attacks_for_investigator: snapshotted enemy \
+                 {enemy_id:?} is gone from state.enemies; this is a \
+                 state-corruption invariant violation"
+            )
+        });
+        enemy.exhausted = true;
+        events.push(Event::EnemyExhausted { enemy: enemy_id });
+    }
+}
+
 /// Reshuffle the discard pile back into the deck for the named
 /// investigator. Used by [`draw`] when the deck runs empty. Drains
 /// `discard` into `deck`, then calls [`shuffle_player_deck`] (which
@@ -5924,5 +6019,237 @@ mod upkeep_phase_tests {
             hand_before + 1,
             "drew 1"
         );
+    }
+}
+
+#[cfg(test)]
+mod enemy_phase_tests {
+    use super::*;
+    use crate::state::{EnemyId, InvestigatorId, Status};
+    use crate::test_support::{test_enemy, test_investigator, TestGame};
+    use crate::Event;
+
+    #[test]
+    fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
+        let inv_id = InvestigatorId(1);
+        let enemy_id = EnemyId(1);
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 1;
+        enemy.attack_horror = 0;
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        let mut events = Vec::new();
+
+        resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+
+        // Damage placed.
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+            )),
+            "expected DamageTaken {{ amount: 1 }}; events = {events:?}"
+        );
+
+        // Enemy exhausted in state and event.
+        assert!(
+            state.enemies[&enemy_id].exhausted,
+            "enemy must be exhausted"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::EnemyExhausted { enemy } if *enemy == enemy_id
+            )),
+            "expected EnemyExhausted; events = {events:?}"
+        );
+
+        // Ordering: DamageTaken precedes EnemyExhausted (post-attack exhaust).
+        let damage_pos = events
+            .iter()
+            .position(|e| matches!(e, Event::DamageTaken { .. }))
+            .unwrap();
+        let exhaust_pos = events
+            .iter()
+            .position(|e| matches!(e, Event::EnemyExhausted { .. }))
+            .unwrap();
+        assert!(
+            damage_pos < exhaust_pos,
+            "DamageTaken must precede EnemyExhausted; events = {events:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_attacks_for_investigator_excludes_exhausted_and_unengaged_enemies() {
+        let inv_id = InvestigatorId(1);
+
+        // Engaged but exhausted — must NOT attack.
+        let mut e1 = test_enemy(1, "Exhausted Engaged");
+        e1.engaged_with = Some(inv_id);
+        e1.exhausted = true;
+        e1.attack_damage = 5;
+
+        // Ready but unengaged — must NOT attack.
+        let mut e2 = test_enemy(2, "Ready Unengaged");
+        e2.engaged_with = None;
+        e2.attack_damage = 5;
+
+        // Ready engaged — the only one that attacks.
+        let mut e3 = test_enemy(3, "Ready Engaged");
+        e3.engaged_with = Some(inv_id);
+        e3.attack_damage = 1;
+
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_enemy(e1)
+            .with_enemy(e2)
+            .with_enemy(e3)
+            .build();
+        let mut events = Vec::new();
+
+        resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+
+        // Exactly one DamageTaken (from e3, amount 1).
+        let damages: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e, Event::DamageTaken { .. }))
+            .collect();
+        assert_eq!(
+            damages.len(),
+            1,
+            "exactly one attacker should fire; events = {events:?}"
+        );
+        assert!(matches!(damages[0], Event::DamageTaken { amount: 1, .. }));
+
+        // Only e3 exhausted; e1 already was; e2 must remain ready.
+        assert!(
+            state.enemies[&EnemyId(1)].exhausted,
+            "e1 was already exhausted; still is"
+        );
+        assert!(
+            !state.enemies[&EnemyId(2)].exhausted,
+            "e2 must NOT exhaust (didn't attack)"
+        );
+        assert!(
+            state.enemies[&EnemyId(3)].exhausted,
+            "e3 attacked and exhausted"
+        );
+
+        // Exactly one EnemyExhausted event (e3). e1's prior-state exhausted doesn't re-emit.
+        let exhausted_events: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e, Event::EnemyExhausted { .. }))
+            .collect();
+        assert_eq!(exhausted_events.len(), 1);
+        assert!(matches!(
+            exhausted_events[0],
+            Event::EnemyExhausted { enemy: EnemyId(3) }
+        ));
+    }
+
+    #[test]
+    fn resolve_attacks_for_investigator_iterates_attackers_in_enemy_id_order() {
+        let inv_id = InvestigatorId(1);
+
+        let mut e_lower = test_enemy(2, "Lower id"); // EnemyId(2)
+        e_lower.engaged_with = Some(inv_id);
+        e_lower.attack_damage = 1;
+
+        let mut e_higher = test_enemy(10, "Higher id"); // EnemyId(10)
+        e_higher.engaged_with = Some(inv_id);
+        e_higher.attack_damage = 2;
+
+        let mut state = TestGame::default()
+            .with_investigator({
+                let mut inv = test_investigator(1);
+                inv.max_health = 100; // survive both attacks
+                inv
+            })
+            .with_enemy(e_higher) // insert in NON-id order to confirm BTreeMap ordering wins
+            .with_enemy(e_lower)
+            .build();
+        let mut events = Vec::new();
+
+        resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+
+        // The two DamageTaken events must appear in EnemyId(2) → EnemyId(10) order
+        // (verifiable via their amounts: 1 then 2).
+        let damages: Vec<u8> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::DamageTaken { amount, .. } => Some(*amount),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            damages,
+            vec![1, 2],
+            "EnemyId order: 2 (dmg 1) before 10 (dmg 2)"
+        );
+    }
+
+    #[test]
+    fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop() {
+        let inv_id = InvestigatorId(1);
+
+        // EnemyId(1) deals the killing blow on its attack.
+        let mut e1 = test_enemy(1, "Killer");
+        e1.engaged_with = Some(inv_id);
+        e1.attack_damage = 1;
+
+        // EnemyId(2) must NOT attack (active check fails at loop top).
+        let mut e2 = test_enemy(2, "Bystander");
+        e2.engaged_with = Some(inv_id);
+        e2.attack_damage = 5;
+
+        let mut state = TestGame::default()
+            .with_investigator({
+                let mut inv = test_investigator(1);
+                inv.max_health = 1; // e1's attack defeats
+                inv
+            })
+            .with_enemy(e1)
+            .with_enemy(e2)
+            .build();
+        let mut events = Vec::new();
+
+        resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+
+        // e1 attacked + exhausted.
+        assert!(
+            state.enemies[&EnemyId(1)].exhausted,
+            "e1 attacked, must exhaust"
+        );
+        // e2 did NOT attack and did NOT exhaust.
+        assert!(
+            !state.enemies[&EnemyId(2)].exhausted,
+            "e2 must not exhaust (early-break)"
+        );
+
+        let damages: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e, Event::DamageTaken { .. }))
+            .collect();
+        assert_eq!(
+            damages.len(),
+            1,
+            "only e1's attack lands; events = {events:?}"
+        );
+
+        let exhausted_events: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e, Event::EnemyExhausted { .. }))
+            .collect();
+        assert_eq!(exhausted_events.len(), 1);
+        assert!(matches!(
+            exhausted_events[0],
+            Event::EnemyExhausted { enemy: EnemyId(1) }
+        ));
+
+        // Investigator was defeated.
+        assert_eq!(state.investigators[&inv_id].status, Status::Killed);
     }
 }
