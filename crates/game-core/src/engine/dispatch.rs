@@ -917,19 +917,23 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// `PhaseStarted` emit). For phases without a driver, emits
 /// `PhaseStarted` directly.
 ///
-/// **`PhaseEnded(Mythos)` suppression invariant:** when
-/// `from == Phase::Mythos`, `step_phase` does NOT emit
-/// `PhaseEnded(Mythos)` — `mythos_phase_end` (the canonical owner of
-/// step 1.5's emit) is responsible. `mythos_phase_end` is invoked via
-/// [`run_window_continuation`] when a [`WindowKind::MythosAfterDraws`]
-/// window closes (either inline via [`open_fast_window`]'s auto-skip
-/// path when no Fast plays are eligible, or via `ResolveInput::Skip`
-/// after the player declines further Fast plays). `start_scenario`'s
-/// first-round-skip path bypasses the entire Mythos phase — no
-/// `PhaseStarted(Mythos)` / `PhaseEnded(Mythos)` events fire on round 1
-/// — per Rules Reference p.24 ("skip the mythos phase"). #71 extends
-/// the same suppression to `Phase::Enemy` — `enemy_phase_end` owns the
-/// step 3.4 `PhaseEnded(Enemy)` emit.
+/// **`PhaseEnded` suppression invariant:** when `from` is any phase
+/// whose driver owns its own end emit (`Phase::Mythos`,
+/// `Phase::Upkeep`, `Phase::Enemy`), `step_phase` does NOT emit the
+/// `PhaseEnded(from)` fallback. The phase's `_end` helper
+/// (`mythos_phase_end` / `upkeep_phase_end` / `enemy_phase_end`,
+/// respectively the canonical owners of steps 1.5 / 4.6 / 3.4) is
+/// responsible. Each `_end` helper is invoked via
+/// [`run_window_continuation`] when its corresponding
+/// [`WindowKind`] closes (`MythosAfterDraws` → `mythos_phase_end`;
+/// `UpkeepBegins` → `upkeep_resume` then `upkeep_phase_end`;
+/// `AfterAllInvestigatorsAttacked` → `enemy_phase_end`) — either
+/// inline via [`open_fast_window`]'s auto-skip path when no Fast
+/// plays are eligible, or via `ResolveInput::Skip` after the player
+/// declines further Fast plays. `start_scenario`'s first-round-skip
+/// path bypasses the entire Mythos phase — no
+/// `PhaseStarted(Mythos)` / `PhaseEnded(Mythos)` events fire on
+/// round 1 — per Rules Reference p.24 ("skip the mythos phase").
 ///
 /// **Round-bump:** the round-counter increment now lives in
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
