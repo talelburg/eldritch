@@ -6909,8 +6909,9 @@ mod enemy_phase_tests {
 
     #[test]
     fn step_phase_from_enemy_does_not_emit_phase_ended_enemy() {
-        // Direct unit-level check: step_phase's PhaseEnded fallback must
-        // suppress for Phase::Enemy (enemy_phase_end owns that emit).
+        // Direct unit-level check: step_phase emits no PhaseEnded itself,
+        // so the Enemy→Upkeep step must not emit PhaseEnded(Enemy)
+        // (enemy_phase_end owns that emit).
         let mut state = TestGame::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Enemy)
