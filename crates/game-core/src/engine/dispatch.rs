@@ -801,14 +801,17 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
         rotate_to_active(state, events, next_id);
     } else {
         state.active_investigator = None;
-        step_phase(state, events); // Investigation → Enemy (empty until #71)
-        step_phase(state, events); // Enemy → Upkeep: upkeep_phase opens the
-                                   // post-4.1 window. Auto-skip cascades
-                                   // 4.2–4.6 → Upkeep→Mythos → mythos_phase
-                                   // (seeds mythos_draw_pending). If a Fast
-                                   // play is eligible the window stays open
-                                   // and the cascade pauses in Upkeep. Either
-                                   // way the wait is signalled on state.
+        // Investigation → Enemy: enemy_phase (#71) seeds the per-
+        // investigator attack loop, then its windows auto-skip-cascade
+        // (when nothing Fast is eligible) through enemy_phase_end →
+        // step_phase(Enemy→Upkeep) → upkeep_phase (opens UpkeepBegins,
+        // auto-skip runs 4.2–4.6) → upkeep_phase_end → step_phase
+        // (Upkeep→Mythos) → mythos_phase (seeds mythos_draw_pending).
+        // If anything Fast is eligible at any of the four windows
+        // (BeforeInvestigatorAttacked × N, AfterAllInvestigatorsAttacked,
+        // UpkeepBegins), the cascade pauses there and the wait is
+        // signalled on state.
+        step_phase(state, events);
     }
 
     EngineOutcome::Done
@@ -924,7 +927,9 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// after the player declines further Fast plays). `start_scenario`'s
 /// first-round-skip path bypasses the entire Mythos phase — no
 /// `PhaseStarted(Mythos)` / `PhaseEnded(Mythos)` events fire on round 1
-/// — per Rules Reference p.24 ("skip the mythos phase").
+/// — per Rules Reference p.24 ("skip the mythos phase"). #71 extends
+/// the same suppression to `Phase::Enemy` — `enemy_phase_end` owns the
+/// step 3.4 `PhaseEnded(Enemy)` emit.
 ///
 /// **Round-bump:** the round-counter increment now lives in
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
@@ -934,7 +939,7 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     let to = from.next();
 
     // PhaseEnded suppressed when the from-phase's *_end helper owns it.
-    if from != Phase::Mythos && from != Phase::Upkeep {
+    if from != Phase::Mythos && from != Phase::Upkeep && from != Phase::Enemy {
         events.push(Event::PhaseEnded { phase: from });
     }
 
@@ -947,8 +952,14 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     match to {
         Phase::Mythos if from != Phase::Mythos => mythos_phase(state, events),
         Phase::Investigation if from != Phase::Investigation => investigation_phase(state, events),
+        Phase::Enemy if from != Phase::Enemy => enemy_phase(state, events),
         Phase::Upkeep if from != Phase::Upkeep => upkeep_phase(state, events),
-        _ => events.push(Event::PhaseStarted { phase: to }),
+        _ => unreachable!(
+            "step_phase: from == to (from={from:?}, to={to:?}); Phase::next \
+             never returns the same phase, so this branch is structurally \
+             unreachable. If it ever fires, something has corrupted \
+             state.phase between the read and the dispatch."
+        ),
     }
 }
 
@@ -2884,11 +2895,6 @@ fn fire_attacks_of_opportunity(
 /// choosing" when an investigator is engaged with multiple enemies;
 /// #143 (unmilestoned) covers both this site and
 /// [`fire_attacks_of_opportunity`] (which has the same TODO).
-// `#[allow(dead_code)]` is temporary: the only caller today is the
-// `enemy_phase_tests` module below. T5 of #71 wires the real caller
-// (`run_window_continuation`'s `BeforeInvestigatorAttacked` arm) and
-// this attribute is removed in that PR.
-#[allow(dead_code)]
 fn resolve_attacks_for_investigator(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -2927,6 +2933,68 @@ fn resolve_attacks_for_investigator(
         enemy.exhausted = true;
         events.push(Event::EnemyExhausted { enemy: enemy_id });
     }
+}
+
+/// 3.2 Hunter enemies move. Rules Reference p.25: "Resolve the hunter
+/// keyword for each ready, unengaged enemy that has the hunter
+/// keyword."
+fn hunter_movement_step(_state: &mut GameState, _events: &mut Vec<Event>) {
+    // TODO(#128): iterate ready unengaged enemies with the Hunter
+    //             keyword; BFS over the location-connection graph;
+    //             move + engage-on-arrival. Ambiguous shortest paths
+    //             prompt the active investigator via AwaitingInput +
+    //             InputResponse::PickLocation. Currently no Hunter
+    //             keyword exists on CardMetadata; #128 lands it
+    //             alongside this body.
+}
+
+/// Entered by [`step_phase`] on the Investigation→Enemy transition.
+/// Owns the `PhaseStarted(Enemy)` emit (Rules Reference p.25 step 3.1)
+/// and kicks off the per-investigator attack loop (step 3.3) by
+/// seeding [`GameState::enemy_attack_pending`] and opening the first
+/// [`WindowKind::BeforeInvestigatorAttacked`] window. The loop body
+/// runs in [`run_window_continuation`]'s arms; this driver returns
+/// after the kickoff.
+///
+/// Hunter movement (step 3.2) is a named TODO stub
+/// ([`hunter_movement_step`]) deferred to #128.
+fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) {
+    // 3.1 Enemy phase begins.
+    events.push(Event::PhaseStarted {
+        phase: Phase::Enemy,
+    });
+
+    // 3.2 Hunter enemies move. TODO(#128).
+    hunter_movement_step(state, events);
+
+    // 3.3 Kick off the per-investigator attack loop. Seed the cursor
+    //     to the first Active investigator in turn_order. Eliminated
+    //     investigators (Killed / Insane / Resigned) are skipped per
+    //     Rules Reference p.10 (Elimination); first_active_investigator
+    //     is the shared helper used by Mythos 1.4 (#69) for the same
+    //     semantics.
+    state.enemy_attack_pending = first_active_investigator(state);
+
+    if state.enemy_attack_pending.is_some() {
+        open_fast_window(state, events, WindowKind::BeforeInvestigatorAttacked);
+    } else {
+        // No Active investigators (turn_order empty or all eliminated).
+        // Skip straight to the final window — mirror of mythos_phase's
+        // no-drawer path.
+        open_fast_window(state, events, WindowKind::AfterAllInvestigatorsAttacked);
+    }
+}
+
+/// Called from [`run_window_continuation`]'s
+/// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
+/// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
+/// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
+fn enemy_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+    // 3.4 Enemy phase ends.
+    events.push(Event::PhaseEnded {
+        phase: Phase::Enemy,
+    });
+    step_phase(state, events); // Enemy → Upkeep; calls upkeep_phase
 }
 
 /// Reshuffle the discard pile back into the deck for the named
@@ -3898,16 +3966,69 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             upkeep_resume(state, events);
         }
         WindowKind::AfterEnemyDefeated { .. } | WindowKind::BetweenPhases { .. } => {}
-        // Real bodies land in Task 5 of #71; until then these arms are
-        // unreachable in practice (nothing in the engine opens these
-        // window kinds yet).
-        WindowKind::BeforeInvestigatorAttacked | WindowKind::AfterAllInvestigatorsAttacked => {
-            unreachable!(
-                "run_window_continuation: enemy-phase window kinds are \
-                 not yet opened by any engine path (T5 of #71 wires \
-                 enemy_phase + real continuation bodies). If you hit \
-                 this, a task ordering invariant was broken."
-            )
+        WindowKind::BeforeInvestigatorAttacked => {
+            // Phase-transitioning continuation (advances to the next
+            // window and ultimately to Upkeep) — cannot run while a
+            // skill test is in flight (would strand it). Phase 4 has
+            // no Enemy-phase skill-test source, so this branch is
+            // structurally unreachable today. A future PR adding one
+            // (e.g. a treachery-style "make an Agility test or take
+            // damage" attack ability) must redesign the window-close
+            // + phase-transition ordering before this assertion fires.
+            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+                unreachable!(
+                    "BeforeInvestigatorAttacked window closed while a \
+                     skill test is in flight (continuation={:?}). Phase \
+                     transition would strand the skill test in the \
+                     wrong phase. Phase 4 has no Enemy-phase skill test \
+                     sources; if a future PR adds one, the window-close \
+                     + phase-transition ordering needs redesign before \
+                     this assertion can be relaxed.",
+                    in_flight.continuation,
+                );
+            }
+
+            // Cursor expect-Some: BeforeInvestigatorAttacked is only
+            // ever opened after enemy_attack_pending is set to Some(_)
+            // in enemy_phase or in the advance below. A None cursor
+            // here is a state-corruption invariant violation, not a
+            // normal rejection path.
+            let investigator = state.enemy_attack_pending.unwrap_or_else(|| {
+                unreachable!(
+                    "BeforeInvestigatorAttacked closed with \
+                     enemy_attack_pending == None; this is a \
+                     state-corruption invariant violation"
+                )
+            });
+
+            resolve_attacks_for_investigator(state, events, investigator);
+
+            // Advance the cursor: next Active investigator AFTER
+            // `investigator` in turn_order. The shared helper uses
+            // turn_order (not the filtered-Active list) as the index
+            // basis, so `investigator` itself can have been defeated
+            // mid-loop and we still find the right successor.
+            state.enemy_attack_pending = next_active_investigator_after(state, investigator);
+
+            if state.enemy_attack_pending.is_some() {
+                open_fast_window(state, events, WindowKind::BeforeInvestigatorAttacked);
+            } else {
+                open_fast_window(state, events, WindowKind::AfterAllInvestigatorsAttacked);
+            }
+        }
+        WindowKind::AfterAllInvestigatorsAttacked => {
+            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+                unreachable!(
+                    "AfterAllInvestigatorsAttacked window closed while a \
+                     skill test is in flight (continuation={:?}). Phase \
+                     4 has no Enemy-phase skill-test sources; a future \
+                     PR adding one needs the window-close + \
+                     phase-transition ordering redesigned before this \
+                     fires.",
+                    in_flight.continuation,
+                );
+            }
+            enemy_phase_end(state, events);
         }
     }
 }
@@ -6025,7 +6146,7 @@ mod upkeep_phase_tests {
 #[cfg(test)]
 mod enemy_phase_tests {
     use super::*;
-    use crate::state::{EnemyId, InvestigatorId, Status};
+    use crate::state::{EnemyId, InvestigatorId, Phase, Status, WindowKind};
     use crate::test_support::{test_enemy, test_investigator, TestGame};
     use crate::Event;
 
@@ -6251,5 +6372,295 @@ mod enemy_phase_tests {
 
         // Investigator was defeated.
         assert_eq!(state.investigators[&inv_id].status, Status::Killed);
+    }
+
+    #[test]
+    fn enemy_phase_emits_phase_started_and_cascades_to_mythos_in_no_eligibility_case() {
+        // 1 Active investigator, no engaged enemies. Auto-skip
+        // cascades through both windows + enemy_phase_end +
+        // Upkeep → Mythos.
+        let inv_id = InvestigatorId(1);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![inv_id];
+        state.active_investigator = None;
+        let mut events = Vec::new();
+
+        step_phase(&mut state, &mut events); // Investigation → Enemy
+
+        // Positional ordering of the major events.
+        let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
+        let started = pos(&|e| {
+            matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Enemy
+                }
+            )
+        })
+        .expect("PhaseStarted(Enemy)");
+        let w1_open = pos(&|e| {
+            matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::BeforeInvestigatorAttacked
+                }
+            )
+        })
+        .expect("WindowOpened(Before)");
+        let w1_close = pos(&|e| {
+            matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::BeforeInvestigatorAttacked
+                }
+            )
+        })
+        .expect("WindowClosed(Before)");
+        let w2_open = pos(&|e| {
+            matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::AfterAllInvestigatorsAttacked
+                }
+            )
+        })
+        .expect("WindowOpened(After)");
+        let w2_close = pos(&|e| {
+            matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::AfterAllInvestigatorsAttacked
+                }
+            )
+        })
+        .expect("WindowClosed(After)");
+        let ended = pos(&|e| {
+            matches!(
+                e,
+                Event::PhaseEnded {
+                    phase: Phase::Enemy
+                }
+            )
+        })
+        .expect("PhaseEnded(Enemy)");
+        let upkeep_started = pos(&|e| {
+            matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Upkeep
+                }
+            )
+        })
+        .expect("PhaseStarted(Upkeep)");
+
+        assert!(
+            started < w1_open
+                && w1_open < w1_close
+                && w1_close < w2_open
+                && w2_open < w2_close
+                && w2_close < ended
+                && ended < upkeep_started,
+            "ordered: 3.1 → BeforeInv window → AfterAll window → 3.4 → Upkeep 4.1; events = {events:?}"
+        );
+        assert_eq!(state.phase, Phase::Mythos, "cascade lands in Mythos");
+        assert_eq!(state.enemy_attack_pending, None, "cursor cleared at end");
+    }
+
+    #[test]
+    fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
+        let id1 = InvestigatorId(1);
+        let id2 = InvestigatorId(2);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![id1, id2];
+        state.active_investigator = None;
+        let mut events = Vec::new();
+
+        step_phase(&mut state, &mut events); // Investigation → Enemy
+
+        // Two BeforeInvestigatorAttacked windows + one AfterAll.
+        let before_opens: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| {
+                matches!(
+                    e,
+                    Event::WindowOpened {
+                        kind: WindowKind::BeforeInvestigatorAttacked
+                    }
+                )
+                .then_some(i)
+            })
+            .collect();
+        let after_opens: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| {
+                matches!(
+                    e,
+                    Event::WindowOpened {
+                        kind: WindowKind::AfterAllInvestigatorsAttacked
+                    }
+                )
+                .then_some(i)
+            })
+            .collect();
+        assert_eq!(before_opens.len(), 2, "one window per Active investigator");
+        assert_eq!(after_opens.len(), 1);
+        assert!(before_opens[0] < before_opens[1] && before_opens[1] < after_opens[0]);
+    }
+
+    #[test]
+    fn enemy_phase_skips_eliminated_investigator_in_advance() {
+        let id1 = InvestigatorId(1);
+        let id2 = InvestigatorId(2);
+        let id3 = InvestigatorId(3);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_investigator(test_investigator(3))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![id1, id2, id3];
+        state.active_investigator = None;
+        state.investigators.get_mut(&id2).unwrap().status = Status::Insane;
+        let mut events = Vec::new();
+
+        step_phase(&mut state, &mut events); // Investigation → Enemy
+
+        // Only 2 BeforeInvestigatorAttacked windows (id1 + id3).
+        let before_count = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Event::WindowOpened {
+                        kind: WindowKind::BeforeInvestigatorAttacked
+                    }
+                )
+            })
+            .count();
+        assert_eq!(before_count, 2, "Insane id2 must be skipped");
+    }
+
+    #[test]
+    fn enemy_phase_with_all_eliminated_opens_after_all_directly() {
+        let id1 = InvestigatorId(1);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![id1];
+        state.active_investigator = None;
+        state.investigators.get_mut(&id1).unwrap().status = Status::Killed;
+        let mut events = Vec::new();
+
+        step_phase(&mut state, &mut events); // Investigation → Enemy
+
+        // No BeforeInvestigatorAttacked windows — straight to AfterAll.
+        assert!(
+            events.iter().all(|e| !matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::BeforeInvestigatorAttacked
+                }
+            )),
+            "no per-investigator window when all are eliminated; events = {events:?}"
+        );
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::WindowOpened {
+                kind: WindowKind::AfterAllInvestigatorsAttacked
+            }
+        )));
+        // With all investigators eliminated, the cascade keeps going:
+        // Enemy → Upkeep (no-op steps for empty Active set) → Mythos
+        // (mythos_draw_pending = None → auto-skip path) → Investigation.
+        // The point of this test is the structural shape — no
+        // BeforeInvestigatorAttacked window, AfterAll opens directly —
+        // not the terminal phase.
+        assert_eq!(state.phase, Phase::Investigation);
+    }
+
+    #[test]
+    fn enemy_phase_attack_lands_in_full_cascade() {
+        // 1 investigator engaged with 1 ready enemy. Full Investigation→Enemy→Upkeep→Mythos
+        // cascade; attack lands inside the BeforeInvestigatorAttacked continuation.
+        let inv_id = InvestigatorId(1);
+        let enemy_id = EnemyId(1);
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 1;
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![inv_id];
+        state.active_investigator = None;
+        let mut events = Vec::new();
+
+        step_phase(&mut state, &mut events); // Investigation → Enemy
+
+        // The attack landed. Event-stream evidence — state.enemies's
+        // `exhausted` flag is reset by Upkeep step 4.3 later in the
+        // cascade (ready_exhausted_cards), so checking the post-cascade
+        // state directly would race the readying step. The
+        // DamageTaken + EnemyExhausted events emitted inside the
+        // BeforeInvestigatorAttacked continuation are the authoritative
+        // signal that the attack landed.
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        )));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::EnemyExhausted { enemy } if *enemy == enemy_id
+        )));
+
+        // Cascade landed in Mythos.
+        assert_eq!(state.phase, Phase::Mythos);
+    }
+
+    #[test]
+    fn step_phase_from_enemy_does_not_emit_phase_ended_enemy() {
+        // Direct unit-level check: step_phase's PhaseEnded fallback must
+        // suppress for Phase::Enemy (enemy_phase_end owns that emit).
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Enemy)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        state.active_investigator = None;
+        // Use a state where Upkeep's cascade can complete (Active investigator exists).
+        let mut events = Vec::new();
+
+        step_phase(&mut state, &mut events); // Enemy → Upkeep
+
+        // step_phase itself MUST NOT emit PhaseEnded(Enemy); only
+        // enemy_phase_end is allowed to (which doesn't run here — we
+        // started in Enemy and stepped out, simulating the "phase
+        // transition without driver-owned end emit" path).
+        let phase_ended_enemy_count = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Event::PhaseEnded {
+                        phase: Phase::Enemy
+                    }
+                )
+            })
+            .count();
+        assert_eq!(
+            phase_ended_enemy_count, 0,
+            "step_phase must NOT emit PhaseEnded(Enemy); only enemy_phase_end may. events = {events:?}"
+        );
     }
 }
