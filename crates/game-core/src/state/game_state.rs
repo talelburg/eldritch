@@ -542,6 +542,19 @@ pub enum WindowKind {
     ///
     /// [`MythosAfterDraws`]: WindowKind::MythosAfterDraws
     AfterAllInvestigatorsAttacked,
+    /// The player window between Rules Reference p.24 step 2.1
+    /// (Investigation phase begins) and step 2.2 (the first
+    /// investigator's turn begins). Bare variant — no `EventPattern`
+    /// matches it today; it exists so the printed timing point is
+    /// addressable and so step 2.2's rotation runs in this window's
+    /// continuation (preserving the printed 2.1 → window → 2.2 order).
+    InvestigationBegins,
+    /// The player window opened at the start of each investigator's
+    /// turn (Rules Reference p.24 step 2.2, the "previous player window"
+    /// that actions return to during step 2.2.1). Bare variant. One per
+    /// investigator turn. Continuation is a no-op: the engine then waits
+    /// for the active investigator's player-driven actions.
+    InvestigatorTurnBegins,
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
@@ -711,6 +724,22 @@ mod open_window_tests {
     #[test]
     fn after_all_investigators_attacked_window_kind_serde_roundtrip() {
         let kind = WindowKind::AfterAllInvestigatorsAttacked;
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn investigation_begins_window_kind_serde_roundtrip() {
+        let kind = WindowKind::InvestigationBegins;
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn investigator_turn_begins_window_kind_serde_roundtrip() {
+        let kind = WindowKind::InvestigatorTurnBegins;
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);

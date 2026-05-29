@@ -158,37 +158,78 @@ mod tests {
 
     #[test]
     fn start_scenario_advances_to_investigation_with_round_one() {
+        // StartScenario opens the mulligan window; the Investigation phase
+        // does NOT begin until the last mulligan completes (Rules Reference
+        // p.27: no action windows during setup; the game begins after
+        // mulligans). After StartScenario alone, active_investigator is
+        // None and no PhaseStarted(Investigation) fires yet.
+        //
+        // The full round-1 kickoff (active investigator set, PhaseStarted
+        // fired) is covered by
+        // `investigation_phase_tests::mulligan_completion_kicks_off_investigation_phase`.
         let id = InvestigatorId(1);
         let state = TestGame::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .build();
-        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let start_result = apply(state, Action::Player(PlayerAction::StartScenario));
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(result.state.round, 1);
-        assert_eq!(result.state.phase, Phase::Investigation);
-        assert_eq!(result.state.active_investigator, Some(id));
-        assert_eq!(result.state.investigators[&id].actions_remaining, 3);
+        assert_eq!(start_result.outcome, EngineOutcome::Done);
+        assert_eq!(start_result.state.round, 1);
+        assert_eq!(start_result.state.phase, Phase::Investigation);
+        // Mulligan window is open — active investigator not yet set.
+        assert!(
+            start_result.state.mulligan_window,
+            "mulligan window must be open after StartScenario"
+        );
+        assert_eq!(
+            start_result.state.active_investigator, None,
+            "active investigator is not set until mulligan window closes"
+        );
+        assert_eq!(start_result.state.investigators[&id].actions_remaining, 3);
 
-        assert_event!(result.events, Event::ScenarioStarted);
+        assert_event!(start_result.events, Event::ScenarioStarted);
         // Round 1: Mythos is skipped entirely — no PhaseStarted(Mythos) or
         // PhaseEnded(Mythos) fire (Rules Reference p.24: first round skips
         // the Mythos phase; the phase doesn't happen, not "runs empty").
         assert_no_event!(
-            result.events,
+            start_result.events,
             Event::PhaseStarted {
                 phase: Phase::Mythos
             }
         );
         assert_no_event!(
-            result.events,
+            start_result.events,
             Event::PhaseEnded {
                 phase: Phase::Mythos
             }
         );
+        // PhaseStarted(Investigation) fires at mulligan completion, not here.
+        assert_no_event!(
+            start_result.events,
+            Event::PhaseStarted {
+                phase: Phase::Investigation
+            }
+        );
+
+        // After the sole investigator mulligans, the phase begins and the
+        // lead becomes active.
+        let mulligan_result = apply(
+            start_result.state,
+            Action::Player(PlayerAction::Mulligan {
+                investigator: id,
+                indices_to_redraw: vec![],
+            }),
+        );
+        assert_eq!(mulligan_result.outcome, EngineOutcome::Done);
+        assert!(!mulligan_result.state.mulligan_window, "window must close");
+        assert_eq!(
+            mulligan_result.state.active_investigator,
+            Some(id),
+            "lead investigator becomes active after mulligan window closes"
+        );
         assert_event!(
-            result.events,
+            mulligan_result.events,
             Event::PhaseStarted {
                 phase: Phase::Investigation
             }
@@ -877,13 +918,21 @@ mod tests {
             .with_turn_order([inv1, inv2])
             .build();
 
-        // StartScenario: round 0 → 1, phase Mythos → Investigation,
-        // first investigator becomes active with 3 actions.
+        // StartScenario: round 0 → 1, phase Investigation (mulligan window
+        // open). The Investigation phase does NOT begin until the last
+        // investigator mulligans — active_investigator is None here.
         let result = apply(state, Action::Player(PlayerAction::StartScenario));
         let state = result.state;
         assert_eq!(state.round, 1);
         assert_eq!(state.phase, Phase::Investigation);
-        assert_eq!(state.active_investigator, Some(inv1));
+        assert!(
+            state.mulligan_window,
+            "mulligan window must be open after StartScenario"
+        );
+        assert_eq!(
+            state.active_investigator, None,
+            "active investigator not yet set — Investigation phase begins after mulligan"
+        );
         assert_eq!(state.investigators[&inv1].actions_remaining, 3);
 
         // Mulligan past the window for both investigators (empty
@@ -906,6 +955,13 @@ mod tests {
             }),
         )
         .state;
+        // After the last mulligan, the Investigation phase begins and the
+        // lead investigator becomes active.
+        assert_eq!(
+            state.active_investigator,
+            Some(inv1),
+            "lead investigator becomes active after mulligan window closes"
+        );
 
         // First EndTurn (inv1): rotates to inv2 within Investigation.
         // No phase transitions yet.
@@ -988,11 +1044,16 @@ mod tests {
             .with_turn_order([id])
             .build();
 
+        // StartScenario: round 0 → 1, mulligan window opens.
+        // active_investigator is None until mulligan completion.
         let after_start = apply(state, Action::Player(PlayerAction::StartScenario)).state;
         assert_eq!(after_start.round, 1);
-        assert_eq!(after_start.active_investigator, Some(id));
+        assert_eq!(
+            after_start.active_investigator, None,
+            "active investigator not set until mulligan window closes"
+        );
 
-        // Mulligan past the setup window.
+        // Mulligan past the setup window. After completion, lead becomes active.
         let after_mulligan = apply(
             after_start,
             Action::Player(PlayerAction::Mulligan {

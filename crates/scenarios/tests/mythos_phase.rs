@@ -630,35 +630,57 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
         "Skip must return Done after closing MythosAfterDraws"
     );
 
-    // Window must be closed — no open windows remaining.
+    // MythosAfterDraws is closed; investigation_phase then opens
+    // InvestigationBegins. Because there's a Fast card in hand,
+    // InvestigationBegins does NOT auto-skip — it stays on the stack.
+    // (Defect B was: MythosAfterDraws could NOT be closed via Skip at all;
+    // that defect is still fixed — only the old "open_windows empty" shape
+    // changes now that investigation_phase opens its own window.)
+    assert_eq!(
+        skip_result.state.open_windows.len(),
+        1,
+        "InvestigationBegins window must be open (Fast card is eligible); \
+         MythosAfterDraws must be gone"
+    );
     assert!(
-        skip_result.state.open_windows.is_empty(),
-        "open_windows must be empty after Skip closes MythosAfterDraws; \
-         pre-fix this window could not be closed via Skip"
+        skip_result
+            .state
+            .open_windows
+            .last()
+            .is_some_and(|w| w.kind == WindowKind::InvestigationBegins),
+        "top window must be InvestigationBegins; got {:?}",
+        skip_result.state.open_windows.last()
     );
 
-    // mythos_phase_end ran: phase transitioned to Investigation, lead
-    // investigator is active, round is still 2.
+    // mythos_phase_end ran: phase transitioned to Investigation.
+    // active_investigator is None until InvestigationBegins closes
+    // (its continuation begin_investigator_turn rotates to the lead).
     assert_eq!(
         skip_result.state.phase,
         Phase::Investigation,
         "phase must be Investigation after MythosAfterDraws window closes"
     );
     assert_eq!(
-        skip_result.state.active_investigator,
-        Some(InvestigatorId(1)),
-        "investigation_phase must rotate to the lead investigator"
+        skip_result.state.active_investigator, None,
+        "active investigator not yet set — InvestigationBegins window is still open"
     );
     assert_eq!(
         skip_result.state.round, 2,
         "round stays 2 — it bumped on Mythos entry"
     );
 
-    // WindowClosed event must be in the stream.
+    // WindowClosed event for MythosAfterDraws must be in the stream.
     assert_event!(
         skip_result.events,
         Event::WindowClosed {
             kind: WindowKind::MythosAfterDraws
+        }
+    );
+    // WindowOpened event for InvestigationBegins must also be present.
+    assert_event!(
+        skip_result.events,
+        Event::WindowOpened {
+            kind: WindowKind::InvestigationBegins
         }
     );
 }
