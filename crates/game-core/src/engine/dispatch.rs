@@ -550,6 +550,98 @@ fn spawn_enemy(
     EngineOutcome::Done
 }
 
+/// Result of narrowing a candidate investigator set by a prey
+/// instruction (Rules Reference p.12 / p.17).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PreyResolution {
+    /// Exactly one investigator best meets the instruction.
+    One(InvestigatorId),
+    /// Two or more tie — the lead investigator decides (carries the
+    /// tied set, in input order).
+    Tie(Vec<InvestigatorId>),
+    /// No candidates at all.
+    None,
+}
+
+/// Narrow `candidates` by `prey`. `Default` treats all candidates as
+/// equal; `HighestStat` keeps those with the maximum value of the
+/// stat. Returns `One` (single best), `Tie` (2+ best — lead decides),
+/// or `None` (empty candidate set). Caller supplies the candidate set
+/// (equidistant-nearest investigators for movement; co-located
+/// investigators for engagement).
+// TODO(#128): called by hunter-move (Task 5), engage-on-arrival (Task 6),
+// engage-on-spawn (Task 7) — remove allow once wired.
+#[allow(dead_code)]
+fn resolve_prey(
+    state: &GameState,
+    prey: crate::card_data::Prey,
+    candidates: &[InvestigatorId],
+) -> PreyResolution {
+    use crate::card_data::Prey;
+    if candidates.is_empty() {
+        return PreyResolution::None;
+    }
+    let best: Vec<InvestigatorId> = match prey {
+        Prey::Default => candidates.to_vec(),
+        Prey::HighestStat(stat) => {
+            let skill = stat_to_skill_kind(stat);
+            let max = candidates
+                .iter()
+                .filter_map(|id| {
+                    state
+                        .investigators
+                        .get(id)
+                        .map(|inv| inv.skills.value(skill))
+                })
+                .max();
+            match max {
+                Some(m) => candidates
+                    .iter()
+                    .copied()
+                    .filter(|id| {
+                        state
+                            .investigators
+                            .get(id)
+                            .is_some_and(|inv| inv.skills.value(skill) == m)
+                    })
+                    .collect(),
+                None => Vec::new(),
+            }
+        }
+        // `Prey` is #[non_exhaustive]; new variants (Lowest, Most Clues, etc.)
+        // must be wired here when their first card consumer lands — an
+        // unrecognised variant at runtime is a card-impl bug.
+        _ => unreachable!(
+            "resolve_prey: unrecognised Prey variant {prey:?} — \
+             card-impl bug or new variant needs engine wiring"
+        ),
+    };
+    match best.as_slice() {
+        [] => PreyResolution::None,
+        [one] => PreyResolution::One(*one),
+        _ => PreyResolution::Tie(best),
+    }
+}
+
+/// Map a prey `Stat` to the `SkillKind` used for investigator lookup.
+/// Only the four base skills are valid prey stats in Phase-4 scope; a
+/// `MaxHealth`/`MaxSanity` prey would be a card-impl bug.
+// TODO(#128): remove allow once resolve_prey is wired by Task 5/6/7.
+#[allow(dead_code)]
+fn stat_to_skill_kind(stat: crate::dsl::Stat) -> SkillKind {
+    use crate::dsl::Stat;
+    match stat {
+        Stat::Willpower => SkillKind::Willpower,
+        Stat::Intellect => SkillKind::Intellect,
+        Stat::Combat => SkillKind::Combat,
+        Stat::Agility => SkillKind::Agility,
+        Stat::MaxHealth | Stat::MaxSanity => unreachable!(
+            "resolve_prey: prey stat {stat:?} is not a base skill; no in-scope \
+             prey instruction uses MaxHealth/MaxSanity — card-impl bug"
+        ),
+    }
+}
+
 /// Fisher-Yates shuffle of the named investigator's deck using the
 /// shared deterministic RNG. Used by [`deck_shuffled`] and by
 /// scenario setup (initial-hand draw).
@@ -7036,4 +7128,75 @@ mod enemy_phase_tests {
     // pause shape is exercised indirectly via the existing
     // any_fast_play_eligible-driven open_fast_window tests at
     // dispatch.rs's open_fast_window_tests block.
+}
+
+#[cfg(test)]
+mod resolve_prey_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn resolve_prey_default_single_candidate_is_one() {
+        let state = TestGame::new().build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::Default,
+            &[InvestigatorId(1)],
+        );
+        assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
+    }
+
+    #[test]
+    fn resolve_prey_default_multiple_is_tie() {
+        let state = TestGame::new().build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::Default,
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
+    }
+
+    #[test]
+    fn resolve_prey_empty_is_none() {
+        let state = TestGame::new().build();
+        let r = resolve_prey(&state, crate::card_data::Prey::Default, &[]);
+        assert!(matches!(r, PreyResolution::None));
+    }
+
+    #[test]
+    fn resolve_prey_highest_stat_picks_max() {
+        let mut hi = test_investigator(1);
+        hi.skills.combat = 5;
+        let mut lo = test_investigator(2);
+        lo.skills.combat = 2;
+        let state = TestGame::new()
+            .with_investigator(hi)
+            .with_investigator(lo)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
+    }
+
+    #[test]
+    fn resolve_prey_highest_stat_tie_is_tie() {
+        let mut a = test_investigator(1);
+        a.skills.combat = 4;
+        let mut b = test_investigator(2);
+        b.skills.combat = 4;
+        let state = TestGame::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
+    }
 }
