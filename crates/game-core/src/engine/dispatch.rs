@@ -12,10 +12,10 @@ use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
-use crate::card_data::{CardMetadata, CardType, Spawn, SpawnLocation};
+use crate::card_data::{CardMetadata, CardType, Prey, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::{
-    discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Trigger,
+    discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Stat, Trigger,
 };
 use crate::event::{Event, FailureReason};
 use crate::state::{
@@ -572,12 +572,7 @@ enum PreyResolution {
 // TODO(#128): called by hunter-move (Task 5), engage-on-arrival (Task 6),
 // engage-on-spawn (Task 7) — remove allow once wired.
 #[allow(dead_code)]
-fn resolve_prey(
-    state: &GameState,
-    prey: crate::card_data::Prey,
-    candidates: &[InvestigatorId],
-) -> PreyResolution {
-    use crate::card_data::Prey;
+fn resolve_prey(state: &GameState, prey: Prey, candidates: &[InvestigatorId]) -> PreyResolution {
     if candidates.is_empty() {
         return PreyResolution::None;
     }
@@ -628,8 +623,7 @@ fn resolve_prey(
 /// `MaxHealth`/`MaxSanity` prey would be a card-impl bug.
 // TODO(#128): remove allow once resolve_prey is wired by Task 5/6/7.
 #[allow(dead_code)]
-fn stat_to_skill_kind(stat: crate::dsl::Stat) -> SkillKind {
-    use crate::dsl::Stat;
+fn stat_to_skill_kind(stat: Stat) -> SkillKind {
     match stat {
         Stat::Willpower => SkillKind::Willpower,
         Stat::Intellect => SkillKind::Intellect,
@@ -7137,7 +7131,9 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_default_single_candidate_is_one() {
-        let state = TestGame::new().build();
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
         let r = resolve_prey(
             &state,
             crate::card_data::Prey::Default,
@@ -7148,7 +7144,10 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_default_multiple_is_tie() {
-        let state = TestGame::new().build();
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .build();
         let r = resolve_prey(
             &state,
             crate::card_data::Prey::Default,
