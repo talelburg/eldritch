@@ -172,8 +172,8 @@ pub struct GameState {
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
     /// Suspended Hunter-movement choice (#128), `Some` only while the
-    /// Enemy phase is paused on a lead-investigator tie. See
-    /// [`HunterChoice`].
+    /// Enemy phase is paused on a lead-investigator tie; cleared once
+    /// resolved. See [`HunterChoice`].
     pub hunter_move_pending: Option<HunterChoice>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
@@ -562,11 +562,8 @@ pub enum WindowKind {
 }
 
 /// A suspended Hunter-movement choice awaiting the lead investigator's
-/// input during Enemy-phase step 3.2 (#128). `Some` only while
-/// suspended on a tie; cleared once resolved. The [`EnemyId`] inside is
-/// the movement cursor — on resume the engine finishes this enemy then
-/// scans `state.enemies` for the next eligible hunter with a strictly
-/// greater id.
+/// input during Enemy-phase step 3.2 (#128, Rules Reference p.12 / p.10 /
+/// p.17).
 ///
 /// Two shapes because the two choice points need different input:
 /// movement is a `PickLocation` over a prey-filtered destination set
