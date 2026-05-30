@@ -110,6 +110,9 @@ pub fn apply_player_action(
         };
     }
 
+    // Hunter movement is Enemy-phase only; it can't coexist with an open
+    // reaction window or an in-flight skill test, so order among the guards
+    // is immaterial — but a pending hunter choice still blocks other actions.
     if state.hunter_move_pending.is_some() && !matches!(action, PlayerAction::ResolveInput { .. }) {
         return EngineOutcome::Rejected {
             reason: "a hunter-movement choice is pending; submit a PlayerAction::ResolveInput \
@@ -7940,6 +7943,108 @@ mod hunter_resume_tests {
         assert_eq!(
             state.enemies[&EnemyId(2)].engaged_with,
             Some(InvestigatorId(1))
+        );
+    }
+
+    #[test]
+    fn hunter_move_tie_rejects_wrong_response_kind() {
+        // Diamond A(1)-{B(2),C(3)}-D(4). Investigator at D; hunter at A,
+        // default prey. Two equal first-steps (B, C) -> AwaitingInput on Move.
+        // Client submits PickInvestigator instead of PickLocation -> Rejected,
+        // pending preserved for retry.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        let mut loc_d = test_location(4, "D");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1), LocationId(4)];
+        loc_c.connections = vec![LocationId(1), LocationId(4)];
+        loc_d.connections = vec![LocationId(2), LocationId(3)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(4));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_location(loc_d)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.hunter_move_pending.is_some());
+        // Submit PickInvestigator when PickLocation is expected.
+        let mut ev2 = Vec::new();
+        let result = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickInvestigator(InvestigatorId(1)),
+        );
+        assert!(
+            matches!(result, EngineOutcome::Rejected { .. }),
+            "wrong response kind should be rejected"
+        );
+        assert!(
+            state.hunter_move_pending.is_some(),
+            "pending preserved so client can retry with PickLocation"
+        );
+    }
+
+    #[test]
+    fn hunter_engage_tie_rejects_wrong_response_kind() {
+        // Two investigators at B(2); hunter moves A(1)->B(2); default prey
+        // -> engage tie -> AwaitingInput on Engage.
+        // Client submits PickLocation instead of PickInvestigator -> Rejected,
+        // pending preserved for retry.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        loc_a.connections = vec![LocationId(2)];
+        loc_b.connections = vec![LocationId(1)];
+        let mut inv1 = test_investigator(1);
+        inv1.current_location = Some(LocationId(2));
+        let mut inv2 = test_investigator(2);
+        inv2.current_location = Some(LocationId(2));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_investigator(inv1)
+            .with_investigator(inv2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        // Moved to B already, suspended on engagement tie.
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.hunter_move_pending.is_some());
+        // Submit PickLocation when PickInvestigator is expected.
+        let mut ev2 = Vec::new();
+        let result = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickLocation(LocationId(1)),
+        );
+        assert!(
+            matches!(result, EngineOutcome::Rejected { .. }),
+            "wrong response kind should be rejected"
+        );
+        assert!(
+            state.hunter_move_pending.is_some(),
+            "pending preserved so client can retry with PickInvestigator"
         );
     }
 }
