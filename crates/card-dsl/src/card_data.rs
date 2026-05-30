@@ -14,6 +14,7 @@
 //! looked up through the registry too but lives in
 //! [`crate::dsl::Ability`].
 
+use crate::dsl::Stat;
 use serde::{Deserialize, Serialize};
 
 /// Investigator class. Translation of upstream's `faction_code` field
@@ -113,6 +114,28 @@ pub enum SpawnLocation {
 pub struct Spawn {
     /// Where the enemy spawns.
     pub location: SpawnLocation,
+}
+
+/// An enemy's prey instruction (Rules Reference p.17): which
+/// investigator it pursues / engages when it has a choice.
+///
+/// Phase-4 ships `Default` + `HighestStat`. `Default` covers "no prey
+/// instruction" and "Prey – nearest" — among equidistant / co-located
+/// investigators all are equal, so the lead investigator breaks the tie
+/// (p.12 / p.17). `HighestStat(Stat::Combat)` is Ghoul Priest's
+/// `Prey – Highest [combat]`. Other printed variants (`Lowest`,
+/// `Bearer only`, `Most clues`, …) land with their first card consumer;
+/// `#[non_exhaustive]` keeps that additive.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Prey {
+    /// No discriminating instruction — all candidates are equal; the
+    /// lead investigator breaks ties.
+    #[default]
+    Default,
+    /// Pursue / engage the investigator with the highest value of the
+    /// given stat; ties fall to the lead investigator.
+    HighestStat(Stat),
 }
 
 /// Static metadata for one card as printed.
@@ -270,6 +293,24 @@ mod is_fast_tests {
         assert_eq!(back, original);
         assert!(back.surge);
         assert!(!back.peril);
+    }
+}
+
+#[cfg(test)]
+mod prey_tests {
+    use super::*;
+
+    #[test]
+    fn prey_default_is_default() {
+        assert_eq!(Prey::default(), Prey::Default);
+    }
+
+    #[test]
+    fn prey_serde_roundtrip_highest_stat() {
+        let original = Prey::HighestStat(Stat::Combat);
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: Prey = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
     }
 }
 
