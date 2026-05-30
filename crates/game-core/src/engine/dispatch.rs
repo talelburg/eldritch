@@ -22,7 +22,7 @@ use crate::state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId,
     FastActorScope, FinishContinuation, GameState, HunterChoice, InFlightSkillTest, Investigator,
     InvestigatorId, LocationId, OpenWindow, PendingTrigger, Phase, SkillKind, SkillTestFollowUp,
-    Status, TokenResolution, WindowKind, Zone,
+    SpawnEngagePending, Status, TokenResolution, WindowKind, Zone,
 };
 
 use super::evaluator::{
@@ -53,6 +53,7 @@ const MAX_SURGE_CHAIN: usize = 64;
 /// and [`EndTurn`](PlayerAction::EndTurn) are implemented end-to-end;
 /// other variants return [`EngineOutcome::Rejected`] with a TODO message
 /// so callers and tests get a useful signal rather than a silent no-op.
+#[allow(clippy::too_many_lines)] // dispatcher: a guard ladder + one match arm per PlayerAction
 pub fn apply_player_action(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -118,6 +119,19 @@ pub fn apply_player_action(
             reason: "a hunter-movement choice is pending; submit a PlayerAction::ResolveInput \
                      with InputResponse::PickLocation (movement) or \
                      InputResponse::PickInvestigator (engagement) before any other action"
+                .into(),
+        };
+    }
+
+    // A pending engagement-on-spawn choice (#128) likewise blocks every
+    // action but `ResolveInput`. Mirrors the hunter guard above; the two
+    // never coexist (different phases), so guard order is immaterial.
+    if state.spawn_engage_pending.is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason: "an engagement-on-spawn choice is pending; submit a \
+                     PlayerAction::ResolveInput with InputResponse::PickInvestigator \
+                     before any other action"
                 .into(),
         };
     }
@@ -438,12 +452,16 @@ fn resolve_encounter_card(
 /// > enemy's prey instructions to determine which investigator is
 /// > engaged.
 ///
-/// Phase-4 handles the 0- and 1-investigator cases inline. The
-/// multi-investigator case requires `Prey` resolution — the same
-/// machinery #128 will land for hunter-movement target selection —
-/// and rejects here with a reason pointing at #128. #128's author
-/// inherits the work of unifying the prey resolver across spawn and
-/// hunter-movement.
+/// All cases route through the shared [`resolve_prey`] resolver
+/// (#128, option A): the co-located set is narrowed by the enemy's
+/// prey (always `Prey::Default` in current scope, so a 2+ set always
+/// ties). `None`/`One` resolve inline (no engagement, or engage the
+/// sole/best candidate); `Tie` suspends via
+/// [`SpawnEngagePending`](crate::state::SpawnEngagePending) and returns
+/// [`EngineOutcome::AwaitingInput`] for the lead investigator's
+/// `PickInvestigator`. When the spawn happens inside a Mythos
+/// encounter-draw chain, [`resume_spawn_engage`] re-enters
+/// [`run_mythos_draw_chain`] after the pick resolves.
 ///
 /// # Stat fields TODO
 ///
@@ -457,11 +475,12 @@ fn resolve_encounter_card(
 ///
 /// # Validate-first contract
 ///
-/// All preconditions (location resolution, engagement resolution) are
-/// checked before any mutation. Reject paths leave `state` and
-/// `events` unchanged from the caller's perspective; only the happy
-/// path inserts into `state.enemies`, bumps `next_enemy_id`, and
-/// pushes `Event::EnemySpawned`.
+/// The one precondition that can reject — spawn-location resolution —
+/// is checked before any mutation, leaving `state`/`events` unchanged
+/// on rejection. Engagement resolution never rejects: it either
+/// resolves inline or suspends (`AwaitingInput`) with the enemy already
+/// minted into `state.enemies` and `Event::EnemySpawned` pushed (the
+/// pending choice carries the rest of the work to [`resume_spawn_engage`]).
 #[allow(clippy::too_many_lines)]
 fn spawn_enemy(
     state: &mut GameState,
@@ -505,26 +524,16 @@ fn spawn_enemy(
         },
     };
 
-    // 2. Resolve engagement-on-spawn (validate-first).
-    let investigators_at_loc: Vec<InvestigatorId> = state
-        .investigators
-        .iter()
-        .filter(|(_, inv)| inv.current_location == Some(location_id))
-        .map(|(id, _)| *id)
-        .collect();
-    let engaged_with = match investigators_at_loc.as_slice() {
-        [] => None,
-        [single] => Some(*single),
-        _ => {
-            return EngineOutcome::Rejected {
-                reason: "spawn_enemy: multi-investigator engagement-on-spawn requires Prey \
-                         (lands in #128)"
-                    .into(),
-            };
-        }
-    };
+    // 2. Resolve engagement-on-spawn (validate-first). The co-located
+    //    set is narrowed by the enemy's prey — every spawn uses
+    //    `Prey::Default` (Task 2), so a 2+ set always ties and suspends
+    //    for the lead investigator's `PickInvestigator` (option A).
+    let candidates = active_investigators_at(state, location_id);
 
-    // 3. Mint and place (mutate-second).
+    // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
+    //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
+    //    `engage_enemy_with` so the `EnemyEngaged` event always pairs with
+    //    the mutation.
     let enemy_id = EnemyId(state.next_enemy_id);
     state.next_enemy_id = state.next_enemy_id.saturating_add(1);
 
@@ -540,26 +549,62 @@ fn spawn_enemy(
         current_location: Some(location_id),
         exhausted: false,
         traits: metadata.traits.clone(),
-        engaged_with,
+        engaged_with: None,
         hunter: false,
         prey: crate::card_data::Prey::Default,
     };
     state.enemies.insert(enemy_id, enemy);
 
-    events.push(Event::EnemySpawned {
-        enemy: enemy_id,
-        code,
-        location: location_id,
-        engaged_with,
-    });
-    if let Some(target) = engaged_with {
-        events.push(Event::EnemyEngaged {
-            enemy: enemy_id,
-            investigator: target,
-        });
+    match resolve_prey(state, crate::card_data::Prey::Default, &candidates) {
+        PreyResolution::None => {
+            events.push(Event::EnemySpawned {
+                enemy: enemy_id,
+                code,
+                location: location_id,
+                engaged_with: None,
+            });
+            EngineOutcome::Done
+        }
+        PreyResolution::One(target) => {
+            events.push(Event::EnemySpawned {
+                enemy: enemy_id,
+                code,
+                location: location_id,
+                engaged_with: Some(target),
+            });
+            engage_enemy_with(state, events, enemy_id, target);
+            EngineOutcome::Done
+        }
+        PreyResolution::Tie(tied) => {
+            events.push(Event::EnemySpawned {
+                enemy: enemy_id,
+                code,
+                location: location_id,
+                engaged_with: None,
+            });
+            // `chain_count` is 0 here; when this spawn is reached inside a
+            // Mythos surge chain, `run_mythos_draw_chain` patches the
+            // stored value to the live chain position before returning the
+            // `AwaitingInput` (the single-draw `EncounterCardRevealed` path
+            // has no chain, so 0 is correct there).
+            state.spawn_engage_pending = Some(SpawnEngagePending {
+                enemy: enemy_id,
+                investigator_to_draw: investigator,
+                candidates: tied.clone(),
+                surge: metadata.surge,
+                chain_count: 0,
+            });
+            EngineOutcome::AwaitingInput {
+                request: InputRequest {
+                    prompt: format!(
+                        "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
+                         engage among {tied:?} (submit InputResponse::PickInvestigator)"
+                    ),
+                },
+                resume_token: ResumeToken(0),
+            }
+        }
     }
-
-    EngineOutcome::Done
 }
 
 /// Result of narrowing a candidate investigator set by a prey
@@ -1686,8 +1731,19 @@ fn resolve_input(
     // Hunter-movement suspension is its own mode; route it before the
     // reaction-window and skill-test checks, which are independent
     // suspension modes. (#128)
+    debug_assert!(
+        !(state.hunter_move_pending.is_some() && state.spawn_engage_pending.is_some()),
+        "hunter movement and spawn engagement cannot both be pending: they arise in \
+         different phases (Enemy 3.2 vs Mythos 1.4) and each blocks all other actions",
+    );
     if state.hunter_move_pending.is_some() {
         return resume_hunter_choice(state, events, response);
+    }
+
+    // Engagement-on-spawn suspension (#128, option A) is a distinct mode
+    // from hunter movement: its resume re-enters the Mythos draw chain.
+    if state.spawn_engage_pending.is_some() {
+        return resume_spawn_engage(state, events, response);
     }
 
     if state.top_reaction_window().is_some() {
@@ -3340,6 +3396,64 @@ fn resume_hunter_choice(
         cursor = Some(id);
     }
     EngineOutcome::Done
+}
+
+/// Resume a suspended engagement-on-spawn choice (#128, option A) with
+/// the lead investigator's `PickInvestigator`, then continue the drawing
+/// investigator's Mythos encounter-draw chain.
+///
+/// Validate-first: an invalid pick (wrong response shape, or a target
+/// outside the stored candidate set) rejects and leaves
+/// `spawn_engage_pending` untouched so the client can retry.
+///
+/// The chain only resumes when the suspension arose mid-Mythos-draw —
+/// i.e. the drawing investigator is still the pending cursor. The
+/// single-draw `EncounterCardRevealed` path (`mythos_draw_pending` is
+/// `None`, or points elsewhere) engages and stops at `Done` without
+/// touching the cursor.
+fn resume_spawn_engage(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    response: &InputResponse,
+) -> EngineOutcome {
+    let pending = state.spawn_engage_pending.clone().unwrap_or_else(|| {
+        unreachable!("resume_spawn_engage: called with no pending spawn engagement")
+    });
+    let InputResponse::PickInvestigator(who) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: spawn engagement expects InputResponse::PickInvestigator, \
+                 got {response:?}"
+            )
+            .into(),
+        };
+    };
+    if !pending.candidates.contains(who) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: spawn engage target {who:?} not among candidates {:?}",
+                pending.candidates
+            )
+            .into(),
+        };
+    }
+    state.spawn_engage_pending = None;
+    engage_enemy_with(state, events, pending.enemy, *who);
+
+    // Only re-enter the Mythos surge chain if the suspend happened
+    // mid-chain (the drawing investigator is still the pending cursor).
+    // The `EncounterCardRevealed` single-draw path resolves to `Done`.
+    if state.mythos_draw_pending == Some(pending.investigator_to_draw) {
+        run_mythos_draw_chain(
+            state,
+            events,
+            pending.investigator_to_draw,
+            pending.chain_count,
+            pending.surge,
+        )
+    } else {
+        EngineOutcome::Done
+    }
 }
 
 /// 3.2 Hunter enemies move. Rules Reference p.25: "Resolve the hunter
@@ -5076,6 +5190,7 @@ mod spawn_enemy_tests {
         let mut state = TestGame::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
             .build();
         // Place investigator 1 at location 10.
         state
@@ -5179,6 +5294,7 @@ mod spawn_enemy_tests {
         let mut state = TestGame::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
             .build();
         state
             .investigators
@@ -5235,29 +5351,21 @@ mod spawn_enemy_tests {
     }
 
     #[test]
-    fn spawn_with_multi_investigator_engagement_rejects_until_128() {
-        let mut loc = test_location(10, "Crowded");
-        loc.code = CardCode("_crowded_loc".into());
+    fn spawn_engages_sole_colocated_investigator() {
+        // Regression: #127's single-investigator engage-on-spawn path
+        // still resolves inline under the shared prey resolver.
+        let mut loc = test_location(1, "Hall");
+        loc.code = CardCode("_loc".into());
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(1));
         let mut state = TestGame::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
             .with_location(loc)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
             .build();
-        state
-            .investigators
-            .get_mut(&InvestigatorId(1))
-            .unwrap()
-            .current_location = Some(LocationId(10));
-        state
-            .investigators
-            .get_mut(&InvestigatorId(2))
-            .unwrap()
-            .current_location = Some(LocationId(10));
-        let metadata = synth_enemy_metadata(Some(Spawn {
-            location: SpawnLocation::Specific("_crowded_loc".into()),
-        }));
+        let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
-
         let outcome = spawn_enemy(
             &mut state,
             &mut events,
@@ -5265,22 +5373,89 @@ mod spawn_enemy_tests {
             CardCode("_synth_enemy".into()),
             &metadata,
         );
+        assert_eq!(outcome, EngineOutcome::Done);
+        let spawned = state.enemies.values().next().expect("one enemy");
+        assert_eq!(spawned.engaged_with, Some(InvestigatorId(1)));
+    }
 
-        match outcome {
-            EngineOutcome::Rejected { reason } => {
-                assert!(
-                    reason.contains("#128") && reason.contains("Prey"),
-                    "unexpected reason: {reason:?}",
-                );
-            }
-            other => {
-                panic!("expected Rejected for multi-investigator engagement, got {other:?}")
-            }
-        }
-        assert!(
-            state.enemies.is_empty(),
-            "no enemy should be placed on reject"
+    #[test]
+    fn spawn_tie_suspends_for_lead_pick() {
+        let mut loc = test_location(1, "Hall");
+        loc.code = CardCode("_loc".into());
+        let mut i1 = test_investigator(1);
+        i1.current_location = Some(LocationId(1));
+        let mut i2 = test_investigator(2);
+        i2.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Mythos)
+            .with_location(loc)
+            .with_investigator(i1)
+            .with_investigator(i2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let metadata = synth_enemy_metadata(None);
+        let mut events = Vec::new();
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
         );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.spawn_engage_pending.is_some());
+        let spawned = state.enemies.values().next().expect("one enemy");
+        assert_eq!(spawned.engaged_with, None);
+    }
+
+    #[test]
+    fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
+        // Validate-first: a pick outside the stored candidate set rejects
+        // and leaves `spawn_engage_pending` intact for retry, with the
+        // enemy still unengaged.
+        use crate::action::InputResponse;
+        let mut loc = test_location(1, "Hall");
+        loc.code = CardCode("_loc".into());
+        let mut i1 = test_investigator(1);
+        i1.current_location = Some(LocationId(1));
+        let mut i2 = test_investigator(2);
+        i2.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Mythos)
+            .with_location(loc)
+            .with_investigator(i1)
+            .with_investigator(i2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let metadata = synth_enemy_metadata(None);
+        let mut events = Vec::new();
+        let _ = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+        assert!(state.spawn_engage_pending.is_some());
+
+        // Investigator 3 is not among the co-located candidates.
+        let outcome = resume_spawn_engage(
+            &mut state,
+            &mut events,
+            &InputResponse::PickInvestigator(InvestigatorId(3)),
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::Rejected { .. }),
+            "{outcome:?}"
+        );
+        assert!(
+            state.spawn_engage_pending.is_some(),
+            "pending must survive a rejected pick for retry",
+        );
+        let enemy = state.enemies.values().next().expect("enemy still placed");
+        assert_eq!(enemy.engaged_with, None, "no engagement on rejected pick");
     }
 
     #[test]
@@ -5884,14 +6059,51 @@ fn mythos_draw_for(
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
+    // Fresh chain: count starts at 0 and the loop draws at least one
+    // card (`draw_more = true`).
+    run_mythos_draw_chain(state, events, investigator, 0, true)
+}
+
+/// The Mythos surge-draw loop, shared by the initial draw
+/// ([`mythos_draw_for`]) and the post-suspend resume
+/// ([`resume_spawn_engage`]).
+///
+/// `chain_count` is the surge position already consumed (0 for a fresh
+/// chain); the loop increments it per drawn card and enforces
+/// [`MAX_SURGE_CHAIN`] exactly as the single-pass version did.
+/// `draw_more` gates the first iteration: `true` for a fresh draw,
+/// or the suspended card's surge bit on resume (a non-surge enemy that
+/// suspended for engagement resumes with `draw_more = false`, drawing no
+/// further card — only the cursor advance runs).
+///
+/// On a mid-chain spawn engagement tie, [`resolve_encounter_card`]
+/// returns [`EngineOutcome::AwaitingInput`]; this loop patches the live
+/// `chain_count` into the freshly-stored
+/// [`SpawnEngagePending`](crate::state::SpawnEngagePending) so the resume
+/// continues with the cap budget intact, then returns the suspension.
+///
+/// # Mid-chain rejection caveat
+///
+/// Same as the single-pass version: if [`resolve_encounter_card`]
+/// rejects mid-chain (e.g. [`spawn_enemy`] when the drawing investigator
+/// has no location), the card has already left `encounter_deck` and the
+/// apply loop's `events.clear()` on `Rejected` does not roll back that
+/// mutation. Out of Phase-4 scope (the synthetic fixture gives every
+/// investigator a location at setup).
+fn run_mythos_draw_chain(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    mut chain_count: usize,
+    mut draw_more: bool,
+) -> EngineOutcome {
     let Some(reg) = crate::card_registry::current() else {
         return EngineOutcome::Rejected {
             reason: "DrawEncounterCard: no card registry installed".into(),
         };
     };
 
-    let mut chain_count: usize = 0;
-    loop {
+    while draw_more {
         chain_count += 1;
         if chain_count > MAX_SURGE_CHAIN {
             unreachable!(
@@ -5938,14 +6150,22 @@ fn mythos_draw_for(
 
         // Step 3 + 4: Resolve revelation, then enemy-spawn if applicable.
         let outcome = resolve_encounter_card(state, events, investigator, code.clone(), metadata);
-        if !matches!(outcome, EngineOutcome::Done) {
-            return outcome;
+        match outcome {
+            EngineOutcome::Done => {}
+            EngineOutcome::AwaitingInput { .. } => {
+                // A mid-chain spawn engagement tie suspended. Record the
+                // live chain position so the resume keeps counting toward
+                // the cap rather than restarting its budget.
+                if let Some(pending) = state.spawn_engage_pending.as_mut() {
+                    pending.chain_count = chain_count;
+                }
+                return outcome;
+            }
+            EngineOutcome::Rejected { .. } => return outcome,
         }
 
         // Step 5: If the drawn card has the surge keyword, loop.
-        if !metadata.surge {
-            break;
-        }
+        draw_more = metadata.surge;
     }
 
     // Chain complete — advance the cursor.
