@@ -553,6 +553,7 @@ fn spawn_enemy(
 /// Result of narrowing a candidate investigator set by a prey
 /// instruction (Rules Reference p.12 / p.17).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 enum PreyResolution {
     /// Exactly one investigator best meets the instruction.
     One(InvestigatorId),
@@ -569,6 +570,7 @@ enum PreyResolution {
 /// or `None` (empty candidate set). Caller supplies the candidate set
 /// (equidistant-nearest investigators for movement; co-located
 /// investigators for engagement).
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn resolve_prey(state: &GameState, prey: Prey, candidates: &[InvestigatorId]) -> PreyResolution {
     if candidates.is_empty() {
         return PreyResolution::None;
@@ -618,6 +620,7 @@ fn resolve_prey(state: &GameState, prey: Prey, candidates: &[InvestigatorId]) ->
 /// Map a prey `Stat` to the `SkillKind` used for investigator lookup.
 /// Only the four base skills are valid prey stats in Phase-4 scope; a
 /// `MaxHealth`/`MaxSanity` prey would be a card-impl bug.
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn stat_to_skill_kind(stat: Stat) -> SkillKind {
     match stat {
         Stat::Willpower => SkillKind::Willpower,
@@ -3029,6 +3032,7 @@ fn resolve_attacks_for_investigator(
 
 /// Whether an enemy is an eligible hunter for step-3.2 movement:
 /// ready, unengaged, has the keyword, and is on the map.
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn is_eligible_hunter(enemy: &Enemy) -> bool {
     enemy.hunter
         && !enemy.exhausted
@@ -3038,6 +3042,7 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
 
 /// Investigators (Active, on the map) at `loc`, in `turn_order` order
 /// so prey ties carry a deterministic, lead-first candidate list.
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<InvestigatorId> {
     state
         .turn_order
@@ -3055,6 +3060,7 @@ fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<Investigat
 /// the union of shortest-path first-steps toward each
 /// equidistant-nearest, prey-filtered investigator. Empty when no
 /// investigator is reachable. Deterministic order (sorted `LocationId`).
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<LocationId> {
     use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
     let mut nearest: Vec<(InvestigatorId, u32)> = Vec::new();
@@ -3109,6 +3115,7 @@ fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<L
 
 /// Move `enemy` to `to`, emitting [`Event::EnemyMoved`]. Caller has
 /// already validated that `to` is a legal destination.
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn move_hunter_to(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -3127,6 +3134,7 @@ fn move_hunter_to(
 
 /// Set engagement on `enemy_id` → `target` and emit
 /// [`Event::EnemyEngaged`]. Shared by movement and spawn.
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn engage_enemy_with(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -3147,6 +3155,7 @@ fn engage_enemy_with(
 /// location. Returns `Some(HunterChoice::Engage{..})` if the co-located
 /// set ties under prey (caller suspends); otherwise engages the resolved
 /// investigator (or no-one) and returns `None`.
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn engage_on_arrival(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -3174,6 +3183,7 @@ fn engage_on_arrival(
 
 /// Process a single hunter (movement + engage-on-arrival). Returns
 /// `Some(HunterChoice)` if a tie suspends, else `None` (fully resolved).
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn process_one_hunter(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -3205,6 +3215,7 @@ fn process_one_hunter(
 /// Find the next eligible hunter with id strictly greater than `after`
 /// (or the first eligible if `after` is `None`). Scans in ascending
 /// `EnemyId` order (`BTreeMap` iteration order).
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn next_eligible_hunter(state: &GameState, after: Option<EnemyId>) -> Option<EnemyId> {
     state
         .enemies
@@ -3218,6 +3229,7 @@ fn next_eligible_hunter(state: &GameState, after: Option<EnemyId>) -> Option<Ene
 /// `EnemyId` order until none remain ([`EngineOutcome::Done`]) or one
 /// suspends on a lead-investigator tie
 /// ([`EngineOutcome::AwaitingInput`]).
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 pub(crate) fn drive_hunter_moves(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let mut cursor: Option<EnemyId> = None;
     while let Some(id) = next_eligible_hunter(state, cursor) {
@@ -3231,6 +3243,7 @@ pub(crate) fn drive_hunter_moves(state: &mut GameState, events: &mut Vec<Event>)
 
 /// Store the pending hunter choice and return `AwaitingInput` for the
 /// lead investigator (#128, Task 7 wires the resume path).
+#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn suspend_hunter_choice(state: &mut GameState, choice: HunterChoice) -> EngineOutcome {
     let prompt = match &choice {
         HunterChoice::Move { enemy, candidates } => format!(
@@ -3253,14 +3266,11 @@ fn suspend_hunter_choice(state: &mut GameState, choice: HunterChoice) -> EngineO
 /// keyword for each ready, unengaged enemy that has the hunter
 /// keyword."
 ///
-/// Delegates to [`drive_hunter_moves`]. Task 9 (#128) collapses this
-/// stub into the direct call site in `enemy_phase`.
-fn hunter_movement_step(state: &mut GameState, events: &mut Vec<Event>) {
-    // Outcome is intentionally discarded here: AwaitingInput suspends
-    // are handled by Task 7's resume path; Task 9 plumbs the return
-    // value through enemy_phase. Until then, the driver runs and
-    // moves/engages where unambiguous.
-    let _ = drive_hunter_moves(state, events);
+/// Currently a no-op stub. Task 9 (#128) wires [`drive_hunter_moves`]
+/// here and threads the `EngineOutcome` through `enemy_phase`.
+fn hunter_movement_step(_state: &mut GameState, _events: &mut Vec<Event>) {
+    // TODO(#128): call drive_hunter_moves and surface AwaitingInput
+    //             through enemy_phase in Task 9.
 }
 
 /// Entered by [`step_phase`] on the Investigation→Enemy transition.
