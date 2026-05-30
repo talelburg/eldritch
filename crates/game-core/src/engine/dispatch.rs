@@ -529,6 +529,8 @@ fn spawn_enemy(
         exhausted: false,
         traits: metadata.traits.clone(),
         engaged_with,
+        hunter: false,
+        prey: crate::card_data::Prey::Default,
     };
     state.enemies.insert(enemy_id, enemy);
 

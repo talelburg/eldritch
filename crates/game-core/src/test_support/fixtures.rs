@@ -104,5 +104,7 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         exhausted: false,
         traits: Vec::new(),
         engaged_with: None,
+        hunter: false,
+        prey: crate::card_data::Prey::Default,
     }
 }

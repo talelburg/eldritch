@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{investigator::InvestigatorId, location::LocationId};
+use crate::card_data::Prey;
 
 /// Stable identifier for an enemy within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -14,8 +15,7 @@ pub struct EnemyId(pub u32);
 /// Minimal shape needed for Fight / Evade actions in this PR. Fields
 /// that don't influence those actions are deferred to the issues that
 /// will exercise them:
-/// - `aloof`, `prey`: spawn-time engagement rule (separate issue).
-/// - `hunter`, `prey`: hunter movement during the enemy phase (#71).
+/// - `aloof`: spawn-time engagement rule (separate issue).
 ///
 /// Adding each field with its real shape when its consumer lands keeps
 /// us from baking placeholder semantics that turn out to be wrong.
@@ -62,4 +62,40 @@ pub struct Enemy {
     /// the lookup "which enemies is this investigator engaged with"
     /// is just a scan of `state.enemies`.
     pub engaged_with: Option<InvestigatorId>,
+    /// Whether this enemy has the Hunter keyword (Rules Reference
+    /// p.12): a ready, unengaged hunter moves toward the nearest
+    /// investigator during Enemy-phase step 3.2.
+    pub hunter: bool,
+    /// Prey instruction (Rules Reference p.17): which investigator the
+    /// enemy pursues / engages when it has a choice. `Prey::Default`
+    /// for enemies with no printed prey line.
+    pub prey: Prey,
+}
+
+#[cfg(test)]
+mod hunter_prey_field_tests {
+    use super::*;
+    use crate::card_data::Prey;
+
+    #[test]
+    fn enemy_carries_hunter_and_prey() {
+        let e = Enemy {
+            id: EnemyId(1),
+            name: "Ghoul Priest".into(),
+            fight: 4,
+            evade: 4,
+            max_health: 5,
+            damage: 0,
+            attack_damage: 2,
+            attack_horror: 2,
+            current_location: None,
+            exhausted: false,
+            traits: vec!["Humanoid".into(), "Monster".into(), "Elite".into()],
+            engaged_with: None,
+            hunter: true,
+            prey: Prey::Default,
+        };
+        assert!(e.hunter);
+        assert_eq!(e.prey, Prey::Default);
+    }
 }
