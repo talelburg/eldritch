@@ -3063,7 +3063,7 @@ fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<Investigat
 #[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<LocationId> {
     use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
-    let mut nearest: Vec<(InvestigatorId, u32)> = Vec::new();
+    let mut reachable: Vec<(InvestigatorId, u32)> = Vec::new();
     let mut min_dist: Option<u32> = None;
     for id in &state.turn_order {
         let Some(inv) = state.investigators.get(id) else {
@@ -3079,12 +3079,12 @@ fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<L
             continue;
         };
         min_dist = Some(min_dist.map_or(d, |m| m.min(d)));
-        nearest.push((*id, d));
+        reachable.push((*id, d));
     }
     let Some(min) = min_dist else {
         return Vec::new();
     };
-    let nearest_ids: Vec<InvestigatorId> = nearest
+    let nearest_ids: Vec<InvestigatorId> = reachable
         .iter()
         .filter(|(_, d)| *d == min)
         .map(|(id, _)| *id)
@@ -7436,7 +7436,7 @@ mod hunter_movement_tests {
     use crate::{assert_event, assert_no_event};
 
     #[test]
-    fn hunter_moves_one_step_toward_sole_investigator_and_engages_on_arrival() {
+    fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
         // Map: A(1)-B(2)-C(3). Investigator at C; hunter at A. Hunter moves
         // A->B (one step). No investigator at B, so no engage yet.
         let mut a = test_location(1, "A");
@@ -7586,5 +7586,41 @@ mod hunter_movement_tests {
             Some(LocationId(1))
         );
         assert_no_event!(events, Event::EnemyMoved { .. });
+    }
+
+    #[test]
+    fn hunter_already_co_located_does_not_move_but_engages() {
+        // Hunter and investigator both at A(1). p.12: an enemy already at a
+        // location with an investigator does not move; it still engages.
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(1));
+        let mut h = test_enemy(1, "Hunter");
+        h.hunter = true;
+        h.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(h)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(1))
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(InvestigatorId(1))
+        );
+        assert_no_event!(events, Event::EnemyMoved { .. });
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator } if *enemy == EnemyId(1) && *investigator == InvestigatorId(1));
     }
 }
