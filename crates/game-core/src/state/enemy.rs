@@ -62,9 +62,9 @@ pub struct Enemy {
     /// the lookup "which enemies is this investigator engaged with"
     /// is just a scan of `state.enemies`.
     pub engaged_with: Option<InvestigatorId>,
-    /// Whether this enemy has the Hunter keyword (Rules Reference
-    /// p.12): a ready, unengaged hunter moves toward the nearest
-    /// investigator during Enemy-phase step 3.2.
+    /// Whether this enemy has the Hunter keyword (Rules Reference p.12):
+    /// a ready, unengaged hunter moves toward the nearest investigator
+    /// during Enemy-phase step 3.2.
     pub hunter: bool,
     /// Prey instruction (Rules Reference p.17): which investigator the
     /// enemy pursues / engages when it has a choice. `Prey::Default`
@@ -75,7 +75,6 @@ pub struct Enemy {
 #[cfg(test)]
 mod hunter_prey_field_tests {
     use super::*;
-    use crate::card_data::Prey;
 
     #[test]
     fn enemy_carries_hunter_and_prey() {

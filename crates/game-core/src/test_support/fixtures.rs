@@ -17,6 +17,7 @@
 //! field's intent. Phase-2+ reviewers: flag missing fixture updates
 //! when a field addition lands.
 
+use crate::card_data::Prey;
 use crate::state::{
     CardCode, Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
 };
@@ -105,6 +106,6 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         traits: Vec::new(),
         engaged_with: None,
         hunter: false,
-        prey: crate::card_data::Prey::Default,
+        prey: Prey::Default,
     }
 }
