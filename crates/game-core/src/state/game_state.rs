@@ -171,6 +171,10 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
+    /// Suspended Hunter-movement choice (#128), `Some` only while the
+    /// Enemy phase is paused on a lead-investigator tie. See
+    /// [`HunterChoice`].
+    pub hunter_move_pending: Option<HunterChoice>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -557,6 +561,39 @@ pub enum WindowKind {
     InvestigatorTurnBegins,
 }
 
+/// A suspended Hunter-movement choice awaiting the lead investigator's
+/// input during Enemy-phase step 3.2 (#128). `Some` only while
+/// suspended on a tie; cleared once resolved. The [`EnemyId`] inside is
+/// the movement cursor — on resume the engine finishes this enemy then
+/// scans `state.enemies` for the next eligible hunter with a strictly
+/// greater id.
+///
+/// Two shapes because the two choice points need different input:
+/// movement is a `PickLocation` over a prey-filtered destination set
+/// (the chosen prey doesn't persist, so picking a location is
+/// outcome-equivalent to picking an investigator-then-path); engagement
+/// on arrival is a `PickInvestigator` over the co-located set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum HunterChoice {
+    /// Lead investigator picks the hunter's destination among tied
+    /// prey-legal shortest-path next steps (Rules Reference p.12).
+    Move {
+        /// The hunter being moved.
+        enemy: EnemyId,
+        /// Legal destinations to choose among (the validated option set).
+        candidates: Vec<LocationId>,
+    },
+    /// Lead investigator picks whom the hunter engages among co-located
+    /// tied prey candidates (Rules Reference p.10 / p.17).
+    Engage {
+        /// The hunter that arrived.
+        enemy: EnemyId,
+        /// Co-located investigators to choose among.
+        candidates: Vec<InvestigatorId>,
+    },
+}
+
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
 /// ability waiting to fire inside an `OpenWindow`.
 ///
@@ -874,5 +911,32 @@ mod encounter_deck_tests {
         let state = TestGame::new().build();
         assert!(state.encounter_deck.is_empty());
         assert!(state.encounter_discard.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod hunter_pending_tests {
+    use super::*;
+
+    #[test]
+    fn hunter_choice_move_serde_roundtrip() {
+        let original = HunterChoice::Move {
+            enemy: EnemyId(3),
+            candidates: vec![LocationId(2), LocationId(3)],
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: HunterChoice = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn hunter_choice_engage_serde_roundtrip() {
+        let original = HunterChoice::Engage {
+            enemy: EnemyId(5),
+            candidates: vec![InvestigatorId(1), InvestigatorId(2)],
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: HunterChoice = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
     }
 }
