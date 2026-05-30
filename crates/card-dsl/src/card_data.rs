@@ -126,7 +126,7 @@ pub struct Spawn {
 /// `Prey – Highest [combat]`. Other printed variants (`Lowest`,
 /// `Bearer only`, `Most clues`, …) land with their first card consumer;
 /// `#[non_exhaustive]` keeps that additive.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Prey {
     /// No discriminating instruction — all candidates are equal; the
@@ -308,6 +308,14 @@ mod prey_tests {
     #[test]
     fn prey_serde_roundtrip_highest_stat() {
         let original = Prey::HighestStat(Stat::Combat);
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: Prey = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn prey_serde_roundtrip_default() {
+        let original = Prey::Default;
         let json = serde_json::to_string(&original).expect("serialize");
         let back: Prey = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
