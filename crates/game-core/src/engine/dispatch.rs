@@ -2880,7 +2880,126 @@ fn apply_investigator_defeat(
         investigator,
         cause,
     });
+
+    // Rules Reference p.10 Elimination steps 1–5 run here, between the
+    // defeat event and the all-defeated check (step 6 signal). See the
+    // design doc 2026-05-31-144 for the full breakdown.
+    run_elimination_steps(state, events, investigator);
+
     check_all_defeated(state, events);
+}
+
+/// Execute Rules Reference p.10 Elimination steps 1–5 for an
+/// investigator whose `status` has just been flipped to a defeated
+/// variant. Synchronous: the step-3 re-engagement tie auto-picks the
+/// lead rather than suspending (see `reengage_at_location`).
+fn run_elimination_steps(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) {
+    // The location the investigator was at "when eliminated" — read once
+    // before any mutations; step 2 deposits clues here.
+    let last_location = state
+        .investigators
+        .get(&investigator)
+        .and_then(|inv| inv.current_location);
+
+    // Step 1: remove every card this investigator controls in play and
+    // owns in out-of-play areas (hand/deck/discard) from the game.
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "run_elimination_steps: investigator {investigator:?} not in map; state corruption"
+            )
+        });
+    // Build the pile in an owned local so each mutation borrows only one
+    // field of `inv` at a time (mutating `inv.removed_from_game` directly
+    // while borrowing `inv.hand` etc. would double-borrow `inv` — rejected
+    // by the borrow checker).
+    let mut removed = std::mem::take(&mut inv.removed_from_game);
+    removed.extend(inv.cards_in_play.drain(..).map(|c| c.code));
+    removed.append(&mut inv.hand);
+    removed.append(&mut inv.deck);
+    removed.append(&mut inv.discard);
+    inv.removed_from_game = removed;
+
+    // Step 2: place possessed clues at the location; return resources to
+    // the (unmodeled, infinite) token pool by zeroing them.
+    let clues = inv.clues;
+    inv.clues = 0;
+    inv.resources = 0;
+    if clues > 0 {
+        if let Some(loc_id) = last_location {
+            if let Some(loc) = state.locations.get_mut(&loc_id) {
+                loc.clues = loc.clues.saturating_add(clues);
+                let new_count = loc.clues;
+                events.push(Event::LocationCluesChanged {
+                    location: loc_id,
+                    new_count,
+                });
+            }
+        }
+    }
+
+    // Step 3: disengage every enemy engaged with the eliminated
+    // investigator, leaving them "at the location the investigator was
+    // at when eliminated, unengaged but otherwise maintaining their
+    // current game state" (RR p.10). Engaged enemies already share the
+    // investigator's location by the engagement invariant (Move drags
+    // them along), so no location update is needed — just clear
+    // `engaged_with`. Disengage all first (simultaneous), then let the
+    // ready ones re-engage a surviving co-located investigator per prey.
+    let affected: Vec<EnemyId> = state
+        .enemies
+        .iter()
+        .filter(|(_, e)| e.engaged_with == Some(investigator))
+        .map(|(id, _)| *id)
+        .collect();
+    for &eid in &affected {
+        let enemy = state.enemies.get_mut(&eid).unwrap_or_else(|| {
+            unreachable!("run_elimination_steps: enemy {eid:?} vanished; state corruption")
+        });
+        enemy.engaged_with = None;
+        events.push(Event::EnemyDisengaged {
+            enemy: eid,
+            investigator,
+        });
+    }
+    for &eid in &affected {
+        reengage_at_location(state, events, eid);
+    }
+
+    // Step 4: place other (non-enemy) threat-area cards in the
+    // appropriate discard pile. No-op: treachery/asset-in-threat-area
+    // state is not modeled yet (enemies are the only threat-area
+    // occupants). TODO: wire when threat-area cards land (Phase 7+).
+
+    // Step 5: lead-investigator transfer. No-op by construction: there
+    // is no stored lead; `first_active_investigator` recomputes the lead
+    // as the first Active investigator in `turn_order`, so a defeated
+    // lead is automatically replaced. UX for "remaining players choose"
+    // is deferred (Phase 8, #151) alongside the re-engagement-tie pick.
+
+    // Step 6 (no remaining players => scenario ends) is signaled by
+    // `check_all_defeated` (caller) emitting AllInvestigatorsDefeated;
+    // the Resolution::Lost consequence is wired by #73.
+
+    // The investigator has left play — clear their location last, after
+    // step 2 deposited clues using `last_location` (step 3 reads
+    // `enemy.current_location` directly, relying on the same value via
+    // the engagement invariant).
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "run_elimination_steps: investigator {investigator:?} not in map; state corruption"
+            )
+        });
+    inv.current_location = None;
 }
 
 /// Apply `amount` horror to an investigator. If their accumulated
@@ -3043,15 +3162,14 @@ fn fire_attacks_of_opportunity(
 ///    ("Each ready, engaged enemy makes an attack" — a disengaged
 ///    enemy is not "engaged").
 ///
-///    Today [`apply_investigator_defeat`] only flips `Status`;
-///    `TODO(#144)`: the full disengage + re-engage flow lands in
-///    #144 (Phase-4 milestone, blocked on #128 which lands the prey
-///    logic needed for multi-investigator re-engagement). The
-///    early-break here is the rules-correct minimal interpretation:
-///    no incorrect events fire, no behavior anomaly visible at the
-///    rules level. After #144 lands, the `enemy.engaged_with` field
-///    is properly cleared on defeat too; this early-break stays as
-///    the simpler form (one redundant check, harmless).
+///    `apply_investigator_defeat` (#144) now clears `engaged_with` on
+///    every enemy engaged with a defeated investigator (Rules Reference
+///    p.10 Elimination step 3), so a disengaged enemy genuinely is no
+///    longer "engaged" by the time the next loop iteration would run.
+///    The early-break here is therefore redundant with that flow — it
+///    is kept as the simpler, local form (one extra status check,
+///    harmless) so the loop body stays self-evidently correct without
+///    cross-referencing the elimination flow.
 ///
 /// 2. Call [`enemy_attack`] (places damage + horror simultaneously
 ///    per p.7, fires [`apply_investigator_defeat`] if either
@@ -3262,6 +3380,44 @@ fn engage_on_arrival(
             enemy: enemy_id,
             candidates: v,
         }),
+    }
+}
+
+/// Engage a now-unengaged enemy with a co-located investigator per the
+/// general engagement rule (Rules Reference p.10): "Any time a ready
+/// unengaged enemy is at the same location as an investigator, it
+/// engages that investigator … follow the enemy's prey instructions."
+///
+/// No-op when the enemy is exhausted (an exhausted unengaged enemy does
+/// not engage until readied) or has no location. On a prey `Tie` this
+/// engages the lead (`tied[0]`, which is `turn_order`-first because
+/// `active_investigators_at` is turn-order-ordered) rather than
+/// suspending for the lead's `PickInvestigator` — keeping every defeat
+/// caller synchronous. TODO(#151): make the multiplayer tie an
+/// interactive lead choice when multiplayer lands.
+///
+/// Shared primitive: the elimination flow's step-3 re-engagement is the
+/// first consumer; Upkeep-4.3 "engage on ready" (#150) will reuse it.
+///
+/// Precondition: `enemy.engaged_with` must be `None` on entry. This
+/// helper engages unconditionally on a `One`/`Tie` resolution and does
+/// not disengage a prior target or emit [`Event::EnemyDisengaged`];
+/// callers are responsible for clearing (and announcing) any existing
+/// engagement first.
+fn reengage_at_location(state: &mut GameState, events: &mut Vec<Event>, enemy_id: EnemyId) {
+    let enemy = &state.enemies[&enemy_id];
+    if enemy.exhausted {
+        return;
+    }
+    let Some(loc) = enemy.current_location else {
+        return;
+    };
+    let prey = enemy.prey;
+    let candidates = active_investigators_at(state, loc);
+    match resolve_prey(state, prey, &candidates) {
+        PreyResolution::None => {}
+        PreyResolution::One(target) => engage_enemy_with(state, events, enemy_id, target),
+        PreyResolution::Tie(tied) => engage_enemy_with(state, events, enemy_id, tied[0]),
     }
 }
 
@@ -4625,16 +4781,15 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             if let Some(id) = first_active_investigator(state) {
                 begin_investigator_turn(state, events, id);
             }
-            // None branch: no active investigator can take a turn.
-            // TODO(#144): Rules Reference p.10 step 6 — with no
-            // remaining players the scenario ends.
-            // check_all_defeated already emits
-            // AllInvestigatorsDefeated, but the scenario-end
-            // consequence is unwired. Until it lands, park here
-            // (mirrors prior behavior). Auto-advancing would loop
-            // the round forever — every other phase auto-skips
-            // with no active investigators, so Investigation is
-            // the cascade's only natural pause point.
+            // None branch: no active investigator can take a turn. Per
+            // Rules Reference p.10 step 6 the scenario ends; #144 fires
+            // AllInvestigatorsDefeated via check_all_defeated, but the
+            // Resolution::Lost consequence (and removing this park) is
+            // #73's resolution-layer work. TODO(#73): end the scenario
+            // here instead of parking. Auto-advancing would loop the
+            // round forever — every other phase auto-skips with no
+            // active investigators, so Investigation is the cascade's
+            // only natural pause point.
         }
         // InvestigatorTurnBegins: 2.2.1 — the active investigator now
         // takes actions (Investigate / Move / Fight / Evade / PlayCard /
@@ -8406,5 +8561,416 @@ mod hunter_resume_tests {
             state.hunter_move_pending.is_some(),
             "pending preserved so client can retry with PickInvestigator"
         );
+    }
+}
+
+#[cfg(test)]
+mod elimination_tests {
+    use super::*;
+    use crate::assert_event;
+    use crate::assert_no_event;
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+
+    #[test]
+    fn elimination_step1_removes_controlled_and_owned_cards() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 1;
+        inv.hand = vec![CardCode("h1".into()), CardCode("h2".into())];
+        inv.deck = vec![CardCode("d1".into())];
+        inv.discard = vec![CardCode("x1".into())];
+        inv.cards_in_play = vec![CardInPlay::enter_play(
+            CardCode("p1".into()),
+            CardInstanceId(1),
+        )];
+
+        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+
+        let after = &state.investigators[&id];
+        assert!(after.hand.is_empty(), "hand drained");
+        assert!(after.deck.is_empty(), "deck drained");
+        assert!(after.discard.is_empty(), "discard drained");
+        assert!(after.cards_in_play.is_empty(), "cards_in_play drained");
+        // All five codes landed in the removed pile (order: in-play, hand, deck, discard).
+        let removed: Vec<&str> = after
+            .removed_from_game
+            .iter()
+            .map(CardCode::as_str)
+            .collect();
+        assert_eq!(removed.len(), 5, "all controlled/owned cards removed");
+        assert!(removed.contains(&"p1"));
+        assert!(removed.contains(&"h1"));
+        assert!(removed.contains(&"d1"));
+        assert!(removed.contains(&"x1"));
+    }
+
+    #[test]
+    fn elimination_step2_places_clues_at_location_and_zeroes_resources() {
+        let id = InvestigatorId(1);
+        let loc_id = LocationId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 1;
+        inv.current_location = Some(loc_id);
+        inv.clues = 2;
+        inv.resources = 4;
+
+        let mut loc = test_location(1, "Study");
+        loc.clues = 1;
+
+        let mut state = TestGame::default()
+            .with_investigator(inv)
+            .with_location(loc)
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+
+        assert_eq!(
+            state.locations[&loc_id].clues, 3,
+            "2 investigator clues added to location's 1"
+        );
+        assert_eq!(
+            state.investigators[&id].clues, 0,
+            "investigator clues cleared"
+        );
+        assert_eq!(
+            state.investigators[&id].resources, 0,
+            "resources returned to pool"
+        );
+        assert_event!(events, Event::LocationCluesChanged { location, new_count: 3 } if *location == loc_id);
+    }
+
+    #[test]
+    fn elimination_step3_disengages_then_reengages_ready_enemy_onto_survivor() {
+        let dead = InvestigatorId(1);
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+
+        let mut dying = test_investigator(1);
+        dying.max_health = 1;
+        dying.current_location = Some(loc);
+
+        let mut survivor = test_investigator(2);
+        survivor.current_location = Some(loc);
+
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = Some(dead); // engaged with the about-to-die investigator
+            e
+        };
+
+        let mut state = TestGame::default()
+            .with_investigator(dying)
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([dead, surv])
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Damage);
+
+        assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == dead);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(surv),
+            "ready enemy re-engages the co-located survivor"
+        );
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == surv);
+        assert_eq!(state.enemies[&EnemyId(1)].current_location, Some(loc));
+        assert_eq!(
+            state.investigators[&dead].current_location, None,
+            "eliminated => between locations"
+        );
+    }
+
+    #[test]
+    fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
+        let dead = InvestigatorId(1);
+        let loc = LocationId(1);
+
+        let mut dying = test_investigator(1);
+        dying.max_health = 1;
+        dying.current_location = Some(loc);
+
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = Some(dead);
+            e
+        };
+
+        let mut state = TestGame::default()
+            .with_investigator(dying)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([dead])
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Damage);
+
+        assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == dead);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            None,
+            "no surviving co-located investigator => stays unengaged"
+        );
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn elimination_runs_on_horror_defeat_too() {
+        let dead = InvestigatorId(1);
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+
+        let mut dying = test_investigator(1);
+        dying.max_sanity = 1;
+        dying.current_location = Some(loc);
+        dying.clues = 1;
+
+        let mut survivor = test_investigator(2);
+        survivor.current_location = Some(loc);
+
+        let enemy = {
+            let mut e = test_enemy(1, "Whippoorwill");
+            e.current_location = Some(loc);
+            e.engaged_with = Some(dead);
+            e
+        };
+
+        let mut state = TestGame::default()
+            .with_investigator(dying)
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([dead, surv])
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Horror);
+
+        assert_eq!(state.investigators[&dead].status, Status::Insane);
+        assert_eq!(state.locations[&loc].clues, 1, "clue placed at location");
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(surv),
+            "re-engaged survivor"
+        );
+        assert_eq!(state.investigators[&dead].current_location, None);
+    }
+
+    #[test]
+    fn elimination_step3_exhausted_engaged_enemy_disengages_but_does_not_reengage() {
+        let dead = InvestigatorId(1);
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+
+        let mut dying = test_investigator(1);
+        dying.max_health = 1;
+        dying.current_location = Some(loc);
+
+        let mut survivor = test_investigator(2);
+        survivor.current_location = Some(loc);
+
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = Some(dead);
+            e.exhausted = true; // does not re-engage even with a co-located survivor
+            e
+        };
+
+        let mut state = TestGame::default()
+            .with_investigator(dying)
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([dead, surv])
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Damage);
+
+        assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == dead);
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn elimination_without_location_skips_clue_placement_and_does_not_panic() {
+        // Defeated "between locations" (current_location == None): step 2
+        // must skip clue placement (the clues leave play with the
+        // investigator) and zero resources without panicking.
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 1;
+        inv.current_location = None;
+        inv.clues = 3;
+        inv.resources = 2;
+
+        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+
+        assert_eq!(
+            state.investigators[&id].clues, 0,
+            "clues cleared (left play)"
+        );
+        assert_eq!(state.investigators[&id].resources, 0, "resources returned");
+        assert_no_event!(events, Event::LocationCluesChanged { .. });
+    }
+}
+
+#[cfg(test)]
+mod reengage_tests {
+    use super::*;
+    use crate::assert_event;
+    use crate::assert_no_event;
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+
+    #[test]
+    fn reengage_at_location_engages_sole_co_located_survivor() {
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+        let survivor = {
+            let mut i = test_investigator(2);
+            i.current_location = Some(loc);
+            i
+        };
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e
+        };
+        let mut state = TestGame::default()
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([surv])
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(surv));
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == surv);
+    }
+
+    #[test]
+    fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
+        let loc = LocationId(1);
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e
+        };
+        let mut state = TestGame::default()
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([])
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
+        // Two co-located survivors, Prey::Default → tie → engage turn_order-first (lead).
+        let lead = InvestigatorId(2);
+        let other = InvestigatorId(3);
+        let loc = LocationId(1);
+        let mk = |raw: u32| {
+            let mut i = test_investigator(raw);
+            i.current_location = Some(loc);
+            i
+        };
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e.prey = crate::card_data::Prey::Default;
+            e
+        };
+        let mut state = TestGame::default()
+            .with_investigator(mk(2))
+            .with_investigator(mk(3))
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([lead, other]) // lead first
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(lead),
+            "tie engages the lead (turn_order-first)"
+        );
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == lead);
+    }
+
+    #[test]
+    fn reengage_at_location_exhausted_enemy_does_not_engage() {
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+        let survivor = {
+            let mut i = test_investigator(2);
+            i.current_location = Some(loc);
+            i
+        };
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e.exhausted = true; // exhausted unengaged enemy does not engage (RR p.10)
+            e
+        };
+        let mut state = TestGame::default()
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([surv])
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn reengage_at_location_enemy_without_location_is_noop() {
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = None; // no location — must no-op
+            e.engaged_with = None;
+            e
+        };
+        let mut state = TestGame::default().with_enemy(enemy).build();
+        let mut events = Vec::new();
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
     }
 }

@@ -83,6 +83,15 @@ pub struct Investigator {
     /// action; remains true for the rest of the scenario so a second
     /// mulligan rejects.
     pub mulligan_used: bool,
+    /// Cards removed from the game (Rules Reference p.10, "Elimination,"
+    /// step 1). When this investigator is eliminated, every card they
+    /// control in play (`cards_in_play`) and every card they own in an
+    /// out-of-play area (`hand`, `deck`, `discard`) is drained into this
+    /// pile and removed from the game. Stays empty for Active
+    /// investigators. Defaults to empty for backward-compat: states
+    /// serialized before this field was added still deserialize.
+    #[serde(default)]
+    pub removed_from_game: Vec<CardCode>,
 }
 
 /// Whether an investigator is still active in the scenario, and if not,
@@ -166,4 +175,31 @@ pub enum SkillKind {
     Combat,
     /// Tests for evading, dexterity, speed.
     Agility,
+}
+
+#[cfg(test)]
+mod removed_from_game_tests {
+    use super::*;
+
+    #[test]
+    fn new_investigator_has_empty_removed_pile() {
+        let inv = crate::test_support::test_investigator(1);
+        assert!(inv.removed_from_game.is_empty());
+    }
+
+    #[test]
+    fn deserializes_when_field_absent() {
+        // A JSON object missing `removed_from_game` must still parse
+        // (serde default), proving forward-compat for pre-field states.
+        let json = r#"{
+            "id": 1, "name": "Test", "current_location": null,
+            "skills": {"willpower":3,"intellect":3,"combat":3,"agility":3},
+            "max_health": 8, "damage": 0, "max_sanity": 8, "horror": 0,
+            "clues": 0, "resources": 0, "actions_remaining": 3,
+            "status": "Active", "deck": [], "hand": [], "discard": [],
+            "cards_in_play": [], "mulligan_used": false
+        }"#;
+        let inv: Investigator = serde_json::from_str(json).expect("deserialize");
+        assert!(inv.removed_from_game.is_empty());
+    }
 }
