@@ -2880,7 +2880,45 @@ fn apply_investigator_defeat(
         investigator,
         cause,
     });
+
+    // Rules Reference p.10 Elimination steps 1–5 run here, between the
+    // defeat event and the all-defeated check (step 6 signal). See the
+    // design doc 2026-05-31-144 for the full breakdown.
+    run_elimination_steps(state, events, investigator);
+
     check_all_defeated(state, events);
+}
+
+/// Execute Rules Reference p.10 Elimination steps 1–5 for an
+/// investigator whose `status` has just been flipped to a defeated
+/// variant. Synchronous: the step-3 re-engagement tie auto-picks the
+/// lead rather than suspending (see `reengage_at_location`).
+fn run_elimination_steps(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) {
+    let _ = &events; // TODO: steps 2-3 will emit via events
+                     // Step 1: remove every card this investigator controls in play and
+                     // owns in out-of-play areas (hand/deck/discard) from the game.
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "run_elimination_steps: investigator {investigator:?} not in map; state corruption"
+            )
+        });
+    // Build the pile in an owned local so each mutation borrows only one
+    // field of `inv` at a time (mutating `inv.removed_from_game` directly
+    // while borrowing `inv.hand` etc. would double-borrow `inv` — rejected
+    // by the borrow checker).
+    let mut removed = std::mem::take(&mut inv.removed_from_game);
+    removed.extend(inv.cards_in_play.drain(..).map(|c| c.code));
+    removed.append(&mut inv.hand);
+    removed.append(&mut inv.deck);
+    removed.append(&mut inv.discard);
+    inv.removed_from_game = removed;
 }
 
 /// Apply `amount` horror to an investigator. If their accumulated
@@ -8406,5 +8444,48 @@ mod hunter_resume_tests {
             state.hunter_move_pending.is_some(),
             "pending preserved so client can retry with PickInvestigator"
         );
+    }
+}
+
+#[cfg(test)]
+mod elimination_tests {
+    use super::*;
+    use crate::state::{CardCode, CardInPlay, CardInstanceId, DefeatCause, InvestigatorId};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn elimination_step1_removes_controlled_and_owned_cards() {
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 1;
+        inv.hand = vec![CardCode("h1".into()), CardCode("h2".into())];
+        inv.deck = vec![CardCode("d1".into())];
+        inv.discard = vec![CardCode("x1".into())];
+        inv.cards_in_play = vec![CardInPlay::enter_play(
+            CardCode("p1".into()),
+            CardInstanceId(1),
+        )];
+
+        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+
+        let after = &state.investigators[&id];
+        assert!(after.hand.is_empty(), "hand drained");
+        assert!(after.deck.is_empty(), "deck drained");
+        assert!(after.discard.is_empty(), "discard drained");
+        assert!(after.cards_in_play.is_empty(), "cards_in_play drained");
+        // All five codes landed in the removed pile (order: in-play, hand, deck, discard).
+        let removed: Vec<&str> = after
+            .removed_from_game
+            .iter()
+            .map(CardCode::as_str)
+            .collect();
+        assert_eq!(removed.len(), 5, "all controlled/owned cards removed");
+        assert!(removed.contains(&"p1"));
+        assert!(removed.contains(&"h1"));
+        assert!(removed.contains(&"d1"));
+        assert!(removed.contains(&"x1"));
     }
 }
