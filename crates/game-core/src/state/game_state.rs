@@ -171,6 +171,12 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
+    /// Suspended Hunter-movement choice (#128), `Some` only while the
+    /// Enemy phase is paused on a lead-investigator tie; cleared once
+    /// resolved. See [`HunterChoice`].
+    pub hunter_move_pending: Option<HunterChoice>,
+    /// Suspended engagement-on-spawn choice (#128). See [`SpawnEngagePending`].
+    pub spawn_engage_pending: Option<SpawnEngagePending>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -557,6 +563,67 @@ pub enum WindowKind {
     InvestigatorTurnBegins,
 }
 
+/// A suspended Hunter-movement choice awaiting the lead investigator's
+/// input during Enemy-phase step 3.2 (#128, Rules Reference p.12 / p.10 /
+/// p.17).
+///
+/// Two shapes because the two choice points need different input:
+/// movement is a `PickLocation` over a prey-filtered destination set
+/// (the chosen prey doesn't persist, so picking a location is
+/// outcome-equivalent to picking an investigator-then-path); engagement
+/// on arrival is a `PickInvestigator` over the co-located set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum HunterChoice {
+    /// Lead investigator picks the hunter's destination among tied
+    /// prey-legal shortest-path next steps (Rules Reference p.12).
+    Move {
+        /// The hunter being moved.
+        enemy: EnemyId,
+        /// Legal destinations to choose among (the validated option set).
+        candidates: Vec<LocationId>,
+    },
+    /// Lead investigator picks whom the hunter engages among co-located
+    /// tied prey candidates (Rules Reference p.10 / p.17).
+    Engage {
+        /// The hunter that arrived.
+        enemy: EnemyId,
+        /// Co-located investigators to choose among.
+        candidates: Vec<InvestigatorId>,
+    },
+}
+
+/// A suspended engagement-on-spawn choice (#128, option A): a
+/// multi-investigator spawn tie awaiting the lead investigator's
+/// `PickInvestigator`. `investigator_to_draw` is the drawing
+/// investigator whose Mythos encounter-draw chain resumes once the
+/// engagement is chosen.
+///
+/// Distinct from [`HunterChoice`] because spawn engagement is not a
+/// hunter move (it never picks a location) and its resume path
+/// re-enters a different driver — the Mythos encounter-draw chain
+/// rather than the Enemy-phase hunter loop. `surge` and `chain_count`
+/// carry the surge-chain bookkeeping across the suspend boundary so the
+/// drawing investigator's chain resumes with its cap budget intact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct SpawnEngagePending {
+    /// The spawned enemy awaiting an engagement target.
+    pub enemy: EnemyId,
+    /// The investigator who drew the enemy (Mythos draw resumes for them).
+    pub investigator_to_draw: InvestigatorId,
+    /// Co-located investigators to choose among.
+    pub candidates: Vec<InvestigatorId>,
+    /// Whether the spawned enemy card carries the surge keyword — i.e.
+    /// whether the drawing investigator draws another encounter card
+    /// once this engagement resolves.
+    pub surge: bool,
+    /// Surge-chain position at the point of suspension, so the resumed
+    /// chain keeps counting toward `MAX_SURGE_CHAIN` rather than
+    /// resetting its budget across the input round-trip.
+    pub chain_count: usize,
+}
+
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
 /// ability waiting to fire inside an `OpenWindow`.
 ///
@@ -874,5 +941,46 @@ mod encounter_deck_tests {
         let state = TestGame::new().build();
         assert!(state.encounter_deck.is_empty());
         assert!(state.encounter_discard.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod hunter_pending_tests {
+    use super::*;
+
+    #[test]
+    fn hunter_choice_move_serde_roundtrip() {
+        let original = HunterChoice::Move {
+            enemy: EnemyId(3),
+            candidates: vec![LocationId(2), LocationId(3)],
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: HunterChoice = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn hunter_choice_engage_serde_roundtrip() {
+        let original = HunterChoice::Engage {
+            enemy: EnemyId(5),
+            candidates: vec![InvestigatorId(1), InvestigatorId(2)],
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: HunterChoice = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn spawn_engage_pending_serde_roundtrip() {
+        let original = SpawnEngagePending {
+            enemy: EnemyId(2),
+            investigator_to_draw: InvestigatorId(1),
+            candidates: vec![InvestigatorId(1), InvestigatorId(2)],
+            surge: false,
+            chain_count: 1,
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: SpawnEngagePending = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
     }
 }

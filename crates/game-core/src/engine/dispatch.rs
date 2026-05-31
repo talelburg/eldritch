@@ -12,17 +12,17 @@ use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
-use crate::card_data::{CardMetadata, CardType, Spawn, SpawnLocation};
+use crate::card_data::{CardMetadata, CardType, Prey, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::{
-    discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Trigger,
+    discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Stat, Trigger,
 };
 use crate::event::{Event, FailureReason};
 use crate::state::{
     resolve_token, CardCode, CardInPlay, CardInstanceId, DefeatCause, Enemy, EnemyId,
-    FastActorScope, FinishContinuation, GameState, InFlightSkillTest, Investigator, InvestigatorId,
-    LocationId, OpenWindow, PendingTrigger, Phase, SkillKind, SkillTestFollowUp, Status,
-    TokenResolution, WindowKind, Zone,
+    FastActorScope, FinishContinuation, GameState, HunterChoice, InFlightSkillTest, Investigator,
+    InvestigatorId, LocationId, OpenWindow, PendingTrigger, Phase, SkillKind, SkillTestFollowUp,
+    SpawnEngagePending, Status, TokenResolution, WindowKind, Zone,
 };
 
 use super::evaluator::{
@@ -53,6 +53,7 @@ const MAX_SURGE_CHAIN: usize = 64;
 /// and [`EndTurn`](PlayerAction::EndTurn) are implemented end-to-end;
 /// other variants return [`EngineOutcome::Rejected`] with a TODO message
 /// so callers and tests get a useful signal rather than a silent no-op.
+#[allow(clippy::too_many_lines)] // dispatcher: a guard ladder + one match arm per PlayerAction
 pub fn apply_player_action(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -106,6 +107,31 @@ pub fn apply_player_action(
             reason: "a skill test is paused at its commit window; submit a \
                      PlayerAction::ResolveInput with an InputResponse::CommitCards \
                      (empty indices commits no cards) before any other action"
+                .into(),
+        };
+    }
+
+    // Hunter movement is Enemy-phase only; it can't coexist with an open
+    // reaction window or an in-flight skill test, so order among the guards
+    // is immaterial — but a pending hunter choice still blocks other actions.
+    if state.hunter_move_pending.is_some() && !matches!(action, PlayerAction::ResolveInput { .. }) {
+        return EngineOutcome::Rejected {
+            reason: "a hunter-movement choice is pending; submit a PlayerAction::ResolveInput \
+                     with InputResponse::PickLocation (movement) or \
+                     InputResponse::PickInvestigator (engagement) before any other action"
+                .into(),
+        };
+    }
+
+    // A pending engagement-on-spawn choice (#128) likewise blocks every
+    // action but `ResolveInput`. Mirrors the hunter guard above; the two
+    // never coexist (different phases), so guard order is immaterial.
+    if state.spawn_engage_pending.is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason: "an engagement-on-spawn choice is pending; submit a \
+                     PlayerAction::ResolveInput with InputResponse::PickInvestigator \
+                     before any other action"
                 .into(),
         };
     }
@@ -426,12 +452,16 @@ fn resolve_encounter_card(
 /// > enemy's prey instructions to determine which investigator is
 /// > engaged.
 ///
-/// Phase-4 handles the 0- and 1-investigator cases inline. The
-/// multi-investigator case requires `Prey` resolution — the same
-/// machinery #128 will land for hunter-movement target selection —
-/// and rejects here with a reason pointing at #128. #128's author
-/// inherits the work of unifying the prey resolver across spawn and
-/// hunter-movement.
+/// All cases route through the shared [`resolve_prey`] resolver
+/// (#128, option A): the co-located set is narrowed by the enemy's
+/// prey (always `Prey::Default` in current scope, so a 2+ set always
+/// ties). `None`/`One` resolve inline (no engagement, or engage the
+/// sole/best candidate); `Tie` suspends via
+/// [`SpawnEngagePending`](crate::state::SpawnEngagePending) and returns
+/// [`EngineOutcome::AwaitingInput`] for the lead investigator's
+/// `PickInvestigator`. When the spawn happens inside a Mythos
+/// encounter-draw chain, [`resume_spawn_engage`] re-enters
+/// [`run_mythos_draw_chain`] after the pick resolves.
 ///
 /// # Stat fields TODO
 ///
@@ -445,11 +475,12 @@ fn resolve_encounter_card(
 ///
 /// # Validate-first contract
 ///
-/// All preconditions (location resolution, engagement resolution) are
-/// checked before any mutation. Reject paths leave `state` and
-/// `events` unchanged from the caller's perspective; only the happy
-/// path inserts into `state.enemies`, bumps `next_enemy_id`, and
-/// pushes `Event::EnemySpawned`.
+/// The one precondition that can reject — spawn-location resolution —
+/// is checked before any mutation, leaving `state`/`events` unchanged
+/// on rejection. Engagement resolution never rejects: it either
+/// resolves inline or suspends (`AwaitingInput`) with the enemy already
+/// minted into `state.enemies` and `Event::EnemySpawned` pushed (the
+/// pending choice carries the rest of the work to [`resume_spawn_engage`]).
 #[allow(clippy::too_many_lines)]
 fn spawn_enemy(
     state: &mut GameState,
@@ -493,26 +524,16 @@ fn spawn_enemy(
         },
     };
 
-    // 2. Resolve engagement-on-spawn (validate-first).
-    let investigators_at_loc: Vec<InvestigatorId> = state
-        .investigators
-        .iter()
-        .filter(|(_, inv)| inv.current_location == Some(location_id))
-        .map(|(id, _)| *id)
-        .collect();
-    let engaged_with = match investigators_at_loc.as_slice() {
-        [] => None,
-        [single] => Some(*single),
-        _ => {
-            return EngineOutcome::Rejected {
-                reason: "spawn_enemy: multi-investigator engagement-on-spawn requires Prey \
-                         (lands in #128)"
-                    .into(),
-            };
-        }
-    };
+    // 2. Resolve engagement-on-spawn (validate-first). The co-located
+    //    set is narrowed by the enemy's prey — every spawn uses
+    //    `Prey::Default` (Task 2), so a 2+ set always ties and suspends
+    //    for the lead investigator's `PickInvestigator` (option A).
+    let candidates = active_investigators_at(state, location_id);
 
-    // 3. Mint and place (mutate-second).
+    // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
+    //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
+    //    `engage_enemy_with` so the `EnemyEngaged` event always pairs with
+    //    the mutation.
     let enemy_id = EnemyId(state.next_enemy_id);
     state.next_enemy_id = state.next_enemy_id.saturating_add(1);
 
@@ -528,24 +549,143 @@ fn spawn_enemy(
         current_location: Some(location_id),
         exhausted: false,
         traits: metadata.traits.clone(),
-        engaged_with,
+        engaged_with: None,
+        hunter: false,
+        prey: crate::card_data::Prey::Default,
     };
     state.enemies.insert(enemy_id, enemy);
 
-    events.push(Event::EnemySpawned {
-        enemy: enemy_id,
-        code,
-        location: location_id,
-        engaged_with,
-    });
-    if let Some(target) = engaged_with {
-        events.push(Event::EnemyEngaged {
-            enemy: enemy_id,
-            investigator: target,
-        });
+    match resolve_prey(state, crate::card_data::Prey::Default, &candidates) {
+        PreyResolution::None => {
+            events.push(Event::EnemySpawned {
+                enemy: enemy_id,
+                code,
+                location: location_id,
+                engaged_with: None,
+            });
+            EngineOutcome::Done
+        }
+        PreyResolution::One(target) => {
+            events.push(Event::EnemySpawned {
+                enemy: enemy_id,
+                code,
+                location: location_id,
+                engaged_with: Some(target),
+            });
+            engage_enemy_with(state, events, enemy_id, target);
+            EngineOutcome::Done
+        }
+        PreyResolution::Tie(tied) => {
+            events.push(Event::EnemySpawned {
+                enemy: enemy_id,
+                code,
+                location: location_id,
+                engaged_with: None,
+            });
+            // `chain_count` is 0 here; when this spawn is reached inside a
+            // Mythos surge chain, `run_mythos_draw_chain` patches the
+            // stored value to the live chain position before returning the
+            // `AwaitingInput` (the single-draw `EncounterCardRevealed` path
+            // has no chain, so 0 is correct there).
+            state.spawn_engage_pending = Some(SpawnEngagePending {
+                enemy: enemy_id,
+                investigator_to_draw: investigator,
+                candidates: tied.clone(),
+                surge: metadata.surge,
+                chain_count: 0,
+            });
+            EngineOutcome::AwaitingInput {
+                request: InputRequest {
+                    prompt: format!(
+                        "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
+                         engage among {tied:?} (submit InputResponse::PickInvestigator)"
+                    ),
+                },
+                resume_token: ResumeToken(0),
+            }
+        }
     }
+}
 
-    EngineOutcome::Done
+/// Result of narrowing a candidate investigator set by a prey
+/// instruction (Rules Reference p.12 / p.17).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PreyResolution {
+    /// Exactly one investigator best meets the instruction.
+    One(InvestigatorId),
+    /// Two or more tie — the lead investigator decides (carries the
+    /// tied set, in input order).
+    Tie(Vec<InvestigatorId>),
+    /// No candidates at all.
+    None,
+}
+
+/// Narrow `candidates` by `prey`. `Default` treats all candidates as
+/// equal; `HighestStat` keeps those with the maximum value of the
+/// stat. Returns `One` (single best), `Tie` (2+ best — lead decides),
+/// or `None` (empty candidate set). Caller supplies the candidate set
+/// (equidistant-nearest investigators for movement; co-located
+/// investigators for engagement).
+fn resolve_prey(state: &GameState, prey: Prey, candidates: &[InvestigatorId]) -> PreyResolution {
+    if candidates.is_empty() {
+        return PreyResolution::None;
+    }
+    let best: Vec<InvestigatorId> = match prey {
+        Prey::Default => candidates.to_vec(),
+        Prey::HighestStat(stat) => {
+            let skill = stat_to_skill_kind(stat);
+            let max = candidates
+                .iter()
+                .filter_map(|id| {
+                    state
+                        .investigators
+                        .get(id)
+                        .map(|inv| inv.skills.value(skill))
+                })
+                .max();
+            match max {
+                Some(m) => candidates
+                    .iter()
+                    .copied()
+                    .filter(|id| {
+                        state
+                            .investigators
+                            .get(id)
+                            .is_some_and(|inv| inv.skills.value(skill) == m)
+                    })
+                    .collect(),
+                None => Vec::new(),
+            }
+        }
+        // `Prey` is #[non_exhaustive]; new variants (Lowest, Most Clues, etc.)
+        // must be wired here when their first card consumer lands — an
+        // unrecognised variant at runtime is a card-impl bug.
+        _ => unreachable!(
+            "resolve_prey: unrecognised Prey variant {prey:?} — \
+             card-impl bug or new variant needs engine wiring"
+        ),
+    };
+    match best.as_slice() {
+        [] => PreyResolution::None,
+        [one] => PreyResolution::One(*one),
+        _ => PreyResolution::Tie(best),
+    }
+}
+
+/// Map a prey `Stat` to the `SkillKind` used for investigator lookup.
+/// Only the four base skills are valid prey stats in Phase-4 scope; a
+/// `MaxHealth`/`MaxSanity` prey would be a card-impl bug.
+fn stat_to_skill_kind(stat: Stat) -> SkillKind {
+    match stat {
+        Stat::Willpower => SkillKind::Willpower,
+        Stat::Intellect => SkillKind::Intellect,
+        Stat::Combat => SkillKind::Combat,
+        Stat::Agility => SkillKind::Agility,
+        Stat::MaxHealth | Stat::MaxSanity => unreachable!(
+            "resolve_prey: prey stat {stat:?} is not a base skill; no in-scope \
+             prey instruction uses MaxHealth/MaxSanity — card-impl bug"
+        ),
+    }
 }
 
 /// Fisher-Yates shuffle of the named investigator's deck using the
@@ -805,12 +945,13 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     // Enemy phase uses.
     if let Some(next_id) = next_active_investigator_after(state, active_id) {
         begin_investigator_turn(state, events, next_id);
+        EngineOutcome::Done
     } else {
         state.active_investigator = None;
-        investigation_phase_end(state, events); // 2.3 → Enemy
+        // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
+        // (Enemy 3.2); propagate its outcome rather than swallowing it.
+        investigation_phase_end(state, events)
     }
-
-    EngineOutcome::Done
 }
 
 /// Entered by [`step_phase`] on any-to-Investigation transition, and by
@@ -861,11 +1002,11 @@ fn begin_investigator_turn(state: &mut GameState, events: &mut Vec<Event>, who: 
 /// `enemy_phase_end` / `upkeep_phase_end` — then transitions to the
 /// Enemy phase. Called only from `end_turn`'s terminal branch (the last
 /// investigator has taken a turn this round).
-fn investigation_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+fn investigation_phase_end(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
-    step_phase(state, events); // Investigation → Enemy; calls enemy_phase
+    step_phase(state, events) // Investigation → Enemy; calls enemy_phase
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
@@ -943,7 +1084,15 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// **Round-bump:** the round-counter increment now lives in
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
 /// rather than here. `step_phase` no longer touches `state.round`.
-fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
+///
+/// Returns the transition's [`EngineOutcome`]. Only the
+/// Investigation→Enemy arm can return [`EngineOutcome::AwaitingInput`]
+/// (a hunter-movement tie in [`enemy_phase`]); every other arm runs its
+/// driver to completion and returns [`EngineOutcome::Done`]. The
+/// Investigation→Enemy suspension is owned by
+/// [`investigation_phase_end`], which propagates it up through
+/// [`end_turn`].
+fn step_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let from = state.phase;
     let to = from.next();
 
@@ -954,10 +1103,19 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // Dispatch to phase driver if one exists; otherwise emit
     // PhaseStarted directly (for phases without a driver yet).
     match to {
-        Phase::Mythos if from != Phase::Mythos => mythos_phase(state, events),
-        Phase::Investigation if from != Phase::Investigation => investigation_phase(state, events),
+        Phase::Mythos if from != Phase::Mythos => {
+            mythos_phase(state, events);
+            EngineOutcome::Done
+        }
+        Phase::Investigation if from != Phase::Investigation => {
+            investigation_phase(state, events);
+            EngineOutcome::Done
+        }
         Phase::Enemy if from != Phase::Enemy => enemy_phase(state, events),
-        Phase::Upkeep if from != Phase::Upkeep => upkeep_phase(state, events),
+        Phase::Upkeep if from != Phase::Upkeep => {
+            upkeep_phase(state, events);
+            EngineOutcome::Done
+        }
         _ => unreachable!(
             "step_phase: from == to (from={from:?}, to={to:?}); Phase::next \
              never returns the same phase, so this branch is structurally \
@@ -1588,6 +1746,24 @@ fn resolve_input(
     events: &mut Vec<Event>,
     response: &InputResponse,
 ) -> EngineOutcome {
+    // Hunter-movement suspension is its own mode; route it before the
+    // reaction-window and skill-test checks, which are independent
+    // suspension modes. (#128)
+    debug_assert!(
+        !(state.hunter_move_pending.is_some() && state.spawn_engage_pending.is_some()),
+        "hunter movement and spawn engagement cannot both be pending: they arise in \
+         different phases (Enemy 3.2 vs Mythos 1.4) and each blocks all other actions",
+    );
+    if state.hunter_move_pending.is_some() {
+        return resume_hunter_choice(state, events, response);
+    }
+
+    // Engagement-on-spawn suspension (#128, option A) is a distinct mode
+    // from hunter movement: its resume re-enters the Mythos draw chain.
+    if state.spawn_engage_pending.is_some() {
+        return resume_spawn_engage(state, events, response);
+    }
+
     if state.top_reaction_window().is_some() {
         return resume_reaction_window(state, events, response);
     }
@@ -2944,44 +3120,382 @@ fn resolve_attacks_for_investigator(
     }
 }
 
-/// 3.2 Hunter enemies move. Rules Reference p.25: "Resolve the hunter
-/// keyword for each ready, unengaged enemy that has the hunter
-/// keyword."
-fn hunter_movement_step(_state: &mut GameState, _events: &mut Vec<Event>) {
-    // TODO(#128): iterate ready unengaged enemies with the Hunter
-    //             keyword; BFS over the location-connection graph;
-    //             move + engage-on-arrival. Ambiguous shortest paths
-    //             prompt the active investigator via AwaitingInput +
-    //             InputResponse::PickLocation. Currently no Hunter
-    //             keyword exists on CardMetadata; #128 lands it
-    //             alongside this body.
+/// Whether an enemy is an eligible hunter for step-3.2 movement:
+/// ready, unengaged, has the keyword, and is on the map.
+fn is_eligible_hunter(enemy: &Enemy) -> bool {
+    enemy.hunter
+        && !enemy.exhausted
+        && enemy.engaged_with.is_none()
+        && enemy.current_location.is_some()
 }
 
-/// Entered by [`step_phase`] on the Investigation→Enemy transition.
-/// Owns the `PhaseStarted(Enemy)` emit (Rules Reference p.25 step 3.1)
-/// and kicks off the per-investigator attack loop (step 3.3) by
-/// seeding [`GameState::enemy_attack_pending`] and opening the first
-/// [`WindowKind::BeforeInvestigatorAttacked`] window. The loop body
-/// runs in [`run_window_continuation`]'s arms; this driver returns
-/// after the kickoff.
-///
-/// Hunter movement (step 3.2) is a named TODO stub
-/// ([`hunter_movement_step`]) deferred to #128.
-fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) {
-    // 3.1 Enemy phase begins.
-    events.push(Event::PhaseStarted {
-        phase: Phase::Enemy,
+/// Investigators (Active, on the map) at `loc`, in `turn_order` order
+/// so prey ties carry a deterministic, lead-first candidate list.
+fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<InvestigatorId> {
+    state
+        .turn_order
+        .iter()
+        .copied()
+        .filter(|id| {
+            state.investigators.get(id).is_some_and(|inv| {
+                inv.status == Status::Active && inv.current_location == Some(loc)
+            })
+        })
+        .collect()
+}
+
+/// Compute the prey-legal destination set for a hunter at `from`:
+/// the union of shortest-path first-steps toward each
+/// equidistant-nearest, prey-filtered investigator. Empty when no
+/// investigator is reachable. Deterministic order (sorted `LocationId`).
+fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<LocationId> {
+    use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
+    let mut reachable: Vec<(InvestigatorId, u32)> = Vec::new();
+    let mut min_dist: Option<u32> = None;
+    for id in &state.turn_order {
+        let Some(inv) = state.investigators.get(id) else {
+            continue;
+        };
+        if inv.status != Status::Active {
+            continue;
+        }
+        let Some(loc) = inv.current_location else {
+            continue;
+        };
+        let Some(d) = bfs_distance(state, from, loc) else {
+            continue;
+        };
+        min_dist = Some(min_dist.map_or(d, |m| m.min(d)));
+        reachable.push((*id, d));
+    }
+    let Some(min) = min_dist else {
+        return Vec::new();
+    };
+    let nearest_ids: Vec<InvestigatorId> = reachable
+        .iter()
+        .filter(|(_, d)| *d == min)
+        .map(|(id, _)| *id)
+        .collect();
+    let chosen: Vec<InvestigatorId> = match resolve_prey(state, prey, &nearest_ids) {
+        PreyResolution::One(id) => vec![id],
+        PreyResolution::Tie(v) => v,
+        PreyResolution::None => return Vec::new(),
+    };
+    let mut dests: Vec<LocationId> = Vec::new();
+    for id in chosen {
+        let Some(loc) = state
+            .investigators
+            .get(&id)
+            .and_then(|i| i.current_location)
+        else {
+            continue;
+        };
+        for step in shortest_first_steps(state, from, loc) {
+            if !dests.contains(&step) {
+                dests.push(step);
+            }
+        }
+    }
+    dests.sort();
+    dests
+}
+
+/// Move `enemy` to `to`, emitting [`Event::EnemyMoved`]. Caller has
+/// already validated that `to` is a legal destination.
+fn move_hunter_to(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    enemy_id: EnemyId,
+    to: LocationId,
+) {
+    let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+        unreachable!("move_hunter_to: enemy {enemy_id:?} vanished mid-movement; state corruption")
     });
+    enemy.current_location = Some(to);
+    events.push(Event::EnemyMoved {
+        enemy: enemy_id,
+        to,
+    });
+}
 
-    // 3.2 Hunter enemies move. TODO(#128).
-    hunter_movement_step(state, events);
+/// Set engagement on `enemy_id` → `target` and emit
+/// [`Event::EnemyEngaged`]. Shared by movement and spawn.
+fn engage_enemy_with(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    enemy_id: EnemyId,
+    target: InvestigatorId,
+) {
+    let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+        unreachable!("engage_enemy_with: enemy {enemy_id:?} vanished; state corruption")
+    });
+    enemy.engaged_with = Some(target);
+    events.push(Event::EnemyEngaged {
+        enemy: enemy_id,
+        investigator: target,
+    });
+}
 
-    // 3.3 Kick off the per-investigator attack loop. Seed the cursor
-    //     to the first Active investigator in turn_order. Eliminated
-    //     investigators (Killed / Insane / Resigned) are skipped per
-    //     Rules Reference p.10 (Elimination); first_active_investigator
-    //     is the shared helper used by Mythos 1.4 (#69) for the same
-    //     semantics.
+/// Engage-on-arrival for a hunter now at its (possibly unchanged)
+/// location. Returns `Some(HunterChoice::Engage{..})` if the co-located
+/// set ties under prey (caller suspends); otherwise engages the resolved
+/// investigator (or no-one) and returns `None`.
+fn engage_on_arrival(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    enemy_id: EnemyId,
+) -> Option<HunterChoice> {
+    let loc = state.enemies[&enemy_id]
+        .current_location
+        .unwrap_or_else(|| {
+            unreachable!("engage_on_arrival: enemy {enemy_id:?} has no location; state corruption")
+        });
+    let prey = state.enemies[&enemy_id].prey;
+    let candidates = active_investigators_at(state, loc);
+    match resolve_prey(state, prey, &candidates) {
+        PreyResolution::None => None,
+        PreyResolution::One(target) => {
+            engage_enemy_with(state, events, enemy_id, target);
+            None
+        }
+        PreyResolution::Tie(v) => Some(HunterChoice::Engage {
+            enemy: enemy_id,
+            candidates: v,
+        }),
+    }
+}
+
+/// Process a single hunter (movement + engage-on-arrival). Returns
+/// `Some(HunterChoice)` if a tie suspends, else `None` (fully resolved).
+fn process_one_hunter(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    enemy_id: EnemyId,
+) -> Option<HunterChoice> {
+    let from = state.enemies[&enemy_id]
+        .current_location
+        .unwrap_or_else(|| {
+            unreachable!("process_one_hunter: enemy {enemy_id:?} has no location; state corruption")
+        });
+    let here = active_investigators_at(state, from);
+    if here.is_empty() {
+        let prey = state.enemies[&enemy_id].prey;
+        let dests = hunter_destinations(state, from, prey);
+        match dests.as_slice() {
+            [] => return None,
+            [one] => move_hunter_to(state, events, enemy_id, *one),
+            _ => {
+                return Some(HunterChoice::Move {
+                    enemy: enemy_id,
+                    candidates: dests,
+                })
+            }
+        }
+    }
+    engage_on_arrival(state, events, enemy_id)
+}
+
+/// Find the next eligible hunter with id strictly greater than `after`
+/// (or the first eligible if `after` is `None`). Scans in ascending
+/// `EnemyId` order (`BTreeMap` iteration order).
+fn next_eligible_hunter(state: &GameState, after: Option<EnemyId>) -> Option<EnemyId> {
+    state
+        .enemies
+        .iter()
+        .filter(|(id, e)| after.is_none_or(|a| **id > a) && is_eligible_hunter(e))
+        .map(|(id, _)| *id)
+        .next()
+}
+
+/// Drive Enemy-phase step 3.2: process eligible hunters in ascending
+/// `EnemyId` order until none remain ([`EngineOutcome::Done`]) or one
+/// suspends on a lead-investigator tie
+/// ([`EngineOutcome::AwaitingInput`]).
+pub(crate) fn drive_hunter_moves(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    let mut cursor: Option<EnemyId> = None;
+    while let Some(id) = next_eligible_hunter(state, cursor) {
+        if let Some(choice) = process_one_hunter(state, events, id) {
+            return suspend_hunter_choice(state, choice);
+        }
+        cursor = Some(id);
+    }
+    EngineOutcome::Done
+}
+
+/// Store the pending hunter choice and return `AwaitingInput` for the
+/// lead investigator (#128, Task 7 wires the resume path).
+fn suspend_hunter_choice(state: &mut GameState, choice: HunterChoice) -> EngineOutcome {
+    let prompt = match &choice {
+        HunterChoice::Move { enemy, candidates } => format!(
+            "Hunter {enemy:?} movement: lead investigator picks a destination among \
+             {candidates:?} (submit InputResponse::PickLocation)"
+        ),
+        HunterChoice::Engage { enemy, candidates } => format!(
+            "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
+             {candidates:?} (submit InputResponse::PickInvestigator)"
+        ),
+    };
+    state.hunter_move_pending = Some(choice);
+    EngineOutcome::AwaitingInput {
+        request: InputRequest { prompt },
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume a suspended Hunter-movement choice with the lead
+/// investigator's response, then continue driving remaining hunters.
+/// Validates the response against the stored candidate set; on an
+/// invalid pick, rejects and leaves `hunter_move_pending` untouched so
+/// the client can retry. (#128)
+fn resume_hunter_choice(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    response: &InputResponse,
+) -> EngineOutcome {
+    let pending = state.hunter_move_pending.clone().unwrap_or_else(|| {
+        unreachable!("resume_hunter_choice: called with no pending hunter choice")
+    });
+    let current_enemy = match (&pending, response) {
+        (HunterChoice::Move { enemy, candidates }, InputResponse::PickLocation(loc)) => {
+            if !candidates.contains(loc) {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "ResolveInput: hunter move destination {loc:?} not among candidates {candidates:?}"
+                    )
+                    .into(),
+                };
+            }
+            state.hunter_move_pending = None;
+            move_hunter_to(state, events, *enemy, *loc);
+            // After the move, attempt engage-on-arrival; that itself may
+            // suspend on an engagement tie.
+            if let Some(choice) = engage_on_arrival(state, events, *enemy) {
+                return suspend_hunter_choice(state, choice);
+            }
+            *enemy
+        }
+        (HunterChoice::Engage { enemy, candidates }, InputResponse::PickInvestigator(who)) => {
+            if !candidates.contains(who) {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "ResolveInput: hunter engage target {who:?} not among candidates {candidates:?}"
+                    )
+                    .into(),
+                };
+            }
+            state.hunter_move_pending = None;
+            engage_enemy_with(state, events, *enemy, *who);
+            *enemy
+        }
+        (HunterChoice::Move { .. }, other) => {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ResolveInput: hunter movement expects InputResponse::PickLocation, got {other:?}"
+                )
+                .into(),
+            };
+        }
+        (HunterChoice::Engage { .. }, other) => {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ResolveInput: hunter engagement expects InputResponse::PickInvestigator, got {other:?}"
+                )
+                .into(),
+            };
+        }
+    };
+    // Continue with the next eligible hunter after the one we finished.
+    let mut cursor = Some(current_enemy);
+    while let Some(id) = next_eligible_hunter(state, cursor) {
+        if let Some(choice) = process_one_hunter(state, events, id) {
+            return suspend_hunter_choice(state, choice);
+        }
+        cursor = Some(id);
+    }
+    // All hunters processed (step 3.2 complete) — begin the
+    // per-investigator attack loop (step 3.3). Reached only on the
+    // no-further-suspension path; every suspension above early-returns
+    // via `suspend_hunter_choice`.
+    enemy_attack_kickoff(state, events);
+    EngineOutcome::Done
+}
+
+/// Resume a suspended engagement-on-spawn choice (#128, option A) with
+/// the lead investigator's `PickInvestigator`, then continue the drawing
+/// investigator's Mythos encounter-draw chain.
+///
+/// Validate-first: an invalid pick (wrong response shape, or a target
+/// outside the stored candidate set) rejects and leaves
+/// `spawn_engage_pending` untouched so the client can retry.
+///
+/// The chain only resumes when the suspension arose mid-Mythos-draw —
+/// i.e. the drawing investigator is still the pending cursor. The
+/// single-draw `EncounterCardRevealed` path (`mythos_draw_pending` is
+/// `None`, or points elsewhere) engages and stops at `Done` without
+/// touching the cursor.
+fn resume_spawn_engage(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    response: &InputResponse,
+) -> EngineOutcome {
+    let pending = state.spawn_engage_pending.clone().unwrap_or_else(|| {
+        unreachable!("resume_spawn_engage: called with no pending spawn engagement")
+    });
+    let InputResponse::PickInvestigator(who) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: spawn engagement expects InputResponse::PickInvestigator, \
+                 got {response:?}"
+            )
+            .into(),
+        };
+    };
+    if !pending.candidates.contains(who) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: spawn engage target {who:?} not among candidates {:?}",
+                pending.candidates
+            )
+            .into(),
+        };
+    }
+    state.spawn_engage_pending = None;
+    engage_enemy_with(state, events, pending.enemy, *who);
+
+    // Only re-enter the Mythos surge chain if the suspend happened
+    // mid-chain (the drawing investigator is still the pending cursor).
+    // The `EncounterCardRevealed` single-draw path resolves to `Done`.
+    //
+    // Invariant: while `spawn_engage_pending` is set, the apply guard
+    // (line 129) rejects every non-`ResolveInput` action, so nothing can
+    // retarget the Mythos cursor between suspend and resume. Hence
+    // `mythos_draw_pending == Some(investigator_to_draw)` reliably means
+    // "we suspended mid-chain for this investigator."
+    if state.mythos_draw_pending == Some(pending.investigator_to_draw) {
+        run_mythos_draw_chain(
+            state,
+            events,
+            pending.investigator_to_draw,
+            pending.chain_count,
+            pending.surge,
+        )
+    } else {
+        EngineOutcome::Done
+    }
+}
+
+/// 3.3 Seed the per-investigator attack cursor and open the first
+/// attack window — or the final window directly if there is no Active
+/// investigator. Called once hunter movement (step 3.2) completes:
+/// from [`enemy_phase`] on the no-tie path, and from
+/// [`resume_hunter_choice`] once all hunters resolve.
+///
+/// Seeds the cursor to the first Active investigator in `turn_order`.
+/// Eliminated investigators (Killed / Insane / Resigned) are skipped per
+/// Rules Reference p.10 (Elimination); [`first_active_investigator`] is
+/// the shared helper used by Mythos 1.4 (#69) for the same semantics.
+/// The loop body runs in [`run_window_continuation`]'s arms.
+fn enemy_attack_kickoff(state: &mut GameState, events: &mut Vec<Event>) {
     state.enemy_attack_pending = first_active_investigator(state);
 
     if state.enemy_attack_pending.is_some() {
@@ -2994,6 +3508,39 @@ fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) {
     }
 }
 
+/// Entered by [`step_phase`] on the Investigation→Enemy transition.
+/// Owns the `PhaseStarted(Enemy)` emit (Rules Reference p.25 step 3.1),
+/// runs hunter movement (step 3.2) via [`drive_hunter_moves`], then
+/// kicks off the per-investigator attack loop (step 3.3) via
+/// [`enemy_attack_kickoff`].
+///
+/// If hunter movement suspends on a lead-investigator tie, this returns
+/// the [`EngineOutcome::AwaitingInput`] unchanged — the attack-loop
+/// kickoff is deferred to [`resume_hunter_choice`], which runs it once
+/// the last hunter resolves. Otherwise the kickoff runs inline here and
+/// this returns [`EngineOutcome::Done`].
+fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    // 3.1 Enemy phase begins.
+    events.push(Event::PhaseStarted {
+        phase: Phase::Enemy,
+    });
+
+    // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
+    //     attack-loop kickoff then happens on resume.
+    match drive_hunter_moves(state, events) {
+        outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
+        // drive_hunter_moves only ever returns Done or AwaitingInput, never Rejected.
+        EngineOutcome::Rejected { reason } => {
+            unreachable!("enemy_phase: hunter movement rejected unexpectedly: {reason}")
+        }
+        EngineOutcome::Done => {}
+    }
+
+    // 3.3 Kick off the per-investigator attack loop.
+    enemy_attack_kickoff(state, events);
+    EngineOutcome::Done
+}
+
 /// Called from [`run_window_continuation`]'s
 /// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
@@ -3003,7 +3550,14 @@ fn enemy_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
-    step_phase(state, events); // Enemy → Upkeep; calls upkeep_phase
+    // Enemy → Upkeep; calls upkeep_phase. Only the Investigation→Enemy
+    // transition can suspend (hunter movement), so this never does.
+    let outcome = step_phase(state, events);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "unexpected suspension in Enemy→Upkeep transition"
+    );
 }
 
 /// Reshuffle the discard pile back into the deck for the named
@@ -3730,7 +4284,15 @@ fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });
-    step_phase(state, events); // Mythos → Investigation; calls investigation_phase
+    // Mythos → Investigation; calls investigation_phase. Only the
+    // Investigation→Enemy transition can suspend (hunter movement), so
+    // this cascade always completes.
+    let outcome = step_phase(state, events);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "unexpected suspension in Mythos→Investigation transition"
+    );
 }
 
 /// Entered by [`step_phase`] on the Enemy→Upkeep transition. Owns the
@@ -3769,7 +4331,14 @@ fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });
-    step_phase(state, events); // Upkeep → Mythos; calls mythos_phase
+    // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
+    // transition can suspend (hunter movement), so this never does.
+    let outcome = step_phase(state, events);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "unexpected suspension in Upkeep→Mythos transition"
+    );
 }
 
 /// 4.3 Ready exhausted cards. Rules Reference p.25: "Simultaneously
@@ -4680,6 +5249,7 @@ mod spawn_enemy_tests {
         let mut state = TestGame::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
             .build();
         // Place investigator 1 at location 10.
         state
@@ -4783,6 +5353,7 @@ mod spawn_enemy_tests {
         let mut state = TestGame::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
             .build();
         state
             .investigators
@@ -4839,29 +5410,21 @@ mod spawn_enemy_tests {
     }
 
     #[test]
-    fn spawn_with_multi_investigator_engagement_rejects_until_128() {
-        let mut loc = test_location(10, "Crowded");
-        loc.code = CardCode("_crowded_loc".into());
+    fn spawn_engages_sole_colocated_investigator() {
+        // Regression: #127's single-investigator engage-on-spawn path
+        // still resolves inline under the shared prey resolver.
+        let mut loc = test_location(1, "Hall");
+        loc.code = CardCode("_loc".into());
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(1));
         let mut state = TestGame::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_phase(Phase::Mythos)
             .with_location(loc)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
             .build();
-        state
-            .investigators
-            .get_mut(&InvestigatorId(1))
-            .unwrap()
-            .current_location = Some(LocationId(10));
-        state
-            .investigators
-            .get_mut(&InvestigatorId(2))
-            .unwrap()
-            .current_location = Some(LocationId(10));
-        let metadata = synth_enemy_metadata(Some(Spawn {
-            location: SpawnLocation::Specific("_crowded_loc".into()),
-        }));
+        let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
-
         let outcome = spawn_enemy(
             &mut state,
             &mut events,
@@ -4869,22 +5432,89 @@ mod spawn_enemy_tests {
             CardCode("_synth_enemy".into()),
             &metadata,
         );
+        assert_eq!(outcome, EngineOutcome::Done);
+        let spawned = state.enemies.values().next().expect("one enemy");
+        assert_eq!(spawned.engaged_with, Some(InvestigatorId(1)));
+    }
 
-        match outcome {
-            EngineOutcome::Rejected { reason } => {
-                assert!(
-                    reason.contains("#128") && reason.contains("Prey"),
-                    "unexpected reason: {reason:?}",
-                );
-            }
-            other => {
-                panic!("expected Rejected for multi-investigator engagement, got {other:?}")
-            }
-        }
-        assert!(
-            state.enemies.is_empty(),
-            "no enemy should be placed on reject"
+    #[test]
+    fn spawn_tie_suspends_for_lead_pick() {
+        let mut loc = test_location(1, "Hall");
+        loc.code = CardCode("_loc".into());
+        let mut i1 = test_investigator(1);
+        i1.current_location = Some(LocationId(1));
+        let mut i2 = test_investigator(2);
+        i2.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Mythos)
+            .with_location(loc)
+            .with_investigator(i1)
+            .with_investigator(i2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let metadata = synth_enemy_metadata(None);
+        let mut events = Vec::new();
+        let outcome = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
         );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.spawn_engage_pending.is_some());
+        let spawned = state.enemies.values().next().expect("one enemy");
+        assert_eq!(spawned.engaged_with, None);
+    }
+
+    #[test]
+    fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
+        // Validate-first: a pick outside the stored candidate set rejects
+        // and leaves `spawn_engage_pending` intact for retry, with the
+        // enemy still unengaged.
+        use crate::action::InputResponse;
+        let mut loc = test_location(1, "Hall");
+        loc.code = CardCode("_loc".into());
+        let mut i1 = test_investigator(1);
+        i1.current_location = Some(LocationId(1));
+        let mut i2 = test_investigator(2);
+        i2.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Mythos)
+            .with_location(loc)
+            .with_investigator(i1)
+            .with_investigator(i2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .build();
+        state.mythos_draw_pending = Some(InvestigatorId(1));
+        let metadata = synth_enemy_metadata(None);
+        let mut events = Vec::new();
+        let _ = spawn_enemy(
+            &mut state,
+            &mut events,
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+        assert!(state.spawn_engage_pending.is_some());
+
+        // Investigator 3 is not among the co-located candidates.
+        let outcome = resume_spawn_engage(
+            &mut state,
+            &mut events,
+            &InputResponse::PickInvestigator(InvestigatorId(3)),
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::Rejected { .. }),
+            "{outcome:?}"
+        );
+        assert!(
+            state.spawn_engage_pending.is_some(),
+            "pending must survive a rejected pick for retry",
+        );
+        let enemy = state.enemies.values().next().expect("enemy still placed");
+        assert_eq!(enemy.engaged_with, None, "no engagement on rejected pick");
     }
 
     #[test]
@@ -5488,14 +6118,51 @@ fn mythos_draw_for(
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
+    // Fresh chain: count starts at 0 and the loop draws at least one
+    // card (`draw_more = true`).
+    run_mythos_draw_chain(state, events, investigator, 0, true)
+}
+
+/// The Mythos surge-draw loop, shared by the initial draw
+/// ([`mythos_draw_for`]) and the post-suspend resume
+/// ([`resume_spawn_engage`]).
+///
+/// `chain_count` is the surge position already consumed (0 for a fresh
+/// chain); the loop increments it per drawn card and enforces
+/// [`MAX_SURGE_CHAIN`] exactly as the single-pass version did.
+/// `draw_more` gates the first iteration: `true` for a fresh draw,
+/// or the suspended card's surge bit on resume (a non-surge enemy that
+/// suspended for engagement resumes with `draw_more = false`, drawing no
+/// further card — only the cursor advance runs).
+///
+/// On a mid-chain spawn engagement tie, [`resolve_encounter_card`]
+/// returns [`EngineOutcome::AwaitingInput`]; this loop patches the live
+/// `chain_count` into the freshly-stored
+/// [`SpawnEngagePending`](crate::state::SpawnEngagePending) so the resume
+/// continues with the cap budget intact, then returns the suspension.
+///
+/// # Mid-chain rejection caveat
+///
+/// Same as the single-pass version: if [`resolve_encounter_card`]
+/// rejects mid-chain (e.g. [`spawn_enemy`] when the drawing investigator
+/// has no location), the card has already left `encounter_deck` and the
+/// apply loop's `events.clear()` on `Rejected` does not roll back that
+/// mutation. Out of Phase-4 scope (the synthetic fixture gives every
+/// investigator a location at setup).
+fn run_mythos_draw_chain(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    mut chain_count: usize,
+    mut draw_more: bool,
+) -> EngineOutcome {
     let Some(reg) = crate::card_registry::current() else {
         return EngineOutcome::Rejected {
             reason: "DrawEncounterCard: no card registry installed".into(),
         };
     };
 
-    let mut chain_count: usize = 0;
-    loop {
+    while draw_more {
         chain_count += 1;
         if chain_count > MAX_SURGE_CHAIN {
             unreachable!(
@@ -5542,14 +6209,22 @@ fn mythos_draw_for(
 
         // Step 3 + 4: Resolve revelation, then enemy-spawn if applicable.
         let outcome = resolve_encounter_card(state, events, investigator, code.clone(), metadata);
-        if !matches!(outcome, EngineOutcome::Done) {
-            return outcome;
+        match outcome {
+            EngineOutcome::Done => {}
+            EngineOutcome::AwaitingInput { .. } => {
+                // A mid-chain spawn engagement tie suspended. Record the
+                // live chain position so the resume keeps counting toward
+                // the cap rather than restarting its budget.
+                if let Some(pending) = state.spawn_engage_pending.as_mut() {
+                    pending.chain_count = chain_count;
+                }
+                return outcome;
+            }
+            EngineOutcome::Rejected { .. } => return outcome,
         }
 
         // Step 5: If the drawn card has the surge keyword, loop.
-        if !metadata.surge {
-            break;
-        }
+        draw_more = metadata.surge;
     }
 
     // Chain complete — advance the cursor.
@@ -6422,12 +7097,93 @@ mod upkeep_phase_tests {
 mod enemy_phase_tests {
     use super::*;
     use crate::action::Action;
+    use crate::assert_event;
     use crate::engine::{apply, EngineOutcome};
     use crate::state::{
-        EnemyId, FastActorScope, InvestigatorId, OpenWindow, Phase, Status, WindowKind,
+        EnemyId, FastActorScope, InvestigatorId, LocationId, OpenWindow, Phase, Status, WindowKind,
     };
-    use crate::test_support::{test_enemy, test_investigator, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
     use crate::Event;
+
+    #[test]
+    fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        loc_a.connections = vec![LocationId(2)];
+        loc_b.connections = vec![LocationId(1)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(2));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_investigator(inv)
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = end_turn(&mut state, &mut events);
+        assert_eq!(outcome, EngineOutcome::Done);
+        // No registry installed → the attack window auto-skips inline and
+        // the cascade runs Enemy→Upkeep→Mythos within this same call (same
+        // as `enemy_phase_emits_phase_started_and_cascades_to_mythos...`).
+        // The hunter still moved + engaged during step 3.2, and the first
+        // attack window still opened — asserted via the event stream below.
+        assert_eq!(state.phase, Phase::Mythos);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert_event!(events, Event::EnemyEngaged { enemy, .. } if *enemy == EnemyId(1));
+        assert_event!(events, Event::WindowOpened { kind } if *kind == WindowKind::BeforeInvestigatorAttacked);
+    }
+
+    #[test]
+    fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        let mut loc_d = test_location(4, "D");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1), LocationId(4)];
+        loc_c.connections = vec![LocationId(1), LocationId(4)];
+        loc_d.connections = vec![LocationId(2), LocationId(3)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(4));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_location(loc_d)
+            .with_investigator(inv)
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = end_turn(&mut state, &mut events);
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert_eq!(state.phase, Phase::Enemy);
+        let mut ev2 = Vec::new();
+        let resumed = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickLocation(LocationId(2)),
+        );
+        assert_eq!(resumed, EngineOutcome::Done);
+        assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::BeforeInvestigatorAttacked);
+        // With no registry the attack window auto-skips and the cascade runs
+        // Enemy->Upkeep->Mythos within the same resume call (same as the no-tie test).
+        assert_eq!(state.phase, Phase::Mythos);
+    }
 
     #[test]
     fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
@@ -7034,4 +7790,621 @@ mod enemy_phase_tests {
     // pause shape is exercised indirectly via the existing
     // any_fast_play_eligible-driven open_fast_window tests at
     // dispatch.rs's open_fast_window_tests block.
+}
+
+#[cfg(test)]
+mod resolve_prey_tests {
+    use super::*;
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn resolve_prey_default_single_candidate_is_one() {
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::Default,
+            &[InvestigatorId(1)],
+        );
+        assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
+    }
+
+    #[test]
+    fn resolve_prey_default_multiple_is_tie() {
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::Default,
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
+    }
+
+    #[test]
+    fn resolve_prey_empty_is_none() {
+        let state = TestGame::new().build();
+        let r = resolve_prey(&state, crate::card_data::Prey::Default, &[]);
+        assert!(matches!(r, PreyResolution::None));
+    }
+
+    #[test]
+    fn resolve_prey_highest_stat_picks_max() {
+        let mut hi = test_investigator(1);
+        hi.skills.combat = 5;
+        let mut lo = test_investigator(2);
+        lo.skills.combat = 2;
+        let state = TestGame::new()
+            .with_investigator(hi)
+            .with_investigator(lo)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
+    }
+
+    #[test]
+    fn resolve_prey_highest_stat_tie_is_tie() {
+        let mut a = test_investigator(1);
+        a.skills.combat = 4;
+        let mut b = test_investigator(2);
+        b.skills.combat = 4;
+        let state = TestGame::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
+    }
+}
+
+#[cfg(test)]
+mod hunter_movement_tests {
+    use super::*;
+    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::{assert_event, assert_no_event};
+
+    #[test]
+    fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
+        // Map: A(1)-B(2)-C(3). Investigator at C; hunter at A. Hunter moves
+        // A->B (one step). No investigator at B, so no engage yet.
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        let mut c = test_location(3, "C");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1), LocationId(3)];
+        c.connections = vec![LocationId(2)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(3));
+        let mut ghoul = test_enemy(1, "Swarm");
+        ghoul.hunter = true;
+        ghoul.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .with_location(c)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(ghoul)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_event!(events, Event::EnemyMoved { enemy, to } if *enemy == EnemyId(1) && *to == LocationId(2));
+    }
+
+    #[test]
+    fn hunter_engages_when_it_moves_into_investigators_location() {
+        // Map A(1)-B(2). Investigator at B; hunter at A. Hunter moves A->B
+        // and engages on arrival.
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(2));
+        let mut h = test_enemy(1, "Hunter");
+        h.hunter = true;
+        h.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(h)
+            .build();
+        let mut events = Vec::new();
+        drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(InvestigatorId(1))
+        );
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator } if *enemy == EnemyId(1) && *investigator == InvestigatorId(1));
+    }
+
+    #[test]
+    fn hunter_with_no_path_does_not_move() {
+        let mut a = test_location(1, "A");
+        let island = test_location(9, "Island");
+        a.connections = vec![];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(1));
+        let mut h = test_enemy(1, "Hunter");
+        h.hunter = true;
+        h.current_location = Some(LocationId(9));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(island)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(h)
+            .build();
+        let mut events = Vec::new();
+        drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(9))
+        );
+        assert_no_event!(events, Event::EnemyMoved { .. });
+    }
+
+    #[test]
+    fn exhausted_hunter_is_skipped() {
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(2));
+        let mut h = test_enemy(1, "Hunter");
+        h.hunter = true;
+        h.exhausted = true;
+        h.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(h)
+            .build();
+        let mut events = Vec::new();
+        drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(1))
+        );
+        assert_no_event!(events, Event::EnemyMoved { .. });
+    }
+
+    #[test]
+    fn non_hunter_enemy_does_not_move() {
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(2));
+        let mut e = test_enemy(1, "Slug");
+        e.hunter = false;
+        e.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(e)
+            .build();
+        let mut events = Vec::new();
+        drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(1))
+        );
+        assert_no_event!(events, Event::EnemyMoved { .. });
+    }
+
+    #[test]
+    fn hunter_already_co_located_does_not_move_but_engages() {
+        // Hunter and investigator both at A(1). p.12: an enemy already at a
+        // location with an investigator does not move; it still engages.
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(1));
+        let mut h = test_enemy(1, "Hunter");
+        h.hunter = true;
+        h.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(h)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(1))
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(InvestigatorId(1))
+        );
+        assert_no_event!(events, Event::EnemyMoved { .. });
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator } if *enemy == EnemyId(1) && *investigator == InvestigatorId(1));
+    }
+}
+
+#[cfg(test)]
+mod hunter_resume_tests {
+    use super::*;
+    use crate::assert_event;
+    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+
+    #[test]
+    fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
+        // Diamond A(1)-{B(2),C(3)}-D(4). Investigator at D; hunter at A,
+        // default prey. Two equal first-steps (B, C) -> AwaitingInput.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        let mut loc_d = test_location(4, "D");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1), LocationId(4)];
+        loc_c.connections = vec![LocationId(1), LocationId(4)];
+        loc_d.connections = vec![LocationId(2), LocationId(3)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(4));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_location(loc_d)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.hunter_move_pending.is_some());
+        // Resume by picking C.
+        let mut ev2 = Vec::new();
+        let resumed = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickLocation(LocationId(3)),
+        );
+        assert_eq!(resumed, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(3))
+        );
+        assert!(state.hunter_move_pending.is_none());
+        assert_event!(ev2, Event::EnemyMoved { enemy, to } if *enemy == EnemyId(1) && *to == LocationId(3));
+    }
+
+    #[test]
+    fn hunter_move_tie_rejects_invalid_pick() {
+        // Same diamond setup; resume with a location not in candidates.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        let mut loc_d = test_location(4, "D");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1), LocationId(4)];
+        loc_c.connections = vec![LocationId(1), LocationId(4)];
+        loc_d.connections = vec![LocationId(2), LocationId(3)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(4));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_location(loc_d)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        drive_hunter_moves(&mut state, &mut events);
+        let mut ev2 = Vec::new();
+        // LocationId(4) is the destination, not a first-step candidate.
+        let result = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickLocation(LocationId(4)),
+        );
+        assert!(matches!(result, EngineOutcome::Rejected { .. }));
+        assert!(
+            state.hunter_move_pending.is_some(),
+            "pending stays open on invalid pick"
+        );
+    }
+
+    #[test]
+    fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
+        // Two investigators at B; hunter moves A->B; default prey -> tie ->
+        // PickInvestigator.
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1)];
+        let mut i1 = test_investigator(1);
+        i1.current_location = Some(LocationId(2));
+        let mut i2 = test_investigator(2);
+        i2.current_location = Some(LocationId(2));
+        let mut h = test_enemy(1, "Hunter");
+        h.hunter = true;
+        h.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .with_investigator(i1)
+            .with_investigator(i2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .with_enemy(h)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        // Moved to B already, suspended on engagement tie.
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        let mut ev2 = Vec::new();
+        let resumed = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickInvestigator(InvestigatorId(2)),
+        );
+        assert_eq!(resumed, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(InvestigatorId(2))
+        );
+        assert!(state.hunter_move_pending.is_none());
+    }
+
+    #[test]
+    fn highest_combat_prey_breaks_move_tie_without_prompt() {
+        // Fan A(1)-{B(2),C(3)}. inv1 at B combat 5; inv2 at C combat 2.
+        // hunter at A with HighestStat(Combat) prey. resolve_prey picks
+        // inv1 unambiguously -> moves A->B, engages, no prompt.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1)];
+        loc_c.connections = vec![LocationId(1)];
+        let mut inv1 = test_investigator(1);
+        inv1.current_location = Some(LocationId(2));
+        inv1.skills.combat = 5;
+        let mut inv2 = test_investigator(2);
+        inv2.current_location = Some(LocationId(3));
+        inv2.skills.combat = 2;
+        let mut hunter = test_enemy(1, "Ghoul Priest");
+        hunter.hunter = true;
+        hunter.prey = crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat);
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_investigator(inv1)
+            .with_investigator(inv2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert_eq!(outcome, EngineOutcome::Done);
+        // Moves toward inv1 (B) and engages immediately (arrives at B).
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(InvestigatorId(1))
+        );
+    }
+
+    #[test]
+    fn multi_hunter_one_suspends_then_next_processed_on_resume() {
+        // Diamond A(1)-{B(2),C(3)}-D(4). inv at D(4).
+        // Hunter1 at A(1) ties B/C; hunter2 at B(2) has clean B->D step.
+        // drive suspends on hunter1; resume picks B; then hunter2
+        // processes automatically: moves B->D and engages.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        let mut loc_d = test_location(4, "D");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1), LocationId(4)];
+        loc_c.connections = vec![LocationId(1), LocationId(4)];
+        loc_d.connections = vec![LocationId(2), LocationId(3)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(4));
+        let mut tie_hunter = test_enemy(1, "Tie Hunter");
+        tie_hunter.hunter = true;
+        tie_hunter.current_location = Some(LocationId(1)); // ties B/C toward D
+        let mut clean_hunter = test_enemy(2, "Clean Hunter");
+        clean_hunter.hunter = true;
+        clean_hunter.current_location = Some(LocationId(2)); // single step B->D
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_location(loc_d)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(tie_hunter)
+            .with_enemy(clean_hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        // Resolve hunter 1's tie -> hunter 2 then moves B->D and engages.
+        let mut ev2 = Vec::new();
+        let resumed = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickLocation(LocationId(2)),
+        );
+        assert_eq!(resumed, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(2)].current_location,
+            Some(LocationId(4))
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(2)].engaged_with,
+            Some(InvestigatorId(1))
+        );
+    }
+
+    #[test]
+    fn hunter_move_tie_rejects_wrong_response_kind() {
+        // Diamond A(1)-{B(2),C(3)}-D(4). Investigator at D; hunter at A,
+        // default prey. Two equal first-steps (B, C) -> AwaitingInput on Move.
+        // Client submits PickInvestigator instead of PickLocation -> Rejected,
+        // pending preserved for retry.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        let mut loc_d = test_location(4, "D");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1), LocationId(4)];
+        loc_c.connections = vec![LocationId(1), LocationId(4)];
+        loc_d.connections = vec![LocationId(2), LocationId(3)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(4));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_location(loc_d)
+            .with_investigator(inv)
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.hunter_move_pending.is_some());
+        // Submit PickInvestigator when PickLocation is expected.
+        let mut ev2 = Vec::new();
+        let result = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickInvestigator(InvestigatorId(1)),
+        );
+        assert!(
+            matches!(result, EngineOutcome::Rejected { .. }),
+            "wrong response kind should be rejected"
+        );
+        assert!(
+            state.hunter_move_pending.is_some(),
+            "pending preserved so client can retry with PickLocation"
+        );
+    }
+
+    #[test]
+    fn hunter_engage_tie_rejects_wrong_response_kind() {
+        // Two investigators at B(2); hunter moves A(1)->B(2); default prey
+        // -> engage tie -> AwaitingInput on Engage.
+        // Client submits PickLocation instead of PickInvestigator -> Rejected,
+        // pending preserved for retry.
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        loc_a.connections = vec![LocationId(2)];
+        loc_b.connections = vec![LocationId(1)];
+        let mut inv1 = test_investigator(1);
+        inv1.current_location = Some(LocationId(2));
+        let mut inv2 = test_investigator(2);
+        inv2.current_location = Some(LocationId(2));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Enemy)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_investigator(inv1)
+            .with_investigator(inv2)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = drive_hunter_moves(&mut state, &mut events);
+        // Moved to B already, suspended on engagement tie.
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.hunter_move_pending.is_some());
+        // Submit PickLocation when PickInvestigator is expected.
+        let mut ev2 = Vec::new();
+        let result = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickLocation(LocationId(1)),
+        );
+        assert!(
+            matches!(result, EngineOutcome::Rejected { .. }),
+            "wrong response kind should be rejected"
+        );
+        assert!(
+            state.hunter_move_pending.is_some(),
+            "pending preserved so client can retry with PickInvestigator"
+        );
+    }
 }

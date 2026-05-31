@@ -13,6 +13,7 @@
 mod dispatch;
 pub mod evaluator;
 mod outcome;
+pub(crate) mod pathfinding;
 
 pub use evaluator::{apply_effect, EvalContext};
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};

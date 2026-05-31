@@ -195,6 +195,15 @@ pub enum Event {
         /// The investigator the enemy is now engaged with.
         investigator: InvestigatorId,
     },
+    /// A hunter enemy moved one location during Enemy-phase step 3.2
+    /// (Rules Reference p.12). Engagement on arrival, if any, emits a
+    /// paired [`EnemyEngaged`](Self::EnemyEngaged) immediately after.
+    EnemyMoved {
+        /// The enemy that moved.
+        enemy: EnemyId,
+        /// Destination location.
+        to: LocationId,
+    },
     /// An enemy disengaged from an investigator (e.g. via a
     /// successful Evade).
     EnemyDisengaged {

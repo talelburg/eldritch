@@ -231,6 +231,105 @@ fn mythos_phase_resolves_single_spawn_enemy() {
     );
 }
 
+#[test]
+fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
+    // Two investigators co-located at the synth spawn location: the
+    // drawn enemy ties under Prey::Default, so the draw suspends for the
+    // lead's PickInvestigator (#128, option A). Resolving the pick
+    // engages the chosen investigator and resumes inv1's Mythos draw
+    // chain — which, the enemy being non-surge, advances the cursor to
+    // inv2 and stays in Mythos.
+    install_test_registry();
+    let mut base = synthetic::setup();
+    base.investigators
+        .get_mut(&InvestigatorId(1))
+        .unwrap()
+        .current_location = Some(LocationId(10));
+    let mut inv2 = game_core::test_support::test_investigator(2);
+    inv2.current_location = Some(LocationId(10));
+    base.investigators.insert(InvestigatorId(2), inv2);
+    base.turn_order.push(InvestigatorId(2));
+
+    // inv1 draws the enemy; inv2 draws a plain treachery afterward.
+    synthetic::with_encounter_deck(
+        &mut base,
+        vec![
+            CardCode(SYNTH_ENEMY_CODE.into()),
+            CardCode(SYNTH_TREACHERY_CODE.into()),
+        ],
+    );
+
+    // Drive both investigators through setup into Mythos (mirrors
+    // `mythos_phase_multi_investigator_player_order`; `setup_at_mythos_draw`
+    // only mulligans inv1 and so can't seat a second investigator).
+    let (state, _) = drive(
+        base,
+        vec![
+            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::Mulligan {
+                investigator: InvestigatorId(1),
+                indices_to_redraw: vec![],
+            }),
+            Action::Player(PlayerAction::Mulligan {
+                investigator: InvestigatorId(2),
+                indices_to_redraw: vec![],
+            }),
+            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::EndTurn),
+        ],
+    );
+    assert_eq!(state.phase, Phase::Mythos);
+    assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+
+    // Draw → spawn tie → suspend.
+    let suspended = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    assert!(
+        matches!(suspended.outcome, EngineOutcome::AwaitingInput { .. }),
+        "spawn tie must suspend, got {:?}",
+        suspended.outcome,
+    );
+    assert!(suspended.state.spawn_engage_pending.is_some());
+    let enemy = suspended
+        .state
+        .enemies
+        .values()
+        .next()
+        .expect("enemy placed");
+    assert_eq!(enemy.engaged_with, None, "engagement deferred");
+    // The cursor is unchanged — still mid-chain for inv1.
+    assert_eq!(suspended.state.mythos_draw_pending, Some(InvestigatorId(1)));
+
+    // Lead picks inv2 → engage + resume the chain. The enemy is
+    // non-surge, so no further card draws; the chain advances to inv2.
+    let resumed = apply(
+        suspended.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickInvestigator(InvestigatorId(2)),
+        }),
+    );
+    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(resumed.state.spawn_engage_pending.is_none());
+    let enemy = resumed
+        .state
+        .enemies
+        .values()
+        .next()
+        .expect("enemy still placed");
+    assert_eq!(
+        enemy.engaged_with,
+        Some(InvestigatorId(2)),
+        "the lead's pick is now engaged",
+    );
+    // Chain resumed and advanced to inv2; still in Mythos.
+    assert_eq!(resumed.state.phase, Phase::Mythos);
+    assert_eq!(resumed.state.mythos_draw_pending, Some(InvestigatorId(2)));
+    assert_event!(
+        resumed.events,
+        Event::EnemyEngaged { investigator, .. }
+            if *investigator == InvestigatorId(2)
+    );
+}
+
 // ------------------------------------------------------------------
 // Multi-investigator player order
 // ------------------------------------------------------------------

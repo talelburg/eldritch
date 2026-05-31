@@ -10,8 +10,10 @@
 //!   `Event::EnemySpawned` at the right location, engaged with the
 //!   drawing investigator. The enemy lands in `state.enemies` and
 //!   does NOT appear in `encounter_discard`.
-//! - Multi-investigator reject: two investigators at the spawn
-//!   location → the spawn rejects with a reason naming #128.
+//! - Multi-investigator suspend: two investigators at the spawn
+//!   location → the spawn suspends (`AwaitingInput`) for the lead
+//!   investigator's `PickInvestigator` (#128, option A), leaving the
+//!   enemy in play but unengaged until the pick resolves.
 //!
 //! Default-spawn and location-not-in-play coverage lives in
 //! `spawn_enemy_tests` in `dispatch.rs`, where we can construct
@@ -111,7 +113,7 @@ fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
 }
 
 #[test]
-fn revealing_synth_enemy_with_two_investigators_at_loc_rejects_pointing_at_128() {
+fn revealing_synth_enemy_with_two_investigators_at_loc_suspends_for_lead_pick() {
     install_test_registry();
     let mut state = synthetic::setup();
     // Add a second investigator at the same location.
@@ -139,25 +141,15 @@ fn revealing_synth_enemy_with_two_investigators_at_loc_rejects_pointing_at_128()
         }),
     );
 
-    match result.outcome {
-        EngineOutcome::Rejected { reason } => {
-            assert!(
-                reason.contains("#128") && reason.contains("Prey"),
-                "unexpected reject reason: {reason:?}",
-            );
-        }
-        other => panic!("expected Rejected, got {other:?}"),
-    }
-
-    // No enemy placed.
     assert!(
-        result.state.enemies.is_empty(),
-        "no enemy should be in play on multi-investigator reject",
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "multi-investigator spawn now suspends for the lead's PickInvestigator, got {:?}",
+        result.outcome,
     );
-    // Card was drawn off the top BEFORE the reject (validate-first
-    // exception is documented in encounter_card_revealed).
-    assert!(
-        result.state.encounter_deck.is_empty(),
-        "encounter card was drawn before the engagement reject",
+    assert!(result.state.spawn_engage_pending.is_some());
+    let enemy = result.state.enemies.values().next().expect("enemy placed");
+    assert_eq!(
+        enemy.engaged_with, None,
+        "engagement deferred until the lead picks",
     );
 }

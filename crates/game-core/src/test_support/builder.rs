@@ -268,6 +268,8 @@ impl TestGame {
             scenario_id: self.scenario_id,
             mythos_draw_pending: None,
             enemy_attack_pending: None,
+            hunter_move_pending: None,
+            spawn_engage_pending: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
         }
