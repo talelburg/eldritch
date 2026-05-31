@@ -3327,6 +3327,40 @@ fn engage_on_arrival(
     }
 }
 
+/// Engage a now-unengaged enemy with a co-located investigator per the
+/// general engagement rule (Rules Reference p.10): "Any time a ready
+/// unengaged enemy is at the same location as an investigator, it
+/// engages that investigator … follow the enemy's prey instructions."
+///
+/// No-op when the enemy is exhausted (an exhausted unengaged enemy does
+/// not engage until readied) or has no location. On a prey `Tie` this
+/// engages the lead (`tied[0]`, which is `turn_order`-first because
+/// `active_investigators_at` is turn-order-ordered) rather than
+/// suspending for the lead's `PickInvestigator` — keeping every defeat
+/// caller synchronous. TODO(#151): make the multiplayer tie an
+/// interactive lead choice when multiplayer lands.
+///
+/// Shared primitive: the elimination flow's step-3 re-engagement is the
+/// first consumer; Upkeep-4.3 "engage on ready" (#150) will reuse it.
+// Will be wired into run_elimination_steps in the next task (#144 step 5).
+#[allow(dead_code)]
+fn reengage_at_location(state: &mut GameState, events: &mut Vec<Event>, enemy_id: EnemyId) {
+    let enemy = &state.enemies[&enemy_id];
+    if enemy.exhausted {
+        return;
+    }
+    let Some(loc) = enemy.current_location else {
+        return;
+    };
+    let prey = enemy.prey;
+    let candidates = active_investigators_at(state, loc);
+    match resolve_prey(state, prey, &candidates) {
+        PreyResolution::None => {}
+        PreyResolution::One(target) => engage_enemy_with(state, events, enemy_id, target),
+        PreyResolution::Tie(tied) => engage_enemy_with(state, events, enemy_id, tied[0]),
+    }
+}
+
 /// Process a single hunter (movement + engage-on-arrival). Returns
 /// `Some(HunterChoice)` if a tie suspends, else `None` (fully resolved).
 fn process_one_hunter(
@@ -8547,5 +8581,131 @@ mod elimination_tests {
             "resources returned to pool"
         );
         assert_event!(events, Event::LocationCluesChanged { location, new_count: 3 } if *location == loc_id);
+    }
+}
+
+#[cfg(test)]
+mod reengage_tests {
+    use super::*;
+    use crate::assert_event;
+    use crate::assert_no_event;
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+
+    #[test]
+    fn reengage_at_location_engages_sole_co_located_survivor() {
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+        let survivor = {
+            let mut i = test_investigator(2);
+            i.current_location = Some(loc);
+            i
+        };
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e
+        };
+        let mut state = TestGame::default()
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([surv])
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(surv));
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == surv);
+    }
+
+    #[test]
+    fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
+        let loc = LocationId(1);
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e
+        };
+        let mut state = TestGame::default()
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([])
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn reengage_at_location_tie_auto_picks_lead_first_in_turn_order() {
+        // Two co-located survivors, Prey::Default → tie → engage turn_order-first (lead).
+        let lead = InvestigatorId(2);
+        let other = InvestigatorId(3);
+        let loc = LocationId(1);
+        let mk = |raw: u32| {
+            let mut i = test_investigator(raw);
+            i.current_location = Some(loc);
+            i
+        };
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e.prey = crate::card_data::Prey::Default;
+            e
+        };
+        let mut state = TestGame::default()
+            .with_investigator(mk(2))
+            .with_investigator(mk(3))
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([lead, other]) // lead first
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(lead),
+            "tie engages the lead (turn_order-first)"
+        );
+    }
+
+    #[test]
+    fn reengage_at_location_exhausted_enemy_does_not_engage() {
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+        let survivor = {
+            let mut i = test_investigator(2);
+            i.current_location = Some(loc);
+            i
+        };
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(loc);
+            e.engaged_with = None;
+            e.exhausted = true; // exhausted unengaged enemy does not engage (RR p.10)
+            e
+        };
+        let mut state = TestGame::default()
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([surv])
+            .build();
+        let mut events = Vec::new();
+
+        reengage_at_location(&mut state, &mut events, EnemyId(1));
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
     }
 }
