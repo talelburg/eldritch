@@ -1496,6 +1496,7 @@ version = "0.1.0"
 dependencies = [
  "cards",
  "game-core",
+ "serde_json",
 ]
 
 [[package]]
