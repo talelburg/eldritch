@@ -48,7 +48,10 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
         "multi-investigator spawn suspends, got {:?}",
         r1.outcome,
     );
-    assert!(r1.state.spawn_engage_pending.is_some());
+    assert!(
+        r1.state.spawn_engage_pending.is_some(),
+        "spawn engagement tie should be pending for the lead's pick",
+    );
     let spawned = r1.state.enemies.values().next().expect("enemy placed");
     assert_eq!(spawned.engaged_with, None, "engagement deferred until pick");
 
@@ -109,6 +112,11 @@ fn hunter_movement_pick_location_replays_identically() {
     for a in &actions {
         s2 = apply(s2, a.clone()).state;
     }
+    // Replay determinism is a whole-state property: the engine guarantees
+    // that replaying an identical action log reproduces state bit-for-bit.
+    // GameState isn't PartialEq, and its maps are BTreeMaps (stable key
+    // order), so comparing the full serialized form is the right, strongest
+    // check here — stricter than the field-wise comparisons used elsewhere.
     assert_eq!(
         serde_json::to_string(&s1).unwrap(),
         serde_json::to_string(&s2).unwrap(),
