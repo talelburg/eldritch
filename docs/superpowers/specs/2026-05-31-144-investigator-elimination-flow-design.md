@@ -107,8 +107,11 @@ locations" invariant on `Investigator`.
 
 **Step 3 — Disengage + re-engage.**
 - For each enemy with `engaged_with == Some(defeated)`, in `EnemyId` order: set
-  `engaged_with = None`, set `current_location = <defeated's last location>`, emit
-  existing `Event::EnemyDisengaged { enemy, investigator: defeated }`.
+  `engaged_with = None` and emit existing `Event::EnemyDisengaged { enemy, investigator:
+  defeated }`. (No `current_location` write: an engaged enemy is already at its
+  investigator's location — the Move handler drags engaged enemies along and every engage
+  site sets the location first — so RR step 3's "placed at the location the investigator
+  was at" is already satisfied. The operative change is the disengagement.)
 - Then re-engage via a new reusable helper `reengage_at_location(state, events, enemy_id)`:
   guarded on `!enemy.exhausted` (exhausted enemies don't re-engage); runs `resolve_prey`
   over `active_investigators_at(loc)`; `One` → `engage_enemy_with`; `None` → leave

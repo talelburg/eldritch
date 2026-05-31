@@ -8805,6 +8805,31 @@ mod elimination_tests {
         assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
         assert_no_event!(events, Event::EnemyEngaged { .. });
     }
+
+    #[test]
+    fn elimination_without_location_skips_clue_placement_and_does_not_panic() {
+        // Defeated "between locations" (current_location == None): step 2
+        // must skip clue placement (the clues leave play with the
+        // investigator) and zero resources without panicking.
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 1;
+        inv.current_location = None;
+        inv.clues = 3;
+        inv.resources = 2;
+
+        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+
+        assert_eq!(
+            state.investigators[&id].clues, 0,
+            "clues cleared (left play)"
+        );
+        assert_eq!(state.investigators[&id].resources, 0, "resources returned");
+        assert_no_event!(events, Event::LocationCluesChanged { .. });
+    }
 }
 
 #[cfg(test)]
