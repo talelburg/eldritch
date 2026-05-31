@@ -1084,6 +1084,7 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// **Round-bump:** the round-counter increment now lives in
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
 /// rather than here. `step_phase` no longer touches `state.round`.
+///
 /// Returns the transition's [`EngineOutcome`]. Only the
 /// Investigation→Enemy arm can return [`EngineOutcome::AwaitingInput`]
 /// (a hunter-movement tie in [`enemy_phase`]); every other arm runs its
@@ -3527,15 +3528,8 @@ fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
     //     attack-loop kickoff then happens on resume.
     match drive_hunter_moves(state, events) {
-        EngineOutcome::AwaitingInput {
-            request,
-            resume_token,
-        } => {
-            return EngineOutcome::AwaitingInput {
-                request,
-                resume_token,
-            };
-        }
+        outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
+        // drive_hunter_moves only ever returns Done or AwaitingInput, never Rejected.
         EngineOutcome::Rejected { reason } => {
             unreachable!("enemy_phase: hunter movement rejected unexpectedly: {reason}")
         }
@@ -7186,6 +7180,9 @@ mod enemy_phase_tests {
         );
         assert_eq!(resumed, EngineOutcome::Done);
         assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::BeforeInvestigatorAttacked);
+        // With no registry the attack window auto-skips and the cascade runs
+        // Enemy->Upkeep->Mythos within the same resume call (same as the no-tie test).
+        assert_eq!(state.phase, Phase::Mythos);
     }
 
     #[test]
