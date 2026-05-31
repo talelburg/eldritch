@@ -2988,10 +2988,18 @@ fn run_elimination_steps(
     // the Resolution::Lost consequence is wired by #73.
 
     // The investigator has left play — clear their location last, after
-    // steps 2 & 3 consumed `last_location`.
-    if let Some(inv) = state.investigators.get_mut(&investigator) {
-        inv.current_location = None;
-    }
+    // step 2 deposited clues using `last_location` (step 3 reads
+    // `enemy.current_location` directly, relying on the same value via
+    // the engagement invariant).
+    let inv = state
+        .investigators
+        .get_mut(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "run_elimination_steps: investigator {investigator:?} not in map; state corruption"
+            )
+        });
+    inv.current_location = None;
 }
 
 /// Apply `amount` horror to an investigator. If their accumulated
@@ -3391,6 +3399,12 @@ fn engage_on_arrival(
 ///
 /// Shared primitive: the elimination flow's step-3 re-engagement is the
 /// first consumer; Upkeep-4.3 "engage on ready" (#150) will reuse it.
+///
+/// Precondition: `enemy.engaged_with` must be `None` on entry. This
+/// helper engages unconditionally on a `One`/`Tie` resolution and does
+/// not disengage a prior target or emit [`Event::EnemyDisengaged`];
+/// callers are responsible for clearing (and announcing) any existing
+/// engagement first.
 fn reengage_at_location(state: &mut GameState, events: &mut Vec<Event>, enemy_id: EnemyId) {
     let enemy = &state.enemies[&enemy_id];
     if enemy.exhausted {
