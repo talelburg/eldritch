@@ -945,12 +945,13 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     // Enemy phase uses.
     if let Some(next_id) = next_active_investigator_after(state, active_id) {
         begin_investigator_turn(state, events, next_id);
+        EngineOutcome::Done
     } else {
         state.active_investigator = None;
-        investigation_phase_end(state, events); // 2.3 → Enemy
+        // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
+        // (Enemy 3.2); propagate its outcome rather than swallowing it.
+        investigation_phase_end(state, events)
     }
-
-    EngineOutcome::Done
 }
 
 /// Entered by [`step_phase`] on any-to-Investigation transition, and by
@@ -1001,11 +1002,11 @@ fn begin_investigator_turn(state: &mut GameState, events: &mut Vec<Event>, who: 
 /// `enemy_phase_end` / `upkeep_phase_end` — then transitions to the
 /// Enemy phase. Called only from `end_turn`'s terminal branch (the last
 /// investigator has taken a turn this round).
-fn investigation_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+fn investigation_phase_end(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
-    step_phase(state, events); // Investigation → Enemy; calls enemy_phase
+    step_phase(state, events) // Investigation → Enemy; calls enemy_phase
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
@@ -1083,7 +1084,14 @@ fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// **Round-bump:** the round-counter increment now lives in
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
 /// rather than here. `step_phase` no longer touches `state.round`.
-fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
+/// Returns the transition's [`EngineOutcome`]. Only the
+/// Investigation→Enemy arm can return [`EngineOutcome::AwaitingInput`]
+/// (a hunter-movement tie in [`enemy_phase`]); every other arm runs its
+/// driver to completion and returns [`EngineOutcome::Done`]. The
+/// Investigation→Enemy suspension is owned by
+/// [`investigation_phase_end`], which propagates it up through
+/// [`end_turn`].
+fn step_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let from = state.phase;
     let to = from.next();
 
@@ -1094,10 +1102,19 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // Dispatch to phase driver if one exists; otherwise emit
     // PhaseStarted directly (for phases without a driver yet).
     match to {
-        Phase::Mythos if from != Phase::Mythos => mythos_phase(state, events),
-        Phase::Investigation if from != Phase::Investigation => investigation_phase(state, events),
+        Phase::Mythos if from != Phase::Mythos => {
+            mythos_phase(state, events);
+            EngineOutcome::Done
+        }
+        Phase::Investigation if from != Phase::Investigation => {
+            investigation_phase(state, events);
+            EngineOutcome::Done
+        }
         Phase::Enemy if from != Phase::Enemy => enemy_phase(state, events),
-        Phase::Upkeep if from != Phase::Upkeep => upkeep_phase(state, events),
+        Phase::Upkeep if from != Phase::Upkeep => {
+            upkeep_phase(state, events);
+            EngineOutcome::Done
+        }
         _ => unreachable!(
             "step_phase: from == to (from={from:?}, to={to:?}); Phase::next \
              never returns the same phase, so this branch is structurally \
@@ -3293,7 +3310,6 @@ fn next_eligible_hunter(state: &GameState, after: Option<EnemyId>) -> Option<Ene
 /// `EnemyId` order until none remain ([`EngineOutcome::Done`]) or one
 /// suspends on a lead-investigator tie
 /// ([`EngineOutcome::AwaitingInput`]).
-#[allow(dead_code)] // TODO(#128): wired into enemy_phase in Task 9
 pub(crate) fn drive_hunter_moves(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let mut cursor: Option<EnemyId> = None;
     while let Some(id) = next_eligible_hunter(state, cursor) {
@@ -3395,6 +3411,11 @@ fn resume_hunter_choice(
         }
         cursor = Some(id);
     }
+    // All hunters processed (step 3.2 complete) — begin the
+    // per-investigator attack loop (step 3.3). Reached only on the
+    // no-further-suspension path; every suspension above early-returns
+    // via `suspend_hunter_choice`.
+    enemy_attack_kickoff(state, events);
     EngineOutcome::Done
 }
 
@@ -3462,42 +3483,18 @@ fn resume_spawn_engage(
     }
 }
 
-/// 3.2 Hunter enemies move. Rules Reference p.25: "Resolve the hunter
-/// keyword for each ready, unengaged enemy that has the hunter
-/// keyword."
+/// 3.3 Seed the per-investigator attack cursor and open the first
+/// attack window — or the final window directly if there is no Active
+/// investigator. Called once hunter movement (step 3.2) completes:
+/// from [`enemy_phase`] on the no-tie path, and from
+/// [`resume_hunter_choice`] once all hunters resolve.
 ///
-/// Currently a no-op stub. Task 9 (#128) wires [`drive_hunter_moves`]
-/// here and threads the `EngineOutcome` through `enemy_phase`.
-fn hunter_movement_step(_state: &mut GameState, _events: &mut Vec<Event>) {
-    // TODO(#128): call drive_hunter_moves and surface AwaitingInput
-    //             through enemy_phase in Task 9.
-}
-
-/// Entered by [`step_phase`] on the Investigation→Enemy transition.
-/// Owns the `PhaseStarted(Enemy)` emit (Rules Reference p.25 step 3.1)
-/// and kicks off the per-investigator attack loop (step 3.3) by
-/// seeding [`GameState::enemy_attack_pending`] and opening the first
-/// [`WindowKind::BeforeInvestigatorAttacked`] window. The loop body
-/// runs in [`run_window_continuation`]'s arms; this driver returns
-/// after the kickoff.
-///
-/// Hunter movement (step 3.2) is a named TODO stub
-/// ([`hunter_movement_step`]) deferred to #128.
-fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) {
-    // 3.1 Enemy phase begins.
-    events.push(Event::PhaseStarted {
-        phase: Phase::Enemy,
-    });
-
-    // 3.2 Hunter enemies move. TODO(#128).
-    hunter_movement_step(state, events);
-
-    // 3.3 Kick off the per-investigator attack loop. Seed the cursor
-    //     to the first Active investigator in turn_order. Eliminated
-    //     investigators (Killed / Insane / Resigned) are skipped per
-    //     Rules Reference p.10 (Elimination); first_active_investigator
-    //     is the shared helper used by Mythos 1.4 (#69) for the same
-    //     semantics.
+/// Seeds the cursor to the first Active investigator in `turn_order`.
+/// Eliminated investigators (Killed / Insane / Resigned) are skipped per
+/// Rules Reference p.10 (Elimination); [`first_active_investigator`] is
+/// the shared helper used by Mythos 1.4 (#69) for the same semantics.
+/// The loop body runs in [`run_window_continuation`]'s arms.
+fn enemy_attack_kickoff(state: &mut GameState, events: &mut Vec<Event>) {
     state.enemy_attack_pending = first_active_investigator(state);
 
     if state.enemy_attack_pending.is_some() {
@@ -3510,6 +3507,46 @@ fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) {
     }
 }
 
+/// Entered by [`step_phase`] on the Investigation→Enemy transition.
+/// Owns the `PhaseStarted(Enemy)` emit (Rules Reference p.25 step 3.1),
+/// runs hunter movement (step 3.2) via [`drive_hunter_moves`], then
+/// kicks off the per-investigator attack loop (step 3.3) via
+/// [`enemy_attack_kickoff`].
+///
+/// If hunter movement suspends on a lead-investigator tie, this returns
+/// the [`EngineOutcome::AwaitingInput`] unchanged — the attack-loop
+/// kickoff is deferred to [`resume_hunter_choice`], which runs it once
+/// the last hunter resolves. Otherwise the kickoff runs inline here and
+/// this returns [`EngineOutcome::Done`].
+fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    // 3.1 Enemy phase begins.
+    events.push(Event::PhaseStarted {
+        phase: Phase::Enemy,
+    });
+
+    // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
+    //     attack-loop kickoff then happens on resume.
+    match drive_hunter_moves(state, events) {
+        EngineOutcome::AwaitingInput {
+            request,
+            resume_token,
+        } => {
+            return EngineOutcome::AwaitingInput {
+                request,
+                resume_token,
+            };
+        }
+        EngineOutcome::Rejected { reason } => {
+            unreachable!("enemy_phase: hunter movement rejected unexpectedly: {reason}")
+        }
+        EngineOutcome::Done => {}
+    }
+
+    // 3.3 Kick off the per-investigator attack loop.
+    enemy_attack_kickoff(state, events);
+    EngineOutcome::Done
+}
+
 /// Called from [`run_window_continuation`]'s
 /// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
@@ -3519,7 +3556,14 @@ fn enemy_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
-    step_phase(state, events); // Enemy → Upkeep; calls upkeep_phase
+    // Enemy → Upkeep; calls upkeep_phase. Only the Investigation→Enemy
+    // transition can suspend (hunter movement), so this never does.
+    let outcome = step_phase(state, events);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "unexpected suspension in Enemy→Upkeep transition"
+    );
 }
 
 /// Reshuffle the discard pile back into the deck for the named
@@ -4246,7 +4290,15 @@ fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });
-    step_phase(state, events); // Mythos → Investigation; calls investigation_phase
+    // Mythos → Investigation; calls investigation_phase. Only the
+    // Investigation→Enemy transition can suspend (hunter movement), so
+    // this cascade always completes.
+    let outcome = step_phase(state, events);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "unexpected suspension in Mythos→Investigation transition"
+    );
 }
 
 /// Entered by [`step_phase`] on the Enemy→Upkeep transition. Owns the
@@ -4285,7 +4337,14 @@ fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });
-    step_phase(state, events); // Upkeep → Mythos; calls mythos_phase
+    // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
+    // transition can suspend (hunter movement), so this never does.
+    let outcome = step_phase(state, events);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "unexpected suspension in Upkeep→Mythos transition"
+    );
 }
 
 /// 4.3 Ready exhausted cards. Rules Reference p.25: "Simultaneously
@@ -7044,12 +7103,90 @@ mod upkeep_phase_tests {
 mod enemy_phase_tests {
     use super::*;
     use crate::action::Action;
+    use crate::assert_event;
     use crate::engine::{apply, EngineOutcome};
     use crate::state::{
-        EnemyId, FastActorScope, InvestigatorId, OpenWindow, Phase, Status, WindowKind,
+        EnemyId, FastActorScope, InvestigatorId, LocationId, OpenWindow, Phase, Status, WindowKind,
     };
-    use crate::test_support::{test_enemy, test_investigator, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
     use crate::Event;
+
+    #[test]
+    fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        loc_a.connections = vec![LocationId(2)];
+        loc_b.connections = vec![LocationId(1)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(2));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_investigator(inv)
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = end_turn(&mut state, &mut events);
+        assert_eq!(outcome, EngineOutcome::Done);
+        // No registry installed → the attack window auto-skips inline and
+        // the cascade runs Enemy→Upkeep→Mythos within this same call (same
+        // as `enemy_phase_emits_phase_started_and_cascades_to_mythos...`).
+        // The hunter still moved + engaged during step 3.2, and the first
+        // attack window still opened — asserted via the event stream below.
+        assert_eq!(state.phase, Phase::Mythos);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert_event!(events, Event::EnemyEngaged { enemy, .. } if *enemy == EnemyId(1));
+        assert_event!(events, Event::WindowOpened { kind } if *kind == WindowKind::BeforeInvestigatorAttacked);
+    }
+
+    #[test]
+    fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
+        let mut loc_a = test_location(1, "A");
+        let mut loc_b = test_location(2, "B");
+        let mut loc_c = test_location(3, "C");
+        let mut loc_d = test_location(4, "D");
+        loc_a.connections = vec![LocationId(2), LocationId(3)];
+        loc_b.connections = vec![LocationId(1), LocationId(4)];
+        loc_c.connections = vec![LocationId(1), LocationId(4)];
+        loc_d.connections = vec![LocationId(2), LocationId(3)];
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(4));
+        let mut hunter = test_enemy(1, "Hunter");
+        hunter.hunter = true;
+        hunter.current_location = Some(LocationId(1));
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_location(loc_a)
+            .with_location(loc_b)
+            .with_location(loc_c)
+            .with_location(loc_d)
+            .with_investigator(inv)
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_enemy(hunter)
+            .build();
+        let mut events = Vec::new();
+        let outcome = end_turn(&mut state, &mut events);
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert_eq!(state.phase, Phase::Enemy);
+        let mut ev2 = Vec::new();
+        let resumed = resolve_input(
+            &mut state,
+            &mut ev2,
+            &InputResponse::PickLocation(LocationId(2)),
+        );
+        assert_eq!(resumed, EngineOutcome::Done);
+        assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::BeforeInvestigatorAttacked);
+    }
 
     #[test]
     fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
