@@ -3162,15 +3162,14 @@ fn fire_attacks_of_opportunity(
 ///    ("Each ready, engaged enemy makes an attack" — a disengaged
 ///    enemy is not "engaged").
 ///
-///    Today [`apply_investigator_defeat`] only flips `Status`;
-///    `TODO(#144)`: the full disengage + re-engage flow lands in
-///    #144 (Phase-4 milestone, blocked on #128 which lands the prey
-///    logic needed for multi-investigator re-engagement). The
-///    early-break here is the rules-correct minimal interpretation:
-///    no incorrect events fire, no behavior anomaly visible at the
-///    rules level. After #144 lands, the `enemy.engaged_with` field
-///    is properly cleared on defeat too; this early-break stays as
-///    the simpler form (one redundant check, harmless).
+///    `apply_investigator_defeat` (#144) now clears `engaged_with` on
+///    every enemy engaged with a defeated investigator (Rules Reference
+///    p.10 Elimination step 3), so a disengaged enemy genuinely is no
+///    longer "engaged" by the time the next loop iteration would run.
+///    The early-break here is therefore redundant with that flow — it
+///    is kept as the simpler, local form (one extra status check,
+///    harmless) so the loop body stays self-evidently correct without
+///    cross-referencing the elimination flow.
 ///
 /// 2. Call [`enemy_attack`] (places damage + horror simultaneously
 ///    per p.7, fires [`apply_investigator_defeat`] if either
@@ -4782,16 +4781,15 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             if let Some(id) = first_active_investigator(state) {
                 begin_investigator_turn(state, events, id);
             }
-            // None branch: no active investigator can take a turn.
-            // TODO(#144): Rules Reference p.10 step 6 — with no
-            // remaining players the scenario ends.
-            // check_all_defeated already emits
-            // AllInvestigatorsDefeated, but the scenario-end
-            // consequence is unwired. Until it lands, park here
-            // (mirrors prior behavior). Auto-advancing would loop
-            // the round forever — every other phase auto-skips
-            // with no active investigators, so Investigation is
-            // the cascade's only natural pause point.
+            // None branch: no active investigator can take a turn. Per
+            // Rules Reference p.10 step 6 the scenario ends; #144 fires
+            // AllInvestigatorsDefeated via check_all_defeated, but the
+            // Resolution::Lost consequence (and removing this park) is
+            // #73's resolution-layer work. TODO(#73): end the scenario
+            // here instead of parking. Auto-advancing would loop the
+            // round forever — every other phase auto-skips with no
+            // active investigators, so Investigation is the cascade's
+            // only natural pause point.
         }
         // InvestigatorTurnBegins: 2.2.1 — the active investigator now
         // takes actions (Investigate / Move / Fight / Evade / PlayCard /
@@ -8726,6 +8724,48 @@ mod elimination_tests {
             "no surviving co-located investigator => stays unengaged"
         );
         assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn elimination_runs_on_horror_defeat_too() {
+        let dead = InvestigatorId(1);
+        let surv = InvestigatorId(2);
+        let loc = LocationId(1);
+
+        let mut dying = test_investigator(1);
+        dying.max_sanity = 1;
+        dying.current_location = Some(loc);
+        dying.clues = 1;
+
+        let mut survivor = test_investigator(2);
+        survivor.current_location = Some(loc);
+
+        let enemy = {
+            let mut e = test_enemy(1, "Whippoorwill");
+            e.current_location = Some(loc);
+            e.engaged_with = Some(dead);
+            e
+        };
+
+        let mut state = TestGame::default()
+            .with_investigator(dying)
+            .with_investigator(survivor)
+            .with_location(test_location(1, "Study"))
+            .with_enemy(enemy)
+            .with_turn_order([dead, surv])
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Horror);
+
+        assert_eq!(state.investigators[&dead].status, Status::Insane);
+        assert_eq!(state.locations[&loc].clues, 1, "clue placed at location");
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(surv),
+            "re-engaged survivor"
+        );
+        assert_eq!(state.investigators[&dead].current_location, None);
     }
 
     #[test]
