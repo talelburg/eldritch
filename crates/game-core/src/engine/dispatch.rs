@@ -3443,6 +3443,12 @@ fn resume_spawn_engage(
     // Only re-enter the Mythos surge chain if the suspend happened
     // mid-chain (the drawing investigator is still the pending cursor).
     // The `EncounterCardRevealed` single-draw path resolves to `Done`.
+    //
+    // Invariant: while `spawn_engage_pending` is set, the apply guard
+    // (line 129) rejects every non-`ResolveInput` action, so nothing can
+    // retarget the Mythos cursor between suspend and resume. Hence
+    // `mythos_draw_pending == Some(investigator_to_draw)` reliably means
+    // "we suspended mid-chain for this investigator."
     if state.mythos_draw_pending == Some(pending.investigator_to_draw) {
         run_mythos_draw_chain(
             state,
