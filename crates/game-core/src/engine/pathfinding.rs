@@ -11,7 +11,6 @@ use crate::state::{GameState, LocationId};
 /// `to` is unreachable. Connections are treated as given in
 /// `Location.connections` (the engine maintains them bidirectionally,
 /// but BFS does not assume that).
-#[allow(dead_code)] // used by hunter movement (Task 6, #128)
 pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) -> Option<u32> {
     if from == to {
         return Some(0);
@@ -44,7 +43,6 @@ pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) 
 /// is unreachable or `from == to` (no step needed). Result order
 /// follows `from`'s `connections` order; callers that need determinism
 /// across that should sort.
-#[allow(dead_code)] // used by hunter movement (Task 6, #128)
 pub(crate) fn shortest_first_steps(
     state: &GameState,
     from: LocationId,
