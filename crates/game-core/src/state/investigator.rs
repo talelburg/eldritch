@@ -83,13 +83,13 @@ pub struct Investigator {
     /// action; remains true for the rest of the scenario so a second
     /// mulligan rejects.
     pub mulligan_used: bool,
-    /// Cards removed from the game (Rules Reference p.10 Elimination
+    /// Cards removed from the game (Rules Reference p.10, "Elimination,"
     /// step 1). When this investigator is eliminated, every card they
-    /// control or own in an out-of-play area — `hand`, `deck`,
-    /// `discard`, `cards_in_play` — is drained into this pile and
-    /// removed from the game. Stays empty for Active investigators.
-    /// `#[serde(default)]` so states serialized before this field
-    /// existed still deserialize.
+    /// control in play (`cards_in_play`) and every card they own in an
+    /// out-of-play area (`hand`, `deck`, `discard`) is drained into this
+    /// pile and removed from the game. Stays empty for Active
+    /// investigators. Defaults to empty for backward-compat: states
+    /// serialized before this field was added still deserialize.
     #[serde(default)]
     pub removed_from_game: Vec<CardCode>,
 }
@@ -183,31 +183,7 @@ mod removed_from_game_tests {
 
     #[test]
     fn new_investigator_has_empty_removed_pile() {
-        let inv = Investigator {
-            id: InvestigatorId(1),
-            name: "Test".into(),
-            current_location: None,
-            skills: Skills {
-                willpower: 3,
-                intellect: 3,
-                combat: 3,
-                agility: 3,
-            },
-            max_health: 8,
-            damage: 0,
-            max_sanity: 8,
-            horror: 0,
-            clues: 0,
-            resources: 0,
-            actions_remaining: 3,
-            status: Status::Active,
-            deck: Vec::new(),
-            hand: Vec::new(),
-            discard: Vec::new(),
-            cards_in_play: Vec::new(),
-            mulligan_used: false,
-            removed_from_game: Vec::new(),
-        };
+        let inv = crate::test_support::test_investigator(1);
         assert!(inv.removed_from_game.is_empty());
     }
 
