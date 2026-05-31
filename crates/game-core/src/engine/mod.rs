@@ -2221,12 +2221,13 @@ mod tests {
         assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
         // Action point still spent (the action declaration stays).
         assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
-        // Move suppressed: investigator and engaged enemy stay at the
-        // origin; no InvestigatorMoved event.
+        // Move suppressed: no InvestigatorMoved event; enemy stays at
+        // the origin. The investigator's location is cleared to None
+        // (elimination step 3 — they have left play).
         assert_no_event!(result.events, Event::InvestigatorMoved { .. });
         assert_eq!(
-            result.state.investigators[&inv_id].current_location,
-            Some(a)
+            result.state.investigators[&inv_id].current_location, None,
+            "eliminated investigator has no location (left play)"
         );
         assert_eq!(result.state.enemies[&enemy_id].current_location, Some(a));
         // Single-investigator scenario, so AllInvestigatorsDefeated
