@@ -2898,9 +2898,15 @@ fn run_elimination_steps(
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
 ) {
-    let _ = &events; // TODO: steps 2-3 will emit via events
-                     // Step 1: remove every card this investigator controls in play and
-                     // owns in out-of-play areas (hand/deck/discard) from the game.
+    // The location the investigator was at "when eliminated" — read once;
+    // steps 2 and 3 both place tokens/enemies here.
+    let last_location = state
+        .investigators
+        .get(&investigator)
+        .and_then(|inv| inv.current_location);
+
+    // Step 1: remove every card this investigator controls in play and
+    // owns in out-of-play areas (hand/deck/discard) from the game.
     let inv = state
         .investigators
         .get_mut(&investigator)
@@ -2919,6 +2925,24 @@ fn run_elimination_steps(
     removed.append(&mut inv.deck);
     removed.append(&mut inv.discard);
     inv.removed_from_game = removed;
+
+    // Step 2: place possessed clues at the location; return resources to
+    // the (unmodeled, infinite) token pool by zeroing them.
+    let clues = inv.clues;
+    inv.clues = 0;
+    inv.resources = 0;
+    if clues > 0 {
+        if let Some(loc_id) = last_location {
+            if let Some(loc) = state.locations.get_mut(&loc_id) {
+                loc.clues = loc.clues.saturating_add(clues);
+                let new_count = loc.clues;
+                events.push(Event::LocationCluesChanged {
+                    location: loc_id,
+                    new_count,
+                });
+            }
+        }
+    }
 }
 
 /// Apply `amount` horror to an investigator. If their accumulated
@@ -8450,8 +8474,8 @@ mod hunter_resume_tests {
 #[cfg(test)]
 mod elimination_tests {
     use super::*;
-    use crate::state::{CardCode, CardInPlay, CardInstanceId, DefeatCause, InvestigatorId};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::assert_event;
+    use crate::test_support::{test_investigator, test_location, TestGame};
 
     #[test]
     fn elimination_step1_removes_controlled_and_owned_cards() {
@@ -8487,5 +8511,41 @@ mod elimination_tests {
         assert!(removed.contains(&"h1"));
         assert!(removed.contains(&"d1"));
         assert!(removed.contains(&"x1"));
+    }
+
+    #[test]
+    fn elimination_step2_places_clues_at_location_and_zeroes_resources() {
+        let id = InvestigatorId(1);
+        let loc_id = LocationId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 1;
+        inv.current_location = Some(loc_id);
+        inv.clues = 2;
+        inv.resources = 4;
+
+        let mut loc = test_location(1, "Study");
+        loc.clues = 1;
+
+        let mut state = TestGame::default()
+            .with_investigator(inv)
+            .with_location(loc)
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+
+        assert_eq!(
+            state.locations[&loc_id].clues, 3,
+            "2 investigator clues added to location's 1"
+        );
+        assert_eq!(
+            state.investigators[&id].clues, 0,
+            "investigator clues cleared"
+        );
+        assert_eq!(
+            state.investigators[&id].resources, 0,
+            "resources returned to pool"
+        );
+        assert_event!(events, Event::LocationCluesChanged { location, new_count: 3 } if *location == loc_id);
     }
 }
