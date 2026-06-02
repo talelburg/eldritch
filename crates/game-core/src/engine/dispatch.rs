@@ -1115,9 +1115,10 @@ fn advance_agenda(state: &mut GameState, events: &mut Vec<Event>) {
 
 /// Set the scenario-resolution latch. First-writer-wins: a resolution
 /// already latched this scenario is authoritative and a later request is
-/// ignored. The `apply` hook (in `engine::mod`) observes the `None`→`Some`
-/// transition to emit [`Event::ScenarioResolved`] and run the scenario
-/// module's `apply_resolution` exactly once.
+/// ignored. Once the push-model resolution hook lands (#73), `apply` (in
+/// `engine::mod`) will observe the `None`→`Some` transition to emit
+/// [`Event::ScenarioResolved`] and run the scenario module's
+/// `apply_resolution` exactly once.
 fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
     if state.resolution.is_none() {
         state.resolution = Some(resolution);
