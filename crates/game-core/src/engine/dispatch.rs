@@ -1053,18 +1053,75 @@ fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     }
 }
 
-fn place_doom_on_agenda(_state: &mut GameState, _events: &mut Vec<Event>) {
-    // TODO(#73): place 1 doom on the current agenda per Rules
-    //            Reference p.24 step 1.2. Currently no agenda state
-    //            exists; #73 lands the agenda struct + doom counter
-    //            + this body.
+/// Mythos step 1.2 (Rules Reference p.24): "Take 1 doom from the token
+/// pool, and place it on the current agenda card." No-op when no agenda
+/// deck is modeled (tests/fixtures without an agenda).
+fn place_doom_on_agenda(state: &mut GameState, _events: &mut Vec<Event>) {
+    if state.agenda_deck.is_empty() {
+        return;
+    }
+    state.agenda_doom = state.agenda_doom.saturating_add(1);
 }
 
-fn check_doom_threshold(_state: &mut GameState, _events: &mut Vec<Event>) {
-    // TODO(#73): compare total doom in play to current agenda's
-    //            threshold; advance if met. Rules Reference p.24
-    //            step 1.3. Same reason as above: no agenda state
-    //            yet.
+/// Mythos step 1.3 (Rules Reference p.24): compare doom in play with the
+/// current agenda's threshold; if met, the agenda advances. We model
+/// doom only on the agenda (no corpus card carries doom yet — summing
+/// "doom on each other card in play" would add zero).
+///
+/// TODO(#73 follow-up): sum doom on other cards in play once a
+/// doom-bearing card exists.
+///
+/// If the current agenda is terminal (carries a `resolution`), advancing
+/// it ends the scenario: set the resolution latch instead of moving the
+/// cursor. Otherwise emit [`Event::AgendaAdvanced`], reset doom, and make
+/// the next agenda current.
+fn check_doom_threshold(state: &mut GameState, events: &mut Vec<Event>) {
+    if state.agenda_deck.is_empty() {
+        return;
+    }
+    let agenda = &state.agenda_deck[state.agenda_index];
+    if state.agenda_doom < agenda.doom_threshold {
+        return;
+    }
+    match agenda.resolution.clone() {
+        Some(resolution) => request_resolution(state, resolution),
+        None => advance_agenda(state, events),
+    }
+}
+
+/// Advance the agenda deck one step: emit [`Event::AgendaAdvanced`],
+/// reset doom (Rules Reference p.24: "remove all doom from play"), and
+/// move the cursor to the next agenda.
+///
+/// Only ever called for a *non-terminal* agenda (one whose `resolution`
+/// is `None`). A non-terminal agenda must have a successor; reaching the
+/// end of the deck without a resolution firing is malformed scenario
+/// data (the final agenda must carry a `(→R#)` resolution point), so the
+/// missing-successor case is `unreachable!()` — mirrors the surge-chain
+/// malformation guards from #69.
+fn advance_agenda(state: &mut GameState, events: &mut Vec<Event>) {
+    let from = state.agenda_index;
+    events.push(Event::AgendaAdvanced { from });
+    state.agenda_doom = 0;
+    state.agenda_index += 1;
+    if state.agenda_index >= state.agenda_deck.len() {
+        unreachable!(
+            "advance_agenda: agenda {from} advanced past the end of the deck without a \
+             resolution firing — a terminal agenda must carry a resolution point; this is \
+             malformed scenario data"
+        );
+    }
+}
+
+/// Set the scenario-resolution latch. First-writer-wins: a resolution
+/// already latched this scenario is authoritative and a later request is
+/// ignored. The `apply` hook (in `engine::mod`) observes the `None`→`Some`
+/// transition to emit [`Event::ScenarioResolved`] and run the scenario
+/// module's `apply_resolution` exactly once.
+fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
+    if state.resolution.is_none() {
+        state.resolution = Some(resolution);
+    }
 }
 
 /// Transition to the next phase. Dispatches into phase driver
@@ -8972,5 +9029,116 @@ mod reengage_tests {
         reengage_at_location(&mut state, &mut events, EnemyId(1));
         assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
         assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+}
+
+#[cfg(test)]
+mod doom_agenda_tests {
+    use super::*;
+    use crate::event::Event;
+    use crate::test_support::TestGame;
+    use crate::{assert_event, assert_no_event};
+
+    #[test]
+    fn place_doom_increments_agenda_doom() {
+        use crate::state::Agenda;
+        let mut state = TestGame::new().build();
+        state.agenda_deck = vec![Agenda {
+            doom_threshold: 2,
+            resolution: None,
+        }];
+        let mut events = Vec::new();
+        place_doom_on_agenda(&mut state, &mut events);
+        assert_eq!(state.agenda_doom, 1);
+        place_doom_on_agenda(&mut state, &mut events);
+        assert_eq!(state.agenda_doom, 2);
+    }
+
+    #[test]
+    fn doom_threshold_advances_non_terminal_agenda() {
+        use crate::scenario::Resolution;
+        use crate::state::Agenda;
+        let mut state = TestGame::new().build();
+        state.agenda_deck = vec![
+            Agenda {
+                doom_threshold: 2,
+                resolution: None,
+            },
+            Agenda {
+                doom_threshold: 2,
+                resolution: Some(Resolution::Lost {
+                    reason: "agenda".into(),
+                }),
+            },
+        ];
+        state.agenda_doom = 2;
+        let mut events = Vec::new();
+        check_doom_threshold(&mut state, &mut events);
+        assert_eq!(state.agenda_index, 1);
+        assert_eq!(state.agenda_doom, 0, "doom resets on advance");
+        assert!(
+            state.resolution.is_none(),
+            "non-terminal advance does not resolve"
+        );
+        assert_event!(events, Event::AgendaAdvanced { from } if *from == 0);
+    }
+
+    #[test]
+    fn doom_threshold_on_terminal_agenda_sets_resolution_latch() {
+        use crate::scenario::Resolution;
+        use crate::state::Agenda;
+        let mut state = TestGame::new().build();
+        state.agenda_deck = vec![Agenda {
+            doom_threshold: 2,
+            resolution: Some(Resolution::Lost {
+                reason: "doom".into(),
+            }),
+        }];
+        state.agenda_doom = 2;
+        let mut events = Vec::new();
+        check_doom_threshold(&mut state, &mut events);
+        assert_eq!(
+            state.agenda_index, 0,
+            "cursor does not move on a terminal agenda"
+        );
+        assert!(matches!(state.resolution, Some(Resolution::Lost { .. })));
+        assert_no_event!(events, Event::AgendaAdvanced { .. });
+    }
+
+    #[test]
+    fn doom_threshold_not_met_does_nothing() {
+        use crate::state::Agenda;
+        let mut state = TestGame::new().build();
+        state.agenda_deck = vec![Agenda {
+            doom_threshold: 3,
+            resolution: None,
+        }];
+        state.agenda_doom = 2;
+        let mut events = Vec::new();
+        check_doom_threshold(&mut state, &mut events);
+        assert_eq!(state.agenda_index, 0);
+        assert_eq!(state.agenda_doom, 2);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn request_resolution_is_first_writer_wins() {
+        use crate::scenario::Resolution;
+        let mut state = TestGame::new().build();
+        request_resolution(
+            &mut state,
+            Resolution::Lost {
+                reason: "first".into(),
+            },
+        );
+        request_resolution(
+            &mut state,
+            Resolution::Won {
+                id: "second".into(),
+            },
+        );
+        assert!(
+            matches!(state.resolution, Some(Resolution::Lost { ref reason }) if reason == "first")
+        );
     }
 }
