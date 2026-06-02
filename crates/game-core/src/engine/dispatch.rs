@@ -1116,6 +1116,17 @@ fn advance_agenda(state: &mut GameState, events: &mut Vec<Event>) {
     }
 }
 
+/// The investigators who may contribute clues to advance the act, in the
+/// deterministic spend order: the acting investigator first, then the rest
+/// of `turn_order`. Shared by [`advance_act_action`]'s clue-sufficiency
+/// check and [`spend_clues`] so the validation domain and the spend domain
+/// can never diverge.
+fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<InvestigatorId> {
+    std::iter::once(acting)
+        .chain(state.turn_order.iter().copied().filter(|id| *id != acting))
+        .collect()
+}
+
 /// Handler for [`PlayerAction::AdvanceAct`] — a prototype clue-spend to
 /// advance the current act (see the action's doc comment and the design
 /// spec). Validate-first: reject outside the Investigation phase, when no
@@ -1144,9 +1155,9 @@ fn advance_act_action(
         };
     }
     let threshold = state.act_deck[state.act_index].clue_threshold;
-    let total_clues: u32 = state
-        .investigators
-        .values()
+    let total_clues: u32 = clue_contributors(state, investigator)
+        .into_iter()
+        .filter_map(|id| state.investigators.get(&id))
         .map(|i| u32::from(i.clues))
         .sum();
     if total_clues < u32::from(threshold) {
@@ -1177,10 +1188,7 @@ fn advance_act_action(
 /// The fixed order here is outcome-equivalent single-player.
 fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
     let mut remaining = amount;
-    let order: Vec<InvestigatorId> = std::iter::once(acting)
-        .chain(state.turn_order.iter().copied().filter(|id| *id != acting))
-        .collect();
-    for id in order {
+    for id in clue_contributors(state, acting) {
         if remaining == 0 {
             break;
         }
@@ -9354,5 +9362,55 @@ mod advance_act_tests {
         ));
         assert_no_event!(result.events, Event::ActAdvanced { .. });
         assert_eq!(result.state.investigators[&inv].clues, 0);
+    }
+
+    #[test]
+    fn advance_act_spends_acting_investigator_first_then_turn_order() {
+        use crate::state::Act;
+        let acting = InvestigatorId(1);
+        let other = InvestigatorId(2);
+        let mut inv1 = test_investigator(1);
+        inv1.clues = 1;
+        let mut inv2 = test_investigator(2);
+        inv2.clues = 2;
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(inv1)
+            .with_investigator(inv2)
+            .with_active_investigator(acting)
+            .with_turn_order([acting, other])
+            .build();
+        // Two acts so the non-terminal first act can advance the cursor to 1
+        // (a terminal `resolution: None` act at the end would hit the
+        // advance-past-end `unreachable!`). The successor's contents are
+        // irrelevant to this spend-order test.
+        state.act_deck = vec![
+            Act {
+                clue_threshold: 2,
+                resolution: None,
+            },
+            Act {
+                clue_threshold: 2,
+                resolution: None,
+            },
+        ];
+
+        // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::AdvanceAct {
+                investigator: acting,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(
+            result.state.investigators[&acting].clues, 0,
+            "acting drained first"
+        );
+        assert_eq!(
+            result.state.investigators[&other].clues, 1,
+            "remainder taken from turn_order"
+        );
+        assert_eq!(result.state.act_index, 1);
     }
 }
