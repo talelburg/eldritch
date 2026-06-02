@@ -44,6 +44,21 @@ pub enum PlayerAction {
     StartScenario,
     /// Active investigator ends their turn during the Investigation phase.
     EndTurn,
+    /// Spend clues to advance the current act (Rules Reference p.3:
+    /// "spend the requisite number of clues … normally a Fast player
+    /// ability").
+    ///
+    /// **Prototype.** Built minimally for the Phase-4 synthetic demo: a
+    /// flat `clue_threshold`, a single-step spend with a deterministic
+    /// allocation (the acting investigator's clues first, then the rest
+    /// in `turn_order`), no `Objective –` handling, and no per-action
+    /// Fast-window gating. Real consumers (Phase 7, The Gathering) drive
+    /// its final form — see the design spec.
+    AdvanceAct {
+        /// The investigator initiating the spend (the "acting" player;
+        /// their clues are spent first when the group holds a surplus).
+        investigator: InvestigatorId,
+    },
     /// Perform a skill test on `investigator` against `difficulty`,
     /// using the named `skill`.
     ///

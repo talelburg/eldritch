@@ -180,6 +180,9 @@ pub fn apply_player_action(
             },
         },
         PlayerAction::ResolveInput { response } => resolve_input(state, events, response),
+        PlayerAction::AdvanceAct { investigator } => {
+            advance_act_action(state, events, *investigator)
+        }
     };
 
     // After a successful Mulligan, check whether every investigator
@@ -1109,6 +1112,103 @@ fn advance_agenda(state: &mut GameState, events: &mut Vec<Event>) {
             "advance_agenda: agenda {from} advanced past the end of the deck without a \
              resolution firing — a terminal agenda must carry a resolution point; this is \
              malformed scenario data"
+        );
+    }
+}
+
+/// Handler for [`PlayerAction::AdvanceAct`] — a prototype clue-spend to
+/// advance the current act (see the action's doc comment and the design
+/// spec). Validate-first: reject outside the Investigation phase, when no
+/// act deck is modeled, or when the group holds fewer clues than the
+/// current act's `clue_threshold`. On success spend exactly the threshold
+/// (acting investigator first, then the rest in `turn_order`) and either
+/// set the resolution latch (terminal act) or emit [`Event::ActAdvanced`]
+/// and advance the cursor.
+fn advance_act_action(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    if state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "AdvanceAct is only valid during the Investigation phase (was {:?})",
+                state.phase
+            )
+            .into(),
+        };
+    }
+    if state.act_deck.is_empty() {
+        return EngineOutcome::Rejected {
+            reason: "AdvanceAct: no act deck is modeled for this scenario".into(),
+        };
+    }
+    let threshold = state.act_deck[state.act_index].clue_threshold;
+    let total_clues: u32 = state
+        .investigators
+        .values()
+        .map(|i| u32::from(i.clues))
+        .sum();
+    if total_clues < u32::from(threshold) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "AdvanceAct: act requires {threshold} clues, group holds {total_clues}"
+            )
+            .into(),
+        };
+    }
+
+    // All validations passed — mutate.
+    spend_clues(state, investigator, threshold);
+    match state.act_deck[state.act_index].resolution.clone() {
+        Some(resolution) => request_resolution(state, resolution),
+        None => advance_act(state, events),
+    }
+    EngineOutcome::Done
+}
+
+/// Spend `amount` clues from the group, deterministically: the acting
+/// investigator's clues first, then the remaining investigators in
+/// `turn_order`. Callers must have already validated the group holds at
+/// least `amount` clues, so the spend always completes.
+///
+/// TODO(#73 follow-up — Phase 8): let players choose who contributes
+/// when the group holds a surplus (an `AwaitingInput` allocation prompt).
+/// The fixed order here is outcome-equivalent single-player.
+fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
+    let mut remaining = amount;
+    let order: Vec<InvestigatorId> = std::iter::once(acting)
+        .chain(state.turn_order.iter().copied().filter(|id| *id != acting))
+        .collect();
+    for id in order {
+        if remaining == 0 {
+            break;
+        }
+        if let Some(inv) = state.investigators.get_mut(&id) {
+            let take = inv.clues.min(remaining);
+            inv.clues -= take;
+            remaining -= take;
+        }
+    }
+    debug_assert_eq!(
+        remaining, 0,
+        "spend_clues called without enough clues in the group"
+    );
+}
+
+/// Advance the act deck one step: emit [`Event::ActAdvanced`] and move the
+/// cursor. Only called for a non-terminal act; the missing-successor case
+/// is `unreachable!()` (a terminal act must carry a resolution point —
+/// malformed scenario data otherwise). Mirrors [`advance_agenda`].
+fn advance_act(state: &mut GameState, events: &mut Vec<Event>) {
+    let from = state.act_index;
+    events.push(Event::ActAdvanced { from });
+    state.act_index += 1;
+    if state.act_index >= state.act_deck.len() {
+        unreachable!(
+            "advance_act: act {from} advanced past the end of the deck without a resolution \
+             firing — a terminal act must carry a resolution point; this is malformed \
+             scenario data"
         );
     }
 }
@@ -9141,5 +9241,118 @@ mod doom_agenda_tests {
         assert!(
             matches!(state.resolution, Some(Resolution::Lost { ref reason }) if reason == "first")
         );
+    }
+}
+
+#[cfg(test)]
+mod advance_act_tests {
+    use super::*;
+    use crate::action::Action;
+    use crate::engine::{apply, EngineOutcome};
+    use crate::event::Event;
+    use crate::state::{InvestigatorId, Phase};
+    use crate::test_support::{test_investigator, TestGame};
+    use crate::{assert_event, assert_no_event};
+
+    #[test]
+    fn advance_act_rejects_when_clues_insufficient() {
+        use crate::state::Act;
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 1;
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .build();
+        state.act_deck = vec![Act {
+            clue_threshold: 2,
+            resolution: None,
+        }];
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.act_index, 0);
+        assert_eq!(
+            result.state.investigators[&inv].clues, 1,
+            "no clues spent on reject"
+        );
+    }
+
+    #[test]
+    fn advance_act_spends_clues_and_advances_non_terminal() {
+        use crate::scenario::Resolution;
+        use crate::state::Act;
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 3;
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .build();
+        state.act_deck = vec![
+            Act {
+                clue_threshold: 2,
+                resolution: None,
+            },
+            Act {
+                clue_threshold: 2,
+                resolution: Some(Resolution::Won { id: "demo".into() }),
+            },
+        ];
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.act_index, 1);
+        assert_eq!(
+            result.state.investigators[&inv].clues, 1,
+            "spent exactly 2 of 3"
+        );
+        assert!(result.state.resolution.is_none());
+        assert_event!(result.events, Event::ActAdvanced { from } if *from == 0);
+    }
+
+    #[test]
+    fn advance_act_on_terminal_act_sets_resolution_latch() {
+        use crate::scenario::Resolution;
+        use crate::state::Act;
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 2;
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .build();
+        state.act_deck = vec![Act {
+            clue_threshold: 2,
+            resolution: Some(Resolution::Won { id: "demo".into() }),
+        }];
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(
+            result.state.act_index, 0,
+            "cursor does not move on a terminal act"
+        );
+        assert!(matches!(
+            result.state.resolution,
+            Some(Resolution::Won { .. })
+        ));
+        assert_no_event!(result.events, Event::ActAdvanced { .. });
+        assert_eq!(result.state.investigators[&inv].clues, 0);
     }
 }
