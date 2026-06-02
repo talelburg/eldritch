@@ -200,11 +200,14 @@ set; the emit/apply path is covered in integration):
 Integration tests (`crates/scenarios/tests/`, real registry install):
 
 - rewrite `synthetic_resolution.rs` for the push model.
-- doom-to-Lost playthrough: cycle rounds, accumulate doom, assert `ScenarioResolved
-  { Lost }` fires once.
-- clues-to-Won playthrough: discover + spend clues via `AdvanceAct`, assert
-  `ScenarioResolved { Won }`.
-- replay determinism: action-log replay reproduces the resolved state.
+- doom-to-Lost playthrough: cycle rounds (`EndTurn` + `DrawEncounterCard`),
+  accumulate doom, assert `ScenarioResolved { Lost }` fires once.
+- clues-to-Won playthrough: seed the investigator's clues, spend via two
+  `AdvanceAct` calls (act 0 → act 1 → terminal), assert `ScenarioResolved { Won }`.
+
+Replay-determinism testing is **not** in this PR — it's slot-13 (closing demo)
+scope, and `GameState` doesn't derive `PartialEq` (a whole-state replay
+assertion would need serde comparison). Listed here only to mark the boundary.
 
 ## Out of scope
 
