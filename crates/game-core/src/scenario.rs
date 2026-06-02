@@ -7,8 +7,10 @@
 //! [`ScenarioRegistry`] of function pointers, and the host installs it
 //! once at startup via
 //! [`scenario_registry::install`](crate::scenario_registry::install).
-//! The engine, after each `Done` apply outcome, looks up the active
-//! scenario's module and asks it whether the new state has resolved.
+//! The engine watches `GameState.resolution` for a `None`->`Some`
+//! transition during an apply (a push-model latch set at discrete
+//! trigger sites); on that transition it looks up the active
+//! scenario's module and runs its `apply_resolution`.
 //!
 //! # Why function pointers, not `dyn Trait`?
 //!
@@ -83,30 +85,17 @@ pub enum Resolution {
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioModule {
     /// Build the scenario's initial [`GameState`]. Places locations,
-    /// populates encounter / act / agenda decks (when those exist),
-    /// sets chaos-bag modifiers, etc.
-    ///
-    /// For the Phase-4 skeleton, the synthetic fixture's `setup`
-    /// returns a minimal state with one location and one investigator.
+    /// populates encounter / act / agenda decks, sets chaos-bag
+    /// modifiers, etc.
     pub setup: fn() -> GameState,
-    /// Pure check called by [`apply`](crate::engine::apply) after each
-    /// [`Done`](crate::EngineOutcome::Done) outcome. Returns
-    /// `Some(resolution)` when the scenario has resolved.
+    /// Apply the resolution's effects (XP, trauma, scenario-end cleanup).
+    /// Called by [`apply`](crate::engine::apply) exactly once, when the
+    /// engine observes `GameState.resolution` transition from `None` to
+    /// `Some` during an apply. Receives the events buffer so changes are
+    /// observable to clients.
     ///
-    /// **Idempotency note:** the engine has no built-in latch that
-    /// stops calling this once a resolution has fired. For the Phase-4
-    /// skeleton this is acceptable because `apply_resolution` is a
-    /// no-op. Phase 9 will add a guard (likely
-    /// `GameState.resolution: Option<Resolution>`) when the first
-    /// non-trivial `apply_resolution` lands — tracked as #131.
-    pub detect_resolution: fn(&GameState) -> Option<Resolution>,
-    /// Apply the resolution's effects (XP, trauma, scenario-end
-    /// cleanup). Receives the events buffer so changes are observable
-    /// to clients.
-    ///
-    /// For the Phase-4 skeleton, the synthetic fixture's
-    /// `apply_resolution` is a no-op. Phase 9 fills in real bodies
-    /// once the campaign log lands.
+    /// For the Phase-4 synthetic fixture this is a no-op. Phase 9 fills in
+    /// real bodies once the campaign log lands.
     pub apply_resolution: fn(&Resolution, &mut GameState, &mut Vec<Event>),
 }
 

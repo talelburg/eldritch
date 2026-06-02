@@ -2,14 +2,16 @@
 //!
 //! Teaching example — a Phase-7 implementer reading this should see
 //! the shape of a scenario module without having to grok any real
-//! scenario's content. One investigator, one location, a
-//! one-line resolution predicate.
+//! scenario's content. One investigator, one location, seeded
+//! two-card act/agenda decks whose terminal cards carry resolution
+//! points (push-model: the engine latches `GameState.resolution`
+//! when an act/agenda resolution point is reached).
 
 use std::collections::VecDeque;
 
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
-use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
+use game_core::state::{Act, Agenda, CardCode, GameState, InvestigatorId};
 use game_core::test_support::{test_investigator, test_location, TestGame};
 
 use super::synth_cards::{SYNTH_LOC_CODE, SYNTH_TREACHERY_CODE};
@@ -32,6 +34,12 @@ pub const ID: &str = "synthetic";
 /// code (`synth_cards::SYNTH_ENEMY_CODE`) onto the deck themselves
 /// after calling `setup()`.
 ///
+/// Also seeds two-card act and agenda decks. Each deck's first card
+/// is non-terminal (`resolution: None`) and its second carries a
+/// resolution point — advancing past the terminal card latches
+/// `GameState.resolution` (act → `Won { id: "demo" }`, agenda →
+/// `Lost { reason: "agenda" }`), driving the push-model hook.
+///
 /// [`synth_cards::SYNTH_LOC_CODE`]: super::synth_cards::SYNTH_LOC_CODE
 /// [`synth_cards::SYNTH_TREACHERY_CODE`]: super::synth_cards::SYNTH_TREACHERY_CODE
 /// [`synth_cards::SYNTH_ENEMY_CODE`]: super::synth_cards::SYNTH_ENEMY_CODE
@@ -48,6 +56,28 @@ pub fn setup() -> GameState {
     state
         .encounter_deck
         .push_back(CardCode(SYNTH_TREACHERY_CODE.into()));
+    state.agenda_deck = vec![
+        Agenda {
+            doom_threshold: 2,
+            resolution: None,
+        },
+        Agenda {
+            doom_threshold: 2,
+            resolution: Some(Resolution::Lost {
+                reason: "agenda".into(),
+            }),
+        },
+    ];
+    state.act_deck = vec![
+        Act {
+            clue_threshold: 2,
+            resolution: None,
+        },
+        Act {
+            clue_threshold: 2,
+            resolution: Some(Resolution::Won { id: "demo".into() }),
+        },
+    ];
     state
 }
 
@@ -62,21 +92,6 @@ pub fn with_encounter_deck(state: &mut GameState, codes: Vec<CardCode>) {
     state.encounter_deck = VecDeque::from(codes);
 }
 
-/// Resolves with [`Resolution::Won`] once the engine has stepped
-/// past `StartScenario`'s automatic Mythos skip into
-/// [`Phase::Investigation`] with `round >= 1`.
-///
-/// One-liner deliberately: the integration test asserts this fires
-/// after a single `StartScenario` apply.
-#[must_use]
-pub fn detect_resolution(state: &GameState) -> Option<Resolution> {
-    if state.phase == Phase::Investigation && state.round >= 1 {
-        Some(Resolution::Won { id: "demo".into() })
-    } else {
-        None
-    }
-}
-
 /// No-op. Phase 9 fills in real bodies once campaign-log XP / trauma
 /// application lands.
 pub fn apply_resolution(
@@ -87,10 +102,9 @@ pub fn apply_resolution(
 }
 
 /// The [`ScenarioModule`] value for the synthetic fixture. Bundles
-/// the three `fn` pointers above; referenced from
-/// [`crate::module_for`].
+/// the `setup` / `apply_resolution` `fn` pointers above; referenced
+/// from [`crate::module_for`].
 pub const MODULE: ScenarioModule = ScenarioModule {
     setup,
-    detect_resolution,
     apply_resolution,
 };

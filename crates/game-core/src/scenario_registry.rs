@@ -74,15 +74,10 @@ mod tests {
         TestGame::new().build()
     }
 
-    fn never_resolves(_state: &GameState) -> Option<Resolution> {
-        None
-    }
-
     fn no_op_apply(_res: &Resolution, _state: &mut GameState, _events: &mut Vec<Event>) {}
 
     static FAKE_MODULE: ScenarioModule = ScenarioModule {
         setup: empty_state,
-        detect_resolution: never_resolves,
         apply_resolution: no_op_apply,
     };
 
