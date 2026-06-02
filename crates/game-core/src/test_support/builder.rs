@@ -272,6 +272,12 @@ impl TestGame {
             spawn_engage_pending: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
+            agenda_deck: Vec::new(),
+            agenda_index: 0,
+            agenda_doom: 0,
+            act_deck: Vec::new(),
+            act_index: 0,
+            resolution: None,
         }
     }
 }
