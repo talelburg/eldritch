@@ -21,8 +21,8 @@ use crate::rng::RngState;
 /// In the event-sourced model, the canonical state is *derived* by
 /// replaying the action log; `GameState` is the materialized cache.
 ///
-/// Phase-1 minimal shape; later phases will add e.g. encounter deck,
-/// act/agenda decks, doom track, persistent campaign-log facts, etc.
+/// Phase-1 minimal shape; later phases will add e.g. persistent
+/// campaign-log facts and cross-scenario trauma tracking.
 ///
 /// Investigators and locations are stored in [`BTreeMap`]s keyed by ID
 /// rather than [`Vec`]s. This makes iteration order deterministic
@@ -232,8 +232,8 @@ pub struct GameState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agenda {
     /// Total doom in play required to advance (Rules Reference p.24
-    /// step 1.3). Flat value only for now; per-investigator (`󲆃`)
-    /// scaling and `Objective –` overrides are deferred until a real
+    /// step 1.3). Flat value only for now; per-investigator scaling
+    /// and `Objective –` overrides are deferred until a real
     /// scenario needs them.
     pub doom_threshold: u8,
     /// The printed resolution point on this agenda's reverse. `Some` on
