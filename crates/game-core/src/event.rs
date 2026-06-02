@@ -440,6 +440,11 @@ pub enum Event {
     /// `ScenarioResolved` on each subsequent apply. Phase 9 will add
     /// the idempotency guard alongside the first non-trivial
     /// `apply_resolution` — tracked as #131.
+    ScenarioResolved {
+        /// The resolution returned by the scenario module.
+        resolution: Resolution,
+    },
+
     /// The agenda deck advanced: the agenda at `from` met its doom
     /// threshold and the next agenda became current. Doom was reset to
     /// 0. Not emitted when a *terminal* agenda is reached — that fires
@@ -460,10 +465,6 @@ pub enum Event {
         /// The `act_index` of the act that advanced (before the cursor
         /// moved).
         from: usize,
-    },
-    ScenarioResolved {
-        /// The resolution returned by the scenario module.
-        resolution: Resolution,
     },
 }
 
