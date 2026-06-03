@@ -3864,6 +3864,7 @@ mod tests {
             Action::Player(PlayerAction::EndTurn),
             Some(&reg),
         );
+        assert_eq!(second.outcome, EngineOutcome::Done);
         assert_no_event!(second.events, Event::ScenarioResolved { .. });
     }
 

@@ -1223,10 +1223,9 @@ fn advance_act(state: &mut GameState, events: &mut Vec<Event>) {
 
 /// Set the scenario-resolution latch. First-writer-wins: a resolution
 /// already latched this scenario is authoritative and a later request is
-/// ignored. Once the push-model resolution hook lands (#73), `apply` (in
-/// `engine::mod`) will observe the `None`→`Some` transition to emit
-/// [`Event::ScenarioResolved`] and run the scenario module's
-/// `apply_resolution` exactly once.
+/// ignored. The `apply` hook (in `engine::mod`) observes the `None`→`Some`
+/// transition to emit [`Event::ScenarioResolved`] and run the scenario
+/// module's `apply_resolution` exactly once.
 fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
     if state.resolution.is_none() {
         state.resolution = Some(resolution);
@@ -3150,8 +3149,9 @@ fn run_elimination_steps(
     // is deferred (Phase 8, #151) alongside the re-engagement-tie pick.
 
     // Step 6 (no remaining players => scenario ends) is signaled by
-    // `check_all_defeated` (caller) emitting AllInvestigatorsDefeated;
-    // the Resolution::Lost consequence is wired by #73.
+    // `check_all_defeated` (caller) emitting AllInvestigatorsDefeated
+    // and latching Resolution::Lost; the `apply` hook turns that latch
+    // into ScenarioResolved + apply_resolution.
 
     // The investigator has left play — clear their location last, after
     // step 2 deposited clues using `last_location` (step 3 reads
@@ -3214,7 +3214,12 @@ fn take_horror(
 /// Idempotent on subsequent defeats: the predicate becomes true once
 /// and stays true. Callers only invoke it after a status flip, so it
 /// fires exactly once per scenario in practice.
-fn check_all_defeated(state: &GameState, events: &mut Vec<Event>) {
+///
+/// Mutates `state` via the resolution latch (below): on the no-active-
+/// investigator transition it requests [`crate::scenario::Resolution::Lost`]
+/// per Rules Reference p.10 step 6. The `apply` hook turns that latch into
+/// [`Event::ScenarioResolved`] + `apply_resolution`.
+fn check_all_defeated(state: &mut GameState, events: &mut Vec<Event>) {
     let any_active = state
         .investigators
         .values()
@@ -3224,6 +3229,16 @@ fn check_all_defeated(state: &GameState, events: &mut Vec<Event>) {
     // was nobody to defeat in the first place.
     if !any_active && !state.investigators.is_empty() {
         events.push(Event::AllInvestigatorsDefeated);
+        // Rules Reference p.10 step 6: "If there are no remaining players,
+        // the scenario ends. Refer to the 'no resolution was reached'
+        // entry for that scenario." Latch the loss (first-writer-wins, so
+        // an already-fired act/agenda resolution stays authoritative).
+        request_resolution(
+            state,
+            crate::scenario::Resolution::Lost {
+                reason: "no resolution was reached".into(),
+            },
+        );
     }
 }
 
@@ -4948,14 +4963,17 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
                 begin_investigator_turn(state, events, id);
             }
             // None branch: no active investigator can take a turn. Per
-            // Rules Reference p.10 step 6 the scenario ends; #144 fires
-            // AllInvestigatorsDefeated via check_all_defeated, but the
-            // Resolution::Lost consequence (and removing this park) is
-            // #73's resolution-layer work. TODO(#73): end the scenario
-            // here instead of parking. Auto-advancing would loop the
-            // round forever — every other phase auto-skips with no
-            // active investigators, so Investigation is the cascade's
-            // only natural pause point.
+            // Rules Reference p.10 step 6 the scenario ends — that
+            // resolution now fires at the defeat site:
+            // `check_all_defeated` latches `Resolution::Lost` (and emits
+            // `AllInvestigatorsDefeated`), which the `apply` hook turns
+            // into `ScenarioResolved` + `apply_resolution`. So by the
+            // time the cascade would re-enter Investigation with no
+            // active investigator, the loss has already resolved; this
+            // park branch stays as the cascade-breaker (auto-advancing
+            // would loop the round forever — every other phase auto-skips
+            // with no active investigators, so Investigation is the
+            // cascade's only natural pause point).
         }
         // InvestigatorTurnBegins: 2.2.1 — the active investigator now
         // takes actions (Investigate / Move / Fight / Evade / PlayCard /
@@ -8890,6 +8908,34 @@ mod elimination_tests {
             "no surviving co-located investigator => stays unengaged"
         );
         assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn last_investigator_defeated_latches_lost_resolution() {
+        // Single investigator; defeat them and assert the no-remaining-players
+        // resolution latch is set (Rules Reference p.10 step 6).
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.max_sanity = 1;
+        let mut state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .build();
+        let mut events = Vec::new();
+
+        // Apply lethal horror through the standard defeat path.
+        take_horror(&mut state, &mut events, inv, 1);
+
+        assert_event!(events, Event::AllInvestigatorsDefeated);
+        assert!(
+            matches!(
+                state.resolution,
+                Some(crate::scenario::Resolution::Lost { .. })
+            ),
+            "no-remaining-players must latch Lost"
+        );
     }
 
     #[test]
