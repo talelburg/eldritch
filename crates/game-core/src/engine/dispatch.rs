@@ -3211,9 +3211,11 @@ fn take_horror(
 /// silently fails to fire when those paths cause the last `Active`
 /// to fall.
 ///
-/// Idempotent on subsequent defeats: the predicate becomes true once
-/// and stays true. Callers only invoke it after a status flip, so it
-/// fires exactly once per scenario in practice.
+/// Idempotent on subsequent defeats: the predicate becomes true at the
+/// first all-defeated transition and stays true. Callers only invoke it
+/// after a status flip, so the event fires exactly once per scenario in
+/// practice; the resolution latch is likewise transition-bounded
+/// (first-writer-wins).
 ///
 /// Mutates `state` via the resolution latch (below): on the no-active-
 /// investigator transition it requests [`crate::scenario::Resolution::Lost`]
@@ -3231,7 +3233,8 @@ fn check_all_defeated(state: &mut GameState, events: &mut Vec<Event>) {
         events.push(Event::AllInvestigatorsDefeated);
         // Rules Reference p.10 step 6: "If there are no remaining players,
         // the scenario ends. Refer to the 'no resolution was reached'
-        // entry for that scenario." Latch the loss (first-writer-wins, so
+        // entry for that scenario in the campaign guide." Latch the loss
+        // (first-writer-wins, so
         // an already-fired act/agenda resolution stays authoritative).
         request_resolution(
             state,
