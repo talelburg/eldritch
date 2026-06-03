@@ -2945,7 +2945,7 @@ mod tests {
     }
 
     #[test]
-    fn mulligan_after_window_closed_is_rejected() {
+    fn mulligan_after_cursor_cleared_is_rejected() {
         let (id, mut state) = mulligan_scenario();
         state.mulligan_pending = None;
         let result = apply(
