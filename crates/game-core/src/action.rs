@@ -131,12 +131,11 @@ pub enum PlayerAction {
         /// investigator.
         enemy: EnemyId,
     },
-    /// Redraw a subset of an investigator's starting hand. One-shot
-    /// per investigator per scenario; only valid while the engine's
-    /// mulligan window is open. The window opens at `StartScenario`
-    /// and closes once every investigator has `mulligan_used == true`
-    /// (per the Rules Reference: "after all players have completed
-    /// their mulligans, the game begins").
+    /// Setup-only redraw. Valid only when this investigator is the one
+    /// the `mulligan_pending` cursor points at — mulligans happen in
+    /// player order (Rules Reference p.16 / p.27). The cursor is seeded
+    /// at `StartScenario` and advances after each mulligan; when it
+    /// reaches `None` setup ends and the game begins.
     ///
     /// `indices_to_redraw` names zero-based positions in the hand to
     /// redraw. An empty vec is a legal "keep my hand" signal that
@@ -150,8 +149,8 @@ pub enum PlayerAction {
     /// count. An empty mulligan skips both the shuffle and the
     /// redraw — the deck stays untouched.
     Mulligan {
-        /// Investigator mulliganing. Must be `Status::Active` and
-        /// not have already used their mulligan this scenario.
+        /// Investigator mulliganing. Must be the investigator the
+        /// `mulligan_pending` cursor currently points at.
         investigator: InvestigatorId,
         /// Hand indices to redraw; empty = no-op-but-consumes.
         indices_to_redraw: Vec<u8>,

@@ -78,11 +78,6 @@ pub struct Investigator {
     /// at enter-play time so duplicate codes are still individually
     /// addressable.
     pub cards_in_play: Vec<CardInPlay>,
-    /// Whether this investigator has used their one-shot mulligan
-    /// during scenario setup. Set true after a successful Mulligan
-    /// action; remains true for the rest of the scenario so a second
-    /// mulligan rejects.
-    pub mulligan_used: bool,
     /// Cards removed from the game (Rules Reference p.10, "Elimination,"
     /// step 1). When this investigator is eliminated, every card they
     /// control in play (`cards_in_play`) and every card they own in an
@@ -197,7 +192,7 @@ mod removed_from_game_tests {
             "max_health": 8, "damage": 0, "max_sanity": 8, "horror": 0,
             "clues": 0, "resources": 0, "actions_remaining": 3,
             "status": "Active", "deck": [], "hand": [], "discard": [],
-            "cards_in_play": [], "mulligan_used": false
+            "cards_in_play": []
         }"#;
         let inv: Investigator = serde_json::from_str(json).expect("deserialize");
         assert!(inv.removed_from_game.is_empty());

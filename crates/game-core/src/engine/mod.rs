@@ -184,14 +184,15 @@ mod tests {
         assert_eq!(start_result.outcome, EngineOutcome::Done);
         assert_eq!(start_result.state.round, 1);
         assert_eq!(start_result.state.phase, Phase::Investigation);
-        // Mulligan window is open — active investigator not yet set.
-        assert!(
-            start_result.state.mulligan_window,
-            "mulligan window must be open after StartScenario"
+        // Mulligan cursor is seeded — active investigator not yet set.
+        assert_eq!(
+            start_result.state.mulligan_pending,
+            Some(id),
+            "mulligan cursor must be seeded after StartScenario"
         );
         assert_eq!(
             start_result.state.active_investigator, None,
-            "active investigator is not set until mulligan window closes"
+            "active investigator is not set until the mulligan cursor clears"
         );
         assert_eq!(start_result.state.investigators[&id].actions_remaining, 3);
 
@@ -229,7 +230,10 @@ mod tests {
             }),
         );
         assert_eq!(mulligan_result.outcome, EngineOutcome::Done);
-        assert!(!mulligan_result.state.mulligan_window, "window must close");
+        assert_eq!(
+            mulligan_result.state.mulligan_pending, None,
+            "cursor must clear"
+        );
         assert_eq!(
             mulligan_result.state.active_investigator,
             Some(id),
@@ -932,9 +936,10 @@ mod tests {
         let state = result.state;
         assert_eq!(state.round, 1);
         assert_eq!(state.phase, Phase::Investigation);
-        assert!(
-            state.mulligan_window,
-            "mulligan window must be open after StartScenario"
+        assert_eq!(
+            state.mulligan_pending,
+            Some(inv1),
+            "mulligan cursor must be seeded after StartScenario"
         );
         assert_eq!(
             state.active_investigator, None,
@@ -2793,7 +2798,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     /// Build a Mulligan scenario: one investigator with a known hand
-    /// of 5 cards + a remaining deck of 5, mulligan window open.
+    /// of 5 cards + a remaining deck of 5, mulligan cursor seeded.
     /// Bypasses `StartScenario` so tests can control the exact hand
     /// composition.
     fn mulligan_scenario() -> (InvestigatorId, GameState) {
@@ -2816,7 +2821,8 @@ mod tests {
         let state = TestGame::new()
             .with_investigator(inv)
             .with_rng_seed(2026)
-            .with_mulligan_window_open()
+            .with_turn_order([id])
+            .with_mulligan_pending(id)
             .build();
         (id, state)
     }
@@ -2842,7 +2848,6 @@ mod tests {
         let inv = &result.state.investigators[&id];
         assert_eq!(inv.hand.len(), 5);
         assert_eq!(inv.deck.len(), 5);
-        assert!(inv.mulligan_used);
         // h-0, h-2, h-4 stay at relative positions 0/1/2 of the hand
         // (since 1 and 3 got removed, the survivors are in original
         // order at positions 0/1/2). The last 2 hand slots are new
@@ -2875,8 +2880,6 @@ mod tests {
         assert_eq!(inv.hand, original_hand);
         // Deck unchanged (no shuffle happens when nothing moves into it).
         assert_eq!(inv.deck, original_deck);
-        // One-shot consumed.
-        assert!(inv.mulligan_used);
         // No DeckShuffled (deck wasn't touched).
         assert_no_event!(result.events, Event::DeckShuffled { .. });
     }
@@ -2944,7 +2947,7 @@ mod tests {
     #[test]
     fn mulligan_after_window_closed_is_rejected() {
         let (id, mut state) = mulligan_scenario();
-        state.mulligan_window = false;
+        state.mulligan_pending = None;
         let result = apply(
             state,
             Action::Player(PlayerAction::Mulligan {
@@ -2958,13 +2961,26 @@ mod tests {
 
     #[test]
     fn mulligan_by_defeated_investigator_is_rejected() {
-        let (id, mut state) = mulligan_scenario();
-        state.investigators.get_mut(&id).unwrap().status = Status::Killed;
+        // The seed/advance helpers skip non-Active investigators, so the
+        // cursor never points at a defeated one. With inv1 Killed the
+        // cursor sits on inv2; a Mulligan from the defeated inv1 is
+        // rejected by the cursor mismatch.
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut a = test_investigator(1);
+        a.status = Status::Killed;
+        let b = test_investigator(2);
+        let state = TestGame::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .with_turn_order([inv1, inv2])
+            .with_mulligan_pending(inv2)
+            .build();
         let result = apply(
             state,
             Action::Player(PlayerAction::Mulligan {
-                investigator: id,
-                indices_to_redraw: vec![0],
+                investigator: inv1,
+                indices_to_redraw: vec![],
             }),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -3000,7 +3016,7 @@ mod tests {
     }
 
     #[test]
-    fn start_scenario_opens_mulligan_window() {
+    fn start_scenario_seeds_mulligan_cursor() {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.deck = make_test_deck(10);
@@ -3010,13 +3026,13 @@ mod tests {
             .build();
         let result = apply(state, Action::Player(PlayerAction::StartScenario));
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert!(result.state.mulligan_window);
+        assert_eq!(result.state.mulligan_pending, Some(id));
     }
 
     #[test]
-    fn non_mulligan_action_during_mulligan_window_is_rejected() {
+    fn non_mulligan_action_while_mulligan_pending_is_rejected() {
         // Non-Mulligan player actions are gated by the mulligan
-        // window: the engine refuses Move/Investigate/etc. until
+        // cursor: the engine refuses Move/Investigate/etc. until
         // every investigator has signaled their mulligan choice.
         let id = InvestigatorId(1);
         let a = crate::state::LocationId(10);
@@ -3032,7 +3048,8 @@ mod tests {
             .with_location(test_location(11, "B"))
             .with_phase(Phase::Investigation)
             .with_active_investigator(id)
-            .with_mulligan_window_open()
+            .with_turn_order([id])
+            .with_mulligan_pending(id)
             .build();
         let result = apply(
             state,
@@ -3046,10 +3063,10 @@ mod tests {
     }
 
     #[test]
-    fn solo_mulligan_closes_the_window() {
+    fn solo_mulligan_clears_the_cursor() {
         // Single-investigator scenario: as soon as that one
         // investigator mulligans (empty redraw counts), all
-        // investigators have mulliganed and the window closes.
+        // investigators have mulliganed and the cursor clears.
         let (id, state) = mulligan_scenario();
         let result = apply(
             state,
@@ -3059,13 +3076,13 @@ mod tests {
             }),
         );
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert!(!result.state.mulligan_window);
+        assert_eq!(result.state.mulligan_pending, None);
     }
 
     #[test]
-    fn multi_investigator_first_mulligan_keeps_window_open() {
-        // Two investigators; only one mulligans. Window stays open
-        // until the other one also submits Mulligan.
+    fn multi_investigator_mulligan_advances_cursor_in_player_order() {
+        // Two investigators; the cursor advances inv1 → inv2 → None as
+        // each mulligans in player order.
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let mut a = test_investigator(1);
@@ -3075,7 +3092,8 @@ mod tests {
         let state = TestGame::new()
             .with_investigator(a)
             .with_investigator(b)
-            .with_mulligan_window_open()
+            .with_turn_order([inv1, inv2])
+            .with_mulligan_pending(inv1)
             .build();
 
         let after_first = apply(
@@ -3086,9 +3104,7 @@ mod tests {
             }),
         );
         assert_eq!(after_first.outcome, EngineOutcome::Done);
-        assert!(after_first.state.mulligan_window);
-        assert!(after_first.state.investigators[&inv1].mulligan_used);
-        assert!(!after_first.state.investigators[&inv2].mulligan_used);
+        assert_eq!(after_first.state.mulligan_pending, Some(inv2));
 
         let after_second = apply(
             after_first.state,
@@ -3098,14 +3114,14 @@ mod tests {
             }),
         );
         assert_eq!(after_second.outcome, EngineOutcome::Done);
-        assert!(!after_second.state.mulligan_window);
+        assert_eq!(after_second.state.mulligan_pending, None);
     }
 
     #[test]
-    fn multi_investigator_mulligan_order_does_not_matter() {
-        // Same shape as the previous test but with the second
-        // investigator mulliganing first — exercises that the
-        // window-closure predicate is order-independent.
+    fn multi_investigator_mulligan_out_of_order_is_rejected() {
+        // Cursor is on inv1 (first in turn_order). inv2 trying to
+        // mulligan out of turn is rejected, and the cursor is unmoved
+        // (Rules Reference p.16: mulligans in player order).
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let mut a = test_investigator(1);
@@ -3115,25 +3131,20 @@ mod tests {
         let state = TestGame::new()
             .with_investigator(a)
             .with_investigator(b)
-            .with_mulligan_window_open()
+            .with_turn_order([inv1, inv2])
+            .with_mulligan_pending(inv1)
             .build();
 
-        let after_inv2 = apply(
+        let out_of_order = apply(
             state,
             Action::Player(PlayerAction::Mulligan {
                 investigator: inv2,
                 indices_to_redraw: vec![],
             }),
         );
-        assert!(after_inv2.state.mulligan_window);
-        let after_inv1 = apply(
-            after_inv2.state,
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv1,
-                indices_to_redraw: vec![],
-            }),
-        );
-        assert!(!after_inv1.state.mulligan_window);
+        assert!(matches!(out_of_order.outcome, EngineOutcome::Rejected { .. }));
+        assert!(out_of_order.events.is_empty());
+        assert_eq!(out_of_order.state.mulligan_pending, Some(inv1));
     }
 
     #[test]
@@ -3160,7 +3171,8 @@ mod tests {
         let state = TestGame::new()
             .with_investigator(a)
             .with_investigator(b)
-            .with_mulligan_window_open()
+            .with_turn_order([inv1, inv2])
+            .with_mulligan_pending(inv1)
             .with_rng_seed(99)
             .build();
 
@@ -3174,7 +3186,7 @@ mod tests {
             }),
         );
         assert_eq!(after_inv1.outcome, EngineOutcome::Done);
-        assert!(after_inv1.state.mulligan_window); // inv2 hasn't yet
+        assert_eq!(after_inv1.state.mulligan_pending, Some(inv2)); // inv2 hasn't yet
         let inv1_after = &after_inv1.state.investigators[&inv1];
         assert_eq!(inv1_after.hand.len(), 3);
         assert_eq!(inv1_after.deck.len(), 3);
@@ -3195,7 +3207,7 @@ mod tests {
             }),
         );
         assert_eq!(after_inv2.outcome, EngineOutcome::Done);
-        assert!(!after_inv2.state.mulligan_window);
+        assert_eq!(after_inv2.state.mulligan_pending, None);
         assert_event!(
             after_inv2.events,
             Event::MulliganPerformed { investigator, redrawn_count: 0 }
@@ -3205,7 +3217,6 @@ mod tests {
         let inv2_after = &after_inv2.state.investigators[&inv2];
         assert_eq!(inv2_after.hand, original_inv2_hand);
         assert_eq!(inv2_after.deck, original_inv2_deck);
-        assert!(inv2_after.mulligan_used);
     }
 
     // ---- PlayCard rejection tests --------------------------------
@@ -3650,7 +3661,7 @@ mod tests {
     fn non_resolve_input_action_rejects_while_skill_test_paused() {
         // While a test is paused at its commit window, the engine
         // rejects every other player action (mirrors the
-        // mulligan_window guard).
+        // mulligan_pending guard).
         let id = InvestigatorId(1);
         let state = TestGame::new()
             .with_phase(Phase::Investigation)
