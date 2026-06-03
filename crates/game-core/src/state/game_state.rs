@@ -63,14 +63,22 @@ pub struct GameState {
     /// underlying [`rand_chacha::ChaCha8Rng`] is reconstructed on
     /// demand by [`RngState`] methods.
     pub rng: RngState,
-    /// Whether the mulligan setup window is open. Set true at the end
-    /// of [`PlayerAction::StartScenario`](crate::action::PlayerAction::StartScenario)
-    /// processing; cleared once every investigator has
-    /// `mulligan_used == true`. While open, investigators may submit
-    /// [`PlayerAction::Mulligan`](crate::action::PlayerAction::Mulligan)
-    /// to redraw a subset of their starting hand; the engine rejects
-    /// every non-Mulligan player action until the window closes.
-    pub mulligan_window: bool,
+    /// The investigator whose setup mulligan is pending, processed in
+    /// player order (Rules Reference p.16 / p.27: "each player, in
+    /// player order, may mulligan once"). Mirror of
+    /// [`mythos_draw_pending`](Self::mythos_draw_pending):
+    ///
+    /// - Seeded to the first [`Status::Active`](crate::state::Status::Active)
+    ///   investigator in [`turn_order`](Self::turn_order) at
+    ///   [`PlayerAction::StartScenario`](crate::action::PlayerAction::StartScenario).
+    /// - A [`PlayerAction::Mulligan`](crate::action::PlayerAction::Mulligan)
+    ///   is valid only when `mulligan_pending == Some(that investigator)`;
+    ///   on success the cursor advances to the next Active investigator
+    ///   in `turn_order`.
+    /// - `None` once every investigator has mulliganed — at which point
+    ///   setup ends and the Investigation phase begins. While `Some`,
+    ///   the engine rejects every non-Mulligan player action.
+    pub mulligan_pending: Option<InvestigatorId>,
     /// Monotonic counter for assigning [`CardInstanceId`]s when cards
     /// enter play. Starts at 0 and increments after each assignment;
     /// guarantees uniqueness within a scenario and deterministic ids
@@ -104,7 +112,7 @@ pub struct GameState {
     /// with a
     /// [`CommitCards`](crate::action::InputResponse::CommitCards)
     /// response. While set, every non-`ResolveInput` player action
-    /// rejects (mirrors the [`mulligan_window`](Self::mulligan_window)
+    /// rejects (mirrors the [`mulligan_pending`](Self::mulligan_pending)
     /// guard).
     ///
     /// [`SkillTestStarted`]: crate::Event::SkillTestStarted

@@ -50,7 +50,7 @@ pub struct TestGame {
     active_investigator: Option<InvestigatorId>,
     turn_order: Vec<InvestigatorId>,
     rng: RngState,
-    mulligan_window: bool,
+    mulligan_pending: Option<InvestigatorId>,
     open_windows: Vec<OpenWindow>,
     scenario_id: Option<ScenarioId>,
 }
@@ -72,7 +72,7 @@ impl TestGame {
             active_investigator: None,
             turn_order: Vec::new(),
             rng: RngState::new(0),
-            mulligan_window: false,
+            mulligan_pending: None,
             open_windows: Vec::new(),
             scenario_id: None,
         }
@@ -196,13 +196,14 @@ impl TestGame {
         self
     }
 
-    /// Open the mulligan window. By default the window is closed so
-    /// tests don't accidentally exercise Mulligan paths; opt in by
-    /// calling this on the builder when a test wants to fire the
-    /// Mulligan action directly without going through
-    /// `StartScenario`.
-    pub fn with_mulligan_window_open(mut self) -> Self {
-        self.mulligan_window = true;
+    /// Seed the mulligan cursor to `id`. By default the cursor is
+    /// `None` so tests don't accidentally exercise Mulligan paths; opt
+    /// in when a test wants to fire the Mulligan action directly
+    /// without going through `StartScenario`. The investigator must be
+    /// in `turn_order` (set via [`with_turn_order`](Self::with_turn_order))
+    /// for the cursor to advance correctly after the mulligan.
+    pub fn with_mulligan_pending(mut self, id: InvestigatorId) -> Self {
+        self.mulligan_pending = Some(id);
         self
     }
 
@@ -259,7 +260,7 @@ impl TestGame {
             active_investigator: self.active_investigator,
             turn_order: self.turn_order,
             rng: self.rng,
-            mulligan_window: self.mulligan_window,
+            mulligan_pending: self.mulligan_pending,
             next_card_instance_id: 0,
             next_enemy_id: 0,
             pending_skill_modifiers: Vec::new(),

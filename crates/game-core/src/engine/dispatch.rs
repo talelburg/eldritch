@@ -59,22 +59,22 @@ pub fn apply_player_action(
     events: &mut Vec<Event>,
     action: &PlayerAction,
 ) -> EngineOutcome {
-    // While the mulligan window is open, only Mulligan (and the
-    // already-rejected re-StartScenario) is valid. Per the Rules
-    // Reference, "after all players have completed their mulligans,
-    // the game begins" — the engine enforces that by gating other
-    // actions until every investigator has signaled their mulligan
+    // While a mulligan is pending (the setup mulligan cursor is `Some`),
+    // only Mulligan (and the already-rejected re-StartScenario) is valid.
+    // Per the Rules Reference, "after all players have completed their
+    // mulligans, the game begins" — the engine enforces that by gating
+    // other actions until every investigator has signaled their mulligan
     // choice.
-    if state.mulligan_window
+    if state.mulligan_pending.is_some()
         && !matches!(
             action,
             PlayerAction::Mulligan { .. } | PlayerAction::StartScenario
         )
     {
         return EngineOutcome::Rejected {
-            reason: "mulligan window is still open; all investigators must submit \
+            reason: "a setup mulligan is pending; investigators must submit \
                      PlayerAction::Mulligan (with an empty indices_to_redraw to \
-                     keep their hand) before any other action"
+                     keep their hand) in player order before any other action"
                 .into(),
         };
     }
@@ -100,7 +100,7 @@ pub fn apply_player_action(
 
     // While a skill test is paused at its commit window (no reaction
     // window open yet), only `ResolveInput` can advance the engine.
-    // Mirrors the `mulligan_window` guard above.
+    // Mirrors the `mulligan_pending` guard above.
     if state.in_flight_skill_test.is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
@@ -186,16 +186,15 @@ pub fn apply_player_action(
     };
 
     // After a successful Mulligan, check whether every investigator
-    // has now mulliganed. If so, the setup window closes and normal
+    // has now mulliganed. If so, the cursor reaches `None` and normal
     // play begins. Assumes `mulligan()` only ever returns `Done` or
     // `Rejected` (never `AwaitingInput`) — if it ever grows an
-    // input-prompt path, this gate must be revisited so the window
-    // doesn't silently stay open across a partial mulligan.
+    // input-prompt path, this gate must be revisited so the cursor
+    // doesn't silently stay set across a partial mulligan.
     if matches!(outcome, EngineOutcome::Done)
         && matches!(action, PlayerAction::Mulligan { .. })
-        && state.investigators.values().all(|inv| inv.mulligan_used)
+        && state.mulligan_pending.is_none()
     {
-        state.mulligan_window = false;
         // Setup complete — "the game begins" (Rules Reference p.27).
         // Round 1 skips the Mythos phase (p.24), so the first phase to
         // begin is Investigation. Kick off its driver HERE, not in
@@ -891,12 +890,14 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
         draw_cards(state, events, inv_id, INITIAL_HAND_SIZE);
     }
 
-    // Open the mulligan window. Each investigator may now submit a
-    // single `PlayerAction::Mulligan` to redraw a subset of their
-    // starting hand. The window closes once every investigator has
-    // `mulligan_used == true` (see `apply_player_action`); other
-    // player actions are rejected until then.
-    state.mulligan_window = true;
+    // Seed the mulligan cursor to the first Active investigator in
+    // player order. Each investigator submits a single
+    // `PlayerAction::Mulligan` in turn; the cursor advances after each
+    // and reaches `None` once all have gone (see `apply_player_action`),
+    // at which point setup ends. Other player actions are rejected while
+    // the cursor is `Some`. An empty/all-eliminated `turn_order` seeds
+    // `None` — the same degenerate no-op as the Mythos draw cursor.
+    state.mulligan_pending = first_active_investigator(state);
 
     // Round-1 action seed: round 1 skips Mythos, so there's no Upkeep 4.2
     // to grant the first round's actions. Every Active investigator → ACTIONS_PER_TURN.
@@ -904,7 +905,7 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
 
     // NOTE: the Investigation phase is NOT begun here. Setup has no
     // action windows (Rules Reference p.27); the phase begins after the
-    // mulligan window closes — see the kickoff in apply_player_action.
+    // mulligan cursor reaches `None` — see the kickoff in apply_player_action.
     EngineOutcome::Done
 }
 
@@ -4039,14 +4040,15 @@ fn draw(
 /// Handler for [`PlayerAction::Mulligan`].
 ///
 /// Per the Rules Reference, the redrawn cards shuffle directly back
-/// into the deck (not via the discard pile). Validates the mulligan
-/// window is open, the investigator is Active and hasn't already
-/// mulliganed, and the redraw indices are in bounds and unique.
+/// into the deck (not via the discard pile). Validates that it is this
+/// investigator's turn to mulligan (`mulligan_pending == Some(investigator)`,
+/// Rules Reference p.16 player order) and that the redraw indices are in
+/// bounds and unique.
 ///
 /// On success: move named hand cards to the deck, shuffle, draw the
-/// same count back, set `mulligan_used = true`, emit
-/// `MulliganPerformed`. An empty `indices_to_redraw` is a legal
-/// "keep my hand" mulligan that consumes the one-shot without
+/// same count back, advance `mulligan_pending` to the next investigator
+/// in player order, emit `MulliganPerformed`. An empty `indices_to_redraw`
+/// is a legal "keep my hand" mulligan that consumes the turn without
 /// touching the deck.
 fn mulligan(
     state: &mut GameState,
@@ -4054,32 +4056,25 @@ fn mulligan(
     investigator: InvestigatorId,
     indices_to_redraw: &[u8],
 ) -> EngineOutcome {
-    if !state.mulligan_window {
-        return EngineOutcome::Rejected {
-            reason: "Mulligan: setup window has closed (every investigator has already \
-                     mulliganed and normal play has begun)"
-                .into(),
-        };
-    }
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return EngineOutcome::Rejected {
-            reason: format!("Mulligan: investigator {investigator:?} is not in state").into(),
-        };
-    };
-    if inv.status != Status::Active {
+    // One check subsumes the three old ones: the cursor only ever holds
+    // an Active `turn_order` id, so a mismatch covers setup-over (`None`),
+    // wrong-player / too-early, and already-went (cursor moved past you).
+    if state.mulligan_pending != Some(investigator) {
         return EngineOutcome::Rejected {
             reason: format!(
-                "Mulligan: {investigator:?} is not Active (status {:?})",
-                inv.status,
+                "Mulligan: it is not {investigator:?}'s turn to mulligan \
+                 (pending: {:?})",
+                state.mulligan_pending,
             )
             .into(),
         };
     }
-    if inv.mulligan_used {
-        return EngineOutcome::Rejected {
-            reason: format!("Mulligan: {investigator:?} has already used their mulligan").into(),
-        };
-    }
+    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "mulligan_pending {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+    });
     // Validate indices: each must be in bounds and unique.
     let hand_len = inv.hand.len();
     for &idx in indices_to_redraw {
@@ -4109,7 +4104,6 @@ fn mulligan(
         let card = inv_mut.hand.remove(i);
         inv_mut.deck.push(card);
     }
-    inv_mut.mulligan_used = true;
     // If anything actually moved, shuffle the deck (which now contains
     // the redrawn cards mixed with the rest) and draw replacements.
     // For an empty "keep my hand" mulligan, skip both — there's
@@ -4122,6 +4116,10 @@ fn mulligan(
         investigator,
         redrawn_count,
     });
+    // Advance to the next Active investigator in player order (or `None`
+    // when this was the last). The completion check in
+    // `apply_player_action` keys off `None` to end setup.
+    state.mulligan_pending = next_active_investigator_after(state, investigator);
     EngineOutcome::Done
 }
 
@@ -6086,9 +6084,7 @@ mod investigation_phase_tests {
             .build();
         state.turn_order = vec![InvestigatorId(1)];
         state.active_investigator = None;
-        state.mulligan_window = true;
-        // test_investigator(1) already defaults mulligan_used = false; this
-        // sets up the "about to complete the last mulligan" state.
+        state.mulligan_pending = Some(InvestigatorId(1));
 
         let mut events = Vec::new();
         let outcome = apply_player_action(
@@ -6101,9 +6097,9 @@ mod investigation_phase_tests {
         );
 
         assert!(matches!(outcome, EngineOutcome::Done));
-        assert!(
-            !state.mulligan_window,
-            "mulligan window closes once every investigator has mulliganed"
+        assert_eq!(
+            state.mulligan_pending, None,
+            "mulligan cursor clears once every investigator has mulliganed"
         );
         assert_eq!(
             state.active_investigator,
