@@ -21,7 +21,7 @@
 //!
 //! # Replay safety
 //!
-//! The active scenario id (added to `GameState` in a later commit) is
+//! The active scenario id on `GameState` is
 //! a serializable [`ScenarioId`]; function pointers are not
 //! serializable. On reload, the host re-installs `REGISTRY` and the
 //! engine looks the module up by id — the action log replays

@@ -44,9 +44,9 @@ pub enum PlayerAction {
     StartScenario,
     /// Active investigator ends their turn during the Investigation phase.
     EndTurn,
-    /// Spend clues to advance the current act (Rules Reference p.3:
-    /// "spend the requisite number of clues … normally a Fast player
-    /// ability").
+    /// Spend clues to advance the current act. Rules Reference p.3:
+    /// "spend the requisite number of clues" — "normally done as a
+    /// \[Fast\] player ability".
     ///
     /// **Prototype.** Built minimally for the Phase-4 synthetic demo: a
     /// flat `clue_threshold`, a single-step spend with a deterministic

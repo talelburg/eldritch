@@ -132,10 +132,11 @@ pub struct GameState {
     ///
     /// `None` for tests and fixtures that don't care about scenario
     /// resolution; in that case the engine's post-apply resolution
-    /// hook short-circuits. `Some(id)` is the normal case: the
+    /// hook short-circuits. `Some(id)` is the normal case: on a
+    /// `None`→`Some` [`resolution`](Self::resolution) latch transition the
     /// engine looks up the module via
     /// [`scenario_registry::current`](crate::scenario_registry::current)
-    /// and asks it whether the new state has resolved.
+    /// and runs its `apply_resolution`.
     ///
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.
@@ -214,9 +215,8 @@ pub struct GameState {
     /// fires; set by `request_resolution` at the act/agenda resolution
     /// point or the no-remaining-players elimination step. The
     /// `apply` hook detects the `None`→`Some` transition to emit
-    /// `Event::ScenarioResolved` (added in Task 2) and run
-    /// `apply_resolution` exactly once (the idempotency guard formerly
-    /// tracked as #131).
+    /// `Event::ScenarioResolved` and run `apply_resolution` exactly once
+    /// (the idempotency guard formerly tracked as #131).
     pub resolution: Option<crate::scenario::Resolution>,
 }
 

@@ -1183,9 +1183,9 @@ fn advance_act_action(
 /// `turn_order`. Callers must have already validated the group holds at
 /// least `amount` clues, so the spend always completes.
 ///
-/// TODO(#73 follow-up — Phase 8): let players choose who contributes
-/// when the group holds a surplus (an `AwaitingInput` allocation prompt).
-/// The fixed order here is outcome-equivalent single-player.
+/// TODO(#153): let players choose who contributes when the group holds a
+/// surplus (an `AwaitingInput` allocation prompt). The fixed order here is
+/// outcome-equivalent single-player.
 fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
     let mut remaining = amount;
     for id in clue_contributors(state, acting) {
@@ -1226,6 +1226,11 @@ fn advance_act(state: &mut GameState, events: &mut Vec<Event>) {
 /// ignored. The `apply` hook (in `engine::mod`) observes the `None`→`Some`
 /// transition to emit [`Event::ScenarioResolved`] and run the scenario
 /// module's `apply_resolution` exactly once.
+///
+/// Call this only after a handler's validations pass: on a `Rejected`
+/// outcome `apply` clears events but does not roll back `state`, so a
+/// latch set on a doomed path would persist. All current callers latch
+/// only on their success branches.
 fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
     if state.resolution.is_none() {
         state.resolution = Some(resolution);
@@ -3232,10 +3237,10 @@ fn check_all_defeated(state: &mut GameState, events: &mut Vec<Event>) {
     if !any_active && !state.investigators.is_empty() {
         events.push(Event::AllInvestigatorsDefeated);
         // Rules Reference p.10 step 6: "If there are no remaining players,
-        // the scenario ends. Refer to the 'no resolution was reached'
-        // entry for that scenario in the campaign guide." Latch the loss
-        // (first-writer-wins, so
-        // an already-fired act/agenda resolution stays authoritative).
+        // the scenario ends. Refer to 'no resolution was reached' entry
+        // for that scenario in the campaign guide." Latch the loss
+        // (first-writer-wins, so an already-fired act/agenda resolution
+        // stays authoritative).
         request_resolution(
             state,
             crate::scenario::Resolution::Lost {
