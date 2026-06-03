@@ -14,10 +14,10 @@ use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{
-    ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::{assert_event, Action, InputResponse, PlayerAction};
-use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
+use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, SYNTH_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::REGISTRY;
 
 static INSTALL: Once = Once::new();
@@ -141,5 +141,73 @@ fn won_walk_full_cycle_replays_identically() {
     assert_eq!(
         final_state, replayed,
         "Won walk must replay identically across a serialize round-trip",
+    );
+}
+
+#[test]
+fn lost_walk_spawn_attack_doom_replays_identically() {
+    install_registry();
+    let inv = InvestigatorId(1);
+
+    // setup() + place the investigator at the demo location so the
+    // spawn-bearing enemy can engage on arrival, then seed the encounter
+    // deck with the enemy on top so the first Mythos draw spawns it.
+    let make_initial = || {
+        let mut s = scenarios::test_fixtures::synthetic::setup();
+        s.investigators.get_mut(&inv).unwrap().current_location = Some(LocationId(10));
+        scenarios::test_fixtures::synthetic::with_encounter_deck(
+            &mut s,
+            vec![
+                CardCode(SYNTH_ENEMY_CODE.into()),
+                CardCode(SYNTH_TREACHERY_CODE.into()),
+            ],
+        );
+        s
+    };
+
+    // Setup + close mulligan, then drive an EndTurn cascade, drawing only
+    // when a Mythos draw is pending and breaking on resolution. Record the
+    // realized action log so the round-trip replays exactly what ran.
+    let mut log = vec![
+        Action::Player(PlayerAction::StartScenario),
+        Action::Player(PlayerAction::Mulligan { investigator: inv, indices_to_redraw: vec![] }),
+    ];
+    let (mut state, mut events) = drive(make_initial(), &log);
+
+    for _ in 0..12 {
+        let act = Action::Player(PlayerAction::EndTurn);
+        log.push(act.clone());
+        let r = apply(state, act);
+        events.extend(r.events);
+        state = r.state;
+        if state.resolution.is_some() {
+            break;
+        }
+        if state.mythos_draw_pending.is_some() {
+            let act = Action::Player(PlayerAction::DrawEncounterCard);
+            log.push(act.clone());
+            let r = apply(state, act);
+            events.extend(r.events);
+            state = r.state;
+            if state.resolution.is_some() {
+                break;
+            }
+        }
+    }
+
+    // Enemy spawned, engaged, and attacked (proven by EnemyExhausted —
+    // the synthetic enemy deals 0 damage, so no DamageTaken fires).
+    assert_event!(events, Event::EnemySpawned { code, .. } if code.0 == SYNTH_ENEMY_CODE);
+    assert_event!(events, Event::EnemyEngaged { investigator, .. } if *investigator == inv);
+    assert_event!(events, Event::EnemyExhausted { .. });
+    // Doom advanced the agenda and then latched the loss.
+    assert_event!(events, Event::AgendaAdvanced { from } if *from == 0);
+    assert_event!(events, Event::ScenarioResolved { resolution: Resolution::Lost { .. } });
+    assert!(matches!(state.resolution, Some(Resolution::Lost { .. })));
+
+    let replayed = replay_with_roundtrip(make_initial, &log);
+    assert_eq!(
+        state, replayed,
+        "Lost walk must replay identically across a serialize round-trip",
     );
 }
