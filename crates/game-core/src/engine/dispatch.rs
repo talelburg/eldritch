@@ -7132,7 +7132,7 @@ mod upkeep_phase_tests {
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
-    use crate::assert_event;
+    use crate::{assert_event, assert_event_sequence};
 
     #[test]
     fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
@@ -7246,19 +7246,12 @@ mod upkeep_phase_tests {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.exhausted = true; // exhausted + disengaged, e.g. survived a successful Evade
         enemy.current_location = Some(LocationId(10));
-        enemy.engaged_with = None;
         let mut state = TestGame::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator_at(test_investigator(1), LocationId(10))
             .with_location(loc)
             .with_enemy(enemy)
             .with_turn_order([inv_id])
             .build();
-        // Co-locate the investigator with the enemy.
-        state
-            .investigators
-            .get_mut(&inv_id)
-            .unwrap()
-            .current_location = Some(LocationId(10));
         let mut events = Vec::new();
 
         ready_exhausted_cards(&mut state, &mut events);
@@ -7271,6 +7264,11 @@ mod upkeep_phase_tests {
         );
         assert_event!(events, Event::EnemyReadied { enemy } if *enemy == enemy_id);
         assert_event!(events, Event::EnemyEngaged { investigator, .. } if *investigator == inv_id);
+        assert_event_sequence!(
+            events,
+            Event::EnemyReadied { .. },
+            Event::EnemyEngaged { .. },
+        );
     }
 
     #[test]
