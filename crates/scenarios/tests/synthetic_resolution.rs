@@ -22,6 +22,7 @@ use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{GameState, InvestigatorId, Phase};
 use game_core::{assert_event, Action, PlayerAction};
+use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::REGISTRY;
 
 static INSTALL: Once = Once::new();
@@ -29,6 +30,10 @@ static INSTALL: Once = Once::new();
 fn install_registry() {
     INSTALL.call_once(|| {
         let _ = game_core::scenario_registry::install(REGISTRY);
+        // The Lost-via-doom test draws the synthetic encounter card during
+        // Mythos step 1.4, which resolves against the card registry; install
+        // the synthetic `TEST_REGISTRY` so the on-draw effect resolves.
+        let _ = game_core::card_registry::install(TEST_REGISTRY);
     });
 }
 
@@ -80,4 +85,61 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
         Event::ScenarioResolved { resolution: Resolution::Won { id } } if id == "demo"
     );
     assert!(state.resolution.is_some());
+}
+
+#[test]
+fn synthetic_scenario_resolves_lost_via_doom() {
+    install_registry();
+    let inv = InvestigatorId(1);
+    let mut base = scenarios::test_fixtures::synthetic::setup();
+    base.encounter_discard.clear();
+
+    // Setup + close mulligan -> Investigation, round 1.
+    let (mut state, _) = drive(
+        base,
+        vec![
+            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::Mulligan {
+                investigator: inv,
+                indices_to_redraw: vec![],
+            }),
+        ],
+    );
+
+    // Each round: EndTurn cascades into Mythos, which adds doom (and may
+    // advance the agenda) before pausing at step 1.4 for the encounter
+    // draw; DrawEncounterCard then resolves the draw and completes Mythos
+    // back to Investigation. The EndTurn that enters the round whose Mythos
+    // crosses the terminal agenda's threshold latches Lost at step 1.3
+    // (before the 1.4 draw pause), firing ScenarioResolved on that apply.
+    //
+    // Break-on-resolution rather than a fixed count: tolerates cadence
+    // drift and only draws when a Mythos draw is actually pending.
+    let mut all_events = Vec::new();
+    for _ in 0..12 {
+        let r1 = apply(state, Action::Player(PlayerAction::EndTurn));
+        all_events.extend(r1.events);
+        state = r1.state;
+        if state.resolution.is_some() {
+            break;
+        }
+        if state.mythos_draw_pending.is_some() {
+            let r2 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+            all_events.extend(r2.events);
+            state = r2.state;
+            if state.resolution.is_some() {
+                break;
+            }
+        }
+    }
+
+    // Agenda 0 advanced once, then the terminal agenda latched Lost via doom.
+    assert_event!(all_events, Event::AgendaAdvanced { from } if *from == 0);
+    assert_event!(
+        all_events,
+        Event::ScenarioResolved {
+            resolution: Resolution::Lost { .. }
+        }
+    );
+    assert!(matches!(state.resolution, Some(Resolution::Lost { .. })));
 }
