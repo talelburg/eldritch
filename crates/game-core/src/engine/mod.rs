@@ -3142,7 +3142,10 @@ mod tests {
                 indices_to_redraw: vec![],
             }),
         );
-        assert!(matches!(out_of_order.outcome, EngineOutcome::Rejected { .. }));
+        assert!(matches!(
+            out_of_order.outcome,
+            EngineOutcome::Rejected { .. }
+        ));
         assert!(out_of_order.events.is_empty());
         assert_eq!(out_of_order.state.mulligan_pending, Some(inv1));
     }
