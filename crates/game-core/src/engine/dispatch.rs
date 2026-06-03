@@ -7132,7 +7132,7 @@ mod upkeep_phase_tests {
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
-    use crate::{assert_event, assert_event_sequence};
+    use crate::{assert_event, assert_event_sequence, assert_no_event};
 
     #[test]
     fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
@@ -7287,6 +7287,56 @@ mod upkeep_phase_tests {
             events.is_empty(),
             "no readying events for already-ready cards"
         );
+    }
+
+    #[test]
+    fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
+        let enemy_id = EnemyId(1);
+        let inv_id = InvestigatorId(1);
+        let loc = test_location(10, "Synth Loc");
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.exhausted = true;
+        enemy.current_location = Some(LocationId(10));
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1)) // current_location stays None — NOT co-located
+            .with_location(loc)
+            .with_enemy(enemy)
+            .with_turn_order([inv_id])
+            .build();
+        let mut events = Vec::new();
+
+        ready_exhausted_cards(&mut state, &mut events);
+
+        assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
+        assert_eq!(
+            state.enemies[&enemy_id].engaged_with, None,
+            "no investigator at the enemy's location → no engagement"
+        );
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
+        let enemy_id = EnemyId(1);
+        let inv_id = InvestigatorId(1);
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.exhausted = true; // exhausted but still engaged (e.g. attacked last Enemy phase)
+        enemy.engaged_with = Some(inv_id);
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        let mut events = Vec::new();
+
+        ready_exhausted_cards(&mut state, &mut events);
+
+        assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
+        assert_eq!(
+            state.enemies[&enemy_id].engaged_with,
+            Some(inv_id),
+            "an already-engaged enemy keeps its engagement"
+        );
+        assert_no_event!(events, Event::EnemyEngaged { .. });
     }
 
     #[test]
