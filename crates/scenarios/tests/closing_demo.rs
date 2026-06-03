@@ -10,7 +10,7 @@
 
 use std::sync::Once;
 
-use game_core::engine::apply;
+use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{
@@ -31,11 +31,18 @@ fn install_registry() {
 
 /// Apply `actions` in order from `initial`, concatenating all emitted
 /// events. The log includes explicit `ResolveInput { CommitCards }` steps
-/// for each skill-test commit window, so no action is silently skipped.
+/// for each skill-test commit window. Asserts no action is `Rejected` so
+/// a mis-ordered log fails loudly here (naming the offending action)
+/// rather than surfacing later as a confusing "event not found".
 fn drive(mut state: GameState, actions: &[Action]) -> (GameState, Vec<Event>) {
     let mut events = Vec::new();
     for a in actions {
         let r = apply(state, a.clone());
+        assert!(
+            !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+            "action {a:?} was rejected: {:?}",
+            r.outcome,
+        );
         events.extend(r.events);
         state = r.state;
     }
@@ -47,6 +54,11 @@ fn drive(mut state: GameState, actions: &[Action]) -> (GameState, Vec<Event>) {
 /// then continue. Returns the round-tripped final state. Proves both
 /// replay determinism (seeded `state.rng` reproduces draws) and serde
 /// round-trip fidelity (the property Phase 5's persistence depends on).
+///
+/// The midpoint split lands mid-walk, often inside an active skill-test
+/// commit window (`in_flight_skill_test` is `Some`), so this also
+/// exercises serde of the paused-engine state — not just a phase
+/// boundary.
 fn replay_with_roundtrip(make_initial: impl Fn() -> GameState, log: &[Action]) -> GameState {
     let split = log.len() / 2;
     let mut state = make_initial();
@@ -111,6 +123,7 @@ fn won_walk_full_cycle_replays_identically() {
 
     // Cycled all four phases across the two rounds.
     assert_event!(events, Event::PhaseEnded { phase } if *phase == Phase::Investigation);
+    assert_event!(events, Event::PhaseStarted { phase } if *phase == Phase::Enemy);
     assert_event!(events, Event::PhaseStarted { phase } if *phase == Phase::Upkeep);
     assert_event!(events, Event::PhaseStarted { phase } if *phase == Phase::Mythos);
     // Investigation discovered clues; the act advanced; the scenario was won.
