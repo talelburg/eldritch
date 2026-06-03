@@ -4693,6 +4693,11 @@ fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
 /// iterate deterministically (investigator id then in-play order; then
 /// enemy id) for reproducible event streams. Already-ready cards emit
 /// nothing.
+///
+/// After readying, each enemy that became ready while unengaged and
+/// co-located with an investigator engages it via [`reengage_at_location`]
+/// (Rules Reference p.10: "if an exhausted enemy at the same location as an
+/// investigator becomes ready, it engages as soon as it is readied").
 fn ready_exhausted_cards(state: &mut GameState, events: &mut Vec<Event>) {
     let inv_ids: Vec<InvestigatorId> = state.investigators.keys().copied().collect();
     for id in inv_ids {
@@ -4709,11 +4714,25 @@ fn ready_exhausted_cards(state: &mut GameState, events: &mut Vec<Event>) {
         }
     }
     let enemy_ids: Vec<EnemyId> = state.enemies.keys().copied().collect();
+    let mut newly_readied: Vec<EnemyId> = Vec::new();
     for eid in enemy_ids {
         let enemy = state.enemies.get_mut(&eid).expect("id from keys");
         if enemy.exhausted {
             enemy.exhausted = false;
             events.push(Event::EnemyReadied { enemy: eid });
+            newly_readied.push(eid);
+        }
+    }
+    // RR p.10: "if an exhausted enemy at the same location as an investigator
+    // becomes ready, it engages as soon as it is readied." Runs after the
+    // (simultaneous, RR p.25) readying pass. Only newly-readied enemies are
+    // checked ("becomes ready"), and only those still unengaged —
+    // reengage_at_location's precondition is engaged_with == None, so an enemy
+    // that readied while still engaged keeps its existing engagement.
+    // newly_readied is in ascending EnemyId order (BTreeMap key order).
+    for eid in newly_readied {
+        if state.enemies[&eid].engaged_with.is_none() {
+            reengage_at_location(state, events, eid);
         }
     }
 }
@@ -7110,9 +7129,10 @@ mod upkeep_phase_tests {
     use crate::engine::{apply, EngineOutcome};
     use crate::event::Event;
     use crate::state::{
-        CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Phase, Status,
+        CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::{test_enemy, test_investigator, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::assert_event;
 
     #[test]
     fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
@@ -7216,6 +7236,41 @@ mod upkeep_phase_tests {
             if *investigator == inv_id && *instance_id == CardInstanceId(1))));
         assert!(events.iter().any(|e| matches!(
             e, Event::EnemyReadied { enemy } if *enemy == enemy_id)));
+    }
+
+    #[test]
+    fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
+        let inv_id = InvestigatorId(1);
+        let enemy_id = EnemyId(1);
+        let loc = test_location(10, "Synth Loc");
+        let mut enemy = test_enemy(1, "Test Enemy");
+        enemy.exhausted = true; // exhausted + disengaged, e.g. survived a successful Evade
+        enemy.current_location = Some(LocationId(10));
+        enemy.engaged_with = None;
+        let mut state = TestGame::default()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .with_enemy(enemy)
+            .with_turn_order([inv_id])
+            .build();
+        // Co-locate the investigator with the enemy.
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .current_location = Some(LocationId(10));
+        let mut events = Vec::new();
+
+        ready_exhausted_cards(&mut state, &mut events);
+
+        assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
+        assert_eq!(
+            state.enemies[&enemy_id].engaged_with,
+            Some(inv_id),
+            "readied enemy re-engages the co-located investigator (RR p.10)"
+        );
+        assert_event!(events, Event::EnemyReadied { enemy } if *enemy == enemy_id);
+        assert_event!(events, Event::EnemyEngaged { investigator, .. } if *investigator == inv_id);
     }
 
     #[test]
