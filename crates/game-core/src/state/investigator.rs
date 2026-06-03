@@ -29,7 +29,7 @@ pub struct InvestigatorId(pub u32);
 ///   should filter by status.
 ///
 /// [`Event::InvestigatorDefeated`]: crate::event::Event::InvestigatorDefeated
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Investigator {
     /// Stable identifier within this scenario.

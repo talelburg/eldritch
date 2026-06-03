@@ -13,7 +13,7 @@ pub struct LocationId(pub u32);
 /// Phase-1 minimal shape; later phases will add e.g. encounter-set
 /// affiliation, victory points, location-specific effects, and
 /// hidden-information state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Location {
     /// Stable identifier within this scenario.

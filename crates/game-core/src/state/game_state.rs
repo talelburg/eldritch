@@ -30,7 +30,7 @@ use crate::rng::RngState;
 /// equality — and gives O(log n) lookup. Turn order is tracked
 /// separately in [`turn_order`](Self::turn_order); the storage map's
 /// iteration order is *not* turn order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct GameState {
     /// All investigators currently in the scenario, keyed by ID.
@@ -237,7 +237,7 @@ pub struct GameState {
 /// Deliberately NOT `#[non_exhaustive]`: scenario setup in the
 /// `scenarios` crate constructs these with struct literals, which a
 /// `#[non_exhaustive]` struct forbids cross-crate.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Agenda {
     /// Total doom in play required to advance (Rules Reference p.24
     /// step 1.3). Flat value only for now; per-investigator scaling
@@ -254,7 +254,7 @@ pub struct Agenda {
 /// spend to advance it, and its `(→R#)` resolution point (if any). Not
 /// `#[non_exhaustive]` for the same cross-crate-construction reason as
 /// [`Agenda`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Act {
     /// Clues the investigators must spend to advance (Rules Reference
     /// p.3). Flat value only for now.
@@ -1049,5 +1049,16 @@ mod hunter_pending_tests {
         let json = serde_json::to_string(&original).expect("serialize");
         let back: SpawnEngagePending = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
+    }
+}
+
+#[cfg(test)]
+mod partial_eq_tests {
+    use super::*;
+
+    #[test]
+    fn game_state_is_partial_eq() {
+        fn assert_partial_eq<T: PartialEq>() {}
+        assert_partial_eq::<GameState>();
     }
 }
