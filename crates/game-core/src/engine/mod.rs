@@ -78,11 +78,11 @@ pub fn apply(state: GameState, action: Action) -> ApplyResult {
 /// resolution hook against a locally-constructed mock registry
 /// without touching the process-global `OnceLock`.
 ///
-/// The same `Done`-only firing rule applies regardless of how the
-/// registry is supplied: a `Rejected` outcome clears events and
-/// skips the hook; an `AwaitingInput` outcome means the engine is
-/// paused mid-resolution and the scenario module would see a
-/// potentially inconsistent state, so the hook is skipped there too.
+/// The same firing rule applies regardless of how the registry is
+/// supplied: a `Rejected` outcome clears events and skips the hook;
+/// any non-`Rejected` outcome (`Done` or `AwaitingInput`) fires the
+/// hook iff the resolution latch newly transitioned `None`->`Some`
+/// this apply.
 pub fn apply_with_scenario_registry(
     state: GameState,
     action: Action,
@@ -90,6 +90,7 @@ pub fn apply_with_scenario_registry(
 ) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
+    let resolution_already_fired = state.resolution.is_some();
     let outcome = match action {
         Action::Player(p) => dispatch::apply_player_action(&mut state, &mut events, &p),
         Action::Engine(e) => dispatch::apply_engine_record(&mut state, &mut events, &e),
@@ -99,7 +100,13 @@ pub fn apply_with_scenario_registry(
         // mutating, so events should already be empty here. Clear
         // anyway in case a handler accidentally pushed before bailing.
         events.clear();
-    } else if matches!(outcome, EngineOutcome::Done) {
+    } else if !resolution_already_fired {
+        // A dispatch site may have latched a resolution this apply (act/
+        // agenda resolution point, or no-remaining-players elimination).
+        // Fire the module hook exactly once, on the None->Some transition.
+        // Runs on Done AND AwaitingInput — a resolution can latch during
+        // an apply that pauses (e.g. doom crosses the threshold in Mythos
+        // 1.3 before the 1.4 draw pause).
         fire_scenario_resolution(&mut state, &mut events, registry);
     }
     ApplyResult {
@@ -109,22 +116,27 @@ pub fn apply_with_scenario_registry(
     }
 }
 
-/// Post-dispatch hook: if the state belongs to a scenario whose
-/// module is resolvable in `registry`, ask it whether the new state
-/// has resolved. On `Some(res)`, emit
-/// [`Event::ScenarioResolved`] and call the module's
-/// `apply_resolution`.
+/// Post-dispatch hook: if a dispatch site latched a resolution this apply
+/// (`state.resolution` went `None`->`Some`), emit [`Event::ScenarioResolved`]
+/// and run the active scenario module's `apply_resolution`. The caller
+/// guards the `None`->`Some` transition (it reads `state.resolution.is_some()`
+/// *before* dispatch), so this fires exactly once per scenario.
 ///
-/// Idempotency note: there is no engine-side latch on whether a
-/// resolution has already fired. A scenario whose `detect_resolution`
-/// keeps returning `Some` will keep emitting `ScenarioResolved` on
-/// every subsequent apply. Phase 9 adds the guard alongside the
-/// first non-trivial `apply_resolution` body — tracked as #131.
+/// Short-circuits when no resolution latched. The `ScenarioResolved` event
+/// is a property of engine state, so it fires even when no module is
+/// registered (or `scenario_id` is `None`); only `apply_resolution` needs
+/// the registry/module.
 fn fire_scenario_resolution(
     state: &mut GameState,
     events: &mut Vec<Event>,
     registry: Option<&ScenarioRegistry>,
 ) {
+    let Some(resolution) = state.resolution.clone() else {
+        return;
+    };
+    events.push(Event::ScenarioResolved {
+        resolution: resolution.clone(),
+    });
     let Some(id) = state.scenario_id.as_ref() else {
         return;
     };
@@ -132,12 +144,6 @@ fn fire_scenario_resolution(
     let Some(module) = (reg.module_for)(id) else {
         return;
     };
-    let Some(resolution) = (module.detect_resolution)(state) else {
-        return;
-    };
-    events.push(Event::ScenarioResolved {
-        resolution: resolution.clone(),
-    });
     (module.apply_resolution)(&resolution, state, events);
 }
 
@@ -3743,76 +3749,72 @@ mod tests {
     }
 
     use crate::scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
+    use crate::state::Act;
 
-    /// Mock scenario module that always returns `Won { id: "test" }`.
-    // Must match the `detect_resolution` fn-pointer type even though
-    // it always returns Some; the allow keeps clippy from suggesting
-    // we change the signature.
-    #[allow(clippy::unnecessary_wraps)]
-    fn always_wins(_state: &crate::state::GameState) -> Option<Resolution> {
-        Some(Resolution::Won { id: "test".into() })
+    /// `apply_resolution` that records it ran by stamping the acting
+    /// investigator's resources to a sentinel value, so tests can assert
+    /// the module hook (not just the event) fired.
+    fn stamp_apply(
+        _res: &Resolution,
+        state: &mut crate::state::GameState,
+        _events: &mut Vec<Event>,
+    ) {
+        if let Some(inv) = state.investigators.values_mut().next() {
+            inv.resources = 99;
+        }
     }
 
-    /// Mock scenario module that never resolves.
-    fn never_resolves(_state: &crate::state::GameState) -> Option<Resolution> {
-        None
-    }
-
-    /// Empty setup; tests build state via `TestGame`.
     fn unused_setup() -> crate::state::GameState {
         TestGame::new().build()
     }
 
-    /// No-op `apply_resolution`; tests assert on the emitted event only.
-    fn no_op_apply(
-        _res: &Resolution,
-        _state: &mut crate::state::GameState,
-        _events: &mut Vec<Event>,
-    ) {
-    }
-
-    static ALWAYS_WINS_MODULE: ScenarioModule = ScenarioModule {
+    static STAMP_MODULE: ScenarioModule = ScenarioModule {
         setup: unused_setup,
-        detect_resolution: always_wins,
-        apply_resolution: no_op_apply,
+        apply_resolution: stamp_apply,
     };
 
-    static NEVER_RESOLVES_MODULE: ScenarioModule = ScenarioModule {
-        setup: unused_setup,
-        detect_resolution: never_resolves,
-        apply_resolution: no_op_apply,
-    };
-
-    fn always_wins_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
-        if id.as_str() == "wins" {
-            Some(&ALWAYS_WINS_MODULE)
+    fn stamp_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
+        if id.as_str() == "stamp" {
+            Some(&STAMP_MODULE)
         } else {
             None
         }
     }
 
-    fn never_resolves_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
-        if id.as_str() == "neutral" {
-            Some(&NEVER_RESOLVES_MODULE)
-        } else {
-            None
+    /// Build an Investigation-phase state whose current (only) act is
+    /// terminal and whose investigator holds exactly enough clues to
+    /// advance it — so a single `AdvanceAct` latches `Won`.
+    fn terminal_act_state(scenario_id: Option<&str>) -> crate::state::GameState {
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 1;
+        let mut builder = TestGame::new()
+            .with_phase(crate::state::Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv]);
+        if let Some(id) = scenario_id {
+            builder = builder.with_scenario_id(ScenarioId::new(id));
         }
+        let mut state = builder.build();
+        state.act_deck = vec![Act {
+            clue_threshold: 1,
+            resolution: Some(Resolution::Won { id: "test".into() }),
+        }];
+        state
     }
 
     #[test]
-    fn scenario_resolution_fires_when_module_returns_some() {
-        let id = InvestigatorId(1);
-        let state = TestGame::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .with_scenario_id(ScenarioId::new("wins"))
-            .build();
+    fn resolution_fires_and_applies_when_latch_set_with_module() {
+        let state = terminal_act_state(Some("stamp"));
         let reg = ScenarioRegistry {
-            module_for: always_wins_module_for,
+            module_for: stamp_module_for,
         };
         let result = super::apply_with_scenario_registry(
             state,
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::AdvanceAct {
+                investigator: InvestigatorId(1),
+            }),
             Some(&reg),
         );
         assert_eq!(result.outcome, EngineOutcome::Done);
@@ -3820,99 +3822,66 @@ mod tests {
             result.events,
             Event::ScenarioResolved { resolution: Resolution::Won { id } } if id == "test"
         );
-    }
-
-    #[test]
-    fn scenario_resolution_is_skipped_when_module_returns_none() {
-        let id = InvestigatorId(1);
-        let state = TestGame::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .with_scenario_id(ScenarioId::new("neutral"))
-            .build();
-        let reg = ScenarioRegistry {
-            module_for: never_resolves_module_for,
-        };
-        let result = super::apply_with_scenario_registry(
-            state,
-            Action::Player(PlayerAction::StartScenario),
-            Some(&reg),
+        assert_eq!(
+            result.state.investigators[&InvestigatorId(1)].resources,
+            99,
+            "apply_resolution ran"
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_no_event!(result.events, Event::ScenarioResolved { .. });
     }
 
     #[test]
-    fn scenario_resolution_is_skipped_when_registry_has_no_module_for_id() {
-        let id = InvestigatorId(1);
-        let state = TestGame::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .with_scenario_id(ScenarioId::new("unknown-to-registry"))
-            .build();
-        let reg = ScenarioRegistry {
-            module_for: always_wins_module_for,
-        };
+    fn resolution_event_fires_without_a_registered_module() {
+        // No registry: the event still fires (resolution is engine state),
+        // but apply_resolution can't run.
+        let state = terminal_act_state(Some("unknown"));
         let result = super::apply_with_scenario_registry(
             state,
-            Action::Player(PlayerAction::StartScenario),
-            Some(&reg),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_no_event!(result.events, Event::ScenarioResolved { .. });
-    }
-
-    #[test]
-    fn scenario_resolution_is_skipped_when_scenario_id_is_none() {
-        let id = InvestigatorId(1);
-        let state = TestGame::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
-        let reg = ScenarioRegistry {
-            module_for: always_wins_module_for,
-        };
-        let result = super::apply_with_scenario_registry(
-            state,
-            Action::Player(PlayerAction::StartScenario),
-            Some(&reg),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_no_event!(result.events, Event::ScenarioResolved { .. });
-    }
-
-    #[test]
-    fn scenario_resolution_is_skipped_when_no_registry_installed() {
-        let id = InvestigatorId(1);
-        let state = TestGame::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .with_scenario_id(ScenarioId::new("wins"))
-            .build();
-        let result = super::apply_with_scenario_registry(
-            state,
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::AdvanceAct {
+                investigator: InvestigatorId(1),
+            }),
             None,
         );
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_no_event!(result.events, Event::ScenarioResolved { .. });
+        assert_event!(result.events, Event::ScenarioResolved { .. });
     }
 
     #[test]
-    fn scenario_resolution_is_skipped_on_rejected_outcome() {
-        let state = TestGame::new()
-            .with_round(7) // already in progress -> StartScenario rejects
-            .with_scenario_id(ScenarioId::new("wins"))
-            .build();
+    fn resolution_does_not_refire_on_a_later_apply() {
+        let state = terminal_act_state(Some("stamp"));
         let reg = ScenarioRegistry {
-            module_for: always_wins_module_for,
+            module_for: stamp_module_for,
+        };
+        let first = super::apply_with_scenario_registry(
+            state,
+            Action::Player(PlayerAction::AdvanceAct {
+                investigator: InvestigatorId(1),
+            }),
+            Some(&reg),
+        );
+        assert_event!(first.events, Event::ScenarioResolved { .. });
+        let second = super::apply_with_scenario_registry(
+            first.state,
+            Action::Player(PlayerAction::EndTurn),
+            Some(&reg),
+        );
+        assert_eq!(second.outcome, EngineOutcome::Done);
+        assert_no_event!(second.events, Event::ScenarioResolved { .. });
+    }
+
+    #[test]
+    fn resolution_skipped_on_rejected_outcome() {
+        let inv = InvestigatorId(1);
+        let mut state = terminal_act_state(Some("stamp"));
+        state.investigators.get_mut(&inv).unwrap().clues = 0;
+        let reg = ScenarioRegistry {
+            module_for: stamp_module_for,
         };
         let result = super::apply_with_scenario_registry(
             state,
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
             Some(&reg),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert_no_event!(result.events, Event::ScenarioResolved { .. });
     }
 }

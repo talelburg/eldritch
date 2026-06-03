@@ -428,21 +428,42 @@ pub enum Event {
         kind: WindowKind,
     },
     /// A scenario resolved (won or lost). Emitted by
-    /// [`apply`](crate::engine::apply) after a `Done` outcome when the
-    /// active scenario module's `detect_resolution` returns `Some`.
-    /// Followed immediately by any events the scenario's
-    /// `apply_resolution` pushes — XP / trauma changes will appear
-    /// after this event once Phase 9 lands real bodies.
+    /// [`apply`](crate::engine::apply) when `GameState.resolution`
+    /// transitions from `None` to `Some` during an apply (a dispatch
+    /// site latched a resolution at a discrete trigger — act/agenda
+    /// resolution point, or last-investigator elimination). Followed
+    /// immediately by any events the scenario's `apply_resolution`
+    /// pushes — XP / trauma changes will appear after this event once
+    /// Phase 9 lands real bodies.
     ///
-    /// This event is **terminal-ish** for the scenario, but the
-    /// Phase-4 engine does not latch on it: a scenario whose
-    /// `detect_resolution` keeps returning `Some` will keep re-emitting
-    /// `ScenarioResolved` on each subsequent apply. Phase 9 will add
-    /// the idempotency guard alongside the first non-trivial
-    /// `apply_resolution` — tracked as #131.
+    /// The latch is fire-once: the engine guards the `None`->`Some`
+    /// transition, so this event fires exactly once per scenario even
+    /// across later applies.
     ScenarioResolved {
         /// The resolution returned by the scenario module.
         resolution: Resolution,
+    },
+
+    /// The agenda deck advanced: the agenda at `from` met its doom
+    /// threshold and the next agenda became current. Doom was reset to
+    /// 0. Not emitted when a *terminal* agenda is reached — that fires
+    /// [`ScenarioResolved`] instead.
+    ///
+    /// [`ScenarioResolved`]: Self::ScenarioResolved
+    AgendaAdvanced {
+        /// The `agenda_index` of the agenda that advanced (before the
+        /// cursor moved).
+        from: usize,
+    },
+    /// The act deck advanced: the investigators spent the act at `from`'s
+    /// clue threshold and the next act became current. Not emitted when
+    /// a *terminal* act is reached — that fires [`ScenarioResolved`].
+    ///
+    /// [`ScenarioResolved`]: Self::ScenarioResolved
+    ActAdvanced {
+        /// The `act_index` of the act that advanced (before the cursor
+        /// moved).
+        from: usize,
     },
 }
 

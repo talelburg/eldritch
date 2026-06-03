@@ -13,12 +13,11 @@
 //!   `cards::REGISTRY` installs in other test binaries.
 //!
 //! We install [`TEST_REGISTRY`] (the synthetic card registry) but
-//! intentionally do **not** install the scenario registry. The
-//! synthetic `setup()` state carries `scenario_id = "synthetic"`, but
-//! `apply()` short-circuits the resolution hook when no registry is
-//! installed — preventing the synthetic `detect_resolution` (which
-//! fires on round >= 1, phase Investigation) from triggering on round
-//! 2's Investigation entry and obscuring the assertions.
+//! intentionally do **not** install the scenario registry. Under the
+//! push-model latch the synthetic fixture only resolves when an
+//! act/agenda resolution point is reached, which these Mythos-phase
+//! draws never trigger — so the scenario resolution hook stays
+//! dormant regardless.
 
 use std::sync::Once;
 

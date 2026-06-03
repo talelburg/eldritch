@@ -21,8 +21,8 @@ use crate::rng::RngState;
 /// In the event-sourced model, the canonical state is *derived* by
 /// replaying the action log; `GameState` is the materialized cache.
 ///
-/// Phase-1 minimal shape; later phases will add e.g. encounter deck,
-/// act/agenda decks, doom track, persistent campaign-log facts, etc.
+/// Phase-1 minimal shape; later phases will add e.g. persistent
+/// campaign-log facts and cross-scenario trauma tracking.
 ///
 /// Investigators and locations are stored in [`BTreeMap`]s keyed by ID
 /// rather than [`Vec`]s. This makes iteration order deterministic
@@ -132,10 +132,11 @@ pub struct GameState {
     ///
     /// `None` for tests and fixtures that don't care about scenario
     /// resolution; in that case the engine's post-apply resolution
-    /// hook short-circuits. `Some(id)` is the normal case: the
+    /// hook short-circuits. `Some(id)` is the normal case: on a
+    /// `None`→`Some` [`resolution`](Self::resolution) latch transition the
     /// engine looks up the module via
     /// [`scenario_registry::current`](crate::scenario_registry::current)
-    /// and asks it whether the new state has resolved.
+    /// and runs its `apply_resolution`.
     ///
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.
@@ -195,6 +196,64 @@ pub struct GameState {
     /// `reshuffle_encounter_discard` (in `engine::dispatch`) when
     /// the deck runs empty.
     pub encounter_discard: Vec<CardCode>,
+    /// The agenda deck (the doom-fueled lose track). `agenda_deck[agenda_index]`
+    /// is the current agenda. Empty for tests/fixtures that don't model
+    /// agendas — every agenda helper short-circuits on an empty deck.
+    pub agenda_deck: Vec<Agenda>,
+    /// Cursor into [`agenda_deck`](Self::agenda_deck): the current agenda.
+    pub agenda_index: usize,
+    /// Doom currently on the current agenda. Incremented +1 each Mythos
+    /// step 1.2; reset to 0 when the agenda advances. (Doom on other
+    /// cards in play is not summed yet — no corpus card carries doom.)
+    pub agenda_doom: u8,
+    /// The act deck (the investigator-driven win track). `act_deck[act_index]`
+    /// is the current act. Empty for tests/fixtures that don't model acts.
+    pub act_deck: Vec<Act>,
+    /// Cursor into [`act_deck`](Self::act_deck): the current act.
+    pub act_index: usize,
+    /// Fire-once scenario-resolution latch. `None` until a resolution
+    /// fires; set by `request_resolution` at the act/agenda resolution
+    /// point or the no-remaining-players elimination step. The
+    /// `apply` hook detects the `None`→`Some` transition to emit
+    /// `Event::ScenarioResolved` and run `apply_resolution` exactly once
+    /// (the idempotency guard formerly tracked as #131).
+    pub resolution: Option<crate::scenario::Resolution>,
+}
+
+/// One agenda card's mechanically-relevant state: the doom needed to
+/// advance it, and the printed `(→R#)` resolution point on its reverse
+/// (if any). Card *effect* text is out of scope (per-scenario content);
+/// `resolution` is the structural pointer that ends the scenario when a
+/// terminal agenda advances.
+///
+/// Deliberately NOT `#[non_exhaustive]`: scenario setup in the
+/// `scenarios` crate constructs these with struct literals, which a
+/// `#[non_exhaustive]` struct forbids cross-crate.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Agenda {
+    /// Total doom in play required to advance (Rules Reference p.24
+    /// step 1.3). Flat value only for now; per-investigator scaling
+    /// and `Objective –` overrides are deferred until a real
+    /// scenario needs them.
+    pub doom_threshold: u8,
+    /// The printed resolution point on this agenda's reverse. `Some` on
+    /// a terminal agenda (advancing it ends the scenario); `None` on an
+    /// agenda that advances to the next card.
+    pub resolution: Option<crate::scenario::Resolution>,
+}
+
+/// One act card's mechanically-relevant state: the clues the group must
+/// spend to advance it, and its `(→R#)` resolution point (if any). Not
+/// `#[non_exhaustive]` for the same cross-crate-construction reason as
+/// [`Agenda`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Act {
+    /// Clues the investigators must spend to advance (Rules Reference
+    /// p.3). Flat value only for now.
+    pub clue_threshold: u8,
+    /// The printed resolution point on this act's reverse. `Some` on a
+    /// terminal act; `None` otherwise.
+    pub resolution: Option<crate::scenario::Resolution>,
 }
 
 /// A skill test paused mid-resolution at the commit window.
