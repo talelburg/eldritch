@@ -112,14 +112,10 @@ fn hunter_movement_pick_location_replays_identically() {
     for a in &actions {
         s2 = apply(s2, a.clone()).state;
     }
-    // Replay determinism is a whole-state property: the engine guarantees
-    // that replaying an identical action log reproduces state bit-for-bit.
-    // GameState isn't PartialEq, and its maps are BTreeMaps (stable key
-    // order), so comparing the full serialized form is the right, strongest
-    // check here — stricter than the field-wise comparisons used elsewhere.
+    // Replay determinism is a whole-state property: replaying an
+    // identical action log reproduces state bit-for-bit.
     assert_eq!(
-        serde_json::to_string(&s1).unwrap(),
-        serde_json::to_string(&s2).unwrap(),
+        s1, s2,
         "replaying the same action log must reproduce identical state",
     );
     assert_eq!(

@@ -24,7 +24,7 @@ pub struct EnemyId(pub u32);
 ///
 /// - `damage <= max_health`. Reaching equality means the enemy is
 ///   defeated and should be removed from `GameState::enemies`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Enemy {
     /// Stable identifier within this scenario.

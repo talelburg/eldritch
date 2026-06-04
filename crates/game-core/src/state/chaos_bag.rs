@@ -36,7 +36,7 @@ pub enum ChaosToken {
 }
 
 /// The pool of chaos tokens for the current scenario.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ChaosBag {
     /// Tokens currently in the bag. Order is not significant; the engine
