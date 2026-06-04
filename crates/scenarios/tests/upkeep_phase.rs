@@ -155,45 +155,9 @@ fn upkeep_round_replay_is_deterministic() {
         state
     };
 
-    // GameState does not derive PartialEq; compare field-wise.
-    // (Documented choice: field-wise equality covers the meaningful
-    //  post-Upkeep observable state without requiring a full-tree Eq impl.)
-    assert_eq!(final_state.phase, replayed_state.phase, "phase");
-    assert_eq!(final_state.round, replayed_state.round, "round");
+    // Replaying the same action log reproduces state bit-for-bit.
     assert_eq!(
-        final_state.mythos_draw_pending, replayed_state.mythos_draw_pending,
-        "mythos_draw_pending"
-    );
-    assert_eq!(
-        final_state.active_investigator, replayed_state.active_investigator,
-        "active_investigator"
-    );
-    assert_eq!(
-        final_state.turn_order, replayed_state.turn_order,
-        "turn_order"
-    );
-    assert_eq!(
-        final_state.open_windows.len(),
-        replayed_state.open_windows.len(),
-        "open_windows.len"
-    );
-    assert_eq!(
-        final_state.investigators[&inv1].resources, replayed_state.investigators[&inv1].resources,
-        "inv1.resources"
-    );
-    assert_eq!(
-        final_state.investigators[&inv1].hand.len(),
-        replayed_state.investigators[&inv1].hand.len(),
-        "inv1.hand.len"
-    );
-    assert_eq!(
-        final_state.investigators[&inv1].deck.len(),
-        replayed_state.investigators[&inv1].deck.len(),
-        "inv1.deck.len"
-    );
-    assert_eq!(
-        final_state.investigators[&inv1].discard.len(),
-        replayed_state.investigators[&inv1].discard.len(),
-        "inv1.discard.len"
+        final_state, replayed_state,
+        "replay must reproduce identical state"
     );
 }
