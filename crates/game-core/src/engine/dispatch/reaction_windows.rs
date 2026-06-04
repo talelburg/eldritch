@@ -506,7 +506,7 @@ pub(super) fn close_reaction_window_at(
 /// [`WindowKind::UpkeepBegins`], runs [`upkeep_resume`](super::upkeep_resume). For
 /// [`WindowKind::BeforeInvestigatorAttacked`], resolves the cursor
 /// investigator's engaged-enemy attacks via
-/// [`resolve_attacks_for_investigator`](super::resolve_attacks_for_investigator), advances
+/// [`resolve_attacks_for_investigator`](super::combat::resolve_attacks_for_investigator), advances
 /// [`GameState::enemy_attack_pending`] to the next Active investigator
 /// via [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after),
 /// and opens the next window
@@ -596,7 +596,7 @@ pub(super) fn run_window_continuation(
                 )
             });
 
-            super::resolve_attacks_for_investigator(state, events, investigator);
+            super::combat::resolve_attacks_for_investigator(state, events, investigator);
 
             // Advance the cursor: next Active investigator AFTER
             // `investigator` in turn_order. The shared helper uses

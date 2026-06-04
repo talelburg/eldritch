@@ -489,7 +489,7 @@ fn apply_skill_test_follow_up(
             // Mid-test enemy disappearance isn't possible in Phase 3
             // (no commit-window effects mutate enemies), so
             // damage_enemy's enemy-missing panic stays loud.
-            super::damage_enemy(state, events, enemy, 1, Some(investigator));
+            super::combat::damage_enemy(state, events, enemy, 1, Some(investigator));
         }
         SkillTestFollowUp::Evade { enemy } => {
             let e = state.enemies.get_mut(&enemy).unwrap_or_else(|| {

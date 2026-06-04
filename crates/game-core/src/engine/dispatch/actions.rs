@@ -93,7 +93,7 @@ pub(super) fn investigate(
     // Evade, Parley, Engage, Resign are), so each ready engaged
     // enemy attacks before the test resolves.
     spend_one_action(state, events, investigator);
-    super::fire_attacks_of_opportunity(state, events, investigator);
+    super::combat::fire_attacks_of_opportunity(state, events, investigator);
 
     // If AoO defeated the investigator, the action's primary effect
     // (the skill test) is suppressed. The action point and AoO events
@@ -215,7 +215,7 @@ pub(super) fn move_action(
     // Move triggers attacks of opportunity from each ready engaged
     // enemy. Per the Rules Reference, this happens BEFORE the move
     // resolves.
-    super::fire_attacks_of_opportunity(state, events, investigator);
+    super::combat::fire_attacks_of_opportunity(state, events, investigator);
 
     // If AoO defeated the investigator, the move is cancelled. The
     // action point and AoO events stay; the investigator (and any
