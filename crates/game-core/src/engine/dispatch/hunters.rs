@@ -461,7 +461,7 @@ pub(super) fn resume_spawn_engage(
     // `mythos_draw_pending == Some(investigator_to_draw)` reliably means
     // "we suspended mid-chain for this investigator."
     if state.mythos_draw_pending == Some(pending.investigator_to_draw) {
-        super::run_mythos_draw_chain(
+        super::encounter::run_mythos_draw_chain(
             state,
             events,
             pending.investigator_to_draw,
