@@ -232,7 +232,7 @@ pub(super) fn check_all_defeated(state: &mut GameState, events: &mut Vec<Event>)
         // for that scenario in the campaign guide." Latch the loss
         // (first-writer-wins, so an already-fired act/agenda resolution
         // stays authoritative).
-        super::request_resolution(
+        super::act_agenda::request_resolution(
             state,
             crate::scenario::Resolution::Lost {
                 reason: "no resolution was reached".into(),
