@@ -61,9 +61,12 @@ fn drive(mut state: GameState, actions: &[Action]) -> (GameState, Vec<Event>) {
 
 /// Replay-determinism with a serialize round-trip: drive `log` from a
 /// fresh `make_initial()` to the midpoint, serialize -> deserialize,
-/// then continue. Returns the round-tripped final state. Proves both
-/// replay determinism (seeded `state.rng` reproduces draws) and serde
-/// round-trip fidelity (the property Phase 5's persistence depends on).
+/// then continue. Returns the round-tripped final state. The serde step
+/// at the midpoint is the *only* delta from a straight `drive` of the
+/// same log, so comparing this result to the un-round-tripped final
+/// state isolates serde round-trip fidelity — the property Phase 5's
+/// persistence depends on — on top of the seeded-`rng` replay path both
+/// runs share.
 ///
 /// The midpoint split lands mid-walk — for the Won walk inside an active
 /// skill-test commit window (`in_flight_skill_test` is `Some`), for the
