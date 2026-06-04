@@ -17,7 +17,9 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::{assert_event, Action, InputResponse, PlayerAction};
-use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, SYNTH_TREACHERY_CODE, TEST_REGISTRY};
+use scenarios::test_fixtures::synth_cards::{
+    SYNTH_ENEMY_CODE, SYNTH_TREACHERY_CODE, TEST_REGISTRY,
+};
 use scenarios::REGISTRY;
 
 static INSTALL: Once = Once::new();
@@ -33,7 +35,7 @@ fn install_registry() {
 /// step fails loudly here (naming the offending action) rather than
 /// surfacing later as a confusing "event not found". Returns the new
 /// state and emitted events.
-fn apply_checked(state: GameState, action: Action) -> (GameState, Vec<Event>) {
+fn apply_checked(state: GameState, action: &Action) -> (GameState, Vec<Event>) {
     let r = apply(state, action.clone());
     assert!(
         !matches!(r.outcome, EngineOutcome::Rejected { .. }),
@@ -50,7 +52,7 @@ fn apply_checked(state: GameState, action: Action) -> (GameState, Vec<Event>) {
 fn drive(mut state: GameState, actions: &[Action]) -> (GameState, Vec<Event>) {
     let mut events = Vec::new();
     for a in actions {
-        let (next, ev) = apply_checked(state, a.clone());
+        let (next, ev) = apply_checked(state, a);
         state = next;
         events.extend(ev);
     }
@@ -178,7 +180,10 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     // realized action log so the round-trip replays exactly what ran.
     let mut log = vec![
         Action::Player(PlayerAction::StartScenario),
-        Action::Player(PlayerAction::Mulligan { investigator: inv, indices_to_redraw: vec![] }),
+        Action::Player(PlayerAction::Mulligan {
+            investigator: inv,
+            indices_to_redraw: vec![],
+        }),
     ];
     let (mut state, mut events) = drive(make_initial(), &log);
 
@@ -186,8 +191,8 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     // agendas sum to a threshold of 4, so the loss latches by ~round 5.
     for _ in 0..12 {
         let act = Action::Player(PlayerAction::EndTurn);
-        log.push(act.clone());
-        let (next, ev) = apply_checked(state, act);
+        let (next, ev) = apply_checked(state, &act);
+        log.push(act);
         state = next;
         events.extend(ev);
         if state.resolution.is_some() {
@@ -195,8 +200,8 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
         }
         if state.mythos_draw_pending.is_some() {
             let act = Action::Player(PlayerAction::DrawEncounterCard);
-            log.push(act.clone());
-            let (next, ev) = apply_checked(state, act);
+            let (next, ev) = apply_checked(state, &act);
+            log.push(act);
             state = next;
             events.extend(ev);
             if state.resolution.is_some() {
@@ -212,7 +217,12 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     assert_event!(events, Event::EnemyExhausted { .. });
     // Doom advanced the agenda and then latched the loss.
     assert_event!(events, Event::AgendaAdvanced { from } if *from == 0);
-    assert_event!(events, Event::ScenarioResolved { resolution: Resolution::Lost { .. } });
+    assert_event!(
+        events,
+        Event::ScenarioResolved {
+            resolution: Resolution::Lost { .. }
+        }
+    );
     assert!(matches!(state.resolution, Some(Resolution::Lost { .. })));
 
     let replayed = replay_with_roundtrip(make_initial, &log);
