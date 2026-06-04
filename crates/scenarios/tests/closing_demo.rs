@@ -29,22 +29,30 @@ fn install_registry() {
     });
 }
 
+/// Apply one action, asserting it is not `Rejected` so a mis-ordered
+/// step fails loudly here (naming the offending action) rather than
+/// surfacing later as a confusing "event not found". Returns the new
+/// state and emitted events.
+fn apply_checked(state: GameState, action: Action) -> (GameState, Vec<Event>) {
+    let r = apply(state, action.clone());
+    assert!(
+        !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+        "action {action:?} was rejected: {:?}",
+        r.outcome,
+    );
+    (r.state, r.events)
+}
+
 /// Apply `actions` in order from `initial`, concatenating all emitted
 /// events. The log includes explicit `ResolveInput { CommitCards }` steps
-/// for each skill-test commit window. Asserts no action is `Rejected` so
-/// a mis-ordered log fails loudly here (naming the offending action)
-/// rather than surfacing later as a confusing "event not found".
+/// for each skill-test commit window. Each action is run through
+/// [`apply_checked`], so a `Rejected` step fails loudly.
 fn drive(mut state: GameState, actions: &[Action]) -> (GameState, Vec<Event>) {
     let mut events = Vec::new();
     for a in actions {
-        let r = apply(state, a.clone());
-        assert!(
-            !matches!(r.outcome, EngineOutcome::Rejected { .. }),
-            "action {a:?} was rejected: {:?}",
-            r.outcome,
-        );
-        events.extend(r.events);
-        state = r.state;
+        let (next, ev) = apply_checked(state, a.clone());
+        state = next;
+        events.extend(ev);
     }
     (state, events)
 }
@@ -55,10 +63,10 @@ fn drive(mut state: GameState, actions: &[Action]) -> (GameState, Vec<Event>) {
 /// replay determinism (seeded `state.rng` reproduces draws) and serde
 /// round-trip fidelity (the property Phase 5's persistence depends on).
 ///
-/// The midpoint split lands mid-walk, often inside an active skill-test
-/// commit window (`in_flight_skill_test` is `Some`), so this also
-/// exercises serde of the paused-engine state — not just a phase
-/// boundary.
+/// The midpoint split lands mid-walk — for the Won walk inside an active
+/// skill-test commit window (`in_flight_skill_test` is `Some`), for the
+/// Lost walk on a phase boundary — so this exercises serde of in-flight
+/// engine state, not just a clean resting point.
 fn replay_with_roundtrip(make_initial: impl Fn() -> GameState, log: &[Action]) -> GameState {
     let split = log.len() / 2;
     let mut state = make_initial();
@@ -174,21 +182,23 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     ];
     let (mut state, mut events) = drive(make_initial(), &log);
 
+    // 12 iterations is ~2x headroom: doom +1 per Mythos and the two
+    // agendas sum to a threshold of 4, so the loss latches by ~round 5.
     for _ in 0..12 {
         let act = Action::Player(PlayerAction::EndTurn);
         log.push(act.clone());
-        let r = apply(state, act);
-        events.extend(r.events);
-        state = r.state;
+        let (next, ev) = apply_checked(state, act);
+        state = next;
+        events.extend(ev);
         if state.resolution.is_some() {
             break;
         }
         if state.mythos_draw_pending.is_some() {
             let act = Action::Player(PlayerAction::DrawEncounterCard);
             log.push(act.clone());
-            let r = apply(state, act);
-            events.extend(r.events);
-            state = r.state;
+            let (next, ev) = apply_checked(state, act);
+            state = next;
+            events.extend(ev);
             if state.resolution.is_some() {
                 break;
             }
