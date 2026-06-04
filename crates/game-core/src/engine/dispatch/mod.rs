@@ -15,7 +15,7 @@ use crate::action::{EngineRecord, InputResponse, PlayerAction};
 use crate::card_data::{CardMetadata, CardType, Prey, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::{
-    discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Stat, Trigger,
+    discover_clue, Cost, EventPattern, EventTiming, LocationTarget, SkillTestKind, Trigger,
 };
 use crate::event::{Event, FailureReason};
 use crate::state::{
@@ -29,6 +29,8 @@ use super::evaluator::{
     apply_effect, constant_skill_modifier, pending_skill_modifier, EvalContext,
 };
 use super::outcome::{EngineOutcome, InputRequest, ResumeToken};
+
+mod cursor;
 
 /// Action points granted to an investigator at the start of their
 /// turn during the Investigation phase. Per the Arkham Horror LCG
@@ -530,7 +532,7 @@ fn spawn_enemy(
     //    set is narrowed by the enemy's prey — every spawn uses
     //    `Prey::Default` (Task 2), so a 2+ set always ties and suspends
     //    for the lead investigator's `PickInvestigator` (option A).
-    let candidates = active_investigators_at(state, location_id);
+    let candidates = cursor::active_investigators_at(state, location_id);
 
     // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
     //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
@@ -635,7 +637,7 @@ fn resolve_prey(state: &GameState, prey: Prey, candidates: &[InvestigatorId]) ->
     let best: Vec<InvestigatorId> = match prey {
         Prey::Default => candidates.to_vec(),
         Prey::HighestStat(stat) => {
-            let skill = stat_to_skill_kind(stat);
+            let skill = cursor::stat_to_skill_kind(stat);
             let max = candidates
                 .iter()
                 .filter_map(|id| {
@@ -671,22 +673,6 @@ fn resolve_prey(state: &GameState, prey: Prey, candidates: &[InvestigatorId]) ->
         [] => PreyResolution::None,
         [one] => PreyResolution::One(*one),
         _ => PreyResolution::Tie(best),
-    }
-}
-
-/// Map a prey `Stat` to the `SkillKind` used for investigator lookup.
-/// Only the four base skills are valid prey stats in Phase-4 scope; a
-/// `MaxHealth`/`MaxSanity` prey would be a card-impl bug.
-fn stat_to_skill_kind(stat: Stat) -> SkillKind {
-    match stat {
-        Stat::Willpower => SkillKind::Willpower,
-        Stat::Intellect => SkillKind::Intellect,
-        Stat::Combat => SkillKind::Combat,
-        Stat::Agility => SkillKind::Agility,
-        Stat::MaxHealth | Stat::MaxSanity => unreachable!(
-            "resolve_prey: prey stat {stat:?} is not a base skill; no in-scope \
-             prey instruction uses MaxHealth/MaxSanity — card-impl bug"
-        ),
     }
 }
 
@@ -897,7 +883,7 @@ fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutco
     // at which point setup ends. Other player actions are rejected while
     // the cursor is `Some`. An empty/all-eliminated `turn_order` seeds
     // `None` — the same degenerate no-op as the Mythos draw cursor.
-    state.mulligan_pending = first_active_investigator(state);
+    state.mulligan_pending = cursor::first_active_investigator(state);
 
     // Round-1 action seed: round 1 skips Mythos, so there's no Upkeep 4.2
     // to grant the first round's actions. Every Active investigator → ACTIONS_PER_TURN.
@@ -947,7 +933,7 @@ fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     // proceed to 2.3. next_active_investigator_after skips eliminated
     // investigators (Rules Reference p.10) — the same shared helper the
     // Enemy phase uses.
-    if let Some(next_id) = next_active_investigator_after(state, active_id) {
+    if let Some(next_id) = cursor::next_active_investigator_after(state, active_id) {
         begin_investigator_turn(state, events, next_id);
         EngineOutcome::Done
     } else {
@@ -1045,7 +1031,7 @@ fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     //     Per Rules Reference p.10 (Elimination), eliminated
     //     investigators (Killed, Insane, Resigned) do not draw
     //     encounter cards — skip to the first Active investigator.
-    state.mythos_draw_pending = first_active_investigator(state);
+    state.mythos_draw_pending = cursor::first_active_investigator(state);
     if state.mythos_draw_pending.is_none() {
         // No Active investigators to draw (turn_order is empty or all
         // investigators are eliminated). Open the post-1.4 window
@@ -3437,21 +3423,6 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
         && enemy.current_location.is_some()
 }
 
-/// Investigators (Active, on the map) at `loc`, in `turn_order` order
-/// so prey ties carry a deterministic, lead-first candidate list.
-fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec<InvestigatorId> {
-    state
-        .turn_order
-        .iter()
-        .copied()
-        .filter(|id| {
-            state.investigators.get(id).is_some_and(|inv| {
-                inv.status == Status::Active && inv.current_location == Some(loc)
-            })
-        })
-        .collect()
-}
-
 /// Compute the prey-legal destination set for a hunter at `from`:
 /// the union of shortest-path first-steps toward each
 /// equidistant-nearest, prey-filtered investigator. Empty when no
@@ -3559,7 +3530,7 @@ fn engage_on_arrival(
             unreachable!("engage_on_arrival: enemy {enemy_id:?} has no location; state corruption")
         });
     let prey = state.enemies[&enemy_id].prey;
-    let candidates = active_investigators_at(state, loc);
+    let candidates = cursor::active_investigators_at(state, loc);
     match resolve_prey(state, prey, &candidates) {
         PreyResolution::None => None,
         PreyResolution::One(target) => {
@@ -3603,7 +3574,7 @@ fn reengage_at_location(state: &mut GameState, events: &mut Vec<Event>, enemy_id
         return;
     };
     let prey = enemy.prey;
-    let candidates = active_investigators_at(state, loc);
+    let candidates = cursor::active_investigators_at(state, loc);
     match resolve_prey(state, prey, &candidates) {
         PreyResolution::None => {}
         PreyResolution::One(target) => engage_enemy_with(state, events, enemy_id, target),
@@ -3623,7 +3594,7 @@ fn process_one_hunter(
         .unwrap_or_else(|| {
             unreachable!("process_one_hunter: enemy {enemy_id:?} has no location; state corruption")
         });
-    let here = active_investigators_at(state, from);
+    let here = cursor::active_investigators_at(state, from);
     if here.is_empty() {
         let prey = state.enemies[&enemy_id].prey;
         let dests = hunter_destinations(state, from, prey);
@@ -3838,11 +3809,11 @@ fn resume_spawn_engage(
 ///
 /// Seeds the cursor to the first Active investigator in `turn_order`.
 /// Eliminated investigators (Killed / Insane / Resigned) are skipped per
-/// Rules Reference p.10 (Elimination); [`first_active_investigator`] is
+/// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
 /// the shared helper used by Mythos 1.4 (#69) for the same semantics.
 /// The loop body runs in [`run_window_continuation`]'s arms.
 fn enemy_attack_kickoff(state: &mut GameState, events: &mut Vec<Event>) {
-    state.enemy_attack_pending = first_active_investigator(state);
+    state.enemy_attack_pending = cursor::first_active_investigator(state);
 
     if state.enemy_attack_pending.is_some() {
         open_fast_window(state, events, WindowKind::BeforeInvestigatorAttacked);
@@ -4119,7 +4090,7 @@ fn mulligan(
     // Advance to the next Active investigator in player order (or `None`
     // when this was the last). The completion check in
     // `apply_player_action` keys off `None` to end setup.
-    state.mulligan_pending = next_active_investigator_after(state, investigator);
+    state.mulligan_pending = cursor::next_active_investigator_after(state, investigator);
     EngineOutcome::Done
 }
 
@@ -4744,80 +4715,6 @@ fn check_hand_size(_state: &mut GameState, _events: &mut Vec<Event>) {
     //   without changing the driver shape.
 }
 
-/// `turn_order` entries whose status is `Active`, in turn order. Shared
-/// by per-investigator Upkeep steps (4.2 reset, 4.4 draw + resource).
-/// Eliminated investigators (Killed / Insane / Resigned) are excluded
-/// per Rules Reference p.10.
-fn active_investigators_in_turn_order(state: &GameState) -> Vec<InvestigatorId> {
-    state
-        .turn_order
-        .iter()
-        .copied()
-        .filter(|id| {
-            state
-                .investigators
-                .get(id)
-                .is_some_and(|inv| inv.status == Status::Active)
-        })
-        .collect()
-}
-
-/// First investigator in [`turn_order`] whose status is
-/// [`Status::Active`]. Eliminated investigators
-/// ([`Status::Killed`] / [`Status::Insane`] / [`Status::Resigned`])
-/// are skipped per Rules Reference p.10 (Elimination).
-///
-/// Used by per-investigator phase loops to seed their cursor:
-/// Mythos 1.4 draws ([`mythos_phase`] seeds `mythos_draw_pending`),
-/// Enemy 3.3 attacks ([`enemy_phase`] seeds `enemy_attack_pending`).
-///
-/// [`turn_order`]: GameState::turn_order
-fn first_active_investigator(state: &GameState) -> Option<InvestigatorId> {
-    state.turn_order.iter().copied().find(|id| {
-        state
-            .investigators
-            .get(id)
-            .is_some_and(|inv| inv.status == Status::Active)
-    })
-}
-
-/// First investigator in [`turn_order`] whose status is
-/// [`Status::Active`], positioned strictly after `current`. Returns
-/// `None` when no Active investigator follows `current` in
-/// `turn_order`, or when `current` is not in `turn_order` at all.
-///
-/// Eliminated investigators are skipped per Rules Reference p.10
-/// (same predicate as [`first_active_investigator`]).
-///
-/// Used by per-investigator phase loops to advance their cursor:
-/// `advance_mythos_draw_pending` after a draw chain completes, and
-/// `run_window_continuation`'s `BeforeInvestigatorAttacked` arm after
-/// one investigator's engaged-enemy attacks resolve.
-///
-/// Notable: `current` may itself be non-Active (e.g. defeated mid-loop
-/// in Enemy phase) — using `turn_order` as the index basis (rather
-/// than the filtered-Active list) makes this case the same single-pass
-/// lookup.
-///
-/// [`turn_order`]: GameState::turn_order
-fn next_active_investigator_after(
-    state: &GameState,
-    current: InvestigatorId,
-) -> Option<InvestigatorId> {
-    state
-        .turn_order
-        .iter()
-        .position(|id| *id == current)
-        .and_then(|idx| {
-            state.turn_order.iter().skip(idx + 1).copied().find(|id| {
-                state
-                    .investigators
-                    .get(id)
-                    .is_some_and(|inv| inv.status == Status::Active)
-            })
-        })
-}
-
 /// 4.2 Reset actions. Rules Reference p.25: "Flip each investigator's
 /// mini card back to its colored side. This indicates that the
 /// investigator's actions have been reset for his or her next turn."
@@ -4829,7 +4726,7 @@ fn next_active_investigator_after(
 /// `start_scenario` seeds round 1. Eliminated investigators are skipped
 /// (Rules Reference p.10).
 fn reset_actions(state: &mut GameState, events: &mut Vec<Event>) {
-    for id in active_investigators_in_turn_order(state) {
+    for id in cursor::active_investigators_in_turn_order(state) {
         let inv = state
             .investigators
             .get_mut(&id)
@@ -4850,7 +4747,7 @@ fn reset_actions(state: &mut GameState, events: &mut Vec<Event>) {
 /// resource." Two passes to honor that ordering: all draws first, then
 /// all resource gains.
 fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
-    let ids = active_investigators_in_turn_order(state);
+    let ids = cursor::active_investigators_in_turn_order(state);
     for &id in &ids {
         draw_one_with_deckout(state, events, id);
     }
@@ -4868,7 +4765,7 @@ fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
 /// investigator's engaged-enemy attacks via
 /// [`resolve_attacks_for_investigator`], advances
 /// [`GameState::enemy_attack_pending`] to the next Active investigator
-/// via [`next_active_investigator_after`], and opens the next window
+/// via [`cursor::next_active_investigator_after`], and opens the next window
 /// ([`WindowKind::BeforeInvestigatorAttacked`] again if the cursor
 /// advanced to `Some`, otherwise [`WindowKind::AfterAllInvestigatorsAttacked`]).
 /// For [`WindowKind::AfterAllInvestigatorsAttacked`], runs
@@ -4958,7 +4855,8 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             // turn_order (not the filtered-Active list) as the index
             // basis, so `investigator` itself can have been defeated
             // mid-loop and we still find the right successor.
-            state.enemy_attack_pending = next_active_investigator_after(state, investigator);
+            state.enemy_attack_pending =
+                cursor::next_active_investigator_after(state, investigator);
 
             if state.enemy_attack_pending.is_some() {
                 open_fast_window(state, events, WindowKind::BeforeInvestigatorAttacked);
@@ -4984,7 +4882,7 @@ fn run_window_continuation(state: &mut GameState, events: &mut Vec<Event>, kind:
             // Post-2.1 window closed; start the first turn (step 2.2).
             // No skill-test-in-flight guard: this runs at phase start
             // (no test can be in flight) and does not transition phase.
-            if let Some(id) = first_active_investigator(state) {
+            if let Some(id) = cursor::first_active_investigator(state) {
                 begin_investigator_turn(state, events, id);
             }
             // None branch: no active investigator can take a turn. Per
@@ -6602,7 +6500,7 @@ fn advance_mythos_draw_pending(state: &mut GameState, events: &mut Vec<Event>) {
         .mythos_draw_pending
         .expect("advance_mythos_draw_pending called only after a successful chain");
     // Eliminated-skip semantics live in `next_active_investigator_after`.
-    let next = next_active_investigator_after(state, current);
+    let next = cursor::next_active_investigator_after(state, current);
     state.mythos_draw_pending = next;
     if next.is_none() {
         open_fast_window(state, events, WindowKind::MythosAfterDraws);
@@ -6945,7 +6843,7 @@ mod mythos_phase_tests {
             .status = Status::Insane;
 
         assert_eq!(
-            first_active_investigator(&state),
+            cursor::first_active_investigator(&state),
             Some(InvestigatorId(3)),
             "first Active in turn_order after skipping eliminated"
         );
@@ -6963,13 +6861,13 @@ mod mythos_phase_tests {
             .unwrap()
             .status = Status::Killed;
 
-        assert_eq!(first_active_investigator(&state), None);
+        assert_eq!(cursor::first_active_investigator(&state), None);
     }
 
     #[test]
     fn first_active_investigator_returns_none_when_turn_order_empty() {
         let state = TestGame::default().build();
-        assert_eq!(first_active_investigator(&state), None);
+        assert_eq!(cursor::first_active_investigator(&state), None);
     }
 
     #[test]
@@ -6993,17 +6891,17 @@ mod mythos_phase_tests {
             .status = Status::Killed;
 
         assert_eq!(
-            next_active_investigator_after(&state, InvestigatorId(1)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(1)),
             Some(InvestigatorId(3)),
             "advance from 1 skips Killed 2, lands on 3"
         );
         assert_eq!(
-            next_active_investigator_after(&state, InvestigatorId(3)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(3)),
             Some(InvestigatorId(4)),
             "advance from 3 lands on 4"
         );
         assert_eq!(
-            next_active_investigator_after(&state, InvestigatorId(4)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(4)),
             None,
             "advance past the last entry returns None"
         );
@@ -7017,7 +6915,7 @@ mod mythos_phase_tests {
         state.turn_order = vec![InvestigatorId(1)];
 
         assert_eq!(
-            next_active_investigator_after(&state, InvestigatorId(99)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(99)),
             None
         );
     }
@@ -7039,7 +6937,7 @@ mod mythos_phase_tests {
             .status = Status::Killed;
 
         assert_eq!(
-            next_active_investigator_after(&state, InvestigatorId(1)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(1)),
             Some(InvestigatorId(2)),
             "current=1 is non-Active but turn_order still anchors the index"
         );
