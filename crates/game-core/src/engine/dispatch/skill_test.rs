@@ -128,7 +128,7 @@ pub(super) fn start_skill_test(
 /// with no state change and no events pushed — the engine stays
 /// paused so the caller can submit a fixed-up response.
 ///
-/// [`close_reaction_window_at`]: super::close_reaction_window_at
+/// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
 pub(super) fn finish_skill_test(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -221,11 +221,11 @@ pub(super) fn finish_skill_test(
 ///   [`SkillTestEnded`](crate::Event::SkillTestEnded), drain pending
 ///   modifiers, clear in-flight, return `Done`.
 ///
-/// [`close_reaction_window_at`]: super::close_reaction_window_at
+/// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
 pub(super) fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     loop {
         if state.top_reaction_window().is_some() {
-            return super::open_queued_reaction_window(state, events);
+            return super::reaction_windows::open_queued_reaction_window(state, events);
         }
 
         let (continuation, investigator, indices_u8) = {
