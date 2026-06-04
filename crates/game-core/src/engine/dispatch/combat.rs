@@ -103,7 +103,7 @@ pub(super) fn apply_damage_numeric(
 /// Symmetric to [`apply_damage_numeric`] but against `horror` /
 /// `max_sanity`. Returns `true` iff the new total reaches the
 /// max-sanity threshold; defeat application is the caller's
-/// responsibility (see [`super::apply_investigator_defeat`]).
+/// responsibility (see [`super::elimination::apply_investigator_defeat`]).
 pub(super) fn apply_horror_numeric(
     state: &mut GameState,
     events: &mut Vec<Event>,
@@ -191,7 +191,7 @@ pub(super) fn enemy_attack(
         } else {
             DefeatCause::Horror
         };
-        super::apply_investigator_defeat(state, events, investigator, cause);
+        super::elimination::apply_investigator_defeat(state, events, investigator, cause);
     }
 }
 
@@ -245,7 +245,7 @@ pub(super) fn fire_attacks_of_opportunity(
 ///    cross-referencing the elimination flow.
 ///
 /// 2. Call [`enemy_attack`] (places damage + horror simultaneously
-///    per p.7, fires [`super::apply_investigator_defeat`] if either
+///    per p.7, fires [`super::elimination::apply_investigator_defeat`] if either
 ///    crosses).
 ///
 /// 3. Set `enemy.exhausted = true`, emit
