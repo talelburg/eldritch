@@ -3,10 +3,11 @@
 use crate::card_registry;
 use crate::dsl::{Cost, Trigger};
 use crate::event::Event;
-use crate::state::{CardCode, CardInstanceId, GameState, Investigator, InvestigatorId};
+use crate::state::{CardCode, CardInstanceId, Investigator, InvestigatorId};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
+use super::Cx;
 
 /// Handler for [`PlayerAction::ActivateAbility`].
 ///
@@ -52,8 +53,7 @@ use super::super::outcome::EngineOutcome;
 /// `DiscoverClue`, `Seq` of those, future `Modify`/`ThisSkillTest`
 /// push) can't reject mid-flight once the standard prefix passes.
 pub(super) fn activate_ability(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     instance_id: CardInstanceId,
     ability_index: u8,
@@ -66,7 +66,7 @@ pub(super) fn activate_ability(
         effect,
         source_exhausted: _,
     } = match super::reaction_windows::check_activate_ability(
-        state,
+        cx.state,
         investigator,
         instance_id,
         ability_index,
@@ -77,8 +77,7 @@ pub(super) fn activate_ability(
 
     // Mutate.
     pay_activation_costs(
-        state,
-        events,
+        cx,
         investigator,
         instance_id,
         in_play_pos,
@@ -86,24 +85,22 @@ pub(super) fn activate_ability(
         action_cost,
         &costs,
     );
-    events.push(Event::AbilityActivated {
+    cx.events.push(Event::AbilityActivated {
         investigator,
         instance_id,
         code: source_code,
         ability_index,
     });
 
-    let ctx = EvalContext::for_controller_with_source(investigator, instance_id);
-    apply_effect(state, events, &effect, ctx)
+    let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
+    apply_effect(cx.state, cx.events, &effect, eval_ctx)
 }
 
 /// Pay the action cost and every payment cost of an activated
 /// ability. Mutates state in place and pushes the matching events.
 /// Caller has already validated that every cost is payable.
-#[allow(clippy::too_many_arguments)]
 fn pay_activation_costs(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     instance_id: CardInstanceId,
     in_play_pos: usize,
@@ -111,29 +108,41 @@ fn pay_activation_costs(
     action_cost: u8,
     costs: &[Cost],
 ) {
-    let inv_mut = state
-        .investigators
-        .get_mut(&investigator)
-        .expect("validated above");
     if action_cost > 0 {
+        let inv_mut = cx
+            .state
+            .investigators
+            .get_mut(&investigator)
+            .expect("validated above");
         inv_mut.actions_remaining = inv_mut.actions_remaining.saturating_sub(action_cost);
-        events.push(Event::ActionsRemainingChanged {
+        let new_count = inv_mut.actions_remaining;
+        cx.events.push(Event::ActionsRemainingChanged {
             investigator,
-            new_count: inv_mut.actions_remaining,
+            new_count,
         });
     }
     for cost in costs {
         match cost {
             Cost::Resources(n) => {
+                let inv_mut = cx
+                    .state
+                    .investigators
+                    .get_mut(&investigator)
+                    .expect("validated above");
                 inv_mut.resources = inv_mut.resources.saturating_sub(*n);
-                events.push(Event::ResourcesPaid {
+                cx.events.push(Event::ResourcesPaid {
                     investigator,
                     amount: *n,
                 });
             }
             Cost::Exhaust => {
-                inv_mut.cards_in_play[in_play_pos].exhausted = true;
-                events.push(Event::CardExhausted {
+                cx.state
+                    .investigators
+                    .get_mut(&investigator)
+                    .expect("validated above")
+                    .cards_in_play[in_play_pos]
+                    .exhausted = true;
+                cx.events.push(Event::CardExhausted {
                     investigator,
                     instance_id,
                     code: source_code.clone(),

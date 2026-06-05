@@ -154,13 +154,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             investigator,
             instance_id,
             ability_index,
-        } => abilities::activate_ability(
-            cx.state,
-            cx.events,
-            *investigator,
-            *instance_id,
-            *ability_index,
-        ),
+        } => abilities::activate_ability(cx, *investigator, *instance_id, *ability_index),
         PlayerAction::DrawEncounterCard => match cx.state.mythos_draw_pending {
             // DrawEncounterCard carries no investigator payload — the
             // acting investigator IS the pending cursor.
