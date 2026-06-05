@@ -478,7 +478,7 @@ fn apply_skill_test_follow_up(
             // action validates before starting the test. Empty-
             // location is a silent no-op by design. Any rejection
             // here is a state-corruption invariant violation.
-            let outcome = apply_effect(cx.state, cx.events, &effect, eval_ctx);
+            let outcome = apply_effect(cx, &effect, eval_ctx);
             if let EngineOutcome::Rejected { reason } = outcome {
                 unreachable!(
                     "Investigate follow-up: discover_clue rejected unexpectedly after \
@@ -579,7 +579,7 @@ fn fire_on_skill_test_resolution(
                 continue;
             }
             let eval_ctx = EvalContext::for_controller(investigator);
-            let result = apply_effect(cx.state, cx.events, &ability.effect, eval_ctx);
+            let result = apply_effect(cx, &ability.effect, eval_ctx);
             if let EngineOutcome::Rejected { reason } = result {
                 unreachable!(
                     "OnSkillTestResolution: effect for card {code:?} rejected unexpectedly: \

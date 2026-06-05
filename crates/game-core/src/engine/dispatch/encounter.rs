@@ -129,7 +129,7 @@ fn resolve_encounter_card(
                 .iter()
                 .filter(|a| a.trigger == Trigger::Revelation)
             {
-                let outcome = apply_effect(cx.state, cx.events, &ability.effect, eval_ctx);
+                let outcome = apply_effect(cx, &ability.effect, eval_ctx);
                 if !matches!(outcome, EngineOutcome::Done) {
                     return outcome;
                 }
@@ -160,7 +160,7 @@ fn resolve_encounter_card(
                 .iter()
                 .filter(|a| a.trigger == Trigger::Revelation)
             {
-                let outcome = apply_effect(cx.state, cx.events, &ability.effect, eval_ctx);
+                let outcome = apply_effect(cx, &ability.effect, eval_ctx);
                 if !matches!(outcome, EngineOutcome::Done) {
                     return outcome;
                 }

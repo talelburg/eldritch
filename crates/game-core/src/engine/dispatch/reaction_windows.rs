@@ -347,7 +347,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // information is already on the trigger record.
     let eval_ctx = EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
     let usage_limit = ability.usage_limit;
-    let result = apply_effect(cx.state, cx.events, &ability.effect, eval_ctx);
+    let result = apply_effect(cx, &ability.effect, eval_ctx);
     if let EngineOutcome::Rejected { reason } = result {
         // Card-impl bugs surface loudly — same policy as
         // `fire_on_skill_test_resolution`.

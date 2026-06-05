@@ -497,7 +497,7 @@ pub(super) fn play_card(
     });
     let eval_ctx = EvalContext::for_controller(investigator);
     for ability in abilities.iter().filter(|a| a.trigger == Trigger::OnPlay) {
-        let outcome = apply_effect(cx.state, cx.events, &ability.effect, eval_ctx);
+        let outcome = apply_effect(cx, &ability.effect, eval_ctx);
         if !matches!(outcome, EngineOutcome::Done) {
             return outcome;
         }

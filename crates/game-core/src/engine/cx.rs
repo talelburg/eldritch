@@ -5,8 +5,8 @@
 //! by hand through every signature — the [`GameState`] being mutated and
 //! the [`Event`] buffer being emitted into. It is *not* a semantic
 //! context: the "you"/"source" of card text lives in
-//! [`EvalContext`](super::EvalContext), which will travel alongside `Cx`
-//! as a separate `eval_ctx` parameter once the evaluator is migrated.
+//! [`EvalContext`](super::EvalContext), which travels alongside `Cx`
+//! as a separate `eval_ctx` parameter in the evaluator.
 //!
 //! Bare field bundle by design — no helper methods. Read-only callees
 //! keep taking `&GameState`; a holder of `cx` calls them as

@@ -93,7 +93,7 @@ pub(super) fn activate_ability(
     });
 
     let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
-    apply_effect(cx.state, cx.events, &effect, eval_ctx)
+    apply_effect(cx, &effect, eval_ctx)
 }
 
 /// Pay the action cost and every payment cost of an activated
