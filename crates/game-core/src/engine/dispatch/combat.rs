@@ -173,7 +173,7 @@ pub(super) fn enemy_attack(cx: &mut Cx, enemy_id: EnemyId, investigator: Investi
         } else {
             DefeatCause::Horror
         };
-        super::elimination::apply_investigator_defeat(cx.state, cx.events, investigator, cause);
+        super::elimination::apply_investigator_defeat(cx, investigator, cause);
     }
 }
 

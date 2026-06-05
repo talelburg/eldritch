@@ -1,8 +1,9 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and all-defeated detection.
 
+use super::Cx;
 use crate::event::Event;
-use crate::state::{DefeatCause, EnemyId, GameState, InvestigatorId, Status};
+use crate::state::{DefeatCause, EnemyId, InvestigatorId, Status};
 
 #[cfg(test)]
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Phase};
@@ -15,12 +16,11 @@ use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Phase};
 /// [`Status::Killed`]: crate::state::Status::Killed
 /// [`Status::Insane`]: crate::state::Status::Insane
 pub(super) fn apply_investigator_defeat(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     cause: DefeatCause,
 ) {
-    let inv = state
+    let inv = cx.state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -37,7 +37,7 @@ pub(super) fn apply_investigator_defeat(
         DefeatCause::Horror => Status::Insane,
         DefeatCause::Resigned => Status::Resigned,
     };
-    events.push(Event::InvestigatorDefeated {
+    cx.events.push(Event::InvestigatorDefeated {
         investigator,
         cause,
     });
@@ -45,30 +45,28 @@ pub(super) fn apply_investigator_defeat(
     // Rules Reference p.10 Elimination steps 1–5 run here, between the
     // defeat event and the all-defeated check (step 6 signal). See the
     // design doc 2026-05-31-144 for the full breakdown.
-    run_elimination_steps(state, events, investigator);
+    run_elimination_steps(cx, investigator);
 
-    check_all_defeated(state, events);
+    check_all_defeated(cx);
 }
 
 /// Execute Rules Reference p.10 Elimination steps 1–5 for an
 /// investigator whose `status` has just been flipped to a defeated
 /// variant. Synchronous: the step-3 re-engagement tie auto-picks the
 /// lead rather than suspending (see `reengage_at_location`).
-fn run_elimination_steps(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) {
+fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // The location the investigator was at "when eliminated" — read once
     // before any mutations; step 2 deposits clues here.
-    let last_location = state
+    let last_location = cx
+        .state
         .investigators
         .get(&investigator)
         .and_then(|inv| inv.current_location);
 
     // Step 1: remove every card this investigator controls in play and
     // owns in out-of-play areas (hand/deck/discard) from the game.
-    let inv = state
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -94,10 +92,10 @@ fn run_elimination_steps(
     inv.resources = 0;
     if clues > 0 {
         if let Some(loc_id) = last_location {
-            if let Some(loc) = state.locations.get_mut(&loc_id) {
+            if let Some(loc) = cx.state.locations.get_mut(&loc_id) {
                 loc.clues = loc.clues.saturating_add(clues);
                 let new_count = loc.clues;
-                events.push(Event::LocationCluesChanged {
+                cx.events.push(Event::LocationCluesChanged {
                     location: loc_id,
                     new_count,
                 });
@@ -113,24 +111,25 @@ fn run_elimination_steps(
     // them along), so no location update is needed — just clear
     // `engaged_with`. Disengage all first (simultaneous), then let the
     // ready ones re-engage a surviving co-located investigator per prey.
-    let affected: Vec<EnemyId> = state
+    let affected: Vec<EnemyId> = cx
+        .state
         .enemies
         .iter()
         .filter(|(_, e)| e.engaged_with == Some(investigator))
         .map(|(id, _)| *id)
         .collect();
     for &eid in &affected {
-        let enemy = state.enemies.get_mut(&eid).unwrap_or_else(|| {
+        let enemy = cx.state.enemies.get_mut(&eid).unwrap_or_else(|| {
             unreachable!("run_elimination_steps: enemy {eid:?} vanished; state corruption")
         });
         enemy.engaged_with = None;
-        events.push(Event::EnemyDisengaged {
+        cx.events.push(Event::EnemyDisengaged {
             enemy: eid,
             investigator,
         });
     }
     for &eid in &affected {
-        super::hunters::reengage_at_location(&mut super::Cx { state, events }, eid);
+        super::hunters::reengage_at_location(cx, eid);
     }
 
     // Step 4: place other (non-enemy) threat-area cards in the
@@ -153,7 +152,8 @@ fn run_elimination_steps(
     // step 2 deposited clues using `last_location` (step 3 reads
     // `enemy.current_location` directly, relying on the same value via
     // the engagement invariant).
-    let inv = state
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -183,14 +183,9 @@ fn run_elimination_steps(
 /// return) is one line per call site.
 ///
 /// [`Status::Insane`]: crate::state::Status::Insane
-pub(super) fn take_horror(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    amount: u8,
-) {
-    if super::combat::apply_horror_numeric(&mut super::Cx { state, events }, investigator, amount) {
-        apply_investigator_defeat(state, events, investigator, DefeatCause::Horror);
+pub(super) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
+    if super::combat::apply_horror_numeric(cx, investigator, amount) {
+        apply_investigator_defeat(cx, investigator, DefeatCause::Horror);
     }
 }
 
@@ -217,23 +212,24 @@ pub(super) fn take_horror(
 /// investigator transition it requests [`crate::scenario::Resolution::Lost`]
 /// per Rules Reference p.10 step 6. The `apply` hook turns that latch into
 /// [`Event::ScenarioResolved`] + `apply_resolution`.
-pub(super) fn check_all_defeated(state: &mut GameState, events: &mut Vec<Event>) {
-    let any_active = state
+pub(super) fn check_all_defeated(cx: &mut Cx) {
+    let any_active = cx
+        .state
         .investigators
         .values()
         .any(|inv| inv.status == Status::Active);
     // Empty-investigators is nonsense scenario state; suppress the
     // event so we don't emit a meaningless "all defeated" when there
     // was nobody to defeat in the first place.
-    if !any_active && !state.investigators.is_empty() {
-        events.push(Event::AllInvestigatorsDefeated);
+    if !any_active && !cx.state.investigators.is_empty() {
+        cx.events.push(Event::AllInvestigatorsDefeated);
         // Rules Reference p.10 step 6: "If there are no remaining players,
         // the scenario ends. Refer to 'no resolution was reached' entry
         // for that scenario in the campaign guide." Latch the loss
         // (first-writer-wins, so an already-fired act/agenda resolution
         // stays authoritative).
         super::act_agenda::request_resolution(
-            state,
+            cx.state,
             crate::scenario::Resolution::Lost {
                 reason: "no resolution was reached".into(),
             },
@@ -264,7 +260,14 @@ mod elimination_tests {
         let mut state = TestGame::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            DefeatCause::Damage,
+        );
 
         let after = &state.investigators[&id];
         assert!(after.hand.is_empty(), "hand drained");
@@ -303,7 +306,14 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            DefeatCause::Damage,
+        );
 
         assert_eq!(
             state.locations[&loc_id].clues, 3,
@@ -349,7 +359,14 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Damage);
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Damage,
+        );
 
         assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
             if *enemy == EnemyId(1) && *investigator == dead);
@@ -391,7 +408,14 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Damage);
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Damage,
+        );
 
         assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
             if *enemy == EnemyId(1) && *investigator == dead);
@@ -419,7 +443,14 @@ mod elimination_tests {
         let mut events = Vec::new();
 
         // Apply lethal horror through the standard defeat path.
-        take_horror(&mut state, &mut events, inv, 1);
+        take_horror(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv,
+            1,
+        );
 
         assert_event!(events, Event::AllInvestigatorsDefeated);
         assert!(
@@ -461,7 +492,14 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Horror);
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Horror,
+        );
 
         assert_eq!(state.investigators[&dead].status, Status::Insane);
         assert_eq!(state.locations[&loc].clues, 1, "clue placed at location");
@@ -503,7 +541,14 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(&mut state, &mut events, dead, DefeatCause::Damage);
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Damage,
+        );
 
         assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
             if *enemy == EnemyId(1) && *investigator == dead);
@@ -526,7 +571,14 @@ mod elimination_tests {
         let mut state = TestGame::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(&mut state, &mut events, id, DefeatCause::Damage);
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            DefeatCause::Damage,
+        );
 
         assert_eq!(
             state.investigators[&id].clues, 0,

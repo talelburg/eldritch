@@ -179,7 +179,7 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
         // (the reshuffle did happen if discard was non-empty; if it
         // was also empty, the rules don't strictly require horror
         // but we apply it as the safer reading).
-        super::elimination::take_horror(cx.state, cx.events, investigator, 1);
+        super::elimination::take_horror(cx, investigator, 1);
     } else {
         draw_cards(cx, investigator, 1);
     }
