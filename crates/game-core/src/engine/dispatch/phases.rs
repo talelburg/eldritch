@@ -3,20 +3,22 @@
 
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
-use crate::state::{EnemyId, GameState, InvestigatorId, Phase, WindowKind};
+use crate::state::{EnemyId, InvestigatorId, Phase, WindowKind};
+
+use super::Cx;
 
 /// Action points granted to an investigator at the start of their
 /// turn during the Investigation phase. Per the Arkham Horror LCG
 /// rulebook.
 pub(super) const ACTIONS_PER_TURN: u8 = 3;
 
-pub(super) fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+pub(super) fn start_scenario(cx: &mut Cx) -> EngineOutcome {
     // The GameState constructor places the world in its initial shape;
     // this action is the explicit "session has begun" marker that lands
     // in the action log. Replaying it on an already-started state is a
     // bug, not a no-op — reject so callers notice rather than silently
     // double-emitting `ScenarioStarted`.
-    if state.round != 0 {
+    if cx.state.round != 0 {
         return EngineOutcome::Rejected {
             reason: "StartScenario applied to a state that is already in progress".into(),
         };
@@ -26,16 +28,16 @@ pub(super) fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> 
     // the first round of the game, skip the mythos phase." No
     // PhaseStarted(Mythos) / PhaseEnded(Mythos) fire — the phase
     // doesn't happen.
-    state.round = 1;
-    state.phase = Phase::Investigation;
-    events.push(Event::ScenarioStarted);
+    cx.state.round = 1;
+    cx.state.phase = Phase::Investigation;
+    cx.events.push(Event::ScenarioStarted);
 
     // For each investigator (sorted by id for determinism), shuffle
     // their deck and deal an initial hand of up to 5.
-    let inv_ids: Vec<InvestigatorId> = state.investigators.keys().copied().collect();
+    let inv_ids: Vec<InvestigatorId> = cx.state.investigators.keys().copied().collect();
     for inv_id in inv_ids {
-        super::cards::shuffle_player_deck(state, events, inv_id);
-        super::cards::draw_cards(state, events, inv_id, super::cards::INITIAL_HAND_SIZE);
+        super::cards::shuffle_player_deck(cx, inv_id);
+        super::cards::draw_cards(cx, inv_id, super::cards::INITIAL_HAND_SIZE);
     }
 
     // Seed the mulligan cursor to the first Active investigator in
@@ -45,11 +47,11 @@ pub(super) fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> 
     // at which point setup ends. Other player actions are rejected while
     // the cursor is `Some`. An empty/all-eliminated `turn_order` seeds
     // `None` — the same degenerate no-op as the Mythos draw cursor.
-    state.mulligan_pending = super::cursor::first_active_investigator(state);
+    cx.state.mulligan_pending = super::cursor::first_active_investigator(cx.state);
 
     // Round-1 action seed: round 1 skips Mythos, so there's no Upkeep 4.2
     // to grant the first round's actions. Every Active investigator → ACTIONS_PER_TURN.
-    reset_actions(state, events);
+    reset_actions(cx);
 
     // NOTE: the Investigation phase is NOT begun here. Setup has no
     // action windows (Rules Reference p.27); the phase begins after the
@@ -57,13 +59,13 @@ pub(super) fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> 
     EngineOutcome::Done
 }
 
-pub(super) fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
-    if state.phase != Phase::Investigation {
+pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
+    if cx.state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
             reason: "EndTurn is only valid during the Investigation phase".into(),
         };
     }
-    let Some(active_id) = state.active_investigator else {
+    let Some(active_id) = cx.state.active_investigator else {
         return EngineOutcome::Rejected {
             reason: "EndTurn requires an active investigator".into(),
         };
@@ -72,22 +74,26 @@ pub(super) fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> Engine
     // existing in the investigators map; a missing entry would be state
     // corruption, not a normal rejection. Surface it loudly rather than
     // hiding behind Rejected.
-    let active = state.investigators.get_mut(&active_id).unwrap_or_else(|| {
-        unreachable!(
-            "active_investigator {active_id:?} is not in the investigators map; \
+    let active = cx
+        .state
+        .investigators
+        .get_mut(&active_id)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "active_investigator {active_id:?} is not in the investigators map; \
                  this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
 
     // Drain remaining actions and announce the turn ended.
     if active.actions_remaining != 0 {
         active.actions_remaining = 0;
-        events.push(Event::ActionsRemainingChanged {
+        cx.events.push(Event::ActionsRemainingChanged {
             investigator: active_id,
             new_count: 0,
         });
     }
-    events.push(Event::TurnEnded {
+    cx.events.push(Event::TurnEnded {
         investigator: active_id,
     });
 
@@ -95,14 +101,14 @@ pub(super) fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> Engine
     // proceed to 2.3. next_active_investigator_after skips eliminated
     // investigators (Rules Reference p.10) — the same shared helper the
     // Enemy phase uses.
-    if let Some(next_id) = super::cursor::next_active_investigator_after(state, active_id) {
-        begin_investigator_turn(state, events, next_id);
+    if let Some(next_id) = super::cursor::next_active_investigator_after(cx.state, active_id) {
+        begin_investigator_turn(cx, next_id);
         EngineOutcome::Done
     } else {
-        state.active_investigator = None;
+        cx.state.active_investigator = None;
         // 2.3 → Enemy. The cascade may suspend on a hunter-movement tie
         // (Enemy 3.2); propagate its outcome rather than swallowing it.
-        investigation_phase_end(state, events)
+        investigation_phase_end(cx)
     }
 }
 
@@ -120,9 +126,9 @@ pub(super) fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> Engine
 /// hand, which is always the case in unit tests with no card registry
 /// installed), so single-investigator entry still lands the lead active
 /// within the same `apply()` call.
-pub(super) fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
+pub(super) fn investigation_phase(cx: &mut Cx) {
     // 2.1 Investigation phase begins.
-    events.push(Event::PhaseStarted {
+    cx.events.push(Event::PhaseStarted {
         phase: Phase::Investigation,
     });
     // PLAYER WINDOW (post-2.1). Rotation to the first investigator
@@ -131,7 +137,7 @@ pub(super) fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>
     // order 2.1 → window → 2.2 holds. Auto-skips inline when nothing is
     // Fast-eligible, so single-investigator entry still lands the lead
     // active within the same apply() call.
-    super::reaction_windows::open_fast_window(state, events, WindowKind::InvestigationBegins);
+    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigationBegins);
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
@@ -144,13 +150,9 @@ pub(super) fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>
 ///
 /// `who` must be an `Active` investigator in `turn_order`; callers
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
-pub(super) fn begin_investigator_turn(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    who: InvestigatorId,
-) {
-    rotate_to_active(state, events, who);
-    super::reaction_windows::open_fast_window(state, events, WindowKind::InvestigatorTurnBegins);
+pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
+    rotate_to_active(cx, who);
+    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigatorTurnBegins);
 }
 
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)`
@@ -158,18 +160,18 @@ pub(super) fn begin_investigator_turn(
 /// `enemy_phase_end` / `upkeep_phase_end` — then transitions to the
 /// Enemy phase. Called only from `end_turn`'s terminal branch (the last
 /// investigator has taken a turn this round).
-fn investigation_phase_end(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
-    events.push(Event::PhaseEnded {
+fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
+    cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
-    step_phase(state, events) // Investigation → Enemy; calls enemy_phase
+    step_phase(cx) // Investigation → Enemy; calls enemy_phase
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
 /// out the Rules Reference p.24 sub-steps as discrete named call
 /// sites so the rule structure is grep-able and #73 / future-peril-PR
 /// fills in TODO bodies without changing the driver shape.
-fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
+fn mythos_phase(cx: &mut Cx) {
     // 1.1 Round begins. Mythos phase begins.
     //     Rules Reference p.24: "As this is the first framework event
     //     of the round, it [1.1] also formalizes the beginning of a new
@@ -179,16 +181,16 @@ fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     //     bypassed: start_scenario sets round = 1 directly (Mythos
     //     skipped). This is also the future home for a RoundStarted
     //     event when a consumer lands.
-    state.round = state.round.saturating_add(1);
-    events.push(Event::PhaseStarted {
+    cx.state.round = cx.state.round.saturating_add(1);
+    cx.events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });
 
     // 1.2 Place 1 doom on the current agenda.
-    super::act_agenda::place_doom_on_agenda(state, events);
+    super::act_agenda::place_doom_on_agenda(cx);
 
     // 1.3 Check doom threshold.
-    super::act_agenda::check_doom_threshold(state, events);
+    super::act_agenda::check_doom_threshold(cx);
 
     // 1.4 Each investigator draws 1 encounter card.
     //     Seed the cursor; the actual draws are player-driven via
@@ -197,15 +199,15 @@ fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     //     Per Rules Reference p.10 (Elimination), eliminated
     //     investigators (Killed, Insane, Resigned) do not draw
     //     encounter cards — skip to the first Active investigator.
-    state.mythos_draw_pending = super::cursor::first_active_investigator(state);
-    if state.mythos_draw_pending.is_none() {
+    cx.state.mythos_draw_pending = super::cursor::first_active_investigator(cx.state);
+    if cx.state.mythos_draw_pending.is_none() {
         // No Active investigators to draw (turn_order is empty or all
         // investigators are eliminated). Open the post-1.4 window
         // immediately; open_fast_window's auto-skip path triggers
         // because nothing is eligible, runs the MythosAfterDraws
         // continuation (mythos_phase_end), which transitions to
         // Investigation. All in this same apply.
-        super::reaction_windows::open_fast_window(state, events, WindowKind::MythosAfterDraws);
+        super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
     }
 }
 
@@ -234,11 +236,11 @@ fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
 /// Investigation→Enemy suspension is owned by
 /// [`investigation_phase_end`], which propagates it up through
 /// [`end_turn`].
-fn step_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
-    let from = state.phase;
+fn step_phase(cx: &mut Cx) -> EngineOutcome {
+    let from = cx.state.phase;
     let to = from.next();
 
-    state.phase = to;
+    cx.state.phase = to;
     // The round-counter bump moves into mythos_phase (step 1.1).
     // step_phase no longer touches state.round.
 
@@ -246,16 +248,16 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     // PhaseStarted directly (for phases without a driver yet).
     match to {
         Phase::Mythos if from != Phase::Mythos => {
-            mythos_phase(state, events);
+            mythos_phase(cx);
             EngineOutcome::Done
         }
         Phase::Investigation if from != Phase::Investigation => {
-            investigation_phase(state, events);
+            investigation_phase(cx);
             EngineOutcome::Done
         }
-        Phase::Enemy if from != Phase::Enemy => enemy_phase(state, events),
+        Phase::Enemy if from != Phase::Enemy => enemy_phase(cx),
         Phase::Upkeep if from != Phase::Upkeep => {
-            upkeep_phase(state, events);
+            upkeep_phase(cx);
             EngineOutcome::Done
         }
         _ => unreachable!(
@@ -275,12 +277,12 @@ fn step_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
 ///
 /// `id` must refer to an investigator in `state.investigators` (a
 /// whole-program invariant for ids drawn from `turn_order`).
-fn rotate_to_active(state: &mut GameState, _events: &mut Vec<Event>, id: InvestigatorId) {
+fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
     debug_assert!(
-        state.investigators.contains_key(&id),
+        cx.state.investigators.contains_key(&id),
         "rotate_to_active: investigator {id:?} not in investigators (state corruption)"
     );
-    state.active_investigator = Some(id);
+    cx.state.active_investigator = Some(id);
 }
 
 /// 3.3 Seed the per-investigator attack cursor and open the first
@@ -294,24 +296,16 @@ fn rotate_to_active(state: &mut GameState, _events: &mut Vec<Event>, id: Investi
 /// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
 /// the shared helper used by Mythos 1.4 (#69) for the same semantics.
 /// The loop body runs in [`run_window_continuation`]'s arms.
-pub(super) fn enemy_attack_kickoff(state: &mut GameState, events: &mut Vec<Event>) {
-    state.enemy_attack_pending = super::cursor::first_active_investigator(state);
+pub(super) fn enemy_attack_kickoff(cx: &mut Cx) {
+    cx.state.enemy_attack_pending = super::cursor::first_active_investigator(cx.state);
 
-    if state.enemy_attack_pending.is_some() {
-        super::reaction_windows::open_fast_window(
-            state,
-            events,
-            WindowKind::BeforeInvestigatorAttacked,
-        );
+    if cx.state.enemy_attack_pending.is_some() {
+        super::reaction_windows::open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked);
     } else {
         // No Active investigators (turn_order empty or all eliminated).
         // Skip straight to the final window — mirror of mythos_phase's
         // no-drawer path.
-        super::reaction_windows::open_fast_window(
-            state,
-            events,
-            WindowKind::AfterAllInvestigatorsAttacked,
-        );
+        super::reaction_windows::open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked);
     }
 }
 
@@ -326,15 +320,15 @@ pub(super) fn enemy_attack_kickoff(state: &mut GameState, events: &mut Vec<Event
 /// kickoff is deferred to [`resume_hunter_choice`], which runs it once
 /// the last hunter resolves. Otherwise the kickoff runs inline here and
 /// this returns [`EngineOutcome::Done`].
-fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     // 3.1 Enemy phase begins.
-    events.push(Event::PhaseStarted {
+    cx.events.push(Event::PhaseStarted {
         phase: Phase::Enemy,
     });
 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
     //     attack-loop kickoff then happens on resume.
-    match super::hunters::drive_hunter_moves(state, events) {
+    match super::hunters::drive_hunter_moves(cx) {
         outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
         // drive_hunter_moves only ever returns Done or AwaitingInput, never Rejected.
         EngineOutcome::Rejected { reason } => {
@@ -344,7 +338,7 @@ fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome 
     }
 
     // 3.3 Kick off the per-investigator attack loop.
-    enemy_attack_kickoff(state, events);
+    enemy_attack_kickoff(cx);
     EngineOutcome::Done
 }
 
@@ -352,14 +346,14 @@ fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome 
 /// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
 /// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
-pub(super) fn enemy_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+pub(super) fn enemy_phase_end(cx: &mut Cx) {
     // 3.4 Enemy phase ends.
-    events.push(Event::PhaseEnded {
+    cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
     // Enemy → Upkeep; calls upkeep_phase. Only the Investigation→Enemy
     // transition can suspend (hunter movement), so this never does.
-    let outcome = step_phase(state, events);
+    let outcome = step_phase(cx);
     debug_assert_eq!(
         outcome,
         EngineOutcome::Done,
@@ -373,20 +367,20 @@ pub(super) fn enemy_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
 /// `mythos_phase_end`. Invoked from `close_reaction_window_at`'s
 /// kind-aware tail when a `MythosAfterDraws` window pops, and from
 /// `open_fast_window`'s auto-skip path inline.
-pub(super) fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+pub(super) fn mythos_phase_end(cx: &mut Cx) {
     // 1.5 Mythos phase ends.
     //     The PhaseEnded(Mythos) emit lives HERE rather than in
     //     step_phase so step 1.5 has explicit ownership in the
     //     driver — mirror of step 1.1's PhaseStarted ownership in
     //     mythos_phase. Rules Reference p.24: "This step formalizes
     //     the end of the mythos phase."
-    events.push(Event::PhaseEnded {
+    cx.events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });
     // Mythos → Investigation; calls investigation_phase. Only the
     // Investigation→Enemy transition can suspend (hunter movement), so
     // this cascade always completes.
-    let outcome = step_phase(state, events);
+    let outcome = step_phase(cx);
     debug_assert_eq!(
         outcome,
         EngineOutcome::Done,
@@ -401,38 +395,38 @@ pub(super) fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
 /// window sits at the END, so its driver runs content then opens;
 /// Upkeep's sits at the START, so the driver opens immediately and the
 /// content is the continuation.
-fn upkeep_phase(state: &mut GameState, events: &mut Vec<Event>) {
+fn upkeep_phase(cx: &mut Cx) {
     // 4.1 Upkeep phase begins.
-    events.push(Event::PhaseStarted {
+    cx.events.push(Event::PhaseStarted {
         phase: Phase::Upkeep,
     });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
     // via run_window_continuation) when nothing is Fast-eligible.
-    super::reaction_windows::open_fast_window(state, events, WindowKind::UpkeepBegins);
+    super::reaction_windows::open_fast_window(cx, WindowKind::UpkeepBegins);
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
 /// call sites; step 4.5 is the [`check_hand_size`] stub (TODO #111).
 /// Then hands to [`upkeep_phase_end`] for 4.6 + transition.
-pub(super) fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
-    reset_actions(state, events); // 4.2
-    ready_exhausted_cards(state, events); // 4.3
-    upkeep_draw_and_resource(state, events); // 4.4
-    check_hand_size(state, events); // 4.5 (TODO #111)
-    upkeep_phase_end(state, events); // 4.6 + transition
+pub(super) fn upkeep_resume(cx: &mut Cx) {
+    reset_actions(cx); // 4.2
+    ready_exhausted_cards(cx); // 4.3
+    upkeep_draw_and_resource(cx); // 4.4
+    check_hand_size(cx); // 4.5 (TODO #111)
+    upkeep_phase_end(cx); // 4.6 + transition
 }
 
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
 /// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` emits no
 /// `PhaseEnded` itself — every phase's `*_end` helper owns its own.
-fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
+fn upkeep_phase_end(cx: &mut Cx) {
     // 4.6 Upkeep phase ends. Round ends.
-    events.push(Event::PhaseEnded {
+    cx.events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });
     // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
     // transition can suspend (hunter movement), so this never does.
-    let outcome = step_phase(state, events);
+    let outcome = step_phase(cx);
     debug_assert_eq!(
         outcome,
         EngineOutcome::Done,
@@ -452,14 +446,14 @@ fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
 /// co-located with an investigator engages it via [`reengage_at_location`]
 /// (Rules Reference p.10: "if an exhausted enemy at the same location as an
 /// investigator becomes ready, it engages as soon as it is readied").
-fn ready_exhausted_cards(state: &mut GameState, events: &mut Vec<Event>) {
-    let inv_ids: Vec<InvestigatorId> = state.investigators.keys().copied().collect();
+fn ready_exhausted_cards(cx: &mut Cx) {
+    let inv_ids: Vec<InvestigatorId> = cx.state.investigators.keys().copied().collect();
     for id in inv_ids {
-        let inv = state.investigators.get_mut(&id).expect("id from keys");
+        let inv = cx.state.investigators.get_mut(&id).expect("id from keys");
         for card in &mut inv.cards_in_play {
             if card.exhausted {
                 card.exhausted = false;
-                events.push(Event::CardReadied {
+                cx.events.push(Event::CardReadied {
                     investigator: id,
                     instance_id: card.instance_id,
                     code: card.code.clone(),
@@ -467,13 +461,13 @@ fn ready_exhausted_cards(state: &mut GameState, events: &mut Vec<Event>) {
             }
         }
     }
-    let enemy_ids: Vec<EnemyId> = state.enemies.keys().copied().collect();
+    let enemy_ids: Vec<EnemyId> = cx.state.enemies.keys().copied().collect();
     let mut newly_readied: Vec<EnemyId> = Vec::new();
     for eid in enemy_ids {
-        let enemy = state.enemies.get_mut(&eid).expect("id from keys");
+        let enemy = cx.state.enemies.get_mut(&eid).expect("id from keys");
         if enemy.exhausted {
             enemy.exhausted = false;
-            events.push(Event::EnemyReadied { enemy: eid });
+            cx.events.push(Event::EnemyReadied { enemy: eid });
             newly_readied.push(eid);
         }
     }
@@ -485,14 +479,14 @@ fn ready_exhausted_cards(state: &mut GameState, events: &mut Vec<Event>) {
     // that readied while still engaged keeps its existing engagement.
     // newly_readied is in ascending EnemyId order (BTreeMap key order).
     for eid in newly_readied {
-        if state.enemies[&eid].engaged_with.is_none() {
-            super::hunters::reengage_at_location(state, events, eid);
+        if cx.state.enemies[&eid].engaged_with.is_none() {
+            super::hunters::reengage_at_location(cx, eid);
         }
     }
 }
 
 /// 4.5 Each investigator checks hand size.
-fn check_hand_size(_state: &mut GameState, _events: &mut Vec<Event>) {
+fn check_hand_size(_cx: &mut Cx) {
     // TODO(#111): in player order, each investigator with more than 8
     //   cards in hand discards down to 8 (Rules Reference p.25 step 4.5).
     //   Needs an AwaitingInput producer for the discard choice. The call
@@ -510,15 +504,16 @@ fn check_hand_size(_state: &mut GameState, _events: &mut Vec<Event>) {
 /// no longer refreshes (step 2.2 is just "the turn begins");
 /// `start_scenario` seeds round 1. Eliminated investigators are skipped
 /// (Rules Reference p.10).
-fn reset_actions(state: &mut GameState, events: &mut Vec<Event>) {
-    for id in super::cursor::active_investigators_in_turn_order(state) {
-        let inv = state
+fn reset_actions(cx: &mut Cx) {
+    for id in super::cursor::active_investigators_in_turn_order(cx.state) {
+        let inv = cx
+            .state
             .investigators
             .get_mut(&id)
             .expect("id from active_investigators_in_turn_order");
         if inv.actions_remaining != ACTIONS_PER_TURN {
             inv.actions_remaining = ACTIONS_PER_TURN;
-            events.push(Event::ActionsRemainingChanged {
+            cx.events.push(Event::ActionsRemainingChanged {
                 investigator: id,
                 new_count: ACTIONS_PER_TURN,
             });
@@ -531,13 +526,13 @@ fn reset_actions(state: &mut GameState, events: &mut Vec<Event>) {
 /// Once those cards have been drawn, each investigator gains 1
 /// resource." Two passes to honor that ordering: all draws first, then
 /// all resource gains.
-fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
-    let ids = super::cursor::active_investigators_in_turn_order(state);
+fn upkeep_draw_and_resource(cx: &mut Cx) {
+    let ids = super::cursor::active_investigators_in_turn_order(cx.state);
     for &id in &ids {
-        super::cards::draw_one_with_deckout(state, events, id);
+        super::cards::draw_one_with_deckout(cx, id);
     }
     for &id in &ids {
-        super::cards::grant_resources(state, events, id, 1);
+        super::cards::grant_resources(cx, id, 1);
     }
 }
 
@@ -565,8 +560,10 @@ mod investigation_phase_tests {
 
         let mut events = Vec::new();
         let outcome = apply_player_action(
-            &mut state,
-            &mut events,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &PlayerAction::Mulligan {
                 investigator: InvestigatorId(1),
                 indices_to_redraw: vec![],
@@ -627,7 +624,10 @@ mod investigation_phase_tests {
         state.active_investigator = None;
 
         let mut events = Vec::new();
-        investigation_phase(&mut state, &mut events);
+        investigation_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(
             state.active_investigator,
@@ -676,7 +676,10 @@ mod investigation_phase_tests {
         state.active_investigator = None;
 
         let mut events = Vec::new();
-        investigation_phase(&mut state, &mut events);
+        investigation_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(
             state.active_investigator, None,
@@ -712,7 +715,10 @@ mod investigation_phase_tests {
         state.active_investigator = None;
 
         let mut events = Vec::new();
-        investigation_phase(&mut state, &mut events);
+        investigation_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(
             state.active_investigator,
@@ -734,7 +740,10 @@ mod investigation_phase_tests {
         state.turn_order = vec![InvestigatorId(1)];
 
         let mut events = Vec::new();
-        let outcome = end_turn(&mut state, &mut events);
+        let outcome = end_turn(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(matches!(outcome, EngineOutcome::Done));
         assert!(
@@ -783,7 +792,10 @@ mod investigation_phase_tests {
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
 
         let mut events = Vec::new();
-        let outcome = end_turn(&mut state, &mut events);
+        let outcome = end_turn(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(matches!(outcome, EngineOutcome::Done));
         assert_eq!(
@@ -821,7 +833,10 @@ mod investigation_phase_tests {
         state.turn_order = vec![InvestigatorId(1)];
 
         let mut events = Vec::new();
-        step_phase(&mut state, &mut events);
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(
             events
@@ -846,7 +861,10 @@ mod investigation_phase_tests {
         state.active_investigator = None;
 
         let mut events = Vec::new();
-        step_phase(&mut state, &mut events); // Mythos→Investigation
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Mythos→Investigation
 
         assert_eq!(state.phase, Phase::Investigation);
         assert_eq!(state.active_investigator, Some(InvestigatorId(1)));
@@ -894,7 +912,10 @@ mod mythos_phase_tests {
         state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
-        mythos_phase(&mut state, &mut events);
+        mythos_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
         assert!(
@@ -915,7 +936,10 @@ mod mythos_phase_tests {
         state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
-        mythos_phase(&mut state, &mut events);
+        mythos_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         // No drawers → open_fast_window runs for MythosAfterDraws,
         // which auto-skips (no Fast eligibility), runs continuation
@@ -969,7 +993,10 @@ mod mythos_phase_tests {
         state.turn_order = vec![InvestigatorId(1)];
         let mut events = Vec::new();
 
-        mythos_phase_end(&mut state, &mut events);
+        mythos_phase_end(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(state.phase, Phase::Investigation);
         assert!(
@@ -1012,7 +1039,10 @@ mod mythos_phase_tests {
         state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
-        mythos_phase(&mut state, &mut events);
+        mythos_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(
             state.mythos_draw_pending,
@@ -1043,7 +1073,10 @@ mod mythos_phase_tests {
         state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
-        mythos_phase(&mut state, &mut events);
+        mythos_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(state.mythos_draw_pending, None);
         assert_eq!(
@@ -1075,7 +1108,10 @@ mod mythos_phase_tests {
         state.mythos_draw_pending = Some(InvestigatorId(1));
         let mut events = Vec::new();
 
-        super::super::encounter::advance_mythos_draw_pending(&mut state, &mut events);
+        super::super::encounter::advance_mythos_draw_pending(&mut super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(
             state.mythos_draw_pending,
@@ -1237,7 +1273,10 @@ mod upkeep_phase_tests {
         state.active_investigator = None;
 
         let mut events = Vec::new();
-        step_phase(&mut state, &mut events); // Enemy → Upkeep, cascades to Mythos
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Enemy → Upkeep, cascades to Mythos
 
         let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
         let started = pos(&|e| {
@@ -1313,7 +1352,10 @@ mod upkeep_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        ready_exhausted_cards(&mut state, &mut events);
+        ready_exhausted_cards(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(
             !state.investigators[&inv_id].cards_in_play[0].exhausted,
@@ -1343,7 +1385,10 @@ mod upkeep_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        ready_exhausted_cards(&mut state, &mut events);
+        ready_exhausted_cards(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
         assert_eq!(
@@ -1370,7 +1415,10 @@ mod upkeep_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        ready_exhausted_cards(&mut state, &mut events);
+        ready_exhausted_cards(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(
             events.is_empty(),
@@ -1394,7 +1442,10 @@ mod upkeep_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        ready_exhausted_cards(&mut state, &mut events);
+        ready_exhausted_cards(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
         assert_eq!(
@@ -1417,7 +1468,10 @@ mod upkeep_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        ready_exhausted_cards(&mut state, &mut events);
+        ready_exhausted_cards(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(!state.enemies[&enemy_id].exhausted, "enemy readied");
         assert_eq!(
@@ -1450,7 +1504,10 @@ mod upkeep_phase_tests {
         state.turn_order = vec![a, b, c];
         let mut events = Vec::new();
 
-        upkeep_draw_and_resource(&mut state, &mut events);
+        upkeep_draw_and_resource(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(state.investigators[&a].resources, res_a + 1);
         assert_eq!(state.investigators[&b].resources, res_b + 1);
@@ -1481,7 +1538,10 @@ mod upkeep_phase_tests {
         state.turn_order = vec![a, b];
         let mut events = Vec::new();
 
-        upkeep_draw_and_resource(&mut state, &mut events);
+        upkeep_draw_and_resource(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         let last_draw = events
             .iter()
@@ -1512,7 +1572,10 @@ mod upkeep_phase_tests {
         state.turn_order = vec![a, b];
         let mut events = Vec::new();
 
-        reset_actions(&mut state, &mut events);
+        reset_actions(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(state.investigators[&a].actions_remaining, ACTIONS_PER_TURN);
         assert_eq!(
@@ -1538,7 +1601,10 @@ mod upkeep_phase_tests {
         state.turn_order = vec![id];
         let mut events = Vec::new();
 
-        reset_actions(&mut state, &mut events);
+        reset_actions(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(state.investigators[&id].actions_remaining, ACTIONS_PER_TURN);
         assert!(events.is_empty(), "no event when value is unchanged");
@@ -1552,7 +1618,13 @@ mod upkeep_phase_tests {
         let mut state = TestGame::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        rotate_to_active(&mut state, &mut events, id);
+        rotate_to_active(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+        );
 
         assert_eq!(state.active_investigator, Some(id));
         assert_eq!(
@@ -1580,7 +1652,10 @@ mod upkeep_phase_tests {
         state.round = 4;
 
         let mut events = Vec::new();
-        step_phase(&mut state, &mut events); // Upkeep → ... → Mythos via the cascade
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Upkeep → ... → Mythos via the cascade
 
         assert_eq!(state.round, 5, "round bumps on Mythos entry");
         assert_eq!(state.phase, Phase::Mythos);
@@ -1665,7 +1740,10 @@ mod enemy_phase_tests {
             .with_enemy(hunter)
             .build();
         let mut events = Vec::new();
-        let outcome = end_turn(&mut state, &mut events);
+        let outcome = end_turn(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(outcome, EngineOutcome::Done);
         // No registry installed → the attack window auto-skips inline and
         // the cascade runs Enemy→Upkeep→Mythos within this same call (same
@@ -1708,13 +1786,18 @@ mod enemy_phase_tests {
             .with_enemy(hunter)
             .build();
         let mut events = Vec::new();
-        let outcome = end_turn(&mut state, &mut events);
+        let outcome = end_turn(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Enemy);
         let mut ev2 = Vec::new();
         let resumed = resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &InputResponse::PickLocation(LocationId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
@@ -1738,7 +1821,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // Damage placed.
         assert!(
@@ -1805,7 +1894,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // Exactly one DamageTaken (from e3, amount 1).
         let damages: Vec<&Event> = events
@@ -1868,7 +1963,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // The two DamageTaken events must appear in EnemyId(2) → EnemyId(10) order
         // (verifiable via their amounts: 1 then 2).
@@ -1911,7 +2012,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // e1 attacked + exhausted.
         assert!(
@@ -1962,7 +2069,10 @@ mod enemy_phase_tests {
         state.active_investigator = None;
         let mut events = Vec::new();
 
-        step_phase(&mut state, &mut events); // Investigation → Enemy
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Investigation → Enemy
 
         // Positional ordering of the major events.
         let pos = |pred: &dyn Fn(&Event) -> bool| events.iter().position(pred);
@@ -2056,7 +2166,10 @@ mod enemy_phase_tests {
         state.active_investigator = None;
         let mut events = Vec::new();
 
-        step_phase(&mut state, &mut events); // Investigation → Enemy
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Investigation → Enemy
 
         // Two BeforeInvestigatorAttacked windows + one AfterAll.
         let before_opens: Vec<usize> = events
@@ -2106,7 +2219,10 @@ mod enemy_phase_tests {
         state.investigators.get_mut(&id2).unwrap().status = Status::Insane;
         let mut events = Vec::new();
 
-        step_phase(&mut state, &mut events); // Investigation → Enemy
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Investigation → Enemy
 
         // Only 2 BeforeInvestigatorAttacked windows (id1 + id3).
         let before_count = events
@@ -2135,7 +2251,10 @@ mod enemy_phase_tests {
         state.investigators.get_mut(&id1).unwrap().status = Status::Killed;
         let mut events = Vec::new();
 
-        step_phase(&mut state, &mut events); // Investigation → Enemy
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Investigation → Enemy
 
         // No BeforeInvestigatorAttacked windows — straight to AfterAll.
         assert!(
@@ -2180,7 +2299,10 @@ mod enemy_phase_tests {
         state.active_investigator = None;
         let mut events = Vec::new();
 
-        step_phase(&mut state, &mut events); // Investigation → Enemy
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Investigation → Enemy
 
         // The attack landed. Event-stream evidence — state.enemies's
         // `exhausted` flag is reset by Upkeep step 4.3 later in the
@@ -2216,7 +2338,10 @@ mod enemy_phase_tests {
         // Use a state where Upkeep's cascade can complete (Active investigator exists).
         let mut events = Vec::new();
 
-        step_phase(&mut state, &mut events); // Enemy → Upkeep
+        step_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        }); // Enemy → Upkeep
 
         // step_phase itself MUST NOT emit PhaseEnded(Enemy); only
         // enemy_phase_end is allowed to (which doesn't run here — we

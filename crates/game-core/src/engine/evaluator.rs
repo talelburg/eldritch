@@ -59,6 +59,7 @@ use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
 
 use super::outcome::EngineOutcome;
+use super::Cx;
 
 /// Per-evaluation context the effect needs to resolve targets and
 /// reference in-flight game state (current skill test, etc.).
@@ -127,24 +128,17 @@ impl EvalContext {
 /// authors expect the whole sequence or nothing — but it means
 /// gluing implemented + stubbed effects together still blocks on
 /// the stubs.
-pub fn apply_effect(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    effect: &Effect,
-    ctx: EvalContext,
-) -> EngineOutcome {
+pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
     match effect {
-        Effect::GainResources { target, amount } => {
-            gain_resources(state, events, ctx, *target, *amount)
-        }
-        Effect::DiscoverClue { from, count } => discover_clue(state, events, ctx, *from, *count),
-        Effect::Seq(effects) => apply_seq(state, events, effects, ctx),
-        Effect::Modify { stat, delta, scope } => modify(state, ctx, *stat, *delta, *scope),
+        Effect::GainResources { target, amount } => gain_resources(cx, eval_ctx, *target, *amount),
+        Effect::DiscoverClue { from, count } => discover_clue(cx, eval_ctx, *from, *count),
+        Effect::Seq(effects) => apply_seq(cx, effects, eval_ctx),
+        Effect::Modify { stat, delta, scope } => modify(cx, eval_ctx, *stat, *delta, *scope),
         Effect::If {
             condition,
             then,
             else_,
-        } => apply_if(state, events, ctx, condition, then, else_.as_deref()),
+        } => apply_if(cx, eval_ctx, condition, then, else_.as_deref()),
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(_) => awaiting_input_stub("ChooseOne"),
     }
@@ -163,14 +157,13 @@ pub fn apply_effect(
 /// events the branch already pushed. The structural fix lives at
 /// the outer `apply` loop (TODO in `engine/mod.rs::apply`).
 fn apply_if(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    ctx: EvalContext,
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
     condition: &Condition,
     then: &Effect,
     else_: Option<&Effect>,
 ) -> EngineOutcome {
-    let holds = match eval_condition(state, condition) {
+    let holds = match eval_condition(cx.state, condition) {
         Ok(b) => b,
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -179,9 +172,9 @@ fn apply_if(
         }
     };
     if holds {
-        apply_effect(state, events, then, ctx)
+        apply_effect(cx, then, eval_ctx)
     } else if let Some(else_branch) = else_ {
-        apply_effect(state, events, else_branch, ctx)
+        apply_effect(cx, else_branch, eval_ctx)
     } else {
         EngineOutcome::Done
     }
@@ -234,21 +227,21 @@ fn eval_condition(state: &GameState, condition: &Condition) -> Result<bool, Stri
 /// - [`ModifierScope::ThisTurn`]: not yet wired; rejects with TODO
 ///   until a card or test demands it.
 fn modify(
-    state: &mut GameState,
-    ctx: EvalContext,
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
     stat: crate::dsl::Stat,
     delta: i8,
     scope: ModifierScope,
 ) -> EngineOutcome {
     match scope {
         ModifierScope::ThisSkillTest => {
-            state
+            cx.state
                 .pending_skill_modifiers
                 .push(crate::state::PendingSkillModifier {
-                    investigator: ctx.controller,
+                    investigator: eval_ctx.controller,
                     stat,
                     delta,
-                    source: ctx.source,
+                    source: eval_ctx.source,
                 });
             EngineOutcome::Done
         }
@@ -287,9 +280,8 @@ fn awaiting_input_stub(name: &'static str) -> EngineOutcome {
 // ---- leaf-effect implementations ------------------------------
 
 fn gain_resources(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    ctx: EvalContext,
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
     target: InvestigatorTarget,
     amount: u8,
 ) -> EngineOutcome {
@@ -300,7 +292,7 @@ fn gain_resources(
         // isn't a state change worth narrating.
         return EngineOutcome::Done;
     }
-    let target_id = match resolve_investigator_target(state, ctx, target) {
+    let target_id = match resolve_investigator_target(cx.state, eval_ctx, target) {
         Ok(id) => id,
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -311,19 +303,18 @@ fn gain_resources(
     // Validate-first: confirm the investigator exists in state before
     // we touch anything. The "active" target may resolve to None if
     // outside the Investigation phase; that's a reject, not a panic.
-    if !state.investigators.contains_key(&target_id) {
+    if !cx.state.investigators.contains_key(&target_id) {
         return EngineOutcome::Rejected {
             reason: format!("GainResources: investigator {target_id:?} is not in the state").into(),
         };
     }
-    crate::engine::dispatch::cards::grant_resources(state, events, target_id, amount);
+    crate::engine::dispatch::cards::grant_resources(cx, target_id, amount);
     EngineOutcome::Done
 }
 
 fn discover_clue(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    ctx: EvalContext,
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
     from: LocationTarget,
     count: u8,
 ) -> EngineOutcome {
@@ -336,7 +327,7 @@ fn discover_clue(
     }
 
     // Resolve the source location.
-    let location_id = match resolve_location_target(state, ctx, from) {
+    let location_id = match resolve_location_target(cx.state, eval_ctx, from) {
         Ok(id) => id,
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -348,7 +339,7 @@ fn discover_clue(
     // Validate-first: collect the data we need to mutate without
     // mutating yet, so a missing-investigator or empty-location case
     // doesn't leave state half-modified.
-    let Some(location) = state.locations.get(&location_id) else {
+    let Some(location) = cx.state.locations.get(&location_id) else {
         return EngineOutcome::Rejected {
             reason: format!("DiscoverClue: location {location_id:?} is not in the state").into(),
         };
@@ -364,11 +355,11 @@ fn discover_clue(
     let actually_taken = count.min(location.clues);
     let new_location_count = location.clues - actually_taken;
 
-    if !state.investigators.contains_key(&ctx.controller) {
+    if !cx.state.investigators.contains_key(&eval_ctx.controller) {
         return EngineOutcome::Rejected {
             reason: format!(
                 "DiscoverClue: controller {:?} is not in the state",
-                ctx.controller
+                eval_ctx.controller
             )
             .into(),
         };
@@ -376,34 +367,30 @@ fn discover_clue(
 
     // Commit the mutations. From here both writes succeed
     // unconditionally.
-    state
+    cx.state
         .locations
         .get_mut(&location_id)
         .expect("checked above")
         .clues = new_location_count;
-    let investigator = state
+    let investigator = cx
+        .state
         .investigators
-        .get_mut(&ctx.controller)
+        .get_mut(&eval_ctx.controller)
         .expect("checked above");
     investigator.clues = investigator.clues.saturating_add(actually_taken);
 
-    events.push(Event::CluePlaced {
-        investigator: ctx.controller,
+    cx.events.push(Event::CluePlaced {
+        investigator: eval_ctx.controller,
         count: actually_taken,
     });
-    events.push(Event::LocationCluesChanged {
+    cx.events.push(Event::LocationCluesChanged {
         location: location_id,
         new_count: new_location_count,
     });
     EngineOutcome::Done
 }
 
-fn apply_seq(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    effects: &[Effect],
-    ctx: EvalContext,
-) -> EngineOutcome {
+fn apply_seq(cx: &mut Cx, effects: &[Effect], eval_ctx: EvalContext) -> EngineOutcome {
     // Stop at the first non-Done outcome. A Rejected mid-Seq leaves
     // earlier effects committed — not great as a rollback story, but
     // matches the existing handler contract (the validate-first
@@ -417,7 +404,7 @@ fn apply_seq(
     // AwaitingInput is unreachable here (no implemented variant
     // produces it), so the simple early-return is correct for v0.
     for effect in effects {
-        let outcome = apply_effect(state, events, effect, ctx);
+        let outcome = apply_effect(cx, effect, eval_ctx);
         if !matches!(outcome, EngineOutcome::Done) {
             return outcome;
         }
@@ -635,6 +622,7 @@ mod tests {
     use crate::{assert_event, assert_no_event};
 
     use super::{apply_effect, constant_skill_modifier, EngineOutcome, EvalContext};
+    use crate::engine::Cx;
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))
@@ -650,8 +638,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &gain_resources(InvestigatorTarget::Controller, 3),
             ctx(1),
         );
@@ -678,8 +668,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &gain_resources(InvestigatorTarget::Active, 0),
             ctx(1),
         );
@@ -699,8 +691,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &gain_resources(InvestigatorTarget::Active, 1),
             ctx(1),
         );
@@ -724,8 +718,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &discover_clue(LocationTarget::ControllerLocation, 1),
             ctx(1),
         );
@@ -760,8 +756,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &discover_clue(LocationTarget::ControllerLocation, 3),
             ctx(1),
         );
@@ -794,8 +792,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &discover_clue(LocationTarget::ControllerLocation, 1),
             ctx(1),
         );
@@ -816,8 +816,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &discover_clue(LocationTarget::ControllerLocation, 1),
             ctx(1),
         );
@@ -859,8 +861,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &discover_clue(LocationTarget::TestedLocation, 1),
             ctx(1),
         );
@@ -887,8 +891,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &discover_clue(LocationTarget::TestedLocation, 1),
             ctx(1),
         );
@@ -935,7 +941,14 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+        );
 
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.locations[&LocationId(10)].clues, 1);
@@ -952,7 +965,14 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+        );
 
         assert_eq!(outcome, EngineOutcome::Done);
         // No-op: location clues unchanged, no events emitted.
@@ -973,7 +993,14 @@ mod tests {
         );
         let resources_before = state.investigators[&InvestigatorId(1)].resources;
 
-        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+        );
 
         assert_eq!(outcome, EngineOutcome::Done);
         // Else branch ran: location untouched, resources +2.
@@ -996,7 +1023,14 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+        );
 
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
         assert!(events.is_empty());
@@ -1018,7 +1052,14 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(&mut state, &mut events, &effect, ctx(1));
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+        );
 
         match outcome {
             EngineOutcome::Rejected { reason } => {
@@ -1051,8 +1092,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &discover_clue(LocationTarget::TestedLocation, 1),
             ctx(1),
         );
@@ -1077,8 +1120,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &seq([
                 gain_resources(InvestigatorTarget::Controller, 2),
                 discover_clue(LocationTarget::ControllerLocation, 1),
@@ -1110,8 +1155,10 @@ mod tests {
         let mut events = Vec::new();
 
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &seq([
                 gain_resources(InvestigatorTarget::Active, 1), // rejects
                 discover_clue(LocationTarget::ControllerLocation, 1), // shouldn't run
@@ -1133,8 +1180,10 @@ mod tests {
         let mut state = TestGame::new().build();
         let mut events = Vec::new();
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &modify(Stat::Willpower, 1, ModifierScope::WhileInPlay),
             ctx(1),
         );
@@ -1149,8 +1198,10 @@ mod tests {
             .build();
         let mut events = Vec::new();
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
             ctx(1),
         );
@@ -1174,8 +1225,10 @@ mod tests {
         let mut events = Vec::new();
         let ctx_with_src = EvalContext::for_controller_with_source(id, src);
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &modify(Stat::Combat, 2, ModifierScope::ThisSkillTest),
             ctx_with_src,
         );
@@ -1188,8 +1241,10 @@ mod tests {
         let mut state = TestGame::new().build();
         let mut events = Vec::new();
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
             ctx(1),
         );
@@ -1209,8 +1264,10 @@ mod tests {
         let mut state = TestGame::new().build();
         let mut events = Vec::new();
         let outcome = apply_effect(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &Effect::ChooseOne(vec![gain_resources(InvestigatorTarget::Controller, 1)]),
             ctx(1),
         );

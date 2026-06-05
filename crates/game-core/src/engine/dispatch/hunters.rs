@@ -6,6 +6,7 @@ use crate::event::Event;
 use crate::state::{Enemy, EnemyId, GameState, HunterChoice, InvestigatorId, LocationId};
 
 use super::cursor;
+use super::Cx;
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 
 /// Result of narrowing a candidate investigator set by a prey
@@ -143,17 +144,12 @@ fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<L
 
 /// Move `enemy` to `to`, emitting [`Event::EnemyMoved`]. Caller has
 /// already validated that `to` is a legal destination.
-fn move_hunter_to(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    enemy_id: EnemyId,
-    to: LocationId,
-) {
-    let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+fn move_hunter_to(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
+    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
         unreachable!("move_hunter_to: enemy {enemy_id:?} vanished mid-movement; state corruption")
     });
     enemy.current_location = Some(to);
-    events.push(Event::EnemyMoved {
+    cx.events.push(Event::EnemyMoved {
         enemy: enemy_id,
         to,
     });
@@ -161,17 +157,12 @@ fn move_hunter_to(
 
 /// Set engagement on `enemy_id` → `target` and emit
 /// [`Event::EnemyEngaged`]. Shared by movement and spawn.
-pub(super) fn engage_enemy_with(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    enemy_id: EnemyId,
-    target: InvestigatorId,
-) {
-    let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+pub(super) fn engage_enemy_with(cx: &mut Cx, enemy_id: EnemyId, target: InvestigatorId) {
+    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
         unreachable!("engage_enemy_with: enemy {enemy_id:?} vanished; state corruption")
     });
     enemy.engaged_with = Some(target);
-    events.push(Event::EnemyEngaged {
+    cx.events.push(Event::EnemyEngaged {
         enemy: enemy_id,
         investigator: target,
     });
@@ -181,22 +172,18 @@ pub(super) fn engage_enemy_with(
 /// location. Returns `Some(HunterChoice::Engage{..})` if the co-located
 /// set ties under prey (caller suspends); otherwise engages the resolved
 /// investigator (or no-one) and returns `None`.
-fn engage_on_arrival(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    enemy_id: EnemyId,
-) -> Option<HunterChoice> {
-    let loc = state.enemies[&enemy_id]
+fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
+    let loc = cx.state.enemies[&enemy_id]
         .current_location
         .unwrap_or_else(|| {
             unreachable!("engage_on_arrival: enemy {enemy_id:?} has no location; state corruption")
         });
-    let prey = state.enemies[&enemy_id].prey;
-    let candidates = cursor::active_investigators_at(state, loc);
-    match resolve_prey(state, prey, &candidates) {
+    let prey = cx.state.enemies[&enemy_id].prey;
+    let candidates = cursor::active_investigators_at(cx.state, loc);
+    match resolve_prey(cx.state, prey, &candidates) {
         PreyResolution::None => None,
         PreyResolution::One(target) => {
-            engage_enemy_with(state, events, enemy_id, target);
+            engage_enemy_with(cx, enemy_id, target);
             None
         }
         PreyResolution::Tie(v) => Some(HunterChoice::Engage {
@@ -227,12 +214,8 @@ fn engage_on_arrival(
 /// not disengage a prior target or emit [`Event::EnemyDisengaged`];
 /// callers are responsible for clearing (and announcing) any existing
 /// engagement first.
-pub(super) fn reengage_at_location(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    enemy_id: EnemyId,
-) {
-    let enemy = &state.enemies[&enemy_id];
+pub(super) fn reengage_at_location(cx: &mut Cx, enemy_id: EnemyId) {
+    let enemy = &cx.state.enemies[&enemy_id];
     if enemy.exhausted {
         return;
     }
@@ -240,33 +223,29 @@ pub(super) fn reengage_at_location(
         return;
     };
     let prey = enemy.prey;
-    let candidates = cursor::active_investigators_at(state, loc);
-    match resolve_prey(state, prey, &candidates) {
+    let candidates = cursor::active_investigators_at(cx.state, loc);
+    match resolve_prey(cx.state, prey, &candidates) {
         PreyResolution::None => {}
-        PreyResolution::One(target) => engage_enemy_with(state, events, enemy_id, target),
-        PreyResolution::Tie(tied) => engage_enemy_with(state, events, enemy_id, tied[0]),
+        PreyResolution::One(target) => engage_enemy_with(cx, enemy_id, target),
+        PreyResolution::Tie(tied) => engage_enemy_with(cx, enemy_id, tied[0]),
     }
 }
 
 /// Process a single hunter (movement + engage-on-arrival). Returns
 /// `Some(HunterChoice)` if a tie suspends, else `None` (fully resolved).
-fn process_one_hunter(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    enemy_id: EnemyId,
-) -> Option<HunterChoice> {
-    let from = state.enemies[&enemy_id]
+fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
+    let from = cx.state.enemies[&enemy_id]
         .current_location
         .unwrap_or_else(|| {
             unreachable!("process_one_hunter: enemy {enemy_id:?} has no location; state corruption")
         });
-    let here = cursor::active_investigators_at(state, from);
+    let here = cursor::active_investigators_at(cx.state, from);
     if here.is_empty() {
-        let prey = state.enemies[&enemy_id].prey;
-        let dests = hunter_destinations(state, from, prey);
+        let prey = cx.state.enemies[&enemy_id].prey;
+        let dests = hunter_destinations(cx.state, from, prey);
         match dests.as_slice() {
             [] => return None,
-            [one] => move_hunter_to(state, events, enemy_id, *one),
+            [one] => move_hunter_to(cx, enemy_id, *one),
             _ => {
                 return Some(HunterChoice::Move {
                     enemy: enemy_id,
@@ -275,7 +254,7 @@ fn process_one_hunter(
             }
         }
     }
-    engage_on_arrival(state, events, enemy_id)
+    engage_on_arrival(cx, enemy_id)
 }
 
 /// Find the next eligible hunter with id strictly greater than `after`
@@ -294,11 +273,11 @@ fn next_eligible_hunter(state: &GameState, after: Option<EnemyId>) -> Option<Ene
 /// `EnemyId` order until none remain ([`EngineOutcome::Done`]) or one
 /// suspends on a lead-investigator tie
 /// ([`EngineOutcome::AwaitingInput`]).
-pub(crate) fn drive_hunter_moves(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
     let mut cursor: Option<EnemyId> = None;
-    while let Some(id) = next_eligible_hunter(state, cursor) {
-        if let Some(choice) = process_one_hunter(state, events, id) {
-            return suspend_hunter_choice(state, choice);
+    while let Some(id) = next_eligible_hunter(cx.state, cursor) {
+        if let Some(choice) = process_one_hunter(cx, id) {
+            return suspend_hunter_choice(cx, choice);
         }
         cursor = Some(id);
     }
@@ -307,7 +286,7 @@ pub(crate) fn drive_hunter_moves(state: &mut GameState, events: &mut Vec<Event>)
 
 /// Store the pending hunter choice and return `AwaitingInput` for the
 /// lead investigator (#128, Task 7 wires the resume path).
-fn suspend_hunter_choice(state: &mut GameState, choice: HunterChoice) -> EngineOutcome {
+fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
     let prompt = match &choice {
         HunterChoice::Move { enemy, candidates } => format!(
             "Hunter {enemy:?} movement: lead investigator picks a destination among \
@@ -318,7 +297,7 @@ fn suspend_hunter_choice(state: &mut GameState, choice: HunterChoice) -> EngineO
              {candidates:?} (submit InputResponse::PickInvestigator)"
         ),
     };
-    state.hunter_move_pending = Some(choice);
+    cx.state.hunter_move_pending = Some(choice);
     EngineOutcome::AwaitingInput {
         request: InputRequest { prompt },
         resume_token: ResumeToken(0),
@@ -331,11 +310,10 @@ fn suspend_hunter_choice(state: &mut GameState, choice: HunterChoice) -> EngineO
 /// invalid pick, rejects and leaves `hunter_move_pending` untouched so
 /// the client can retry. (#128)
 pub(super) fn resume_hunter_choice(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     response: &crate::action::InputResponse,
 ) -> EngineOutcome {
-    let pending = state.hunter_move_pending.clone().unwrap_or_else(|| {
+    let pending = cx.state.hunter_move_pending.clone().unwrap_or_else(|| {
         unreachable!("resume_hunter_choice: called with no pending hunter choice")
     });
     let current_enemy = match (&pending, response) {
@@ -351,12 +329,12 @@ pub(super) fn resume_hunter_choice(
                     .into(),
                 };
             }
-            state.hunter_move_pending = None;
-            move_hunter_to(state, events, *enemy, *loc);
+            cx.state.hunter_move_pending = None;
+            move_hunter_to(cx, *enemy, *loc);
             // After the move, attempt engage-on-arrival; that itself may
             // suspend on an engagement tie.
-            if let Some(choice) = engage_on_arrival(state, events, *enemy) {
-                return suspend_hunter_choice(state, choice);
+            if let Some(choice) = engage_on_arrival(cx, *enemy) {
+                return suspend_hunter_choice(cx, choice);
             }
             *enemy
         }
@@ -372,8 +350,8 @@ pub(super) fn resume_hunter_choice(
                     .into(),
                 };
             }
-            state.hunter_move_pending = None;
-            engage_enemy_with(state, events, *enemy, *who);
+            cx.state.hunter_move_pending = None;
+            engage_enemy_with(cx, *enemy, *who);
             *enemy
         }
         (HunterChoice::Move { .. }, other) => {
@@ -395,9 +373,9 @@ pub(super) fn resume_hunter_choice(
     };
     // Continue with the next eligible hunter after the one we finished.
     let mut cursor = Some(current_enemy);
-    while let Some(id) = next_eligible_hunter(state, cursor) {
-        if let Some(choice) = process_one_hunter(state, events, id) {
-            return suspend_hunter_choice(state, choice);
+    while let Some(id) = next_eligible_hunter(cx.state, cursor) {
+        if let Some(choice) = process_one_hunter(cx, id) {
+            return suspend_hunter_choice(cx, choice);
         }
         cursor = Some(id);
     }
@@ -405,7 +383,7 @@ pub(super) fn resume_hunter_choice(
     // per-investigator attack loop (step 3.3). Reached only on the
     // no-further-suspension path; every suspension above early-returns
     // via `suspend_hunter_choice`.
-    super::phases::enemy_attack_kickoff(state, events);
+    super::phases::enemy_attack_kickoff(cx);
     EngineOutcome::Done
 }
 
@@ -423,11 +401,10 @@ pub(super) fn resume_hunter_choice(
 /// `None`, or points elsewhere) engages and stops at `Done` without
 /// touching the cursor.
 pub(super) fn resume_spawn_engage(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     response: &crate::action::InputResponse,
 ) -> EngineOutcome {
-    let pending = state.spawn_engage_pending.clone().unwrap_or_else(|| {
+    let pending = cx.state.spawn_engage_pending.clone().unwrap_or_else(|| {
         unreachable!("resume_spawn_engage: called with no pending spawn engagement")
     });
     let crate::action::InputResponse::PickInvestigator(who) = response else {
@@ -448,8 +425,8 @@ pub(super) fn resume_spawn_engage(
             .into(),
         };
     }
-    state.spawn_engage_pending = None;
-    engage_enemy_with(state, events, pending.enemy, *who);
+    cx.state.spawn_engage_pending = None;
+    engage_enemy_with(cx, pending.enemy, *who);
 
     // Only re-enter the Mythos surge chain if the suspend happened
     // mid-chain (the drawing investigator is still the pending cursor).
@@ -460,10 +437,9 @@ pub(super) fn resume_spawn_engage(
     // retarget the Mythos cursor between suspend and resume. Hence
     // `mythos_draw_pending == Some(investigator_to_draw)` reliably means
     // "we suspended mid-chain for this investigator."
-    if state.mythos_draw_pending == Some(pending.investigator_to_draw) {
+    if cx.state.mythos_draw_pending == Some(pending.investigator_to_draw) {
         super::encounter::run_mythos_draw_chain(
-            state,
-            events,
+            cx,
             pending.investigator_to_draw,
             pending.chain_count,
             pending.surge,
@@ -552,6 +528,7 @@ mod resolve_prey_tests {
 #[cfg(test)]
 mod hunter_movement_tests {
     use super::*;
+    use crate::engine::Cx;
     use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
     use crate::{assert_event, assert_no_event};
@@ -581,7 +558,10 @@ mod hunter_movement_tests {
             .with_enemy(ghoul)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -613,7 +593,10 @@ mod hunter_movement_tests {
             .with_enemy(h)
             .build();
         let mut events = Vec::new();
-        drive_hunter_moves(&mut state, &mut events);
+        drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(2))
@@ -644,7 +627,10 @@ mod hunter_movement_tests {
             .with_enemy(h)
             .build();
         let mut events = Vec::new();
-        drive_hunter_moves(&mut state, &mut events);
+        drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(9))
@@ -673,7 +659,10 @@ mod hunter_movement_tests {
             .with_enemy(h)
             .build();
         let mut events = Vec::new();
-        drive_hunter_moves(&mut state, &mut events);
+        drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(1))
@@ -701,7 +690,10 @@ mod hunter_movement_tests {
             .with_enemy(e)
             .build();
         let mut events = Vec::new();
-        drive_hunter_moves(&mut state, &mut events);
+        drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(1))
@@ -731,7 +723,10 @@ mod hunter_movement_tests {
             .with_enemy(h)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -750,6 +745,7 @@ mod hunter_movement_tests {
 mod hunter_resume_tests {
     use super::*;
     use crate::assert_event;
+    use crate::engine::Cx;
     use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
 
@@ -781,14 +777,19 @@ mod hunter_resume_tests {
             .with_enemy(hunter)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(state.hunter_move_pending.is_some());
         // Resume by picking C.
         let mut ev2 = Vec::new();
         let resumed = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(3)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
@@ -827,12 +828,17 @@ mod hunter_resume_tests {
             .with_enemy(hunter)
             .build();
         let mut events = Vec::new();
-        drive_hunter_moves(&mut state, &mut events);
+        drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         let mut ev2 = Vec::new();
         // LocationId(4) is the destination, not a first-step candidate.
         let result = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(4)),
         );
         assert!(matches!(result, EngineOutcome::Rejected { .. }));
@@ -867,7 +873,10 @@ mod hunter_resume_tests {
             .with_enemy(h)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         // Moved to B already, suspended on engagement tie.
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -876,8 +885,10 @@ mod hunter_resume_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         let mut ev2 = Vec::new();
         let resumed = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickInvestigator(InvestigatorId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
@@ -920,7 +931,10 @@ mod hunter_resume_tests {
             .with_enemy(hunter)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(outcome, EngineOutcome::Done);
         // Moves toward inv1 (B) and engages immediately (arrives at B).
         assert_eq!(
@@ -967,13 +981,18 @@ mod hunter_resume_tests {
             .with_enemy(clean_hunter)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         // Resolve hunter 1's tie -> hunter 2 then moves B->D and engages.
         let mut ev2 = Vec::new();
         let resumed = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
@@ -1017,14 +1036,19 @@ mod hunter_resume_tests {
             .with_enemy(hunter)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(state.hunter_move_pending.is_some());
         // Submit PickInvestigator when PickLocation is expected.
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickInvestigator(InvestigatorId(1)),
         );
         assert!(
@@ -1064,7 +1088,10 @@ mod hunter_resume_tests {
             .with_enemy(hunter)
             .build();
         let mut events = Vec::new();
-        let outcome = drive_hunter_moves(&mut state, &mut events);
+        let outcome = drive_hunter_moves(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         // Moved to B already, suspended on engagement tie.
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -1075,8 +1102,10 @@ mod hunter_resume_tests {
         // Submit PickLocation when PickInvestigator is expected.
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(1)),
         );
         assert!(
@@ -1095,6 +1124,7 @@ mod reengage_tests {
     use super::*;
     use crate::assert_event;
     use crate::assert_no_event;
+    use crate::engine::Cx;
     use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
 
     #[test]
@@ -1120,7 +1150,13 @@ mod reengage_tests {
             .build();
         let mut events = Vec::new();
 
-        reengage_at_location(&mut state, &mut events, EnemyId(1));
+        reengage_at_location(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+        );
 
         assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(surv));
         assert_event!(events, Event::EnemyEngaged { enemy, investigator }
@@ -1143,7 +1179,13 @@ mod reengage_tests {
             .build();
         let mut events = Vec::new();
 
-        reengage_at_location(&mut state, &mut events, EnemyId(1));
+        reengage_at_location(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+        );
 
         assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
         assert_no_event!(events, Event::EnemyEngaged { .. });
@@ -1176,7 +1218,13 @@ mod reengage_tests {
             .build();
         let mut events = Vec::new();
 
-        reengage_at_location(&mut state, &mut events, EnemyId(1));
+        reengage_at_location(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+        );
 
         assert_eq!(
             state.enemies[&EnemyId(1)].engaged_with,
@@ -1211,7 +1259,13 @@ mod reengage_tests {
             .build();
         let mut events = Vec::new();
 
-        reengage_at_location(&mut state, &mut events, EnemyId(1));
+        reengage_at_location(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+        );
 
         assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
         assert_no_event!(events, Event::EnemyEngaged { .. });
@@ -1227,7 +1281,13 @@ mod reengage_tests {
         };
         let mut state = TestGame::default().with_enemy(enemy).build();
         let mut events = Vec::new();
-        reengage_at_location(&mut state, &mut events, EnemyId(1));
+        reengage_at_location(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+        );
         assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
         assert_no_event!(events, Event::EnemyEngaged { .. });
     }

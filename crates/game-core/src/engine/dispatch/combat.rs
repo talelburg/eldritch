@@ -1,21 +1,17 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
 use crate::event::Event;
-use crate::state::{DefeatCause, EnemyId, GameState, InvestigatorId, Status, WindowKind};
+use crate::state::{DefeatCause, EnemyId, InvestigatorId, Status, WindowKind};
+
+use super::Cx;
 
 /// Apply `amount` damage to an enemy. If the new damage reaches or
 /// exceeds `max_health`, emit `EnemyDefeated` and remove the enemy
 /// from `state.enemies`. `by` attributes the defeat for
 /// trigger-window consumers (e.g. Roland's reaction). Used by Fight
 /// today; will be reused by future damage-dealing card effects.
-pub(super) fn damage_enemy(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    enemy_id: EnemyId,
-    amount: u8,
-    by: Option<InvestigatorId>,
-) {
-    let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Option<InvestigatorId>) {
+    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
         unreachable!(
             "damage_enemy: enemy {enemy_id:?} is not in state.enemies; \
              this is a state-corruption invariant violation"
@@ -23,17 +19,17 @@ pub(super) fn damage_enemy(
     });
     let new_damage = enemy.damage.saturating_add(amount).min(enemy.max_health);
     enemy.damage = new_damage;
-    events.push(Event::EnemyDamaged {
+    cx.events.push(Event::EnemyDamaged {
         enemy: enemy_id,
         amount,
         new_damage,
     });
     if new_damage >= enemy.max_health {
-        events.push(Event::EnemyDefeated {
+        cx.events.push(Event::EnemyDefeated {
             enemy: enemy_id,
             by,
         });
-        state.enemies.remove(&enemy_id);
+        cx.state.enemies.remove(&enemy_id);
         // Queue the post-defeat reaction window. Emits
         // `Event::WindowOpened` immediately (inside queue_reaction_window);
         // the skill-test driver then suspends at the next step boundary
@@ -41,8 +37,7 @@ pub(super) fn damage_enemy(
         // `fire_on_skill_test_resolution`) returning AwaitingInput so the
         // player can fire their reaction triggers; see `drive_skill_test`.
         super::reaction_windows::queue_reaction_window(
-            state,
-            events,
+            cx,
             WindowKind::AfterEnemyDefeated {
                 enemy: enemy_id,
                 by,
@@ -70,16 +65,12 @@ pub(super) fn damage_enemy(
 /// don't accumulate more damage.
 ///
 /// [`Status`]: crate::state::Status
-pub(super) fn apply_damage_numeric(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    amount: u8,
-) -> bool {
+pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
     }
-    let inv = state
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -93,7 +84,7 @@ pub(super) fn apply_damage_numeric(
     }
     inv.damage = inv.damage.saturating_add(amount);
     let lethal = inv.damage >= inv.max_health;
-    events.push(Event::DamageTaken {
+    cx.events.push(Event::DamageTaken {
         investigator,
         amount,
     });
@@ -104,16 +95,12 @@ pub(super) fn apply_damage_numeric(
 /// `max_sanity`. Returns `true` iff the new total reaches the
 /// max-sanity threshold; defeat application is the caller's
 /// responsibility (see [`super::elimination::apply_investigator_defeat`]).
-pub(super) fn apply_horror_numeric(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    amount: u8,
-) -> bool {
+pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
     }
-    let inv = state
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -127,7 +114,7 @@ pub(super) fn apply_horror_numeric(
     }
     inv.horror = inv.horror.saturating_add(amount);
     let lethal = inv.horror >= inv.max_sanity;
-    events.push(Event::HorrorTaken {
+    cx.events.push(Event::HorrorTaken {
         investigator,
         amount,
     });
@@ -168,13 +155,8 @@ pub(super) fn apply_horror_numeric(
 /// scope for `#83`.
 ///
 /// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
-pub(super) fn enemy_attack(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    enemy_id: EnemyId,
-    investigator: InvestigatorId,
-) {
-    let enemy = state.enemies.get(&enemy_id).unwrap_or_else(|| {
+pub(super) fn enemy_attack(cx: &mut Cx, enemy_id: EnemyId, investigator: InvestigatorId) {
+    let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
         unreachable!(
             "enemy_attack: enemy {enemy_id:?} is not in state.enemies; \
              this is a state-corruption invariant violation"
@@ -183,15 +165,15 @@ pub(super) fn enemy_attack(
     let damage = enemy.attack_damage;
     let horror = enemy.attack_horror;
 
-    let damage_lethal = apply_damage_numeric(state, events, investigator, damage);
-    let horror_lethal = apply_horror_numeric(state, events, investigator, horror);
+    let damage_lethal = apply_damage_numeric(cx, investigator, damage);
+    let horror_lethal = apply_horror_numeric(cx, investigator, horror);
     if damage_lethal || horror_lethal {
         let cause = if damage_lethal {
             DefeatCause::Damage
         } else {
             DefeatCause::Horror
         };
-        super::elimination::apply_investigator_defeat(state, events, investigator, cause);
+        super::elimination::apply_investigator_defeat(cx, investigator, cause);
     }
 }
 
@@ -205,19 +187,16 @@ pub(super) fn enemy_attack(
 /// (unmilestoned) covers this site alongside
 /// [`resolve_attacks_for_investigator`] — both sites share the same
 /// deterministic-order TODO.
-pub(super) fn fire_attacks_of_opportunity(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) {
-    let attackers: Vec<EnemyId> = state
+pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: InvestigatorId) {
+    let attackers: Vec<EnemyId> = cx
+        .state
         .enemies
         .iter()
         .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
         .map(|(id, _)| *id)
         .collect();
     for enemy_id in attackers {
-        enemy_attack(state, events, enemy_id, investigator);
+        enemy_attack(cx, enemy_id, investigator);
     }
 }
 
@@ -271,14 +250,11 @@ pub(super) fn fire_attacks_of_opportunity(
 /// `TODO(#143)`: player-pick attack order, unmilestoned, covers both
 /// this site and [`fire_attacks_of_opportunity`] (which has the same
 /// TODO).
-pub(super) fn resolve_attacks_for_investigator(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) {
+pub(super) fn resolve_attacks_for_investigator(cx: &mut Cx, investigator: InvestigatorId) {
     // Snapshot ready engaged attackers in deterministic EnemyId order.
     // BTreeMap iteration is already key-sorted.
-    let attackers: Vec<EnemyId> = state
+    let attackers: Vec<EnemyId> = cx
+        .state
         .enemies
         .iter()
         .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
@@ -287,7 +263,8 @@ pub(super) fn resolve_attacks_for_investigator(
 
     for enemy_id in attackers {
         // Early-break on defeat. See fn doc.
-        let active = state
+        let active = cx
+            .state
             .investigators
             .get(&investigator)
             .is_some_and(|inv| inv.status == Status::Active);
@@ -296,10 +273,10 @@ pub(super) fn resolve_attacks_for_investigator(
         }
 
         // Damage + horror placement (simultaneous per p.7) + defeat.
-        enemy_attack(state, events, enemy_id, investigator);
+        enemy_attack(cx, enemy_id, investigator);
 
         // Exhaust the attacker post-resolution.
-        let enemy = state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+        let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
             unreachable!(
                 "resolve_attacks_for_investigator: snapshotted enemy \
                  {enemy_id:?} is gone from state.enemies; this is a \
@@ -307,6 +284,6 @@ pub(super) fn resolve_attacks_for_investigator(
             )
         });
         enemy.exhausted = true;
-        events.push(Event::EnemyExhausted { enemy: enemy_id });
+        cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
     }
 }

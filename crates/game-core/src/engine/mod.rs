@@ -10,12 +10,14 @@
 //! replaying it via [`apply`] from the initial state reproduces the
 //! current state bit-for-bit.
 
+mod cx;
+pub(crate) use cx::Cx;
 mod dispatch;
 pub mod evaluator;
 mod outcome;
 pub(crate) mod pathfinding;
 
-pub use evaluator::{apply_effect, EvalContext};
+pub use evaluator::EvalContext;
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
 
 use crate::action::Action;
@@ -91,24 +93,32 @@ pub fn apply_with_scenario_registry(
     let mut state = state;
     let mut events = Vec::new();
     let resolution_already_fired = state.resolution.is_some();
-    let outcome = match action {
-        Action::Player(p) => dispatch::apply_player_action(&mut state, &mut events, &p),
-        Action::Engine(e) => dispatch::apply_engine_record(&mut state, &mut events, &e),
+    let outcome = {
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = match action {
+            Action::Player(p) => dispatch::apply_player_action(&mut cx, &p),
+            Action::Engine(e) => dispatch::apply_engine_record(&mut cx, &e),
+        };
+        if matches!(outcome, EngineOutcome::Rejected { .. }) {
+            // Belt-and-suspenders: handlers are expected to validate before
+            // mutating, so events should already be empty here. Clear
+            // anyway in case a handler accidentally pushed before bailing.
+            cx.events.clear();
+        } else if !resolution_already_fired {
+            // A dispatch site may have latched a resolution this apply (act/
+            // agenda resolution point, or no-remaining-players elimination).
+            // Fire the module hook exactly once, on the None->Some transition.
+            // Runs on Done AND AwaitingInput — a resolution can latch during
+            // an apply that pauses (e.g. doom crosses the threshold in Mythos
+            // 1.3 before the 1.4 draw pause).
+            fire_scenario_resolution(&mut cx, registry);
+        }
+        outcome
+        // `cx` drops here, releasing borrows on `state` and `events`.
     };
-    if matches!(outcome, EngineOutcome::Rejected { .. }) {
-        // Belt-and-suspenders: handlers are expected to validate before
-        // mutating, so events should already be empty here. Clear
-        // anyway in case a handler accidentally pushed before bailing.
-        events.clear();
-    } else if !resolution_already_fired {
-        // A dispatch site may have latched a resolution this apply (act/
-        // agenda resolution point, or no-remaining-players elimination).
-        // Fire the module hook exactly once, on the None->Some transition.
-        // Runs on Done AND AwaitingInput — a resolution can latch during
-        // an apply that pauses (e.g. doom crosses the threshold in Mythos
-        // 1.3 before the 1.4 draw pause).
-        fire_scenario_resolution(&mut state, &mut events, registry);
-    }
     ApplyResult {
         state,
         events,
@@ -126,25 +136,21 @@ pub fn apply_with_scenario_registry(
 /// is a property of engine state, so it fires even when no module is
 /// registered (or `scenario_id` is `None`); only `apply_resolution` needs
 /// the registry/module.
-fn fire_scenario_resolution(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    registry: Option<&ScenarioRegistry>,
-) {
-    let Some(resolution) = state.resolution.clone() else {
+fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
+    let Some(resolution) = cx.state.resolution.clone() else {
         return;
     };
-    events.push(Event::ScenarioResolved {
+    cx.events.push(Event::ScenarioResolved {
         resolution: resolution.clone(),
     });
-    let Some(id) = state.scenario_id.as_ref() else {
+    let Some(id) = cx.state.scenario_id.as_ref() else {
         return;
     };
     let Some(reg) = registry else { return };
     let Some(module) = (reg.module_for)(id) else {
         return;
     };
-    (module.apply_resolution)(&resolution, state, events);
+    (module.apply_resolution)(&resolution, cx.state, cx.events);
 }
 
 #[cfg(test)]

@@ -5,12 +5,11 @@ use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
-use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, Phase, Status, Zone,
-};
+use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Phase, Status, Zone};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
+use super::Cx;
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
 /// each investigator draws 5 cards before mulligan.
@@ -21,17 +20,13 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// Permutes the named investigator's player deck via the deterministic
 /// RNG and emits [`Event::DeckShuffled`]. Empty decks are a silent
 /// no-op (no event emitted) — there's nothing to shuffle.
-pub(super) fn deck_shuffled(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
-    if !state.investigators.contains_key(&investigator) {
+pub(super) fn deck_shuffled(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    if !cx.state.investigators.contains_key(&investigator) {
         return EngineOutcome::Rejected {
             reason: format!("DeckShuffled: investigator {investigator:?} is not in state").into(),
         };
     }
-    shuffle_player_deck(state, events, investigator);
+    shuffle_player_deck(cx, investigator);
     EngineOutcome::Done
 }
 
@@ -41,12 +36,9 @@ pub(super) fn deck_shuffled(
 ///
 /// Emits [`Event::DeckShuffled`] iff the deck had at least 2 cards
 /// (a 0- or 1-card deck has nothing to permute).
-pub(super) fn shuffle_player_deck(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) {
-    let inv = state
+pub(super) fn shuffle_player_deck(cx: &mut Cx, investigator: InvestigatorId) {
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -68,15 +60,19 @@ pub(super) fn shuffle_player_deck(
     let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
     let mut i = deck_len - 1;
     while i >= 1 {
-        let j = state.rng.next_index(i + 1);
+        let j = cx.state.rng.next_index(i + 1);
         swaps.push((i, j));
         i -= 1;
     }
-    let inv = state.investigators.get_mut(&investigator).expect("checked");
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("checked");
     for (a, b) in swaps {
         inv.deck.swap(a, b);
     }
-    events.push(Event::DeckShuffled { investigator });
+    cx.events.push(Event::DeckShuffled { investigator });
 }
 
 /// Draw up to `count` cards from the named investigator's deck top
@@ -87,13 +83,9 @@ pub(super) fn shuffle_player_deck(
 /// Emits a single [`Event::CardsDrawn`] with the actually-drawn
 /// count, even if that's zero. A zero-count draw is informative for
 /// consumers tracking the attempt.
-pub(super) fn draw_cards(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    count: u8,
-) {
-    let inv = state
+pub(super) fn draw_cards(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -109,7 +101,7 @@ pub(super) fn draw_cards(
     inv.hand.extend(drawn_cards);
     // `drawn` ≤ `count: u8`, so the cast can't overflow.
     let drawn_u8 = u8::try_from(drawn).expect("drawn <= count <= u8::MAX");
-    events.push(Event::CardsDrawn {
+    cx.events.push(Event::CardsDrawn {
         investigator,
         count: drawn_u8,
     });
@@ -122,21 +114,17 @@ pub(super) fn draw_cards(
 /// the existing `gain_resources` zero-amount behavior.
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
-pub(crate) fn grant_resources(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    amount: u8,
-) {
+pub(crate) fn grant_resources(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     if amount == 0 {
         return;
     }
-    let inv = state
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .expect("grant_resources: caller guarantees investigator exists");
     inv.resources = inv.resources.saturating_add(amount);
-    events.push(Event::ResourcesGained {
+    cx.events.push(Event::ResourcesGained {
         investigator,
         amount,
     });
@@ -146,12 +134,9 @@ pub(crate) fn grant_resources(
 /// investigator. Used by [`draw`] when the deck runs empty. Drains
 /// `discard` into `deck`, then calls [`shuffle_player_deck`] (which
 /// emits [`Event::DeckShuffled`] when ≥ 2 cards land in the deck).
-fn reshuffle_discard_into_deck(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) {
-    let inv = state
+fn reshuffle_discard_into_deck(cx: &mut Cx, investigator: InvestigatorId) {
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
@@ -162,7 +147,7 @@ fn reshuffle_discard_into_deck(
         });
     let cards: Vec<_> = inv.discard.drain(..).collect();
     inv.deck.extend(cards);
-    shuffle_player_deck(state, events, investigator);
+    shuffle_player_deck(cx, investigator);
 }
 
 /// Draw one card for `investigator`, applying the empty-deck rule:
@@ -174,12 +159,9 @@ fn reshuffle_discard_into_deck(
 /// inherited unchanged.
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
-pub(super) fn draw_one_with_deckout(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) {
-    let inv = state
+pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
+    let inv = cx
+        .state
         .investigators
         .get(&investigator)
         .expect("draw_one_with_deckout: caller guarantees investigator exists");
@@ -187,19 +169,19 @@ pub(super) fn draw_one_with_deckout(
     let discard_empty = inv.discard.is_empty();
     if deck_empty {
         if !discard_empty {
-            reshuffle_discard_into_deck(state, events, investigator);
+            reshuffle_discard_into_deck(cx, investigator);
         }
         // After the (possibly no-op) reshuffle, attempt the draw.
         // draw_cards handles a still-empty deck by emitting
         // CardsDrawn { count: 0 } without moving cards.
-        draw_cards(state, events, investigator, 1);
+        draw_cards(cx, investigator, 1);
         // Horror penalty fires on any "would-draw-from-empty-deck"
         // (the reshuffle did happen if discard was non-empty; if it
         // was also empty, the rules don't strictly require horror
         // but we apply it as the safer reading).
-        super::elimination::take_horror(state, events, investigator, 1);
+        super::elimination::take_horror(cx, investigator, 1);
     } else {
-        draw_cards(state, events, investigator, 1);
+        draw_cards(cx, investigator, 1);
     }
 }
 
@@ -223,35 +205,35 @@ pub(super) fn draw_one_with_deckout(
 ///   both zones) that the difference is mostly theoretical.
 ///
 /// The draw logic itself is delegated to [`draw_one_with_deckout`].
-pub(super) fn draw(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
-    if state.phase != Phase::Investigation {
+pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    if cx.state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Draw is only valid during the Investigation phase (was {:?})",
-                state.phase
+                cx.state.phase
             )
             .into(),
         };
     }
-    if state.active_investigator != Some(investigator) {
+    if cx.state.active_investigator != Some(investigator) {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Draw: {investigator:?} is not the active investigator ({:?})",
-                state.active_investigator,
+                cx.state.active_investigator,
             )
             .into(),
         };
     }
-    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Draw: active_investigator {investigator:?} is not in the investigators map; \
+    let inv = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Draw: active_investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv.status != Status::Active {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -268,8 +250,8 @@ pub(super) fn draw(
     }
 
     // Mutate.
-    super::actions::spend_one_action(state, events, investigator);
-    draw_one_with_deckout(state, events, investigator);
+    super::actions::spend_one_action(cx, investigator);
+    draw_one_with_deckout(cx, investigator);
     EngineOutcome::Done
 }
 
@@ -287,30 +269,33 @@ pub(super) fn draw(
 /// is a legal "keep my hand" mulligan that consumes the turn without
 /// touching the deck.
 pub(super) fn mulligan(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     indices_to_redraw: &[u8],
 ) -> EngineOutcome {
     // One check subsumes the three old ones: the cursor only ever holds
     // an Active `turn_order` id, so a mismatch covers setup-over (`None`),
     // wrong-player / too-early, and already-went (cursor moved past you).
-    if state.mulligan_pending != Some(investigator) {
+    if cx.state.mulligan_pending != Some(investigator) {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Mulligan: it is not {investigator:?}'s turn to mulligan \
                  (pending: {:?})",
-                state.mulligan_pending,
+                cx.state.mulligan_pending,
             )
             .into(),
         };
     }
-    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "mulligan_pending {investigator:?} is not in the investigators map; \
+    let inv = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "mulligan_pending {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     // Validate indices: each must be in bounds and unique.
     let hand_len = inv.hand.len();
     for &idx in indices_to_redraw {
@@ -332,7 +317,11 @@ pub(super) fn mulligan(
     // Mutate.
     let redrawn_count = u8::try_from(indices_to_redraw.len())
         .expect("indices_to_redraw.len() <= hand.len() <= u8::MAX in practice");
-    let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
+    let inv_mut = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("checked");
     // Walk indices high-to-low so smaller positions remain valid as
     // we remove. Move named cards directly into the deck — they
     // shuffle back in per the rules, not through the discard pile.
@@ -345,17 +334,18 @@ pub(super) fn mulligan(
     // For an empty "keep my hand" mulligan, skip both — there's
     // nothing to put back, so no shuffle and no draw.
     if redrawn_count > 0 {
-        shuffle_player_deck(state, events, investigator);
-        draw_cards(state, events, investigator, redrawn_count);
+        shuffle_player_deck(cx, investigator);
+        draw_cards(cx, investigator, redrawn_count);
     }
-    events.push(Event::MulliganPerformed {
+    cx.events.push(Event::MulliganPerformed {
         investigator,
         redrawn_count,
     });
     // Advance to the next Active investigator in player order (or `None`
     // when this was the last). The completion check in
     // `apply_player_action` keys off `None` to end setup.
-    state.mulligan_pending = super::cursor::next_active_investigator_after(state, investigator);
+    cx.state.mulligan_pending =
+        super::cursor::next_active_investigator_after(cx.state, investigator);
     EngineOutcome::Done
 }
 
@@ -475,8 +465,7 @@ pub(super) fn resolve_play_target(
 /// `events.clear()` still clears the event stream on a rejected
 /// outcome; the state-rollback hardening is out of scope here.
 pub(super) fn play_card(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     hand_index: u8,
 ) -> EngineOutcome {
@@ -485,7 +474,7 @@ pub(super) fn play_card(
         abilities,
         is_fast: _,
         card_type: _,
-    } = match super::reaction_windows::check_play_card(state, investigator, hand_index) {
+    } = match super::reaction_windows::check_play_card(cx.state, investigator, hand_index) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -493,7 +482,8 @@ pub(super) fn play_card(
     // the result (avoiding the lifetime question). The validator already
     // confirmed the hand_index is in bounds and the investigator exists.
     let idx = usize::from(hand_index);
-    let code: CardCode = state
+    let code: CardCode = cx
+        .state
         .investigators
         .get(&investigator)
         .expect("checked in validator")
@@ -501,32 +491,40 @@ pub(super) fn play_card(
         .clone();
 
     // Mutate.
-    events.push(Event::CardPlayed {
+    cx.events.push(Event::CardPlayed {
         investigator,
         code: code.clone(),
     });
-    let ctx = EvalContext::for_controller(investigator);
+    let eval_ctx = EvalContext::for_controller(investigator);
     for ability in abilities.iter().filter(|a| a.trigger == Trigger::OnPlay) {
-        let outcome = apply_effect(state, events, &ability.effect, ctx);
+        let outcome = apply_effect(cx, &ability.effect, eval_ctx);
         if !matches!(outcome, EngineOutcome::Done) {
             return outcome;
         }
     }
     match destination {
         super::PlayDestination::InPlay => {
-            let instance_id = CardInstanceId(state.next_card_instance_id);
-            state.next_card_instance_id = state.next_card_instance_id.saturating_add(1);
-            let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
+            let instance_id = CardInstanceId(cx.state.next_card_instance_id);
+            cx.state.next_card_instance_id = cx.state.next_card_instance_id.saturating_add(1);
+            let inv_mut = cx
+                .state
+                .investigators
+                .get_mut(&investigator)
+                .expect("checked");
             let card = inv_mut.hand.remove(idx);
             inv_mut
                 .cards_in_play
                 .push(CardInPlay::enter_play(card, instance_id));
         }
         super::PlayDestination::Discard => {
-            let inv_mut = state.investigators.get_mut(&investigator).expect("checked");
+            let inv_mut = cx
+                .state
+                .investigators
+                .get_mut(&investigator)
+                .expect("checked");
             let card = inv_mut.hand.remove(idx);
             inv_mut.discard.push(card.clone());
-            events.push(Event::CardDiscarded {
+            cx.events.push(Event::CardDiscarded {
                 investigator,
                 code: card,
                 from: Zone::Hand,
@@ -551,7 +549,14 @@ mod grant_resources_tests {
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
 
-        grant_resources(&mut state, &mut events, id, 2);
+        grant_resources(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            2,
+        );
 
         assert_eq!(state.investigators[&id].resources, before + 2);
         assert!(events.iter().any(|e| matches!(
@@ -569,7 +574,14 @@ mod grant_resources_tests {
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
 
-        grant_resources(&mut state, &mut events, id, 0);
+        grant_resources(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            0,
+        );
 
         assert_eq!(state.investigators[&id].resources, before);
         assert!(events.is_empty());
@@ -593,7 +605,13 @@ mod draw_one_with_deckout_tests {
         let mut state = TestGame::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        draw_one_with_deckout(&mut state, &mut events, id);
+        draw_one_with_deckout(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+        );
 
         assert_eq!(
             state.investigators[&id].hand.len(),

@@ -19,10 +19,10 @@ use super::super::evaluator::{
     apply_effect, constant_skill_modifier, pending_skill_modifier, EvalContext,
 };
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use super::Cx;
 
 pub(super) fn start_skill_test(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
@@ -34,7 +34,7 @@ pub(super) fn start_skill_test(
     // negative (FFG difficulties are always ≥ 0). Defeated
     // investigators can't take skill tests — they're out of play.
     // A second test cannot overlap an in-flight one.
-    let Some(inv) = state.investigators.get(&investigator) else {
+    let Some(inv) = cx.state.investigators.get(&investigator) else {
         return EngineOutcome::Rejected {
             reason: format!("skill test: investigator {investigator:?} not in state").into(),
         };
@@ -48,7 +48,7 @@ pub(super) fn start_skill_test(
             .into(),
         };
     }
-    if state.chaos_bag.tokens.is_empty() {
+    if cx.state.chaos_bag.tokens.is_empty() {
         return EngineOutcome::Rejected {
             reason: "skill test requires a non-empty chaos bag".into(),
         };
@@ -58,7 +58,7 @@ pub(super) fn start_skill_test(
             reason: format!("skill test: difficulty {difficulty} must be >= 0").into(),
         };
     }
-    if state.in_flight_skill_test.is_some() {
+    if cx.state.in_flight_skill_test.is_some() {
         return EngineOutcome::Rejected {
             reason: "skill test: another skill test is already in flight; only one test \
                      may pause at a commit window at a time"
@@ -73,7 +73,7 @@ pub(super) fn start_skill_test(
     // borrow from the validation block above is still live; reading
     // `current_location` here doesn't extend it past this line.
     let tested_location = inv.current_location;
-    state.in_flight_skill_test = Some(InFlightSkillTest {
+    cx.state.in_flight_skill_test = Some(InFlightSkillTest {
         investigator,
         skill,
         kind,
@@ -83,7 +83,7 @@ pub(super) fn start_skill_test(
         follow_up,
         continuation: FinishContinuation::AwaitingCommit,
     });
-    events.push(Event::SkillTestStarted {
+    cx.events.push(Event::SkillTestStarted {
         investigator,
         skill,
         difficulty,
@@ -129,14 +129,10 @@ pub(super) fn start_skill_test(
 /// paused so the caller can submit a fixed-up response.
 ///
 /// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
-pub(super) fn finish_skill_test(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    indices: &[u32],
-) -> EngineOutcome {
+pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // Snapshot the in-flight record (Copy-able primitives only) so
     // later mutation paths can re-borrow state freely.
-    let Some(in_flight) = state.in_flight_skill_test.as_ref() else {
+    let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() else {
         return EngineOutcome::Rejected {
             reason: "ResolveInput::CommitCards: no in-flight skill test to resume".into(),
         };
@@ -160,41 +156,40 @@ pub(super) fn finish_skill_test(
     // Validate the commit indices against the resolving
     // investigator's hand. On Err, state is untouched and the engine
     // stays paused so the client can retry.
-    let indices_u8 = match validate_commit_indices(state, investigator, indices) {
+    let indices_u8 = match validate_commit_indices(cx.state, investigator, indices) {
         Ok(v) => v,
         Err(rejected) => return rejected,
     };
 
-    let skill_value = sum_skill_value(state, investigator, skill, kind, &indices_u8);
+    let skill_value = sum_skill_value(cx.state, investigator, skill, kind, &indices_u8);
 
     // Persist the committed indices into the in-flight record for
     // replay clarity. Safe to expect: we read `in_flight_skill_test`
     // immediately above and nothing has cleared it since.
-    state
+    cx.state
         .in_flight_skill_test
         .as_mut()
         .expect("in_flight_skill_test was Some immediately above")
         .committed_by_active
         .clone_from(&indices_u8);
 
-    let succeeded =
-        resolve_chaos_token_and_emit(state, events, investigator, skill, difficulty, skill_value);
+    let succeeded = resolve_chaos_token_and_emit(cx, investigator, skill, difficulty, skill_value);
 
     if succeeded {
-        apply_skill_test_follow_up(state, events, investigator, follow_up);
+        apply_skill_test_follow_up(cx, investigator, follow_up);
     }
 
     // Step 2 is complete. Advance the continuation (carrying the
     // outcome forward) and let the driver handle the remaining
     // steps (including the possibly-queued reaction window from
     // inside the follow-up).
-    state
+    cx.state
         .in_flight_skill_test
         .as_mut()
         .expect("in_flight_skill_test was Some immediately above")
         .continuation = FinishContinuation::PostFollowUp { succeeded };
 
-    drive_skill_test(state, events)
+    drive_skill_test(cx)
 }
 
 /// Walk the skill-test resolution sequence from the current
@@ -222,14 +217,14 @@ pub(super) fn finish_skill_test(
 ///   modifiers, clear in-flight, return `Done`.
 ///
 /// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
-pub(super) fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
     loop {
-        if state.top_reaction_window().is_some() {
-            return super::reaction_windows::open_queued_reaction_window(state, events);
+        if cx.state.top_reaction_window().is_some() {
+            return super::reaction_windows::open_queued_reaction_window(cx);
         }
 
         let (continuation, investigator, indices_u8) = {
-            let in_flight = state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
+            let in_flight = cx.state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
                 unreachable!(
                     "drive_skill_test: in_flight_skill_test must exist while driver is active; \
                      state-corruption invariant violation"
@@ -250,24 +245,24 @@ pub(super) fn drive_skill_test(state: &mut GameState, events: &mut Vec<Event>) -
                 );
             }
             FinishContinuation::PostFollowUp { succeeded } => {
-                fire_on_skill_test_resolution(state, events, investigator, &indices_u8, succeeded);
-                state
+                fire_on_skill_test_resolution(cx, investigator, &indices_u8, succeeded);
+                cx.state
                     .in_flight_skill_test
                     .as_mut()
                     .expect("in_flight_skill_test must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
             FinishContinuation::PostOnResolution { succeeded: _ } => {
-                discard_committed_cards(state, events, investigator, &indices_u8);
-                events.push(Event::SkillTestEnded { investigator });
+                discard_committed_cards(cx, investigator, &indices_u8);
+                cx.events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when
                 // the test ends. Drain pending entries for *this*
                 // investigator only — entries queued for other
                 // investigators' future tests stay.
-                state
+                cx.state
                     .pending_skill_modifiers
                     .retain(|m| m.investigator != investigator);
-                state.in_flight_skill_test = None;
+                cx.state.in_flight_skill_test = None;
                 return EngineOutcome::Done;
             }
         }
@@ -386,17 +381,17 @@ fn sum_committed_icons(hand: &[CardCode], indices: &[u8], skill: SkillKind) -> i
 /// inside `i8`, but saturation defends against absurd state
 /// configurations without needing a wider integer type.
 fn resolve_chaos_token_and_emit(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     skill: SkillKind,
     difficulty: i8,
     skill_value: i8,
 ) -> bool {
-    let token_idx = state.rng.next_index(state.chaos_bag.tokens.len());
-    let token = state.chaos_bag.tokens[token_idx];
-    let resolution = resolve_token(token, &state.token_modifiers);
-    events.push(Event::ChaosTokenRevealed { token, resolution });
+    let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
+    let token = cx.state.chaos_bag.tokens[token_idx];
+    let resolution = resolve_token(token, &cx.state.token_modifiers);
+    cx.events
+        .push(Event::ChaosTokenRevealed { token, resolution });
 
     let (total, fail_reason) = match resolution {
         TokenResolution::Modifier(n) => (skill_value.saturating_add(n).max(0), None),
@@ -406,7 +401,7 @@ fn resolve_chaos_token_and_emit(
     let margin = total.saturating_sub(difficulty);
     let succeeded = margin >= 0 && fail_reason.is_none();
     if succeeded {
-        events.push(Event::SkillTestSucceeded {
+        cx.events.push(Event::SkillTestSucceeded {
             investigator,
             skill,
             margin,
@@ -414,7 +409,7 @@ fn resolve_chaos_token_and_emit(
     } else {
         let reason = fail_reason.unwrap_or(FailureReason::Total);
         let by = difficulty.saturating_sub(total);
-        events.push(Event::SkillTestFailed {
+        cx.events.push(Event::SkillTestFailed {
             investigator,
             skill,
             reason,
@@ -429,27 +424,34 @@ fn resolve_chaos_token_and_emit(
 /// [`Event::SkillTestEnded`] docs, these discards precede the
 /// `SkillTestEnded` cleanup marker. Walk indices in descending order
 /// so each `remove` keeps the still-pending indices stable.
-fn discard_committed_cards(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    indices_u8: &[u8],
-) {
+fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
     let mut sorted: Vec<u8> = indices_u8.to_vec();
     sorted.sort_by(|a, b| b.cmp(a));
-    let inv = state
-        .investigators
-        .get_mut(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "discard_committed_cards: investigator {investigator:?} vanished after \
-                 follow-up; this is a state-corruption invariant violation"
-            )
-        });
-    for idx in sorted {
-        let code = inv.hand.remove(usize::from(idx));
-        inv.discard.push(code.clone());
-        events.push(Event::CardDiscarded {
+    // Collect discarded codes first (releasing the mutable borrow on
+    // cx.state) so we can push to cx.events afterwards without a
+    // simultaneous borrow through cx.
+    let discarded: Vec<CardCode> = {
+        let inv = cx
+            .state
+            .investigators
+            .get_mut(&investigator)
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "discard_committed_cards: investigator {investigator:?} vanished after \
+                     follow-up; this is a state-corruption invariant violation"
+                )
+            });
+        sorted
+            .iter()
+            .map(|&idx| {
+                let code = inv.hand.remove(usize::from(idx));
+                inv.discard.push(code.clone());
+                code
+            })
+            .collect()
+    };
+    for code in discarded {
+        cx.events.push(Event::CardDiscarded {
             investigator,
             code,
             from: Zone::Hand,
@@ -461,8 +463,7 @@ fn discard_committed_cards(
 /// skill test. Failure-path follow-ups (none today) would route here
 /// too if we grow them.
 fn apply_skill_test_follow_up(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     follow_up: SkillTestFollowUp,
 ) {
@@ -470,14 +471,14 @@ fn apply_skill_test_follow_up(
         SkillTestFollowUp::None => {}
         SkillTestFollowUp::Investigate => {
             let effect = discover_clue(LocationTarget::ControllerLocation, 1);
-            let ctx = EvalContext::for_controller(investigator);
+            let eval_ctx = EvalContext::for_controller(investigator);
             // Same caveat as the pre-refactor `investigate`: the only
             // remaining rejection path inside `discover_clue` is
             // "controller is between locations", which the Investigate
             // action validates before starting the test. Empty-
             // location is a silent no-op by design. Any rejection
             // here is a state-corruption invariant violation.
-            let outcome = apply_effect(state, events, &effect, ctx);
+            let outcome = apply_effect(cx, &effect, eval_ctx);
             if let EngineOutcome::Rejected { reason } = outcome {
                 unreachable!(
                     "Investigate follow-up: discover_clue rejected unexpectedly after \
@@ -489,10 +490,10 @@ fn apply_skill_test_follow_up(
             // Mid-test enemy disappearance isn't possible in Phase 3
             // (no commit-window effects mutate enemies), so
             // damage_enemy's enemy-missing panic stays loud.
-            super::combat::damage_enemy(state, events, enemy, 1, Some(investigator));
+            super::combat::damage_enemy(cx, enemy, 1, Some(investigator));
         }
         SkillTestFollowUp::Evade { enemy } => {
-            let e = state.enemies.get_mut(&enemy).unwrap_or_else(|| {
+            let e = cx.state.enemies.get_mut(&enemy).unwrap_or_else(|| {
                 unreachable!(
                     "Evade follow-up: enemy {enemy:?} vanished while test was in flight; \
                      this is a state-corruption invariant violation"
@@ -500,11 +501,11 @@ fn apply_skill_test_follow_up(
             });
             e.engaged_with = None;
             e.exhausted = true;
-            events.push(Event::EnemyDisengaged {
+            cx.events.push(Event::EnemyDisengaged {
                 enemy,
                 investigator,
             });
-            events.push(Event::EnemyExhausted { enemy });
+            cx.events.push(Event::EnemyExhausted { enemy });
         }
     }
 }
@@ -528,8 +529,7 @@ fn apply_skill_test_follow_up(
 /// triggered effect. Mirrors `apply_skill_test_follow_up`'s
 /// `unreachable!` on a follow-up rejection.
 fn fire_on_skill_test_resolution(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     indices_u8: &[u8],
     succeeded: bool,
@@ -551,12 +551,16 @@ fn fire_on_skill_test_resolution(
     // Each committed index resolves to a hand-position CardCode; the
     // cards are still in hand at this point (discard happens next).
     let codes: Vec<CardCode> = {
-        let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
-            unreachable!(
-                "fire_on_skill_test_resolution: investigator {investigator:?} vanished while \
+        let inv = cx
+            .state
+            .investigators
+            .get(&investigator)
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "fire_on_skill_test_resolution: investigator {investigator:?} vanished while \
                  test was in flight; this is a state-corruption invariant violation"
-            )
-        });
+                )
+            });
         indices_u8
             .iter()
             .map(|&i| inv.hand[usize::from(i)].clone())
@@ -574,8 +578,8 @@ fn fire_on_skill_test_resolution(
             if outcome != outcome_now {
                 continue;
             }
-            let ctx = EvalContext::for_controller(investigator);
-            let result = apply_effect(state, events, &ability.effect, ctx);
+            let eval_ctx = EvalContext::for_controller(investigator);
+            let result = apply_effect(cx, &ability.effect, eval_ctx);
             if let EngineOutcome::Rejected { reason } = result {
                 unreachable!(
                     "OnSkillTestResolution: effect for card {code:?} rejected unexpectedly: \
@@ -591,15 +595,13 @@ fn fire_on_skill_test_resolution(
 /// Opens the commit window with no action-specific follow-up. The
 /// after-resolution trigger window (#64) is downstream.
 pub(super) fn perform_skill_test(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     skill: SkillKind,
     difficulty: i8,
 ) -> EngineOutcome {
     start_skill_test(
-        state,
-        events,
+        cx,
         investigator,
         skill,
         SkillTestKind::Plain,
@@ -609,14 +611,13 @@ pub(super) fn perform_skill_test(
 }
 
 pub(super) fn peril_check(
-    _state: &mut GameState,
-    _events: &mut Vec<Event>,
+    _cx: &mut Cx,
     _code: &CardCode,
     _investigator: InvestigatorId,
     _is_peril: bool,
 ) {
     // TODO(future-peril-PR): if `is_peril`, install a temporary
-    //   restriction on `state` such that other investigators cannot
+    //   restriction on `_cx.state` such that other investigators cannot
     //   (a) play cards, (b) trigger abilities, or (c) commit to the
     //   drawing investigator's skill tests until this card's
     //   resolution completes.

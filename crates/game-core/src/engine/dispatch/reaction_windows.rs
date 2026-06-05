@@ -23,6 +23,7 @@ use crate::state::{
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use super::Cx;
 
 /// Queue a reaction window of the given `kind` if any in-play card
 /// has a matching `Trigger::OnEvent` ability. No-op when the registry
@@ -45,20 +46,16 @@ use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 /// doesn't arise; the overwrite is a loud-on-debug placeholder
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
-pub(super) fn queue_reaction_window(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    kind: WindowKind,
-) {
-    let pending_triggers = scan_pending_triggers(state, kind);
+pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
+    let pending_triggers = scan_pending_triggers(cx.state, kind);
     if pending_triggers.is_empty() {
         return;
     }
-    events.push(Event::WindowOpened { kind });
+    cx.events.push(Event::WindowOpened { kind });
     // Reaction windows admit any investigator's Fast actions
     // (Rules Reference: Fast may be played at any player window).
     // Multi-window nesting is now structural — push twice is valid.
-    state.open_windows.push(OpenWindow {
+    cx.state.open_windows.push(OpenWindow {
         kind,
         pending_triggers,
         fast_actors: FastActorScope::Any,
@@ -199,11 +196,9 @@ fn trigger_matches(
 /// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
 /// (not here) so the event appears at queue time and is symmetric with
 /// the [`open_fast_window`] path.
-pub(super) fn open_queued_reaction_window(
-    state: &GameState,
-    _events: &mut Vec<Event>,
-) -> EngineOutcome {
-    let window = state
+pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
+    let window = cx
+        .state
         .top_reaction_window()
         .expect("open_queued_reaction_window: caller checked is_some");
     EngineOutcome::AwaitingInput {
@@ -236,23 +231,20 @@ pub(super) fn open_queued_reaction_window(
 /// Closing the window emits [`Event::WindowClosed`] with the same
 /// kind, pops the top entry from [`GameState::open_windows`], and
 /// returns [`Done`].
-pub(super) fn resume_reaction_window(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    response: &InputResponse,
-) -> EngineOutcome {
+pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
-        InputResponse::PickIndex(i) => fire_pending_trigger(state, events, *i),
+        InputResponse::PickIndex(i) => fire_pending_trigger(cx, *i),
         InputResponse::Skip => {
             // Resolve the active reaction-window index up-front so the
             // close path operates on the same window the driver had
             // been driving (not the absolute top of `open_windows`,
             // which may be an empty-pending_triggers window sitting
             // above it).
-            let idx = state
+            let idx = cx
+                .state
                 .top_reaction_window_index()
                 .expect("resume_reaction_window: caller checked is_some");
-            close_reaction_window_at(state, events, idx)
+            close_reaction_window_at(cx, idx)
         }
         other => EngineOutcome::Rejected {
             reason: format!(
@@ -267,17 +259,18 @@ pub(super) fn resume_reaction_window(
 /// Fire the pending trigger at index `i` in the open reaction window.
 /// Rejects out-of-bounds; the window stays open so the client can
 /// retry with a corrected index.
-fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
+fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Capture the index of the reaction window we're driving up-front
     // so the close path removes the same entry (not the absolute top of
     // the stack, which may be a different, empty-pending_triggers
     // window once non-reaction windows can sit above one).
-    let window_idx = state
+    let window_idx = cx
+        .state
         .top_reaction_window_index()
         .expect("fire_pending_trigger: caller checked is_some");
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
-        let window = &state.open_windows[window_idx];
+        let window = &cx.state.open_windows[window_idx];
         let idx = match usize::try_from(i) {
             Ok(idx) if idx < window.pending_triggers.len() => idx,
             _ => {
@@ -303,7 +296,8 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
              missing; the OnceLock contract guarantees once-set-stays-set"
         );
     };
-    let inv = state
+    let inv = cx
+        .state
         .investigators
         .get(&trigger.controller)
         .unwrap_or_else(|| {
@@ -351,9 +345,9 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
     // effects (`discover_clue`, `gain_resources`) don't read this,
     // but the first source-attributing reaction effect will, and the
     // information is already on the trigger record.
-    let ctx = EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    let eval_ctx = EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
     let usage_limit = ability.usage_limit;
-    let result = apply_effect(state, events, &ability.effect, ctx);
+    let result = apply_effect(cx, &ability.effect, eval_ctx);
     if let EngineOutcome::Rejected { reason } = result {
         // Card-impl bugs surface loudly — same policy as
         // `fire_on_skill_test_resolution`.
@@ -361,20 +355,20 @@ fn fire_pending_trigger(state: &mut GameState, events: &mut Vec<Event>, i: u32) 
     }
 
     if usage_limit.is_some() {
-        bump_usage_counter(state, &trigger);
+        bump_usage_counter(cx.state, &trigger);
     }
 
     // Drop the fired entry now that resolution succeeded. The window
     // we drove sits at `window_idx` — apply_effect does not push or
     // pop `open_windows` entries, so the index remains valid.
-    let window = &mut state.open_windows[window_idx];
+    let window = &mut cx.state.open_windows[window_idx];
     window.pending_triggers.remove(pending_idx);
 
     // If more triggers remain pending, re-emit AwaitingInput so the
     // player can pick the next one. Otherwise the window closes
     // automatically.
     if window.pending_triggers.is_empty() {
-        return close_reaction_window_at(state, events, window_idx);
+        return close_reaction_window_at(cx, window_idx);
     }
     let kind = window.kind;
     let pending_len = window.pending_triggers.len();
@@ -448,15 +442,12 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
 /// (#69/#70/#71), a naive `open_windows.pop()` would remove the wrong
 /// entry. Callers compute the index via
 /// [`GameState::top_reaction_window_index`].
-pub(super) fn close_reaction_window_at(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    idx: usize,
-) -> EngineOutcome {
+pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome {
     // Borrow the window at `idx` to check for forced triggers remaining
     // before removing — Rejected must leave state untouched.
     {
-        let window = state
+        let window = cx
+            .state
             .open_windows
             .get(idx)
             .expect("close_reaction_window_at: caller-supplied index must be in bounds");
@@ -474,14 +465,14 @@ pub(super) fn close_reaction_window_at(
             };
         }
     }
-    let window = state.open_windows.remove(idx);
+    let window = cx.state.open_windows.remove(idx);
     let kind = window.kind;
-    events.push(Event::WindowClosed { kind });
+    cx.events.push(Event::WindowClosed { kind });
 
     // Run any kind-specific continuation (e.g. MythosAfterDraws →
     // mythos_phase_end). For reaction windows that have no continuation
     // (AfterEnemyDefeated, BetweenPhases) this is a no-op.
-    run_window_continuation(state, events, kind);
+    run_window_continuation(cx, kind);
 
     // If a skill test was mid-resolution when this window opened,
     // hand control back to its driver to run the remaining steps.
@@ -489,9 +480,9 @@ pub(super) fn close_reaction_window_at(
     // window (no driver state to resume); this happens when a future
     // non-skill-test action queues a window — `Done` is the right
     // terminal outcome.
-    if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+    if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
         if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
-            return super::skill_test::drive_skill_test(state, events);
+            return super::skill_test::drive_skill_test(cx);
         }
     }
 
@@ -519,11 +510,7 @@ pub(super) fn close_reaction_window_at(
 /// and [`WindowKind::InvestigatorTurnBegins`] windows have no
 /// continuation — for them this is a no-op preserving the existing
 /// [`close_reaction_window_at`] behavior.
-pub(super) fn run_window_continuation(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    kind: WindowKind,
-) {
+pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
     match kind {
         WindowKind::MythosAfterDraws => {
             // Phase-transitioning continuation: cannot run while a skill
@@ -533,7 +520,7 @@ pub(super) fn run_window_continuation(
             // adding a Mythos-phase Revelation that initiates a skill
             // test must redesign the close-window + phase-transition
             // ordering before this assertion fires.
-            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+            if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
                 unreachable!(
                     "MythosAfterDraws window closed while a skill test is in flight \
                      (continuation={:?}). Phase transition would strand the skill test \
@@ -544,13 +531,13 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::phases::mythos_phase_end(state, events);
+            super::phases::mythos_phase_end(cx);
         }
         WindowKind::UpkeepBegins => {
             // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
             // cannot run while a skill test is in flight. Phase 4 has no
             // Upkeep-phase skill-test source, so structurally unreachable.
-            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+            if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
                 unreachable!(
                     "UpkeepBegins window closed while a skill test is in flight \
                      (continuation={:?}). Phase 4 has no Upkeep-phase skill-test \
@@ -559,7 +546,7 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::phases::upkeep_resume(state, events);
+            super::phases::upkeep_resume(cx);
         }
         WindowKind::BeforeInvestigatorAttacked => {
             // Phase-transitioning continuation (advances to the next
@@ -570,7 +557,7 @@ pub(super) fn run_window_continuation(
             // (e.g. a treachery-style "make an Agility test or take
             // damage" attack ability) must redesign the window-close
             // + phase-transition ordering before this assertion fires.
-            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+            if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
                 unreachable!(
                     "BeforeInvestigatorAttacked window closed while a \
                      skill test is in flight (continuation={:?}). Phase \
@@ -588,7 +575,7 @@ pub(super) fn run_window_continuation(
             // in enemy_phase or in the advance below. A None cursor
             // here is a state-corruption invariant violation, not a
             // normal rejection path.
-            let investigator = state.enemy_attack_pending.unwrap_or_else(|| {
+            let investigator = cx.state.enemy_attack_pending.unwrap_or_else(|| {
                 unreachable!(
                     "BeforeInvestigatorAttacked closed with \
                      enemy_attack_pending == None; this is a \
@@ -596,24 +583,24 @@ pub(super) fn run_window_continuation(
                 )
             });
 
-            super::combat::resolve_attacks_for_investigator(state, events, investigator);
+            super::combat::resolve_attacks_for_investigator(cx, investigator);
 
             // Advance the cursor: next Active investigator AFTER
             // `investigator` in turn_order. The shared helper uses
             // turn_order (not the filtered-Active list) as the index
             // basis, so `investigator` itself can have been defeated
             // mid-loop and we still find the right successor.
-            state.enemy_attack_pending =
-                super::cursor::next_active_investigator_after(state, investigator);
+            cx.state.enemy_attack_pending =
+                super::cursor::next_active_investigator_after(cx.state, investigator);
 
-            if state.enemy_attack_pending.is_some() {
-                open_fast_window(state, events, WindowKind::BeforeInvestigatorAttacked);
+            if cx.state.enemy_attack_pending.is_some() {
+                open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked);
             } else {
-                open_fast_window(state, events, WindowKind::AfterAllInvestigatorsAttacked);
+                open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked);
             }
         }
         WindowKind::AfterAllInvestigatorsAttacked => {
-            if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
+            if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
                 unreachable!(
                     "AfterAllInvestigatorsAttacked window closed while a \
                      skill test is in flight (continuation={:?}). Phase \
@@ -624,14 +611,14 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::phases::enemy_phase_end(state, events);
+            super::phases::enemy_phase_end(cx);
         }
         WindowKind::InvestigationBegins => {
             // Post-2.1 window closed; start the first turn (step 2.2).
             // No skill-test-in-flight guard: this runs at phase start
             // (no test can be in flight) and does not transition phase.
-            if let Some(id) = super::cursor::first_active_investigator(state) {
-                super::phases::begin_investigator_turn(state, events, id);
+            if let Some(id) = super::cursor::first_active_investigator(cx.state) {
+                super::phases::begin_investigator_turn(cx, id);
             }
             // None branch: no active investigator can take a turn. Per
             // Rules Reference p.10 step 6 the scenario ends — that
@@ -684,33 +671,34 @@ pub(super) fn run_window_continuation(
 /// On the auto-skip path the window is popped before returning so the
 /// net effect on `state.open_windows` is identical to the pre-fix
 /// behaviour (window never lands persistently on the stack).
-pub(super) fn open_fast_window(state: &mut GameState, events: &mut Vec<Event>, kind: WindowKind) {
-    events.push(Event::WindowOpened { kind });
+pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) {
+    cx.events.push(Event::WindowOpened { kind });
 
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
-    let pending_triggers = scan_pending_triggers(state, kind);
-    state.open_windows.push(OpenWindow {
+    let pending_triggers = scan_pending_triggers(cx.state, kind);
+    cx.state.open_windows.push(OpenWindow {
         kind,
         pending_triggers,
         fast_actors: FastActorScope::Any,
     });
 
-    let has_pending = !state
+    let has_pending = !cx
+        .state
         .open_windows
         .last()
         .expect("just pushed; cannot be empty")
         .pending_triggers
         .is_empty();
-    let has_fast_eligible = any_fast_play_eligible(state);
+    let has_fast_eligible = any_fast_play_eligible(cx.state);
 
     if !has_pending && !has_fast_eligible {
         // Auto-skip: nothing to do. Pop the window we just pushed,
         // emit WindowClosed, and run the continuation inline, so the
         // net effect on state.open_windows is the same as before the fix.
-        let _ = state.open_windows.pop();
-        events.push(Event::WindowClosed { kind });
-        run_window_continuation(state, events, kind);
+        let _ = cx.state.open_windows.pop();
+        cx.events.push(Event::WindowClosed { kind });
+        run_window_continuation(cx, kind);
     }
     // Otherwise the window stays on the stack. The guard at the top of
     // apply() and resume_reaction_window / resolve_input handle the
@@ -1083,7 +1071,13 @@ mod open_fast_window_tests {
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
-        open_fast_window(&mut state, &mut events, WindowKind::MythosAfterDraws);
+        open_fast_window(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            WindowKind::MythosAfterDraws,
+        );
 
         assert!(
             state.open_windows.is_empty(),
@@ -1117,8 +1111,10 @@ mod open_fast_window_tests {
         let mut state = TestGame::default().build();
         let mut events = Vec::new();
         run_window_continuation(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             WindowKind::AfterEnemyDefeated {
                 enemy: EnemyId(1),
                 by: None,

@@ -729,7 +729,7 @@ pub struct PendingTrigger {
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
 /// apply to a skill test.
 ///
-/// Pushed by [`apply_effect`](crate::engine::apply_effect) when an
+/// Pushed by `apply_effect` when an
 /// activated or triggered ability resolves a `Modify { scope:
 /// ThisSkillTest, … }` effect. Consumed (and cleared) by the next
 /// skill-test resolution for the same investigator.
