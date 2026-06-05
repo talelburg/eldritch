@@ -187,10 +187,10 @@ fn mythos_phase(cx: &mut Cx) {
     });
 
     // 1.2 Place 1 doom on the current agenda.
-    super::act_agenda::place_doom_on_agenda(cx.state, cx.events);
+    super::act_agenda::place_doom_on_agenda(cx);
 
     // 1.3 Check doom threshold.
-    super::act_agenda::check_doom_threshold(cx.state, cx.events);
+    super::act_agenda::check_doom_threshold(cx);
 
     // 1.4 Each investigator draws 1 encounter card.
     //     Seed the cursor; the actual draws are player-driven via

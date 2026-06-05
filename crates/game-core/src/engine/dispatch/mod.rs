@@ -171,7 +171,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         },
         PlayerAction::ResolveInput { response } => resolve_input(cx, response),
         PlayerAction::AdvanceAct { investigator } => {
-            act_agenda::advance_act_action(cx.state, cx.events, *investigator)
+            act_agenda::advance_act_action(cx, *investigator)
         }
     };
 

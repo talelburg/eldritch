@@ -1,19 +1,19 @@
 //! Act and agenda handlers: doom placement, threshold checking, agenda
 //! advancement, clue spending, and act advancement.
 
-use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, Phase};
 
 use super::super::outcome::EngineOutcome;
+use super::Cx;
 
 /// Mythos step 1.2 (Rules Reference p.24): "Take 1 doom from the token
 /// pool, and place it on the current agenda card." No-op when no agenda
 /// deck is modeled (tests/fixtures without an agenda).
-pub(super) fn place_doom_on_agenda(state: &mut GameState, _events: &mut Vec<Event>) {
-    if state.agenda_deck.is_empty() {
+pub(super) fn place_doom_on_agenda(cx: &mut Cx) {
+    if cx.state.agenda_deck.is_empty() {
         return;
     }
-    state.agenda_doom = state.agenda_doom.saturating_add(1);
+    cx.state.agenda_doom = cx.state.agenda_doom.saturating_add(1);
 }
 
 /// Mythos step 1.3 (Rules Reference p.24): compare doom in play with the
@@ -28,17 +28,17 @@ pub(super) fn place_doom_on_agenda(state: &mut GameState, _events: &mut Vec<Even
 /// it ends the scenario: set the resolution latch instead of moving the
 /// cursor. Otherwise emit [`Event::AgendaAdvanced`], reset doom, and make
 /// the next agenda current.
-pub(super) fn check_doom_threshold(state: &mut GameState, events: &mut Vec<Event>) {
-    if state.agenda_deck.is_empty() {
+pub(super) fn check_doom_threshold(cx: &mut Cx) {
+    if cx.state.agenda_deck.is_empty() {
         return;
     }
-    let agenda = &state.agenda_deck[state.agenda_index];
-    if state.agenda_doom < agenda.doom_threshold {
+    let agenda = &cx.state.agenda_deck[cx.state.agenda_index];
+    if cx.state.agenda_doom < agenda.doom_threshold {
         return;
     }
     match agenda.resolution.clone() {
-        Some(resolution) => request_resolution(state, resolution),
-        None => advance_agenda(state, events),
+        Some(resolution) => request_resolution(cx.state, resolution),
+        None => advance_agenda(cx),
     }
 }
 
@@ -52,12 +52,12 @@ pub(super) fn check_doom_threshold(state: &mut GameState, events: &mut Vec<Event
 /// data (the final agenda must carry a `(→R#)` resolution point), so the
 /// missing-successor case is `unreachable!()` — mirrors the surge-chain
 /// malformation guards from #69.
-pub(super) fn advance_agenda(state: &mut GameState, events: &mut Vec<Event>) {
-    let from = state.agenda_index;
-    events.push(Event::AgendaAdvanced { from });
-    state.agenda_doom = 0;
-    state.agenda_index += 1;
-    if state.agenda_index >= state.agenda_deck.len() {
+pub(super) fn advance_agenda(cx: &mut Cx) {
+    let from = cx.state.agenda_index;
+    cx.events.push(crate::event::Event::AgendaAdvanced { from });
+    cx.state.agenda_doom = 0;
+    cx.state.agenda_index += 1;
+    if cx.state.agenda_index >= cx.state.agenda_deck.len() {
         unreachable!(
             "advance_agenda: agenda {from} advanced past the end of the deck without a \
              resolution firing — a terminal agenda must carry a resolution point; this is \
@@ -85,29 +85,25 @@ fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<Investiga
 /// (acting investigator first, then the rest in `turn_order`) and either
 /// set the resolution latch (terminal act) or emit [`Event::ActAdvanced`]
 /// and advance the cursor.
-pub(super) fn advance_act_action(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
-    if state.phase != Phase::Investigation {
+pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    if cx.state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
             reason: format!(
                 "AdvanceAct is only valid during the Investigation phase (was {:?})",
-                state.phase
+                cx.state.phase
             )
             .into(),
         };
     }
-    if state.act_deck.is_empty() {
+    if cx.state.act_deck.is_empty() {
         return EngineOutcome::Rejected {
             reason: "AdvanceAct: no act deck is modeled for this scenario".into(),
         };
     }
-    let threshold = state.act_deck[state.act_index].clue_threshold;
-    let total_clues: u32 = clue_contributors(state, investigator)
+    let threshold = cx.state.act_deck[cx.state.act_index].clue_threshold;
+    let total_clues: u32 = clue_contributors(cx.state, investigator)
         .into_iter()
-        .filter_map(|id| state.investigators.get(&id))
+        .filter_map(|id| cx.state.investigators.get(&id))
         .map(|i| u32::from(i.clues))
         .sum();
     if total_clues < u32::from(threshold) {
@@ -120,10 +116,10 @@ pub(super) fn advance_act_action(
     }
 
     // All validations passed — mutate.
-    spend_clues(state, investigator, threshold);
-    match state.act_deck[state.act_index].resolution.clone() {
-        Some(resolution) => request_resolution(state, resolution),
-        None => advance_act(state, events),
+    spend_clues(cx.state, investigator, threshold);
+    match cx.state.act_deck[cx.state.act_index].resolution.clone() {
+        Some(resolution) => request_resolution(cx.state, resolution),
+        None => advance_act(cx),
     }
     EngineOutcome::Done
 }
@@ -158,11 +154,11 @@ fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
 /// cursor. Only called for a non-terminal act; the missing-successor case
 /// is `unreachable!()` (a terminal act must carry a resolution point —
 /// malformed scenario data otherwise). Mirrors [`advance_agenda`].
-fn advance_act(state: &mut GameState, events: &mut Vec<Event>) {
-    let from = state.act_index;
-    events.push(Event::ActAdvanced { from });
-    state.act_index += 1;
-    if state.act_index >= state.act_deck.len() {
+fn advance_act(cx: &mut Cx) {
+    let from = cx.state.act_index;
+    cx.events.push(crate::event::Event::ActAdvanced { from });
+    cx.state.act_index += 1;
+    if cx.state.act_index >= cx.state.act_deck.len() {
         unreachable!(
             "advance_act: act {from} advanced past the end of the deck without a resolution \
              firing — a terminal act must carry a resolution point; this is malformed \
@@ -203,9 +199,15 @@ mod doom_agenda_tests {
             resolution: None,
         }];
         let mut events = Vec::new();
-        place_doom_on_agenda(&mut state, &mut events);
+        place_doom_on_agenda(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(state.agenda_doom, 1);
-        place_doom_on_agenda(&mut state, &mut events);
+        place_doom_on_agenda(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(state.agenda_doom, 2);
     }
 
@@ -228,7 +230,10 @@ mod doom_agenda_tests {
         ];
         state.agenda_doom = 2;
         let mut events = Vec::new();
-        check_doom_threshold(&mut state, &mut events);
+        check_doom_threshold(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(state.agenda_index, 1);
         assert_eq!(state.agenda_doom, 0, "doom resets on advance");
         assert!(
@@ -251,7 +256,10 @@ mod doom_agenda_tests {
         }];
         state.agenda_doom = 2;
         let mut events = Vec::new();
-        check_doom_threshold(&mut state, &mut events);
+        check_doom_threshold(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(
             state.agenda_index, 0,
             "cursor does not move on a terminal agenda"
@@ -270,7 +278,10 @@ mod doom_agenda_tests {
         }];
         state.agenda_doom = 2;
         let mut events = Vec::new();
-        check_doom_threshold(&mut state, &mut events);
+        check_doom_threshold(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         assert_eq!(state.agenda_index, 0);
         assert_eq!(state.agenda_doom, 2);
         assert!(events.is_empty());
