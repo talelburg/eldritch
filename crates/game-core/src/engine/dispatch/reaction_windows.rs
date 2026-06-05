@@ -866,7 +866,7 @@ pub(super) fn check_activate_ability(
     // `check_activate_ability`'s `Result` shape. Mirrors the same invariant
     // comment on `resolve_play_target` in `check_play_card`.
     let (action_cost, costs, effect) =
-        match super::resolve_activated_ability(&source_code, ability_index) {
+        match super::abilities::resolve_activated_ability(&source_code, ability_index) {
             Ok(v) => v,
             Err(EngineOutcome::Rejected { reason }) => return Err(reason),
             Err(other) => {
@@ -920,7 +920,7 @@ pub(super) fn check_activate_ability(
     // before any mutation so an all-or-nothing reject leaves state
     // untouched.
     for cost in &costs {
-        if let Err(reason) = super::check_cost_payable(cost, inv, source_exhausted) {
+        if let Err(reason) = super::abilities::check_cost_payable(cost, inv, source_exhausted) {
             return Err(reason.into());
         }
     }
