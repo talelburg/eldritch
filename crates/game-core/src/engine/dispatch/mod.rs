@@ -121,8 +121,8 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     }
 
     let outcome = match action {
-        PlayerAction::StartScenario => phases::start_scenario(cx.state, cx.events),
-        PlayerAction::EndTurn => phases::end_turn(cx.state, cx.events),
+        PlayerAction::StartScenario => phases::start_scenario(cx),
+        PlayerAction::EndTurn => phases::end_turn(cx),
         PlayerAction::PerformSkillTest {
             investigator,
             skill,
@@ -202,7 +202,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         // — hosts check `open_windows` and present `ResolveInput::Skip`
         // to close it, exactly as for the phase-transition windows the
         // void `*_phase` drivers open.
-        phases::investigation_phase(cx.state, cx.events);
+        phases::investigation_phase(cx);
     }
 
     // Reaction windows open at the step boundary inside the handler

@@ -544,7 +544,7 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::phases::mythos_phase_end(state, events);
+            super::phases::mythos_phase_end(&mut super::Cx { state, events });
         }
         WindowKind::UpkeepBegins => {
             // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
@@ -559,7 +559,7 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::phases::upkeep_resume(state, events);
+            super::phases::upkeep_resume(&mut super::Cx { state, events });
         }
         WindowKind::BeforeInvestigatorAttacked => {
             // Phase-transitioning continuation (advances to the next
@@ -624,14 +624,14 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::phases::enemy_phase_end(state, events);
+            super::phases::enemy_phase_end(&mut super::Cx { state, events });
         }
         WindowKind::InvestigationBegins => {
             // Post-2.1 window closed; start the first turn (step 2.2).
             // No skill-test-in-flight guard: this runs at phase start
             // (no test can be in flight) and does not transition phase.
             if let Some(id) = super::cursor::first_active_investigator(state) {
-                super::phases::begin_investigator_turn(state, events, id);
+                super::phases::begin_investigator_turn(&mut super::Cx { state, events }, id);
             }
             // None branch: no active investigator can take a turn. Per
             // Rules Reference p.10 step 6 the scenario ends — that
