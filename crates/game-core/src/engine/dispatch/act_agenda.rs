@@ -2,7 +2,7 @@
 //! advancement, clue spending, and act advancement.
 
 use crate::event::Event;
-use crate::state::{GameState, InvestigatorId};
+use crate::state::{GameState, InvestigatorId, Phase};
 
 use super::super::outcome::EngineOutcome;
 
@@ -90,7 +90,7 @@ pub(super) fn advance_act_action(
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    if state.phase != crate::state::Phase::Investigation {
+    if state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
             reason: format!(
                 "AdvanceAct is only valid during the Investigation phase (was {:?})",

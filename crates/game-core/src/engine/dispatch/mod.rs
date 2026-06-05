@@ -18,6 +18,8 @@ use super::outcome::EngineOutcome;
 mod abilities;
 mod act_agenda;
 mod actions;
+// pub(super): evaluator reaches grant_resources via the full path
+// crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
 pub(super) mod cards;
 mod combat;
 mod cursor;

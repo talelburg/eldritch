@@ -5,7 +5,7 @@ use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Enemy, EnemyId, GameState, InvestigatorId, SpawnEngagePending, WindowKind,
+    CardCode, Enemy, EnemyId, GameState, InvestigatorId, Phase, SpawnEngagePending, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -446,7 +446,7 @@ pub(super) fn draw_encounter_card(
     events: &mut Vec<Event>,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    if state.phase != crate::state::Phase::Mythos {
+    if state.phase != Phase::Mythos {
         return EngineOutcome::Rejected {
             reason: format!(
                 "DrawEncounterCard: only valid during Mythos phase, got {:?}",

@@ -3,17 +3,14 @@
 
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
-use crate::state::{EnemyId, InvestigatorId, Phase, WindowKind};
+use crate::state::{EnemyId, GameState, InvestigatorId, Phase, WindowKind};
 
 /// Action points granted to an investigator at the start of their
 /// turn during the Investigation phase. Per the Arkham Horror LCG
 /// rulebook.
 pub(super) const ACTIONS_PER_TURN: u8 = 3;
 
-pub(super) fn start_scenario(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<Event>,
-) -> EngineOutcome {
+pub(super) fn start_scenario(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     // The GameState constructor places the world in its initial shape;
     // this action is the explicit "session has begun" marker that lands
     // in the action log. Replaying it on an already-started state is a
@@ -60,10 +57,7 @@ pub(super) fn start_scenario(
     EngineOutcome::Done
 }
 
-pub(super) fn end_turn(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<Event>,
-) -> EngineOutcome {
+pub(super) fn end_turn(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     if state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
             reason: "EndTurn is only valid during the Investigation phase".into(),
@@ -126,7 +120,7 @@ pub(super) fn end_turn(
 /// hand, which is always the case in unit tests with no card registry
 /// installed), so single-investigator entry still lands the lead active
 /// within the same `apply()` call.
-pub(super) fn investigation_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+pub(super) fn investigation_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // 2.1 Investigation phase begins.
     events.push(Event::PhaseStarted {
         phase: Phase::Investigation,
@@ -151,7 +145,7 @@ pub(super) fn investigation_phase(state: &mut crate::state::GameState, events: &
 /// `who` must be an `Active` investigator in `turn_order`; callers
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
 pub(super) fn begin_investigator_turn(
-    state: &mut crate::state::GameState,
+    state: &mut GameState,
     events: &mut Vec<Event>,
     who: InvestigatorId,
 ) {
@@ -164,10 +158,7 @@ pub(super) fn begin_investigator_turn(
 /// `enemy_phase_end` / `upkeep_phase_end` — then transitions to the
 /// Enemy phase. Called only from `end_turn`'s terminal branch (the last
 /// investigator has taken a turn this round).
-fn investigation_phase_end(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<Event>,
-) -> EngineOutcome {
+fn investigation_phase_end(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
@@ -178,7 +169,7 @@ fn investigation_phase_end(
 /// out the Rules Reference p.24 sub-steps as discrete named call
 /// sites so the rule structure is grep-able and #73 / future-peril-PR
 /// fills in TODO bodies without changing the driver shape.
-fn mythos_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+fn mythos_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // 1.1 Round begins. Mythos phase begins.
     //     Rules Reference p.24: "As this is the first framework event
     //     of the round, it [1.1] also formalizes the beginning of a new
@@ -243,7 +234,7 @@ fn mythos_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
 /// Investigation→Enemy suspension is owned by
 /// [`investigation_phase_end`], which propagates it up through
 /// [`end_turn`].
-fn step_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) -> EngineOutcome {
+fn step_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     let from = state.phase;
     let to = from.next();
 
@@ -284,11 +275,7 @@ fn step_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) -> E
 ///
 /// `id` must refer to an investigator in `state.investigators` (a
 /// whole-program invariant for ids drawn from `turn_order`).
-fn rotate_to_active(
-    state: &mut crate::state::GameState,
-    _events: &mut Vec<Event>,
-    id: InvestigatorId,
-) {
+fn rotate_to_active(state: &mut GameState, _events: &mut Vec<Event>, id: InvestigatorId) {
     debug_assert!(
         state.investigators.contains_key(&id),
         "rotate_to_active: investigator {id:?} not in investigators (state corruption)"
@@ -307,7 +294,7 @@ fn rotate_to_active(
 /// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
 /// the shared helper used by Mythos 1.4 (#69) for the same semantics.
 /// The loop body runs in [`run_window_continuation`]'s arms.
-pub(super) fn enemy_attack_kickoff(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+pub(super) fn enemy_attack_kickoff(state: &mut GameState, events: &mut Vec<Event>) {
     state.enemy_attack_pending = super::cursor::first_active_investigator(state);
 
     if state.enemy_attack_pending.is_some() {
@@ -339,7 +326,7 @@ pub(super) fn enemy_attack_kickoff(state: &mut crate::state::GameState, events: 
 /// kickoff is deferred to [`resume_hunter_choice`], which runs it once
 /// the last hunter resolves. Otherwise the kickoff runs inline here and
 /// this returns [`EngineOutcome::Done`].
-fn enemy_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) -> EngineOutcome {
+fn enemy_phase(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
     // 3.1 Enemy phase begins.
     events.push(Event::PhaseStarted {
         phase: Phase::Enemy,
@@ -365,7 +352,7 @@ fn enemy_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) -> 
 /// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
 /// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
-pub(super) fn enemy_phase_end(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+pub(super) fn enemy_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     // 3.4 Enemy phase ends.
     events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
@@ -386,7 +373,7 @@ pub(super) fn enemy_phase_end(state: &mut crate::state::GameState, events: &mut 
 /// `mythos_phase_end`. Invoked from `close_reaction_window_at`'s
 /// kind-aware tail when a `MythosAfterDraws` window pops, and from
 /// `open_fast_window`'s auto-skip path inline.
-pub(super) fn mythos_phase_end(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+pub(super) fn mythos_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     // 1.5 Mythos phase ends.
     //     The PhaseEnded(Mythos) emit lives HERE rather than in
     //     step_phase so step 1.5 has explicit ownership in the
@@ -414,7 +401,7 @@ pub(super) fn mythos_phase_end(state: &mut crate::state::GameState, events: &mut
 /// window sits at the END, so its driver runs content then opens;
 /// Upkeep's sits at the START, so the driver opens immediately and the
 /// content is the continuation.
-fn upkeep_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+fn upkeep_phase(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.1 Upkeep phase begins.
     events.push(Event::PhaseStarted {
         phase: Phase::Upkeep,
@@ -427,7 +414,7 @@ fn upkeep_phase(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
 /// call sites; step 4.5 is the [`check_hand_size`] stub (TODO #111).
 /// Then hands to [`upkeep_phase_end`] for 4.6 + transition.
-pub(super) fn upkeep_resume(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+pub(super) fn upkeep_resume(state: &mut GameState, events: &mut Vec<Event>) {
     reset_actions(state, events); // 4.2
     ready_exhausted_cards(state, events); // 4.3
     upkeep_draw_and_resource(state, events); // 4.4
@@ -438,7 +425,7 @@ pub(super) fn upkeep_resume(state: &mut crate::state::GameState, events: &mut Ve
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
 /// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` emits no
 /// `PhaseEnded` itself — every phase's `*_end` helper owns its own.
-fn upkeep_phase_end(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+fn upkeep_phase_end(state: &mut GameState, events: &mut Vec<Event>) {
     // 4.6 Upkeep phase ends. Round ends.
     events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
@@ -465,7 +452,7 @@ fn upkeep_phase_end(state: &mut crate::state::GameState, events: &mut Vec<Event>
 /// co-located with an investigator engages it via [`reengage_at_location`]
 /// (Rules Reference p.10: "if an exhausted enemy at the same location as an
 /// investigator becomes ready, it engages as soon as it is readied").
-fn ready_exhausted_cards(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+fn ready_exhausted_cards(state: &mut GameState, events: &mut Vec<Event>) {
     let inv_ids: Vec<InvestigatorId> = state.investigators.keys().copied().collect();
     for id in inv_ids {
         let inv = state.investigators.get_mut(&id).expect("id from keys");
@@ -505,7 +492,7 @@ fn ready_exhausted_cards(state: &mut crate::state::GameState, events: &mut Vec<E
 }
 
 /// 4.5 Each investigator checks hand size.
-fn check_hand_size(_state: &mut crate::state::GameState, _events: &mut Vec<Event>) {
+fn check_hand_size(_state: &mut GameState, _events: &mut Vec<Event>) {
     // TODO(#111): in player order, each investigator with more than 8
     //   cards in hand discards down to 8 (Rules Reference p.25 step 4.5).
     //   Needs an AwaitingInput producer for the discard choice. The call
@@ -523,7 +510,7 @@ fn check_hand_size(_state: &mut crate::state::GameState, _events: &mut Vec<Event
 /// no longer refreshes (step 2.2 is just "the turn begins");
 /// `start_scenario` seeds round 1. Eliminated investigators are skipped
 /// (Rules Reference p.10).
-fn reset_actions(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+fn reset_actions(state: &mut GameState, events: &mut Vec<Event>) {
     for id in super::cursor::active_investigators_in_turn_order(state) {
         let inv = state
             .investigators
@@ -544,7 +531,7 @@ fn reset_actions(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
 /// Once those cards have been drawn, each investigator gains 1
 /// resource." Two passes to honor that ordering: all draws first, then
 /// all resource gains.
-fn upkeep_draw_and_resource(state: &mut crate::state::GameState, events: &mut Vec<Event>) {
+fn upkeep_draw_and_resource(state: &mut GameState, events: &mut Vec<Event>) {
     let ids = super::cursor::active_investigators_in_turn_order(state);
     for &id in &ids {
         super::cards::draw_one_with_deckout(state, events, id);

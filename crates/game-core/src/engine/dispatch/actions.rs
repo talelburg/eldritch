@@ -1,3 +1,6 @@
+//! Player-action handlers: Investigate, Move, Fight, Evade, plus the
+//! engaged-action validation and single-action-spend helpers.
+
 use crate::dsl::SkillTestKind;
 use crate::event::Event;
 use crate::state::{
