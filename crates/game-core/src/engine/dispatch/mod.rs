@@ -130,13 +130,11 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         } => {
             skill_test::perform_skill_test(cx.state, cx.events, *investigator, *skill, *difficulty)
         }
-        PlayerAction::Investigate { investigator } => {
-            actions::investigate(cx.state, cx.events, *investigator)
-        }
+        PlayerAction::Investigate { investigator } => actions::investigate(cx, *investigator),
         PlayerAction::Move {
             investigator,
             destination,
-        } => actions::move_action(cx.state, cx.events, *investigator, *destination),
+        } => actions::move_action(cx, *investigator, *destination),
         PlayerAction::Draw { investigator } => cards::draw(cx.state, cx.events, *investigator),
         PlayerAction::Mulligan {
             investigator,
@@ -145,11 +143,11 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         PlayerAction::Fight {
             investigator,
             enemy,
-        } => actions::fight(cx.state, cx.events, *investigator, *enemy),
+        } => actions::fight(cx, *investigator, *enemy),
         PlayerAction::Evade {
             investigator,
             enemy,
-        } => actions::evade(cx.state, cx.events, *investigator, *enemy),
+        } => actions::evade(cx, *investigator, *enemy),
         PlayerAction::PlayCard {
             investigator,
             hand_index,

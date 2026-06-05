@@ -9,6 +9,7 @@ use crate::state::{
 };
 
 use super::super::outcome::EngineOutcome;
+use super::Cx;
 
 /// Handler for [`PlayerAction::Investigate`].
 ///
@@ -25,38 +26,38 @@ use super::super::outcome::EngineOutcome;
 /// handler is the bare turn-action.
 ///
 /// [`Effect::DiscoverClue`]: crate::dsl::Effect::DiscoverClue
-pub(super) fn investigate(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
+pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // Validate-first.
-    if state.phase != Phase::Investigation {
+    if cx.state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Investigate is only valid during the Investigation phase (was {:?})",
-                state.phase
+                cx.state.phase
             )
             .into(),
         };
     }
-    if state.active_investigator != Some(investigator) {
+    if cx.state.active_investigator != Some(investigator) {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Investigate: {investigator:?} is not the active investigator ({:?})",
-                state.active_investigator,
+                cx.state.active_investigator,
             )
             .into(),
         };
     }
     // Active-investigator + missing-from-map is a state-corruption
     // invariant violation; panic rather than silently rejecting.
-    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Investigate: active_investigator {investigator:?} is not in the investigators \
+    let inv = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Investigate: active_investigator {investigator:?} is not in the investigators \
              map; this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv.status != Status::Active {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -81,7 +82,7 @@ pub(super) fn investigate(
     // a state-corruption invariant violation, not a user-facing
     // rejection — match `end_turn` and `rotate_to_active` and surface
     // it loudly.
-    let location = state.locations.get(&location_id).unwrap_or_else(|| {
+    let location = cx.state.locations.get(&location_id).unwrap_or_else(|| {
         unreachable!(
             "Investigate: location {location_id:?} (investigator's current_location) \
              is not in the locations map; this is a state-corruption invariant violation"
@@ -95,26 +96,30 @@ pub(super) fn investigate(
     // test. Investigate is NOT on the AoO-exempt list (only Fight,
     // Evade, Parley, Engage, Resign are), so each ready engaged
     // enemy attacks before the test resolves.
-    spend_one_action(state, events, investigator);
-    super::combat::fire_attacks_of_opportunity(state, events, investigator);
+    spend_one_action(cx, investigator);
+    super::combat::fire_attacks_of_opportunity(cx.state, cx.events, investigator);
 
     // If AoO defeated the investigator, the action's primary effect
     // (the skill test) is suppressed. The action point and AoO events
     // already fired — they stay. The action declaration was legal;
     // the investigator just can't complete it.
-    let inv_after_aoo = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
+    let inv_after_aoo = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
             "Investigate: investigator {investigator:?} disappeared between AoO and skill test; \
              this is a state-corruption invariant violation"
         )
-    });
+        });
     if inv_after_aoo.status != Status::Active {
         return EngineOutcome::Done;
     }
 
     super::skill_test::start_skill_test(
-        state,
-        events,
+        cx.state,
+        cx.events,
         investigator,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
@@ -131,27 +136,29 @@ pub(super) fn investigate(
 /// opportunity before the move resolves, and engaged enemies move
 /// with the investigator. Both behaviors land alongside enemy state
 /// in #67; this handler covers only the bare movement.
+// Pre-existing bulk (99/100 lines before the Cx migration); the longer
+// `cx.state.` qualifier nudged it past the limit without adding logic.
+#[allow(clippy::too_many_lines)]
 pub(super) fn move_action(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     destination: LocationId,
 ) -> EngineOutcome {
     // Validate-first.
-    if state.phase != Phase::Investigation {
+    if cx.state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Move is only valid during the Investigation phase (was {:?})",
-                state.phase
+                cx.state.phase
             )
             .into(),
         };
     }
-    if state.active_investigator != Some(investigator) {
+    if cx.state.active_investigator != Some(investigator) {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Move: {investigator:?} is not the active investigator ({:?})",
-                state.active_investigator,
+                cx.state.active_investigator,
             )
             .into(),
         };
@@ -159,12 +166,16 @@ pub(super) fn move_action(
     // Active-investigator + missing-from-map is a state-corruption
     // invariant violation (active_investigator is engine-set; the
     // pairing with the map entry is an invariant), so surface loudly.
-    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Move: active_investigator {investigator:?} is not in the investigators map; \
+    let inv = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Move: active_investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv.status != Status::Active {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -195,13 +206,13 @@ pub(super) fn move_action(
     // location is malformed input, not engine corruption, so we
     // reject. Check destination-in-state BEFORE connections so the
     // error message is informative when both fail.
-    let from_loc = state.locations.get(&from).unwrap_or_else(|| {
+    let from_loc = cx.state.locations.get(&from).unwrap_or_else(|| {
         unreachable!(
             "Move: location {from:?} (investigator's current_location) is not in the \
              locations map; this is a state-corruption invariant violation"
         )
     });
-    if !state.locations.contains_key(&destination) {
+    if !cx.state.locations.contains_key(&destination) {
         return EngineOutcome::Rejected {
             reason: format!("Move: destination {destination:?} is not in state").into(),
         };
@@ -213,22 +224,26 @@ pub(super) fn move_action(
     }
 
     // Mutate-second.
-    spend_one_action(state, events, investigator);
+    spend_one_action(cx, investigator);
 
     // Move triggers attacks of opportunity from each ready engaged
     // enemy. Per the Rules Reference, this happens BEFORE the move
     // resolves.
-    super::combat::fire_attacks_of_opportunity(state, events, investigator);
+    super::combat::fire_attacks_of_opportunity(cx.state, cx.events, investigator);
 
     // If AoO defeated the investigator, the move is cancelled. The
     // action point and AoO events stay; the investigator (and any
     // engaged enemies) don't change location.
-    let inv_after_aoo = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Move: investigator {investigator:?} disappeared between AoO and move resolution; \
+    let inv_after_aoo = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Move: investigator {investigator:?} disappeared between AoO and move resolution; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv_after_aoo.status != Status::Active {
         return EngineOutcome::Done;
     }
@@ -237,23 +252,24 @@ pub(super) fn move_action(
     // engagement set before mutating any locations, then update each
     // engaged enemy's `current_location` to the destination
     // alongside the investigator's own move.
-    let engaged: Vec<EnemyId> = state
+    let engaged: Vec<EnemyId> = cx
+        .state
         .enemies
         .iter()
         .filter(|(_, e)| e.engaged_with == Some(investigator))
         .map(|(id, _)| *id)
         .collect();
-    state
+    cx.state
         .investigators
         .get_mut(&investigator)
         .expect("investigator existence checked above")
         .current_location = Some(destination);
     for enemy_id in engaged {
-        if let Some(enemy) = state.enemies.get_mut(&enemy_id) {
+        if let Some(enemy) = cx.state.enemies.get_mut(&enemy_id) {
             enemy.current_location = Some(destination);
         }
     }
-    events.push(Event::InvestigatorMoved {
+    cx.events.push(Event::InvestigatorMoved {
         investigator,
         from,
         to: destination,
@@ -340,18 +356,15 @@ fn validate_engaged_action<'a>(
 /// Spend 1 action point from the active investigator and emit
 /// `ActionsRemainingChanged`. Caller has already validated that
 /// `actions_remaining >= 1`.
-pub(super) fn spend_one_action(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) {
-    let inv = state
+pub(super) fn spend_one_action(cx: &mut Cx, investigator: InvestigatorId) {
+    let inv = cx
+        .state
         .investigators
         .get_mut(&investigator)
         .expect("investigator existence checked before spend_one_action");
     let new_count = inv.actions_remaining - 1;
     inv.actions_remaining = new_count;
-    events.push(Event::ActionsRemainingChanged {
+    cx.events.push(Event::ActionsRemainingChanged {
         investigator,
         new_count,
     });
@@ -367,13 +380,9 @@ pub(super) fn spend_one_action(
 /// triggers (#64), and `AoO` from *other* engaged enemies (#78) are all
 /// downstream. `AoO` does NOT fire on Fight itself per the Rules
 /// Reference's `AoO`-exempt list.
-pub(super) fn fight(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    enemy_id: EnemyId,
-) -> EngineOutcome {
-    let fight_difficulty = match validate_engaged_action(state, "Fight", investigator, enemy_id) {
+pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId) -> EngineOutcome {
+    let fight_difficulty = match validate_engaged_action(cx.state, "Fight", investigator, enemy_id)
+    {
         Ok(enemy) => {
             if enemy.fight < 0 {
                 return EngineOutcome::Rejected {
@@ -388,10 +397,10 @@ pub(super) fn fight(
         }
         Err(rejected) => return rejected,
     };
-    spend_one_action(state, events, investigator);
+    spend_one_action(cx, investigator);
     super::skill_test::start_skill_test(
-        state,
-        events,
+        cx.state,
+        cx.events,
         investigator,
         SkillKind::Combat,
         SkillTestKind::Fight,
@@ -404,13 +413,9 @@ pub(super) fn fight(
 ///
 /// Spends 1 action, runs an Agility skill test against the enemy's
 /// evade value, and on success disengages and exhausts the enemy.
-pub(super) fn evade(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-    enemy_id: EnemyId,
-) -> EngineOutcome {
-    let evade_difficulty = match validate_engaged_action(state, "Evade", investigator, enemy_id) {
+pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId) -> EngineOutcome {
+    let evade_difficulty = match validate_engaged_action(cx.state, "Evade", investigator, enemy_id)
+    {
         Ok(enemy) => {
             if enemy.evade < 0 {
                 return EngineOutcome::Rejected {
@@ -425,10 +430,10 @@ pub(super) fn evade(
         }
         Err(rejected) => return rejected,
     };
-    spend_one_action(state, events, investigator);
+    spend_one_action(cx, investigator);
     super::skill_test::start_skill_test(
-        state,
-        events,
+        cx.state,
+        cx.events,
         investigator,
         SkillKind::Agility,
         SkillTestKind::Evade,

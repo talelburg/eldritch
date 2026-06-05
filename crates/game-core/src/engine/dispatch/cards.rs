@@ -268,7 +268,7 @@ pub(super) fn draw(
     }
 
     // Mutate.
-    super::actions::spend_one_action(state, events, investigator);
+    super::actions::spend_one_action(&mut super::Cx { state, events }, investigator);
     draw_one_with_deckout(state, events, investigator);
     EngineOutcome::Done
 }
