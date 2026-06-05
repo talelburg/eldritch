@@ -135,11 +135,11 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             investigator,
             destination,
         } => actions::move_action(cx, *investigator, *destination),
-        PlayerAction::Draw { investigator } => cards::draw(cx.state, cx.events, *investigator),
+        PlayerAction::Draw { investigator } => cards::draw(cx, *investigator),
         PlayerAction::Mulligan {
             investigator,
             indices_to_redraw,
-        } => cards::mulligan(cx.state, cx.events, *investigator, indices_to_redraw),
+        } => cards::mulligan(cx, *investigator, indices_to_redraw),
         PlayerAction::Fight {
             investigator,
             enemy,
@@ -151,7 +151,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         PlayerAction::PlayCard {
             investigator,
             hand_index,
-        } => cards::play_card(cx.state, cx.events, *investigator, *hand_index),
+        } => cards::play_card(cx, *investigator, *hand_index),
         PlayerAction::ActivateAbility {
             investigator,
             instance_id,
@@ -218,9 +218,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 /// Apply an [`EngineRecord`] to the state, pushing events.
 pub fn apply_engine_record(cx: &mut Cx, record: &EngineRecord) -> EngineOutcome {
     match record {
-        EngineRecord::DeckShuffled { investigator } => {
-            cards::deck_shuffled(cx.state, cx.events, *investigator)
-        }
+        EngineRecord::DeckShuffled { investigator } => cards::deck_shuffled(cx, *investigator),
         EngineRecord::EncounterDeckShuffled => {
             encounter::encounter_deck_shuffled(cx.state, cx.events)
         }

@@ -36,8 +36,8 @@ pub(super) fn start_scenario(cx: &mut Cx) -> EngineOutcome {
     // their deck and deal an initial hand of up to 5.
     let inv_ids: Vec<InvestigatorId> = cx.state.investigators.keys().copied().collect();
     for inv_id in inv_ids {
-        super::cards::shuffle_player_deck(cx.state, cx.events, inv_id);
-        super::cards::draw_cards(cx.state, cx.events, inv_id, super::cards::INITIAL_HAND_SIZE);
+        super::cards::shuffle_player_deck(cx, inv_id);
+        super::cards::draw_cards(cx, inv_id, super::cards::INITIAL_HAND_SIZE);
     }
 
     // Seed the mulligan cursor to the first Active investigator in
@@ -545,10 +545,10 @@ fn reset_actions(cx: &mut Cx) {
 fn upkeep_draw_and_resource(cx: &mut Cx) {
     let ids = super::cursor::active_investigators_in_turn_order(cx.state);
     for &id in &ids {
-        super::cards::draw_one_with_deckout(cx.state, cx.events, id);
+        super::cards::draw_one_with_deckout(cx, id);
     }
     for &id in &ids {
-        super::cards::grant_resources(cx.state, cx.events, id, 1);
+        super::cards::grant_resources(cx, id, 1);
     }
 }
 
