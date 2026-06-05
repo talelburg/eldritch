@@ -316,7 +316,7 @@ fn gain_resources(
             reason: format!("GainResources: investigator {target_id:?} is not in the state").into(),
         };
     }
-    crate::engine::dispatch::grant_resources(state, events, target_id, amount);
+    crate::engine::dispatch::cards::grant_resources(state, events, target_id, amount);
     EngineOutcome::Done
 }
 

@@ -761,11 +761,14 @@ pub(super) fn check_play_card(
     // `Result` shape. Pinning the invariant loudly here is intentional —
     // silent `AwaitingInput` propagation through a `Result<_, Cow>` would
     // produce wrong gameplay.
-    let (destination, abilities, is_fast, card_type) = match super::resolve_play_target(&code) {
-        Ok(v) => v,
-        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
-        Err(other) => unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}"),
-    };
+    let (destination, abilities, is_fast, card_type) =
+        match super::cards::resolve_play_target(&code) {
+            Ok(v) => v,
+            Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+            Err(other) => {
+                unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
+            }
+        };
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
