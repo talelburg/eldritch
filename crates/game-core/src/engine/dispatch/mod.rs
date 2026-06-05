@@ -164,7 +164,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         PlayerAction::DrawEncounterCard => match cx.state.mythos_draw_pending {
             // DrawEncounterCard carries no investigator payload — the
             // acting investigator IS the pending cursor.
-            Some(actor) => encounter::draw_encounter_card(cx.state, cx.events, actor),
+            Some(actor) => encounter::draw_encounter_card(cx, actor),
             None => EngineOutcome::Rejected {
                 reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
             },
@@ -217,11 +217,9 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 pub fn apply_engine_record(cx: &mut Cx, record: &EngineRecord) -> EngineOutcome {
     match record {
         EngineRecord::DeckShuffled { investigator } => cards::deck_shuffled(cx, *investigator),
-        EngineRecord::EncounterDeckShuffled => {
-            encounter::encounter_deck_shuffled(cx.state, cx.events)
-        }
+        EngineRecord::EncounterDeckShuffled => encounter::encounter_deck_shuffled(cx),
         EngineRecord::EncounterCardRevealed { investigator } => {
-            encounter::encounter_card_revealed(cx.state, cx.events, *investigator)
+            encounter::encounter_card_revealed(cx, *investigator)
         }
     }
 }

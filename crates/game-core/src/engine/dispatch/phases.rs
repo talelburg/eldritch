@@ -1124,7 +1124,10 @@ mod mythos_phase_tests {
         state.mythos_draw_pending = Some(InvestigatorId(1));
         let mut events = Vec::new();
 
-        super::super::encounter::advance_mythos_draw_pending(&mut state, &mut events);
+        super::super::encounter::advance_mythos_draw_pending(&mut super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert_eq!(
             state.mythos_draw_pending,

@@ -462,8 +462,7 @@ pub(super) fn resume_spawn_engage(
     // "we suspended mid-chain for this investigator."
     if state.mythos_draw_pending == Some(pending.investigator_to_draw) {
         super::encounter::run_mythos_draw_chain(
-            state,
-            events,
+            &mut super::Cx { state, events },
             pending.investigator_to_draw,
             pending.chain_count,
             pending.surge,

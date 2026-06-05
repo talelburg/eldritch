@@ -5,11 +5,12 @@ use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Enemy, EnemyId, GameState, InvestigatorId, Phase, SpawnEngagePending, WindowKind,
+    CardCode, Enemy, EnemyId, InvestigatorId, Phase, SpawnEngagePending, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use super::Cx;
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
 /// in a chain; the cap exists purely to guarantee termination on
@@ -25,11 +26,8 @@ const MAX_SURGE_CHAIN: usize = 64;
 /// emits [`Event::EncounterDeckShuffled`] (when ≥ 2 cards). No
 /// validation — the encounter deck is shared, so there's no
 /// per-investigator existence check.
-pub(super) fn encounter_deck_shuffled(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-) -> EngineOutcome {
-    shuffle_encounter_deck(state, events);
+pub(super) fn encounter_deck_shuffled(cx: &mut Cx) -> EngineOutcome {
+    shuffle_encounter_deck(cx);
     EngineOutcome::Done
 }
 
@@ -66,18 +64,14 @@ pub(super) fn encounter_deck_shuffled(
 ///
 /// Compare to `play_card`'s documented mid-resolution caveat in
 /// CLAUDE.md: same shape, same rationale.
-pub(super) fn encounter_card_revealed(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
+pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let Some(registry) = card_registry::current() else {
         return EngineOutcome::Rejected {
             reason: "EncounterCardRevealed: no card registry installed".into(),
         };
     };
 
-    let Some(code) = draw_encounter_top(state, events) else {
+    let Some(code) = draw_encounter_top(cx) else {
         return EngineOutcome::Rejected {
             reason: "EncounterCardRevealed: encounter deck and discard both empty".into(),
         };
@@ -88,7 +82,7 @@ pub(super) fn encounter_card_revealed(
             reason: format!("EncounterCardRevealed: unknown card code: {code:?}").into(),
         };
     };
-    resolve_encounter_card(state, events, investigator, code, metadata)
+    resolve_encounter_card(cx, investigator, code, metadata)
 }
 
 /// Shared post-draw resolution helper. Resolves the per-card 5-step
@@ -108,8 +102,7 @@ pub(super) fn encounter_card_revealed(
 /// per #126's design decision). The apply loop's `events.clear()`
 /// on Rejected still wipes the event stream on rejection.
 fn resolve_encounter_card(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
     metadata: &CardMetadata,
@@ -117,7 +110,7 @@ fn resolve_encounter_card(
     let card_type = metadata.card_type;
 
     // Emit BEFORE Revelation resolves — see caveat in encounter_card_revealed.
-    events.push(Event::CardRevealed {
+    cx.events.push(Event::CardRevealed {
         investigator,
         code: code.clone(),
         card_type,
@@ -131,17 +124,17 @@ fn resolve_encounter_card(
                 };
             };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
-            let ctx = EvalContext::for_controller(investigator);
+            let eval_ctx = EvalContext::for_controller(investigator);
             for ability in abilities
                 .iter()
                 .filter(|a| a.trigger == Trigger::Revelation)
             {
-                let outcome = apply_effect(state, events, &ability.effect, ctx);
+                let outcome = apply_effect(cx.state, cx.events, &ability.effect, eval_ctx);
                 if !matches!(outcome, EngineOutcome::Done) {
                     return outcome;
                 }
             }
-            state.encounter_discard.push(code);
+            cx.state.encounter_discard.push(code);
             EngineOutcome::Done
         }
         CardType::Enemy => {
@@ -162,17 +155,17 @@ fn resolve_encounter_card(
                 };
             };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
-            let ctx = EvalContext::for_controller(investigator);
+            let eval_ctx = EvalContext::for_controller(investigator);
             for ability in abilities
                 .iter()
                 .filter(|a| a.trigger == Trigger::Revelation)
             {
-                let outcome = apply_effect(state, events, &ability.effect, ctx);
+                let outcome = apply_effect(cx.state, cx.events, &ability.effect, eval_ctx);
                 if !matches!(outcome, EngineOutcome::Done) {
                     return outcome;
                 }
             }
-            spawn_enemy(state, events, investigator, code, metadata)
+            spawn_enemy(cx, investigator, code, metadata)
         }
         other => EngineOutcome::Rejected {
             reason: format!(
@@ -250,8 +243,7 @@ fn resolve_encounter_card(
 /// pending choice carries the rest of the work to [`resume_spawn_engage`]).
 #[allow(clippy::too_many_lines)]
 fn spawn_enemy(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
     metadata: &CardMetadata,
@@ -260,7 +252,8 @@ fn spawn_enemy(
     let location_id = match &metadata.spawn {
         Some(Spawn {
             location: SpawnLocation::Specific(loc_code),
-        }) => match state
+        }) => match cx
+            .state
             .locations
             .iter()
             .find(|(_, loc)| loc.code.as_str() == loc_code.as_str())
@@ -273,7 +266,8 @@ fn spawn_enemy(
                 };
             }
         },
-        None => match state
+        None => match cx
+            .state
             .investigators
             .get(&investigator)
             .and_then(|inv| inv.current_location)
@@ -295,14 +289,14 @@ fn spawn_enemy(
     //    set is narrowed by the enemy's prey — every spawn uses
     //    `Prey::Default` (Task 2), so a 2+ set always ties and suspends
     //    for the lead investigator's `PickInvestigator` (option A).
-    let candidates = super::cursor::active_investigators_at(state, location_id);
+    let candidates = super::cursor::active_investigators_at(cx.state, location_id);
 
     // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
     //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
     //    `engage_enemy_with` so the `EnemyEngaged` event always pairs with
     //    the mutation.
-    let enemy_id = EnemyId(state.next_enemy_id);
-    state.next_enemy_id = state.next_enemy_id.saturating_add(1);
+    let enemy_id = EnemyId(cx.state.next_enemy_id);
+    cx.state.next_enemy_id = cx.state.next_enemy_id.saturating_add(1);
 
     let enemy = Enemy {
         id: enemy_id,
@@ -320,11 +314,11 @@ fn spawn_enemy(
         hunter: false,
         prey: crate::card_data::Prey::Default,
     };
-    state.enemies.insert(enemy_id, enemy);
+    cx.state.enemies.insert(enemy_id, enemy);
 
-    match super::hunters::resolve_prey(state, crate::card_data::Prey::Default, &candidates) {
+    match super::hunters::resolve_prey(cx.state, crate::card_data::Prey::Default, &candidates) {
         super::hunters::PreyResolution::None => {
-            events.push(Event::EnemySpawned {
+            cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
                 location: location_id,
@@ -333,17 +327,17 @@ fn spawn_enemy(
             EngineOutcome::Done
         }
         super::hunters::PreyResolution::One(target) => {
-            events.push(Event::EnemySpawned {
+            cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
                 location: location_id,
                 engaged_with: Some(target),
             });
-            super::hunters::engage_enemy_with(state, events, enemy_id, target);
+            super::hunters::engage_enemy_with(cx.state, cx.events, enemy_id, target);
             EngineOutcome::Done
         }
         super::hunters::PreyResolution::Tie(tied) => {
-            events.push(Event::EnemySpawned {
+            cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
                 location: location_id,
@@ -354,7 +348,7 @@ fn spawn_enemy(
             // stored value to the live chain position before returning the
             // `AwaitingInput` (the single-draw `EncounterCardRevealed` path
             // has no chain, so 0 is correct there).
-            state.spawn_engage_pending = Some(SpawnEngagePending {
+            cx.state.spawn_engage_pending = Some(SpawnEngagePending {
                 enemy: enemy_id,
                 investigator_to_draw: investigator,
                 candidates: tied.clone(),
@@ -380,8 +374,8 @@ fn spawn_enemy(
 ///
 /// Emits [`Event::EncounterDeckShuffled`] iff the deck had at least
 /// 2 cards (a 0- or 1-card deck has nothing to permute).
-pub(super) fn shuffle_encounter_deck(state: &mut GameState, events: &mut Vec<Event>) {
-    let deck_len = state.encounter_deck.len();
+pub(super) fn shuffle_encounter_deck(cx: &mut Cx) {
+    let deck_len = cx.state.encounter_deck.len();
     if deck_len < 2 {
         return;
     }
@@ -391,14 +385,14 @@ pub(super) fn shuffle_encounter_deck(state: &mut GameState, events: &mut Vec<Eve
     let mut swaps: Vec<(usize, usize)> = Vec::with_capacity(deck_len - 1);
     let mut i = deck_len - 1;
     while i >= 1 {
-        let j = state.rng.next_index(i + 1);
+        let j = cx.state.rng.next_index(i + 1);
         swaps.push((i, j));
         i -= 1;
     }
     for (a, b) in swaps {
-        state.encounter_deck.swap(a, b);
+        cx.state.encounter_deck.swap(a, b);
     }
-    events.push(Event::EncounterDeckShuffled);
+    cx.events.push(Event::EncounterDeckShuffled);
 }
 
 /// Drain `state.encounter_discard` into `state.encounter_deck` and
@@ -411,11 +405,11 @@ pub(super) fn shuffle_encounter_deck(state: &mut GameState, events: &mut Vec<Eve
 /// player-deck pattern. The `EngineRecord` variant is reserved for
 /// explicit shuffle actions (future "shuffle X into the encounter
 /// deck" effects).
-pub(super) fn reshuffle_encounter_discard(state: &mut GameState, events: &mut Vec<Event>) {
-    state
+pub(super) fn reshuffle_encounter_discard(cx: &mut Cx) {
+    cx.state
         .encounter_deck
-        .extend(state.encounter_discard.drain(..));
-    shuffle_encounter_deck(state, events);
+        .extend(cx.state.encounter_discard.drain(..));
+    shuffle_encounter_deck(cx);
 }
 
 /// Draw the top card of the encounter deck, transparently reshuffling
@@ -426,36 +420,29 @@ pub(super) fn reshuffle_encounter_discard(state: &mut GameState, events: &mut Ve
 /// the deck and the discard are empty — callers decide how to
 /// interpret this (#69's Mythos loop treats it as a scenario
 /// condition rather than an engine error).
-pub(super) fn draw_encounter_top(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-) -> Option<CardCode> {
-    if state.encounter_deck.is_empty() {
-        if state.encounter_discard.is_empty() {
+pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
+    if cx.state.encounter_deck.is_empty() {
+        if cx.state.encounter_discard.is_empty() {
             return None;
         }
-        reshuffle_encounter_discard(state, events);
+        reshuffle_encounter_discard(cx);
     }
-    state.encounter_deck.pop_front()
+    cx.state.encounter_deck.pop_front()
 }
 
 /// Handler for [`PlayerAction::DrawEncounterCard`]. Validates phase
 /// + cursor; delegates to [`mythos_draw_for`] on success.
-pub(super) fn draw_encounter_card(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
-    if state.phase != Phase::Mythos {
+pub(super) fn draw_encounter_card(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    if cx.state.phase != Phase::Mythos {
         return EngineOutcome::Rejected {
             reason: format!(
                 "DrawEncounterCard: only valid during Mythos phase, got {:?}",
-                state.phase,
+                cx.state.phase,
             )
             .into(),
         };
     }
-    match state.mythos_draw_pending {
+    match cx.state.mythos_draw_pending {
         None => EngineOutcome::Rejected {
             reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
         },
@@ -465,7 +452,7 @@ pub(super) fn draw_encounter_card(
             )
             .into(),
         },
-        Some(_) => mythos_draw_for(state, events, investigator),
+        Some(_) => mythos_draw_for(cx, investigator),
     }
 }
 
@@ -489,14 +476,10 @@ pub(super) fn draw_encounter_card(
 /// scope this can't happen because the synthetic fixture ensures every
 /// investigator has a location at scenario start; revisit if a future
 /// scenario lets investigators reach a location-less state during play.
-fn mythos_draw_for(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
+fn mythos_draw_for(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // Fresh chain: count starts at 0 and the loop draws at least one
     // card (`draw_more = true`).
-    run_mythos_draw_chain(state, events, investigator, 0, true)
+    run_mythos_draw_chain(cx, investigator, 0, true)
 }
 
 /// The Mythos surge-draw loop, shared by the initial draw
@@ -526,8 +509,7 @@ fn mythos_draw_for(
 /// mutation. Out of Phase-4 scope (the synthetic fixture gives every
 /// investigator a location at setup).
 pub(super) fn run_mythos_draw_chain(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
+    cx: &mut Cx,
     investigator: InvestigatorId,
     mut chain_count: usize,
     mut draw_more: bool,
@@ -553,7 +535,7 @@ pub(super) fn run_mythos_draw_chain(
         }
 
         // Step 1: Draw the card from the encounter deck.
-        let Some(code) = draw_encounter_top(state, events) else {
+        let Some(code) = draw_encounter_top(cx) else {
             if chain_count == 1 {
                 return EngineOutcome::Rejected {
                     reason: "DrawEncounterCard: encounter deck and discard both empty".into(),
@@ -581,22 +563,17 @@ pub(super) fn run_mythos_draw_chain(
         };
 
         // Step 2: Check for the peril keyword on the drawn card.
-        super::skill_test::peril_check(
-            &mut super::Cx { state, events },
-            &code,
-            investigator,
-            metadata.peril,
-        );
+        super::skill_test::peril_check(cx, &code, investigator, metadata.peril);
 
         // Step 3 + 4: Resolve revelation, then enemy-spawn if applicable.
-        let outcome = resolve_encounter_card(state, events, investigator, code.clone(), metadata);
+        let outcome = resolve_encounter_card(cx, investigator, code.clone(), metadata);
         match outcome {
             EngineOutcome::Done => {}
             EngineOutcome::AwaitingInput { .. } => {
                 // A mid-chain spawn engagement tie suspended. Record the
                 // live chain position so the resume keeps counting toward
                 // the cap rather than restarting its budget.
-                if let Some(pending) = state.spawn_engage_pending.as_mut() {
+                if let Some(pending) = cx.state.spawn_engage_pending.as_mut() {
                     pending.chain_count = chain_count;
                 }
                 return outcome;
@@ -609,22 +586,27 @@ pub(super) fn run_mythos_draw_chain(
     }
 
     // Chain complete — advance the cursor.
-    advance_mythos_draw_pending(state, events);
+    advance_mythos_draw_pending(cx);
     EngineOutcome::Done
 }
 
 /// Advance `state.mythos_draw_pending` after a completed chain. If
 /// a next investigator exists in turn order, set to that id.
 /// Otherwise set to None and open the post-1.4 window.
-pub(super) fn advance_mythos_draw_pending(state: &mut GameState, events: &mut Vec<Event>) {
-    let current = state
+pub(super) fn advance_mythos_draw_pending(cx: &mut Cx) {
+    let current = cx
+        .state
         .mythos_draw_pending
         .expect("advance_mythos_draw_pending called only after a successful chain");
     // Eliminated-skip semantics live in `next_active_investigator_after`.
-    let next = super::cursor::next_active_investigator_after(state, current);
-    state.mythos_draw_pending = next;
+    let next = super::cursor::next_active_investigator_after(cx.state, current);
+    cx.state.mythos_draw_pending = next;
     if next.is_none() {
-        super::reaction_windows::open_fast_window(state, events, WindowKind::MythosAfterDraws);
+        super::reaction_windows::open_fast_window(
+            cx.state,
+            cx.events,
+            WindowKind::MythosAfterDraws,
+        );
     }
 }
 
@@ -727,7 +709,10 @@ mod encounter_deck_helper_tests {
         state.encounter_deck.push_back(CardCode("c".into()));
 
         let mut events = Vec::new();
-        shuffle_encounter_deck(&mut state, &mut events);
+        shuffle_encounter_deck(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(matches!(events.as_slice(), [Event::EncounterDeckShuffled]));
         assert_eq!(state.encounter_deck.len(), 3);
@@ -751,7 +736,10 @@ mod encounter_deck_helper_tests {
                 state.encounter_deck.push_back(CardCode(format!("c{i}")));
             }
             let mut events = Vec::new();
-            shuffle_encounter_deck(&mut state, &mut events);
+            shuffle_encounter_deck(&mut Cx {
+                state: &mut state,
+                events: &mut events,
+            });
             assert!(events.is_empty(), "expected no event for n={n} deck");
         }
     }
@@ -765,7 +753,10 @@ mod encounter_deck_helper_tests {
         }
 
         let mut events = Vec::new();
-        reshuffle_encounter_discard(&mut state, &mut events);
+        reshuffle_encounter_discard(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(
             state.encounter_discard.is_empty(),
@@ -784,7 +775,10 @@ mod encounter_deck_helper_tests {
         state.encounter_discard.push(CardCode("solo".into()));
 
         let mut events = Vec::new();
-        reshuffle_encounter_discard(&mut state, &mut events);
+        reshuffle_encounter_discard(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         assert!(state.encounter_discard.is_empty());
         assert_eq!(state.encounter_deck.len(), 1);
@@ -801,18 +795,33 @@ mod encounter_deck_helper_tests {
         let mut events = Vec::new();
 
         assert_eq!(
-            draw_encounter_top(&mut state, &mut events),
+            draw_encounter_top(&mut Cx {
+                state: &mut state,
+                events: &mut events,
+            }),
             Some(CardCode("a".into()))
         );
         assert_eq!(
-            draw_encounter_top(&mut state, &mut events),
+            draw_encounter_top(&mut Cx {
+                state: &mut state,
+                events: &mut events,
+            }),
             Some(CardCode("b".into()))
         );
         assert_eq!(
-            draw_encounter_top(&mut state, &mut events),
+            draw_encounter_top(&mut Cx {
+                state: &mut state,
+                events: &mut events,
+            }),
             Some(CardCode("c".into()))
         );
-        assert_eq!(draw_encounter_top(&mut state, &mut events), None);
+        assert_eq!(
+            draw_encounter_top(&mut Cx {
+                state: &mut state,
+                events: &mut events,
+            }),
+            None
+        );
         assert!(
             events.is_empty(),
             "no events for any draw — discard is always empty, no reshuffle is triggered"
@@ -828,7 +837,10 @@ mod encounter_deck_helper_tests {
         state.encounter_discard.push(CardCode("z".into()));
 
         let mut events = Vec::new();
-        let drawn = draw_encounter_top(&mut state, &mut events);
+        let drawn = draw_encounter_top(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
 
         let drawn_code = drawn.expect("should reshuffle and draw");
         assert!(
@@ -856,7 +868,13 @@ mod encounter_deck_helper_tests {
     fn draw_encounter_top_returns_none_when_deck_and_discard_both_empty() {
         let mut state = TestGame::new().build();
         let mut events = Vec::new();
-        assert_eq!(draw_encounter_top(&mut state, &mut events), None);
+        assert_eq!(
+            draw_encounter_top(&mut Cx {
+                state: &mut state,
+                events: &mut events,
+            }),
+            None
+        );
         assert!(events.is_empty(), "no events on empty-on-both");
     }
 
@@ -899,7 +917,10 @@ mod encounter_deck_helper_tests {
                 state.encounter_deck.push_back(CardCode(format!("c{i:02}")));
             }
             let mut events = Vec::new();
-            shuffle_encounter_deck(&mut state, &mut events);
+            shuffle_encounter_deck(&mut Cx {
+                state: &mut state,
+                events: &mut events,
+            });
             state.encounter_deck.iter().cloned().collect()
         }
 
@@ -972,8 +993,10 @@ mod spawn_enemy_tests {
         let mut events = Vec::new();
 
         let outcome = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1012,8 +1035,10 @@ mod spawn_enemy_tests {
         let mut events = Vec::new();
 
         let outcome = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1036,8 +1061,10 @@ mod spawn_enemy_tests {
         }));
         let mut events = Vec::new();
         let outcome = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1072,8 +1099,10 @@ mod spawn_enemy_tests {
         let mut events = Vec::new();
 
         let outcome = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1100,8 +1129,10 @@ mod spawn_enemy_tests {
         let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
         let outcome = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1134,8 +1165,10 @@ mod spawn_enemy_tests {
         let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
         let outcome = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1164,8 +1197,10 @@ mod spawn_enemy_tests {
         let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
         let outcome = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1199,8 +1234,10 @@ mod spawn_enemy_tests {
         let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
         let _ = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1244,15 +1281,19 @@ mod spawn_enemy_tests {
         let mut events = Vec::new();
 
         let _ = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
         );
         let _ = spawn_enemy(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1300,7 +1341,13 @@ mod mythos_draw_for_tests {
             .push_back(CardCode("__no_such_card".into()));
         let pre_deck_len = state.encounter_deck.len();
         let mut events = Vec::new();
-        let outcome = mythos_draw_for(&mut state, &mut events, InvestigatorId(1));
+        let outcome = mythos_draw_for(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+        );
         match outcome {
             EngineOutcome::Rejected { reason } => {
                 assert!(
@@ -1336,7 +1383,13 @@ mod draw_encounter_card_tests {
             .build();
         state.mythos_draw_pending = Some(InvestigatorId(1));
         let mut events = Vec::new();
-        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(1));
+        let outcome = draw_encounter_card(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+        );
         assert!(matches!(
             outcome,
             EngineOutcome::Rejected { reason } if reason.contains("only valid during Mythos")
@@ -1351,7 +1404,13 @@ mod draw_encounter_card_tests {
             .build();
         state.mythos_draw_pending = None;
         let mut events = Vec::new();
-        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(1));
+        let outcome = draw_encounter_card(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+        );
         assert!(matches!(
             outcome,
             EngineOutcome::Rejected { reason } if reason.contains("no draw pending")
@@ -1368,7 +1427,13 @@ mod draw_encounter_card_tests {
         state.mythos_draw_pending = Some(InvestigatorId(1));
         let mut events = Vec::new();
         // Inv2 attempts to draw when inv1 is expected.
-        let outcome = draw_encounter_card(&mut state, &mut events, InvestigatorId(2));
+        let outcome = draw_encounter_card(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(2),
+        );
         assert!(matches!(
             outcome,
             EngineOutcome::Rejected { reason } if reason.contains("out of order")
