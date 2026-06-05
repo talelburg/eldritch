@@ -118,8 +118,7 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
     }
 
     super::skill_test::start_skill_test(
-        cx.state,
-        cx.events,
+        cx,
         investigator,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
@@ -399,8 +398,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
     };
     spend_one_action(cx, investigator);
     super::skill_test::start_skill_test(
-        cx.state,
-        cx.events,
+        cx,
         investigator,
         SkillKind::Combat,
         SkillTestKind::Fight,
@@ -432,8 +430,7 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
     };
     spend_one_action(cx, investigator);
     super::skill_test::start_skill_test(
-        cx.state,
-        cx.events,
+        cx,
         investigator,
         SkillKind::Agility,
         SkillTestKind::Evade,

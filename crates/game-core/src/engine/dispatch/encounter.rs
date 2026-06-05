@@ -581,7 +581,12 @@ pub(super) fn run_mythos_draw_chain(
         };
 
         // Step 2: Check for the peril keyword on the drawn card.
-        super::skill_test::peril_check(state, events, &code, investigator, metadata.peril);
+        super::skill_test::peril_check(
+            &mut super::Cx { state, events },
+            &code,
+            investigator,
+            metadata.peril,
+        );
 
         // Step 3 + 4: Resolve revelation, then enemy-spawn if applicable.
         let outcome = resolve_encounter_card(state, events, investigator, code.clone(), metadata);

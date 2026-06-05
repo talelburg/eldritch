@@ -127,9 +127,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             investigator,
             skill,
             difficulty,
-        } => {
-            skill_test::perform_skill_test(cx.state, cx.events, *investigator, *skill, *difficulty)
-        }
+        } => skill_test::perform_skill_test(cx, *investigator, *skill, *difficulty),
         PlayerAction::Investigate { investigator } => actions::investigate(cx, *investigator),
         PlayerAction::Move {
             investigator,
@@ -353,9 +351,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         };
     }
     match response {
-        InputResponse::CommitCards { indices } => {
-            skill_test::finish_skill_test(cx.state, cx.events, indices)
-        }
+        InputResponse::CommitCards { indices } => skill_test::finish_skill_test(cx, indices),
         other => EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: skill-test commit window expects InputResponse::CommitCards, \

@@ -491,7 +491,7 @@ pub(super) fn close_reaction_window_at(
     // terminal outcome.
     if let Some(in_flight) = state.in_flight_skill_test.as_ref() {
         if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
-            return super::skill_test::drive_skill_test(state, events);
+            return super::skill_test::drive_skill_test(&mut super::Cx { state, events });
         }
     }
 
