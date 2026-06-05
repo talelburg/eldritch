@@ -130,7 +130,7 @@ fn run_elimination_steps(
         });
     }
     for &eid in &affected {
-        super::hunters::reengage_at_location(state, events, eid);
+        super::hunters::reengage_at_location(&mut super::Cx { state, events }, eid);
     }
 
     // Step 4: place other (non-enemy) threat-area cards in the

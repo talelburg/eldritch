@@ -312,13 +312,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
          different phases (Enemy 3.2 vs Mythos 1.4) and each blocks all other actions",
     );
     if cx.state.hunter_move_pending.is_some() {
-        return hunters::resume_hunter_choice(cx.state, cx.events, response);
+        return hunters::resume_hunter_choice(cx, response);
     }
 
     // Engagement-on-spawn suspension (#128, option A) is a distinct mode
     // from hunter movement: its resume re-enters the Mythos draw chain.
     if cx.state.spawn_engage_pending.is_some() {
-        return hunters::resume_spawn_engage(cx.state, cx.events, response);
+        return hunters::resume_spawn_engage(cx, response);
     }
 
     if cx.state.top_reaction_window().is_some() {

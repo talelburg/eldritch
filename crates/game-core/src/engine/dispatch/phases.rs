@@ -344,7 +344,7 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
     //     attack-loop kickoff then happens on resume.
-    match super::hunters::drive_hunter_moves(cx.state, cx.events) {
+    match super::hunters::drive_hunter_moves(cx) {
         outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
         // drive_hunter_moves only ever returns Done or AwaitingInput, never Rejected.
         EngineOutcome::Rejected { reason } => {
@@ -496,7 +496,7 @@ fn ready_exhausted_cards(cx: &mut Cx) {
     // newly_readied is in ascending EnemyId order (BTreeMap key order).
     for eid in newly_readied {
         if cx.state.enemies[&eid].engaged_with.is_none() {
-            super::hunters::reengage_at_location(cx.state, cx.events, eid);
+            super::hunters::reengage_at_location(cx, eid);
         }
     }
 }

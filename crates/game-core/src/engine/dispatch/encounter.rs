@@ -333,7 +333,7 @@ fn spawn_enemy(
                 location: location_id,
                 engaged_with: Some(target),
             });
-            super::hunters::engage_enemy_with(cx.state, cx.events, enemy_id, target);
+            super::hunters::engage_enemy_with(cx, enemy_id, target);
             EngineOutcome::Done
         }
         super::hunters::PreyResolution::Tie(tied) => {
@@ -1246,8 +1246,10 @@ mod spawn_enemy_tests {
 
         // Investigator 3 is not among the co-located candidates.
         let outcome = super::super::hunters::resume_spawn_engage(
-            &mut state,
-            &mut events,
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &InputResponse::PickInvestigator(InvestigatorId(3)),
         );
         assert!(
