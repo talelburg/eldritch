@@ -596,7 +596,10 @@ pub(super) fn run_window_continuation(
                 )
             });
 
-            super::combat::resolve_attacks_for_investigator(state, events, investigator);
+            super::combat::resolve_attacks_for_investigator(
+                &mut super::Cx { state, events },
+                investigator,
+            );
 
             // Advance the cursor: next Active investigator AFTER
             // `investigator` in turn_order. The shared helper uses

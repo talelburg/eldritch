@@ -1834,7 +1834,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // Damage placed.
         assert!(
@@ -1901,7 +1907,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // Exactly one DamageTaken (from e3, amount 1).
         let damages: Vec<&Event> = events
@@ -1964,7 +1976,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // The two DamageTaken events must appear in EnemyId(2) → EnemyId(10) order
         // (verifiable via their amounts: 1 then 2).
@@ -2007,7 +2025,13 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(&mut state, &mut events, inv_id);
+        super::super::combat::resolve_attacks_for_investigator(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
 
         // e1 attacked + exhausted.
         assert!(

@@ -189,7 +189,7 @@ pub(super) fn take_horror(
     investigator: InvestigatorId,
     amount: u8,
 ) {
-    if super::combat::apply_horror_numeric(state, events, investigator, amount) {
+    if super::combat::apply_horror_numeric(&mut super::Cx { state, events }, investigator, amount) {
         apply_investigator_defeat(state, events, investigator, DefeatCause::Horror);
     }
 }
