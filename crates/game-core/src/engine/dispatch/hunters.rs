@@ -405,7 +405,7 @@ pub(super) fn resume_hunter_choice(
     // per-investigator attack loop (step 3.3). Reached only on the
     // no-further-suspension path; every suspension above early-returns
     // via `suspend_hunter_choice`.
-    super::enemy_attack_kickoff(state, events);
+    super::phases::enemy_attack_kickoff(state, events);
     EngineOutcome::Done
 }
 

@@ -502,8 +502,8 @@ pub(super) fn close_reaction_window_at(
 /// inline via [`open_fast_window`]'s auto-skip path or via the
 /// [`close_reaction_window_at`] pop path). For
 /// [`WindowKind::MythosAfterDraws`], runs
-/// [`mythos_phase_end`](super::mythos_phase_end); for
-/// [`WindowKind::UpkeepBegins`], runs [`upkeep_resume`](super::upkeep_resume). For
+/// [`mythos_phase_end`](super::phases::mythos_phase_end); for
+/// [`WindowKind::UpkeepBegins`], runs [`upkeep_resume`](super::phases::upkeep_resume). For
 /// [`WindowKind::BeforeInvestigatorAttacked`], resolves the cursor
 /// investigator's engaged-enemy attacks via
 /// [`resolve_attacks_for_investigator`](super::combat::resolve_attacks_for_investigator), advances
@@ -513,8 +513,8 @@ pub(super) fn close_reaction_window_at(
 /// ([`WindowKind::BeforeInvestigatorAttacked`] again if the cursor
 /// advanced to `Some`, otherwise [`WindowKind::AfterAllInvestigatorsAttacked`]).
 /// For [`WindowKind::AfterAllInvestigatorsAttacked`], runs
-/// [`enemy_phase_end`](super::enemy_phase_end). For [`WindowKind::InvestigationBegins`], starts
-/// the first turn via [`begin_investigator_turn`](super::begin_investigator_turn) for the first Active
+/// [`enemy_phase_end`](super::phases::enemy_phase_end). For [`WindowKind::InvestigationBegins`], starts
+/// the first turn via [`begin_investigator_turn`](super::phases::begin_investigator_turn) for the first Active
 /// investigator (or parks if none). `AfterEnemyDefeated`, `BetweenPhases`,
 /// and [`WindowKind::InvestigatorTurnBegins`] windows have no
 /// continuation — for them this is a no-op preserving the existing
@@ -544,7 +544,7 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::mythos_phase_end(state, events);
+            super::phases::mythos_phase_end(state, events);
         }
         WindowKind::UpkeepBegins => {
             // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
@@ -559,7 +559,7 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::upkeep_resume(state, events);
+            super::phases::upkeep_resume(state, events);
         }
         WindowKind::BeforeInvestigatorAttacked => {
             // Phase-transitioning continuation (advances to the next
@@ -624,14 +624,14 @@ pub(super) fn run_window_continuation(
                     in_flight.continuation,
                 );
             }
-            super::enemy_phase_end(state, events);
+            super::phases::enemy_phase_end(state, events);
         }
         WindowKind::InvestigationBegins => {
             // Post-2.1 window closed; start the first turn (step 2.2).
             // No skill-test-in-flight guard: this runs at phase start
             // (no test can be in flight) and does not transition phase.
             if let Some(id) = super::cursor::first_active_investigator(state) {
-                super::begin_investigator_turn(state, events, id);
+                super::phases::begin_investigator_turn(state, events, id);
             }
             // None branch: no active investigator can take a turn. Per
             // Rules Reference p.10 step 6 the scenario ends — that

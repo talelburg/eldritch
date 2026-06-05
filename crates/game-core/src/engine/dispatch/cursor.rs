@@ -65,8 +65,8 @@ pub(super) fn active_investigators_in_turn_order(state: &GameState) -> Vec<Inves
 /// Enemy 3.3 attacks ([`enemy_phase`] seeds `enemy_attack_pending`).
 ///
 /// [`turn_order`]: GameState::turn_order
-/// [`mythos_phase`]: super::mythos_phase
-/// [`enemy_phase`]: super::enemy_phase
+/// [`mythos_phase`]: super::phases::mythos_phase
+/// [`enemy_phase`]: super::phases::enemy_phase
 pub(super) fn first_active_investigator(state: &GameState) -> Option<InvestigatorId> {
     state.turn_order.iter().copied().find(|id| {
         state
