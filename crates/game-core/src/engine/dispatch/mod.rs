@@ -322,7 +322,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     }
 
     if cx.state.top_reaction_window().is_some() {
-        return reaction_windows::resume_reaction_window(cx.state, cx.events, response);
+        return reaction_windows::resume_reaction_window(cx, response);
     }
 
     // Pure-Fast window path (Option B): no reaction-driven window is
@@ -332,7 +332,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     if !cx.state.open_windows.is_empty() {
         if matches!(response, InputResponse::Skip) {
             let idx = cx.state.open_windows.len() - 1;
-            return reaction_windows::close_reaction_window_at(cx.state, cx.events, idx);
+            return reaction_windows::close_reaction_window_at(cx, idx);
         }
         return EngineOutcome::Rejected {
             reason: format!(

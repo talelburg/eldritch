@@ -220,7 +220,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
     loop {
         if cx.state.top_reaction_window().is_some() {
-            return super::reaction_windows::open_queued_reaction_window(cx.state, cx.events);
+            return super::reaction_windows::open_queued_reaction_window(cx);
         }
 
         let (continuation, investigator, indices_u8) = {

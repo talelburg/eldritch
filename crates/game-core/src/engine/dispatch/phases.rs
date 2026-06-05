@@ -137,7 +137,7 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
     // order 2.1 → window → 2.2 holds. Auto-skips inline when nothing is
     // Fast-eligible, so single-investigator entry still lands the lead
     // active within the same apply() call.
-    super::reaction_windows::open_fast_window(cx.state, cx.events, WindowKind::InvestigationBegins);
+    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigationBegins);
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
@@ -152,11 +152,7 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     rotate_to_active(cx, who);
-    super::reaction_windows::open_fast_window(
-        cx.state,
-        cx.events,
-        WindowKind::InvestigatorTurnBegins,
-    );
+    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigatorTurnBegins);
 }
 
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)`
@@ -211,11 +207,7 @@ fn mythos_phase(cx: &mut Cx) {
         // because nothing is eligible, runs the MythosAfterDraws
         // continuation (mythos_phase_end), which transitions to
         // Investigation. All in this same apply.
-        super::reaction_windows::open_fast_window(
-            cx.state,
-            cx.events,
-            WindowKind::MythosAfterDraws,
-        );
+        super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
     }
 }
 
@@ -308,20 +300,12 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) {
     cx.state.enemy_attack_pending = super::cursor::first_active_investigator(cx.state);
 
     if cx.state.enemy_attack_pending.is_some() {
-        super::reaction_windows::open_fast_window(
-            cx.state,
-            cx.events,
-            WindowKind::BeforeInvestigatorAttacked,
-        );
+        super::reaction_windows::open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked);
     } else {
         // No Active investigators (turn_order empty or all eliminated).
         // Skip straight to the final window — mirror of mythos_phase's
         // no-drawer path.
-        super::reaction_windows::open_fast_window(
-            cx.state,
-            cx.events,
-            WindowKind::AfterAllInvestigatorsAttacked,
-        );
+        super::reaction_windows::open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked);
     }
 }
 
@@ -418,7 +402,7 @@ fn upkeep_phase(cx: &mut Cx) {
     });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
     // via run_window_continuation) when nothing is Fast-eligible.
-    super::reaction_windows::open_fast_window(cx.state, cx.events, WindowKind::UpkeepBegins);
+    super::reaction_windows::open_fast_window(cx, WindowKind::UpkeepBegins);
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named

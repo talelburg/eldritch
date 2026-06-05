@@ -37,8 +37,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         // `fire_on_skill_test_resolution`) returning AwaitingInput so the
         // player can fire their reaction triggers; see `drive_skill_test`.
         super::reaction_windows::queue_reaction_window(
-            cx.state,
-            cx.events,
+            cx,
             WindowKind::AfterEnemyDefeated {
                 enemy: enemy_id,
                 by,

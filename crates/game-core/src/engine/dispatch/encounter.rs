@@ -602,11 +602,7 @@ pub(super) fn advance_mythos_draw_pending(cx: &mut Cx) {
     let next = super::cursor::next_active_investigator_after(cx.state, current);
     cx.state.mythos_draw_pending = next;
     if next.is_none() {
-        super::reaction_windows::open_fast_window(
-            cx.state,
-            cx.events,
-            WindowKind::MythosAfterDraws,
-        );
+        super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
     }
 }
 
