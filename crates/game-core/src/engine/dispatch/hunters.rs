@@ -787,8 +787,10 @@ mod hunter_resume_tests {
         // Resume by picking C.
         let mut ev2 = Vec::new();
         let resumed = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(3)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
@@ -831,8 +833,10 @@ mod hunter_resume_tests {
         let mut ev2 = Vec::new();
         // LocationId(4) is the destination, not a first-step candidate.
         let result = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(4)),
         );
         assert!(matches!(result, EngineOutcome::Rejected { .. }));
@@ -876,8 +880,10 @@ mod hunter_resume_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         let mut ev2 = Vec::new();
         let resumed = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickInvestigator(InvestigatorId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
@@ -972,8 +978,10 @@ mod hunter_resume_tests {
         // Resolve hunter 1's tie -> hunter 2 then moves B->D and engages.
         let mut ev2 = Vec::new();
         let resumed = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
@@ -1023,8 +1031,10 @@ mod hunter_resume_tests {
         // Submit PickInvestigator when PickLocation is expected.
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickInvestigator(InvestigatorId(1)),
         );
         assert!(
@@ -1075,8 +1085,10 @@ mod hunter_resume_tests {
         // Submit PickLocation when PickInvestigator is expected.
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &crate::action::InputResponse::PickLocation(LocationId(1)),
         );
         assert!(

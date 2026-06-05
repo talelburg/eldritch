@@ -565,8 +565,10 @@ mod investigation_phase_tests {
 
         let mut events = Vec::new();
         let outcome = apply_player_action(
-            &mut state,
-            &mut events,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &PlayerAction::Mulligan {
                 investigator: InvestigatorId(1),
                 indices_to_redraw: vec![],
@@ -1713,8 +1715,10 @@ mod enemy_phase_tests {
         assert_eq!(state.phase, Phase::Enemy);
         let mut ev2 = Vec::new();
         let resumed = resolve_input(
-            &mut state,
-            &mut ev2,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut ev2,
+            },
             &InputResponse::PickLocation(LocationId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);

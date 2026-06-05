@@ -10,10 +10,10 @@
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction};
 use crate::card_data::CardType;
-use crate::event::Event;
-use crate::state::{CardCode, GameState};
+use crate::state::CardCode;
 
 use super::outcome::EngineOutcome;
+use super::Cx;
 
 mod abilities;
 mod act_agenda;
@@ -37,18 +37,14 @@ mod skill_test;
 /// other variants return [`EngineOutcome::Rejected`] with a TODO message
 /// so callers and tests get a useful signal rather than a silent no-op.
 #[allow(clippy::too_many_lines)] // dispatcher: a guard ladder + one match arm per PlayerAction
-pub fn apply_player_action(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    action: &PlayerAction,
-) -> EngineOutcome {
+pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
     // While a mulligan is pending (the setup mulligan cursor is `Some`),
     // only Mulligan (and the already-rejected re-StartScenario) is valid.
     // Per the Rules Reference, "after all players have completed their
     // mulligans, the game begins" — the engine enforces that by gating
     // other actions until every investigator has signaled their mulligan
     // choice.
-    if state.mulligan_pending.is_some()
+    if cx.state.mulligan_pending.is_some()
         && !matches!(
             action,
             PlayerAction::Mulligan { .. } | PlayerAction::StartScenario
@@ -66,10 +62,11 @@ pub fn apply_player_action(
     // window opens mid-skill-test (e.g. Roland's "after you defeat an
     // enemy" firing during a Fight that defeats), both
     // `in_flight_skill_test` and the open reaction window on
-    // `state.open_windows` are populated — the test is mid-resolution,
+    // `cx.state.open_windows` are populated — the test is mid-resolution,
     // parked at the window boundary inside `drive_skill_test`. The
     // reaction-window message is the one the client needs.
-    if state.top_reaction_window().is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
+    if cx.state.top_reaction_window().is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "a reaction window is open; submit a \
@@ -84,7 +81,8 @@ pub fn apply_player_action(
     // While a skill test is paused at its commit window (no reaction
     // window open yet), only `ResolveInput` can advance the engine.
     // Mirrors the `mulligan_pending` guard above.
-    if state.in_flight_skill_test.is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
+    if cx.state.in_flight_skill_test.is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "a skill test is paused at its commit window; submit a \
@@ -97,7 +95,9 @@ pub fn apply_player_action(
     // Hunter movement is Enemy-phase only; it can't coexist with an open
     // reaction window or an in-flight skill test, so order among the guards
     // is immaterial — but a pending hunter choice still blocks other actions.
-    if state.hunter_move_pending.is_some() && !matches!(action, PlayerAction::ResolveInput { .. }) {
+    if cx.state.hunter_move_pending.is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
         return EngineOutcome::Rejected {
             reason: "a hunter-movement choice is pending; submit a PlayerAction::ResolveInput \
                      with InputResponse::PickLocation (movement) or \
@@ -109,7 +109,8 @@ pub fn apply_player_action(
     // A pending engagement-on-spawn choice (#128) likewise blocks every
     // action but `ResolveInput`. Mirrors the hunter guard above; the two
     // never coexist (different phases), so guard order is immaterial.
-    if state.spawn_engage_pending.is_some() && !matches!(action, PlayerAction::ResolveInput { .. })
+    if cx.state.spawn_engage_pending.is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "an engagement-on-spawn choice is pending; submit a \
@@ -120,55 +121,61 @@ pub fn apply_player_action(
     }
 
     let outcome = match action {
-        PlayerAction::StartScenario => phases::start_scenario(state, events),
-        PlayerAction::EndTurn => phases::end_turn(state, events),
+        PlayerAction::StartScenario => phases::start_scenario(cx.state, cx.events),
+        PlayerAction::EndTurn => phases::end_turn(cx.state, cx.events),
         PlayerAction::PerformSkillTest {
             investigator,
             skill,
             difficulty,
-        } => skill_test::perform_skill_test(state, events, *investigator, *skill, *difficulty),
+        } => {
+            skill_test::perform_skill_test(cx.state, cx.events, *investigator, *skill, *difficulty)
+        }
         PlayerAction::Investigate { investigator } => {
-            actions::investigate(state, events, *investigator)
+            actions::investigate(cx.state, cx.events, *investigator)
         }
         PlayerAction::Move {
             investigator,
             destination,
-        } => actions::move_action(state, events, *investigator, *destination),
-        PlayerAction::Draw { investigator } => cards::draw(state, events, *investigator),
+        } => actions::move_action(cx.state, cx.events, *investigator, *destination),
+        PlayerAction::Draw { investigator } => cards::draw(cx.state, cx.events, *investigator),
         PlayerAction::Mulligan {
             investigator,
             indices_to_redraw,
-        } => cards::mulligan(state, events, *investigator, indices_to_redraw),
+        } => cards::mulligan(cx.state, cx.events, *investigator, indices_to_redraw),
         PlayerAction::Fight {
             investigator,
             enemy,
-        } => actions::fight(state, events, *investigator, *enemy),
+        } => actions::fight(cx.state, cx.events, *investigator, *enemy),
         PlayerAction::Evade {
             investigator,
             enemy,
-        } => actions::evade(state, events, *investigator, *enemy),
+        } => actions::evade(cx.state, cx.events, *investigator, *enemy),
         PlayerAction::PlayCard {
             investigator,
             hand_index,
-        } => cards::play_card(state, events, *investigator, *hand_index),
+        } => cards::play_card(cx.state, cx.events, *investigator, *hand_index),
         PlayerAction::ActivateAbility {
             investigator,
             instance_id,
             ability_index,
-        } => {
-            abilities::activate_ability(state, events, *investigator, *instance_id, *ability_index)
-        }
-        PlayerAction::DrawEncounterCard => match state.mythos_draw_pending {
+        } => abilities::activate_ability(
+            cx.state,
+            cx.events,
+            *investigator,
+            *instance_id,
+            *ability_index,
+        ),
+        PlayerAction::DrawEncounterCard => match cx.state.mythos_draw_pending {
             // DrawEncounterCard carries no investigator payload — the
             // acting investigator IS the pending cursor.
-            Some(actor) => encounter::draw_encounter_card(state, events, actor),
+            Some(actor) => encounter::draw_encounter_card(cx.state, cx.events, actor),
             None => EngineOutcome::Rejected {
                 reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
             },
         },
-        PlayerAction::ResolveInput { response } => resolve_input(state, events, response),
+        PlayerAction::ResolveInput { response } => resolve_input(cx, response),
         PlayerAction::AdvanceAct { investigator } => {
-            act_agenda::advance_act_action(state, events, *investigator)
+            act_agenda::advance_act_action(cx.state, cx.events, *investigator)
         }
     };
 
@@ -180,7 +187,7 @@ pub fn apply_player_action(
     // doesn't silently stay set across a partial mulligan.
     if matches!(outcome, EngineOutcome::Done)
         && matches!(action, PlayerAction::Mulligan { .. })
-        && state.mulligan_pending.is_none()
+        && cx.state.mulligan_pending.is_none()
     {
         // Setup complete — "the game begins" (Rules Reference p.27).
         // Round 1 skips the Mythos phase (p.24), so the first phase to
@@ -191,11 +198,11 @@ pub fn apply_player_action(
         // NOTE: investigation_phase may leave an InvestigationBegins
         // window open (when a Fast-eligible play exists); this function
         // still returns the Mulligan's `Done`. So this is one of the few
-        // paths where `Done` can accompany a non-empty `state.open_windows`
+        // paths where `Done` can accompany a non-empty `cx.state.open_windows`
         // — hosts check `open_windows` and present `ResolveInput::Skip`
         // to close it, exactly as for the phase-transition windows the
         // void `*_phase` drivers open.
-        phases::investigation_phase(state, events);
+        phases::investigation_phase(cx.state, cx.events);
     }
 
     // Reaction windows open at the step boundary inside the handler
@@ -211,18 +218,16 @@ pub fn apply_player_action(
 }
 
 /// Apply an [`EngineRecord`] to the state, pushing events.
-pub fn apply_engine_record(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    record: &EngineRecord,
-) -> EngineOutcome {
+pub fn apply_engine_record(cx: &mut Cx, record: &EngineRecord) -> EngineOutcome {
     match record {
         EngineRecord::DeckShuffled { investigator } => {
-            cards::deck_shuffled(state, events, *investigator)
+            cards::deck_shuffled(cx.state, cx.events, *investigator)
         }
-        EngineRecord::EncounterDeckShuffled => encounter::encounter_deck_shuffled(state, events),
+        EngineRecord::EncounterDeckShuffled => {
+            encounter::encounter_deck_shuffled(cx.state, cx.events)
+        }
         EngineRecord::EncounterCardRevealed { investigator } => {
-            encounter::encounter_card_revealed(state, events, *investigator)
+            encounter::encounter_card_revealed(cx.state, cx.events, *investigator)
         }
     }
 }
@@ -305,41 +310,37 @@ pub(super) struct ActivateCheckResult {
 /// directly via [`close_reaction_window_at`] on the literal top-of-stack
 /// index. This covers the `MythosAfterDraws` window after all Fast
 /// plays have been made and the player is done.
-pub(crate) fn resolve_input(
-    state: &mut GameState,
-    events: &mut Vec<Event>,
-    response: &InputResponse,
-) -> EngineOutcome {
+pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     // Hunter-movement suspension is its own mode; route it before the
     // reaction-window and skill-test checks, which are independent
     // suspension modes. (#128)
     debug_assert!(
-        !(state.hunter_move_pending.is_some() && state.spawn_engage_pending.is_some()),
+        !(cx.state.hunter_move_pending.is_some() && cx.state.spawn_engage_pending.is_some()),
         "hunter movement and spawn engagement cannot both be pending: they arise in \
          different phases (Enemy 3.2 vs Mythos 1.4) and each blocks all other actions",
     );
-    if state.hunter_move_pending.is_some() {
-        return hunters::resume_hunter_choice(state, events, response);
+    if cx.state.hunter_move_pending.is_some() {
+        return hunters::resume_hunter_choice(cx.state, cx.events, response);
     }
 
     // Engagement-on-spawn suspension (#128, option A) is a distinct mode
     // from hunter movement: its resume re-enters the Mythos draw chain.
-    if state.spawn_engage_pending.is_some() {
-        return hunters::resume_spawn_engage(state, events, response);
+    if cx.state.spawn_engage_pending.is_some() {
+        return hunters::resume_spawn_engage(cx.state, cx.events, response);
     }
 
-    if state.top_reaction_window().is_some() {
-        return reaction_windows::resume_reaction_window(state, events, response);
+    if cx.state.top_reaction_window().is_some() {
+        return reaction_windows::resume_reaction_window(cx.state, cx.events, response);
     }
 
     // Pure-Fast window path (Option B): no reaction-driven window is
     // pending, but a window (e.g. MythosAfterDraws) may still be on the
     // stack with empty pending_triggers. Skip is the only valid response
     // here — PickIndex / CommitCards reject below.
-    if !state.open_windows.is_empty() {
+    if !cx.state.open_windows.is_empty() {
         if matches!(response, InputResponse::Skip) {
-            let idx = state.open_windows.len() - 1;
-            return reaction_windows::close_reaction_window_at(state, events, idx);
+            let idx = cx.state.open_windows.len() - 1;
+            return reaction_windows::close_reaction_window_at(cx.state, cx.events, idx);
         }
         return EngineOutcome::Rejected {
             reason: format!(
@@ -350,14 +351,14 @@ pub(crate) fn resolve_input(
         };
     }
 
-    if state.in_flight_skill_test.is_none() {
+    if cx.state.in_flight_skill_test.is_none() {
         return EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
         };
     }
     match response {
         InputResponse::CommitCards { indices } => {
-            skill_test::finish_skill_test(state, events, indices)
+            skill_test::finish_skill_test(cx.state, cx.events, indices)
         }
         other => EngineOutcome::Rejected {
             reason: format!(

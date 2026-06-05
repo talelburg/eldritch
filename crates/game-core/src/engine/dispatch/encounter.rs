@@ -667,8 +667,10 @@ mod encounter_card_revealed_tests {
         let mut events = Vec::new();
 
         let outcome = super::super::apply_engine_record(
-            &mut state,
-            &mut events,
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             &EngineRecord::EncounterCardRevealed {
                 investigator: InvestigatorId(1),
             },
