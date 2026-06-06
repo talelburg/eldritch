@@ -120,6 +120,19 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         };
     }
 
+    // A pending upkeep hand-size discard (#111) blocks every action but
+    // `ResolveInput`. Upkeep-phase only; never coexists with the other
+    // suspension modes, so guard order is immaterial.
+    if cx.state.hand_size_discard_pending.is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason: "a hand-size discard choice is pending; submit a PlayerAction::ResolveInput \
+                     with InputResponse::DiscardCards before any other action"
+                .into(),
+        };
+    }
+
     let outcome = match action {
         PlayerAction::StartScenario => phases::start_scenario(cx),
         PlayerAction::EndTurn => phases::end_turn(cx),
@@ -297,13 +310,21 @@ pub(super) struct ActivateCheckResult {
 /// index. This covers the `MythosAfterDraws` window after all Fast
 /// plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    // Hunter-movement suspension is its own mode; route it before the
-    // reaction-window and skill-test checks, which are independent
-    // suspension modes. (#128)
+    // Hunter movement, spawn engagement, and hand-size discard are three
+    // mutually exclusive suspension modes (different phases). Route to the
+    // right resume handler before the reaction-window and skill-test checks.
     debug_assert!(
-        !(cx.state.hunter_move_pending.is_some() && cx.state.spawn_engage_pending.is_some()),
-        "hunter movement and spawn engagement cannot both be pending: they arise in \
-         different phases (Enemy 3.2 vs Mythos 1.4) and each blocks all other actions",
+        [
+            cx.state.hunter_move_pending.is_some(),
+            cx.state.spawn_engage_pending.is_some(),
+            cx.state.hand_size_discard_pending.is_some(),
+        ]
+        .iter()
+        .filter(|b| **b)
+        .count()
+            <= 1,
+        "hunter movement, spawn engagement, and hand-size discard are mutually exclusive \
+         suspension modes (different phases)",
     );
     if cx.state.hunter_move_pending.is_some() {
         return hunters::resume_hunter_choice(cx, response);
@@ -313,6 +334,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // from hunter movement: its resume re-enters the Mythos draw chain.
     if cx.state.spawn_engage_pending.is_some() {
         return hunters::resume_spawn_engage(cx, response);
+    }
+
+    // Upkeep step-4.5 hand-size discard (#111) is its own suspension mode;
+    // route it before the reaction-window check (it arises in Upkeep, not
+    // mid-skill-test, so the two never coexist).
+    if cx.state.hand_size_discard_pending.is_some() {
+        return phases::resume_hand_size_discard(cx, response);
     }
 
     if cx.state.top_reaction_window().is_some() {

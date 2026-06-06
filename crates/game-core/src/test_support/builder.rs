@@ -28,8 +28,8 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Enemy, EnemyId, FastActorScope, GameState, Investigator, InvestigatorId, Location,
-    LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
+    ChaosBag, Enemy, EnemyId, FastActorScope, GameState, HandSizeDiscard, Investigator,
+    InvestigatorId, Location, LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -51,6 +51,7 @@ pub struct TestGame {
     turn_order: Vec<InvestigatorId>,
     rng: RngState,
     mulligan_pending: Option<InvestigatorId>,
+    hand_size_discard_pending: Option<HandSizeDiscard>,
     open_windows: Vec<OpenWindow>,
     scenario_id: Option<ScenarioId>,
 }
@@ -73,6 +74,7 @@ impl TestGame {
             turn_order: Vec::new(),
             rng: RngState::new(0),
             mulligan_pending: None,
+            hand_size_discard_pending: None,
             open_windows: Vec::new(),
             scenario_id: None,
         }
@@ -207,6 +209,18 @@ impl TestGame {
         self
     }
 
+    /// Seed a pending upkeep hand-size discard for the given player-order
+    /// queue (front = currently prompted).
+    pub fn with_hand_size_discard_pending(
+        mut self,
+        remaining: impl IntoIterator<Item = InvestigatorId>,
+    ) -> Self {
+        self.hand_size_discard_pending = Some(HandSizeDiscard {
+            remaining: remaining.into_iter().collect(),
+        });
+        self
+    }
+
     /// Push an [`OpenWindow`] onto the build's `open_windows` stack
     /// for tests that need a specific window-state shape.
     ///
@@ -271,6 +285,7 @@ impl TestGame {
             enemy_attack_pending: None,
             hunter_move_pending: None,
             spawn_engage_pending: None,
+            hand_size_discard_pending: self.hand_size_discard_pending,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
             agenda_deck: Vec::new(),

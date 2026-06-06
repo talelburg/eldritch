@@ -333,6 +333,19 @@ pub enum InputResponse {
         /// Hand indices to commit.
         indices: Vec<u32>,
     },
+    /// Discard cards from hand to satisfy the upkeep maximum-hand-size
+    /// step (Rules Reference p.25 step 4.5). Each entry is a zero-based index into
+    /// the prompted investigator's hand at the moment of the prompt. The
+    /// engine discards exactly the overflow (`hand.len() - 8`); any other
+    /// count, a duplicate, or an out-of-bounds index is rejected.
+    ///
+    /// `u32` rather than `u8` for wire-format symmetry with
+    /// [`CommitCards`](Self::CommitCards) / [`PickIndex`](Self::PickIndex);
+    /// downcast at validation time.
+    DiscardCards {
+        /// Hand indices to discard.
+        indices: Vec<u32>,
+    },
 }
 
 #[cfg(test)]
@@ -347,5 +360,20 @@ mod encounter_card_revealed_action_tests {
         let json = serde_json::to_string(&rec).expect("serialize");
         let back: EngineRecord = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, rec);
+    }
+}
+
+#[cfg(test)]
+mod input_response_tests {
+    use super::*;
+
+    #[test]
+    fn discard_cards_input_serde_roundtrip() {
+        let original = InputResponse::DiscardCards {
+            indices: vec![0, 3, 7],
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: InputResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
     }
 }

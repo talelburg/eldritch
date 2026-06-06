@@ -1,9 +1,12 @@
 //! Phase-driver functions: start/end scenario, per-phase entrypoints,
 //! and the round-cycle stepping logic.
 
-use crate::engine::outcome::EngineOutcome;
+use crate::action::InputResponse;
+use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::event::Event;
-use crate::state::{EnemyId, InvestigatorId, Phase, WindowKind};
+use crate::state::{
+    CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase, WindowKind, Zone,
+};
 
 use super::Cx;
 
@@ -137,7 +140,12 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
     // order 2.1 → window → 2.2 holds. Auto-skips inline when nothing is
     // Fast-eligible, so single-investigator entry still lands the lead
     // active within the same apply() call.
-    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigationBegins);
+    let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::InvestigationBegins);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "open_fast_window(InvestigationBegins) unexpectedly suspended; this window has no suspending continuation",
+    );
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
@@ -152,7 +160,12 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     rotate_to_active(cx, who);
-    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigatorTurnBegins);
+    let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::InvestigatorTurnBegins);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "open_fast_window(InvestigatorTurnBegins) unexpectedly suspended; this window has no suspending continuation",
+    );
 }
 
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)`
@@ -207,7 +220,12 @@ fn mythos_phase(cx: &mut Cx) {
         // because nothing is eligible, runs the MythosAfterDraws
         // continuation (mythos_phase_end), which transitions to
         // Investigation. All in this same apply.
-        super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
+        let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
+        debug_assert_eq!(
+            outcome,
+            EngineOutcome::Done,
+            "open_fast_window(MythosAfterDraws) unexpectedly suspended; this window has no suspending continuation",
+        );
     }
 }
 
@@ -229,13 +247,15 @@ fn mythos_phase(cx: &mut Cx) {
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
 /// rather than here. `step_phase` no longer touches `state.round`.
 ///
-/// Returns the transition's [`EngineOutcome`]. Only the
-/// Investigation→Enemy arm can return [`EngineOutcome::AwaitingInput`]
-/// (a hunter-movement tie in [`enemy_phase`]); every other arm runs its
-/// driver to completion and returns [`EngineOutcome::Done`]. The
-/// Investigation→Enemy suspension is owned by
-/// [`investigation_phase_end`], which propagates it up through
-/// [`end_turn`].
+/// Returns the transition's [`EngineOutcome`]. Two arms can return
+/// [`EngineOutcome::AwaitingInput`]:
+/// - **Investigation→Enemy**: a hunter-movement tie in [`enemy_phase`],
+///   owned by [`investigation_phase_end`] and propagated through [`end_turn`].
+/// - **Enemy→Upkeep**: the step-4.5 hand-size discard (#111), owned by
+///   [`upkeep_resume`].
+///
+/// Every other arm runs its driver to completion and returns
+/// [`EngineOutcome::Done`].
 fn step_phase(cx: &mut Cx) -> EngineOutcome {
     let from = cx.state.phase;
     let to = from.next();
@@ -256,10 +276,7 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
             EngineOutcome::Done
         }
         Phase::Enemy if from != Phase::Enemy => enemy_phase(cx),
-        Phase::Upkeep if from != Phase::Upkeep => {
-            upkeep_phase(cx);
-            EngineOutcome::Done
-        }
+        Phase::Upkeep if from != Phase::Upkeep => upkeep_phase(cx),
         _ => unreachable!(
             "step_phase: from == to (from={from:?}, to={to:?}); Phase::next \
              never returns the same phase, so this branch is structurally \
@@ -296,16 +313,22 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
 /// the shared helper used by Mythos 1.4 (#69) for the same semantics.
 /// The loop body runs in [`run_window_continuation`]'s arms.
-pub(super) fn enemy_attack_kickoff(cx: &mut Cx) {
+///
+/// Returns the opened window's [`EngineOutcome`]. The no-active-investigator
+/// path opens `AfterAllInvestigatorsAttacked`, whose continuation cascades
+/// Enemy → Upkeep; that cascade can now suspend at Upkeep step 4.5
+/// (hand-size discard, #111), so the outcome propagates rather than being
+/// discarded.
+pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     cx.state.enemy_attack_pending = super::cursor::first_active_investigator(cx.state);
 
     if cx.state.enemy_attack_pending.is_some() {
-        super::reaction_windows::open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked);
+        super::reaction_windows::open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked)
     } else {
         // No Active investigators (turn_order empty or all eliminated).
         // Skip straight to the final window — mirror of mythos_phase's
         // no-drawer path.
-        super::reaction_windows::open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked);
+        super::reaction_windows::open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked)
     }
 }
 
@@ -319,7 +342,9 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) {
 /// the [`EngineOutcome::AwaitingInput`] unchanged — the attack-loop
 /// kickoff is deferred to [`resume_hunter_choice`], which runs it once
 /// the last hunter resolves. Otherwise the kickoff runs inline here and
-/// this returns [`EngineOutcome::Done`].
+/// this returns its outcome — usually [`EngineOutcome::Done`], but the
+/// Enemy → Upkeep cascade can suspend at step 4.5 (hand-size discard,
+/// #111), so that `AwaitingInput` now propagates rather than being dropped.
 fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     // 3.1 Enemy phase begins.
     cx.events.push(Event::PhaseStarted {
@@ -338,27 +363,22 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     }
 
     // 3.3 Kick off the per-investigator attack loop.
-    enemy_attack_kickoff(cx);
-    EngineOutcome::Done
+    enemy_attack_kickoff(cx)
 }
 
 /// Called from [`run_window_continuation`]'s
 /// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
 /// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
-pub(super) fn enemy_phase_end(cx: &mut Cx) {
+pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 3.4 Enemy phase ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
-    // Enemy → Upkeep; calls upkeep_phase. Only the Investigation→Enemy
-    // transition can suspend (hunter movement), so this never does.
-    let outcome = step_phase(cx);
-    debug_assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "unexpected suspension in Enemy→Upkeep transition"
-    );
+    // Enemy → Upkeep; calls upkeep_phase. This may now suspend at step
+    // 4.5 (hand-size discard, #111), so the outcome propagates rather
+    // than being asserted Done.
+    step_phase(cx)
 }
 
 /// Called after the post-1.4 window closes. Emits 1.5's
@@ -395,25 +415,31 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
 /// window sits at the END, so its driver runs content then opens;
 /// Upkeep's sits at the START, so the driver opens immediately and the
 /// content is the continuation.
-fn upkeep_phase(cx: &mut Cx) {
+fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     // 4.1 Upkeep phase begins.
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Upkeep,
     });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
     // via run_window_continuation) when nothing is Fast-eligible.
-    super::reaction_windows::open_fast_window(cx, WindowKind::UpkeepBegins);
+    super::reaction_windows::open_fast_window(cx, WindowKind::UpkeepBegins)
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
-/// call sites; step 4.5 is the [`check_hand_size`] stub (TODO #111).
-/// Then hands to [`upkeep_phase_end`] for 4.6 + transition.
-pub(super) fn upkeep_resume(cx: &mut Cx) {
+/// call sites; step 4.5 ([`check_hand_size`]) may suspend with
+/// [`EngineOutcome::AwaitingInput`] when an investigator is over the hand
+/// cap — in which case `upkeep_resume` short-circuits and 4.6 runs only
+/// once the discard resolves. Otherwise it hands to [`upkeep_phase_end`]
+/// for 4.6 + transition.
+pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
     ready_exhausted_cards(cx); // 4.3
     upkeep_draw_and_resource(cx); // 4.4
-    check_hand_size(cx); // 4.5 (TODO #111)
+    if let outcome @ EngineOutcome::AwaitingInput { .. } = check_hand_size(cx) {
+        return outcome; // 4.5 parked for discard; 4.6 runs on resume
+    }
     upkeep_phase_end(cx); // 4.6 + transition
+    EngineOutcome::Done
 }
 
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
@@ -485,13 +511,151 @@ fn ready_exhausted_cards(cx: &mut Cx) {
     }
 }
 
-/// 4.5 Each investigator checks hand size.
-fn check_hand_size(_cx: &mut Cx) {
-    // TODO(#111): in player order, each investigator with more than 8
-    //   cards in hand discards down to 8 (Rules Reference p.25 step 4.5).
-    //   Needs an AwaitingInput producer for the discard choice. The call
-    //   site exists so the rule step is grep-able and #111 plugs in here
-    //   without changing the driver shape.
+/// Maximum hand size (Rules Reference p.25 step 4.5: discard down to 8). A module
+/// constant rather than a per-investigator field — no card in the
+/// current scope modifies the cap. A future hand-size-modifying card
+/// introduces the field when it is actually needed (#111 spec).
+pub(super) const HAND_SIZE_LIMIT: u8 = 8;
+
+/// Active investigators, in player order, whose hand exceeds
+/// [`HAND_SIZE_LIMIT`]. Empty when nobody is over the cap.
+pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
+    super::cursor::active_investigators_in_turn_order(state)
+        .into_iter()
+        .filter(|id| state.investigators[id].hand.len() > HAND_SIZE_LIMIT as usize)
+        .collect()
+}
+
+/// Stores `remaining` as `hand_size_discard_pending` and returns the
+/// [`EngineOutcome::AwaitingInput`] that prompts `remaining[0]` to discard.
+/// Used by both [`check_hand_size`] (first suspension) and
+/// [`resume_hand_size_discard`] (re-prompt after a queue pop).
+///
+/// `remaining` must be non-empty; callers ensure this before calling.
+fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
+    let next = remaining[0];
+    cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
+    EngineOutcome::AwaitingInput {
+        request: InputRequest {
+            prompt: format!(
+                "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
+                 submit InputResponse::DiscardCards with the hand indices to discard down to \
+                 {HAND_SIZE_LIMIT}.",
+            ),
+        },
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// 4.5 Each investigator checks hand size. In player order, each
+/// investigator over [`HAND_SIZE_LIMIT`] is prompted to discard down to
+/// the cap. Returns [`EngineOutcome::AwaitingInput`] (parking on the
+/// first over-cap investigator) when anyone is over, or
+/// [`EngineOutcome::Done`] when nobody is — in which case the caller
+/// proceeds straight to 4.6.
+fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
+    let remaining = over_cap_investigators(cx.state);
+    if remaining.is_empty() {
+        return EngineOutcome::Done;
+    }
+    park_hand_size_discard(cx, remaining)
+}
+
+/// Resume a parked upkeep hand-size discard (#111). Validates the
+/// `DiscardCards` response against the currently-prompted investigator
+/// (`remaining[0]`): the indices must be unique, in-bounds, and exactly
+/// `hand.len() - HAND_SIZE_LIMIT` in count. On success, discards the
+/// chosen cards (emitting [`Event::CardDiscarded`] per card), pops the
+/// queue front, and either re-prompts the next over-cap investigator or
+/// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
+/// to Mythos). Rejections leave state and events untouched.
+pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let pending = cx
+        .state
+        .hand_size_discard_pending
+        .clone()
+        .unwrap_or_else(|| unreachable!("resume_hand_size_discard: no pending discard"));
+    let current = pending.remaining[0];
+
+    let InputResponse::DiscardCards { indices } = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: hand-size discard expects InputResponse::DiscardCards, got {response:?}",
+            )
+            .into(),
+        };
+    };
+
+    // ---- validate (state untouched on any failure) ----
+    let inv = cx.state.investigators.get(&current).unwrap_or_else(|| {
+        unreachable!("resume_hand_size_discard: prompted investigator {current:?} vanished")
+    });
+    let hand_len = inv.hand.len();
+    let target = hand_len.saturating_sub(HAND_SIZE_LIMIT as usize);
+    if indices.len() != target {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput::DiscardCards: {current:?} must discard exactly {target} card(s) \
+                 (hand {hand_len}, cap {HAND_SIZE_LIMIT}), got {}",
+                indices.len(),
+            )
+            .into(),
+        };
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for &i in indices {
+        if !seen.insert(i) {
+            return EngineOutcome::Rejected {
+                reason: format!("ResolveInput::DiscardCards: duplicate hand index {i}").into(),
+            };
+        }
+        if i as usize >= hand_len {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ResolveInput::DiscardCards: hand index {i} out of bounds (hand size {hand_len})",
+                )
+                .into(),
+            };
+        }
+    }
+
+    // ---- mutate ----
+    let discarded: Vec<CardCode> = {
+        let inv = cx
+            .state
+            .investigators
+            .get_mut(&current)
+            .expect("validated above");
+        let mut sorted: Vec<u32> = indices.clone();
+        sorted.sort_unstable();
+        let codes: Vec<CardCode> = sorted
+            .iter()
+            .map(|&i| inv.hand[i as usize].clone())
+            .collect();
+        for &i in sorted.iter().rev() {
+            inv.hand.remove(i as usize);
+        }
+        inv.discard.extend(codes.iter().cloned());
+        codes
+    };
+    for code in discarded {
+        cx.events.push(Event::CardDiscarded {
+            investigator: current,
+            code,
+            from: Zone::Hand,
+        });
+    }
+
+    // ---- advance the queue ----
+    let mut remaining = pending.remaining;
+    remaining.remove(0);
+    if remaining.is_empty() {
+        cx.state.hand_size_discard_pending = None;
+        upkeep_phase_end(cx); // 4.6 + transition to Mythos
+        EngineOutcome::Done
+    } else {
+        park_hand_size_discard(cx, remaining)
+    }
 }
 
 /// 4.2 Reset actions. Rules Reference p.25: "Flip each investigator's
@@ -2454,4 +2618,335 @@ mod enemy_phase_tests {
     // pause shape is exercised indirectly via the existing
     // any_fast_play_eligible-driven open_fast_window tests at
     // dispatch.rs's open_fast_window_tests block.
+}
+
+#[cfg(test)]
+mod hand_size_tests {
+    use super::*;
+    use crate::assert_no_event;
+    use crate::state::{CardCode, InvestigatorId};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn over_cap_investigators_lists_only_over_eight_in_player_order() {
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_turn_order([inv2, inv1]) // player order: inv2 first
+            .build();
+        // inv1: 9 cards (over), inv2: 8 cards (at cap, not over).
+        state.investigators.get_mut(&inv1).unwrap().hand = vec![CardCode("x".into()); 9];
+        state.investigators.get_mut(&inv2).unwrap().hand = vec![CardCode("x".into()); 8];
+
+        assert_eq!(over_cap_investigators(&state), vec![inv1]);
+
+        // Push inv2 over too: order must follow turn_order (inv2 then inv1).
+        state.investigators.get_mut(&inv2).unwrap().hand = vec![CardCode("x".into()); 10];
+        assert_eq!(over_cap_investigators(&state), vec![inv2, inv1]);
+    }
+
+    #[test]
+    fn check_hand_size_suspends_for_over_cap_investigator() {
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .build();
+        state.investigators.get_mut(&id).unwrap().hand = vec![CardCode("x".into()); 10];
+
+        let mut events = Vec::new();
+        let outcome = check_hand_size(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "over-cap investigator must suspend; got {outcome:?}"
+        );
+        assert_eq!(
+            state
+                .hand_size_discard_pending
+                .as_ref()
+                .map(|p| p.remaining.clone()),
+            Some(vec![id]),
+        );
+    }
+
+    #[test]
+    fn check_hand_size_is_noop_when_all_at_or_below_cap() {
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .build();
+        state.investigators.get_mut(&id).unwrap().hand = vec![CardCode("x".into()); 8];
+
+        let mut events = Vec::new();
+        let outcome = check_hand_size(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.hand_size_discard_pending.is_none());
+    }
+
+    #[test]
+    fn upkeep_resume_parks_at_hand_size_discard() {
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .build();
+        // 13 cards in hand after the step-4.4 draw, still above the 8-card cap;
+        // a small deck so the draw doesn't deck out.
+        state.investigators.get_mut(&id).unwrap().hand =
+            (0..12).map(|i| CardCode(format!("h{i}"))).collect();
+        state.investigators.get_mut(&id).unwrap().deck =
+            (0..3).map(|i| CardCode(format!("d{i}"))).collect();
+
+        let mut events = Vec::new();
+        let outcome = upkeep_resume(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.hand_size_discard_pending.is_some());
+        assert_eq!(
+            state.phase,
+            Phase::Upkeep,
+            "4.6 must NOT have run while parked"
+        );
+        assert_no_event!(
+            events,
+            Event::PhaseEnded {
+                phase: Phase::Upkeep
+            }
+        );
+    }
+
+    #[test]
+    fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([id])
+            .build();
+        // 10-card hand: discard exactly 2 (indices 0 and 1) → land at 8.
+        state.investigators.get_mut(&id).unwrap().hand =
+            (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+
+        let mut events = Vec::new();
+        let outcome = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::DiscardCards {
+                indices: vec![0, 1],
+            },
+        );
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.hand_size_discard_pending.is_none());
+        assert_eq!(state.investigators[&id].hand.len(), 8);
+        assert_eq!(state.investigators[&id].discard.len(), 2);
+        assert_eq!(
+            state.phase,
+            Phase::Mythos,
+            "queue drained → 4.6 runs → next round Mythos"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(
+                    e,
+                    Event::CardDiscarded {
+                        from: crate::state::Zone::Hand,
+                        ..
+                    }
+                ))
+                .count(),
+            2,
+        );
+        assert_eq!(
+            state.investigators[&id].discard,
+            vec![CardCode("c0".into()), CardCode("c1".into())],
+            "the cards at the submitted indices (0,1) must be the ones discarded",
+        );
+    }
+
+    #[test]
+    fn resume_hand_size_discard_rejects_wrong_count() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([id])
+            .build();
+        state.investigators.get_mut(&id).unwrap().hand =
+            (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+
+        let mut events = Vec::new();
+        // Need to discard 2; submitting 1 must reject with state untouched.
+        let outcome = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::DiscardCards { indices: vec![0] },
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            state.investigators[&id].hand.len(),
+            10,
+            "rejected: hand untouched"
+        );
+        assert!(
+            state.hand_size_discard_pending.is_some(),
+            "rejected: still pending"
+        );
+        assert!(events.is_empty(), "rejected: no events");
+    }
+
+    #[test]
+    fn resume_hand_size_discard_rejects_duplicate_and_oob_indices() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let build = || {
+            let mut s = TestGame::new()
+                .with_investigator(test_investigator(1))
+                .with_turn_order([id])
+                .with_phase(Phase::Upkeep)
+                .with_hand_size_discard_pending([id])
+                .build();
+            s.investigators.get_mut(&id).unwrap().hand =
+                (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+            s
+        };
+
+        // Duplicate index (count is 2 but both point at slot 0).
+        let mut s1 = build();
+        let mut e1 = Vec::new();
+        let o1 = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut s1,
+                events: &mut e1,
+            },
+            &InputResponse::DiscardCards {
+                indices: vec![0, 0],
+            },
+        );
+        assert!(matches!(o1, EngineOutcome::Rejected { .. }));
+        assert_eq!(s1.investigators[&id].hand.len(), 10);
+
+        // Out-of-bounds index.
+        let mut s2 = build();
+        let mut e2 = Vec::new();
+        let o2 = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut s2,
+                events: &mut e2,
+            },
+            &InputResponse::DiscardCards {
+                indices: vec![0, 99],
+            },
+        );
+        assert!(matches!(o2, EngineOutcome::Rejected { .. }));
+        assert_eq!(s2.investigators[&id].hand.len(), 10);
+    }
+
+    #[test]
+    fn resume_hand_size_discard_sequences_investigators_in_player_order() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_turn_order([inv1, inv2])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([inv1, inv2])
+            .build();
+        state.investigators.get_mut(&inv1).unwrap().hand =
+            (0..9).map(|i| CardCode(format!("a{i}"))).collect(); // discard 1
+        state.investigators.get_mut(&inv2).unwrap().hand =
+            (0..9).map(|i| CardCode(format!("b{i}"))).collect(); // discard 1
+
+        // inv1 resolves first → still pending for inv2, phase still Upkeep.
+        let mut events = Vec::new();
+        let o1 = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::DiscardCards { indices: vec![0] },
+        );
+        assert!(matches!(o1, EngineOutcome::AwaitingInput { .. }));
+        assert_eq!(
+            state
+                .hand_size_discard_pending
+                .as_ref()
+                .map(|p| p.remaining.clone()),
+            Some(vec![inv2]),
+        );
+        assert_eq!(state.phase, Phase::Upkeep);
+        assert_eq!(state.investigators[&inv1].hand.len(), 8);
+    }
+
+    #[test]
+    fn resume_hand_size_discard_rejects_wrong_response_kind() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([id])
+            .build();
+        state.investigators.get_mut(&id).unwrap().hand =
+            (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+
+        let mut events = Vec::new();
+        let outcome = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::Skip,
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            state.investigators[&id].hand.len(),
+            10,
+            "rejected: hand untouched"
+        );
+        assert!(
+            state.hand_size_discard_pending.is_some(),
+            "rejected: still pending"
+        );
+        assert!(events.is_empty(), "rejected: no events");
+    }
 }

@@ -186,6 +186,8 @@ pub struct GameState {
     pub hunter_move_pending: Option<HunterChoice>,
     /// Suspended engagement-on-spawn choice (#128). See [`SpawnEngagePending`].
     pub spawn_engage_pending: Option<SpawnEngagePending>,
+    /// Suspended upkeep hand-size discard (#111). See [`HandSizeDiscard`].
+    pub hand_size_discard_pending: Option<HandSizeDiscard>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -691,6 +693,22 @@ pub struct SpawnEngagePending {
     pub chain_count: usize,
 }
 
+/// Suspended upkeep maximum-hand-size discard (#111). `Some` only while
+/// the upkeep phase is paused at step 4.5 waiting for an over-cap
+/// investigator to choose discards; cleared once the queue drains.
+///
+/// `remaining[0]` is the investigator currently prompted. The queue is
+/// the player-order list of over-cap investigators, precomputed once
+/// when step 4.5 fires — discarding only ever shrinks the discarding
+/// investigator's own hand, so no other investigator's over-cap status
+/// can change mid-resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct HandSizeDiscard {
+    /// Over-cap investigators in player order; front = currently prompted.
+    pub remaining: Vec<InvestigatorId>,
+}
+
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
 /// ability waiting to fire inside an `OpenWindow`.
 ///
@@ -1048,6 +1066,21 @@ mod hunter_pending_tests {
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: SpawnEngagePending = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+}
+
+#[cfg(test)]
+mod hand_size_discard_tests {
+    use super::*;
+
+    #[test]
+    fn hand_size_discard_serde_roundtrip() {
+        let original = HandSizeDiscard {
+            remaining: vec![InvestigatorId(1), InvestigatorId(2)],
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: HandSizeDiscard = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
     }
 }

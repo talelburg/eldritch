@@ -17,9 +17,9 @@ pub use card::{AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, UseKind
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
-    Act, Agenda, FastActorScope, FinishContinuation, GameState, HunterChoice, InFlightSkillTest,
-    OpenWindow, PendingSkillModifier, PendingTrigger, SkillTestFollowUp, SpawnEngagePending,
-    WindowKind,
+    Act, Agenda, FastActorScope, FinishContinuation, GameState, HandSizeDiscard, HunterChoice,
+    InFlightSkillTest, OpenWindow, PendingSkillModifier, PendingTrigger, SkillTestFollowUp,
+    SpawnEngagePending, WindowKind,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, SkillKind, Skills, Status};
 pub use location::{Location, LocationId};
