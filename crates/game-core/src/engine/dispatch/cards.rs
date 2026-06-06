@@ -454,16 +454,12 @@ pub(super) fn resolve_play_target(
 /// into `discard` (with an emitted [`Event::CardDiscarded`]) for
 /// events.
 ///
-/// # State-mutation contract caveat
+/// # State-mutation contract
 ///
-/// For the Phase-3-scoped Core cards the on-play effects in scope
-/// (`DiscoverClue`, `GainResources`) can't reject after the standard
-/// validation prefix passes. If a future on-play effect can reject
-/// mid-resolution, the partial mutation between [`Event::CardPlayed`]
-/// and the destination move violates the engine's "no state change on
-/// rejection" contract. The apply loop's belt-and-suspenders
-/// `events.clear()` still clears the event stream on a rejected
-/// outcome; the state-rollback hardening is out of scope here.
+/// A mid-resolution reject here (an `OnPlay` effect returning non-`Done`
+/// after [`Event::CardPlayed`] and earlier effects have committed) is
+/// rolled back at the `apply` boundary — see [`apply`](crate::engine::apply)'s
+/// "Handler contract". No per-handler rollback is needed.
 pub(super) fn play_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
