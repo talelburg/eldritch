@@ -361,6 +361,74 @@ mod tests {
         assert_eq!(result.state.active_investigator, active_before);
     }
 
+    #[test]
+    fn rejected_action_returns_byte_identical_state() {
+        // A reject with nothing outstanding (ResolveInput on a fresh state)
+        // must leave state untouched.
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let before = state.clone();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
+        );
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state, before, "rejected action must not mutate state");
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn rejected_resolve_input_rewinds_to_pause_state_not_pre_action() {
+        // Drive a skill test to its commit-window AwaitingInput, then submit
+        // a malformed response. The reject must rewind to the *pause* state
+        // (in_flight_skill_test still set), not to before the skill test.
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: InvestigatorId(1),
+                skill: SkillKind::Willpower,
+                difficulty: 2,
+            }),
+        );
+        assert!(
+            matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+            "skill test should pause at the commit window, got {:?}",
+            paused.outcome,
+        );
+        assert!(paused.state.in_flight_skill_test.is_some());
+        let s1 = paused.state.clone();
+
+        // Malformed response: commit window expects CommitCards; send Skip.
+        let result = apply(
+            paused.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
+        );
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            result.state, s1,
+            "rejected ResolveInput rewinds to the pause state, not pre-action",
+        );
+        assert!(result.state.in_flight_skill_test.is_some(), "suspension stays open");
+        assert!(result.events.is_empty());
+    }
+
     /// Standard-difficulty Night of the Zealot symbol-token values.
     fn night_of_the_zealot_standard() -> TokenModifiers {
         TokenModifiers {
