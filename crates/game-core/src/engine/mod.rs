@@ -387,7 +387,10 @@ mod tests {
         );
 
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state, before, "rejected action must not mutate state");
+        assert_eq!(
+            result.state, before,
+            "rejected action must not mutate state"
+        );
         assert!(result.events.is_empty());
     }
 
@@ -432,7 +435,10 @@ mod tests {
             result.state, s1,
             "rejected ResolveInput rewinds to the pause state, not pre-action",
         );
-        assert!(result.state.in_flight_skill_test.is_some(), "suspension stays open");
+        assert!(
+            result.state.in_flight_skill_test.is_some(),
+            "suspension stays open"
+        );
         assert!(result.events.is_empty());
     }
 
