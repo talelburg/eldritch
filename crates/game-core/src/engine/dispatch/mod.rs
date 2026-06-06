@@ -310,9 +310,9 @@ pub(super) struct ActivateCheckResult {
 /// index. This covers the `MythosAfterDraws` window after all Fast
 /// plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    // Hunter-movement suspension is its own mode; route it before the
-    // reaction-window and skill-test checks, which are independent
-    // suspension modes. (#128)
+    // Hunter movement, spawn engagement, and hand-size discard are three
+    // mutually exclusive suspension modes (different phases). Route to the
+    // right resume handler before the reaction-window and skill-test checks.
     debug_assert!(
         [
             cx.state.hunter_move_pending.is_some(),

@@ -511,6 +511,27 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
         .collect()
 }
 
+/// Stores `remaining` as `hand_size_discard_pending` and returns the
+/// [`EngineOutcome::AwaitingInput`] that prompts `remaining[0]` to discard.
+/// Used by both [`check_hand_size`] (first suspension) and
+/// [`resume_hand_size_discard`] (re-prompt after a queue pop).
+///
+/// `remaining` must be non-empty; callers ensure this before calling.
+fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
+    let next = remaining[0];
+    cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
+    EngineOutcome::AwaitingInput {
+        request: InputRequest {
+            prompt: format!(
+                "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
+                 submit InputResponse::DiscardCards with the hand indices to discard down to \
+                 {HAND_SIZE_LIMIT}.",
+            ),
+        },
+        resume_token: ResumeToken(0),
+    }
+}
+
 /// 4.5 Each investigator checks hand size. In player order, each
 /// investigator over [`HAND_SIZE_LIMIT`] is prompted to discard down to
 /// the cap. Returns [`EngineOutcome::AwaitingInput`] (parking on the
@@ -519,20 +540,10 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
 /// proceeds straight to 4.6.
 fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
     let remaining = over_cap_investigators(cx.state);
-    let Some(&first) = remaining.first() else {
+    if remaining.is_empty() {
         return EngineOutcome::Done;
-    };
-    cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
-    EngineOutcome::AwaitingInput {
-        request: InputRequest {
-            prompt: format!(
-                "Upkeep step 4.5: {first:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
-                 submit InputResponse::DiscardCards with the hand indices to discard down to \
-                 {HAND_SIZE_LIMIT}.",
-            ),
-        },
-        resume_token: ResumeToken(0),
     }
+    park_hand_size_discard(cx, remaining)
 }
 
 /// Resume a parked upkeep hand-size discard (#111). Validates the
@@ -628,18 +639,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
         upkeep_phase_end(cx); // 4.6 + transition to Mythos
         EngineOutcome::Done
     } else {
-        let next = remaining[0];
-        cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
-        EngineOutcome::AwaitingInput {
-            request: InputRequest {
-                prompt: format!(
-                    "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
-                     submit InputResponse::DiscardCards with the hand indices to discard down to \
-                     {HAND_SIZE_LIMIT}.",
-                ),
-            },
-            resume_token: ResumeToken(0),
-        }
+        park_hand_size_discard(cx, remaining)
     }
 }
 
@@ -2768,6 +2768,11 @@ mod hand_size_tests {
                 .count(),
             2,
         );
+        assert_eq!(
+            state.investigators[&id].discard,
+            vec![CardCode("c0".into()), CardCode("c1".into())],
+            "the cards at the submitted indices (0,1) must be the ones discarded",
+        );
     }
 
     #[test]
@@ -2892,5 +2897,41 @@ mod hand_size_tests {
         );
         assert_eq!(state.phase, Phase::Upkeep);
         assert_eq!(state.investigators[&inv1].hand.len(), 8);
+    }
+
+    #[test]
+    fn resume_hand_size_discard_rejects_wrong_response_kind() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([id])
+            .build();
+        state.investigators.get_mut(&id).unwrap().hand =
+            (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+
+        let mut events = Vec::new();
+        let outcome = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::Skip,
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            state.investigators[&id].hand.len(),
+            10,
+            "rejected: hand untouched"
+        );
+        assert!(
+            state.hand_size_discard_pending.is_some(),
+            "rejected: still pending"
+        );
+        assert!(events.is_empty(), "rejected: no events");
     }
 }
