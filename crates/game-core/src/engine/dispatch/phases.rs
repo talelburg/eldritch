@@ -1,9 +1,12 @@
 //! Phase-driver functions: start/end scenario, per-phase entrypoints,
 //! and the round-cycle stepping logic.
 
+use crate::action::InputResponse;
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::event::Event;
-use crate::state::{EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase, WindowKind};
+use crate::state::{
+    CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase, WindowKind, Zone,
+};
 
 use super::Cx;
 
@@ -529,6 +532,114 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
             ),
         },
         resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume a parked upkeep hand-size discard (#111). Validates the
+/// `DiscardCards` response against the currently-prompted investigator
+/// (`remaining[0]`): the indices must be unique, in-bounds, and exactly
+/// `hand.len() - HAND_SIZE_LIMIT` in count. On success, discards the
+/// chosen cards (emitting [`Event::CardDiscarded`] per card), pops the
+/// queue front, and either re-prompts the next over-cap investigator or
+/// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
+/// to Mythos). Rejections leave state and events untouched.
+pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let pending = cx
+        .state
+        .hand_size_discard_pending
+        .clone()
+        .unwrap_or_else(|| unreachable!("resume_hand_size_discard: no pending discard"));
+    let current = pending.remaining[0];
+
+    let InputResponse::DiscardCards { indices } = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: hand-size discard expects InputResponse::DiscardCards, got {response:?}",
+            )
+            .into(),
+        };
+    };
+
+    // ---- validate (state untouched on any failure) ----
+    let inv = cx.state.investigators.get(&current).unwrap_or_else(|| {
+        unreachable!("resume_hand_size_discard: prompted investigator {current:?} vanished")
+    });
+    let hand_len = inv.hand.len();
+    let target = hand_len.saturating_sub(HAND_SIZE_LIMIT as usize);
+    if indices.len() != target {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput::DiscardCards: {current:?} must discard exactly {target} card(s) \
+                 (hand {hand_len}, cap {HAND_SIZE_LIMIT}), got {}",
+                indices.len(),
+            )
+            .into(),
+        };
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for &i in indices {
+        if !seen.insert(i) {
+            return EngineOutcome::Rejected {
+                reason: format!("ResolveInput::DiscardCards: duplicate hand index {i}").into(),
+            };
+        }
+        if i as usize >= hand_len {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ResolveInput::DiscardCards: hand index {i} out of bounds (hand size {hand_len})",
+                )
+                .into(),
+            };
+        }
+    }
+
+    // ---- mutate ----
+    let discarded: Vec<CardCode> = {
+        let inv = cx
+            .state
+            .investigators
+            .get_mut(&current)
+            .expect("validated above");
+        let mut sorted: Vec<u32> = indices.clone();
+        sorted.sort_unstable();
+        let codes: Vec<CardCode> = sorted
+            .iter()
+            .map(|&i| inv.hand[i as usize].clone())
+            .collect();
+        for &i in sorted.iter().rev() {
+            inv.hand.remove(i as usize);
+        }
+        inv.discard.extend(codes.iter().cloned());
+        codes
+    };
+    for code in discarded {
+        cx.events.push(Event::CardDiscarded {
+            investigator: current,
+            code,
+            from: Zone::Hand,
+        });
+    }
+
+    // ---- advance the queue ----
+    let mut remaining = pending.remaining;
+    remaining.remove(0);
+    if remaining.is_empty() {
+        cx.state.hand_size_discard_pending = None;
+        upkeep_phase_end(cx); // 4.6 + transition to Mythos
+        EngineOutcome::Done
+    } else {
+        let next = remaining[0];
+        cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
+        EngineOutcome::AwaitingInput {
+            request: InputRequest {
+                prompt: format!(
+                    "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
+                     submit InputResponse::DiscardCards with the hand indices to discard down to \
+                     {HAND_SIZE_LIMIT}.",
+                ),
+            },
+            resume_token: ResumeToken(0),
+        }
     }
 }
 
@@ -2607,5 +2718,179 @@ mod hand_size_tests {
                 phase: Phase::Upkeep
             }
         );
+    }
+
+    #[test]
+    fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([id])
+            .build();
+        // 10-card hand: discard exactly 2 (indices 0 and 1) → land at 8.
+        state.investigators.get_mut(&id).unwrap().hand =
+            (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+
+        let mut events = Vec::new();
+        let outcome = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::DiscardCards {
+                indices: vec![0, 1],
+            },
+        );
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.hand_size_discard_pending.is_none());
+        assert_eq!(state.investigators[&id].hand.len(), 8);
+        assert_eq!(state.investigators[&id].discard.len(), 2);
+        assert_eq!(
+            state.phase,
+            Phase::Mythos,
+            "queue drained → 4.6 runs → next round Mythos"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(
+                    e,
+                    Event::CardDiscarded {
+                        from: crate::state::Zone::Hand,
+                        ..
+                    }
+                ))
+                .count(),
+            2,
+        );
+    }
+
+    #[test]
+    fn resume_hand_size_discard_rejects_wrong_count() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([id])
+            .build();
+        state.investigators.get_mut(&id).unwrap().hand =
+            (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+
+        let mut events = Vec::new();
+        // Need to discard 2; submitting 1 must reject with state untouched.
+        let outcome = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::DiscardCards { indices: vec![0] },
+        );
+
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            state.investigators[&id].hand.len(),
+            10,
+            "rejected: hand untouched"
+        );
+        assert!(
+            state.hand_size_discard_pending.is_some(),
+            "rejected: still pending"
+        );
+        assert!(events.is_empty(), "rejected: no events");
+    }
+
+    #[test]
+    fn resume_hand_size_discard_rejects_duplicate_and_oob_indices() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let id = InvestigatorId(1);
+        let build = || {
+            let mut s = TestGame::new()
+                .with_investigator(test_investigator(1))
+                .with_turn_order([id])
+                .with_phase(Phase::Upkeep)
+                .with_hand_size_discard_pending([id])
+                .build();
+            s.investigators.get_mut(&id).unwrap().hand =
+                (0..10).map(|i| CardCode(format!("c{i}"))).collect();
+            s
+        };
+
+        // Duplicate index (count is 2 but both point at slot 0).
+        let mut s1 = build();
+        let mut e1 = Vec::new();
+        let o1 = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut s1,
+                events: &mut e1,
+            },
+            &InputResponse::DiscardCards {
+                indices: vec![0, 0],
+            },
+        );
+        assert!(matches!(o1, EngineOutcome::Rejected { .. }));
+        assert_eq!(s1.investigators[&id].hand.len(), 10);
+
+        // Out-of-bounds index.
+        let mut s2 = build();
+        let mut e2 = Vec::new();
+        let o2 = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut s2,
+                events: &mut e2,
+            },
+            &InputResponse::DiscardCards {
+                indices: vec![0, 99],
+            },
+        );
+        assert!(matches!(o2, EngineOutcome::Rejected { .. }));
+        assert_eq!(s2.investigators[&id].hand.len(), 10);
+    }
+
+    #[test]
+    fn resume_hand_size_discard_sequences_investigators_in_player_order() {
+        use crate::action::InputResponse;
+        use crate::state::CardCode;
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_turn_order([inv1, inv2])
+            .with_phase(Phase::Upkeep)
+            .with_hand_size_discard_pending([inv1, inv2])
+            .build();
+        state.investigators.get_mut(&inv1).unwrap().hand =
+            (0..9).map(|i| CardCode(format!("a{i}"))).collect(); // discard 1
+        state.investigators.get_mut(&inv2).unwrap().hand =
+            (0..9).map(|i| CardCode(format!("b{i}"))).collect(); // discard 1
+
+        // inv1 resolves first → still pending for inv2, phase still Upkeep.
+        let mut events = Vec::new();
+        let o1 = resume_hand_size_discard(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::DiscardCards { indices: vec![0] },
+        );
+        assert!(matches!(o1, EngineOutcome::AwaitingInput { .. }));
+        assert_eq!(
+            state
+                .hand_size_discard_pending
+                .as_ref()
+                .map(|p| p.remaining.clone()),
+            Some(vec![inv2]),
+        );
+        assert_eq!(state.phase, Phase::Upkeep);
+        assert_eq!(state.investigators[&inv1].hand.len(), 8);
     }
 }
