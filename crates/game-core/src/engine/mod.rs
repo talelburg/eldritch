@@ -52,12 +52,21 @@ pub struct ApplyResult {
 /// # Handler contract
 ///
 /// On [`EngineOutcome::Rejected`], the returned state and event list
-/// must be unchanged from the input. `apply` enforces this for the
-/// event list (it clears events post-dispatch on rejection) but **not**
-/// for state — handlers are expected to validate before mutating.
-/// TODO(#17+): once non-trivial handlers exist, refactor to a strict
-/// validate-first / apply-second two-phase shape so this is structural
-/// rather than a per-handler convention.
+/// are unchanged from the input. `apply` enforces this **structurally**:
+/// it snapshots the state before dispatch and restores the snapshot on
+/// rejection, and clears the (per-apply) event buffer. So no handler —
+/// including the fallible-and-mutating DSL evaluator — can leak partial
+/// state on rejection; handlers need not be defensively validate-first
+/// for *correctness* of this invariant (they still should be, for clear
+/// rejection messages and to avoid wasted work).
+///
+/// The transaction boundary is the `apply` *call*, not a multi-call
+/// logical action: a reject during a
+/// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) rewinds to
+/// the [`AwaitingInput`](EngineOutcome::AwaitingInput) pause state (the
+/// input to that `apply`), not to before the original action — the pause
+/// state was the product of an apply that returned `AwaitingInput`, whose
+/// partial state is legitimate and retained.
 ///
 /// On [`EngineOutcome::AwaitingInput`], the returned state and event
 /// list reflect the work done up to the pause point — e.g. a
