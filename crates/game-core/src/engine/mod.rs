@@ -362,9 +362,16 @@ mod tests {
     }
 
     #[test]
-    fn rejected_action_returns_byte_identical_state() {
-        // A reject with nothing outstanding (ResolveInput on a fresh state)
-        // must leave state untouched.
+    fn guard_ladder_reject_leaves_state_byte_identical() {
+        // A guard-ladder reject (ResolveInput against a state with no
+        // in-flight skill test, no open windows, and no pending hunter
+        // move) fires *before any mutation*. This locks that pre-mutation
+        // rejects return the input state byte-identical (whole-state
+        // equality, stronger than the field-by-field
+        // `rejected_actions_do_not_mutate_state` above). The mid-resolution
+        // rollback path — where a handler mutates *then* rejects — is
+        // covered by `rejected_resolve_input_rewinds_to_pause_state_not_pre_action`
+        // and the integration test in `crates/cards/tests/reject_rollback.rs`.
         let state = TestGame::new()
             .with_phase(Phase::Investigation)
             .with_investigator(test_investigator(1))
