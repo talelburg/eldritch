@@ -471,13 +471,19 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
 
     // Run any kind-specific continuation (e.g. MythosAfterDraws →
     // mythos_phase_end). For reaction windows that have no continuation
-    // (AfterEnemyDefeated, BetweenPhases) this is a no-op. The
-    // continuation may now suspend (upkeep step 4.5 hand-size discard,
-    // #111), so propagate an AwaitingInput rather than dropping it.
+    // (AfterEnemyDefeated, BetweenPhases) this has no side effects and
+    // returns Done. The continuation may suspend (upkeep step 4.5
+    // hand-size discard, #111), so propagate AwaitingInput rather than
+    // dropping it.
     let continuation = run_window_continuation(cx, kind);
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
         return continuation;
     }
+    debug_assert!(
+        matches!(continuation, EngineOutcome::Done),
+        "close_reaction_window_at: window continuation returned unexpected {continuation:?} \
+         (expected Done or AwaitingInput)",
+    );
 
     // If a skill test was mid-resolution when this window opened,
     // hand control back to its driver to run the remaining steps.
@@ -684,9 +690,10 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
 /// net effect on `state.open_windows` is identical to the pre-fix
 /// behaviour (window never lands persistently on the stack).
 ///
-/// Returns the auto-skip path's continuation outcome (today always
-/// [`EngineOutcome::Done`]) when the window auto-skips; otherwise
-/// returns [`EngineOutcome::Done`] with the window left on the stack.
+/// Returns the continuation's outcome on the auto-skip path (today always
+/// [`EngineOutcome::Done`]; propagates [`EngineOutcome::AwaitingInput`] once
+/// #111 step 4.5 can suspend); returns [`EngineOutcome::Done`] immediately on
+/// the wait path (window left on the stack).
 pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     cx.events.push(Event::WindowOpened { kind });
 
@@ -1127,7 +1134,7 @@ mod open_fast_window_tests {
         // no-op (no events, no state change).
         let mut state = TestGame::default().build();
         let mut events = Vec::new();
-        run_window_continuation(
+        let result = run_window_continuation(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -1137,6 +1144,7 @@ mod open_fast_window_tests {
                 by: None,
             },
         );
+        assert_eq!(result, EngineOutcome::Done);
         assert!(
             events.is_empty(),
             "AfterEnemyDefeated continuation must be a no-op; events = {events:?}"

@@ -229,13 +229,15 @@ fn mythos_phase(cx: &mut Cx) {
 /// `mythos_phase` step 1.1 — the rules' "round begins" point —
 /// rather than here. `step_phase` no longer touches `state.round`.
 ///
-/// Returns the transition's [`EngineOutcome`]. Only the
-/// Investigation→Enemy arm can return [`EngineOutcome::AwaitingInput`]
-/// (a hunter-movement tie in [`enemy_phase`]); every other arm runs its
-/// driver to completion and returns [`EngineOutcome::Done`]. The
-/// Investigation→Enemy suspension is owned by
-/// [`investigation_phase_end`], which propagates it up through
-/// [`end_turn`].
+/// Returns the transition's [`EngineOutcome`]. Two arms can return
+/// [`EngineOutcome::AwaitingInput`]:
+/// - **Investigation→Enemy**: a hunter-movement tie in [`enemy_phase`],
+///   owned by [`investigation_phase_end`] and propagated through [`end_turn`].
+/// - **Enemy→Upkeep**: the step-4.5 hand-size discard in [`upkeep_phase`]
+///   (#111), owned by [`upkeep_resume`] once that task lands.
+///
+/// Every other arm runs its driver to completion and returns
+/// [`EngineOutcome::Done`].
 fn step_phase(cx: &mut Cx) -> EngineOutcome {
     let from = cx.state.phase;
     let to = from.next();
