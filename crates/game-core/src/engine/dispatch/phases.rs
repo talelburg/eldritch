@@ -3,7 +3,7 @@
 
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
-use crate::state::{EnemyId, InvestigatorId, Phase, WindowKind};
+use crate::state::{EnemyId, GameState, InvestigatorId, Phase, WindowKind};
 
 use super::Cx;
 
@@ -483,6 +483,23 @@ fn ready_exhausted_cards(cx: &mut Cx) {
             super::hunters::reengage_at_location(cx, eid);
         }
     }
+}
+
+/// Maximum hand size (Rules Reference p.25 step 4.5: discard down to 8). A module
+/// constant rather than a per-investigator field — no card in the
+/// current scope modifies the cap. A future hand-size-modifying card
+/// introduces the field when it is actually needed (#111 spec).
+#[allow(dead_code)] // consumed by check_hand_size when #111 lands
+pub(super) const HAND_SIZE_LIMIT: u8 = 8;
+
+/// Active investigators, in player order, whose hand exceeds
+/// [`HAND_SIZE_LIMIT`]. Empty when nobody is over the cap.
+#[allow(dead_code)] // consumed by check_hand_size when #111 lands
+pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
+    super::cursor::active_investigators_in_turn_order(state)
+        .into_iter()
+        .filter(|id| state.investigators[id].hand.len() > HAND_SIZE_LIMIT as usize)
+        .collect()
 }
 
 /// 4.5 Each investigator checks hand size.
@@ -2454,4 +2471,31 @@ mod enemy_phase_tests {
     // pause shape is exercised indirectly via the existing
     // any_fast_play_eligible-driven open_fast_window tests at
     // dispatch.rs's open_fast_window_tests block.
+}
+
+#[cfg(test)]
+mod hand_size_tests {
+    use super::*;
+    use crate::state::{CardCode, InvestigatorId};
+    use crate::test_support::{test_investigator, TestGame};
+
+    #[test]
+    fn over_cap_investigators_lists_only_over_eight_in_player_order() {
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_turn_order([inv2, inv1]) // player order: inv2 first
+            .build();
+        // inv1: 9 cards (over), inv2: 8 cards (at cap, not over).
+        state.investigators.get_mut(&inv1).unwrap().hand = vec![CardCode("x".into()); 9];
+        state.investigators.get_mut(&inv2).unwrap().hand = vec![CardCode("x".into()); 8];
+
+        assert_eq!(over_cap_investigators(&state), vec![inv1]);
+
+        // Push inv2 over too: order must follow turn_order (inv2 then inv1).
+        state.investigators.get_mut(&inv2).unwrap().hand = vec![CardCode("x".into()); 10];
+        assert_eq!(over_cap_investigators(&state), vec![inv2, inv1]);
+    }
 }
