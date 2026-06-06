@@ -52,12 +52,21 @@ pub struct ApplyResult {
 /// # Handler contract
 ///
 /// On [`EngineOutcome::Rejected`], the returned state and event list
-/// must be unchanged from the input. `apply` enforces this for the
-/// event list (it clears events post-dispatch on rejection) but **not**
-/// for state — handlers are expected to validate before mutating.
-/// TODO(#17+): once non-trivial handlers exist, refactor to a strict
-/// validate-first / apply-second two-phase shape so this is structural
-/// rather than a per-handler convention.
+/// are unchanged from the input. `apply` enforces this **structurally**:
+/// it snapshots the state before dispatch and restores the snapshot on
+/// rejection, and clears the (per-apply) event buffer. So no handler —
+/// including the fallible-and-mutating DSL evaluator — can leak partial
+/// state on rejection; handlers need not be defensively validate-first
+/// for *correctness* of this invariant (they still should be, for clear
+/// rejection messages and to avoid wasted work).
+///
+/// The transaction boundary is the `apply` *call*, not a multi-call
+/// logical action: a reject during a
+/// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) rewinds to
+/// the [`AwaitingInput`](EngineOutcome::AwaitingInput) pause state (the
+/// input to that `apply`), not to before the original action — the pause
+/// state was the product of an apply that returned `AwaitingInput`, whose
+/// partial state is legitimate and retained.
 ///
 /// On [`EngineOutcome::AwaitingInput`], the returned state and event
 /// list reflect the work done up to the pause point — e.g. a
@@ -92,6 +101,19 @@ pub fn apply_with_scenario_registry(
 ) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
+    // Transactional snapshot: a Rejected outcome must leave the returned
+    // state byte-identical to the input (the engine's "Rejected => state
+    // unchanged" contract). Taken before any handler runs and restored
+    // below if the outcome is Rejected, so no handler — including the
+    // fallible-and-mutating DSL evaluator — can leak partial state on
+    // rejection. AwaitingInput is untouched: it legitimately returns the
+    // work done up to the pause point, so we restore on Rejected only.
+    //
+    // RNG state (`state.rng`) is part of the snapshot, so a rejected
+    // action that advanced the RNG is rewound too. That's correct for
+    // replay: a rejected action contributes nothing to the action log, so
+    // it must contribute no RNG consumption either.
+    let pristine = state.clone();
     let resolution_already_fired = state.resolution.is_some();
     let outcome = {
         let mut cx = Cx {
@@ -103,9 +125,10 @@ pub fn apply_with_scenario_registry(
             Action::Engine(e) => dispatch::apply_engine_record(&mut cx, &e),
         };
         if matches!(outcome, EngineOutcome::Rejected { .. }) {
-            // Belt-and-suspenders: handlers are expected to validate before
-            // mutating, so events should already be empty here. Clear
-            // anyway in case a handler accidentally pushed before bailing.
+            // Transactional restore (event half): the events buffer is
+            // per-apply and starts empty, so clearing it == restoring it.
+            // State half is restored after this block (the `cx` borrow on
+            // `state` releases at the block close).
             cx.events.clear();
         } else if !resolution_already_fired {
             // A dispatch site may have latched a resolution this apply (act/
@@ -119,6 +142,12 @@ pub fn apply_with_scenario_registry(
         outcome
         // `cx` drops here, releasing borrows on `state` and `events`.
     };
+    // State half of the transactional restore: now that `cx`'s borrow on
+    // `state` is released, swap the (possibly partially-mutated) state
+    // back to the pristine snapshot on rejection.
+    if matches!(outcome, EngineOutcome::Rejected { .. }) {
+        state = pristine;
+    }
     ApplyResult {
         state,
         events,
@@ -335,6 +364,87 @@ mod tests {
         assert_eq!(result.state.round, round_before);
         assert_eq!(result.state.phase, phase_before);
         assert_eq!(result.state.active_investigator, active_before);
+    }
+
+    #[test]
+    fn guard_ladder_reject_leaves_state_byte_identical() {
+        // A guard-ladder reject (ResolveInput against a state with no
+        // in-flight skill test, no open windows, and no pending hunter
+        // move) fires *before any mutation*. This locks that pre-mutation
+        // rejects return the input state byte-identical (whole-state
+        // equality, stronger than the field-by-field
+        // `rejected_actions_do_not_mutate_state` above). The mid-resolution
+        // rollback path — where a handler mutates *then* rejects — is
+        // covered by `rejected_resolve_input_rewinds_to_pause_state_not_pre_action`
+        // and the integration test in `crates/cards/tests/reject_rollback.rs`.
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let before = state.clone();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
+        );
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            result.state, before,
+            "rejected action must not mutate state"
+        );
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn rejected_resolve_input_rewinds_to_pause_state_not_pre_action() {
+        // Drive a skill test to its commit-window AwaitingInput, then submit
+        // a malformed response. The reject must rewind to the *pause* state
+        // (in_flight_skill_test still set), not to before the skill test.
+        let state = TestGame::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: InvestigatorId(1),
+                skill: SkillKind::Willpower,
+                difficulty: 2,
+            }),
+        );
+        assert!(
+            matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+            "skill test should pause at the commit window, got {:?}",
+            paused.outcome,
+        );
+        assert!(paused.state.in_flight_skill_test.is_some());
+        let s1 = paused.state.clone();
+
+        // Malformed response: commit window expects CommitCards; send Skip.
+        let result = apply(
+            paused.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
+        );
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            result.state, s1,
+            "rejected ResolveInput rewinds to the pause state, not pre-action",
+        );
+        assert!(
+            result.state.in_flight_skill_test.is_some(),
+            "suspension stays open"
+        );
+        assert!(result.events.is_empty());
     }
 
     /// Standard-difficulty Night of the Zealot symbol-token values.

@@ -392,11 +392,11 @@ fn discover_clue(
 
 fn apply_seq(cx: &mut Cx, effects: &[Effect], eval_ctx: EvalContext) -> EngineOutcome {
     // Stop at the first non-Done outcome. A Rejected mid-Seq leaves
-    // earlier effects committed — not great as a rollback story, but
-    // matches the existing handler contract (the validate-first
-    // refactor that fixes this for whole handlers is TODO'd in
-    // engine/mod.rs::apply). Most card sequences are short enough
-    // that the lack of mid-sequence rollback is fine for now.
+    // earlier effects committed *within this apply*, but the `apply`
+    // boundary rolls the whole call back to its pre-dispatch snapshot on
+    // Rejected (see engine/mod.rs::apply "Handler contract"), so the
+    // partial mutation never escapes. The AwaitingInput-resume note below
+    // still stands.
     //
     // **AwaitingInput resume:** when ChooseOne et al. land and start
     // returning AwaitingInput mid-Seq, this loop will need to track
