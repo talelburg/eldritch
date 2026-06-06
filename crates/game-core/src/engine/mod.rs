@@ -92,6 +92,14 @@ pub fn apply_with_scenario_registry(
 ) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
+    // Transactional snapshot: a Rejected outcome must leave the returned
+    // state byte-identical to the input (the engine's "Rejected => state
+    // unchanged" contract). Taken before any handler runs and restored
+    // below if the outcome is Rejected, so no handler — including the
+    // fallible-and-mutating DSL evaluator — can leak partial state on
+    // rejection. AwaitingInput is untouched: it legitimately returns the
+    // work done up to the pause point, so we restore on Rejected only.
+    let pristine = state.clone();
     let resolution_already_fired = state.resolution.is_some();
     let outcome = {
         let mut cx = Cx {
@@ -103,9 +111,10 @@ pub fn apply_with_scenario_registry(
             Action::Engine(e) => dispatch::apply_engine_record(&mut cx, &e),
         };
         if matches!(outcome, EngineOutcome::Rejected { .. }) {
-            // Belt-and-suspenders: handlers are expected to validate before
-            // mutating, so events should already be empty here. Clear
-            // anyway in case a handler accidentally pushed before bailing.
+            // Transactional restore (event half): the events buffer is
+            // per-apply and starts empty, so clearing it == restoring it.
+            // State half is restored after this block (the `cx` borrow on
+            // `state` releases at the block close).
             cx.events.clear();
         } else if !resolution_already_fired {
             // A dispatch site may have latched a resolution this apply (act/
@@ -119,6 +128,12 @@ pub fn apply_with_scenario_registry(
         outcome
         // `cx` drops here, releasing borrows on `state` and `events`.
     };
+    // State half of the transactional restore: now that `cx`'s borrow on
+    // `state` is released, swap the (possibly partially-mutated) state
+    // back to the pristine snapshot on rejection.
+    if matches!(outcome, EngineOutcome::Rejected { .. }) {
+        state = pristine;
+    }
     ApplyResult {
         state,
         events,
