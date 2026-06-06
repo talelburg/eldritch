@@ -28,8 +28,8 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Enemy, EnemyId, FastActorScope, GameState, Investigator, InvestigatorId, Location,
-    LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
+    ChaosBag, Enemy, EnemyId, FastActorScope, GameState, HandSizeDiscard, Investigator,
+    InvestigatorId, Location, LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -51,7 +51,7 @@ pub struct TestGame {
     turn_order: Vec<InvestigatorId>,
     rng: RngState,
     mulligan_pending: Option<InvestigatorId>,
-    hand_size_discard_pending: Option<crate::state::HandSizeDiscard>,
+    hand_size_discard_pending: Option<HandSizeDiscard>,
     open_windows: Vec<OpenWindow>,
     scenario_id: Option<ScenarioId>,
 }
@@ -215,7 +215,7 @@ impl TestGame {
         mut self,
         remaining: impl IntoIterator<Item = InvestigatorId>,
     ) -> Self {
-        self.hand_size_discard_pending = Some(crate::state::HandSizeDiscard {
+        self.hand_size_discard_pending = Some(HandSizeDiscard {
             remaining: remaining.into_iter().collect(),
         });
         self

@@ -1068,6 +1068,11 @@ mod hunter_pending_tests {
         let back: SpawnEngagePending = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
     }
+}
+
+#[cfg(test)]
+mod hand_size_discard_tests {
+    use super::*;
 
     #[test]
     fn hand_size_discard_serde_roundtrip() {
