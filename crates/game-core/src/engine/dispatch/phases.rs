@@ -140,7 +140,12 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
     // order 2.1 → window → 2.2 holds. Auto-skips inline when nothing is
     // Fast-eligible, so single-investigator entry still lands the lead
     // active within the same apply() call.
-    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigationBegins);
+    let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::InvestigationBegins);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "open_fast_window(InvestigationBegins) unexpectedly suspended; this window has no suspending continuation",
+    );
 }
 
 /// 2.2 Next investigator's turn begins. Rotates the active cursor to
@@ -155,7 +160,12 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     rotate_to_active(cx, who);
-    super::reaction_windows::open_fast_window(cx, WindowKind::InvestigatorTurnBegins);
+    let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::InvestigatorTurnBegins);
+    debug_assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "open_fast_window(InvestigatorTurnBegins) unexpectedly suspended; this window has no suspending continuation",
+    );
 }
 
 /// 2.3 Investigation phase ends. Owns the `PhaseEnded(Investigation)`
@@ -210,7 +220,12 @@ fn mythos_phase(cx: &mut Cx) {
         // because nothing is eligible, runs the MythosAfterDraws
         // continuation (mythos_phase_end), which transitions to
         // Investigation. All in this same apply.
-        super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
+        let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
+        debug_assert_eq!(
+            outcome,
+            EngineOutcome::Done,
+            "open_fast_window(MythosAfterDraws) unexpectedly suspended; this window has no suspending continuation",
+        );
     }
 }
 
