@@ -233,8 +233,8 @@ fn mythos_phase(cx: &mut Cx) {
 /// [`EngineOutcome::AwaitingInput`]:
 /// - **Investigation→Enemy**: a hunter-movement tie in [`enemy_phase`],
 ///   owned by [`investigation_phase_end`] and propagated through [`end_turn`].
-/// - **Enemy→Upkeep**: the step-4.5 hand-size discard in [`upkeep_phase`]
-///   (#111), owned by [`upkeep_resume`] once that task lands.
+/// - **Enemy→Upkeep**: the step-4.5 hand-size discard (#111), owned by
+///   [`upkeep_resume`].
 ///
 /// Every other arm runs its driver to completion and returns
 /// [`EngineOutcome::Done`].
@@ -2497,6 +2497,7 @@ mod enemy_phase_tests {
 #[cfg(test)]
 mod hand_size_tests {
     use super::*;
+    use crate::assert_no_event;
     use crate::state::{CardCode, InvestigatorId};
     use crate::test_support::{test_investigator, TestGame};
 
@@ -2580,8 +2581,8 @@ mod hand_size_tests {
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
             .build();
-        // 12-card hand so even after the step-4.4 draw the investigator is
-        // over the cap; a small deck so the draw doesn't deck out.
+        // 13 cards in hand after the step-4.4 draw, still above the 8-card cap;
+        // a small deck so the draw doesn't deck out.
         state.investigators.get_mut(&id).unwrap().hand =
             (0..12).map(|i| CardCode(format!("h{i}"))).collect();
         state.investigators.get_mut(&id).unwrap().deck =
@@ -2599,6 +2600,12 @@ mod hand_size_tests {
             state.phase,
             Phase::Upkeep,
             "4.6 must NOT have run while parked"
+        );
+        assert_no_event!(
+            events,
+            Event::PhaseEnded {
+                phase: Phase::Upkeep
+            }
         );
     }
 }
