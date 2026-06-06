@@ -35,9 +35,12 @@ fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
     ]))])
 }
 
-fn probe_metadata_static() -> &'static CardMetadata {
+fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
+    if code.as_str() != PROBE {
+        return None;
+    }
     static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| CardMetadata {
+    Some(M.get_or_init(|| CardMetadata {
         code: PROBE.to_string(),
         name: "Rollback Probe".to_string(),
         class: Class::Neutral,
@@ -60,18 +63,13 @@ fn probe_metadata_static() -> &'static CardMetadata {
         spawn: None,
         surge: false,
         peril: false,
-    })
+    }))
 }
 
-fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
-    if code.as_str() == PROBE {
-        Some(probe_metadata_static())
-    } else {
-        None
-    }
-}
-
-/// Install the hand-rolled probe registry once for this binary.
+/// Install the hand-rolled probe registry for this binary. `install` is
+/// idempotent at the `OnceLock` level (first call wins; later calls
+/// return `Err`, discarded here), so no `Once` guard is needed for this
+/// single-test binary.
 fn install_probe_registry() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: probe_metadata,
@@ -114,7 +112,8 @@ fn mid_resolution_reject_leaves_state_and_events_untouched() {
     );
     assert_eq!(
         result.state, before,
-        "rejected play must leave state byte-identical (resources, hand, cards_in_play)",
+        "rejected play must leave state byte-identical \
+         (pre-fix: OnPlay GainResources commits +2 before the reject)",
     );
     assert!(
         result.events.is_empty(),
