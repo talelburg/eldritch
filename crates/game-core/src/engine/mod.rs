@@ -108,6 +108,11 @@ pub fn apply_with_scenario_registry(
     // fallible-and-mutating DSL evaluator — can leak partial state on
     // rejection. AwaitingInput is untouched: it legitimately returns the
     // work done up to the pause point, so we restore on Rejected only.
+    //
+    // RNG state (`state.rng`) is part of the snapshot, so a rejected
+    // action that advanced the RNG is rewound too. That's correct for
+    // replay: a rejected action contributes nothing to the action log, so
+    // it must contribute no RNG consumption either.
     let pristine = state.clone();
     let resolution_already_fired = state.resolution.is_some();
     let outcome = {
