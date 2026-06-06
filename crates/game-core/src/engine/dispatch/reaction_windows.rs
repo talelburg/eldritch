@@ -471,8 +471,13 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
 
     // Run any kind-specific continuation (e.g. MythosAfterDraws →
     // mythos_phase_end). For reaction windows that have no continuation
-    // (AfterEnemyDefeated, BetweenPhases) this is a no-op.
-    run_window_continuation(cx, kind);
+    // (AfterEnemyDefeated, BetweenPhases) this is a no-op. The
+    // continuation may now suspend (upkeep step 4.5 hand-size discard,
+    // #111), so propagate an AwaitingInput rather than dropping it.
+    let continuation = run_window_continuation(cx, kind);
+    if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
+        return continuation;
+    }
 
     // If a skill test was mid-resolution when this window opened,
     // hand control back to its driver to run the remaining steps.
@@ -508,9 +513,14 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
 /// the first turn via [`begin_investigator_turn`](super::phases::begin_investigator_turn) for the first Active
 /// investigator (or parks if none). `AfterEnemyDefeated`, `BetweenPhases`,
 /// and [`WindowKind::InvestigatorTurnBegins`] windows have no
-/// continuation — for them this is a no-op preserving the existing
-/// [`close_reaction_window_at`] behavior.
-pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
+/// continuation — for them this returns [`EngineOutcome::Done`],
+/// preserving the existing [`close_reaction_window_at`] behavior.
+///
+/// Returns the continuation's [`EngineOutcome`]. Today every path
+/// returns [`EngineOutcome::Done`]; the return type is widened ahead of
+/// upkeep step 4.5 (hand-size discard) gaining an
+/// [`EngineOutcome::AwaitingInput`] producer (#111).
+pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     match kind {
         WindowKind::MythosAfterDraws => {
             // Phase-transitioning continuation: cannot run while a skill
@@ -532,6 +542,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
                 );
             }
             super::phases::mythos_phase_end(cx);
+            EngineOutcome::Done
         }
         WindowKind::UpkeepBegins => {
             // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
@@ -546,7 +557,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
                     in_flight.continuation,
                 );
             }
-            super::phases::upkeep_resume(cx);
+            super::phases::upkeep_resume(cx)
         }
         WindowKind::BeforeInvestigatorAttacked => {
             // Phase-transitioning continuation (advances to the next
@@ -594,9 +605,9 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
                 super::cursor::next_active_investigator_after(cx.state, investigator);
 
             if cx.state.enemy_attack_pending.is_some() {
-                open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked);
+                open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked)
             } else {
-                open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked);
+                open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked)
             }
         }
         WindowKind::AfterAllInvestigatorsAttacked => {
@@ -611,7 +622,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
                     in_flight.continuation,
                 );
             }
-            super::phases::enemy_phase_end(cx);
+            super::phases::enemy_phase_end(cx)
         }
         WindowKind::InvestigationBegins => {
             // Post-2.1 window closed; start the first turn (step 2.2).
@@ -632,6 +643,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
             // would loop the round forever — every other phase auto-skips
             // with no active investigators, so Investigation is the
             // cascade's only natural pause point).
+            EngineOutcome::Done
         }
         // InvestigatorTurnBegins: 2.2.1 — the active investigator now
         // takes actions (Investigate / Move / Fight / Evade / PlayCard /
@@ -641,7 +653,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
         // re-open (Rules Reference p.24 2.2.1) is deferred to #146.
         WindowKind::AfterEnemyDefeated { .. }
         | WindowKind::BetweenPhases { .. }
-        | WindowKind::InvestigatorTurnBegins => {}
+        | WindowKind::InvestigatorTurnBegins => EngineOutcome::Done,
     }
 }
 
@@ -671,7 +683,11 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) {
 /// On the auto-skip path the window is popped before returning so the
 /// net effect on `state.open_windows` is identical to the pre-fix
 /// behaviour (window never lands persistently on the stack).
-pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) {
+///
+/// Returns the auto-skip path's continuation outcome (today always
+/// [`EngineOutcome::Done`]) when the window auto-skips; otherwise
+/// returns [`EngineOutcome::Done`] with the window left on the stack.
+pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     cx.events.push(Event::WindowOpened { kind });
 
     // Push first so any_fast_play_eligible's check_play_card call sees
@@ -698,11 +714,12 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) {
         // net effect on state.open_windows is the same as before the fix.
         let _ = cx.state.open_windows.pop();
         cx.events.push(Event::WindowClosed { kind });
-        run_window_continuation(cx, kind);
+        return run_window_continuation(cx, kind);
     }
     // Otherwise the window stays on the stack. The guard at the top of
     // apply() and resume_reaction_window / resolve_input handle the
     // wait + close path.
+    EngineOutcome::Done
 }
 
 /// Pure-validation peer to [`play_card`]. Returns `Ok` if the named

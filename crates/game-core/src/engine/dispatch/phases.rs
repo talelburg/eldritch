@@ -256,10 +256,7 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
             EngineOutcome::Done
         }
         Phase::Enemy if from != Phase::Enemy => enemy_phase(cx),
-        Phase::Upkeep if from != Phase::Upkeep => {
-            upkeep_phase(cx);
-            EngineOutcome::Done
-        }
+        Phase::Upkeep if from != Phase::Upkeep => upkeep_phase(cx),
         _ => unreachable!(
             "step_phase: from == to (from={from:?}, to={to:?}); Phase::next \
              never returns the same phase, so this branch is structurally \
@@ -346,19 +343,15 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 /// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
 /// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
-pub(super) fn enemy_phase_end(cx: &mut Cx) {
+pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 3.4 Enemy phase ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
-    // Enemy → Upkeep; calls upkeep_phase. Only the Investigation→Enemy
-    // transition can suspend (hunter movement), so this never does.
-    let outcome = step_phase(cx);
-    debug_assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "unexpected suspension in Enemy→Upkeep transition"
-    );
+    // Enemy → Upkeep; calls upkeep_phase. This may now suspend at step
+    // 4.5 (hand-size discard, #111), so the outcome propagates rather
+    // than being asserted Done.
+    step_phase(cx)
 }
 
 /// Called after the post-1.4 window closes. Emits 1.5's
@@ -395,25 +388,26 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
 /// window sits at the END, so its driver runs content then opens;
 /// Upkeep's sits at the START, so the driver opens immediately and the
 /// content is the continuation.
-fn upkeep_phase(cx: &mut Cx) {
+fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     // 4.1 Upkeep phase begins.
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Upkeep,
     });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
     // via run_window_continuation) when nothing is Fast-eligible.
-    super::reaction_windows::open_fast_window(cx, WindowKind::UpkeepBegins);
+    super::reaction_windows::open_fast_window(cx, WindowKind::UpkeepBegins)
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
 /// call sites; step 4.5 is the [`check_hand_size`] stub (TODO #111).
 /// Then hands to [`upkeep_phase_end`] for 4.6 + transition.
-pub(super) fn upkeep_resume(cx: &mut Cx) {
+pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
     ready_exhausted_cards(cx); // 4.3
     upkeep_draw_and_resource(cx); // 4.4
-    check_hand_size(cx); // 4.5 (TODO #111)
+    check_hand_size(cx); // 4.5 (returns () until Task 5)
     upkeep_phase_end(cx); // 4.6 + transition
+    EngineOutcome::Done
 }
 
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
