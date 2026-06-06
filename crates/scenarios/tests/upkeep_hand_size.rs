@@ -29,6 +29,7 @@ fn install_test_registry() {
 }
 
 /// The hand-size cap enforced at upkeep step 4.5.
+// mirrors the engine-private phases::HAND_SIZE_LIMIT; keep in sync if the cap changes.
 const HAND_SIZE_LIMIT: usize = 8;
 
 #[test]
@@ -61,11 +62,14 @@ fn upkeep_prompts_and_discards_down_to_eight() {
 
     // Pad the hand so we're over cap at 4.5. The step-4.4 draw adds one
     // card; padding to 11 here lands us at 12 cards at the 4.5 check,
-    // requiring a discard of 12 - 8 = 4.
+    // requiring a discard of (11 + 1 draw) - HAND_SIZE_LIMIT = 4.
     let mut state = r2.state;
     {
         let inv = state.investigators.get_mut(&inv1).unwrap();
         while inv.hand.len() < 11 {
+            // Arbitrary code unknown to the test registry — fine because the
+            // hand-size discard path only moves cards between hand and discard
+            // and never performs a registry lookup.
             inv.hand.push(CardCode::new("01999"));
         }
     }
@@ -141,5 +145,85 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     assert!(
         r4.state.mythos_draw_pending.is_some(),
         "Mythos draw cursor must be seeded once the round proceeds"
+    );
+}
+
+// ------------------------------------------------------------------
+// Replay determinism
+// ------------------------------------------------------------------
+
+#[test]
+fn upkeep_hand_size_discard_replay_is_deterministic() {
+    install_test_registry();
+
+    let inv1 = InvestigatorId(1);
+
+    // Build an initial state whose hand already contains 6 padding cards
+    // (arbitrary codes unknown to the test registry — the discard path
+    // never does a registry lookup). With 6 deck cards, StartScenario
+    // draws 5 → hand reaches 11; upkeep step 4.4 draws the last deck
+    // card → 12 cards, triggering the hand-size prompt. The full action
+    // sequence is thus fixed and requires no mid-sequence state mutation.
+    let make_initial = || {
+        let mut base = synthetic::setup();
+        {
+            let inv = base.investigators.get_mut(&inv1).unwrap();
+            // 6 deck cards: StartScenario draws 5, leaving 1 for the upkeep draw.
+            for i in 0..6u32 {
+                inv.deck.push(CardCode::new(format!("01{i:03}")));
+            }
+            // 6 hand cards pre-seeded: combined with the 5 drawn by StartScenario,
+            // the hand reaches 11 before the upkeep draw.
+            for _ in 0..6u32 {
+                inv.hand.push(CardCode::new("01999"));
+            }
+        }
+        base
+    };
+
+    // discard_count = 12 - HAND_SIZE_LIMIT = 4; indices 0..4.
+    let discard_count = 12u32 - u32::try_from(HAND_SIZE_LIMIT).unwrap();
+    let indices: Vec<u32> = (0..discard_count).collect();
+
+    let actions = vec![
+        Action::Player(PlayerAction::StartScenario),
+        Action::Player(PlayerAction::Mulligan {
+            investigator: inv1,
+            indices_to_redraw: vec![],
+        }),
+        Action::Player(PlayerAction::EndTurn),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::DiscardCards {
+                indices: indices.clone(),
+            },
+        }),
+    ];
+
+    // --- First pass: drive and collect final state. ---
+    let final_state = {
+        let mut state = make_initial();
+        for action in &actions {
+            let result = apply(state, action.clone());
+            state = result.state;
+        }
+        state
+    };
+
+    // --- Second pass: replay from the same initial state. ---
+    let replayed_state = {
+        let mut state = make_initial();
+        for action in &actions {
+            let result = apply(state, action.clone());
+            state = result.state;
+        }
+        state
+    };
+
+    // Replaying the same action sequence from the same initial state must
+    // reproduce identical state bit-for-bit — the DiscardCards path is
+    // deterministic and must not drift between runs.
+    assert_eq!(
+        final_state, replayed_state,
+        "replay must reproduce identical state"
     );
 }
