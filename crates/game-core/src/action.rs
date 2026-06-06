@@ -334,7 +334,7 @@ pub enum InputResponse {
         indices: Vec<u32>,
     },
     /// Discard cards from hand to satisfy the upkeep maximum-hand-size
-    /// step (Rules Reference 4.5). Each entry is a zero-based index into
+    /// step (Rules Reference p.25 step 4.5). Each entry is a zero-based index into
     /// the prompted investigator's hand at the moment of the prompt. The
     /// engine discards exactly the overflow (`hand.len() - 8`); any other
     /// count, a duplicate, or an out-of-bounds index is rejected.
@@ -361,6 +361,11 @@ mod encounter_card_revealed_action_tests {
         let back: EngineRecord = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, rec);
     }
+}
+
+#[cfg(test)]
+mod input_response_tests {
+    use super::*;
 
     #[test]
     fn discard_cards_input_serde_roundtrip() {
