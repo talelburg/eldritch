@@ -3,7 +3,7 @@
 //! byte-identical to the pre-action state.
 //!
 //! Own integration-test binary so it can install a *hand-rolled*
-//! `CardRegistry` (a probe card whose OnPlay effect mutates then
+//! `CardRegistry` (a probe card whose `OnPlay` effect mutates then
 //! rejects) without colliding with `game-core`'s registry-free unit
 //! tests or the real-corpus `play_card.rs` binary.
 
@@ -22,7 +22,7 @@ use game_core::{Action, PlayerAction};
 /// hand-rolled registry below resolves it.
 const PROBE: &str = "ROLLBACK1";
 
-/// OnPlay that gains 2 resources (mutates) then runs a ThisTurn Modify,
+/// `OnPlay` that gains 2 resources (mutates) then runs a `ThisTurn` Modify,
 /// which is an evaluator TODO stub that returns `Rejected` — producing a
 /// mid-resolution reject after a committed mutation.
 fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
@@ -36,10 +36,10 @@ fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
 }
 
 fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
     if code.as_str() != PROBE {
         return None;
     }
-    static M: OnceLock<CardMetadata> = OnceLock::new();
     Some(M.get_or_init(|| CardMetadata {
         code: PROBE.to_string(),
         name: "Rollback Probe".to_string(),
