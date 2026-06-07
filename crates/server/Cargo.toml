@@ -14,7 +14,7 @@ workspace = true
 game-core = { path = "../game-core" }
 protocol = { path = "../protocol" }
 cards = { path = "../cards" }
-scenarios = { path = "../scenarios" }
+scenarios = { path = "../scenarios", features = ["test_fixtures"] }
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 futures-util = "0.3"

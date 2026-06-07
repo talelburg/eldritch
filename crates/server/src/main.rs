@@ -3,7 +3,7 @@
 
 use std::net::SocketAddr;
 
-use server::{app, db, AppState};
+use server::{app, db, install_registries, AppState};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,6 +12,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
+
+    install_registries();
 
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eldritch.db".to_string());
