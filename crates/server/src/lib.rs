@@ -76,6 +76,10 @@ pub fn install_registries() {
 /// to the client bundle, with `index.html` as the SPA fallback.
 pub fn app(state: AppState) -> Router {
     let index_html = state.dist_dir.join("index.html");
+    // `.fallback()` (not `.not_found_service()`) keeps the response at
+    // 200 OK — correct for SPA routing, where the browser loads
+    // index.html and its JS resolves the path. `not_found_service`
+    // would force a 404, which an SPA shouldn't return for its routes.
     let static_files = ServeDir::new(&state.dist_dir).fallback(ServeFile::new(index_html));
 
     Router::new()
