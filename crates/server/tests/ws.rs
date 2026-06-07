@@ -8,7 +8,7 @@ use common::{connect, install_registry, memory_pool, recv, send, spawn_server, T
 use game_core::scenario::ScenarioId;
 use game_core::state::InvestigatorId;
 use game_core::{EngineOutcome, PlayerAction};
-use server::wire::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, ServerMessage};
 
 async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str) {
     server::GameSession::create(pool.clone(), game_id, ScenarioId::new(TEST_SCENARIO_ID))

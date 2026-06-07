@@ -84,4 +84,24 @@ mod tests {
             other => panic!("expected Hello, got {other:?}"),
         }
     }
+
+    #[test]
+    fn applied_round_trips_through_json() {
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let msg = ServerMessage::Applied {
+            state: Box::new(state.clone()),
+            events: Vec::new(),
+            outcome: EngineOutcome::Done,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
+        let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
+
+        match back {
+            ServerMessage::Applied { state: s, .. } => assert_eq!(*s, state),
+            other => panic!("expected Applied, got {other:?}"),
+        }
+    }
 }

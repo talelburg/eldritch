@@ -13,9 +13,10 @@ use futures_util::{SinkExt, StreamExt};
 use game_core::EngineOutcome;
 use tokio::sync::{broadcast, Mutex};
 
+use protocol::{ClientMessage, ServerMessage};
+
 use crate::id::GameId;
 use crate::session::GameSession;
-use crate::wire::{ClientMessage, ServerMessage};
 use crate::AppState;
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
