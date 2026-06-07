@@ -5,7 +5,7 @@ use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Enemy, EnemyId, InvestigatorId, Phase, SpawnEngagePending, WindowKind,
+    CardCode, Enemy, EnemyId, InvestigatorId, Phase, PhaseStep, SpawnEngagePending, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -602,7 +602,10 @@ pub(super) fn advance_mythos_draw_pending(cx: &mut Cx) {
     let next = super::cursor::next_active_investigator_after(cx.state, current);
     cx.state.mythos_draw_pending = next;
     if next.is_none() {
-        let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
+        let outcome = super::reaction_windows::open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+        );
         debug_assert_eq!(
             outcome,
             EngineOutcome::Done,

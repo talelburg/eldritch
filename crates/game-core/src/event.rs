@@ -486,15 +486,12 @@ pub enum FailureReason {
 #[cfg(test)]
 mod window_opened_event_tests {
     use super::*;
-    use crate::state::{Phase, WindowKind};
+    use crate::state::{PhaseStep, WindowKind};
 
     #[test]
     fn window_opened_serde_roundtrip() {
         let ev = Event::WindowOpened {
-            kind: WindowKind::BetweenPhases {
-                from: Phase::Mythos,
-                to: Phase::Investigation,
-            },
+            kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
         };
         let json = serde_json::to_string(&ev).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
