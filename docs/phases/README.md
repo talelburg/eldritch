@@ -17,7 +17,7 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 | 2 | Card data + DSL | ✅ closed | [phase-2-card-data-and-dsl.md](phase-2-card-data-and-dsl.md) |
 | 3 | Skill-test end-to-end | ✅ closed | [phase-3-skill-test-end-to-end.md](phase-3-skill-test-end-to-end.md) |
 | 4 | Scenario plumbing | ✅ closed | [phase-4-scenario-plumbing.md](phase-4-scenario-plumbing.md) |
-| 5 | Server + persistence | 📐 architecture only | [phase-5-server-and-persistence.md](phase-5-server-and-persistence.md) |
+| 5 | Server + persistence | 🟡 in progress | [phase-5-server-and-persistence.md](phase-5-server-and-persistence.md) |
 | 6 | Web client v0 | 📐 architecture only | [phase-6-web-client-v0.md](phase-6-web-client-v0.md) |
 | 7 | The Gathering | 📐 architecture only | [phase-7-the-gathering.md](phase-7-the-gathering.md) |
 | 8 | Multiplayer + auth | 📐 architecture only | [phase-8-multiplayer-and-auth.md](phase-8-multiplayer-and-auth.md) |
@@ -38,6 +38,7 @@ Some issues don't belong to a single phase. They live unmilestoned with `p2-late
 - `#31` — turn-order management cleanup (empty `turn_order` / `EndTurn` gracefully).
 - `#42` — card-data-pipeline test coverage expansion.
 - `#44` — DSL horror-soak / damage-redirect primitive (needed when soak-bearing cards land; tracked from PR-I).
+- `#174` — periodic state snapshots for replay perf (deferred from Phase 5; build only when profiling demands it).
 - `#83` — `enemy_attack` cleanup (apply both damage and horror when one defeats).
 - `#93` — split DSL types into a shared `card-dsl` crate (architectural improvement; not phase-gated).
 
