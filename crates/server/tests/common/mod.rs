@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 
 use futures_util::{SinkExt, StreamExt};
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
-use game_core::state::{GameState, InvestigatorId};
+use game_core::state::{ChaosBag, ChaosToken, GameState, InvestigatorId};
 use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::test_investigator;
 use game_core::{Event, Resolution};
@@ -20,9 +20,14 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 pub const TEST_SCENARIO_ID: &str = "test-scenario";
 
 fn test_setup() -> GameState {
+    // Round-0 Mythos state: `StartScenario` is accepted, `EndTurn` is
+    // rejected. The single-token chaos bag also makes the investigator
+    // eligible for a `PerformSkillTest` (which pauses at a commit window
+    // → `AwaitingInput`), exercised by the resume tests.
     TestGame::new()
         .with_investigator(test_investigator(1))
         .with_turn_order([InvestigatorId(1)])
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_scenario_id(ScenarioId::new(TEST_SCENARIO_ID))
         .with_rng_seed(42)
         .build()
