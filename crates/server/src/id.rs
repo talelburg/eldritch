@@ -33,21 +33,9 @@ impl GameId {
     }
 }
 
-impl std::fmt::Display for GameId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 impl From<&str> for GameId {
     fn from(s: &str) -> Self {
         Self(s.to_string())
-    }
-}
-
-impl From<String> for GameId {
-    fn from(s: String) -> Self {
-        Self(s)
     }
 }
 
