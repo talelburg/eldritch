@@ -21,7 +21,7 @@ client is Phase 6; auth + per-seat enforcement are Phase 8.
 | P5.2 | [#169](https://github.com/talelburg/eldritch/issues/169) — GameSession host: create / apply-and-persist / load-by-replay | 🟢 [PR #177](https://github.com/talelburg/eldritch/pull/177) |
 | P5.3 | [#170](https://github.com/talelburg/eldritch/issues/170) — Axum WS endpoint + per-game broadcast hub | 🟢 [PR #178](https://github.com/talelburg/eldritch/pull/178) |
 | P5.4 | [#171](https://github.com/talelburg/eldritch/issues/171) — Game lifecycle HTTP: POST /games + lazy rehydrate | 🟢 [PR #179](https://github.com/talelburg/eldritch/pull/179) |
-| P5.5 | [#172](https://github.com/talelburg/eldritch/issues/172) — Reconnect + restart resume: deliver in-flight AwaitingInput | ⏳ open |
+| P5.5 | [#172](https://github.com/talelburg/eldritch/issues/172) — Reconnect + restart resume: deliver in-flight AwaitingInput | 🟢 [PR #180](https://github.com/talelburg/eldritch/pull/180) |
 | P5.6 | [#173](https://github.com/talelburg/eldritch/issues/173) — closing demo: two WS clients, restart+reconnect replay | ⏳ open |
 
 Deferred out of the phase: [#174](https://github.com/talelburg/eldritch/issues/174) — periodic state snapshots for replay perf (p2-later, build only when profiling demands it).
@@ -53,6 +53,7 @@ Settled in the Phase 5 brainstorm (2026-06-07):
 - **Anonymous hub, no enforcement.** Any connected client may submit; the server applies + broadcasts to the game's connections. Identity/seats/turn-ownership are Phase 8.
 - **Single-port static WASM serving lands in Phase 6**, not Phase 5 — the WASM bundle doesn't exist until then. Phase 5 ships the API/WS server only. (Corrects the original browser-first "done" wording below.)
 - **Snapshots deferred** to #174; build only when replay is measurably slow.
+- **Resume needed zero new code (P5.5).** Reconnect / restart-rebuild / in-flight `AwaitingInput` delivery / `ResolveInput`-over-the-wire all fell out of the generic `EngineOutcome` threading from P5.2 (`load` reconstructs the outcome by replay) and P5.3 (`Hello`/`Applied` carry the outcome; `ResolveInput` is just another `Submit`). P5.5 is acceptance tests only. **Implication for P5.6:** reconnect/restart/resume is already covered by `tests/resume.rs`, so the closing demo's net-new surface is the **two-client identical-event-stream** property; don't re-litigate resume there.
 
 ## Open questions
 
