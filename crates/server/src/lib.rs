@@ -10,7 +10,6 @@ mod id;
 pub mod lifecycle;
 pub mod session;
 mod store;
-pub mod wire;
 mod ws;
 
 pub use id::GameId;

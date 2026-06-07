@@ -1,6 +1,6 @@
 //! Websocket wire protocol: the JSON messages exchanged between a
 //! client and the server. The server is authoritative; clients submit
-//! [`PlayerAction`]s and render the event stream the server broadcasts.
+//! [`PlayerAction`]s and render the state the server broadcasts.
 
 use game_core::state::GameState;
 use game_core::{EngineOutcome, Event, PlayerAction};
@@ -41,6 +41,12 @@ pub enum ServerMessage {
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied {
+        /// The authoritative game state after the action resolved.
+        /// Boxed for the same reason as [`Hello`](ServerMessage::Hello)'s
+        /// `state`: `GameState` dwarfs the other variants. The client
+        /// renders this snapshot directly (events are for log/animation,
+        /// not state reconstruction).
+        state: Box<GameState>,
         /// Events emitted by the action's resolution.
         events: Vec<Event>,
         /// Outcome of the apply.
@@ -52,4 +58,50 @@ pub enum ServerMessage {
         /// Human-readable reason.
         reason: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use game_core::test_support::builder::TestGame;
+    use game_core::test_support::fixtures::test_investigator;
+
+    #[test]
+    fn hello_round_trips_through_json() {
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let msg = ServerMessage::Hello {
+            state: Box::new(state.clone()),
+            outcome: EngineOutcome::Done,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
+        let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
+
+        match back {
+            ServerMessage::Hello { state: s, .. } => assert_eq!(*s, state),
+            other => panic!("expected Hello, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn applied_round_trips_through_json() {
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let msg = ServerMessage::Applied {
+            state: Box::new(state.clone()),
+            events: Vec::new(),
+            outcome: EngineOutcome::Done,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
+        let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
+
+        match back {
+            ServerMessage::Applied { state: s, .. } => assert_eq!(*s, state),
+            other => panic!("expected Applied, got {other:?}"),
+        }
+    }
 }

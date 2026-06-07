@@ -5,6 +5,7 @@ members = [
     "crates/game-core",
     "crates/cards",
     "crates/scenarios",
+    "crates/protocol",
     "crates/server",
     "crates/web",
     "crates/card-data-pipeline",

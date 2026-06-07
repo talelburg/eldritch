@@ -11,7 +11,7 @@ use game_core::state::{ChaosBag, ChaosToken, GameState, InvestigatorId};
 use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::test_investigator;
 use game_core::{Event, Resolution};
-use server::wire::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, ServerMessage};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use tokio_tungstenite::tungstenite::Message;

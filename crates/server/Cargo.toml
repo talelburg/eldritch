@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 game-core = { path = "../game-core" }
+protocol = { path = "../protocol" }
 cards = { path = "../cards" }
 scenarios = { path = "../scenarios" }
 axum = { version = "0.8", features = ["ws"] }

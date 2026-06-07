@@ -14,7 +14,7 @@ use common::{connect, install_registry, memory_pool, recv, send, spawn_server, T
 use game_core::scenario::ScenarioId;
 use game_core::state::{InvestigatorId, SkillKind};
 use game_core::{EngineOutcome, InputResponse, PlayerAction};
-use server::wire::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, ServerMessage};
 use server::GameSession;
 
 /// A skill test pauses at its commit window → `AwaitingInput`.

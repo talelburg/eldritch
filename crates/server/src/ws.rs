@@ -13,9 +13,10 @@ use futures_util::{SinkExt, StreamExt};
 use game_core::EngineOutcome;
 use tokio::sync::{broadcast, Mutex};
 
+use protocol::{ClientMessage, ServerMessage};
+
 use crate::id::GameId;
 use crate::session::GameSession;
-use crate::wire::{ClientMessage, ServerMessage};
 use crate::AppState;
 
 /// Per-game broadcast buffer depth. Generous for the low message rate
@@ -141,7 +142,11 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                         }))
                     }
                     Ok((events, outcome)) => {
-                        let _ = room.tx.send(ServerMessage::Applied { events, outcome });
+                        let _ = room.tx.send(ServerMessage::Applied {
+                            state: Box::new(session.state.clone()),
+                            events,
+                            outcome,
+                        });
                         None
                     }
                     Err(e) => Some(Disposition::Reply(ServerMessage::Rejected {

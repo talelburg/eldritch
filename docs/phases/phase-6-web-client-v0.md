@@ -17,7 +17,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | Order | Issue | State |
 |---|---|---|
 | — | [#191](https://github.com/talelburg/eldritch/issues/191) — kickoff: design spec + issue breakdown | 🟡 open (this docs PR) |
-| P6.1 | [#182](https://github.com/talelburg/eldritch/issues/182) — `protocol` crate extraction + `state` on `Applied` | ⏳ open |
+| P6.1 | [#182](https://github.com/talelburg/eldritch/issues/182) — `protocol` crate extraction + `state` on `Applied` | ✅ PR #193 |
 | P6.2 | [#183](https://github.com/talelburg/eldritch/issues/183) — server production-playable: synthetic registries + static WASM serving | ⏳ open |
 | P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ⏳ open |
 | P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ⏳ open |
@@ -31,7 +31,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 
 | # | Issue | Why this slot | Depends on |
 |---|---|---|---|
-| P6.1 | #182 protocol crate + `state` on `Applied` | Foundational; unblocks the client speaking the protocol with shared types | kickoff |
+| P6.1 | #182 protocol crate + `state` on `Applied` ✅ PR #193 | Foundational; unblocks the client speaking the protocol with shared types | kickoff |
 | P6.2 | #183 server registries + static WASM | The thing the client connects to | — (parallel w/ P6.1) |
 | P6.3 | #184 headless harness + 6th CI job | Testing foundation before TDD-ing components; de-risks browser-in-CI early | — |
 | P6.4 | #185 WS client + reactive store | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
