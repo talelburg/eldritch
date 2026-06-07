@@ -141,7 +141,11 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
                         }))
                     }
                     Ok((events, outcome)) => {
-                        let _ = room.tx.send(ServerMessage::Applied { events, outcome });
+                        let _ = room.tx.send(ServerMessage::Applied {
+                            state: Box::new(session.state.clone()),
+                            events,
+                            outcome,
+                        });
                         None
                     }
                     Err(e) => Some(Disposition::Reply(ServerMessage::Rejected {

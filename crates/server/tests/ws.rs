@@ -6,6 +6,7 @@ mod common;
 
 use common::{connect, install_registry, memory_pool, recv, send, spawn_server, TEST_SCENARIO_ID};
 use game_core::scenario::ScenarioId;
+use game_core::state::InvestigatorId;
 use game_core::{EngineOutcome, PlayerAction};
 use server::wire::{ClientMessage, ServerMessage};
 
@@ -57,9 +58,17 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
 
     for ws in [&mut a, &mut b] {
         match recv(ws).await {
-            ServerMessage::Applied { events, outcome } => {
+            ServerMessage::Applied {
+                state,
+                events,
+                outcome,
+            } => {
                 assert!(!matches!(outcome, EngineOutcome::Rejected { .. }));
                 assert!(!events.is_empty(), "StartScenario emits events");
+                // The broadcast carries the authoritative post-action
+                // state: StartScenario seeds the mulligan cursor, which
+                // was None in the pre-action Hello.
+                assert_eq!(state.mulligan_pending, Some(InvestigatorId(1)));
             }
             other => panic!("expected Applied, got {other:?}"),
         }

@@ -41,6 +41,12 @@ pub enum ServerMessage {
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied {
+        /// The authoritative game state after the action resolved.
+        /// Boxed for the same reason as [`Hello`](ServerMessage::Hello)'s
+        /// `state`: `GameState` dwarfs the other variants. The client
+        /// renders this snapshot directly (events are for log/animation,
+        /// not state reconstruction).
+        state: Box<GameState>,
         /// Events emitted by the action's resolution.
         events: Vec<Event>,
         /// Outcome of the apply.
