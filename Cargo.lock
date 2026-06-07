@@ -2101,6 +2101,7 @@ dependencies = [
  "cards",
  "futures-util",
  "game-core",
+ "protocol",
  "scenarios",
  "serde",
  "serde_json",
