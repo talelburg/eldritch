@@ -307,6 +307,7 @@ impl Default for TestGame {
 #[cfg(test)]
 mod with_open_window_tests {
     use super::*;
+    use crate::state::PhaseStep;
     use crate::test_support::test_investigator;
 
     #[test]
@@ -314,10 +315,7 @@ mod with_open_window_tests {
         let state = TestGame::new()
             .with_investigator(test_investigator(1))
             .with_open_window(
-                WindowKind::BetweenPhases {
-                    from: Phase::Mythos,
-                    to: Phase::Investigation,
-                },
+                WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::Any,
             )
             .build();
@@ -331,27 +329,18 @@ mod with_open_window_tests {
         let state = TestGame::new()
             .with_investigator(test_investigator(1))
             .with_open_window(
-                WindowKind::BetweenPhases {
-                    from: Phase::Mythos,
-                    to: Phase::Investigation,
-                },
+                WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
                 FastActorScope::Any,
             )
             .with_open_window(
-                WindowKind::BetweenPhases {
-                    from: Phase::Investigation,
-                    to: Phase::Enemy,
-                },
+                WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::ActiveInvestigator(InvestigatorId(1)),
             )
             .build();
         assert_eq!(state.open_windows.len(), 2);
         assert!(matches!(
             state.open_windows[1].kind,
-            WindowKind::BetweenPhases {
-                to: Phase::Enemy,
-                ..
-            }
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)
         ));
     }
 }

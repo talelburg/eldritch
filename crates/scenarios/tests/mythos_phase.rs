@@ -24,7 +24,7 @@ use std::sync::Once;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase, WindowKind};
+use game_core::state::{CardCode, InvestigatorId, LocationId, Phase, PhaseStep, WindowKind};
 use game_core::{assert_event, assert_event_sequence, Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_FAST_EVENT_CODE, SYNTH_SURGE_TREACHERY_CODE, SYNTH_TREACHERY_CODE,
@@ -648,7 +648,7 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
     assert!(
         matches!(
             result.state.open_windows.last(),
-            Some(w) if w.kind == WindowKind::MythosAfterDraws
+            Some(w) if w.kind == WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
         ),
         "top open window must be MythosAfterDraws; got {:?}",
         result.state.open_windows.last()
@@ -666,7 +666,7 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
     assert_event!(
         result.events,
         Event::WindowOpened {
-            kind: WindowKind::MythosAfterDraws
+            kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
         }
     );
 
@@ -675,7 +675,7 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
         !result.events.iter().any(|e| matches!(
             e,
             Event::WindowClosed {
-                kind: WindowKind::MythosAfterDraws
+                kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
             }
         )),
         "WindowClosed(MythosAfterDraws) must not fire while window is open; \
@@ -745,7 +745,7 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
             .state
             .open_windows
             .last()
-            .is_some_and(|w| w.kind == WindowKind::InvestigationBegins),
+            .is_some_and(|w| w.kind == WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)),
         "top window must be InvestigationBegins; got {:?}",
         skip_result.state.open_windows.last()
     );
@@ -771,14 +771,14 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     assert_event!(
         skip_result.events,
         Event::WindowClosed {
-            kind: WindowKind::MythosAfterDraws
+            kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
         }
     );
     // WindowOpened event for InvestigationBegins must also be present.
     assert_event!(
         skip_result.events,
         Event::WindowOpened {
-            kind: WindowKind::InvestigationBegins
+            kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
         }
     );
 }

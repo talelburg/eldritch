@@ -129,8 +129,9 @@ pub struct GameState {
     /// Window kinds open at canonical timing points:
     /// - `AfterEnemyDefeated` — queued by `damage_enemy` when an
     ///   enemy reaches 0 health.
-    /// - `BetweenPhases` — opened by the phase machine at every
-    ///   phase transition (Phase-4 phase-content PRs wire this).
+    /// - `PlayerWindow` — a printed player window at a Rules-Reference
+    ///   timing step (e.g. `MythosAfterDraws`), opened by the phase
+    ///   machine; gates Fast actions and runs a per-step continuation.
     ///
     /// Multi-window queueing (one effect that queues two windows in
     /// the same apply) is now structural — push twice, drive resumes
@@ -567,16 +568,19 @@ pub enum WindowKind {
         /// `by` field. `None` for non-investigator-attributed defeats.
         by: Option<InvestigatorId>,
     },
-    /// A window opened between two phases. Phase-4 phase-content PRs
-    /// open this at each canonical transition (e.g. before Mythos,
-    /// between Investigation and Enemy) so Fast cards + cross-phase
-    /// reactions fire correctly. `fast_actors` is typically `Any`.
-    BetweenPhases {
-        /// The phase we're leaving.
-        from: Phase,
-        /// The phase we're entering.
-        to: Phase,
-    },
+    /// A printed player window at a Rules-Reference timing step. Carries
+    /// no event payload — these windows gate Fast actions (and run a
+    /// per-step continuation when they close), they are not after-event
+    /// reaction windows. The specific timing point is the [`PhaseStep`].
+    PlayerWindow(PhaseStep),
+}
+
+/// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits
+/// at. Each step uniquely determines its phase, so the phase is not
+/// carried separately (the engine reads [`GameState::phase`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum PhaseStep {
     /// The player window between Rules Reference p.24 step 1.4
     /// (each investigator draws an encounter card) and step 1.5
     /// (Mythos phase ends). Carries no payload — there is no
@@ -606,7 +610,7 @@ pub enum WindowKind {
     ///
     /// One window per Active investigator in `turn_order`.
     ///
-    /// [`MythosAfterDraws`]: WindowKind::MythosAfterDraws
+    /// [`MythosAfterDraws`]: PhaseStep::MythosAfterDraws
     /// [`turn_order`]: GameState::turn_order
     BeforeInvestigatorAttacked,
     /// The player window after all investigators have resolved their
@@ -615,7 +619,7 @@ pub enum WindowKind {
     /// Continuation runs `enemy_phase_end` (step 3.4 + transition).
     /// Mirror of [`MythosAfterDraws`]'s end-of-step shape.
     ///
-    /// [`MythosAfterDraws`]: WindowKind::MythosAfterDraws
+    /// [`MythosAfterDraws`]: PhaseStep::MythosAfterDraws
     AfterAllInvestigatorsAttacked,
     /// The player window between Rules Reference p.24 step 2.1
     /// (Investigation phase begins) and step 2.2 (the first
@@ -802,7 +806,7 @@ impl GameState {
     /// Callers driving the reaction window pass this index to
     /// `close_reaction_window_at` so the close path removes the same
     /// entry the driver was operating on, rather than blindly popping
-    /// the top of the stack — a `BetweenPhases` window with empty
+    /// the top of the stack — a `PlayerWindow` gate with empty
     /// `pending_triggers` can sit above an active reaction window,
     /// which would corrupt the stack on naive `pop()`.
     ///
@@ -839,59 +843,8 @@ mod open_window_tests {
     }
 
     #[test]
-    fn between_phases_window_kind_serde_roundtrip() {
-        let kind = WindowKind::BetweenPhases {
-            from: Phase::Mythos,
-            to: Phase::Investigation,
-        };
-        let json = serde_json::to_string(&kind).expect("serialize");
-        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, kind);
-    }
-
-    #[test]
-    fn mythos_after_draws_window_kind_serde_roundtrip() {
-        let kind = WindowKind::MythosAfterDraws;
-        let json = serde_json::to_string(&kind).expect("serialize");
-        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, kind);
-    }
-
-    #[test]
-    fn upkeep_begins_window_kind_serde_roundtrip() {
-        let kind = WindowKind::UpkeepBegins;
-        let json = serde_json::to_string(&kind).expect("serialize");
-        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, kind);
-    }
-
-    #[test]
-    fn before_investigator_attacked_window_kind_serde_roundtrip() {
-        let kind = WindowKind::BeforeInvestigatorAttacked;
-        let json = serde_json::to_string(&kind).expect("serialize");
-        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, kind);
-    }
-
-    #[test]
-    fn after_all_investigators_attacked_window_kind_serde_roundtrip() {
-        let kind = WindowKind::AfterAllInvestigatorsAttacked;
-        let json = serde_json::to_string(&kind).expect("serialize");
-        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, kind);
-    }
-
-    #[test]
-    fn investigation_begins_window_kind_serde_roundtrip() {
-        let kind = WindowKind::InvestigationBegins;
-        let json = serde_json::to_string(&kind).expect("serialize");
-        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, kind);
-    }
-
-    #[test]
-    fn investigator_turn_begins_window_kind_serde_roundtrip() {
-        let kind = WindowKind::InvestigatorTurnBegins;
+    fn player_window_kind_serde_roundtrip() {
+        let kind = WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws);
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);

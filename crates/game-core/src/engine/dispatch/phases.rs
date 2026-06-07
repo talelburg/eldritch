@@ -5,7 +5,8 @@ use crate::action::InputResponse;
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::event::Event;
 use crate::state::{
-    CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase, WindowKind, Zone,
+    CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase, PhaseStep, WindowKind,
+    Zone,
 };
 
 use super::Cx;
@@ -120,7 +121,7 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 /// Owns the `PhaseStarted(Investigation)` emit (Rules Reference p.24
 /// step 2.1) and opens the post-2.1 player window. Rotation to the
 /// first active investigator (step 2.2) runs in the
-/// [`WindowKind::InvestigationBegins`] continuation via
+/// [`PhaseStep::InvestigationBegins`] continuation via
 /// [`begin_investigator_turn`], lead-first by default; explicit
 /// player-pick within this window is deferred to #146.
 ///
@@ -140,7 +141,10 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
     // order 2.1 → window → 2.2 holds. Auto-skips inline when nothing is
     // Fast-eligible, so single-investigator entry still lands the lead
     // active within the same apply() call.
-    let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::InvestigationBegins);
+    let outcome = super::reaction_windows::open_fast_window(
+        cx,
+        WindowKind::PlayerWindow(PhaseStep::InvestigationBegins),
+    );
     debug_assert_eq!(
         outcome,
         EngineOutcome::Done,
@@ -160,7 +164,10 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
 /// resolve it via `first_active_investigator` / `next_active_investigator_after`.
 pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     rotate_to_active(cx, who);
-    let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::InvestigatorTurnBegins);
+    let outcome = super::reaction_windows::open_fast_window(
+        cx,
+        WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+    );
     debug_assert_eq!(
         outcome,
         EngineOutcome::Done,
@@ -220,7 +227,10 @@ fn mythos_phase(cx: &mut Cx) {
         // because nothing is eligible, runs the MythosAfterDraws
         // continuation (mythos_phase_end), which transitions to
         // Investigation. All in this same apply.
-        let outcome = super::reaction_windows::open_fast_window(cx, WindowKind::MythosAfterDraws);
+        let outcome = super::reaction_windows::open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+        );
         debug_assert_eq!(
             outcome,
             EngineOutcome::Done,
@@ -323,12 +333,18 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     cx.state.enemy_attack_pending = super::cursor::first_active_investigator(cx.state);
 
     if cx.state.enemy_attack_pending.is_some() {
-        super::reaction_windows::open_fast_window(cx, WindowKind::BeforeInvestigatorAttacked)
+        super::reaction_windows::open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+        )
     } else {
         // No Active investigators (turn_order empty or all eliminated).
         // Skip straight to the final window — mirror of mythos_phase's
         // no-drawer path.
-        super::reaction_windows::open_fast_window(cx, WindowKind::AfterAllInvestigatorsAttacked)
+        super::reaction_windows::open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
+        )
     }
 }
 
@@ -367,7 +383,7 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Called from [`run_window_continuation`]'s
-/// [`WindowKind::AfterAllInvestigatorsAttacked`] arm. Emits step
+/// [`PhaseStep::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
 /// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
 pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
@@ -422,7 +438,7 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
     // via run_window_continuation) when nothing is Fast-eligible.
-    super::reaction_windows::open_fast_window(cx, WindowKind::UpkeepBegins)
+    super::reaction_windows::open_fast_window(cx, WindowKind::PlayerWindow(PhaseStep::UpkeepBegins))
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
@@ -759,7 +775,7 @@ mod investigation_phase_tests {
             matches!(
                 e,
                 Event::WindowOpened {
-                    kind: WindowKind::InvestigationBegins
+                    kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
                 }
             )
         });
@@ -817,7 +833,7 @@ mod investigation_phase_tests {
             events.iter().any(|e| matches!(
                 e,
                 Event::WindowOpened {
-                    kind: WindowKind::InvestigationBegins
+                    kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
                 }
             )),
             "investigation_phase opens the post-2.1 InvestigationBegins window"
@@ -1041,13 +1057,13 @@ mod investigation_phase_tests {
         assert!(events.iter().any(|e| matches!(
             e,
             Event::WindowOpened {
-                kind: WindowKind::InvestigationBegins
+                kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
             }
         )));
         assert!(events.iter().any(|e| matches!(
             e,
             Event::WindowOpened {
-                kind: WindowKind::InvestigatorTurnBegins
+                kind: WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)
             }
         )));
         assert!(!events.iter().any(|e| matches!(
@@ -1114,7 +1130,7 @@ mod mythos_phase_tests {
             events.iter().any(|e| matches!(
                 e,
                 Event::WindowOpened {
-                    kind: WindowKind::MythosAfterDraws
+                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
                 }
             )),
             "must emit WindowOpened(MythosAfterDraws); events = {events:?}"
@@ -1123,7 +1139,7 @@ mod mythos_phase_tests {
             events.iter().any(|e| matches!(
                 e,
                 Event::WindowClosed {
-                    kind: WindowKind::MythosAfterDraws
+                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
                 }
             )),
             "must emit WindowClosed(MythosAfterDraws); events = {events:?}"
@@ -1456,7 +1472,7 @@ mod upkeep_phase_tests {
             matches!(
                 e,
                 Event::WindowOpened {
-                    kind: WindowKind::UpkeepBegins
+                    kind: WindowKind::PlayerWindow(PhaseStep::UpkeepBegins)
                 }
             )
         })
@@ -1465,7 +1481,7 @@ mod upkeep_phase_tests {
             matches!(
                 e,
                 Event::WindowClosed {
-                    kind: WindowKind::UpkeepBegins
+                    kind: WindowKind::PlayerWindow(PhaseStep::UpkeepBegins)
                 }
             )
         })
@@ -1920,7 +1936,7 @@ mod enemy_phase_tests {
             Some(LocationId(2))
         );
         assert_event!(events, Event::EnemyEngaged { enemy, .. } if *enemy == EnemyId(1));
-        assert_event!(events, Event::WindowOpened { kind } if *kind == WindowKind::BeforeInvestigatorAttacked);
+        assert_event!(events, Event::WindowOpened { kind } if *kind == WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked));
     }
 
     #[test]
@@ -1965,7 +1981,7 @@ mod enemy_phase_tests {
             &InputResponse::PickLocation(LocationId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
-        assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::BeforeInvestigatorAttacked);
+        assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked));
         // With no registry the attack window auto-skips and the cascade runs
         // Enemy->Upkeep->Mythos within the same resume call (same as the no-tie test).
         assert_eq!(state.phase, Phase::Mythos);
@@ -2253,7 +2269,7 @@ mod enemy_phase_tests {
             matches!(
                 e,
                 Event::WindowOpened {
-                    kind: WindowKind::BeforeInvestigatorAttacked
+                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
                 }
             )
         })
@@ -2262,7 +2278,7 @@ mod enemy_phase_tests {
             matches!(
                 e,
                 Event::WindowClosed {
-                    kind: WindowKind::BeforeInvestigatorAttacked
+                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
                 }
             )
         })
@@ -2271,7 +2287,7 @@ mod enemy_phase_tests {
             matches!(
                 e,
                 Event::WindowOpened {
-                    kind: WindowKind::AfterAllInvestigatorsAttacked
+                    kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
                 }
             )
         })
@@ -2280,7 +2296,7 @@ mod enemy_phase_tests {
             matches!(
                 e,
                 Event::WindowClosed {
-                    kind: WindowKind::AfterAllInvestigatorsAttacked
+                    kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
                 }
             )
         })
@@ -2343,7 +2359,7 @@ mod enemy_phase_tests {
                 matches!(
                     e,
                     Event::WindowOpened {
-                        kind: WindowKind::BeforeInvestigatorAttacked
+                        kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
                     }
                 )
                 .then_some(i)
@@ -2356,7 +2372,7 @@ mod enemy_phase_tests {
                 matches!(
                     e,
                     Event::WindowOpened {
-                        kind: WindowKind::AfterAllInvestigatorsAttacked
+                        kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
                     }
                 )
                 .then_some(i)
@@ -2395,7 +2411,7 @@ mod enemy_phase_tests {
                 matches!(
                     e,
                     Event::WindowOpened {
-                        kind: WindowKind::BeforeInvestigatorAttacked
+                        kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
                     }
                 )
             })
@@ -2425,7 +2441,7 @@ mod enemy_phase_tests {
             events.iter().all(|e| !matches!(
                 e,
                 Event::WindowOpened {
-                    kind: WindowKind::BeforeInvestigatorAttacked
+                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
                 }
             )),
             "no per-investigator window when all are eliminated; events = {events:?}"
@@ -2433,7 +2449,7 @@ mod enemy_phase_tests {
         assert!(events.iter().any(|e| matches!(
             e,
             Event::WindowOpened {
-                kind: WindowKind::AfterAllInvestigatorsAttacked
+                kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
             }
         )));
         // With all investigators eliminated, the cascade keeps going:
@@ -2563,7 +2579,7 @@ mod enemy_phase_tests {
         state.active_investigator = None;
         state.enemy_attack_pending = Some(inv_id);
         state.open_windows.push(OpenWindow {
-            kind: WindowKind::BeforeInvestigatorAttacked,
+            kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
             pending_triggers: Vec::new(),
             fast_actors: FastActorScope::Any,
         });

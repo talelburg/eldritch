@@ -35,7 +35,7 @@ use game_core::action::{Action, PlayerAction};
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, FastActorScope, InvestigatorId, LocationId, Phase,
-    WindowKind,
+    PhaseStep, WindowKind,
 };
 use game_core::test_support::{test_investigator, test_location, TestGame};
 
@@ -63,10 +63,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::BetweenPhases {
-                from: Phase::Mythos,
-                to: Phase::Investigation,
-            },
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -105,10 +102,7 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::BetweenPhases {
-                from: Phase::Mythos,
-                to: Phase::Investigation,
-            },
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -148,10 +142,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::BetweenPhases {
-                from: Phase::Mythos,
-                to: Phase::Investigation,
-            },
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -221,10 +212,7 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::BetweenPhases {
-                from: Phase::Mythos,
-                to: Phase::Investigation,
-            },
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -306,10 +294,7 @@ fn fast_event_playable_by_active_investigator_outside_investigation_in_permissiv
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::BetweenPhases {
-                from: Phase::Mythos,
-                to: Phase::Investigation,
-            },
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -372,10 +357,7 @@ fn fast_event_playable_by_non_owner_when_window_permits() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::BetweenPhases {
-                from: Phase::Mythos,
-                to: Phase::Investigation,
-            },
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();

@@ -18,8 +18,8 @@ pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenRe
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
     Act, Agenda, FastActorScope, FinishContinuation, GameState, HandSizeDiscard, HunterChoice,
-    InFlightSkillTest, OpenWindow, PendingSkillModifier, PendingTrigger, SkillTestFollowUp,
-    SpawnEngagePending, WindowKind,
+    InFlightSkillTest, OpenWindow, PendingSkillModifier, PendingTrigger, PhaseStep,
+    SkillTestFollowUp, SpawnEngagePending, WindowKind,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, SkillKind, Skills, Status};
 pub use location::{Location, LocationId};
