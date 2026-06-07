@@ -23,6 +23,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("eldritch server listening on http://{addr}");
 
-    axum::serve(listener, app(AppState { db: pool })).await?;
+    axum::serve(listener, app(AppState::new(pool))).await?;
     Ok(())
 }
