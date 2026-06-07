@@ -129,8 +129,9 @@ pub struct GameState {
     /// Window kinds open at canonical timing points:
     /// - `AfterEnemyDefeated` — queued by `damage_enemy` when an
     ///   enemy reaches 0 health.
-    /// - `BetweenPhases` — opened by the phase machine at every
-    ///   phase transition (Phase-4 phase-content PRs wire this).
+    /// - `PlayerWindow` — a printed player window at a Rules-Reference
+    ///   timing step (e.g. `MythosAfterDraws`), opened by the phase
+    ///   machine; gates Fast actions and runs a per-step continuation.
     ///
     /// Multi-window queueing (one effect that queues two windows in
     /// the same apply) is now structural — push twice, drive resumes
@@ -805,7 +806,7 @@ impl GameState {
     /// Callers driving the reaction window pass this index to
     /// `close_reaction_window_at` so the close path removes the same
     /// entry the driver was operating on, rather than blindly popping
-    /// the top of the stack — a `BetweenPhases` window with empty
+    /// the top of the stack — a `PlayerWindow` gate with empty
     /// `pending_triggers` can sit above an active reaction window,
     /// which would corrupt the stack on naive `pop()`.
     ///

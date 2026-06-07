@@ -427,8 +427,8 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
 /// `top_reaction_window_mut` skips empty-`pending_triggers` windows
 /// when finding the active reaction window. The close path must
 /// remove the same window the driver operated on, not the absolute
-/// top of the stack — once `BetweenPhases` (or any other
-/// non-reaction) window can sit above an active reaction window
+/// top of the stack — once a `PlayerWindow` gate (or any other
+/// non-reaction window) can sit above an active reaction window
 /// (#69/#70/#71), a naive `open_windows.pop()` would remove the wrong
 /// entry. Callers compute the index via
 /// [`GameState::top_reaction_window_index`].
@@ -460,9 +460,10 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     cx.events.push(Event::WindowClosed { kind });
 
     // Run any kind-specific continuation (e.g. MythosAfterDraws →
-    // mythos_phase_end). For reaction windows that have no continuation
-    // (AfterEnemyDefeated, BetweenPhases) this has no side effects and
-    // returns Done. The continuation may suspend (upkeep step 4.5
+    // mythos_phase_end). For windows that have no continuation
+    // (AfterEnemyDefeated, or PlayerWindow steps like
+    // InvestigatorTurnBegins) this has no side effects and returns
+    // Done. The continuation may suspend (upkeep step 4.5
     // hand-size discard, #111), so propagate AwaitingInput rather than
     // dropping it.
     let continuation = run_window_continuation(cx, kind);
