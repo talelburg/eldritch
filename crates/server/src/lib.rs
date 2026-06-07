@@ -6,16 +6,19 @@
 //! it directly.
 
 pub mod db;
+mod id;
+pub mod lifecycle;
 pub mod session;
 mod store;
 pub mod wire;
 mod ws;
 
+pub use id::GameId;
 pub use session::{GameSession, SessionError};
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use sqlx::SqlitePool;
 
@@ -45,6 +48,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/games", post(lifecycle::create_game))
         .route("/games/{game_id}/ws", get(ws::game_ws))
         .with_state(state)
 }
