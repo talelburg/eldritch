@@ -8,6 +8,8 @@
 pub mod db;
 pub mod session;
 mod store;
+pub mod wire;
+mod ws;
 
 pub use session::{GameSession, SessionError};
 
@@ -22,6 +24,20 @@ use sqlx::SqlitePool;
 pub struct AppState {
     /// Connection pool for the `SQLite` action-log database.
     pub db: SqlitePool,
+    /// Live games keyed by `game_id`, each with its broadcast group.
+    rooms: ws::Rooms,
+}
+
+impl AppState {
+    /// Build application state over a database pool, with an empty live
+    /// rooms map.
+    #[must_use]
+    pub fn new(db: SqlitePool) -> Self {
+        Self {
+            db,
+            rooms: ws::rooms(),
+        }
+    }
 }
 
 /// Build the application router with all routes and shared state.
@@ -29,6 +45,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/games/{game_id}/ws", get(ws::game_ws))
         .with_state(state)
 }
 

@@ -18,7 +18,7 @@ async fn health_returns_ok_when_database_reachable() {
         .await
         .expect("run migrations");
 
-    let app = server::app(server::AppState { db: pool });
+    let app = server::app(server::AppState::new(pool));
 
     let response = app
         .oneshot(
