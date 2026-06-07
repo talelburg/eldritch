@@ -12,6 +12,7 @@ use game_core::state::GameState;
 use game_core::{Action, EngineOutcome, Event, PlayerAction};
 use sqlx::SqlitePool;
 
+use crate::id::GameId;
 use crate::store;
 
 /// Errors from [`GameSession`] persistence operations.
@@ -32,7 +33,7 @@ pub enum SessionError {
 /// A live game: derived state plus its connection to the action log.
 pub struct GameSession {
     /// Stable identifier for this game (primary key in `games`).
-    pub game_id: String,
+    pub game_id: GameId,
     /// Current derived state.
     pub state: GameState,
     /// Outcome of the most recent apply (`Done` for a freshly created
@@ -54,7 +55,7 @@ impl GameSession {
     /// [`SessionError::UnknownScenario`] if none is registered.
     pub async fn create(
         db: SqlitePool,
-        game_id: impl Into<String>,
+        game_id: impl Into<GameId>,
         scenario_id: ScenarioId,
     ) -> Result<Self, SessionError> {
         let module = game_core::scenario_registry::current()
@@ -67,7 +68,7 @@ impl GameSession {
         store::insert_game(
             &db,
             &game_id,
-            scenario_id.as_str(),
+            &scenario_id,
             &seed_state,
             &unix_millis_string(),
         )
@@ -108,7 +109,7 @@ impl GameSession {
 
     /// Reconstruct a session by replaying its action log over the seed
     /// state. Returns `None` if no game with `game_id` exists.
-    pub async fn load(db: SqlitePool, game_id: &str) -> Result<Option<Self>, SessionError> {
+    pub async fn load(db: SqlitePool, game_id: &GameId) -> Result<Option<Self>, SessionError> {
         let Some((_scenario_id, seed_state)) = store::load_game(&db, game_id).await? else {
             return Ok(None);
         };
@@ -125,7 +126,7 @@ impl GameSession {
         }
 
         Ok(Some(Self {
-            game_id: game_id.to_string(),
+            game_id: game_id.clone(),
             state,
             outcome,
             seq,

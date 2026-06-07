@@ -9,6 +9,7 @@ use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::test_investigator;
 use game_core::{EngineOutcome, Event, PlayerAction, Resolution};
 use server::session::GameSession;
+use server::GameId;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 
@@ -61,7 +62,7 @@ async fn create_persists_seed_and_exposes_setup_state() {
 
     // The in-memory state equals the scenario's setup() output.
     assert_eq!(session.state, test_setup());
-    assert_eq!(session.game_id, "game-1");
+    assert_eq!(session.game_id.as_str(), "game-1");
 
     // A games row was persisted.
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM games WHERE game_id = ?")
@@ -142,7 +143,7 @@ async fn load_replays_log_to_reproduce_live_state() {
         .unwrap();
     session.apply(PlayerAction::StartScenario).await.unwrap();
 
-    let loaded = GameSession::load(pool.clone(), "g4")
+    let loaded = GameSession::load(pool.clone(), &GameId::new("g4"))
         .await
         .unwrap()
         .expect("game exists");
@@ -151,6 +152,6 @@ async fn load_replays_log_to_reproduce_live_state() {
     assert_eq!(loaded.game_id, session.game_id);
 
     // An unknown game id loads as None.
-    let missing = GameSession::load(pool, "nope").await.unwrap();
+    let missing = GameSession::load(pool, &GameId::new("nope")).await.unwrap();
     assert!(missing.is_none());
 }

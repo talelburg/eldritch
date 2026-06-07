@@ -13,6 +13,7 @@ use futures_util::{SinkExt, StreamExt};
 use game_core::EngineOutcome;
 use tokio::sync::{broadcast, Mutex};
 
+use crate::id::GameId;
 use crate::session::GameSession;
 use crate::wire::{ClientMessage, ServerMessage};
 use crate::AppState;
@@ -30,8 +31,8 @@ pub(crate) struct GameRoom {
     tx: broadcast::Sender<ServerMessage>,
 }
 
-/// The server's map of live games, keyed by `game_id`.
-pub(crate) type Rooms = Arc<Mutex<HashMap<String, Arc<GameRoom>>>>;
+/// The server's map of live games, keyed by [`GameId`].
+pub(crate) type Rooms = Arc<Mutex<HashMap<GameId, Arc<GameRoom>>>>;
 
 /// Build an empty rooms map for [`AppState`].
 pub(crate) fn rooms() -> Rooms {
@@ -41,7 +42,7 @@ pub(crate) fn rooms() -> Rooms {
 /// Get the room for `game_id`, lazily loading it from the action log on
 /// a cache miss (e.g. first access, or after a server restart). Returns
 /// `None` if no such game exists.
-async fn get_or_load_room(state: &AppState, game_id: &str) -> Option<Arc<GameRoom>> {
+async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<GameRoom>> {
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get(game_id) {
         return Some(room.clone());
@@ -52,7 +53,7 @@ async fn get_or_load_room(state: &AppState, game_id: &str) -> Option<Arc<GameRoo
         session: Mutex::new(session),
         tx,
     });
-    rooms.insert(game_id.to_string(), room.clone());
+    rooms.insert(game_id.clone(), room.clone());
     Some(room)
 }
 
@@ -60,13 +61,13 @@ async fn get_or_load_room(state: &AppState, game_id: &str) -> Option<Arc<GameRoo
 /// websocket attached to that game's broadcast group.
 pub(crate) async fn game_ws(
     State(state): State<AppState>,
-    Path(game_id): Path<String>,
+    Path(game_id): Path<GameId>,
     ws: WebSocketUpgrade,
 ) -> Response {
     ws.on_upgrade(move |socket| handle_socket(socket, state, game_id))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, game_id: String) {
+async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
     let Some(room) = get_or_load_room(&state, &game_id).await else {
         // No such game — nothing to attach to. Drop the socket.
         return;
