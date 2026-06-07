@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress (since 2026-06-07). Design spec landed; issues filed.
+✅ Closed (2026-06-07). All six issues (P5.1–P5.6) shipped; the milestone demonstration is `crates/server/tests/closing_demo.rs`.
 
 Design spec: [`docs/superpowers/specs/2026-06-07-phase-5-server-and-persistence-design.md`](../superpowers/specs/2026-06-07-phase-5-server-and-persistence-design.md).
 
@@ -22,7 +22,7 @@ client is Phase 6; auth + per-seat enforcement are Phase 8.
 | P5.3 | [#170](https://github.com/talelburg/eldritch/issues/170) — Axum WS endpoint + per-game broadcast hub | 🟢 [PR #178](https://github.com/talelburg/eldritch/pull/178) |
 | P5.4 | [#171](https://github.com/talelburg/eldritch/issues/171) — Game lifecycle HTTP: POST /games + lazy rehydrate | 🟢 [PR #179](https://github.com/talelburg/eldritch/pull/179) |
 | P5.5 | [#172](https://github.com/talelburg/eldritch/issues/172) — Reconnect + restart resume: deliver in-flight AwaitingInput | 🟢 [PR #180](https://github.com/talelburg/eldritch/pull/180) |
-| P5.6 | [#173](https://github.com/talelburg/eldritch/issues/173) — closing demo: two WS clients, restart+reconnect replay | ⏳ open |
+| P5.6 | [#173](https://github.com/talelburg/eldritch/issues/173) — closing demo: two WS clients, restart+reconnect replay | ✅ [PR #181](https://github.com/talelburg/eldritch/pull/181) |
 
 Deferred out of the phase: [#174](https://github.com/talelburg/eldritch/issues/174) — periodic state snapshots for replay perf (p2-later, build only when profiling demands it).
 
@@ -57,7 +57,7 @@ Settled in the Phase 5 brainstorm (2026-06-07):
 
 ## Open questions
 
-None blocking. Remaining choices are issue-local implementation detail (e.g. `GameId` representation, exact WS frame encoding) and will be settled in their respective PRs.
+None — all settled. `GameId` landed as a server-crate transparent newtype (P5.4); the WS frame encoding is the externally-tagged `ClientMessage` / `ServerMessage` (P5.3). Snapshots remain deferred to #174 (build only when replay is measurably slow).
 
 ## Dependencies
 
