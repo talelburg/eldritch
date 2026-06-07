@@ -14,6 +14,8 @@ workspace = true
 game-core = { path = "../game-core" }
 protocol = { path = "../protocol" }
 cards = { path = "../cards" }
+# Explicit: synthetic fixtures power the toy scenario at runtime this phase;
+# keep them even if `test_fixtures` leaves `scenarios`' default set (phase-7).
 scenarios = { path = "../scenarios", features = ["test_fixtures"] }
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

@@ -12,14 +12,15 @@ use common::memory_pool;
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use scenarios::test_fixtures::synth_cards::SYNTH_TREACHERY_CODE;
+use scenarios::test_fixtures::synthetic::ID as SYNTHETIC_SCENARIO_ID;
 use tower::ServiceExt;
 
-#[tokio::test]
-async fn install_registries_resolves_synthetic_scenario_and_cards() {
+#[test]
+fn install_registries_resolves_synthetic_scenario_and_cards() {
     server::install_registries();
 
     let scenario = game_core::scenario_registry::current().expect("scenario registry installed");
-    let id = ScenarioId::new("synthetic");
+    let id = ScenarioId::new(SYNTHETIC_SCENARIO_ID);
     assert!(
         (scenario.module_for)(&id).is_some(),
         "synthetic scenario module must resolve"
@@ -47,7 +48,9 @@ async fn post_games_creates_synthetic_game_against_installed_registries() {
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"scenario_id":"synthetic"}"#))
+        .body(Body::from(format!(
+            r#"{{"scenario_id":"{SYNTHETIC_SCENARIO_ID}"}}"#
+        )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
 
