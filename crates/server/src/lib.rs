@@ -6,6 +6,10 @@
 //! it directly.
 
 pub mod db;
+pub mod session;
+mod store;
+
+pub use session::{GameSession, SessionError};
 
 use axum::extract::State;
 use axum::http::StatusCode;
