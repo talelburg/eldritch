@@ -15,11 +15,14 @@ mod ws;
 pub use id::GameId;
 pub use session::{GameSession, SessionError};
 
+use std::path::PathBuf;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::Router;
 use sqlx::SqlitePool;
+use tower_http::services::{ServeDir, ServeFile};
 
 /// Shared application state handed to every Axum handler.
 #[derive(Clone)]
@@ -28,32 +31,63 @@ pub struct AppState {
     pub db: SqlitePool,
     /// Live games keyed by `game_id`, each with its broadcast group.
     rooms: ws::Rooms,
+    /// Directory holding the built client bundle (`index.html`, JS, wasm),
+    /// served as the router fallback.
+    dist_dir: PathBuf,
 }
 
 impl AppState {
-    /// Build application state over a database pool, with an empty live
-    /// rooms map.
+    /// Build application state over a database pool, serving the client
+    /// bundle from the default dev location (`crates/web/dist`, relative
+    /// to the workspace root).
     #[must_use]
     pub fn new(db: SqlitePool) -> Self {
+        Self::new_with_dist(db, PathBuf::from("crates/web/dist"))
+    }
+
+    /// Build application state with an explicit client-bundle directory.
+    #[must_use]
+    pub fn new_with_dist(db: SqlitePool, dist_dir: PathBuf) -> Self {
         Self {
             db,
             rooms: ws::rooms(),
+            dist_dir,
         }
     }
 }
 
-/// Build the application router with all routes and shared state.
+/// Install the process-global scenario + card registries the server
+/// needs to create and play games. Call once at startup.
+///
+/// Phase 6 installs the **synthetic** fixtures (the toy scenario and
+/// its `_synth_*` cards) knowingly — the only playable content this
+/// phase. Idempotent: a second call is a no-op (the underlying
+/// `OnceLock`s reject re-installation).
+///
+/// TODO(phase-7): swap to the real `scenarios`/`cards` registries when
+/// The Gathering lands.
+pub fn install_registries() {
+    let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
+    let _ = game_core::card_registry::install(scenarios::test_fixtures::synth_cards::TEST_REGISTRY);
+}
+
+/// Build the application router with all routes and shared state. The
+/// JSON API and WebSocket take precedence; everything else falls back
+/// to the client bundle, with `index.html` as the SPA fallback.
 pub fn app(state: AppState) -> Router {
+    let index_html = state.dist_dir.join("index.html");
+    // `.fallback()` (not `.not_found_service()`) keeps the response at
+    // 200 OK — correct for SPA routing, where the browser loads
+    // index.html and its JS resolves the path. `not_found_service`
+    // would force a 404, which an SPA shouldn't return for its routes.
+    let static_files = ServeDir::new(&state.dist_dir).fallback(ServeFile::new(index_html));
+
     Router::new()
-        .route("/", get(index))
         .route("/health", get(health))
         .route("/games", post(lifecycle::create_game))
         .route("/games/{game_id}/ws", get(ws::game_ws))
+        .fallback_service(static_files)
         .with_state(state)
-}
-
-async fn index() -> &'static str {
-    "Eldritch — coming soon"
 }
 
 /// Readiness probe: `200 OK` if the database answers a trivial query,

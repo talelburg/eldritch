@@ -18,7 +18,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 |---|---|---|
 | — | [#191](https://github.com/talelburg/eldritch/issues/191) — kickoff: design spec + issue breakdown | 🟡 open (this docs PR) |
 | P6.1 | [#182](https://github.com/talelburg/eldritch/issues/182) — `protocol` crate extraction + `state` on `Applied` | ✅ PR #193 |
-| P6.2 | [#183](https://github.com/talelburg/eldritch/issues/183) — server production-playable: synthetic registries + static WASM serving | ⏳ open |
+| P6.2 | [#183](https://github.com/talelburg/eldritch/issues/183) — server production-playable: synthetic registries + static WASM serving | ✅ PR #194 |
 | P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ⏳ open |
 | P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ⏳ open |
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ⏳ open |
@@ -32,7 +32,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | # | Issue | Why this slot | Depends on |
 |---|---|---|---|
 | P6.1 | #182 protocol crate + `state` on `Applied` ✅ PR #193 | Foundational; unblocks the client speaking the protocol with shared types | kickoff |
-| P6.2 | #183 server registries + static WASM | The thing the client connects to | — (parallel w/ P6.1) |
+| P6.2 | #183 server registries + static WASM ✅ PR #194 | The thing the client connects to | — (parallel w/ P6.1) |
 | P6.3 | #184 headless harness + 6th CI job | Testing foundation before TDD-ing components; de-risks browser-in-CI early | — |
 | P6.4 | #185 WS client + reactive store | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
 | P6.5 | #186 board rendering | See the state | P6.4 |
@@ -92,12 +92,21 @@ in the design spec):
   real registries when Phase 7 lands The Gathering. Same
   `test_fixtures`-on-in-server tension Phase 4 flagged.
 
+Settled implementing P6.2 (PR #194):
+
+- **Bundle ships alongside the binary, not embedded.** D3's static
+  serving is a `ServeDir` over `crates/web/dist` (default; overridable
+  via `AppState::new_with_dist`) — artifacts are read from disk at
+  runtime, not compiled in. Embedding stays deferred (no deploy story
+  needs it yet).
+- **`ServeDir` uses `.fallback()`, not `.not_found_service()`.** The
+  SPA fallback to `index.html` must return `200 OK` (the browser's JS
+  resolves the route); `not_found_service` would force `404`.
+
 ## Open questions
 
-None blocking. Per-PR details: exact `ServeDir`/SPA-fallback wiring and
-whether the wasm bundle is embedded or shipped alongside the binary
-(P6.2); the precise legality-gating surface (P6.6); CSS/layout
-specifics (P6.5).
+None blocking. Per-PR details: the precise legality-gating surface
+(P6.6); CSS/layout specifics (P6.5).
 
 ## Dependencies
 
