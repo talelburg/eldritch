@@ -10,7 +10,12 @@ mod id;
 pub mod lifecycle;
 pub mod session;
 mod store;
-pub mod wire;
+/// Re-export of the shared wire protocol, which now lives in the
+/// `protocol` crate. Kept at the historical `server::wire` path so
+/// existing call sites and integration tests don't churn.
+pub mod wire {
+    pub use protocol::{ClientMessage, ServerMessage};
+}
 mod ws;
 
 pub use id::GameId;
