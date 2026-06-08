@@ -12,6 +12,15 @@ pub fn ws_url(location_protocol: &str, host: &str, game_id: &str) -> String {
     format!("{scheme}://{host}/games/{game_id}/ws")
 }
 
+/// Read `window.location` and build this game's WebSocket URL.
+#[cfg(target_arch = "wasm32")]
+pub fn current_ws_url(game_id: &str) -> String {
+    let loc = web_sys::window().expect("a browser window").location();
+    let protocol = loc.protocol().unwrap_or_else(|_| "http:".to_string());
+    let host = loc.host().unwrap_or_default();
+    ws_url(&protocol, &host, game_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::ws_url;
@@ -31,13 +40,4 @@ mod tests {
             "wss://play.example.com/games/g1/ws"
         );
     }
-}
-
-/// Read `window.location` and build this game's WebSocket URL.
-#[cfg(target_arch = "wasm32")]
-pub fn current_ws_url(game_id: &str) -> String {
-    let loc = web_sys::window().expect("a browser window").location();
-    let protocol = loc.protocol().unwrap_or_else(|_| "http:".to_string());
-    let host = loc.host().unwrap_or_default();
-    ws_url(&protocol, &host, game_id)
 }
