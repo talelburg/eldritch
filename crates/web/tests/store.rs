@@ -24,6 +24,8 @@ fn body_html() -> String {
 async fn hello_renders_state_present() {
     let store = leptos::prelude::RwSignal::new(ClientState::default());
     // Provide the same signal the component reads, then mount the dump.
+    // Bind the unmount handle (not `_`) so the view stays mounted through
+    // the assertions.
     let _handle = leptos::mount::mount_to_body(move || {
         leptos::prelude::provide_context(store);
         leptos::view! { <DebugDump/> }
@@ -45,7 +47,7 @@ async fn hello_renders_state_present() {
                 state: Box::new(game),
                 outcome: EngineOutcome::Done,
             },
-        )
+        );
     });
 
     // CSR render effects flush on the next executor tick, not synchronously
