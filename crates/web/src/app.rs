@@ -12,10 +12,8 @@ pub fn App() -> impl IntoView {
     // builds render from a signal that tests drive directly.
     #[cfg(target_arch = "wasm32")]
     {
-        // Transport is wired in Task 7; for now just ensure the store
-        // is in context (provide_store above already did that).
-        // TODO(Task 7): crate::transport::start(use_store());
-        let _ = use_store();
+        let store = use_store();
+        crate::transport::start(store);
     }
 
     view! {

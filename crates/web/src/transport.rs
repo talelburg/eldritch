@@ -1,1 +1,146 @@
-//! Browser transport (wasm only): bootstrap, WebSocket connect/reconnect, send.
+//! Browser transport (wasm only): bootstrap a game, connect its
+//! WebSocket, fold inbound frames into the store, forward outbound
+//! actions, and reconnect on close.
+
+use futures::channel::mpsc;
+use futures::{select, SinkExt, StreamExt};
+use gloo_net::http::Request;
+use gloo_net::websocket::{futures::WebSocket, Message};
+use gloo_timers::future::TimeoutFuture;
+use leptos::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+
+use protocol::{ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage};
+
+use crate::store::{reduce, ConnStatus, StoreSignal};
+use crate::url::current_ws_url;
+
+/// localStorage key holding the active game id across reloads.
+const GAME_ID_KEY: &str = "eldritch_game_id";
+/// The only playable scenario this phase (D5: synthetic registries).
+// TODO(phase-7): swap to a real scenario id when The Gathering lands.
+const SCENARIO_ID: &str = "synthetic";
+/// Fixed reconnect backoff. Plenty for a solo v0; not exponential.
+const RECONNECT_MS: u32 = 1000;
+
+/// Sender used by views (the debug button, later P6.7 controls) to
+/// submit actions; cloneable, survives reconnects.
+pub type OutboundTx = mpsc::UnboundedSender<ClientMessage>;
+
+/// Start the transport: provide an `OutboundTx` into context, then spawn
+/// the bootstrap + connect loop. Call once from `App` (wasm only).
+pub fn start(store: StoreSignal) {
+    let (tx, rx) = mpsc::unbounded::<ClientMessage>();
+    provide_context(tx);
+    spawn_local(run(store, rx));
+}
+
+async fn run(store: StoreSignal, mut rx: mpsc::UnboundedReceiver<ClientMessage>) {
+    let mut game_id: GameId = match bootstrap(store).await {
+        Some(id) => id,
+        None => return, // bootstrap set ConnStatus::Failed already
+    };
+
+    loop {
+        let saw_hello = connect_once(&store, &game_id, &mut rx).await;
+
+        // A saved id whose game no longer exists: the server drops the
+        // socket before any Hello. Discard it and create a fresh game.
+        if !saw_hello {
+            clear_saved_id();
+            match create_game(store).await {
+                Some(id) => game_id = id,
+                None => return,
+            }
+        }
+
+        store.update(|s| s.status = ConnStatus::Reconnecting);
+        TimeoutFuture::new(RECONNECT_MS).await;
+    }
+}
+
+/// Resolve a game id: reuse a saved one, else create and save. Returns
+/// `None` (and sets `Failed`) if creation fails.
+async fn bootstrap(store: StoreSignal) -> Option<GameId> {
+    if let Some(id) = saved_id() {
+        return Some(id);
+    }
+    create_game(store).await
+}
+
+async fn create_game(store: StoreSignal) -> Option<GameId> {
+    let resp = Request::post("/games")
+        .json(&CreateGameRequest {
+            scenario_id: SCENARIO_ID.to_string(),
+        })
+        .ok()?
+        .send()
+        .await
+        .ok()?;
+    if let Ok(r) = resp.json::<CreateGameResponse>().await {
+        save_id(&r.game_id);
+        Some(r.game_id)
+    } else {
+        store.update(|s| s.status = ConnStatus::Failed);
+        None
+    }
+}
+
+/// One socket lifetime: open, mark Connected, pump inbound->reduce and
+/// outbound->sink until close. Returns whether a `Hello` was seen.
+async fn connect_once(
+    store: &StoreSignal,
+    game_id: &GameId,
+    rx: &mut mpsc::UnboundedReceiver<ClientMessage>,
+) -> bool {
+    store.update(|s| s.status = ConnStatus::Connecting);
+    let Ok(ws) = WebSocket::open(&current_ws_url(game_id.as_str())) else {
+        return false;
+    };
+    store.update(|s| s.status = ConnStatus::Connected);
+
+    let (mut write, read) = ws.split();
+    let mut read = read.fuse();
+    let mut saw_hello = false;
+
+    loop {
+        select! {
+            incoming = read.next() => match incoming {
+                Some(Ok(Message::Text(txt))) => {
+                    if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
+                        saw_hello |= matches!(msg, ServerMessage::Hello { .. });
+                        store.update(|s| reduce(s, msg));
+                    }
+                }
+                Some(Ok(Message::Bytes(_))) => {}
+                Some(Err(_)) | None => break, // socket closed/errored
+            },
+            outbound = rx.next() => {
+                if let Some(action) = outbound {
+                    if let Ok(json) = serde_json::to_string(&action) {
+                        let _ = write.send(Message::Text(json)).await;
+                    }
+                }
+            }
+        }
+    }
+    saw_hello
+}
+
+fn local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok().flatten()
+}
+fn saved_id() -> Option<GameId> {
+    let raw = local_storage()?.get_item(GAME_ID_KEY).ok().flatten()?;
+    Some(GameId::new(raw))
+}
+fn save_id(id: &GameId) {
+    if let Some(ls) = local_storage() {
+        let _ = ls.set_item(GAME_ID_KEY, id.as_str());
+    }
+}
+fn clear_saved_id() {
+    if let Some(ls) = local_storage() {
+        let _ = ls.remove_item(GAME_ID_KEY);
+    }
+}
