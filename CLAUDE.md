@@ -16,7 +16,7 @@ Likewise, **invoke** the `karpathy-guidelines` skill (don't just recall it) when
 
 ## Commands
 
-CI runs five jobs (`fmt`, `clippy`, `test`, `doc`, `wasm-build`), all warnings-as-errors. Match the strict flags locally before pushing — `cargo test` alone misses broken intra-doc links and clippy lints CI fails on.
+CI runs six jobs (`fmt`, `clippy`, `test`, `doc`, `wasm-build`, `wasm-test`), all warnings-as-errors. Match the strict flags locally before pushing — `cargo test` alone misses broken intra-doc links and clippy lints CI fails on.
 
 ```sh
 # Match CI's strict flags
@@ -25,6 +25,7 @@ RUSTFLAGS="-D warnings"     cargo test --all --all-features
                             cargo fmt --check
 RUSTDOCFLAGS="-D warnings"  cargo doc --workspace --no-deps --all-features
                             cargo build -p web --target wasm32-unknown-unknown
+                            wasm-pack test --headless --firefox crates/web   # headless browser tests (6th CI job)
 
 # Single test (binary name from `cargo test` output)
 cargo test -p game-core <test_fn_name>
