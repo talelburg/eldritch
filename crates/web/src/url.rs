@@ -9,7 +9,7 @@ pub fn ws_url(location_protocol: &str, host: &str, game_id: &str) -> String {
     } else {
         "ws"
     };
-    format!("{scheme}://{host}/games/{game_id}/ws")
+    format!("{scheme}://{host}/ws/{game_id}")
 }
 
 /// Read `window.location` and build this game's WebSocket URL.
@@ -29,7 +29,7 @@ mod tests {
     fn plain_http_uses_ws_and_keeps_port() {
         assert_eq!(
             ws_url("http:", "localhost:3000", "abc"),
-            "ws://localhost:3000/games/abc/ws"
+            "ws://localhost:3000/ws/abc"
         );
     }
 
@@ -37,7 +37,7 @@ mod tests {
     fn https_upgrades_to_wss() {
         assert_eq!(
             ws_url("https:", "play.example.com", "g1"),
-            "wss://play.example.com/games/g1/ws"
+            "wss://play.example.com/ws/g1"
         );
     }
 }

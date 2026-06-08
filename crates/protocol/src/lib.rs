@@ -62,7 +62,7 @@ pub enum ServerMessage {
 
 /// Stable identifier for a persisted game. Part of the client/server
 /// contract: returned by `POST /games` and used in the WebSocket path
-/// `/games/{game_id}/ws`. Lives here (not in `game-core`) because it is a
+/// `/ws/{game_id}`. Lives here (not in `game-core`) because it is a
 /// host/transport concept, not a kernel domain id like `ScenarioId`.
 /// Transparent over `String` — serializes as a bare JSON string, binds to
 /// a `SQLite` TEXT column, and extracts from a URL path segment. Id

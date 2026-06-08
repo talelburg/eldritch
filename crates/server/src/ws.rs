@@ -58,7 +58,7 @@ async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<Game
     Some(room)
 }
 
-/// Axum handler: upgrade a `GET /games/{game_id}/ws` request to a
+/// Axum handler: upgrade a `GET /ws/{game_id}` request to a
 /// websocket attached to that game's broadcast group.
 pub(crate) async fn game_ws(
     State(state): State<AppState>,
