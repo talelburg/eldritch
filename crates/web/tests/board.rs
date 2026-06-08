@@ -5,7 +5,7 @@
 
 use game_core::state::{Act, Agenda, Phase};
 use game_core::test_support::builder::TestGame;
-use game_core::test_support::fixtures::test_investigator;
+use game_core::test_support::fixtures::{test_investigator, test_location};
 use game_core::EngineOutcome;
 use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
@@ -76,4 +76,22 @@ async fn phase_bar_renders_phase_round_act_agenda() {
         html.contains("clues 0/2") || html.contains("0/2"),
         "act threshold missing: {html}"
     );
+}
+
+#[wasm_bindgen_test]
+async fn locations_panel_renders_name_shroud_clues_revealed() {
+    let mut loc = test_location(7, "Rivertown");
+    loc.shroud = 3;
+    loc.clues = 2;
+    let state = TestGame::new()
+        .with_investigator(test_investigator(1))
+        .with_location(loc)
+        .build();
+
+    let html = render_state(state).await;
+
+    assert!(html.contains("Rivertown"), "location name missing: {html}");
+    assert!(html.contains("shroud 3"), "shroud missing: {html}");
+    assert!(html.contains("clues 2"), "location clues missing: {html}");
+    assert!(html.contains("revealed"), "revealed flag missing: {html}");
 }

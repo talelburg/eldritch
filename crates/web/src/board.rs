@@ -27,6 +27,7 @@ pub fn BoardView() -> impl IntoView {
         Some(game) => view! {
             <div class="game">
                 {phase_bar(&game)}
+                {locations_panel(&game)}
             </div>
         }
         .into_any(),
@@ -37,6 +38,36 @@ pub fn BoardView() -> impl IntoView {
             <p class="status">"status: " {status}</p>
             <p class="rejection">"rejection: " {rejection}</p>
             {board}
+        </section>
+    }
+}
+
+/// One row per location: name, shroud, clues, and a revealed flag.
+/// Iterates the `BTreeMap` in `LocationId` order (deterministic).
+fn locations_panel(game: &GameState) -> impl IntoView {
+    let rows: Vec<_> = game
+        .locations
+        .values()
+        .map(|loc| {
+            let revealed = if loc.revealed {
+                "revealed"
+            } else {
+                "unrevealed"
+            };
+            view! {
+                <li class="location">
+                    <span class="loc-name">{loc.name.clone()}</span>
+                    <span class="loc-shroud">"shroud " {loc.shroud}</span>
+                    <span class="loc-clues">"clues " {loc.clues}</span>
+                    <span class="loc-revealed">{revealed}</span>
+                </li>
+            }
+        })
+        .collect();
+    view! {
+        <section class="locations">
+            <h2>"Locations"</h2>
+            <ul>{rows}</ul>
         </section>
     }
 }
