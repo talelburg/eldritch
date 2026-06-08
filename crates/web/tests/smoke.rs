@@ -10,9 +10,9 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 #[wasm_bindgen_test]
 fn app_renders_greeting() {
-    // mount_to_body returns an unmount handle; bind it (not `_`) so the view
-    // stays mounted through the assertion.
-    let _handle = leptos::mount::mount_to_body(web::app::App);
+    // Mount the app into the document body; it stays mounted (attached to
+    // the DOM) for the assertion.
+    leptos::mount::mount_to_body(web::app::App);
 
     let body = leptos::prelude::document()
         .body()

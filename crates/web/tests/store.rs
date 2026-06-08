@@ -23,10 +23,9 @@ fn body_html() -> String {
 #[wasm_bindgen_test]
 async fn hello_renders_state_present() {
     let store = leptos::prelude::RwSignal::new(ClientState::default());
-    // Provide the same signal the component reads, then mount the dump.
-    // Bind the unmount handle (not `_`) so the view stays mounted through
-    // the assertions.
-    let _handle = leptos::mount::mount_to_body(move || {
+    // Provide the same signal the component reads, then mount the dump;
+    // it stays mounted (attached to the DOM) for the assertions.
+    leptos::mount::mount_to_body(move || {
         leptos::prelude::provide_context(store);
         leptos::view! { <DebugDump/> }
     });
