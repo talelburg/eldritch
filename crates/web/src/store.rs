@@ -2,6 +2,7 @@
 
 use game_core::state::GameState;
 use game_core::EngineOutcome;
+use leptos::prelude::*;
 use protocol::ServerMessage;
 
 /// Connection lifecycle, set by the transport (not by `reduce`).
@@ -44,6 +45,22 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.last_rejection = Some(reason);
         }
     }
+}
+
+/// The single reactive store handed through Leptos context.
+pub type StoreSignal = RwSignal<ClientState>;
+
+/// Provide a fresh store signal into context and return it.
+pub fn provide_store() -> StoreSignal {
+    let signal = RwSignal::new(ClientState::default());
+    provide_context(signal);
+    signal
+}
+
+/// Read the store signal from context. Panics if not provided — a
+/// programmer error (every view lives under `provide_store`).
+pub fn use_store() -> StoreSignal {
+    use_context::<StoreSignal>().expect("store signal provided at App root")
 }
 
 #[cfg(test)]
