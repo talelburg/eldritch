@@ -9,6 +9,7 @@ use game_core::test_support::fixtures::{test_enemy, test_investigator, test_loca
 use game_core::EngineOutcome;
 use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::store::{reduce, ClientState};
@@ -150,4 +151,41 @@ async fn enemies_panel_renders_name_stats_engagement() {
     assert!(html.contains("evade 2"), "evade missing: {html}");
     assert!(html.contains("1/2"), "enemy health missing: {html}");
     assert!(html.contains("engaged"), "engagement missing: {html}");
+}
+
+#[wasm_bindgen_test]
+async fn empty_board_renders_placeholder_without_panels() {
+    let store = RwSignal::new(ClientState::default());
+    leptos::mount::mount_to_body(move || {
+        provide_context(store);
+        leptos::view! { <BoardView/> }
+    });
+    leptos::task::tick().await;
+
+    // Scope to only the last mounted <section class="board"> so that
+    // accumulated DOM from earlier tests does not pollute this assertion.
+    let document = leptos::prelude::document();
+    let boards = document
+        .query_selector_all(".board")
+        .expect("query_selector_all");
+    let last = boards
+        .item(boards.length() - 1)
+        .expect("at least one .board section");
+    let html = last
+        .dyn_ref::<web_sys::Element>()
+        .expect("Element")
+        .inner_html();
+
+    assert!(
+        html.contains("&lt;no game&gt;"),
+        "placeholder missing: {html}"
+    );
+    assert!(
+        !html.contains("Investigators"),
+        "panels should be absent: {html}"
+    );
+    assert!(
+        !html.contains("Locations"),
+        "panels should be absent: {html}"
+    );
 }
