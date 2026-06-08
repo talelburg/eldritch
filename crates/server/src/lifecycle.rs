@@ -4,25 +4,11 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use game_core::scenario::ScenarioId;
-use serde::{Deserialize, Serialize};
+use protocol::{CreateGameRequest, CreateGameResponse};
 
-use crate::id::GameId;
+use crate::id::random_game_id;
 use crate::session::{GameSession, SessionError};
 use crate::AppState;
-
-/// Body of `POST /games`.
-#[derive(Debug, Deserialize)]
-pub struct CreateGameRequest {
-    /// The scenario module to set up.
-    pub scenario_id: String,
-}
-
-/// Response to a successful `POST /games`.
-#[derive(Debug, Serialize)]
-pub struct CreateGameResponse {
-    /// The newly created game's id.
-    pub game_id: GameId,
-}
 
 /// `POST /games`: set up a new game from a scenario and return its id.
 ///
@@ -33,7 +19,7 @@ pub(crate) async fn create_game(
     Json(request): Json<CreateGameRequest>,
 ) -> Result<(StatusCode, Json<CreateGameResponse>), StatusCode> {
     let scenario_id = ScenarioId::new(request.scenario_id);
-    match GameSession::create(state.db.clone(), GameId::random(), scenario_id).await {
+    match GameSession::create(state.db.clone(), random_game_id(), scenario_id).await {
         Ok(session) => Ok((
             StatusCode::CREATED,
             Json(CreateGameResponse {

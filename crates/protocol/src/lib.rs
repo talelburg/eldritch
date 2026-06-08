@@ -60,6 +60,61 @@ pub enum ServerMessage {
     },
 }
 
+/// Stable identifier for a persisted game. Part of the client/server
+/// contract: returned by `POST /games` and used in the WebSocket path
+/// `/games/{game_id}/ws`. Transparent over `String` — serializes as a
+/// bare JSON string, binds to a `SQLite` TEXT column, and extracts from a
+/// URL path segment. Id *minting* (`random_game_id`) lives server-side
+/// to keep `uuid` out of this wasm-safe crate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GameId(String);
+
+impl GameId {
+    /// Wrap an existing id string.
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+    /// Borrow the underlying string.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for GameId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+/// Body of `POST /games`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateGameRequest {
+    /// The scenario module to set up.
+    pub scenario_id: String,
+}
+
+/// Response to a successful `POST /games`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateGameResponse {
+    /// The newly created game's id.
+    pub game_id: GameId,
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::GameId;
+
+    #[test]
+    fn serializes_as_a_bare_string() {
+        let id = GameId::new("abc");
+        assert_eq!(serde_json::to_string(&id).unwrap(), "\"abc\"");
+        let back: GameId = serde_json::from_str("\"abc\"").unwrap();
+        assert_eq!(back, id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
