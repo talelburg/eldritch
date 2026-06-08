@@ -46,6 +46,10 @@ async fn run(store: StoreSignal, mut rx: mpsc::UnboundedReceiver<ClientMessage>)
 
         // A saved id whose game no longer exists: the server drops the
         // socket before any Hello. Discard it and create a fresh game.
+        // This relies on the server contract that a valid game *always*
+        // sends Hello immediately on connect, so "no Hello before close"
+        // means the id is stale (it also catches the rare open/handshake
+        // failure, which the same recovery handles harmlessly).
         if !saw_hello {
             clear_saved_id();
             match create_game(store).await {
