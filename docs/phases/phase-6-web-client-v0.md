@@ -20,7 +20,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.1 | [#182](https://github.com/talelburg/eldritch/issues/182) — `protocol` crate extraction + `state` on `Applied` | ✅ PR #193 |
 | P6.2 | [#183](https://github.com/talelburg/eldritch/issues/183) — server production-playable: synthetic registries + static WASM serving | ✅ PR #194 |
 | P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ✅ PR #195 |
-| P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ⏳ open |
+| P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ✅ PR #197 |
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ⏳ open |
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ⏳ open |
 | P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ⏳ open |
@@ -34,7 +34,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.1 | #182 protocol crate + `state` on `Applied` ✅ PR #193 | Foundational; unblocks the client speaking the protocol with shared types | kickoff |
 | P6.2 | #183 server registries + static WASM ✅ PR #194 | The thing the client connects to | — (parallel w/ P6.1) |
 | P6.3 | #184 headless harness + 6th CI job ✅ PR #195 | Testing foundation before TDD-ing components; de-risks browser-in-CI early | — |
-| P6.4 | #185 WS client + reactive store | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
+| P6.4 | #185 WS client + reactive store ✅ PR #197 | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
 | P6.5 | #186 board rendering | See the state | P6.4 |
 | P6.6 | #187 AwaitingInput UI + legality | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
 | P6.7a | #188 core-loop action controls | Toy scenario clickable to a **Won** resolution | P6.6 |
@@ -115,6 +115,28 @@ Settled implementing P6.3 (PR #195):
   `test` would *run*) a browser-only test and break. Only the
   `wasm-test` job (wasm32 via `wasm-pack test --headless --firefox`)
   runs them.
+
+Settled implementing P6.4 (PR #197):
+
+- **`protocol` owns the full client/server contract — HTTP DTOs and
+  identity, not just the WS messages.** `GameId` and the `POST /games`
+  DTOs (`CreateGameRequest`/`CreateGameResponse`) were hoisted out of
+  `server` into `protocol` so the wasm client reuses the real types
+  rather than redefining `String`/local copies. `GameId` carries no
+  `sqlx`/`axum` impls, so the move kept `protocol` dependency-free; id
+  *minting* (`uuid`) stays server-side as `id::random_game_id`, and
+  `server` re-exports `protocol::GameId`. **Convention for later slots:
+  a new client-facing endpoint's request/response types belong in
+  `protocol`.**
+- **`leptos-use` deferred — revisit on the *second* concrete need.**
+  P6.4 needed only a WebSocket + localStorage, both served by
+  already-present `gloo-net` + ~6 lines of `web-sys`, with a pure
+  `reduce` kept library-agnostic. `leptos-use` version-tracks Leptos (an
+  upgrade tax) and adopting it is purely additive, so it was **not**
+  taken. Adopt it when a second concrete cluster appears — e.g.
+  responsive board layout in **P6.5** (`use_media_query` /
+  `use_element_size`) or auth in **Phase 8** (`use_cookie`) — at which
+  point it is justified by real needs, not speculation.
 
 ## Open questions
 
