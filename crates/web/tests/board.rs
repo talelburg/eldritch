@@ -99,7 +99,7 @@ async fn locations_panel_renders_name_shroud_clues_revealed() {
 
 #[wasm_bindgen_test]
 async fn investigators_panel_renders_stats_and_hand() {
-    use game_core::state::CardCode;
+    use game_core::state::{CardCode, CardInPlay, CardInstanceId};
 
     let mut inv = test_investigator(1);
     inv.name = "Roland Banks".to_string();
@@ -112,6 +112,10 @@ async fn investigators_panel_renders_stats_and_hand() {
         CardCode::new("_synth_fast_event"),
         CardCode::new("_synth_treachery"),
     ];
+    inv.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new("_synth_asset"),
+        CardInstanceId(0),
+    )];
     let state = TestGame::new().with_investigator(inv).build();
 
     let html = render_state(state).await;
@@ -129,6 +133,11 @@ async fn investigators_panel_renders_stats_and_hand() {
     assert!(
         html.contains("_synth_treachery"),
         "hand card missing: {html}"
+    );
+    assert!(html.contains("In play"), "in-play heading missing: {html}");
+    assert!(
+        html.contains("_synth_asset"),
+        "in-play card missing: {html}"
     );
 }
 
@@ -150,7 +159,10 @@ async fn enemies_panel_renders_name_stats_engagement() {
     assert!(html.contains("fight 2"), "fight missing: {html}");
     assert!(html.contains("evade 2"), "evade missing: {html}");
     assert!(html.contains("1/2"), "enemy health missing: {html}");
-    assert!(html.contains("engaged"), "engagement missing: {html}");
+    assert!(
+        html.contains("engaged with 1"),
+        "engagement missing: {html}"
+    );
 }
 
 #[wasm_bindgen_test]
