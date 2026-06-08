@@ -2,7 +2,7 @@
 //! helper fns; `BoardView` is the only component. Cards render as their
 //! `CardCode` strings — the client has no card-name source.
 
-use game_core::state::{GameState, LocationId};
+use game_core::state::{GameState, InvestigatorId, LocationId};
 use leptos::prelude::*;
 
 use crate::store::{use_store, ConnStatus};
@@ -29,6 +29,7 @@ pub fn BoardView() -> impl IntoView {
                 {phase_bar(&game)}
                 {locations_panel(&game)}
                 {investigators_panel(&game)}
+                {enemies_panel(&game)}
             </div>
         }
         .into_any(),
@@ -114,6 +115,40 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
         <section class="investigators">
             <h2>"Investigators"</h2>
             {panels}
+        </section>
+    }
+}
+
+/// One row per enemy: name, fight/evade, health (`damage/max_health`),
+/// location, and engagement.
+fn enemies_panel(game: &GameState) -> impl IntoView {
+    let rows: Vec<_> = game
+        .enemies
+        .values()
+        .map(|e| {
+            let engaged = match e.engaged_with {
+                Some(InvestigatorId(id)) => format!("engaged with {id}"),
+                None => "unengaged".to_string(),
+            };
+            let location = e
+                .current_location
+                .map_or_else(|| "—".to_string(), |LocationId(id)| format!("loc {id}"));
+            view! {
+                <li class="enemy">
+                    <span class="enemy-name">{e.name.clone()}</span>
+                    <span class="enemy-fight">"fight " {e.fight}</span>
+                    <span class="enemy-evade">"evade " {e.evade}</span>
+                    <span class="enemy-health">"health " {e.damage} "/" {e.max_health}</span>
+                    <span class="enemy-location">{location}</span>
+                    <span class="enemy-engaged">{engaged}</span>
+                </li>
+            }
+        })
+        .collect();
+    view! {
+        <section class="enemies">
+            <h2>"Enemies"</h2>
+            <ul>{rows}</ul>
         </section>
     }
 }
