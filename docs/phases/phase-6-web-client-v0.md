@@ -16,7 +16,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 
 | Order | Issue | State |
 |---|---|---|
-| — | [#191](https://github.com/talelburg/eldritch/issues/191) — kickoff: design spec + issue breakdown | 🟡 open (this docs PR) |
+| — | [#191](https://github.com/talelburg/eldritch/issues/191) — kickoff: design spec + issue breakdown | ✅ PR #192 |
 | P6.1 | [#182](https://github.com/talelburg/eldritch/issues/182) — `protocol` crate extraction + `state` on `Applied` | ✅ PR #193 |
 | P6.2 | [#183](https://github.com/talelburg/eldritch/issues/183) — server production-playable: synthetic registries + static WASM serving | ✅ PR #194 |
 | P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ✅ PR #195 |
