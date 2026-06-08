@@ -78,7 +78,12 @@ mod tests {
 
     #[test]
     fn applied_updates_game_and_outcome() {
-        let mut s = ClientState::default();
+        // Seed a pending rejection to prove Applied leaves it untouched
+        // (only Hello clears it).
+        let mut s = ClientState {
+            last_rejection: Some("stale".into()),
+            ..Default::default()
+        };
         reduce(
             &mut s,
             ServerMessage::Applied {
@@ -89,6 +94,7 @@ mod tests {
         );
         assert!(s.game.is_some());
         assert_eq!(s.outcome, Some(EngineOutcome::Done));
+        assert_eq!(s.last_rejection.as_deref(), Some("stale"));
     }
 
     #[test]
