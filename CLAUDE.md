@@ -34,15 +34,16 @@ cargo test -p cards --test play_card <test_fn_name>     # integration tests in c
 # Regenerate the card corpus (only after bumping data/arkhamdb-snapshot)
 cargo run -p card-data-pipeline
 
-# Dev loop — single port (serves the WASM bundle + API + WS together)
-cd crates/web && trunk build      # rebuild after client changes (no hot-reload)
-cargo run -p server               # serves crates/web/dist + API/WS on :8000
-# then open http://localhost:8000
+# Dev loop (two terminals) — hot-reload on :3000, proxying to the server
+cargo run -p server                                  # API + WS on :8000
+cd crates/web && trunk serve                         # WASM + hot-reload on :3000
+# then open http://localhost:3000
+#   Proxy config lives in crates/web/Trunk.toml (REST /games + WS /ws, the
+#   latter needing a ws:// backend); a root proxy panics on trunk 0.21.x.
 #
-# `trunk serve --proxy-backend=…` (hot-reload on :3000) does NOT work with
-# trunk 0.21.x: its proxy mounts as an axum `.nest()`, which panics at the
-# root `/`, and our REST (`POST /games`) + WS (`/games/{id}/ws`) share the
-# `/games` prefix so no two-entry proxy config works either. Use single-port.
+# Single-port alternative (no hot-reload; what production serves): build the
+# bundle and let the server serve it on one origin —
+#   cd crates/web && trunk build  &&  cargo run -p server   # open :8000
 ```
 
 ## Architecture

@@ -5,10 +5,17 @@ target = "index.html"
 port = 3000
 addresses = ["127.0.0.1"]
 
-# NOTE: no `[[proxy]]` here. trunk 0.21's proxy mounts each entry as an
-# axum `.nest()`, which (a) panics at the root `/`, and (b) can't serve
-# our REST (`POST /games`) and WebSocket (`/games/{id}/ws`) — they share
-# the `/games` prefix, so two entries collide on one wildcard route while
-# a single entry serves only one of HTTP/WS. For local dev, use the
-# single-port path instead (it's what production runs): `trunk build`,
-# then `cargo run -p server`, and open http://localhost:8000.
+# Proxy the API + WebSocket to the server during dev. Two entries at
+# DISTINCT prefixes so trunk's per-entry axum `.nest()` doesn't collide:
+# `/games` carries the REST (`POST /games`), `/ws` carries the WebSocket
+# upgrade (`/ws/{game_id}` — the reason the WS lives at its own top-level
+# route, not under `/games`). Neither is at the root `/`, which trunk 0.21
+# panics on. The WS backend MUST use the `ws://` scheme: with `http://`,
+# trunk completes the client handshake but fails to open the upstream
+# socket (`Url(UnsupportedUrlScheme)`) and the connection dies (close 1006).
+[[proxy]]
+backend = "http://localhost:8000/games"
+
+[[proxy]]
+backend = "ws://localhost:8000/ws"
+ws = true

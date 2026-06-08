@@ -77,7 +77,7 @@ pub type Client = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// Open a websocket to a game.
 pub async fn connect(addr: SocketAddr, game_id: &str) -> Client {
-    let url = format!("ws://{addr}/games/{game_id}/ws");
+    let url = format!("ws://{addr}/ws/{game_id}");
     let (ws, _response) = connect_async(url).await.expect("ws connect");
     ws
 }

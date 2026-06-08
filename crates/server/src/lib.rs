@@ -85,7 +85,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/games", post(lifecycle::create_game))
-        .route("/games/{game_id}/ws", get(ws::game_ws))
+        .route("/ws/{game_id}", get(ws::game_ws))
         .fallback_service(static_files)
         .with_state(state)
 }
