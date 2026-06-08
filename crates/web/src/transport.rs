@@ -42,25 +42,41 @@ async fn run(store: StoreSignal, mut rx: mpsc::UnboundedReceiver<ClientMessage>)
     };
 
     loop {
-        let saw_hello = connect_once(&store, &game_id, &mut rx).await;
-
-        // A saved id whose game no longer exists: the server drops the
-        // socket before any Hello. Discard it and create a fresh game.
-        // This relies on the server contract that a valid game *always*
-        // sends Hello immediately on connect, so "no Hello before close"
-        // means the id is stale (it also catches the rare open/handshake
-        // failure, which the same recovery handles harmlessly).
-        if !saw_hello {
-            clear_saved_id();
-            match create_game(store).await {
-                Some(id) => game_id = id,
-                None => return,
+        match connect_once(&store, &game_id, &mut rx).await {
+            // Opened, but the server closed before any Hello: a valid game
+            // always sends Hello immediately, so the id is unknown to the
+            // server (e.g. a DB reset). Discard it and create a fresh game.
+            ConnectOutcome::StaleId => {
+                clear_saved_id();
+                match create_game(store).await {
+                    Some(id) => game_id = id,
+                    None => return,
+                }
             }
+            // Couldn't reach the server, or a normal disconnect after a
+            // live session — keep the SAME id and just retry. The server
+            // may be restarting; recreating here would abandon the game
+            // (and wipe the saved id) on every transient outage.
+            ConnectOutcome::Unreachable | ConnectOutcome::Disconnected => {}
         }
 
         store.update(|s| s.status = ConnStatus::Reconnecting);
         TimeoutFuture::new(RECONNECT_MS).await;
     }
+}
+
+/// Outcome of one socket lifetime — the reconnect loop treats these three
+/// cases differently (only `StaleId` discards the saved game id).
+enum ConnectOutcome {
+    /// `WebSocket::open` failed: the server is unreachable (down or
+    /// restarting). Keep the id and retry.
+    Unreachable,
+    /// Opened, but the server closed before sending any `Hello` — the id
+    /// is stale (unknown to the server). Discard it and recreate.
+    StaleId,
+    /// Connected, saw `Hello`, then the socket closed: a normal
+    /// disconnect. Keep the id and reconnect.
+    Disconnected,
 }
 
 /// Resolve a game id: reuse a saved one, else create and save. Returns
@@ -91,15 +107,17 @@ async fn create_game(store: StoreSignal) -> Option<GameId> {
 }
 
 /// One socket lifetime: open, mark Connected, pump inbound->reduce and
-/// outbound->sink until close. Returns whether a `Hello` was seen.
+/// outbound->sink until close. The returned [`ConnectOutcome`] tells the
+/// reconnect loop whether the id is stale, the server is unreachable, or
+/// it was a normal disconnect.
 async fn connect_once(
     store: &StoreSignal,
     game_id: &GameId,
     rx: &mut mpsc::UnboundedReceiver<ClientMessage>,
-) -> bool {
+) -> ConnectOutcome {
     store.update(|s| s.status = ConnStatus::Connecting);
     let Ok(ws) = WebSocket::open(&current_ws_url(game_id.as_str())) else {
-        return false;
+        return ConnectOutcome::Unreachable;
     };
     store.update(|s| s.status = ConnStatus::Connected);
 
@@ -128,7 +146,11 @@ async fn connect_once(
             }
         }
     }
-    saw_hello
+    if saw_hello {
+        ConnectOutcome::Disconnected
+    } else {
+        ConnectOutcome::StaleId
+    }
 }
 
 fn local_storage() -> Option<web_sys::Storage> {
