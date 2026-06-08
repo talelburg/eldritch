@@ -14,3 +14,6 @@ workspace = true
 game-core = { path = "../game-core" }
 leptos = { version = "0.8", features = ["csr"] }
 console_error_panic_hook = "0.1"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
