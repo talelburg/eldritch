@@ -20,8 +20,30 @@ pub fn App() -> impl IntoView {
         <main>
             <h1>"Eldritch"</h1>
             <DebugDump/>
+            {
+                #[cfg(target_arch = "wasm32")]
+                { view! { <DebugSubmit/> }.into_any() }
+                #[cfg(not(target_arch = "wasm32"))]
+                { ().into_any() }
+            }
         </main>
     }
+}
+
+/// Wasm-only debug control: pushes a `ClientMessage::Submit { EndTurn }`
+/// onto the transport's outbound channel, exercising the send path
+/// end-to-end. P6.7 builds the real action controls on this seam.
+#[cfg(target_arch = "wasm32")]
+#[component]
+fn DebugSubmit() -> impl IntoView {
+    let tx = use_context::<crate::transport::OutboundTx>()
+        .expect("OutboundTx provided by transport::start");
+    let on_click = move |_| {
+        let _ = tx.unbounded_send(protocol::ClientMessage::Submit {
+            action: game_core::PlayerAction::EndTurn,
+        });
+    };
+    view! { <button on:click=on_click>"Submit EndTurn (debug)"</button> }
 }
 
 /// Read-only dump of the client store — proves the round-trip before
