@@ -23,7 +23,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ✅ PR #197 |
 | P6.4a | [#199](https://github.com/talelburg/eldritch/issues/199) — restore trunk hot-reload dev loop | ✅ PR #200 |
 | P6.4b | [#198](https://github.com/talelburg/eldritch/issues/198) — WebSocket liveness (heartbeat + graceful shutdown) | ⏭️ deferred → Phase 8 (closed) |
-| P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ⏳ open |
+| P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ✅ PR #204 |
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ⏳ open |
 | P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ⏳ open |
 | P6.7b | [#189](https://github.com/talelburg/eldritch/issues/189) — combat/edge action controls | ⏳ open |
@@ -39,7 +39,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.4 | #185 WS client + reactive store ✅ PR #197 | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
 | P6.4a | #199 hot-reload dev loop ✅ PR #200 | Restore hot-reload **before** the content-UI slots so P6.5+ iterate fast; moved the WS to a distinct `/ws/{id}` route so trunk can proxy REST + WS without colliding | P6.4 |
 | ~~P6.4b~~ | #198 WS liveness — **deferred to Phase 8** | Its triggering symptom is a WSL2 dev artifact, not a real-host bug; genuine liveness is Phase-8 production hardening. See *Decisions made* | — |
-| P6.5 | #186 board rendering | See the state | P6.4 |
+| P6.5 | #186 board rendering ✅ PR #204 | See the state | P6.4 |
 | P6.6 | #187 AwaitingInput UI + legality | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
 | P6.7a | #188 core-loop action controls | Toy scenario clickable to a **Won** resolution | P6.6 |
 | P6.7b | #189 combat/edge action controls | Rounds out the action surface (combat/Lost walk) | P6.7a |
@@ -50,8 +50,9 @@ independent and can land any time before P6.4. P6.4a
 ([#199](https://github.com/talelburg/eldritch/issues/199), trunk
 hot-reload) shipped before the content UI. P6.4b
 ([#198](https://github.com/talelburg/eldritch/issues/198), WS liveness)
-was **deferred to Phase 8 and closed** — see *Decisions made*. So the
-content UI (P6.5+) is next.
+was **deferred to Phase 8 and closed** — see *Decisions made*. P6.5
+(#186, board rendering ✅ PR #204) shipped the read-only board, so the
+interaction layer (P6.6, `AwaitingInput` UI + legality gating) is next.
 
 ## Decisions made
 
@@ -170,10 +171,29 @@ Settled while scoping P6.4b (#198), then **deferred to Phase 8**:
   reconnect-to-a-new-game flow. Both feed the Phase-8 adopt-vs-hand-roll
   (and `leptos-ws-pro`) decision.
 
+Settled implementing P6.5 (PR #204):
+
+- **`leptos-use` deferred again — the read-only board did not trigger
+  it.** P6.4 flagged P6.5's "responsive board layout" as a candidate
+  adopt point (`use_media_query` / `use_element_size`). It isn't one: a
+  read-only text board branches no component trees on viewport size, so
+  any responsiveness is plain CSS (flexbox/grid + media queries) with
+  zero Rust deps. Next concrete candidate stays Phase-8 auth
+  (`use_cookie`); the adopt decision rides with the Phase-8
+  `leptos-use` evaluation noted above.
+- **Headless component tests share one browser page; don't clear
+  `<body>`.** `wasm-bindgen-test` runs every `#[wasm_bindgen_test]` in a
+  single page and `mount_to_body` *appends*, so DOM accumulates across
+  tests — a test asserting an element is *absent* must scope to its own
+  mounted subtree (the empty-board test selects the last
+  `.board` section). `set_inner_html("")` on `<body>` is **not** an
+  option: it deletes the harness's own status elements and the runner
+  then reports "failed to detect test as having been run." Load-bearing
+  for every later interaction test (P6.6+).
+
 ## Open questions
 
-None blocking. Per-PR details: the precise legality-gating surface
-(P6.6); CSS/layout specifics (P6.5).
+None blocking. Per-PR detail: the precise legality-gating surface (P6.6).
 
 ## Dependencies
 

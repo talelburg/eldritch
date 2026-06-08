@@ -8,7 +8,7 @@ use game_core::EngineOutcome;
 use leptos::prelude::Update;
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
-use web::app::DebugDump;
+use web::board::BoardView;
 use web::store::{reduce, ClientState};
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -23,15 +23,15 @@ fn body_html() -> String {
 #[wasm_bindgen_test]
 async fn hello_renders_state_present() {
     let store = leptos::prelude::RwSignal::new(ClientState::default());
-    // Provide the same signal the component reads, then mount the dump;
+    // Provide the same signal the component reads, then mount the board;
     // it stays mounted (attached to the DOM) for the assertions.
     leptos::mount::mount_to_body(move || {
         leptos::prelude::provide_context(store);
-        leptos::view! { <DebugDump/> }
+        leptos::view! { <BoardView/> }
     });
 
     assert!(
-        body_html().contains("state: none"),
+        body_html().contains("&lt;no game&gt;"),
         "before: {}",
         body_html()
     );
@@ -53,9 +53,5 @@ async fn hello_renders_state_present() {
     // with `update`. Yield so the DOM reflects the new signal value.
     leptos::task::tick().await;
 
-    assert!(
-        body_html().contains("state: present"),
-        "after: {}",
-        body_html()
-    );
+    assert!(body_html().contains("phase-bar"), "after: {}", body_html());
 }
