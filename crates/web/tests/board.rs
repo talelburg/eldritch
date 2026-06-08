@@ -95,3 +95,38 @@ async fn locations_panel_renders_name_shroud_clues_revealed() {
     assert!(html.contains("clues 2"), "location clues missing: {html}");
     assert!(html.contains("revealed"), "revealed flag missing: {html}");
 }
+
+#[wasm_bindgen_test]
+async fn investigators_panel_renders_stats_and_hand() {
+    use game_core::state::CardCode;
+
+    let mut inv = test_investigator(1);
+    inv.name = "Roland Banks".to_string();
+    inv.damage = 2; // 2/8
+    inv.horror = 1; // 1/8
+    inv.clues = 3;
+    inv.resources = 4;
+    inv.actions_remaining = 2;
+    inv.hand = vec![
+        CardCode::new("_synth_fast_event"),
+        CardCode::new("_synth_treachery"),
+    ];
+    let state = TestGame::new().with_investigator(inv).build();
+
+    let html = render_state(state).await;
+
+    assert!(html.contains("Roland Banks"), "name missing: {html}");
+    assert!(html.contains("2/8"), "health damage missing: {html}");
+    assert!(html.contains("1/8"), "horror missing: {html}");
+    assert!(html.contains("actions 2"), "actions missing: {html}");
+    assert!(html.contains("resources 4"), "resources missing: {html}");
+    assert!(html.contains("clues 3"), "clues missing: {html}");
+    assert!(
+        html.contains("_synth_fast_event"),
+        "hand card missing: {html}"
+    );
+    assert!(
+        html.contains("_synth_treachery"),
+        "hand card missing: {html}"
+    );
+}
