@@ -21,6 +21,8 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.2 | [#183](https://github.com/talelburg/eldritch/issues/183) — server production-playable: synthetic registries + static WASM serving | ✅ PR #194 |
 | P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ✅ PR #195 |
 | P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ✅ PR #197 |
+| P6.4a | [#199](https://github.com/talelburg/eldritch/issues/199) — restore trunk hot-reload dev loop | ⏳ open |
+| P6.4b | [#198](https://github.com/talelburg/eldritch/issues/198) — WebSocket liveness (heartbeat + graceful shutdown) | ⏳ open |
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ⏳ open |
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ⏳ open |
 | P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ⏳ open |
@@ -35,6 +37,8 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.2 | #183 server registries + static WASM ✅ PR #194 | The thing the client connects to | — (parallel w/ P6.1) |
 | P6.3 | #184 headless harness + 6th CI job ✅ PR #195 | Testing foundation before TDD-ing components; de-risks browser-in-CI early | — |
 | P6.4 | #185 WS client + reactive store ✅ PR #197 | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
+| P6.4a | #199 hot-reload dev loop | Restore hot-reload **before** the content-UI slots so P6.5+ iterate fast; likely moves the WS to a distinct `/ws/{id}` path | P6.4 |
+| P6.4b | #198 WS liveness | Heartbeat + graceful shutdown so the client detects silently-dropped connections — finishes the transport before content builds on it; revisit `leptos-use` here (P6.4 deferral trigger) | P6.4a |
 | P6.5 | #186 board rendering | See the state | P6.4 |
 | P6.6 | #187 AwaitingInput UI + legality | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
 | P6.7a | #188 core-loop action controls | Toy scenario clickable to a **Won** resolution | P6.6 |
@@ -42,7 +46,12 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.8 | #190 resolution + closing demo | Milestone close | all |
 
 P6.1 and P6.2 both touch `server`; sequence to avoid churn. P6.3 is
-independent and can land any time before P6.4.
+independent and can land any time before P6.4. P6.4a and P6.4b are
+foundation follow-ups from P6.4 (surfaced during its manual testing,
+[#198](https://github.com/talelburg/eldritch/issues/198) /
+[#199](https://github.com/talelburg/eldritch/issues/199)) that land
+**before** the content UI; both touch the WS route/transport, so do the
+route move (P6.4a) first to avoid reworking it under P6.4b.
 
 ## Decisions made
 
