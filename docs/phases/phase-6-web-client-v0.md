@@ -22,7 +22,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ✅ PR #195 |
 | P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ✅ PR #197 |
 | P6.4a | [#199](https://github.com/talelburg/eldritch/issues/199) — restore trunk hot-reload dev loop | ✅ PR #200 |
-| P6.4b | [#198](https://github.com/talelburg/eldritch/issues/198) — WebSocket liveness (heartbeat + graceful shutdown) | ⏳ open |
+| P6.4b | [#198](https://github.com/talelburg/eldritch/issues/198) — WebSocket liveness (heartbeat + graceful shutdown) | ⏭️ deferred → Phase 8 (closed) |
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ⏳ open |
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ⏳ open |
 | P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ⏳ open |
@@ -38,7 +38,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.3 | #184 headless harness + 6th CI job ✅ PR #195 | Testing foundation before TDD-ing components; de-risks browser-in-CI early | — |
 | P6.4 | #185 WS client + reactive store ✅ PR #197 | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
 | P6.4a | #199 hot-reload dev loop ✅ PR #200 | Restore hot-reload **before** the content-UI slots so P6.5+ iterate fast; moved the WS to a distinct `/ws/{id}` route so trunk can proxy REST + WS without colliding | P6.4 |
-| P6.4b | #198 WS liveness | Heartbeat + graceful shutdown so the client detects silently-dropped connections — finishes the transport before content builds on it; revisit `leptos-use` here (P6.4 deferral trigger) | P6.4a |
+| ~~P6.4b~~ | #198 WS liveness — **deferred to Phase 8** | Its triggering symptom is a WSL2 dev artifact, not a real-host bug; genuine liveness is Phase-8 production hardening. See *Decisions made* | — |
 | P6.5 | #186 board rendering | See the state | P6.4 |
 | P6.6 | #187 AwaitingInput UI + legality | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
 | P6.7a | #188 core-loop action controls | Toy scenario clickable to a **Won** resolution | P6.6 |
@@ -46,12 +46,12 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.8 | #190 resolution + closing demo | Milestone close | all |
 
 P6.1 and P6.2 both touch `server`; sequence to avoid churn. P6.3 is
-independent and can land any time before P6.4. P6.4a and P6.4b are
-foundation follow-ups from P6.4 (surfaced during its manual testing,
-[#198](https://github.com/talelburg/eldritch/issues/198) /
-[#199](https://github.com/talelburg/eldritch/issues/199)) that land
-**before** the content UI; both touch the WS route/transport, so do the
-route move (P6.4a) first to avoid reworking it under P6.4b.
+independent and can land any time before P6.4. P6.4a
+([#199](https://github.com/talelburg/eldritch/issues/199), trunk
+hot-reload) shipped before the content UI. P6.4b
+([#198](https://github.com/talelburg/eldritch/issues/198), WS liveness)
+was **deferred to Phase 8 and closed** — see *Decisions made*. So the
+content UI (P6.5+) is next.
 
 ## Decisions made
 
@@ -146,6 +146,29 @@ Settled implementing P6.4 (PR #197):
   responsive board layout in **P6.5** (`use_media_query` /
   `use_element_size`) or auth in **Phase 8** (`use_cookie`) — at which
   point it is justified by real needs, not speculation.
+
+Settled while scoping P6.4b (#198), then **deferred to Phase 8**:
+
+- **WS liveness (heartbeat + graceful shutdown) was deferred, and #198
+  closed.** The symptom that motivated it — Ctrl-C the server with a tab
+  open and the client stays `connected` instead of `reconnecting` — is a
+  **WSL2 `localhost`-forwarding artifact**, not a real-host failure. On a
+  normal host a server death sends TCP `FIN`/`RST` and the existing
+  reconnect-on-close fires; the WSL2 relay (Windows browser → WSL server)
+  can leave the socket half-open. So #198 is **not load-bearing for any
+  Phase-6 acceptance** (the stated "reconnect" is tab-close-and-reopen →
+  localStorage rejoin, which works). The genuine need a heartbeat
+  addresses — **client-side** silent drops (wifi loss, sleep, flaky
+  mobile) — is Phase-8 production/multiplayer hardening, captured in the
+  phase-8 doc.
+- **Finding for the Phase-8 `leptos-use` evaluation:** verified against
+  the source that `leptos-use`'s `use_websocket` heartbeat is
+  **send-only** — it emits a periodic frame but does **not** detect a
+  missing response / close on a pong-timeout, so it would *not* have
+  provided the liveness detection by itself. Its URL is also fixed at
+  call time (no reactive URL), which complicates our stale-id
+  reconnect-to-a-new-game flow. Both feed the Phase-8 adopt-vs-hand-roll
+  (and `leptos-ws-pro`) decision.
 
 ## Open questions
 
