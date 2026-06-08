@@ -53,9 +53,5 @@ async fn hello_renders_state_present() {
     // with `update`. Yield so the DOM reflects the new signal value.
     leptos::task::tick().await;
 
-    assert!(
-        body_html().contains("game present"),
-        "after: {}",
-        body_html()
-    );
+    assert!(body_html().contains("phase-bar"), "after: {}", body_html());
 }
