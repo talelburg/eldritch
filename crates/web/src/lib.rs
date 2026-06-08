@@ -5,6 +5,7 @@
 //! components — can import them.
 
 pub mod app;
+pub mod board;
 pub mod store;
 pub mod url;
 
