@@ -19,7 +19,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | — | [#191](https://github.com/talelburg/eldritch/issues/191) — kickoff: design spec + issue breakdown | 🟡 open (this docs PR) |
 | P6.1 | [#182](https://github.com/talelburg/eldritch/issues/182) — `protocol` crate extraction + `state` on `Applied` | ✅ PR #193 |
 | P6.2 | [#183](https://github.com/talelburg/eldritch/issues/183) — server production-playable: synthetic registries + static WASM serving | ✅ PR #194 |
-| P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ⏳ open |
+| P6.3 | [#184](https://github.com/talelburg/eldritch/issues/184) — headless browser test harness + 6th CI job | ✅ PR #195 |
 | P6.4 | [#185](https://github.com/talelburg/eldritch/issues/185) — WS client + reactive state store | ⏳ open |
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ⏳ open |
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ⏳ open |
@@ -33,7 +33,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 |---|---|---|---|
 | P6.1 | #182 protocol crate + `state` on `Applied` ✅ PR #193 | Foundational; unblocks the client speaking the protocol with shared types | kickoff |
 | P6.2 | #183 server registries + static WASM ✅ PR #194 | The thing the client connects to | — (parallel w/ P6.1) |
-| P6.3 | #184 headless harness + 6th CI job | Testing foundation before TDD-ing components; de-risks browser-in-CI early | — |
+| P6.3 | #184 headless harness + 6th CI job ✅ PR #195 | Testing foundation before TDD-ing components; de-risks browser-in-CI early | — |
 | P6.4 | #185 WS client + reactive store | The client's engine room; debug-dump render proves the round-trip | P6.1, P6.3 |
 | P6.5 | #186 board rendering | See the state | P6.4 |
 | P6.6 | #187 AwaitingInput UI + legality | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
@@ -102,6 +102,19 @@ Settled implementing P6.2 (PR #194):
 - **`ServeDir` uses `.fallback()`, not `.not_found_service()`.** The
   SPA fallback to `index.html` must return `200 OK` (the browser's JS
   resolves the route); `not_found_service` would force `404`.
+
+Settled implementing P6.3 (PR #195):
+
+- **Headless component tests live in `crates/web/tests/`, importing
+  `web::app::*`.** The `web` crate is now lib + bin (`lib.rs`/`app.rs` +
+  a thin `main.rs` shim) so `tests/` can reach the components — this is
+  the pattern every later P6 component test follows. Each such test file
+  **must** carry a crate-level `#![cfg(target_arch = "wasm32")]`: a
+  `wasm-bindgen-test` mounts into a DOM that doesn't exist off-wasm, so
+  without the gate the native `test`/`clippy` jobs would compile (and
+  `test` would *run*) a browser-only test and break. Only the
+  `wasm-test` job (wasm32 via `wasm-pack test --headless --firefox`)
+  runs them.
 
 ## Open questions
 
