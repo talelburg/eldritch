@@ -5,7 +5,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc;
-use game_core::state::{InvestigatorId, LocationId, Phase};
+use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::{test_investigator, test_location};
 use game_core::{EngineOutcome, PlayerAction};
@@ -219,5 +219,42 @@ async fn move_picker_submits_move_to_connected_destination() {
             assert_eq!(destination, LocationId(2));
         }
         other => panic!("expected Move, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn play_picker_submits_play_card_by_hand_index() {
+    let mut inv = test_investigator(1);
+    inv.hand = vec![
+        CardCode::new("_synth_event_a"),
+        CardCode::new("_synth_event_b"),
+    ];
+    let game = TestGame::new()
+        .with_investigator(inv)
+        .with_active_investigator(InvestigatorId(1))
+        .with_phase(Phase::Investigation)
+        .build();
+
+    let mut rx = mount(game, EngineOutcome::Done).await;
+    let controls = last_controls();
+    // Click the second card's Play button → hand_index 1.
+    let buttons = controls.query_selector_all(".play-card").expect("query");
+    buttons
+        .item(1)
+        .expect("second play button")
+        .dyn_into::<web_sys::HtmlElement>()
+        .expect("HtmlElement")
+        .click();
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after tick");
+    match submit_action(frame) {
+        PlayerAction::PlayCard {
+            investigator,
+            hand_index,
+        } => {
+            assert_eq!(investigator, InvestigatorId(1));
+            assert_eq!(hand_index, 1);
+        }
+        other => panic!("expected PlayCard, got {other:?}"),
     }
 }

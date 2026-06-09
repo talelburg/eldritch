@@ -5,6 +5,7 @@
 //! Move/PlayCard use inline pickers; Mulligan has its own multi-select.
 //! `board.rs` stays read-only — all interactivity lives here.
 
+use game_core::state::{GameState, InvestigatorId};
 use game_core::PlayerAction;
 use leptos::prelude::*;
 use protocol::ClientMessage;
@@ -37,6 +38,106 @@ fn submit_button(
             {label}
         </button>
     }
+}
+
+/// Move picker: one button per connected destination (from the active
+/// investigator's location's `connections`), labeled by destination name.
+/// Empty when `legal` is false or there is no active investigator/location.
+fn move_picker(
+    game: &GameState,
+    active: Option<InvestigatorId>,
+    legal: bool,
+    tx: Option<&OutboundTx>,
+) -> impl IntoView {
+    let dests: Vec<_> = if legal {
+        active
+            .and_then(|inv| game.investigators.get(&inv))
+            .and_then(|inv| inv.current_location)
+            .and_then(|loc_id| game.locations.get(&loc_id))
+            .map(|loc| loc.connections.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|dest_id| {
+                let inv = active?;
+                let name = game
+                    .locations
+                    .get(&dest_id)
+                    .map_or_else(|| format!("loc {}", dest_id.0), |l| l.name.clone());
+                let tx = tx.cloned();
+                Some(view! {
+                    <button
+                        class="move-dest"
+                        on:click=move |_| {
+                            if let Some(tx) = tx.clone() {
+                                let _ = tx.unbounded_send(ClientMessage::Submit {
+                                    action: PlayerAction::Move {
+                                        investigator: inv,
+                                        destination: dest_id,
+                                    },
+                                });
+                            }
+                        }
+                    >
+                        "Move to " {name}
+                    </button>
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    view! { <div class="move-picker">{dests}</div> }
+}
+
+/// `PlayCard` picker: a "Play" button per card in the active
+/// investigator's hand (`hand_index` = position). Empty when `legal` is
+/// false or there is no active investigator.
+fn play_picker(
+    game: &GameState,
+    active: Option<InvestigatorId>,
+    legal: bool,
+    tx: Option<&OutboundTx>,
+) -> impl IntoView {
+    let buttons: Vec<_> = if legal {
+        active
+            .and_then(|inv| game.investigators.get(&inv))
+            .map(|inv_state| {
+                inv_state
+                    .hand
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, code)| {
+                        let hand_index = u8::try_from(idx).expect("hand fits in u8");
+                        let inv = active.expect("active present in this branch");
+                        let label = code.to_string();
+                        let tx = tx.cloned();
+                        view! {
+                            <li>
+                                <button
+                                    class="play-card"
+                                    on:click=move |_| {
+                                        if let Some(tx) = tx.clone() {
+                                            let _ = tx.unbounded_send(ClientMessage::Submit {
+                                                action: PlayerAction::PlayCard {
+                                                    investigator: inv,
+                                                    hand_index,
+                                                },
+                                            });
+                                        }
+                                    }
+                                >
+                                    "Play " {label}
+                                </button>
+                            </li>
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    view! { <ul class="play-picker">{buttons}</ul> }
 }
 
 /// All core-loop action controls. Reads the store reactively; nothing
@@ -77,47 +178,6 @@ pub fn ActionControls() -> impl IntoView {
                 )
             });
 
-            // Move picker: one button per connected destination, labeled by
-            // the destination's name. Renders only when Move is legal and
-            // the active investigator has a current location.
-            let move_dests: Vec<_> = if has(ActionControl::Move) {
-                active
-                    .and_then(|inv| game.investigators.get(&inv))
-                    .and_then(|inv| inv.current_location)
-                    .and_then(|loc_id| game.locations.get(&loc_id))
-                    .map(|loc| loc.connections.clone())
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|dest_id| {
-                        let inv = active?;
-                        let name = game
-                            .locations
-                            .get(&dest_id)
-                            .map_or_else(|| format!("loc {}", dest_id.0), |l| l.name.clone());
-                        let tx = tx.clone();
-                        Some(view! {
-                            <button
-                                class="move-dest"
-                                on:click=move |_| {
-                                    if let Some(tx) = tx.clone() {
-                                        let _ = tx.unbounded_send(ClientMessage::Submit {
-                                            action: PlayerAction::Move {
-                                                investigator: inv,
-                                                destination: dest_id,
-                                            },
-                                        });
-                                    }
-                                }
-                            >
-                                "Move to " {name}
-                            </button>
-                        })
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
             view! {
                 <section class="controls">
                     {investigate}
@@ -136,7 +196,8 @@ pub fn ActionControls() -> impl IntoView {
                         tx.clone(),
                         PlayerAction::DrawEncounterCard,
                     )}
-                    <div class="move-picker">{move_dests}</div>
+                    {move_picker(&game, active, has(ActionControl::Move), tx.as_ref())}
+                    {play_picker(&game, active, has(ActionControl::PlayCard), tx.as_ref())}
                 </section>
             }
             .into_any()
