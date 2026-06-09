@@ -255,6 +255,13 @@ pub fn ActionControls() -> impl IntoView {
 
             view! {
                 <section class="controls">
+                    {submit_button(
+                        "action start-scenario",
+                        "Start scenario",
+                        !has(ActionControl::StartScenario),
+                        tx.clone(),
+                        PlayerAction::StartScenario,
+                    )}
                     {investigate}
                     {advance_act}
                     {submit_button(

@@ -68,12 +68,15 @@ fn click_in(section: &web_sys::Element, selector: &str) {
         .click();
 }
 
-/// An Investigation-phase game with one active investigator.
+/// An in-progress Investigation-phase game with one active investigator.
+/// `round 1` because an in-progress game is never round 0 (round 0 is the
+/// pre-start state that gates to `StartScenario`).
 fn investigation_game() -> game_core::state::GameState {
     TestGame::new()
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Investigation)
+        .with_round(1)
         .build()
 }
 
@@ -135,6 +138,7 @@ async fn draw_encounter_submits_draw_encounter_card() {
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Mythos)
+        .with_round(1)
         .build();
     game.mythos_draw_pending = Some(InvestigatorId(1));
 
@@ -156,6 +160,7 @@ async fn illegal_controls_are_disabled_and_do_not_submit() {
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Mythos)
+        .with_round(1)
         .build();
     game.mythos_draw_pending = Some(InvestigatorId(1));
 
@@ -196,6 +201,7 @@ async fn move_picker_submits_move_to_connected_destination() {
         .with_location(loc1)
         .with_location(loc2)
         .with_phase(Phase::Investigation)
+        .with_round(1)
         .build();
 
     let mut rx = mount(game, EngineOutcome::Done).await;
@@ -233,6 +239,7 @@ async fn play_picker_submits_play_card_by_hand_index() {
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Investigation)
+        .with_round(1)
         .build();
 
     let mut rx = mount(game, EngineOutcome::Done).await;
@@ -271,6 +278,7 @@ fn mulligan_game() -> game_core::state::GameState {
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Investigation)
+        .with_round(1)
         .with_mulligan_pending(InvestigatorId(1))
         .build()
 }
@@ -318,5 +326,44 @@ async fn mulligan_with_no_selection_keeps_hand() {
             assert_eq!(indices_to_redraw, Vec::<u8>::new());
         }
         other => panic!("expected Mulligan, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn start_scenario_is_the_only_control_at_round_zero() {
+    // The state straight from a scenario `setup()`: phase Mythos, round 0,
+    // no cursors, no active investigator. The only legal action is
+    // StartScenario — this is the state the server hands a freshly created
+    // game, so the player must be able to start it.
+    let game = TestGame::new()
+        .with_investigator(test_investigator(1))
+        .build();
+    assert_eq!(game.round, 0, "precondition: pre-start state");
+
+    let mut rx = mount(game, EngineOutcome::Done).await;
+    let controls = last_controls();
+    let end_turn = controls
+        .query_selector(".end-turn")
+        .expect("query")
+        .expect("end-turn present");
+    let start = controls
+        .query_selector(".start-scenario")
+        .expect("query")
+        .expect("start-scenario present");
+    assert!(
+        end_turn.has_attribute("disabled"),
+        "core-loop buttons should be disabled pre-start"
+    );
+    assert!(
+        !start.has_attribute("disabled"),
+        "Start scenario should be enabled pre-start"
+    );
+
+    click_in(&controls, ".start-scenario");
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after tick");
+    match submit_action(frame) {
+        PlayerAction::StartScenario => {}
+        other => panic!("expected StartScenario, got {other:?}"),
     }
 }

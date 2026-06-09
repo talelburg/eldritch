@@ -12,6 +12,7 @@ use game_core::EngineOutcome;
 /// (`Fight`/`Evade`/`Draw`) join in P6.7b.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ActionControl {
+    StartScenario,
     Move,
     Investigate,
     PlayCard,
@@ -29,21 +30,28 @@ pub enum ActionControl {
 ///    outcome, so it covers every suspension mode the engine surfaces as
 ///    `AwaitingInput` (reaction windows, hunter moves, hand-size discard,
 ///    the skill-test commit window), not just the commit prompt.
-/// 2. The setup cursors dominate their windows: `mulligan_pending` ⇒ only
+/// 2. `round == 0` is the pre-start state straight from a scenario
+///    `setup()` (the engine bumps to round 1 at `StartScenario` and only
+///    ever increments), so `StartScenario` is the sole legal action — it
+///    seeds hands and the mulligan cursor.
+/// 3. The setup cursors dominate their windows: `mulligan_pending` ⇒ only
 ///    `Mulligan`; `mythos_draw_pending` ⇒ only `DrawEncounter`. These are
 ///    state facts, not phase, so they're checked before the phase table.
-/// 3. Otherwise, the controls the current `Phase` permits.
+/// 4. Otherwise, the controls the current `Phase` permits.
 ///
 /// Finer checks (resources, action budget, clue presence) are
 /// deliberately not mirrored — the server's `Rejected` is the truth.
 #[must_use]
 pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<ActionControl> {
     use ActionControl::{
-        AdvanceAct, DrawEncounter, EndTurn, Investigate, Move, Mulligan, PlayCard,
+        AdvanceAct, DrawEncounter, EndTurn, Investigate, Move, Mulligan, PlayCard, StartScenario,
     };
 
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
         return BTreeSet::new();
+    }
+    if game.round == 0 {
+        return BTreeSet::from([StartScenario]);
     }
     if game.mulligan_pending.is_some() {
         return BTreeSet::from([Mulligan]);
@@ -68,11 +76,29 @@ mod tests {
     use std::collections::BTreeSet;
 
     fn investigation_game() -> game_core::state::GameState {
+        // round 1: an in-progress game is never round 0 (the engine bumps
+        // to 1 at StartScenario), and round 0 now gates to StartScenario.
         TestGame::new()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .with_phase(Phase::Investigation)
+            .with_round(1)
             .build()
+    }
+
+    #[test]
+    fn round_zero_enables_only_start_scenario() {
+        // The state straight from a scenario `setup()`: phase Mythos,
+        // round 0, no cursors. The only legal action is StartScenario.
+        let game = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        assert_eq!(game.round, 0, "precondition: pre-start state");
+        assert_eq!(
+            enabled_controls(&game, &EngineOutcome::Done),
+            BTreeSet::from([ActionControl::StartScenario])
+        );
     }
 
     #[test]
