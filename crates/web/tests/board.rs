@@ -3,7 +3,7 @@
 //! wasm32-only (browser DOM); native jobs skip this file.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::state::{Act, Agenda, Phase};
+use game_core::state::{Act, Agenda, CardCode, Phase};
 use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
 use game_core::EngineOutcome;
@@ -53,10 +53,12 @@ async fn phase_bar_renders_phase_round_act_agenda() {
         .with_round(3)
         .build();
     state.act_deck = vec![Act {
+        code: CardCode("_test_act".into()),
         clue_threshold: 2,
         resolution: None,
     }];
     state.agenda_deck = vec![Agenda {
+        code: CardCode("_test_agenda".into()),
         doom_threshold: 5,
         resolution: None,
     }];

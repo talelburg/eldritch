@@ -242,6 +242,11 @@ pub struct GameState {
 /// `#[non_exhaustive]` struct forbids cross-crate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Agenda {
+    /// The encounter-card code this agenda is printed on (e.g.
+    /// `01105`). Lets the trigger dispatcher resolve the agenda's
+    /// `Trigger::OnEvent` abilities through the card registry — the
+    /// agenda owns its Forced effects like any other card.
+    pub code: CardCode,
     /// Total doom in play required to advance (Rules Reference p.24
     /// step 1.3). Flat value only for now; per-investigator scaling
     /// and `Objective –` overrides are deferred until a real
@@ -259,6 +264,10 @@ pub struct Agenda {
 /// [`Agenda`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Act {
+    /// The encounter-card code this act is printed on (e.g. `01108`).
+    /// Lets the trigger dispatcher resolve the act's `Trigger::OnEvent`
+    /// abilities through the card registry.
+    pub code: CardCode,
     /// Clues the investigators must spend to advance (Rules Reference
     /// p.3). Flat value only for now.
     pub clue_threshold: u8,
@@ -1035,6 +1044,27 @@ mod hand_size_discard_tests {
         let json = serde_json::to_string(&original).expect("serialize");
         let back: HandSizeDiscard = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
+    }
+}
+
+#[cfg(test)]
+mod act_agenda_code_tests {
+    use super::*;
+
+    #[test]
+    fn act_and_agenda_carry_card_code() {
+        let act = Act {
+            code: CardCode("01108".into()),
+            clue_threshold: 2,
+            resolution: None,
+        };
+        let agenda = Agenda {
+            code: CardCode("01105".into()),
+            doom_threshold: 3,
+            resolution: None,
+        };
+        assert_eq!(act.code, CardCode("01108".into()));
+        assert_eq!(agenda.code, CardCode("01105".into()));
     }
 }
 
