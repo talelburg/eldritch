@@ -60,13 +60,27 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: Swatinem/rust-cache@v2
+      # taiki-e/install-action fetches prebuilt tool binaries with retries
+      # and a cargo-binstall fallback, replacing jetli/trunk-action's bare,
+      # no-retry GitHub-release download (#196). Version pinned (was
+      # `latest`) so behavior is deterministic.
       - name: Install trunk
-        uses: jetli/trunk-action@v0.5.1
+        uses: taiki-e/install-action@v2
         with:
-          version: latest
+          tool: trunk@0.21.14
       - name: Build web crate
         working-directory: crates/web
-        run: trunk build --release
+        # `trunk build` fetches wasm-bindgen + wasm-opt from GitHub releases
+        # at build time; a transient release-CDN 504 (#196) must not redden
+        # CI. Retry with backoff so an in-run blip is absorbed.
+        run: |
+          for attempt in 1 2 3; do
+            if trunk build --release; then exit 0; fi
+            echo "::warning::trunk build attempt ${attempt} failed (transient tool download?); retrying in $((attempt * 15))s"
+            sleep "$((attempt * 15))"
+          done
+          echo "::error::trunk build failed after 3 attempts"
+          exit 1
 
   wasm-test:
     name: wasm-test
@@ -75,7 +89,13 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: Swatinem/rust-cache@v2
-      - uses: jetli/wasm-pack-action@v0.4.0
+      # taiki-e/install-action (retry + binstall fallback, pinned version)
+      # replaces jetli/wasm-pack-action's bare GitHub-release download —
+      # the wasm-pack fetch that 504'd in #196.
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
       - name: Headless wasm tests
         run: wasm-pack test --headless --firefox crates/web
 
