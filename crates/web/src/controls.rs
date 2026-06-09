@@ -5,6 +5,8 @@
 //! Move/PlayCard use inline pickers; Mulligan has its own multi-select.
 //! `board.rs` stays read-only — all interactivity lives here.
 
+use std::collections::BTreeSet;
+
 use game_core::state::{GameState, InvestigatorId};
 use game_core::PlayerAction;
 use leptos::prelude::*;
@@ -140,12 +142,85 @@ fn play_picker(
     view! { <ul class="play-picker">{buttons}</ul> }
 }
 
+/// Mulligan multi-select: setup-only (gated on the `mulligan_pending`
+/// cursor via the legality helper). Toggling a card flips its index in
+/// `selected`; submitting sends the selected indices (empty = legal "keep
+/// my hand"). Kept separate from the P6.6 commit window — the shapes
+/// diverge (see the design spec). The cursor's investigator owns the
+/// redraw, not necessarily the active one.
+fn mulligan_picker(
+    game: &GameState,
+    legal: bool,
+    selected: RwSignal<BTreeSet<u32>>,
+    tx: Option<&OutboundTx>,
+) -> impl IntoView {
+    if !legal {
+        return ().into_any();
+    }
+    let cursor = game.mulligan_pending;
+    let hand: Vec<String> = cursor
+        .and_then(|id| game.investigators.get(&id))
+        .map(|inv| inv.hand.iter().map(ToString::to_string).collect())
+        .unwrap_or_default();
+    let cards: Vec<_> = hand
+        .into_iter()
+        .enumerate()
+        .map(|(idx, code)| {
+            let i = u32::try_from(idx).expect("hand fits in u32");
+            view! {
+                <li>
+                    <button
+                        class="mull-card"
+                        class:selected=move || selected.get().contains(&i)
+                        on:click=move |_| selected.update(|s| {
+                            if !s.remove(&i) {
+                                s.insert(i);
+                            }
+                        })
+                    >
+                        {code}
+                    </button>
+                </li>
+            }
+        })
+        .collect();
+    let tx = tx.cloned();
+    let on_submit = move |_| {
+        if let Some(inv) = cursor {
+            let indices: Vec<u8> = selected
+                .get()
+                .into_iter()
+                .map(|i| u8::try_from(i).expect("hand fits in u8"))
+                .collect();
+            if let Some(tx) = tx.clone() {
+                let _ = tx.unbounded_send(ClientMessage::Submit {
+                    action: PlayerAction::Mulligan {
+                        investigator: inv,
+                        indices_to_redraw: indices,
+                    },
+                });
+            }
+        }
+        selected.set(BTreeSet::new());
+    };
+    view! {
+        <section class="mulligan">
+            <ul>{cards}</ul>
+            <button class="mulligan-submit" on:click=on_submit>"Mulligan"</button>
+        </section>
+    }
+    .into_any()
+}
+
 /// All core-loop action controls. Reads the store reactively; nothing
 /// renders until both a `game` and an `outcome` are present.
 #[component]
 pub fn ActionControls() -> impl IntoView {
     let store = use_store();
     let tx = use_context::<OutboundTx>();
+    // Mulligan's own selection signal — component-lived so it survives the
+    // reactive re-render and is cleared on submit.
+    let mulligan_sel = RwSignal::new(BTreeSet::<u32>::new());
 
     view! {
         {move || {
@@ -198,6 +273,12 @@ pub fn ActionControls() -> impl IntoView {
                     )}
                     {move_picker(&game, active, has(ActionControl::Move), tx.as_ref())}
                     {play_picker(&game, active, has(ActionControl::PlayCard), tx.as_ref())}
+                    {mulligan_picker(
+                        &game,
+                        has(ActionControl::Mulligan),
+                        mulligan_sel,
+                        tx.as_ref(),
+                    )}
                 </section>
             }
             .into_any()
