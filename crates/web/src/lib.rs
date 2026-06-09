@@ -12,3 +12,6 @@ pub mod url;
 
 #[cfg(target_arch = "wasm32")]
 pub mod transport;
+
+#[cfg(target_arch = "wasm32")]
+pub mod input;
