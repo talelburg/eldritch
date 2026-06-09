@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod board;
+pub mod legality;
 pub mod store;
 pub mod url;
 
