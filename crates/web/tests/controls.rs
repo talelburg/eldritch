@@ -437,3 +437,25 @@ async fn start_scenario_is_the_only_control_at_round_zero() {
         other => panic!("expected StartScenario, got {other:?}"),
     }
 }
+
+#[wasm_bindgen_test]
+async fn resolved_scenario_disables_all_controls() {
+    use game_core::Resolution;
+    // An Investigation-phase game that would normally enable the core
+    // loop; once resolved, every rendered control is disabled.
+    let mut game = investigation_game();
+    game.resolution = Some(Resolution::Won { id: "demo".into() });
+
+    let _rx = mount(game, EngineOutcome::Done).await;
+    let controls = last_controls();
+    for selector in [".start-scenario", ".end-turn", ".draw-encounter"] {
+        let btn = controls
+            .query_selector(selector)
+            .expect("query")
+            .expect("button present");
+        assert!(
+            btn.has_attribute("disabled"),
+            "{selector} should be disabled when the scenario is resolved"
+        );
+    }
+}
