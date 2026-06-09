@@ -64,7 +64,14 @@ pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<A
     }
     match game.phase {
         Phase::Investigation => BTreeSet::from([
-            Move, Investigate, PlayCard, EndTurn, AdvanceAct, Fight, Evade, Draw,
+            Move,
+            Investigate,
+            PlayCard,
+            EndTurn,
+            AdvanceAct,
+            Fight,
+            Evade,
+            Draw,
         ]),
         Phase::Mythos | Phase::Enemy | Phase::Upkeep => BTreeSet::new(),
     }
@@ -142,7 +149,14 @@ mod tests {
         assert_eq!(
             enabled_controls(&game, &EngineOutcome::Done),
             BTreeSet::from([
-                Move, Investigate, PlayCard, EndTurn, AdvanceAct, Fight, Evade, Draw
+                Move,
+                Investigate,
+                PlayCard,
+                EndTurn,
+                AdvanceAct,
+                Fight,
+                Evade,
+                Draw
             ])
         );
     }

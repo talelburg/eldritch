@@ -143,11 +143,17 @@ fn play_picker(
 }
 
 fn fight_action(investigator: InvestigatorId, enemy: EnemyId) -> PlayerAction {
-    PlayerAction::Fight { investigator, enemy }
+    PlayerAction::Fight {
+        investigator,
+        enemy,
+    }
 }
 
 fn evade_action(investigator: InvestigatorId, enemy: EnemyId) -> PlayerAction {
-    PlayerAction::Evade { investigator, enemy }
+    PlayerAction::Evade {
+        investigator,
+        enemy,
+    }
 }
 
 /// Enemy picker: one button per enemy currently engaged with the active
