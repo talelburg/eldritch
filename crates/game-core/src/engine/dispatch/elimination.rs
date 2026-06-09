@@ -177,10 +177,8 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 /// with simultaneous-placement semantics (i.e. [`enemy_attack`](super::combat::enemy_attack) and
 /// any future card effect that deals both) compose the lower-level
 /// [`apply_damage_numeric`](super::combat::apply_damage_numeric) + [`apply_horror_numeric`](super::combat::apply_horror_numeric) +
-/// [`apply_investigator_defeat`] triple instead. A `take_damage`
-/// twin is not provided because no single-source-damage caller exists
-/// yet; the recipe (numeric helper + defeat application on `true`
-/// return) is one line per call site.
+/// [`apply_investigator_defeat`] triple instead. The single-source-damage
+/// twin [`take_damage`] follows the same recipe for [`DefeatCause::Damage`].
 ///
 /// [`Status::Insane`]: crate::state::Status::Insane
 pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {

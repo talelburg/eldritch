@@ -1697,10 +1697,10 @@ mod tests {
         );
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
-        assert!(events.iter().any(|e| matches!(
-            e,
+        assert_event!(
+            events,
             Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
-        )));
+        );
     }
 
     #[test]
@@ -1721,9 +1721,36 @@ mod tests {
         );
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
-        assert!(events.iter().any(|e| matches!(
-            e,
+        assert_event!(
+            events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
-        )));
+        );
+    }
+
+    #[test]
+    fn deal_damage_at_max_health_defeats_investigator() {
+        // Build an investigator with a known low max_health (3), then
+        // apply exactly 3 damage via Effect::DealDamage and assert the
+        // investigator is Killed and InvestigatorDefeated is emitted.
+        use crate::state::Status;
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 3;
+        let mut state = TestGame::new().with_investigator(inv).build();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &deal_damage(InvestigatorTarget::Controller, 3),
+            EvalContext::for_controller(id),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].status, Status::Killed);
+        assert_event!(
+            events,
+            Event::InvestigatorDefeated { investigator, .. } if *investigator == id
+        );
     }
 }
