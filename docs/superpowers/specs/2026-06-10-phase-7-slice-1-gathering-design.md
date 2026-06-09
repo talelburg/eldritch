@@ -284,6 +284,40 @@ mechanical once A/B exist.
   outcome approximation.
 - **Exact encounter-set card list and Roland deck list** — enumerated
   against the snapshot at plan time.
+- **Trigger ordering & resolution UX (mostly a later Phase-7 slice).**
+  Rules Reference p.17: *"If two or more forced abilities (including
+  delayed effects) would resolve at the same time, the lead investigator
+  determines the order in which the abilities resolve."* The target model
+  (confirmed with the user):
+  - The player chooses order **even in solo** (they are the lead).
+  - **Iterative, not order-the-whole-list**: present the pending triggers
+    → player names which resolves *first* → resolve it → re-present the
+    remaining (minus that one) → repeat. More correct than an upfront
+    total order, since resolving one trigger mutates state and can
+    add/remove others.
+  - Uniform across **forced and optional**, with **skip available only
+    when every remaining trigger is optional** (forced are mandatory).
+  - There is also a future click-to-resolve argument even for a *lone*
+    forced trigger (agency / feel-in-charge) — out of scope now.
+
+  This full pipeline lands with the **`emit_event` event-window
+  restructure** — a later Phase-7 slice, not Slice 1. Slice 1's A2 ships
+  only the **single-trigger path**: `fire_forced_triggers` resolves a lone
+  forced trigger immediately and **rejects loudly (TODO)** if 2+ are ever
+  simultaneously pending — no silently-chosen order. The slice's content
+  never produces 2+ simultaneous forced triggers, so that guard is
+  unreachable in practice; it exists to refuse rather than fake.
+
+- **`emit_event` dispatch unification (later Phase-7 slice).** North-star
+  architecture: make event emission itself the dispatch chokepoint — an
+  `emit_event(cx, event)` that consults an event-keyed trigger registry
+  (folding in the #117 index) and routes forced/optional listeners,
+  rather than wiring windows by hand at each emission site. Deferred from
+  Slice 1 because it needs reentrancy handling, mid-emit `AwaitingInput`
+  suspension, and the iterative-ordering pipeline above — none of which
+  Slice 1's content exercises (YAGNI). A1/A2 are forward-compatible: the
+  explicit `fire_forced_triggers` is a clean subset `emit_event` can later
+  absorb. File as a Phase-7 issue (or re-scope #117 to cover it).
 
 ## What "Slice 1 done" looks like
 
