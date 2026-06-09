@@ -41,7 +41,6 @@ Some issues don't belong to a single phase. They live unmilestoned with `p2-late
 - `#174` — periodic state snapshots for replay perf (deferred from Phase 5; build only when profiling demands it).
 - `#83` — `enemy_attack` cleanup (apply both damage and horror when one defeats).
 - `#93` — split DSL types into a shared `card-dsl` crate (architectural improvement; not phase-gated).
-- `#196` — harden wasm CI against GitHub release-CDN 504s (cache/pin `wasm-bindgen`/`wasm-opt`/`wasm-pack`; flaked four reruns on `main` after #195).
 
 ## Template
 
