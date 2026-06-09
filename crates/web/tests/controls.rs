@@ -5,9 +5,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc;
-use game_core::state::{InvestigatorId, Phase};
+use game_core::state::{InvestigatorId, LocationId, Phase};
 use game_core::test_support::builder::TestGame;
-use game_core::test_support::fixtures::test_investigator;
+use game_core::test_support::fixtures::{test_investigator, test_location};
 use game_core::{EngineOutcome, PlayerAction};
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
@@ -182,4 +182,42 @@ async fn illegal_controls_are_disabled_and_do_not_submit() {
     click_in(&controls, ".end-turn");
     leptos::task::tick().await;
     assert!(rx.try_recv().is_err(), "disabled button must not submit");
+}
+
+#[wasm_bindgen_test]
+async fn move_picker_submits_move_to_connected_destination() {
+    // Investigator at location 1, which connects to location 2.
+    let mut loc1 = test_location(1, "Study");
+    loc1.connections = vec![LocationId(2)];
+    let loc2 = test_location(2, "Hallway");
+    let game = TestGame::new()
+        .with_investigator_at(test_investigator(1), LocationId(1))
+        .with_active_investigator(InvestigatorId(1))
+        .with_location(loc1)
+        .with_location(loc2)
+        .with_phase(Phase::Investigation)
+        .build();
+
+    let mut rx = mount(game, EngineOutcome::Done).await;
+    let controls = last_controls();
+    // The single destination button is labeled by the destination name.
+    let dest = controls
+        .query_selector(".move-dest")
+        .expect("query")
+        .expect("a move destination button");
+    assert!(dest.text_content().unwrap_or_default().contains("Hallway"));
+
+    click_in(&controls, ".move-dest");
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after tick");
+    match submit_action(frame) {
+        PlayerAction::Move {
+            investigator,
+            destination,
+        } => {
+            assert_eq!(investigator, InvestigatorId(1));
+            assert_eq!(destination, LocationId(2));
+        }
+        other => panic!("expected Move, got {other:?}"),
+    }
 }

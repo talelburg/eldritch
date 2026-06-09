@@ -77,6 +77,47 @@ pub fn ActionControls() -> impl IntoView {
                 )
             });
 
+            // Move picker: one button per connected destination, labeled by
+            // the destination's name. Renders only when Move is legal and
+            // the active investigator has a current location.
+            let move_dests: Vec<_> = if has(ActionControl::Move) {
+                active
+                    .and_then(|inv| game.investigators.get(&inv))
+                    .and_then(|inv| inv.current_location)
+                    .and_then(|loc_id| game.locations.get(&loc_id))
+                    .map(|loc| loc.connections.clone())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|dest_id| {
+                        let inv = active?;
+                        let name = game
+                            .locations
+                            .get(&dest_id)
+                            .map_or_else(|| format!("loc {}", dest_id.0), |l| l.name.clone());
+                        let tx = tx.clone();
+                        Some(view! {
+                            <button
+                                class="move-dest"
+                                on:click=move |_| {
+                                    if let Some(tx) = tx.clone() {
+                                        let _ = tx.unbounded_send(ClientMessage::Submit {
+                                            action: PlayerAction::Move {
+                                                investigator: inv,
+                                                destination: dest_id,
+                                            },
+                                        });
+                                    }
+                                }
+                            >
+                                "Move to " {name}
+                            </button>
+                        })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             view! {
                 <section class="controls">
                     {investigate}
@@ -95,6 +136,7 @@ pub fn ActionControls() -> impl IntoView {
                         tx.clone(),
                         PlayerAction::DrawEncounterCard,
                     )}
+                    <div class="move-picker">{move_dests}</div>
                 </section>
             }
             .into_any()
