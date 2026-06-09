@@ -252,6 +252,15 @@ pub fn ActionControls() -> impl IntoView {
                     PlayerAction::AdvanceAct { investigator: inv },
                 )
             });
+            let draw = active.map(|inv| {
+                submit_button(
+                    "action draw",
+                    "Draw",
+                    !has(ActionControl::Draw),
+                    tx.clone(),
+                    PlayerAction::Draw { investigator: inv },
+                )
+            });
 
             view! {
                 <section class="controls">
@@ -264,6 +273,7 @@ pub fn ActionControls() -> impl IntoView {
                     )}
                     {investigate}
                     {advance_act}
+                    {draw}
                     {submit_button(
                         "action end-turn",
                         "End turn",
