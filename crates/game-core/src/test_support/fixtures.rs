@@ -18,6 +18,7 @@
 //! when a field addition lands.
 
 use crate::card_data::Prey;
+use crate::engine::{EngineOutcome, InputRequest, ResumeToken};
 use crate::state::{
     CardCode, Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
 };
@@ -107,5 +108,37 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         engaged_with: None,
         hunter: false,
         prey: Prey::Default,
+    }
+}
+
+/// A sample skill-test commit [`AwaitingInput`](EngineOutcome::AwaitingInput)
+/// outcome, for client/UI fixtures. This is the only `AwaitingInput`
+/// shape the engine emits today (the skill-test commit window). The
+/// `ResumeToken` value is irrelevant to rendering — routing keys off
+/// `state.in_flight_skill_test`, not the token.
+#[must_use]
+pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request: InputRequest {
+            prompt: prompt.into(),
+        },
+        resume_token: ResumeToken(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::awaiting_commit_input;
+    use crate::EngineOutcome;
+
+    #[test]
+    fn awaiting_commit_input_carries_the_prompt() {
+        let outcome = awaiting_commit_input("Commit cards for the test");
+        match outcome {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(request.prompt, "Commit cards for the test");
+            }
+            other => panic!("expected AwaitingInput, got {other:?}"),
+        }
     }
 }

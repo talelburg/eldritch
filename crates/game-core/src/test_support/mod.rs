@@ -11,5 +11,5 @@ pub mod fixtures;
 pub mod resolver;
 
 pub use builder::TestGame;
-pub use fixtures::{test_enemy, test_investigator, test_location};
+pub use fixtures::{awaiting_commit_input, test_enemy, test_investigator, test_location};
 pub use resolver::{apply_no_commits, drive, ChoiceResolver, ScriptedResolver, TestSession};
