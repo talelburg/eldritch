@@ -24,8 +24,9 @@ engine framework is already substantial (combat, encounter draws,
 hunters, the enemy phase, skill tests, act/agenda advancement,
 elimination, reaction windows all exist), so Phase 7 is far more a
 **content + integration** phase than an engine-building one. The slice
-surfaces exactly the engine gaps real content needs — chiefly the
-Forced/reaction trigger dispatcher — and builds them once, properly.
+surfaces exactly the engine gaps real content needs — chiefly extending
+the existing reaction-window machinery to forced effects and scenario-card
+sources — and builds them once, properly.
 
 ## Fidelity bar
 
@@ -90,33 +91,63 @@ Two orthogonal axes, kept separate:
   scenario-specific). Per the existing rule: *don't add DSL primitives
   until 2+ cards want the pattern.*
 
-### The trigger spine (the load-bearing new machinery)
+### The trigger spine — *extend* the existing reaction-window machinery
 
-**1. OnEvent/Forced dispatcher (kernel).** The DSL already defines
-`Trigger::OnEvent { pattern, timing }` and `EventPattern` / `Timing`,
-but nothing *fires* OnEvent abilities yet. We build one dispatcher: after
-each event is emitted into the buffer, scan active cards' `OnEvent`
-abilities whose `pattern` matches and run their `Effect` via the existing
-evaluator, under the validate-first contract.
+**Reality check (verified 2026-06-10):** the OnEvent firing pipeline is
+**not** greenfield. `engine/dispatch/reaction_windows.rs` already has a
+full queue/scan/fire pipeline: `scan_pending_triggers` walks in-play
+cards for `Trigger::OnEvent` abilities, matches them against a
+`WindowKind`, honors per-instance usage limits, and fires them;
+windows already open at `AfterEnemyDefeated` (exactly Roland's reaction
+window) and several `PlayerWindow(PhaseStep::…)` points. `PendingTrigger`
+even carries a `forced: bool` field, hardwired `false` today with a
+comment that the DSL had no forced primitive yet. So this slice
+**extends** that machinery rather than building a dispatcher from
+scratch. Four concrete extensions:
 
-- **Scan set:** in-play assets + encounter cards + the current
-  location(s) + the current act + the current agenda.
-- This single piece fires *all* Forced/reaction effects uniformly —
-  treachery/enemy forced effects, location/act/agenda forced effects,
-  **and** Roland's reaction signature.
-- Highest-risk engine piece in the slice; isolate with focused tests.
+**1. Widen the scan set.** `scan_pending_triggers` iterates only
+`inv.cards_in_play`. Extend it to also scan the current **location(s),
+act, and agenda** for `Trigger::OnEvent` abilities, resolved through the
+registry by `CardCode` (same `abilities_for` call). This is what lets
+location/act/agenda forced effects participate.
 
-**2. Kernel trigger windows.** For a card's Forced ability to listen,
-the engine must emit the events: `LocationEntered`, `PhaseEnded(phase)`,
-`RoundEnded`, `EnemyDefeated`, etc. The *effect* lives on the card; the
-*window* that fires it is a kernel concern. Audit which events exist
-today; add the gaps.
+**2. Forced (mandatory) firing.** The `forced` field exists but is always
+`false`. Forced abilities (Attic horror, agenda `01107` movement) must
+fire **mandatorily** — no player "may" window, no `AwaitingInput`
+suspension. This is a real semantic addition: reaction windows suspend
+for a player choice; Forced effects auto-resolve in place. Recommended
+shape: Forced abilities reuse the scan pipeline but take a direct
+auto-fire path (evaluate the effect immediately, in resolution order)
+instead of opening a suspending window. A `Trigger::OnEvent` ability is
+Forced vs. reaction based on whether the printed text is "Forced —" vs.
+"[reaction] … you may"; the card author encodes which.
 
-**3. Acts/agendas carry `CardCode`.** Locations already have `code`; Act
-and Agenda gain one so the dispatcher can resolve their abilities through
-the registry. The thin structs keep only mechanical **state** (clue/doom
-thresholds, resolution latch, shroud, clues, connections); **behavior**
-comes from the registry.
+**3. Open windows / fire forced triggers at new points.** Today windows
+open at defeat + specific phase steps. Add trigger points after
+`InvestigatorMoved` (location entry), at `PhaseEnded(Enemy)` (agenda
+movement), and at end of round (agenda doom). These reuse the existing
+events below — no new events needed for the slice.
+
+**4. Add the `EventPattern` / `WindowKind` variants** the new trigger
+points need (entered-this-location, phase-ended, round-end), matched by
+the existing `trigger_matches`.
+
+**Events already exist.** Audit confirms `InvestigatorMoved`,
+`PhaseEnded { phase }`, `EnemyDefeated`, `DamageTaken`, `HorrorTaken`,
+`ActAdvanced`, `AgendaAdvanced` are all present. "End of round" is the
+`PhaseEnded(Upkeep)` window. So the slice needs **no new `Event`
+variants** — only new `EventPattern`/`WindowKind` variants and the
+trigger-point wiring. Roland's reaction likely already fires through the
+existing `AfterEnemyDefeated` window, making it largely a content task.
+
+**Risk note:** lower than greenfield, but the Forced-vs-reaction split
+(extension 2) and agenda `01107` are the pieces to isolate and test hard.
+
+**Acts/agendas carry `CardCode` (prerequisite for extension 1).**
+Locations already have `code`; Act and Agenda gain one so the widened
+scan can resolve their abilities through the registry. The thin structs
+keep only mechanical **state** (clue/doom thresholds, resolution latch,
+shroud, clues, connections); **behavior** comes from the registry.
 
 ### Symbol-token resolution — through the scenario, owned by the reference card
 
@@ -193,15 +224,19 @@ must populate `deck` before that step runs.
 
 ## Decomposition & build order
 
-**Group A — Engine spine** (unblocks everything; build and prove first)
+**Group A — Engine spine** (unblocks everything; build and prove first).
+*Extends the existing `reaction_windows.rs` machinery — not greenfield.*
 
 1. DSL primitives: `Effect::DealDamage` / `Effect::DealHorror`;
-   forced-on-enter trigger pattern. Pure `card-dsl`.
-2. Kernel trigger windows: emit `LocationEntered`, `PhaseEnded(phase)`,
-   `RoundEnded`, `EnemyDefeated`. Audit + fill gaps.
-3. OnEvent/Forced dispatcher (scan set above; validate-first; focused
-   tests incl. the Roland-reaction case). **Riskiest piece.**
-4. Act/Agenda carry `CardCode`.
+   forced-on-enter `EventPattern`. Pure `card-dsl`.
+2. Act/Agenda carry `CardCode` (prerequisite for the widened scan).
+3. Widen `scan_pending_triggers` to also scan current location/act/agenda
+   via the registry.
+4. Forced (mandatory) auto-fire path (wire the existing `forced` field;
+   no window suspension). **Riskiest piece** alongside agenda `01107`.
+5. New `EventPattern` / `WindowKind` variants + trigger-point wiring at
+   `InvestigatorMoved`, `PhaseEnded(Enemy)`, and round end
+   (`PhaseEnded(Upkeep)`). No new `Event` variants needed.
 
 **Group B — Scenario plumbing**
 
@@ -235,9 +270,9 @@ must populate `deck` before that step runs.
 13. End-to-end gate: integration test driving a solo-Roland Standard run
     to **both** a Won and a Lost resolution, plus the browser demo.
 
-Riskiest pieces to isolate and test hard: the OnEvent dispatcher (#3) and
-agenda `01107` (#8). Everything in C/D is mostly mechanical once A/B
-exist.
+Riskiest pieces to isolate and test hard: the Forced auto-fire path
+(Group A #4) and agenda `01107` (Group C #8). Everything in C/D is mostly
+mechanical once A/B exist.
 
 ## Open questions (settle at plan time; not blockers)
 
