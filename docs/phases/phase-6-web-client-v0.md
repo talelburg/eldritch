@@ -257,6 +257,16 @@ Settled implementing P6.7b (PR #209):
   not a gap. `Fight`/`Evade` are named-field struct variants, so they're
   adapted to the picker's `fn(InvestigatorId, EnemyId) -> PlayerAction`
   constructor slot via thin `fight_action`/`evade_action` wrappers.
+- **Fight/Evade are wired + headless-tested but not reachable in the live
+  toy scenario yet.** `synthetic::setup()` seeds the encounter deck with
+  only `_synth_treachery`; `_synth_enemy` exists but is pushed onto the
+  deck only by integration tests, so no enemy ever spawns/engages through
+  in-browser play and the combat pickers stay empty. The headless tests
+  build an engaged-enemy state directly. Making combat reachable
+  (seeding the enemy so a draw spawns + engages it) is **deferred to P6.8**
+  (#190) — the closing demo's *Lost* path runs through agenda doom, not
+  combat, so this is demo polish, not a milestone blocker. Draw *is*
+  reachable now (rendered in Investigation like Investigate/AdvanceAct).
 
 ## Open questions
 
