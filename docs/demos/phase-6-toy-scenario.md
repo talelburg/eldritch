@@ -21,9 +21,16 @@ Mythos, round 0).
    hands are dealt and the mulligan window opens.
 2. **Mulligan** — keep the opening hand (or mulligan), resolving the
    mulligan window into the Investigation phase.
-3. **Investigate** — gather clues at the starting location.
-4. **Advance act** — once the act's clue threshold is met, advancing past
-   the terminal act card latches `Resolution::Won { id: "demo" }`.
+3. **Investigate** — the starting location holds 4 clues and the demo's
+   chaos bag is a single +0 token, so each Investigate (intellect 3 vs
+   shroud 2) succeeds and moves one clue to you. You have 3 actions per
+   turn; **End turn** to start a new one (the round cycles through
+   Mythos/Enemy/Upkeep — **Draw encounter** when prompted) and keep
+   investigating until you hold 4 clues.
+4. **Advance act** — the act deck has two cards, each needing 2 clues.
+   Advance once (spends 2, moves to the final act), then **Advance act**
+   again (spends 2) to advance past the terminal card, which latches
+   `Resolution::Won { id: "demo" }`.
 5. The board shows the **"Scenario won — demo"** banner and every action
    control goes disabled.
 

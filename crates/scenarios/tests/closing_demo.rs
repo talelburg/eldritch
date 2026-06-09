@@ -13,9 +13,7 @@ use std::sync::Once;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::Resolution;
-use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
-};
+use game_core::state::{CardCode, GameState, InvestigatorId, LocationId, Phase};
 use game_core::{assert_event, Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_TREACHERY_CODE, TEST_REGISTRY,
@@ -91,18 +89,11 @@ fn won_walk_full_cycle_replays_identically() {
     install_registry();
     let inv = InvestigatorId(1);
 
-    // setup() + deterministic local seeding: 4 clues to discover and a
-    // +0 chaos bag so Investigate succeeds against shroud 2 (intellect 3).
-    let make_initial = || {
-        let mut s = scenarios::test_fixtures::synthetic::setup();
-        s.locations.get_mut(&LocationId(10)).unwrap().clues = 4;
-        s.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
-        s.token_modifiers = TokenModifiers::default();
-        // Place the investigator at the demo location so Investigate
-        // can resolve (dispatch rejects if current_location is None).
-        s.investigators.get_mut(&inv).unwrap().current_location = Some(LocationId(10));
-        s
-    };
+    // Raw setup() with no local seeding — exactly the state the browser
+    // plays. setup() itself must place the investigator at the demo
+    // location, stock it with clues, and seed a non-empty chaos bag; this
+    // walk is the regression guard for that (P6.8 demo playability).
+    let make_initial = scenarios::test_fixtures::synthetic::setup;
 
     // Round 1 (Mythos skipped): Investigate x3 (each followed by a
     // CommitCards round-trip for the skill-test commit window) ->
