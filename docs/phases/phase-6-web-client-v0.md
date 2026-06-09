@@ -231,6 +231,15 @@ Settled implementing P6.7a (PR #208):
   P6.6 commit window (`input.rs`); the extract-into-a-shared-component
   trigger is a third multi-select-hand use (the deferred upkeep discard
   prompt, #205).
+- **`StartScenario` is the browser entry point, gated on `round == 0`.**
+  The server hands a freshly created game the raw `setup()` state (phase
+  Mythos, round 0, empty hands), whose only legal action is
+  `StartScenario`. `enabled_controls` keys that off `round == 0` (the
+  round counter only increments from 1, so it uniquely marks the pre-start
+  state). This was a post-review fix: the initial cut omitted
+  `StartScenario`, so the client loaded with every control disabled and no
+  way to begin — and the headless tests masked it by building in-progress
+  states with the builder's default `round 0`, an impossible real state.
 
 ## Open questions
 

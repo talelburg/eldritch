@@ -33,7 +33,7 @@ correctness gate** — the server stays authoritative and rejects anything
 illegal (P6.6 decision S2). When the store has no game (or no outcome),
 the set is empty and everything is disabled.
 
-## The seven controls
+## The controls
 
 "active" investigator = `game.active_investigator`. Mulligan instead uses
 the `mulligan_pending` cursor (the legality helper guarantees only
@@ -41,6 +41,7 @@ Mulligan is enabled in that window).
 
 | Control | UI | Submitted `PlayerAction` |
 |---|---|---|
+| StartScenario | button | `StartScenario` |
 | Investigate | button | `Investigate { investigator: active }` |
 | EndTurn | button | `EndTurn` |
 | DrawEncounterCard | button | `DrawEncounterCard` |
@@ -51,6 +52,20 @@ Mulligan is enabled in that window).
 
 Each action is wrapped in `ClientMessage::Submit { action }` and pushed
 onto the `OutboundTx` channel.
+
+### StartScenario is the entry point
+
+The server hands a freshly created game the raw scenario `setup()` state:
+`phase = Mythos`, `round = 0`, no cursors, empty hands. The only legal
+action there is `StartScenario` (the engine rejects it unless `round == 0`,
+then bumps to round 1, deals hands, and seeds `mulligan_pending`). So
+`enabled_controls` gates `StartScenario` on `round == 0` — which uniquely
+identifies the pre-start state, since the round counter only ever
+increments from 1 — and it is the sole enabled control until the player
+clicks it. (This was missed in the original draft of this spec, which
+enumerated only the in-progress controls; without it the toy scenario
+cannot be started from the browser, failing the "clickable end-to-end"
+acceptance.)
 
 ### Mulligan stays separate from the commit window
 
