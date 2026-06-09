@@ -3,6 +3,7 @@
 //! `CardCode` strings — the client has no card-name source.
 
 use game_core::state::{GameState, InvestigatorId, LocationId};
+use game_core::Resolution;
 use leptos::prelude::*;
 
 use crate::store::{use_store, ConnStatus};
@@ -26,6 +27,7 @@ pub fn BoardView() -> impl IntoView {
         None => view! { <p class="no-game">"<no game>"</p> }.into_any(),
         Some(game) => view! {
             <div class="game">
+                {resolution_banner(&game)}
                 {phase_bar(&game)}
                 {locations_panel(&game)}
                 {investigators_panel(&game)}
@@ -151,6 +153,22 @@ fn enemies_panel(game: &GameState) -> impl IntoView {
             <ul>{rows}</ul>
         </section>
     }
+}
+
+/// Win/loss banner — rendered only once `GameState.resolution` latches.
+/// Read-only display of state, matching the `phase_bar` pattern; keeps
+/// `board.rs` read-only (no new interactivity).
+fn resolution_banner(game: &GameState) -> impl IntoView {
+    game.resolution.as_ref().map(|r| {
+        let text = match r {
+            Resolution::Won { id } => format!("Scenario won — {id}"),
+            Resolution::Lost { reason } => format!("Scenario lost — {reason}"),
+            // `Resolution` is #[non_exhaustive]; a future variant gets a
+            // generic banner until the client learns its shape.
+            _ => "Scenario resolved".to_string(),
+        };
+        view! { <section class="resolution">{text}</section> }
+    })
 }
 
 /// Phase + round, plus the current act's clue threshold and the current

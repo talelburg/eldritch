@@ -201,3 +201,52 @@ async fn empty_board_renders_placeholder_without_panels() {
         "panels should be absent: {html}"
     );
 }
+
+/// The last mounted `.resolution` banner's inner HTML (DOM accumulates
+/// across tests on the shared page — scope to the latest subtree).
+fn last_resolution_html() -> String {
+    let banners = leptos::prelude::document()
+        .query_selector_all(".resolution")
+        .expect("query_selector_all");
+    banners
+        .item(banners.length() - 1)
+        .expect("at least one .resolution banner")
+        .dyn_ref::<web_sys::Element>()
+        .expect("Element")
+        .inner_html()
+}
+
+#[wasm_bindgen_test]
+async fn resolution_banner_renders_won() {
+    use game_core::Resolution;
+    let mut state = TestGame::new()
+        .with_investigator(test_investigator(1))
+        .build();
+    state.resolution = Some(Resolution::Won { id: "demo".into() });
+
+    let _ = render_state(state).await;
+
+    let html = last_resolution_html();
+    assert!(html.contains("won"), "won banner text missing: {html}");
+    assert!(html.contains("demo"), "won id missing: {html}");
+}
+
+#[wasm_bindgen_test]
+async fn resolution_banner_renders_lost() {
+    use game_core::Resolution;
+    let mut state = TestGame::new()
+        .with_investigator(test_investigator(1))
+        .build();
+    state.resolution = Some(Resolution::Lost {
+        reason: "cultist-surge".into(),
+    });
+
+    let _ = render_state(state).await;
+
+    let html = last_resolution_html();
+    assert!(html.contains("lost"), "lost banner text missing: {html}");
+    assert!(
+        html.contains("cultist-surge"),
+        "lost reason missing: {html}"
+    );
+}
