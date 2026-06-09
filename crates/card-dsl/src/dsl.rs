@@ -230,6 +230,17 @@ pub enum EventPattern {
     /// spawns at your location" reaction; that PR gets to extend
     /// this variant with whatever narrowing field it needs.
     EnemySpawned,
+    /// An investigator entered the location this ability is printed on
+    /// (Forced "after you enter \<location\>" effects: Attic `01113`
+    /// takes 1 horror, Cellar `01114` takes 1 damage).
+    ///
+    /// Intentionally bare: the engine binds *you* = the entering
+    /// investigator and *this location* = the ability's own location
+    /// from the trigger context — no narrowing fields needed.
+    ///
+    /// DSL surface only here; the matching + forced auto-fire wiring
+    /// lands in a later task. Until then the engine ignores it.
+    EnteredLocation,
 }
 
 /// When an [`Trigger::OnEvent`] ability fires relative to the
@@ -1145,6 +1156,14 @@ mod tests {
         let revealed = EventPattern::CardRevealed { card_type: None };
         assert_ne!(spawned, defeated);
         assert_ne!(spawned, revealed);
+    }
+
+    #[test]
+    fn entered_location_pattern_round_trips() {
+        let p = EventPattern::EnteredLocation;
+        let json = serde_json::to_string(&p).unwrap();
+        let back: EventPattern = serde_json::from_str(&json).unwrap();
+        assert_eq!(p, back);
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).

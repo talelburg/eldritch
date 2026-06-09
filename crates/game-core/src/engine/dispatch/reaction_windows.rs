@@ -169,11 +169,14 @@ fn trigger_matches(
         // spawned" in Phase 4. A future PR (likely Phase-7+) that wants
         // to react to spawns will add the corresponding WindowKind
         // variant and update this arm.
+        // EnteredLocation is matched by the forced auto-fire path (a later task),
+        // not by reaction windows.
         (
             WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
-            | EventPattern::EnemySpawned,
+            | EventPattern::EnemySpawned
+            | EventPattern::EnteredLocation,
         ) => false,
     }
 }
