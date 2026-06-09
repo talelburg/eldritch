@@ -6,8 +6,12 @@
 
 pub mod app;
 pub mod board;
+pub mod legality;
 pub mod store;
 pub mod url;
 
 #[cfg(target_arch = "wasm32")]
 pub mod transport;
+
+#[cfg(target_arch = "wasm32")]
+pub mod input;

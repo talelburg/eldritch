@@ -24,7 +24,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.4a | [#199](https://github.com/talelburg/eldritch/issues/199) — restore trunk hot-reload dev loop | ✅ PR #200 |
 | P6.4b | [#198](https://github.com/talelburg/eldritch/issues/198) — WebSocket liveness (heartbeat + graceful shutdown) | ⏭️ deferred → Phase 8 (closed) |
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ✅ PR #204 |
-| P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ⏳ open |
+| P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ✅ PR #207 |
 | P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ⏳ open |
 | P6.7b | [#189](https://github.com/talelburg/eldritch/issues/189) — combat/edge action controls | ⏳ open |
 | P6.8 | [#190](https://github.com/talelburg/eldritch/issues/190) — resolution surfacing + closing demo | ⏳ open |
@@ -40,7 +40,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.4a | #199 hot-reload dev loop ✅ PR #200 | Restore hot-reload **before** the content-UI slots so P6.5+ iterate fast; moved the WS to a distinct `/ws/{id}` route so trunk can proxy REST + WS without colliding | P6.4 |
 | ~~P6.4b~~ | #198 WS liveness — **deferred to Phase 8** | Its triggering symptom is a WSL2 dev artifact, not a real-host bug; genuine liveness is Phase-8 production hardening. See *Decisions made* | — |
 | P6.5 | #186 board rendering ✅ PR #204 | See the state | P6.4 |
-| P6.6 | #187 AwaitingInput UI + legality | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
+| P6.6 | #187 AwaitingInput UI + legality ✅ PR #207 | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
 | P6.7a | #188 core-loop action controls | Toy scenario clickable to a **Won** resolution | P6.6 |
 | P6.7b | #189 combat/edge action controls | Rounds out the action surface (combat/Lost walk) | P6.7a |
 | P6.8 | #190 resolution + closing demo | Milestone close | all |
@@ -51,8 +51,9 @@ independent and can land any time before P6.4. P6.4a
 hot-reload) shipped before the content UI. P6.4b
 ([#198](https://github.com/talelburg/eldritch/issues/198), WS liveness)
 was **deferred to Phase 8 and closed** — see *Decisions made*. P6.5
-(#186, board rendering ✅ PR #204) shipped the read-only board, so the
-interaction layer (P6.6, `AwaitingInput` UI + legality gating) is next.
+(#186, board rendering ✅ PR #204) shipped the read-only board and P6.6
+(#187, `AwaitingInput` UI + legality ✅ PR #207) shipped the interaction
+plumbing, so the action controls (P6.7a, #188) are next.
 
 ## Decisions made
 
@@ -191,9 +192,34 @@ Settled implementing P6.5 (PR #204):
   then reports "failed to detect test as having been run." Load-bearing
   for every later interaction test (P6.6+).
 
+Settled implementing P6.6 (PR #207):
+
+- **`AwaitingInput` carries no machine-readable variant discriminator, so
+  the client renders `CommitCards` only.** `InputRequest` is the
+  "Phase-1 minimal shape" (a free-text `prompt` + opaque `ResumeToken`);
+  nothing tells the client which of the seven `InputResponse` variants a
+  prompt wants, and the toy scenario only ever emits the skill-test
+  commit prompt. Routing the other six off prompt-string heuristics would
+  be brittle and speculative. **So P6.7's action controls need not handle
+  any other input variant**; the structured discriminator (client renders
+  the right control for any variant) is [#205](https://github.com/talelburg/eldritch/issues/205)
+  (Phase 7, when real cards first emit `PickIndex`/`PickInvestigator`/…).
+- **Legality gating is coarse and keys off the *outcome*, not engine
+  preconditions.** `web::legality::enabled_controls` gates on the
+  `AwaitingInput` pause, the `mulligan_pending`/`mythos_draw_pending`
+  cursors, and the phase — it does **not** mirror resources, action
+  budget, or clue presence (the server stays authoritative and rejects
+  illegal actions). **P6.7 binds its buttons' `disabled` to this set** as
+  a UX affordance, not a correctness gate. Because the pause keys off the
+  `AwaitingInput` outcome, it covers every engine suspension mode (not
+  just the commit window). Richer "show the player exactly what's legal"
+  affordances are [#206](https://github.com/talelburg/eldritch/issues/206)
+  (Phase 8).
+
 ## Open questions
 
-None blocking. Per-PR detail: the precise legality-gating surface (P6.6).
+None. The legality-gating surface is settled (P6.6, ✅ PR #207) — see
+*Decisions made*.
 
 ## Dependencies
 
