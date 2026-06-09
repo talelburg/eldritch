@@ -88,6 +88,12 @@ pub fn AwaitingInputView() -> impl IntoView {
 
 /// The active investigator's hand as card-code strings (empty when there
 /// is no active investigator).
+///
+/// Solo-scope assumption: the skill-test performer equals
+/// `active_investigator`. The authoritative "whose hand commits" is
+/// `in_flight_skill_test.investigator`; the two coincide in solo but need
+/// not in a delegated/multiplayer test, so input routing is revisited in
+/// #205.
 fn active_hand(game: &GameState) -> Vec<String> {
     game.active_investigator
         .and_then(|id| game.investigators.get(&id))

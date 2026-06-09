@@ -25,7 +25,10 @@ pub enum ActionControl {
 ///
 /// Gating, in order:
 /// 1. An `AwaitingInput` pause blocks every core-loop action — only the
-///    pending `ResolveInput` (the prompt UI) is legal.
+///    pending `ResolveInput` (the prompt UI) is legal. This keys off the
+///    outcome, so it covers every suspension mode the engine surfaces as
+///    `AwaitingInput` (reaction windows, hunter moves, hand-size discard,
+///    the skill-test commit window), not just the commit prompt.
 /// 2. The setup cursors dominate their windows: `mulligan_pending` ⇒ only
 ///    `Mulligan`; `mythos_draw_pending` ⇒ only `DrawEncounter`. These are
 ///    state facts, not phase, so they're checked before the phase table.
