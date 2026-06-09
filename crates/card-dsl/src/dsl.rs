@@ -382,6 +382,20 @@ pub enum Effect {
     /// investigator. (Caller responsibility: validate the location
     /// has clues and the investigator can hold them.)
     DiscoverClue { from: LocationTarget, count: u8 },
+    /// Deal `amount` damage to the resolved target investigator,
+    /// applying defeat if the new total reaches their max health.
+    /// `amount == 0` is a no-op (no event, no target resolution).
+    DealDamage {
+        target: InvestigatorTarget,
+        amount: u8,
+    },
+    /// Deal `amount` horror to the resolved target investigator,
+    /// applying defeat if the new total reaches their max sanity.
+    /// `amount == 0` is a no-op.
+    DealHorror {
+        target: InvestigatorTarget,
+        amount: u8,
+    },
     /// Adjust a stat by `delta` for the duration described by `scope`.
     /// Most scopes are passive contributions to engine queries
     /// rather than mutations of the investigator's stored fields.
@@ -677,6 +691,18 @@ pub fn gain_resources(target: InvestigatorTarget, amount: u8) -> Effect {
 #[must_use]
 pub fn discover_clue(from: LocationTarget, count: u8) -> Effect {
     Effect::DiscoverClue { from, count }
+}
+
+/// Build an [`Effect::DealDamage`] against `target` for `amount`.
+#[must_use]
+pub fn deal_damage(target: InvestigatorTarget, amount: u8) -> Effect {
+    Effect::DealDamage { target, amount }
+}
+
+/// Build an [`Effect::DealHorror`] against `target` for `amount`.
+#[must_use]
+pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
+    Effect::DealHorror { target, amount }
 }
 
 /// Build an [`Effect::Modify`].

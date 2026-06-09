@@ -65,7 +65,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
 /// don't accumulate more damage.
 ///
 /// [`Status`]: crate::state::Status
-pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
+pub(crate) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
     }

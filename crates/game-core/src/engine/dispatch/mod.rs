@@ -23,7 +23,9 @@ mod actions;
 pub(super) mod cards;
 mod combat;
 mod cursor;
-mod elimination;
+// pub(super): evaluator reaches take_damage/take_horror via the full path
+// crate::engine::dispatch::elimination (a sibling of dispatch).
+pub(super) mod elimination;
 mod encounter;
 mod hunters;
 mod phases;

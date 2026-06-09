@@ -183,9 +183,19 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 /// return) is one line per call site.
 ///
 /// [`Status::Insane`]: crate::state::Status::Insane
-pub(super) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
+pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     if super::combat::apply_horror_numeric(cx, investigator, amount) {
         apply_investigator_defeat(cx, investigator, DefeatCause::Horror);
+    }
+}
+
+/// Apply `amount` damage to `investigator` via the numeric helper,
+/// then apply defeat (cause [`DefeatCause::Damage`]) if it was lethal.
+/// The single-source-damage twin of [`take_horror`] — the first such
+/// caller is [`Effect::DealDamage`]'s evaluator.
+pub(crate) fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
+    if super::combat::apply_damage_numeric(cx, investigator, amount) {
+        apply_investigator_defeat(cx, investigator, DefeatCause::Damage);
     }
 }
 
