@@ -26,7 +26,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ✅ PR #204 |
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ✅ PR #207 |
 | P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ✅ PR #208 |
-| P6.7b | [#189](https://github.com/talelburg/eldritch/issues/189) — combat/edge action controls | ⏳ open |
+| P6.7b | [#189](https://github.com/talelburg/eldritch/issues/189) — combat/edge action controls | ✅ PR #209 |
 | P6.8 | [#190](https://github.com/talelburg/eldritch/issues/190) — resolution surfacing + closing demo | ⏳ open |
 
 ## Ordering
@@ -42,7 +42,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.5 | #186 board rendering ✅ PR #204 | See the state | P6.4 |
 | P6.6 | #187 AwaitingInput UI + legality ✅ PR #207 | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
 | P6.7a | #188 core-loop action controls ✅ PR #208 | Toy scenario clickable to a **Won** resolution | P6.6 |
-| P6.7b | #189 combat/edge action controls | Rounds out the action surface (combat/Lost walk) | P6.7a |
+| P6.7b | #189 combat/edge action controls ✅ PR #209 | Rounds out the action surface (combat/Lost walk) | P6.7a |
 | P6.8 | #190 resolution + closing demo | Milestone close | all |
 
 P6.1 and P6.2 both touch `server`; sequence to avoid churn. P6.3 is
@@ -53,8 +53,10 @@ hot-reload) shipped before the content UI. P6.4b
 was **deferred to Phase 8 and closed** — see *Decisions made*. P6.5
 (#186, board rendering ✅ PR #204) shipped the read-only board and P6.6
 (#187, `AwaitingInput` UI + legality ✅ PR #207) shipped the interaction
-plumbing, and P6.7a (#188, core-loop action controls ✅ PR #208) shipped
-the action buttons, so the combat/edge controls (P6.7b, #189) are next.
+plumbing, P6.7a (#188, core-loop action controls ✅ PR #208) shipped the
+action buttons, and P6.7b (#189, combat/edge controls ✅ PR #209) added
+Fight/Evade/Draw, so resolution surfacing + the closing demo (P6.8, #190)
+is the last slot before milestone close.
 
 ## Decisions made
 
@@ -240,6 +242,31 @@ Settled implementing P6.7a (PR #208):
   `StartScenario`, so the client loaded with every control disabled and no
   way to begin — and the headless tests masked it by building in-progress
   states with the builder's default `round 0`, an impossible real state.
+
+Settled implementing P6.7b (PR #209):
+
+- **Fight/Evade use the empty-picker (Move) pattern, not hide-unless-
+  engaged.** The two controls are enabled by `Phase::Investigation` like
+  any other core-loop action, and a single parameterized `enemy_picker`
+  renders one target button per enemy with `engaged_with == Some(active)`
+  — zero buttons when none are engaged, exactly as `move_picker` renders
+  nothing with no connections. This keeps the enemy scan out of the
+  legality layer (which stays phase-coarse) and out of any new
+  conditional-render path. A future combat-UI PR weighing "only show
+  Fight when a target exists" should treat that as a deliberate UX change,
+  not a gap. `Fight`/`Evade` are named-field struct variants, so they're
+  adapted to the picker's `fn(InvestigatorId, EnemyId) -> PlayerAction`
+  constructor slot via thin `fight_action`/`evade_action` wrappers.
+- **Fight/Evade are wired + headless-tested but not reachable in the live
+  toy scenario yet.** `synthetic::setup()` seeds the encounter deck with
+  only `_synth_treachery`; `_synth_enemy` exists but is pushed onto the
+  deck only by integration tests, so no enemy ever spawns/engages through
+  in-browser play and the combat pickers stay empty. The headless tests
+  build an engaged-enemy state directly. Making combat reachable
+  (seeding the enemy so a draw spawns + engages it) is **deferred to P6.8**
+  (#190) — the closing demo's *Lost* path runs through agenda doom, not
+  combat, so this is demo polish, not a milestone blocker. Draw *is*
+  reachable now (rendered in Investigation like Investigate/AdvanceAct).
 
 ## Open questions
 

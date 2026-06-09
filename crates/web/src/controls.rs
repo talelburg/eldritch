@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use game_core::state::{GameState, InvestigatorId};
+use game_core::state::{EnemyId, GameState, InvestigatorId};
 use game_core::PlayerAction;
 use leptos::prelude::*;
 use protocol::ClientMessage;
@@ -142,6 +142,67 @@ fn play_picker(
     view! { <ul class="play-picker">{buttons}</ul> }
 }
 
+fn fight_action(investigator: InvestigatorId, enemy: EnemyId) -> PlayerAction {
+    PlayerAction::Fight {
+        investigator,
+        enemy,
+    }
+}
+
+fn evade_action(investigator: InvestigatorId, enemy: EnemyId) -> PlayerAction {
+    PlayerAction::Evade {
+        investigator,
+        enemy,
+    }
+}
+
+/// Enemy picker: one button per enemy currently engaged with the active
+/// investigator, labeled `"{verb} {enemy name}"`. Empty when `legal` is
+/// false, there is no active investigator, or no enemies are engaged —
+/// same empty-render behavior as `move_picker`.
+fn enemy_picker(
+    game: &GameState,
+    active: Option<InvestigatorId>,
+    legal: bool,
+    class: &'static str,
+    verb: &'static str,
+    make_action: fn(InvestigatorId, EnemyId) -> PlayerAction,
+    tx: Option<&OutboundTx>,
+) -> impl IntoView {
+    let buttons: Vec<_> = if legal {
+        active
+            .map(|inv| {
+                game.enemies
+                    .values()
+                    .filter(|e| e.engaged_with == Some(inv))
+                    .map(|enemy| {
+                        let enemy_id = enemy.id;
+                        let name = enemy.name.clone();
+                        let tx = tx.cloned();
+                        view! {
+                            <button
+                                class=class
+                                on:click=move |_| {
+                                    if let Some(tx) = tx.clone() {
+                                        let _ = tx.unbounded_send(ClientMessage::Submit {
+                                            action: make_action(inv, enemy_id),
+                                        });
+                                    }
+                                }
+                            >
+                                {verb} " " {name}
+                            </button>
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    view! { <div class=format!("{class}-picker")>{buttons}</div> }
+}
+
 /// Mulligan multi-select: setup-only (gated on the `mulligan_pending`
 /// cursor via the legality helper). Toggling a card flips its index in
 /// `selected`; submitting sends the selected indices (empty = legal "keep
@@ -252,6 +313,15 @@ pub fn ActionControls() -> impl IntoView {
                     PlayerAction::AdvanceAct { investigator: inv },
                 )
             });
+            let draw = active.map(|inv| {
+                submit_button(
+                    "action draw",
+                    "Draw",
+                    !has(ActionControl::Draw),
+                    tx.clone(),
+                    PlayerAction::Draw { investigator: inv },
+                )
+            });
 
             view! {
                 <section class="controls">
@@ -264,6 +334,7 @@ pub fn ActionControls() -> impl IntoView {
                     )}
                     {investigate}
                     {advance_act}
+                    {draw}
                     {submit_button(
                         "action end-turn",
                         "End turn",
@@ -280,6 +351,8 @@ pub fn ActionControls() -> impl IntoView {
                     )}
                     {move_picker(&game, active, has(ActionControl::Move), tx.as_ref())}
                     {play_picker(&game, active, has(ActionControl::PlayCard), tx.as_ref())}
+                    {enemy_picker(&game, active, has(ActionControl::Fight), "fight-target", "Fight", fight_action, tx.as_ref())}
+                    {enemy_picker(&game, active, has(ActionControl::Evade), "evade-target", "Evade", evade_action, tx.as_ref())}
                     {mulligan_picker(
                         &game,
                         has(ActionControl::Mulligan),

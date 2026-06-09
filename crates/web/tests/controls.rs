@@ -5,9 +5,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
+use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase};
 use game_core::test_support::builder::TestGame;
-use game_core::test_support::fixtures::{test_investigator, test_location};
+use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
 use game_core::{EngineOutcome, PlayerAction};
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
@@ -326,6 +326,76 @@ async fn mulligan_with_no_selection_keeps_hand() {
             assert_eq!(indices_to_redraw, Vec::<u8>::new());
         }
         other => panic!("expected Mulligan, got {other:?}"),
+    }
+}
+
+/// An Investigation-phase game with one enemy (id 7) engaged with the
+/// active investigator (id 1).
+fn investigation_game_with_engaged_enemy() -> game_core::state::GameState {
+    let mut enemy = test_enemy(7, "Ghoul");
+    enemy.engaged_with = Some(InvestigatorId(1));
+    TestGame::new()
+        .with_investigator(test_investigator(1))
+        .with_active_investigator(InvestigatorId(1))
+        .with_phase(Phase::Investigation)
+        .with_round(1)
+        .with_enemy(enemy)
+        .build()
+}
+
+#[wasm_bindgen_test]
+async fn draw_button_submits_draw() {
+    let game = investigation_game();
+    let mut rx = mount(game, EngineOutcome::Done).await;
+    let controls = last_controls();
+    click_in(&controls, ".action.draw");
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after tick");
+    match submit_action(frame) {
+        PlayerAction::Draw { investigator } => {
+            assert_eq!(investigator, InvestigatorId(1));
+        }
+        other => panic!("expected Draw, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn fight_target_submits_fight_with_chosen_enemy() {
+    let game = investigation_game_with_engaged_enemy();
+    let mut rx = mount(game, EngineOutcome::Done).await;
+    let controls = last_controls();
+    click_in(&controls, ".fight-target");
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after tick");
+    match submit_action(frame) {
+        PlayerAction::Fight {
+            investigator,
+            enemy,
+        } => {
+            assert_eq!(investigator, InvestigatorId(1));
+            assert_eq!(enemy, EnemyId(7));
+        }
+        other => panic!("expected Fight, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn evade_target_submits_evade_with_chosen_enemy() {
+    let game = investigation_game_with_engaged_enemy();
+    let mut rx = mount(game, EngineOutcome::Done).await;
+    let controls = last_controls();
+    click_in(&controls, ".evade-target");
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after tick");
+    match submit_action(frame) {
+        PlayerAction::Evade {
+            investigator,
+            enemy,
+        } => {
+            assert_eq!(investigator, InvestigatorId(1));
+            assert_eq!(enemy, EnemyId(7));
+        }
+        other => panic!("expected Evade, got {other:?}"),
     }
 }
 

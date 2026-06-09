@@ -8,8 +8,7 @@ use std::collections::BTreeSet;
 use game_core::state::{GameState, Phase};
 use game_core::EngineOutcome;
 
-/// A clickable core-loop action in the client. Combat controls
-/// (`Fight`/`Evade`/`Draw`) join in P6.7b.
+/// A clickable core-loop action in the client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ActionControl {
     StartScenario,
@@ -20,6 +19,9 @@ pub enum ActionControl {
     Mulligan,
     DrawEncounter,
     AdvanceAct,
+    Fight,
+    Evade,
+    Draw,
 }
 
 /// The controls the player may click right now.
@@ -44,7 +46,8 @@ pub enum ActionControl {
 #[must_use]
 pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<ActionControl> {
     use ActionControl::{
-        AdvanceAct, DrawEncounter, EndTurn, Investigate, Move, Mulligan, PlayCard, StartScenario,
+        AdvanceAct, Draw, DrawEncounter, EndTurn, Evade, Fight, Investigate, Move, Mulligan,
+        PlayCard, StartScenario,
     };
 
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
@@ -60,14 +63,25 @@ pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<A
         return BTreeSet::from([DrawEncounter]);
     }
     match game.phase {
-        Phase::Investigation => BTreeSet::from([Move, Investigate, PlayCard, EndTurn, AdvanceAct]),
+        Phase::Investigation => BTreeSet::from([
+            Move,
+            Investigate,
+            PlayCard,
+            EndTurn,
+            AdvanceAct,
+            Fight,
+            Evade,
+            Draw,
+        ]),
         Phase::Mythos | Phase::Enemy | Phase::Upkeep => BTreeSet::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ActionControl::{AdvanceAct, EndTurn, Investigate, Move, PlayCard};
+    use super::ActionControl::{
+        AdvanceAct, Draw, EndTurn, Evade, Fight, Investigate, Move, PlayCard,
+    };
     use super::{enabled_controls, ActionControl};
     use game_core::state::{InvestigatorId, Phase};
     use game_core::test_support::builder::TestGame;
@@ -134,7 +148,16 @@ mod tests {
         let game = investigation_game();
         assert_eq!(
             enabled_controls(&game, &EngineOutcome::Done),
-            BTreeSet::from([Move, Investigate, PlayCard, EndTurn, AdvanceAct])
+            BTreeSet::from([
+                Move,
+                Investigate,
+                PlayCard,
+                EndTurn,
+                AdvanceAct,
+                Fight,
+                Evade,
+                Draw
+            ])
         );
     }
 
