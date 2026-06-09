@@ -2,11 +2,35 @@
 
 ## Status
 
-📐 Architecture only. Two issues filed (`#65`, `#77`) tagged here; the rest TBD.
+🛠️ **Slice 1 planned** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216)).
+Phase decomposed into vertical slices; Slice 1 (Roland through The
+Gathering, solo, Standard) is specced and the engine spine is planned.
+Design spec:
+[`docs/superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md`](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md).
 
 ## Goal
 
 First real scenario playable in browser, solo, all 5 investigators.
+
+## Slice 1 — Roland through The Gathering
+
+Vertical-slice-first: one investigator playable end-to-end (solo,
+Standard, win/lose-path fidelity) before breadth. Deferred north-star
+work: `emit_event` dispatch unification (`#212`) + iterative
+trigger-ordering (`#213`), folding in `#117`.
+
+| Order | Issue | Plan | State |
+|---|---|---|---|
+| — | [#216](https://github.com/talelburg/eldritch/issues/216) — kickoff: spec + engine-spine plans + breakdown | — | 🔜 PR open |
+| A1 | [#214](https://github.com/talelburg/eldritch/issues/214) — engine-spine primitives (DealDamage/DealHorror, EnteredLocation, Act/Agenda CardCode) | `plans/2026-06-10-…-engine-spine-primitives.md` | ⏳ planned |
+| A2 | [#215](https://github.com/talelburg/eldritch/issues/215) — forced-trigger dispatch (`fire_forced_triggers`) — depends on A1 | `plans/2026-06-10-…-forced-trigger-dispatch.md` | ⏳ planned |
+| B | scenario plumbing: `reference_card` + symbol routing; roster/seating + `StartScenario` selection; real-registry swap (D5) | TBD | 📐 spec'd |
+| C | content: Gathering scenario cards + setup + Roland + signature/weakness + starter deck | TBD | 📐 spec'd |
+| D | integration & web: investigator/scenario picker; end-to-end Won/Lost gate | TBD | 📐 spec'd |
+
+Group A *extends* the existing `reaction_windows.rs` OnEvent machinery
+(not greenfield); forced scenario effects take a separate immediate path
+(`fire_forced_triggers`) distinct from player reaction windows.
 
 ## Issues (filed)
 
