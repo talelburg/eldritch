@@ -25,7 +25,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.4b | [#198](https://github.com/talelburg/eldritch/issues/198) — WebSocket liveness (heartbeat + graceful shutdown) | ⏭️ deferred → Phase 8 (closed) |
 | P6.5 | [#186](https://github.com/talelburg/eldritch/issues/186) — board rendering (read-only) | ✅ PR #204 |
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ✅ PR #207 |
-| P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ⏳ open |
+| P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ✅ PR #208 |
 | P6.7b | [#189](https://github.com/talelburg/eldritch/issues/189) — combat/edge action controls | ⏳ open |
 | P6.8 | [#190](https://github.com/talelburg/eldritch/issues/190) — resolution surfacing + closing demo | ⏳ open |
 
@@ -41,7 +41,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | ~~P6.4b~~ | #198 WS liveness — **deferred to Phase 8** | Its triggering symptom is a WSL2 dev artifact, not a real-host bug; genuine liveness is Phase-8 production hardening. See *Decisions made* | — |
 | P6.5 | #186 board rendering ✅ PR #204 | See the state | P6.4 |
 | P6.6 | #187 AwaitingInput UI + legality ✅ PR #207 | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
-| P6.7a | #188 core-loop action controls | Toy scenario clickable to a **Won** resolution | P6.6 |
+| P6.7a | #188 core-loop action controls ✅ PR #208 | Toy scenario clickable to a **Won** resolution | P6.6 |
 | P6.7b | #189 combat/edge action controls | Rounds out the action surface (combat/Lost walk) | P6.7a |
 | P6.8 | #190 resolution + closing demo | Milestone close | all |
 
@@ -53,7 +53,8 @@ hot-reload) shipped before the content UI. P6.4b
 was **deferred to Phase 8 and closed** — see *Decisions made*. P6.5
 (#186, board rendering ✅ PR #204) shipped the read-only board and P6.6
 (#187, `AwaitingInput` UI + legality ✅ PR #207) shipped the interaction
-plumbing, so the action controls (P6.7a, #188) are next.
+plumbing, and P6.7a (#188, core-loop action controls ✅ PR #208) shipped
+the action buttons, so the combat/edge controls (P6.7b, #189) are next.
 
 ## Decisions made
 
@@ -215,6 +216,21 @@ Settled implementing P6.6 (PR #207):
   just the commit window). Richer "show the player exactly what's legal"
   affordances are [#206](https://github.com/talelburg/eldritch/issues/206)
   (Phase 8).
+
+Settled implementing P6.7a (PR #208):
+
+- **Action affordances live in a dedicated controls panel; `board.rs`
+  stays read-only.** `ActionControls` (`crates/web/src/controls.rs`)
+  renders the buttons and inline Move/PlayCard pickers; it does not make
+  board locations or hand cards directly clickable. Making the board
+  itself interactive (click a location to move, a card to play) is the
+  preferred surface for real player UX and is **deliberately deferred** —
+  a future-phase change, not an oversight. Future UI PRs adding richer
+  interaction should weigh promoting interactivity into the board against
+  extending the panel. The Mulligan multi-select is kept separate from the
+  P6.6 commit window (`input.rs`); the extract-into-a-shared-component
+  trigger is a third multi-select-hand use (the deferred upkeep discard
+  prompt, #205).
 
 ## Open questions
 
