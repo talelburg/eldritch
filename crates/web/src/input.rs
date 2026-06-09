@@ -22,7 +22,11 @@ pub fn AwaitingInputView() -> impl IntoView {
     let store = use_store();
     let tx = use_context::<OutboundTx>();
     // One prompt is live at a time in solo, so a single component-lived
-    // selection signal suffices.
+    // selection signal suffices. It is cleared after a commit; it is NOT
+    // cleared when an `AwaitingInput` is dismissed without committing
+    // (server abandons a skill test), which the toy scenario never does —
+    // revisit if a path can present a second prompt without an intervening
+    // commit.
     let selected = RwSignal::new(BTreeSet::<u32>::new());
 
     view! {

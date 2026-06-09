@@ -111,7 +111,9 @@ async fn commit_with_no_selection_submits_empty() {
     let section = last_section();
     click_in(&section, ".commit", 0);
     leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame in the channel");
+    let frame = rx
+        .try_recv()
+        .expect("a frame after tick — did tick flush the click handler?");
     assert_eq!(commit_indices(frame), Vec::<u32>::new());
 }
 
@@ -123,6 +125,8 @@ async fn commit_after_selecting_submits_that_index() {
     leptos::task::tick().await;
     click_in(&section, ".commit", 0);
     leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame in the channel");
+    let frame = rx
+        .try_recv()
+        .expect("a frame after tick — did tick flush the click handler?");
     assert_eq!(commit_indices(frame), vec![0]);
 }
