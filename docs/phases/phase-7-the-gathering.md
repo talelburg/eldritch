@@ -32,6 +32,36 @@ Group A *extends* the existing `reaction_windows.rs` OnEvent machinery
 (not greenfield); forced scenario effects take a separate immediate path
 (`fire_forced_triggers`) distinct from player reaction windows.
 
+## Future slices (after Slice 1)
+
+Not yet specced/planned in detail — recorded here so the arc survives a
+fresh session. Rough order; each becomes its own spec → plan → issues
+when picked up.
+
+- **Slice 2+ — investigator breadth.** The other four original-Core
+  investigators (Daisy Walker, "Skids" O'Toole, Agnes Baker, Wendy
+  Adams), each with their signature asset/weakness pair and starter
+  deck — the same content shape as Roland in Slice 1, reusing the engine
+  spine. Likely one slice per investigator (or grouped) once Slice 1
+  proves the pipe. Goal: all five picker-eligible.
+- **Difficulty selection.** Slice 1 ships **Standard** only. Add Easy /
+  Hard / Expert chaos bags + a difficulty picker.
+- **Solo-with-2 UX.** One client driving two investigators — how the
+  picker, turn flow, and board present two characters under one player.
+  Genuinely open design question (see Open questions).
+- **Deferred optional Gathering content** (off the win/lose path, so cut
+  from Slice 1): Lita Chantler's parley/take-control and the Parlor
+  (`01115`) **Resign** action.
+- **Engine north-star (cross-slice, may be its own slice).** `emit_event`
+  dispatch unification (`#212`) + iterative simultaneous-trigger ordering
+  (`#213`, RR p.17 — player picks order even in solo) + the trigger
+  index (`#117`); plus the optional click-to-resolve UX for *lone* forced
+  effects. Slice 1's `fire_forced_triggers` is a forward-compatible
+  subset; this work replaces its single-trigger-only limitation.
+
+Campaign sequencing beyond The Gathering (The Midnight Masks, The
+Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
+
 ## Issues (filed)
 
 | # | Title | Notes |
@@ -47,14 +77,18 @@ Group A *extends* the existing `reaction_windows.rs` OnEvent machinery
 
 ## Open questions
 
-⏳ **Scoping TBD.** When Phase 6 closes, file:
+The Phase-6-era "scoping TBD" list is now addressed by the slice
+structure above — the scenario module, encounter/act/agenda/location
+impls, Roland, and Standard difficulty are **Slice 1** (kickoff `#216`);
+the other investigators, difficulties, solo-2 UX, and optional content
+map to **Future slices**. Genuinely-open design questions that remain:
 
-- **Scenario module: The Gathering.** Locations, encounter set wiring, act/agenda decks, resolution conditions.
-- **Card implementations** for every card in The Gathering's encounter sets and every card in the five investigators' starter decks. Substantial volume.
-- **Investigator card implementations** for the 5 original-Core investigators. Each has stats, max-health/sanity, signature card pairings.
-- **Story-asset/weakness implementations.** Cover Up, Lita Chantler, Hospital Debts, etc. — the campaign-driven mods.
-- **Difficulty selection.** Easy / Standard / Hard / Expert chaos bags.
-- **Solo-with-2 UX.** One player controls two investigators; how does the client present that?
+- **Solo-with-2 UX.** One player controls two investigators; how does
+  the client present that (picker, whose-turn, two boards vs. tabbed)?
+  Unresolved — a Future-slice design question.
+- **Story-asset/weakness shape.** Cover Up (Roland's, in Slice 1) is
+  scoped, but the broader campaign-driven mods (Lita Chantler, Hospital
+  Debts, …) need a pattern; revisit as they land.
 
 ## Dependencies
 
