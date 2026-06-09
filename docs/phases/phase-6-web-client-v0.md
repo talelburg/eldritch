@@ -2,7 +2,7 @@
 
 ## Status
 
-🟡 In progress (kickoff 2026-06-08). Issues filed; design spec at
+🟢 Complete (PR #210, closing P6.8). Kicked off 2026-06-08; design spec at
 [`docs/superpowers/specs/2026-06-08-phase-6-web-client-v0-design.md`](../superpowers/specs/2026-06-08-phase-6-web-client-v0-design.md).
 
 ## Goal
@@ -27,7 +27,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.6 | [#187](https://github.com/talelburg/eldritch/issues/187) — AwaitingInput resolution UI + legality gating | ✅ PR #207 |
 | P6.7a | [#188](https://github.com/talelburg/eldritch/issues/188) — core-loop action controls | ✅ PR #208 |
 | P6.7b | [#189](https://github.com/talelburg/eldritch/issues/189) — combat/edge action controls | ✅ PR #209 |
-| P6.8 | [#190](https://github.com/talelburg/eldritch/issues/190) — resolution surfacing + closing demo | ⏳ open |
+| P6.8 | [#190](https://github.com/talelburg/eldritch/issues/190) — resolution surfacing + closing demo | ✅ PR #210 |
 
 ## Ordering
 
@@ -43,7 +43,7 @@ accumulating doom), and reconnecting mid-scenario restores the board.
 | P6.6 | #187 AwaitingInput UI + legality ✅ PR #207 | Core-loop: `Investigate` opens a skill-test commit window (`AwaitingInput`), so this precedes the action controls | P6.5 |
 | P6.7a | #188 core-loop action controls ✅ PR #208 | Toy scenario clickable to a **Won** resolution | P6.6 |
 | P6.7b | #189 combat/edge action controls ✅ PR #209 | Rounds out the action surface (combat/Lost walk) | P6.7a |
-| P6.8 | #190 resolution + closing demo | Milestone close | all |
+| P6.8 | #190 resolution + closing demo ✅ PR #210 | Milestone close | all |
 
 P6.1 and P6.2 both touch `server`; sequence to avoid churn. P6.3 is
 independent and can land any time before P6.4. P6.4a
@@ -55,8 +55,9 @@ was **deferred to Phase 8 and closed** — see *Decisions made*. P6.5
 (#187, `AwaitingInput` UI + legality ✅ PR #207) shipped the interaction
 plumbing, P6.7a (#188, core-loop action controls ✅ PR #208) shipped the
 action buttons, and P6.7b (#189, combat/edge controls ✅ PR #209) added
-Fight/Evade/Draw, so resolution surfacing + the closing demo (P6.8, #190)
-is the last slot before milestone close.
+Fight/Evade/Draw. P6.8 (#190, resolution surfacing + closing demo
+✅ PR #210) shipped the Won/Lost banner, the resolution legality gate, and
+the closing-demo doc — the milestone is complete.
 
 ## Decisions made
 
@@ -267,6 +268,25 @@ Settled implementing P6.7b (PR #209):
   (#190) — the closing demo's *Lost* path runs through agenda doom, not
   combat, so this is demo polish, not a milestone blocker. Draw *is*
   reachable now (rendered in Investigation like Investigate/AdvanceAct).
+
+Settled implementing P6.8 (PR #210):
+
+- **Resolution is surfaced read-only and dominates legality.** The
+  Won/Lost banner is a `resolution_banner` helper in the read-only
+  `board.rs` (phase_bar pattern), not a control; and `enabled_controls`
+  gates on `game.resolution.is_some()` **first**, before every
+  cursor/pause/phase — a latched resolution is terminal, so no action is
+  clickable once the scenario ends (the server rejects them regardless;
+  this is the UX affordance).
+- **Live combat in the toy scenario was deliberately not built —
+  superseded by Phase 7, not a tracked TODO.** P6.8 is the milestone
+  close, so there is no later Phase-6 slot to defer into, and the
+  synthetic scenario is throwaway (D5: swapped when Phase 7 lands The
+  Gathering). Phase 7's real encounter cards spawn enemies through
+  ordinary play, making Fight/Evade reachable for free — which is why the
+  phase-7 doc carries no combat line item. The only cost: the Phase-6
+  closing demo (`docs/demos/phase-6-toy-scenario.md`) shows the Lost path
+  via agenda doom, not a live Fight/Evade click.
 
 ## Open questions
 

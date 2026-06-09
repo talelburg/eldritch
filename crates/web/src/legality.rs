@@ -27,6 +27,9 @@ pub enum ActionControl {
 /// The controls the player may click right now.
 ///
 /// Gating, in order:
+/// 0. A latched `game.resolution` is terminal: the scenario is over, so
+///    no action is legal. Checked first — it dominates every cursor,
+///    pause, and phase below.
 /// 1. An `AwaitingInput` pause blocks every core-loop action — only the
 ///    pending `ResolveInput` (the prompt UI) is legal. This keys off the
 ///    outcome, so it covers every suspension mode the engine surfaces as
@@ -50,6 +53,9 @@ pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<A
         PlayCard, StartScenario,
     };
 
+    if game.resolution.is_some() {
+        return BTreeSet::new();
+    }
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
         return BTreeSet::new();
     }
@@ -86,7 +92,7 @@ mod tests {
     use game_core::state::{InvestigatorId, Phase};
     use game_core::test_support::builder::TestGame;
     use game_core::test_support::fixtures::{awaiting_commit_input, test_investigator};
-    use game_core::EngineOutcome;
+    use game_core::{EngineOutcome, Resolution};
     use std::collections::BTreeSet;
 
     fn investigation_game() -> game_core::state::GameState {
@@ -172,5 +178,26 @@ mod tests {
                 "phase {phase:?} should enable nothing"
             );
         }
+    }
+
+    #[test]
+    fn resolution_disables_all_controls() {
+        // investigation_game() would normally enable the full core loop;
+        // a latched resolution must dominate and enable nothing.
+        let mut game = investigation_game();
+        game.resolution = Some(Resolution::Won { id: "demo".into() });
+        assert_eq!(
+            enabled_controls(&game, &EngineOutcome::Done),
+            BTreeSet::new(),
+            "a resolved scenario enables nothing"
+        );
+        game.resolution = Some(Resolution::Lost {
+            reason: "eliminated".into(),
+        });
+        assert_eq!(
+            enabled_controls(&game, &EngineOutcome::Done),
+            BTreeSet::new(),
+            "a lost scenario enables nothing"
+        );
     }
 }
