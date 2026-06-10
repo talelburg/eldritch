@@ -125,7 +125,11 @@ fn move_into_forced_location_fires_its_effect() {
     assert!(
         result.events.iter().any(|e| matches!(
             e,
-            Event::InvestigatorMoved { investigator: InvestigatorId(1), to: LocationId(11), .. }
+            Event::InvestigatorMoved {
+                investigator: InvestigatorId(1),
+                to: LocationId(11),
+                ..
+            }
         )),
         "expected InvestigatorMoved to 11 in events; got {:?}",
         result.events
