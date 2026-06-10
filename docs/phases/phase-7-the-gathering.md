@@ -2,11 +2,14 @@
 
 ## Status
 
-🛠️ **Slice 1 planned** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216)).
-Phase decomposed into vertical slices; Slice 1 (Roland through The
-Gathering, solo, Standard) is specced and the engine spine is planned.
-Design spec:
-[`docs/superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md`](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md).
+🛠️ **Slice 1 in progress** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216)).
+Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
+(the Gathering content) is decomposed into sub-slices C1–C7
+([#227](https://github.com/talelburg/eldritch/issues/227)–[#245](https://github.com/talelburg/eldritch/issues/245),
+kickoff [#246](https://github.com/talelburg/eldritch/issues/246)).
+Design specs:
+[Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
+[Group C decomposition](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
 
 ## Goal
 
@@ -26,13 +29,43 @@ trigger-ordering (`#213`), folding in `#117`.
 | A2 | [#215](https://github.com/talelburg/eldritch/issues/215) — forced-trigger dispatch (`fire_forced_triggers`) — depends on A1 | `plans/2026-06-10-…-forced-trigger-dispatch.md` | ✅ PR #219 |
 | B1 | [#220](https://github.com/talelburg/eldritch/issues/220) — `reference_card` field + symbol-token lookup plumbing | `plans/2026-06-10-…-reference-card-routing.md` | ✅ PR #223 |
 | B2 | [#221](https://github.com/talelburg/eldritch/issues/221) — roster/seating step + `StartScenario` investigator selection (protocol change) | `plans/2026-06-10-…-b2-roster-seating.md` | ✅ PR #225 |
-| B3 | [#222](https://github.com/talelburg/eldritch/issues/222) — registry-swap foundation (server installs real card registry; D5) | — | 🔀 folded into C |
-| C | content: Gathering scenario cards + setup + Roland + signature/weakness + starter deck (incl. the B3 card-registry swap + web `SCENARIO_ID` repoint) | TBD | 📐 spec'd |
-| D | integration & web: investigator/scenario picker; end-to-end Won/Lost gate | TBD | 📐 spec'd |
+| B3 | [#222](https://github.com/talelburg/eldritch/issues/222) — registry-swap foundation (server installs real card registry; D5) | — | 🔀 folded into C (C7a [#244](https://github.com/talelburg/eldritch/issues/244)) |
+| — | [#246](https://github.com/talelburg/eldritch/issues/246) — kickoff: Group C decomposition spec + issue breakdown | [`…group-c-decomposition…`](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md) | ✅ PR #247 |
+| C | content: Gathering scenario cards + setup + Roland + signature/weakness + starter deck — **decomposed into C1–C7** ([#227](https://github.com/talelburg/eldritch/issues/227)–[#245](https://github.com/talelburg/eldritch/issues/245)); see breakdown below | [`…group-c-decomposition…`](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md) | 🛠️ in progress |
+| D | integration & web: investigator/scenario picker (end-to-end Won/Lost gate is C7b [#245](https://github.com/talelburg/eldritch/issues/245)) | TBD | 📐 spec'd |
 
 Group A *extends* the existing `reaction_windows.rs` OnEvent machinery
 (not greenfield); forced scenario effects take a separate immediate path
 (`fire_forced_triggers`) distinct from player reaction windows.
+
+### Group C breakdown (C1–C7)
+
+Decomposed in
+[`…group-c-decomposition…`](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
+Split along the engine-machinery / card-content seam. `C1a` (#227) is the
+root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
+
+| Sub | Issue | What |
+|---|---|---|
+| C1a | [#227](https://github.com/talelburg/eldritch/issues/227) | `setup()` world-build + forced location effects |
+| C1b | [#228](https://github.com/talelburg/eldritch/issues/228) | act-advancement objective types (01109 / 01110) |
+| C2 | [#229](https://github.com/talelburg/eldritch/issues/229) | 01104 symbol-token effects + victory points |
+| C3a | [#230](https://github.com/talelburg/eldritch/issues/230) | Prey variants + Retaliate |
+| C3b | [#231](https://github.com/talelburg/eldritch/issues/231) | the six encounter enemies |
+| C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) |
+| C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) |
+| C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) |
+| C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area treacheries (×3) |
+| C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` |
+| C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog damage-from-enemy window |
+| C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content |
+| C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets (×6) |
+| C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) |
+| C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window |
+| C6b | [#242](https://github.com/talelburg/eldritch/issues/242) | Seeker deck cards |
+| C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards |
+| C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) |
+| C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test |
 
 ## Future slices (after Slice 1)
 
@@ -78,6 +111,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **All 5 original-Core investigators implementable:** Roland Banks (`#55`, already filed in Phase 3), Daisy Walker, "Skids" O'Toole, Agnes Baker, Wendy Adams. Each needs their card impl + signature cards.
 - **Investigator seating (B2):** stats are read from `CardMetadata` via the existing `CardRegistry` (no new registry); the deck is a player-supplied `RosterEntry { investigator, deck }` field on `StartScenario` (the Phase-9 decklist-import seam). `start_scenario` rejects unless ≥1 investigator is seated; the pre-seated synthetic-test path is tolerated until [#224](https://github.com/talelburg/eldritch/issues/224) migrates tests to roster seating and requires a non-empty roster.
 - **Registry swap (B3, [#222](https://github.com/talelburg/eldritch/issues/222)) folds into Group C, not a standalone PR.** `server` already depends on `cards` and installs the real `scenarios::REGISTRY`; the only work is swapping the *card* registry (`synth_cards::TEST_REGISTRY` → `cards::REGISTRY`) in `server/src/lib.rs`. But that swap is coupled to C: the synthetic scenario's encounter deck draws synth-only card codes, so swapping with no real scenario to serve would break the `"synthetic"` web demo mid-play and `server/tests/registries.rs` for the whole B3→C window. So the swap + the web `SCENARIO_ID` repoint to `"the-gathering"` land in the Group C PR alongside the real scenario; synthetic registries stay for per-process tests.
+
+- **`emit_event` unification (#212) lands *after* Group C, not before it.** C is built on the existing `ForcedTriggerPoint` enum-dispatcher + reaction-window pipeline, extended with new timing points (`RoundEnded`, `EndOfTurn`, `AfterLocationInvestigated`, `GameEnd`, damage/investigate windows) as content demands them; #212 then consolidates those into one emit-driven chokepoint, validated against all of C's real content. The dispatch surface C adds is a handful of points through already-generic machinery (the 7 treacheries share one Revelation hook; locations and Beat Cop reuse existing paths), so front-loading #212 would design its event taxonomy before the cards defining its requirements exist. **#213** (player-choice simultaneous-trigger ordering) is deferred further still — until then simultaneous triggers resolve in a fixed **deterministic** order. C4a (#233) lands the one in-C consolidation seam (shared scan source over `cards_in_play` + threat area) that #212 later absorbs.
 
 ## Open questions
 
