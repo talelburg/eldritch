@@ -171,12 +171,16 @@ fn trigger_matches(
         // variant and update this arm.
         // EnteredLocation is matched by the forced auto-fire path (#215),
         // not by reaction windows.
+        // PhaseEnded is matched only by the forced dispatch path
+        // (engine::dispatch::forced_triggers, a later task), never by
+        // player reaction windows.
         (
             WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
-            | EventPattern::EnteredLocation,
+            | EventPattern::EnteredLocation
+            | EventPattern::PhaseEnded { .. },
         ) => false,
     }
 }
