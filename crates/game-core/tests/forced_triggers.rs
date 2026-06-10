@@ -17,18 +17,25 @@ use std::sync::OnceLock;
 use game_core::assert_event;
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
+use game_core::dsl::Phase as DslPhase;
 use game_core::dsl::{
     deal_horror, on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{fire_forced_on_enter, test_investigator, test_location, TestGame};
+use game_core::state::{Agenda, CardCode, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{
+    fire_forced_on_enter, fire_forced_on_phase_end, test_investigator, test_location, TestGame,
+};
 use game_core::{apply, Action, PlayerAction};
 
 /// Mock location code: one `EventPattern::EnteredLocation` forced ability
 /// that deals 1 horror to the entering investigator.
 const HORROR_ATTIC: &str = "test-attic";
+
+/// Mock agenda code: one `EventPattern::PhaseEnded { phase: Enemy }` forced
+/// ability that deals 1 horror to the controller (lead investigator).
+const DOOM_AGENDA: &str = "test-agenda";
 
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
@@ -38,6 +45,14 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     if code.as_str() == HORROR_ATTIC {
         Some(vec![on_event(
             EventPattern::EnteredLocation,
+            EventTiming::After,
+            deal_horror(InvestigatorTarget::Controller, 1),
+        )])
+    } else if code.as_str() == DOOM_AGENDA {
+        Some(vec![on_event(
+            EventPattern::PhaseEnded {
+                phase: DslPhase::Enemy,
+            },
             EventTiming::After,
             deal_horror(InvestigatorTarget::Controller, 1),
         )])
@@ -167,4 +182,157 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
         events.is_empty(),
         "no events for a location with no forced abilities"
     );
+}
+
+// ── PhaseEnded tests ──────────────────────────────────────────────────────────
+
+/// Build a `GameState` with the mock agenda (`test-agenda`, Enemy-phase
+/// forced horror) as the current agenda and `InvestigatorId(1)` as the lead.
+fn state_with_doom_agenda() -> game_core::state::GameState {
+    let inv = test_investigator(1);
+    let mut state = TestGame::new()
+        .with_investigator(inv)
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+    state.agenda_deck = vec![Agenda {
+        code: CardCode(DOOM_AGENDA.into()),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+    state.agenda_index = 0;
+    state
+}
+
+#[test]
+fn forced_on_enemy_phase_end_fires_agenda_ability() {
+    install_mock_registry();
+
+    let mut state = state_with_doom_agenda();
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(
+        state.investigators[&InvestigatorId(1)].horror,
+        1,
+        "lead investigator should have taken 1 horror from agenda forced ability"
+    );
+    assert_event!(
+        events,
+        Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+    );
+}
+
+#[test]
+fn forced_on_phase_end_wrong_phase_fires_nothing() {
+    install_mock_registry();
+
+    // The agenda ability is keyed to Enemy; firing Mythos should be a no-op.
+    let mut state = state_with_doom_agenda();
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Mythos);
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(
+        state.investigators[&InvestigatorId(1)].horror,
+        0,
+        "no horror for a non-matching phase"
+    );
+    assert!(
+        events.is_empty(),
+        "no events when phase doesn't match agenda ability"
+    );
+}
+
+/// Cover all four `dsl_phase` mappings: each phase fires the ability only for
+/// the matching engine `Phase`. We reuse four separate agenda codes whose
+/// abilities are keyed to each dsl `Phase`, all mapped into the mock registry
+/// via a local helper.
+///
+/// Because the mock registry is installed once per process (`OnceLock`), this
+/// test uses `DOOM_AGENDA` (Enemy) and separately verifies the three non-Enemy
+/// phases all produce zero hits (the agenda is only keyed to Enemy).
+#[test]
+fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
+    install_mock_registry();
+
+    for phase in [Phase::Mythos, Phase::Investigation, Phase::Upkeep] {
+        let mut state = state_with_doom_agenda();
+        let mut events = Vec::new();
+        let outcome = fire_forced_on_phase_end(&mut state, &mut events, phase);
+
+        assert_eq!(
+            outcome,
+            EngineOutcome::Done,
+            "expected Done for phase {phase:?}"
+        );
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].horror,
+            0,
+            "no horror for phase {phase:?} (agenda keyed to Enemy only)"
+        );
+        assert!(
+            events.is_empty(),
+            "no events for phase {phase:?}; got {events:?}"
+        );
+    }
+}
+
+#[test]
+fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
+    install_mock_registry();
+
+    let inv = test_investigator(1);
+    let mut state = TestGame::new()
+        .with_investigator(inv)
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+    // "plain-agenda" → None from mock registry.
+    state.agenda_deck = vec![Agenda {
+        code: CardCode("plain-agenda".into()),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+    state.agenda_index = 0;
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert!(events.is_empty(), "no events for agenda with no abilities");
+}
+
+#[test]
+fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
+    install_mock_registry();
+
+    // Empty decks — common fixture shape for tests not modeling scenarios.
+    let inv = test_investigator(1);
+    let mut state = TestGame::new()
+        .with_investigator(inv)
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+    // state.agenda_deck / act_deck are empty by default from TestGame.
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert!(events.is_empty(), "no events when decks are empty");
+}
+
+#[test]
+fn forced_on_phase_end_no_op_when_no_lead_investigator() {
+    install_mock_registry();
+
+    // No turn_order set → no lead investigator → early return.
+    let mut state = state_with_doom_agenda();
+    state.turn_order.clear();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert!(events.is_empty(), "no events without a lead investigator");
 }

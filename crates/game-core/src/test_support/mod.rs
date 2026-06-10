@@ -38,3 +38,18 @@ pub fn fire_forced_on_enter(
         },
     )
 }
+
+/// Test helper: fire forced triggers for a phase ending, returning the
+/// `EngineOutcome`. Constructs the internal `ForcedTriggerPoint` so
+/// integration tests don't need it public. See `fire_forced_on_enter`.
+pub fn fire_forced_on_phase_end(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    phase: crate::state::Phase,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        crate::engine::ForcedTriggerPoint::PhaseEnded { phase },
+    )
+}

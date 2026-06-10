@@ -7,7 +7,7 @@
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
-use crate::state::{CardCode, InvestigatorId, LocationId};
+use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -32,7 +32,10 @@ pub(crate) enum ForcedTriggerPoint {
         /// The location that was entered.
         location: LocationId,
     },
-    // PhaseEnded variant added in a later task.
+    /// A phase ended. Scans the current act and agenda for
+    /// `EventPattern::PhaseEnded { phase }` forced abilities; binds
+    /// controller = the lead investigator (board-wide effects ignore it).
+    PhaseEnded { phase: Phase },
 }
 
 struct ForcedHit {
@@ -80,8 +83,45 @@ fn collect_forced_hits(
                 matches!(p, EventPattern::EnteredLocation)
             });
         }
+        ForcedTriggerPoint::PhaseEnded { phase } => {
+            let want_phase = dsl_phase(phase);
+            // Lead investigator binds the controller for board-wide effects
+            // (which ignore it). First of turn_order is the lead.
+            let Some(lead) = state.turn_order.first().copied() else {
+                return hits;
+            };
+            if let Some(act) = state.act_deck.get(state.act_index) {
+                push_matching(
+                    reg,
+                    &act.code,
+                    lead,
+                    &mut hits,
+                    |p| matches!(p, crate::dsl::EventPattern::PhaseEnded { phase } if phase == want_phase),
+                );
+            }
+            if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
+                push_matching(
+                    reg,
+                    &agenda.code,
+                    lead,
+                    &mut hits,
+                    |p| matches!(p, crate::dsl::EventPattern::PhaseEnded { phase } if phase == want_phase),
+                );
+            }
+        }
     }
     hits
+}
+
+/// Map the engine's `state::Phase` to the `card-dsl` mirror so a
+/// `PhaseEnded` pattern can be compared.
+fn dsl_phase(phase: Phase) -> crate::dsl::Phase {
+    match phase {
+        Phase::Mythos => crate::dsl::Phase::Mythos,
+        Phase::Investigation => crate::dsl::Phase::Investigation,
+        Phase::Enemy => crate::dsl::Phase::Enemy,
+        Phase::Upkeep => crate::dsl::Phase::Upkeep,
+    }
 }
 
 fn push_matching(
