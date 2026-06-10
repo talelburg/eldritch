@@ -84,6 +84,22 @@ pub enum Resolution {
 /// shape: no `dyn`, no `Box`, [`Copy`]-able.
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioModule {
+    /// `ArkhamDB` card code of this scenario's single reference card —
+    /// the card whose chaos **symbol** abilities (skull / cultist /
+    /// tablet / elder-thing) are printed on it (e.g. `"01104"` for The
+    /// Gathering). Plain data: ownership of the symbol effect stays on
+    /// the card, but access flows through the scenario module.
+    ///
+    /// `&'static str` (not [`CardCode`](crate::state::CardCode)) so the
+    /// struct stays [`Copy`] and const-constructible in `static` /
+    /// `const` module literals, matching the `CODE: &str` convention
+    /// card impls already use. Empty string means the scenario has no
+    /// reference card (test fixtures / synthetic modules).
+    ///
+    /// Slice 1 B1 only *routes* to this code (see
+    /// [`active_reference_card`]); evaluating the symbol ability against
+    /// board state lands in Group C with the `01104` impl.
+    pub reference_card: &'static str,
     /// Build the scenario's initial [`GameState`]. Places locations,
     /// populates encounter / act / agenda decks, sets chaos-bag
     /// modifiers, etc.
