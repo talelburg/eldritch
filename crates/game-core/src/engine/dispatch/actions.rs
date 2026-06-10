@@ -273,7 +273,13 @@ pub(super) fn move_action(
         from,
         to: destination,
     });
-    EngineOutcome::Done
+    super::forced_triggers::fire_forced_triggers(
+        cx,
+        super::forced_triggers::ForcedTriggerPoint::EnteredLocation {
+            investigator,
+            location: destination,
+        },
+    )
 }
 
 /// Validate the prefix shared by Fight and Evade: phase, active
