@@ -3138,8 +3138,17 @@ mod start_scenario_tests {
         assert_eq!(result.state.round, 1);
     }
 
+    // A non-empty roster whose entry cannot be resolved to investigator
+    // stats rejects with state unchanged. game-core unit tests install no
+    // real `CardRegistry`, so resolution fails — via the "no registry"
+    // path, or (if another test in this binary already installed a fake
+    // registry, since `card_registry::current()` is a process-global
+    // `OnceLock`) via the "unknown code" path, as "01001" is not in the
+    // fake. Either way it rejects; the registry-backed happy and
+    // unknown-code paths are pinned deterministically by the
+    // `crates/cards` integration test, which installs `cards::REGISTRY`.
     #[test]
-    fn start_scenario_rejects_non_empty_roster_when_no_registry_installed() {
+    fn start_scenario_rejects_unresolvable_roster_entry() {
         let state = TestGame::new().build();
         let roster = vec![RosterEntry {
             investigator: CardCode::new("01001"),
