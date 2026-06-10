@@ -98,7 +98,12 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
 
     // --- mutate (all validations passed) ---
     // Seat resolved investigators. Ids are sequential (1-based) in roster
-    // order; production seats into an empty investigator set.
+    // order. This ASSUMES an empty investigator set when the roster is
+    // non-empty — true for production (setup() seats nobody) and every
+    // test (pre-seated states pass an empty roster). Mixing a non-empty
+    // roster with pre-seated investigators would overwrite id 1; #224
+    // removes the pre-seated path and makes the roster the sole seater,
+    // retiring this assumption.
     for (idx, (skills, health, sanity, name, deck)) in resolved.into_iter().enumerate() {
         let id = InvestigatorId(u32::try_from(idx).unwrap_or(0) + 1);
         cx.state.investigators.insert(
