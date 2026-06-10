@@ -37,6 +37,12 @@ pub struct GameState {
     pub investigators: BTreeMap<InvestigatorId, Investigator>,
     /// All locations laid out (revealed and unrevealed alike), keyed by ID.
     pub locations: BTreeMap<LocationId, Location>,
+    /// Where roster-seated investigators are placed at scenario start.
+    /// `setup()` sets it (e.g. The Gathering -> the Study); the
+    /// `StartScenario` seating step reads it. `None` leaves seated
+    /// investigators unplaced (`current_location: None`) — the legacy
+    /// pre-seated test path, where `setup()` already placed them.
+    pub starting_location: Option<LocationId>,
     /// All enemies currently in play, keyed by ID. Defeated enemies are
     /// removed; the map is the source of truth for "this enemy exists."
     pub enemies: BTreeMap<EnemyId, Enemy>,
@@ -1076,5 +1082,22 @@ mod partial_eq_tests {
     fn game_state_is_partial_eq() {
         fn assert_partial_eq<T: PartialEq>() {}
         assert_partial_eq::<GameState>();
+    }
+}
+
+#[cfg(test)]
+mod starting_location_tests {
+    use super::*;
+    use crate::test_support::TestGame;
+
+    #[test]
+    fn game_state_starting_location_defaults_to_none_and_roundtrips() {
+        let mut state = TestGame::new().build();
+        assert_eq!(state.starting_location, None, "default must be None");
+
+        state.starting_location = Some(crate::state::LocationId(7));
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.starting_location, Some(crate::state::LocationId(7)));
     }
 }
