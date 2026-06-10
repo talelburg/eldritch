@@ -188,7 +188,10 @@ mod tests {
         let agenda_codes: Vec<_> = s.agenda_deck.iter().map(|a| a.code.as_str()).collect();
         assert_eq!(agenda_codes, ["01105", "01106", "01107"]);
         assert_eq!(
-            s.agenda_deck.iter().map(|a| a.doom_threshold).collect::<Vec<_>>(),
+            s.agenda_deck
+                .iter()
+                .map(|a| a.doom_threshold)
+                .collect::<Vec<_>>(),
             [3, 7, 10]
         );
         assert!(matches!(

@@ -1,4 +1,4 @@
-//! C1a end-to-end: the-gathering setup() seats a roster at the Study and
+//! C1a end-to-end: the-gathering `setup()` seats a roster at the Study and
 //! reaches a resolution; the Attic/Cellar forced-on-enter abilities fire
 //! through the real card registry. Own process so it can install the
 //! process-global registries against the real `cards` corpus.
@@ -9,7 +9,7 @@ use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::scenario::Resolution;
 use game_core::state::{CardCode, InvestigatorId, LocationId};
-use game_core::test_support::fire_forced_on_enter;
+use game_core::test_support::{fire_forced_on_enter, test_investigator, test_location, TestGame};
 use game_core::{Action, PlayerAction};
 use scenarios::{the_gathering, REGISTRY};
 
@@ -104,7 +104,6 @@ fn attic_forced_enter_deals_one_horror() {
     // A bare board with the Attic (01113); fire the forced
     // EnteredLocation trigger directly via the test helper (live entry
     // isn't reachable until C1b's Door-on-the-Floor transition).
-    use game_core::test_support::{test_investigator, test_location, TestGame};
     let mut attic = test_location(20, "Attic");
     attic.code = CardCode("01113".into());
     let mut state = TestGame::new()
@@ -113,8 +112,7 @@ fn attic_forced_enter_deals_one_horror() {
         .build();
     let mut events = Vec::new();
 
-    let outcome =
-        fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(20));
+    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(20));
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
         state.investigators.get(&InvestigatorId(1)).unwrap().horror,
@@ -126,7 +124,6 @@ fn attic_forced_enter_deals_one_horror() {
 #[test]
 fn cellar_forced_enter_deals_one_damage() {
     install_registries();
-    use game_core::test_support::{test_investigator, test_location, TestGame};
     let mut cellar = test_location(21, "Cellar");
     cellar.code = CardCode("01114".into());
     let mut state = TestGame::new()
@@ -135,8 +132,7 @@ fn cellar_forced_enter_deals_one_damage() {
         .build();
     let mut events = Vec::new();
 
-    let outcome =
-        fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(21));
+    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(21));
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
         state.investigators.get(&InvestigatorId(1)).unwrap().damage,
