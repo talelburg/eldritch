@@ -181,6 +181,10 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
 /// Enemy phase. Called only from `end_turn`'s terminal branch (the last
 /// investigator has taken a turn this round).
 fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
+    // No forced-trigger dispatch here: only Enemy and Upkeep phase-ends have
+    // slice consumers (agenda 01107). A `PhaseEnded { Investigation }` forced
+    // ability would NOT fire until #212's emit_event restructure centralises
+    // forced dispatch across all framework windows.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
@@ -422,6 +426,10 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
     //     driver — mirror of step 1.1's PhaseStarted ownership in
     //     mythos_phase. Rules Reference p.24: "This step formalizes
     //     the end of the mythos phase."
+    // No forced-trigger dispatch here: only Enemy and Upkeep phase-ends have
+    // slice consumers (agenda 01107). A `PhaseEnded { Mythos }` forced ability
+    // would NOT fire until #212's emit_event restructure centralises forced
+    // dispatch across all framework windows.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });

@@ -238,8 +238,8 @@ pub enum EventPattern {
     /// investigator and *this location* = the ability's own location
     /// from the trigger context — no narrowing fields needed.
     ///
-    /// DSL surface only here; the matching + forced auto-fire wiring
-    /// lands in #215. Until then the engine ignores it.
+    /// The forced dispatch path matches this pattern and fires it from
+    /// `move_action` on entry (`engine::dispatch::forced_triggers`).
     EnteredLocation,
     /// A game phase ended. Forced agenda/act effects keyed to a phase
     /// boundary listen here: agenda `01107` moves Ghouls at
@@ -247,15 +247,17 @@ pub enum EventPattern {
     /// round (`PhaseEnded { phase: Upkeep }`).
     ///
     /// Matched only by the forced dispatch path
-    /// (`engine::dispatch::forced_triggers`, a later task), never by
-    /// player reaction windows — `trigger_matches` returns `false` for it.
+    /// (`engine::dispatch::forced_triggers`), never by player reaction
+    /// windows — `trigger_matches` returns `false` for it. Currently
+    /// wired for Enemy and Upkeep phase-ends only; Mythos and
+    /// Investigation are not wired (see #212).
     PhaseEnded { phase: Phase },
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
 /// name a phase without `card-dsl` depending on `game-core` (layering).
 /// `game-core` maps this to its own `state::Phase` at the dispatch
-/// boundary (see `engine::dispatch::forced_triggers`, a later task).
+/// boundary (see `engine::dispatch::forced_triggers`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Phase {
     Mythos,

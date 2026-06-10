@@ -22,7 +22,8 @@ pub use resolver::{apply_no_commits, drive, ChoiceResolver, ScriptedResolver, Te
 /// `CardRegistry` and `OnceLock<CardRegistry>` is process-global — an
 /// in-crate install would collide with `card_registry::tests`. Integration
 /// tests in `crates/game-core/tests/` run in separate processes.
-/// Not yet wired into a handler — Task 3 of #215 wires `move_action`.
+/// Wired into `move_action` (`EnteredLocation`); this helper exists for
+/// unit-style coverage of the dispatch path in isolation.
 pub fn fire_forced_on_enter(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,

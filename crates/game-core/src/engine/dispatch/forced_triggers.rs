@@ -20,7 +20,8 @@ use super::Cx;
 /// `pub(crate)` — not part of the public API. [`crate::test_support`]
 /// constructs it internally via `fire_forced_on_enter` (a primitive-arg
 /// helper), so integration tests never need to name this type directly.
-/// Task 3 wires this into `move_action`.
+/// Wired into `move_action` (`EnteredLocation`) and
+/// `enemy_phase_end`/`upkeep_phase_end` (`PhaseEnded`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ForcedTriggerPoint {
     /// An investigator entered a location. Scans that location's card
@@ -136,6 +137,9 @@ fn push_matching(
     };
     for (idx, ability) in abilities.iter().enumerate() {
         if let Trigger::OnEvent { pattern, timing } = ability.trigger {
+            // Only `After` timing is handled in this slice; no in-scope
+            // Forced card uses `Before` ("when X would Y") timing.
+            // Revisit when such a card lands.
             if timing == EventTiming::After && want(pattern) {
                 out.push(ForcedHit {
                     code: code.clone(),
