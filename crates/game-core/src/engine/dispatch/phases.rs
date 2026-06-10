@@ -9,8 +9,9 @@ use crate::state::{
     Zone,
 };
 
+use crate::action::RosterEntry;
 use crate::card_data::{CardMetadata, CardType};
-use crate::state::Skills;
+use crate::state::{Investigator, Skills, Status};
 
 use super::Cx;
 
@@ -21,8 +22,6 @@ use super::Cx;
 /// (single-digit) — an impossible overflow yields `None` rather than a
 /// panic. Lives here, not on `CardMetadata`, because `Skills` is a
 /// `game-core` type and `card-dsl` must not depend on `game-core`.
-// used by start_scenario seating in the next task
-#[allow(dead_code)]
 fn investigator_skills(meta: &CardMetadata) -> Option<Skills> {
     if meta.card_type != CardType::Investigator {
         return None;
@@ -40,7 +39,7 @@ fn investigator_skills(meta: &CardMetadata) -> Option<Skills> {
 /// rulebook.
 pub(super) const ACTIONS_PER_TURN: u8 = 3;
 
-pub(super) fn start_scenario(cx: &mut Cx) -> EngineOutcome {
+pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
     // The GameState constructor places the world in its initial shape;
     // this action is the explicit "session has begun" marker that lands
     // in the action log. Replaying it on an already-started state is a
@@ -51,6 +50,82 @@ pub(super) fn start_scenario(cx: &mut Cx) -> EngineOutcome {
             reason: "StartScenario applied to a state that is already in progress".into(),
         };
     }
+
+    // Validate-first: resolve every roster entry's stats from card data
+    // before mutating anything. Any failure rejects with state unchanged.
+    let registry = crate::card_registry::current();
+    let mut resolved: Vec<(Skills, u8, u8, String, Vec<CardCode>)> =
+        Vec::with_capacity(roster.len());
+    for entry in roster {
+        let Some(reg) = registry else {
+            return EngineOutcome::Rejected {
+                reason: "no card registry installed; cannot resolve investigator stats".into(),
+            };
+        };
+        let Some(meta) = (reg.metadata_for)(&entry.investigator) else {
+            return EngineOutcome::Rejected {
+                reason: format!("unknown investigator code {}", entry.investigator).into(),
+            };
+        };
+        let (Some(skills), Some(health), Some(sanity)) =
+            (investigator_skills(meta), meta.health, meta.sanity)
+        else {
+            return EngineOutcome::Rejected {
+                reason: format!("card {} is not a seatable investigator", entry.investigator)
+                    .into(),
+            };
+        };
+        resolved.push((
+            skills,
+            health,
+            sanity,
+            meta.name.clone(),
+            entry.deck.clone(),
+        ));
+    }
+
+    // A scenario requires at least one investigator (pre-seated or
+    // roster-seated). In production setup() seats none, so this makes the
+    // roster mandatory: an empty roster rejects. The pre-seated test path
+    // (>=1 already present, empty roster) passes — temporary scaffolding
+    // until TODO(#224) migrates tests to roster seating and tightens this
+    // to require a non-empty roster.
+    if cx.state.investigators.is_empty() && resolved.is_empty() {
+        return EngineOutcome::Rejected {
+            reason: "a scenario requires at least one investigator".into(),
+        };
+    }
+
+    // --- mutate (all validations passed) ---
+    // Seat resolved investigators. Ids are sequential (1-based) in roster
+    // order; production seats into an empty investigator set.
+    for (idx, (skills, health, sanity, name, deck)) in resolved.into_iter().enumerate() {
+        let id = InvestigatorId(u32::try_from(idx).unwrap_or(0) + 1);
+        cx.state.investigators.insert(
+            id,
+            Investigator {
+                id,
+                name,
+                current_location: None,
+                skills,
+                max_health: health,
+                damage: 0,
+                max_sanity: sanity,
+                horror: 0,
+                clues: 0,
+                resources: 5,
+                actions_remaining: 0,
+                status: Status::Active,
+                deck,
+                hand: Vec::new(),
+                discard: Vec::new(),
+                cards_in_play: Vec::new(),
+                removed_from_game: Vec::new(),
+            },
+        );
+        cx.state.turn_order.push(id);
+    }
+
     // Round 1: scenario starts directly in Investigation phase —
     // Mythos is skipped entirely per Rules Reference p.24 "During
     // the first round of the game, skip the mythos phase." No
@@ -3024,6 +3099,59 @@ mod hand_size_tests {
             "rejected: still pending"
         );
         assert!(events.is_empty(), "rejected: no events");
+    }
+}
+
+#[cfg(test)]
+mod start_scenario_tests {
+    use super::*;
+    use crate::action::{Action, PlayerAction, RosterEntry};
+    use crate::engine::apply;
+    use crate::state::CardCode;
+    use crate::test_support::builder::TestGame;
+    use crate::test_support::fixtures::test_investigator;
+
+    #[test]
+    fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
+        let state = TestGame::new().build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.round, 0, "state unchanged on reject");
+        assert!(result.events.is_empty(), "no events on reject");
+    }
+
+    #[test]
+    fn start_scenario_empty_roster_passes_through_with_preseated_investigator() {
+        let id = crate::state::InvestigatorId(1);
+        let state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.round, 1);
+    }
+
+    #[test]
+    fn start_scenario_rejects_non_empty_roster_when_no_registry_installed() {
+        let state = TestGame::new().build();
+        let roster = vec![RosterEntry {
+            investigator: CardCode::new("01001"),
+            deck: vec![],
+        }];
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.round, 0, "state unchanged on reject");
+        assert!(result.events.is_empty());
     }
 }
 
