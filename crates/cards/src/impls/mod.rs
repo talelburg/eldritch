@@ -32,6 +32,8 @@
 //!   `Modify`.
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `DealHorror(You, 1)`.
+//! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
+//!   `DealDamage(You, 1)`.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
@@ -45,6 +47,7 @@
 use card_dsl::dsl::Ability;
 
 pub mod attic;
+pub mod cellar;
 pub mod deduction;
 pub mod holy_rosary;
 pub mod hyperawareness;
@@ -58,6 +61,7 @@ pub mod working_a_hunch;
 pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     match code {
         attic::CODE => Some(attic::abilities()),
+        cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
