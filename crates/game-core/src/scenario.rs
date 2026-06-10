@@ -127,3 +127,96 @@ pub struct ScenarioRegistry {
     /// not known to this registry.
     pub module_for: fn(&ScenarioId) -> Option<&'static ScenarioModule>,
 }
+
+/// The active scenario's reference-card code, or `None`.
+///
+/// Routes `state.scenario_id` → the installed scenario registry →
+/// `module_for` → [`ScenarioModule::reference_card`]. Returns `None`
+/// when there is no active scenario, no registry is installed, or the
+/// id is unknown — the same tolerant shape as
+/// [`apply`](crate::engine::apply)'s resolution lookup.
+///
+/// The returned code may be the empty string for fixture/synthetic
+/// modules with no symbol content; callers that evaluate symbol
+/// abilities (Group C) treat `""` as "no reference card".
+#[must_use]
+pub fn active_reference_card(state: &GameState) -> Option<&'static str> {
+    reference_card_with_registry(state, crate::scenario_registry::current())
+}
+
+/// Registry-parameterized core of [`active_reference_card`], split out so
+/// tests can pass an explicit [`ScenarioRegistry`] instead of relying on
+/// the process-global `OnceLock`.
+fn reference_card_with_registry(
+    state: &GameState,
+    registry: Option<&ScenarioRegistry>,
+) -> Option<&'static str> {
+    let id = state.scenario_id.as_ref()?;
+    let module = (registry?.module_for)(id)?;
+    Some(module.reference_card)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::GameState;
+    use crate::test_support::TestGame;
+
+    fn dummy_setup() -> GameState {
+        TestGame::new().build()
+    }
+    fn dummy_resolution(_: &Resolution, _: &mut GameState, _: &mut Vec<Event>) {}
+
+    static GATHERING_MODULE: ScenarioModule = ScenarioModule {
+        reference_card: "01104",
+        setup: dummy_setup,
+        apply_resolution: dummy_resolution,
+    };
+
+    fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
+        (id.as_str() == "the-gathering").then_some(&GATHERING_MODULE)
+    }
+
+    fn registry() -> ScenarioRegistry {
+        ScenarioRegistry { module_for }
+    }
+
+    #[test]
+    fn returns_reference_card_for_active_scenario() {
+        let state = TestGame::new()
+            .with_scenario_id(ScenarioId::new("the-gathering"))
+            .build();
+        assert_eq!(
+            reference_card_with_registry(&state, Some(&registry())),
+            Some("01104"),
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_scenario_id() {
+        let state = TestGame::new().build();
+        assert_eq!(
+            reference_card_with_registry(&state, Some(&registry())),
+            None,
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_registry_installed() {
+        let state = TestGame::new()
+            .with_scenario_id(ScenarioId::new("the-gathering"))
+            .build();
+        assert_eq!(reference_card_with_registry(&state, None), None);
+    }
+
+    #[test]
+    fn returns_none_for_unknown_scenario() {
+        let state = TestGame::new()
+            .with_scenario_id(ScenarioId::new("nonexistent"))
+            .build();
+        assert_eq!(
+            reference_card_with_registry(&state, Some(&registry())),
+            None,
+        );
+    }
+}
