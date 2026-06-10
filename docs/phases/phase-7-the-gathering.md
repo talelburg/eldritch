@@ -25,7 +25,7 @@ trigger-ordering (`#213`), folding in `#117`.
 | A1 | [#214](https://github.com/talelburg/eldritch/issues/214) — engine-spine primitives (DealDamage/DealHorror, EnteredLocation, Act/Agenda CardCode) | `plans/2026-06-10-…-engine-spine-primitives.md` | ✅ PR #218 |
 | A2 | [#215](https://github.com/talelburg/eldritch/issues/215) — forced-trigger dispatch (`fire_forced_triggers`) — depends on A1 | `plans/2026-06-10-…-forced-trigger-dispatch.md` | ✅ PR #219 |
 | B1 | [#220](https://github.com/talelburg/eldritch/issues/220) — `reference_card` field + symbol-token lookup plumbing | `plans/2026-06-10-…-reference-card-routing.md` | ✅ PR #223 |
-| B2 | [#221](https://github.com/talelburg/eldritch/issues/221) — roster/seating step + `StartScenario` investigator selection (protocol change) | TBD | 📐 spec'd |
+| B2 | [#221](https://github.com/talelburg/eldritch/issues/221) — roster/seating step + `StartScenario` investigator selection (protocol change) | `plans/2026-06-10-…-b2-roster-seating.md` | ✅ PR #225 |
 | B3 | [#222](https://github.com/talelburg/eldritch/issues/222) — registry-swap foundation (server installs real card + scenario registries; D5) | TBD | 📐 spec'd |
 | C | content: Gathering scenario cards + setup + Roland + signature/weakness + starter deck | TBD | 📐 spec'd |
 | D | integration & web: investigator/scenario picker; end-to-end Won/Lost gate | TBD | 📐 spec'd |
@@ -76,6 +76,7 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **The Gathering** is the first scenario of the original Core Set's *Night of the Zealot* campaign. Three locations to start (Study + connections), with the campaign expanding from there.
 - **"Solo with 1–2 investigators" is the supported mode** for this phase. Multiplayer (two human investigators on different machines) is Phase 8.
 - **All 5 original-Core investigators implementable:** Roland Banks (`#55`, already filed in Phase 3), Daisy Walker, "Skids" O'Toole, Agnes Baker, Wendy Adams. Each needs their card impl + signature cards.
+- **Investigator seating (B2):** stats are read from `CardMetadata` via the existing `CardRegistry` (no new registry); the deck is a player-supplied `RosterEntry { investigator, deck }` field on `StartScenario` (the Phase-9 decklist-import seam). `start_scenario` rejects unless ≥1 investigator is seated; the pre-seated synthetic-test path is tolerated until [#224](https://github.com/talelburg/eldritch/issues/224) migrates tests to roster seating and requires a non-empty roster.
 
 ## Open questions
 
