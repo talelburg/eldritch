@@ -3928,6 +3928,7 @@ mod tests {
         }
         let mut state = builder.build();
         state.act_deck = vec![Act {
+            code: CardCode("_test_act".into()),
             clue_threshold: 1,
             resolution: Some(Resolution::Won { id: "test".into() }),
         }];

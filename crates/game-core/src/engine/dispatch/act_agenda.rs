@@ -192,9 +192,10 @@ mod doom_agenda_tests {
 
     #[test]
     fn place_doom_increments_agenda_doom() {
-        use crate::state::Agenda;
+        use crate::state::{Agenda, CardCode};
         let mut state = TestGame::new().build();
         state.agenda_deck = vec![Agenda {
+            code: CardCode("_test_agenda".into()),
             doom_threshold: 2,
             resolution: None,
         }];
@@ -214,14 +215,16 @@ mod doom_agenda_tests {
     #[test]
     fn doom_threshold_advances_non_terminal_agenda() {
         use crate::scenario::Resolution;
-        use crate::state::Agenda;
+        use crate::state::{Agenda, CardCode};
         let mut state = TestGame::new().build();
         state.agenda_deck = vec![
             Agenda {
+                code: CardCode("_test_agenda_1".into()),
                 doom_threshold: 2,
                 resolution: None,
             },
             Agenda {
+                code: CardCode("_test_agenda_2".into()),
                 doom_threshold: 2,
                 resolution: Some(Resolution::Lost {
                     reason: "agenda".into(),
@@ -246,9 +249,10 @@ mod doom_agenda_tests {
     #[test]
     fn doom_threshold_on_terminal_agenda_sets_resolution_latch() {
         use crate::scenario::Resolution;
-        use crate::state::Agenda;
+        use crate::state::{Agenda, CardCode};
         let mut state = TestGame::new().build();
         state.agenda_deck = vec![Agenda {
+            code: CardCode("_test_agenda".into()),
             doom_threshold: 2,
             resolution: Some(Resolution::Lost {
                 reason: "doom".into(),
@@ -270,9 +274,10 @@ mod doom_agenda_tests {
 
     #[test]
     fn doom_threshold_not_met_does_nothing() {
-        use crate::state::Agenda;
+        use crate::state::{Agenda, CardCode};
         let mut state = TestGame::new().build();
         state.agenda_deck = vec![Agenda {
+            code: CardCode("_test_agenda".into()),
             doom_threshold: 3,
             resolution: None,
         }];
@@ -320,7 +325,7 @@ mod advance_act_tests {
 
     #[test]
     fn advance_act_rejects_when_clues_insufficient() {
-        use crate::state::Act;
+        use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 1;
@@ -331,6 +336,7 @@ mod advance_act_tests {
             .with_turn_order([inv])
             .build();
         state.act_deck = vec![Act {
+            code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: None,
         }];
@@ -350,7 +356,7 @@ mod advance_act_tests {
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {
         use crate::scenario::Resolution;
-        use crate::state::Act;
+        use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 3;
@@ -362,10 +368,12 @@ mod advance_act_tests {
             .build();
         state.act_deck = vec![
             Act {
+                code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
             },
             Act {
+                code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: Some(Resolution::Won { id: "demo".into() }),
             },
@@ -388,7 +396,7 @@ mod advance_act_tests {
     #[test]
     fn advance_act_on_terminal_act_sets_resolution_latch() {
         use crate::scenario::Resolution;
-        use crate::state::Act;
+        use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 2;
@@ -399,6 +407,7 @@ mod advance_act_tests {
             .with_turn_order([inv])
             .build();
         state.act_deck = vec![Act {
+            code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: Some(Resolution::Won { id: "demo".into() }),
         }];
@@ -422,7 +431,7 @@ mod advance_act_tests {
 
     #[test]
     fn advance_act_spends_acting_investigator_first_then_turn_order() {
-        use crate::state::Act;
+        use crate::state::{Act, CardCode};
         let acting = InvestigatorId(1);
         let other = InvestigatorId(2);
         let mut inv1 = test_investigator(1);
@@ -442,10 +451,12 @@ mod advance_act_tests {
         // irrelevant to this spend-order test.
         state.act_deck = vec![
             Act {
+                code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
             },
             Act {
+                code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: None,
             },

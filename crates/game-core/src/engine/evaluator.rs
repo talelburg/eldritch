@@ -132,6 +132,8 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
     match effect {
         Effect::GainResources { target, amount } => gain_resources(cx, eval_ctx, *target, *amount),
         Effect::DiscoverClue { from, count } => discover_clue(cx, eval_ctx, *from, *count),
+        Effect::DealDamage { target, amount } => deal_damage_effect(cx, eval_ctx, *target, *amount),
+        Effect::DealHorror { target, amount } => deal_horror_effect(cx, eval_ctx, *target, *amount),
         Effect::Seq(effects) => apply_seq(cx, effects, eval_ctx),
         Effect::Modify { stat, delta, scope } => modify(cx, eval_ctx, *stat, *delta, *scope),
         Effect::If {
@@ -390,6 +392,58 @@ fn discover_clue(
     EngineOutcome::Done
 }
 
+fn deal_damage_effect(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    target: InvestigatorTarget,
+    amount: u8,
+) -> EngineOutcome {
+    if amount == 0 {
+        return EngineOutcome::Done;
+    }
+    let target_id = match resolve_investigator_target(cx.state, eval_ctx, target) {
+        Ok(id) => id,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    if !cx.state.investigators.contains_key(&target_id) {
+        return EngineOutcome::Rejected {
+            reason: format!("DealDamage: investigator {target_id:?} is not in the state").into(),
+        };
+    }
+    crate::engine::dispatch::elimination::take_damage(cx, target_id, amount);
+    EngineOutcome::Done
+}
+
+fn deal_horror_effect(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    target: InvestigatorTarget,
+    amount: u8,
+) -> EngineOutcome {
+    if amount == 0 {
+        return EngineOutcome::Done;
+    }
+    let target_id = match resolve_investigator_target(cx.state, eval_ctx, target) {
+        Ok(id) => id,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    if !cx.state.investigators.contains_key(&target_id) {
+        return EngineOutcome::Rejected {
+            reason: format!("DealHorror: investigator {target_id:?} is not in the state").into(),
+        };
+    }
+    crate::engine::dispatch::elimination::take_horror(cx, target_id, amount);
+    EngineOutcome::Done
+}
+
 fn apply_seq(cx: &mut Cx, effects: &[Effect], eval_ctx: EvalContext) -> EngineOutcome {
     // Stop at the first non-Done outcome. A Rejected mid-Seq leaves
     // earlier effects committed *within this apply*, but the `apply`
@@ -611,8 +665,8 @@ fn stat_matches_skill(stat: Stat, skill: SkillKind) -> bool {
 mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        constant, discover_clue, gain_resources, modify, on_play, seq, Ability, Effect,
-        InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
+        constant, deal_damage, deal_horror, discover_clue, gain_resources, modify, on_play, seq,
+        Ability, Effect, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
@@ -1623,5 +1677,80 @@ mod tests {
         ] {
             assert_eq!(pending_skill_modifier(&state, id, skill), 0);
         }
+    }
+
+    #[test]
+    fn deal_damage_adds_damage_and_emits_event() {
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = apply_effect(
+            &mut cx,
+            &deal_damage(InvestigatorTarget::Controller, 2),
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        assert_event!(
+            events,
+            Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
+        );
+    }
+
+    #[test]
+    fn deal_horror_adds_horror_and_emits_event() {
+        let mut state = TestGame::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = apply_effect(
+            &mut cx,
+            &deal_horror(InvestigatorTarget::Controller, 1),
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+        assert_event!(
+            events,
+            Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+        );
+    }
+
+    #[test]
+    fn deal_damage_at_max_health_defeats_investigator() {
+        // Build an investigator with a known low max_health (3), then
+        // apply exactly 3 damage via Effect::DealDamage and assert the
+        // investigator is Killed and InvestigatorDefeated is emitted.
+        use crate::state::Status;
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 3;
+        let mut state = TestGame::new().with_investigator(inv).build();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &deal_damage(InvestigatorTarget::Controller, 3),
+            EvalContext::for_controller(id),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].status, Status::Killed);
+        assert_event!(
+            events,
+            Event::InvestigatorDefeated { investigator, .. } if *investigator == id
+        );
     }
 }

@@ -230,6 +230,17 @@ pub enum EventPattern {
     /// spawns at your location" reaction; that PR gets to extend
     /// this variant with whatever narrowing field it needs.
     EnemySpawned,
+    /// An investigator entered the location this ability is printed on
+    /// (Forced "after you enter \<location\>" effects: Attic `01113`
+    /// takes 1 horror, Cellar `01114` takes 1 damage).
+    ///
+    /// Intentionally bare: the engine binds *you* = the entering
+    /// investigator and *this location* = the ability's own location
+    /// from the trigger context — no narrowing fields needed.
+    ///
+    /// DSL surface only here; the matching + forced auto-fire wiring
+    /// lands in #215. Until then the engine ignores it.
+    EnteredLocation,
 }
 
 /// When an [`Trigger::OnEvent`] ability fires relative to the
@@ -382,6 +393,20 @@ pub enum Effect {
     /// investigator. (Caller responsibility: validate the location
     /// has clues and the investigator can hold them.)
     DiscoverClue { from: LocationTarget, count: u8 },
+    /// Deal `amount` damage to the resolved target investigator,
+    /// applying defeat if the new total reaches their max health.
+    /// `amount == 0` is a no-op (no event, no target resolution).
+    DealDamage {
+        target: InvestigatorTarget,
+        amount: u8,
+    },
+    /// Deal `amount` horror to the resolved target investigator,
+    /// applying defeat if the new total reaches their max sanity.
+    /// `amount == 0` is a no-op.
+    DealHorror {
+        target: InvestigatorTarget,
+        amount: u8,
+    },
     /// Adjust a stat by `delta` for the duration described by `scope`.
     /// Most scopes are passive contributions to engine queries
     /// rather than mutations of the investigator's stored fields.
@@ -677,6 +702,18 @@ pub fn gain_resources(target: InvestigatorTarget, amount: u8) -> Effect {
 #[must_use]
 pub fn discover_clue(from: LocationTarget, count: u8) -> Effect {
     Effect::DiscoverClue { from, count }
+}
+
+/// Build an [`Effect::DealDamage`] against `target` for `amount`.
+#[must_use]
+pub fn deal_damage(target: InvestigatorTarget, amount: u8) -> Effect {
+    Effect::DealDamage { target, amount }
+}
+
+/// Build an [`Effect::DealHorror`] against `target` for `amount`.
+#[must_use]
+pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
+    Effect::DealHorror { target, amount }
 }
 
 /// Build an [`Effect::Modify`].
@@ -1119,6 +1156,14 @@ mod tests {
         let revealed = EventPattern::CardRevealed { card_type: None };
         assert_ne!(spawned, defeated);
         assert_ne!(spawned, revealed);
+    }
+
+    #[test]
+    fn entered_location_pattern_round_trips() {
+        let p = EventPattern::EnteredLocation;
+        let json = serde_json::to_string(&p).unwrap();
+        let back: EventPattern = serde_json::from_str(&json).unwrap();
+        assert_eq!(p, back);
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).

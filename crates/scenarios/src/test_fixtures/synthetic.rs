@@ -82,10 +82,12 @@ pub fn setup() -> GameState {
         .push_back(CardCode(SYNTH_TREACHERY_CODE.into()));
     state.agenda_deck = vec![
         Agenda {
+            code: CardCode("_synth_agenda_1".into()),
             doom_threshold: 2,
             resolution: None,
         },
         Agenda {
+            code: CardCode("_synth_agenda_2".into()),
             doom_threshold: 2,
             resolution: Some(Resolution::Lost {
                 reason: "agenda".into(),
@@ -94,10 +96,12 @@ pub fn setup() -> GameState {
     ];
     state.act_deck = vec![
         Act {
+            code: CardCode("_synth_act_1".into()),
             clue_threshold: 2,
             resolution: None,
         },
         Act {
+            code: CardCode("_synth_act_2".into()),
             clue_threshold: 2,
             resolution: Some(Resolution::Won { id: "demo".into() }),
         },
