@@ -123,6 +123,14 @@ fn move_into_forced_location_fires_its_effect() {
     );
     assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
     assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            Event::InvestigatorMoved { investigator: InvestigatorId(1), to: LocationId(11), .. }
+        )),
+        "expected InvestigatorMoved to 11 in events; got {:?}",
+        result.events
+    );
+    assert!(
         result
             .events
             .iter()
