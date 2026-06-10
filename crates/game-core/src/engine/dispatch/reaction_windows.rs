@@ -169,14 +169,19 @@ fn trigger_matches(
         // spawned" in Phase 4. A future PR (likely Phase-7+) that wants
         // to react to spawns will add the corresponding WindowKind
         // variant and update this arm.
-        // EnteredLocation is matched by the forced auto-fire path (#215),
+        // EnteredLocation is matched by the forced auto-fire path in
+        // `engine::dispatch::forced_triggers` (fired from `move_action`),
         // not by reaction windows.
+        // PhaseEnded is matched only by the forced dispatch path
+        // (`engine::dispatch::forced_triggers`), never by player reaction
+        // windows.
         (
             WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
-            | EventPattern::EnteredLocation,
+            | EventPattern::EnteredLocation
+            | EventPattern::PhaseEnded { .. },
         ) => false,
     }
 }

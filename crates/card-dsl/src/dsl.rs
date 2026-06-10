@@ -238,9 +238,32 @@ pub enum EventPattern {
     /// investigator and *this location* = the ability's own location
     /// from the trigger context — no narrowing fields needed.
     ///
-    /// DSL surface only here; the matching + forced auto-fire wiring
-    /// lands in #215. Until then the engine ignores it.
+    /// The forced dispatch path matches this pattern and fires it from
+    /// `move_action` on entry (`engine::dispatch::forced_triggers`).
     EnteredLocation,
+    /// A game phase ended. Forced agenda/act effects keyed to a phase
+    /// boundary listen here: agenda `01107` moves Ghouls at
+    /// `PhaseEnded { phase: Enemy }` and places doom at the end of the
+    /// round (`PhaseEnded { phase: Upkeep }`).
+    ///
+    /// Matched only by the forced dispatch path
+    /// (`engine::dispatch::forced_triggers`), never by player reaction
+    /// windows — `trigger_matches` returns `false` for it. Currently
+    /// wired for Enemy and Upkeep phase-ends only; Mythos and
+    /// Investigation are not wired (see #212).
+    PhaseEnded { phase: Phase },
+}
+
+/// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
+/// name a phase without `card-dsl` depending on `game-core` (layering).
+/// `game-core` maps this to its own `state::Phase` at the dispatch
+/// boundary (see `engine::dispatch::forced_triggers`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Phase {
+    Mythos,
+    Investigation,
+    Enemy,
+    Upkeep,
 }
 
 /// When an [`Trigger::OnEvent`] ability fires relative to the
@@ -1161,6 +1184,16 @@ mod tests {
     #[test]
     fn entered_location_pattern_round_trips() {
         let p = EventPattern::EnteredLocation;
+        let json = serde_json::to_string(&p).unwrap();
+        let back: EventPattern = serde_json::from_str(&json).unwrap();
+        assert_eq!(p, back);
+    }
+
+    #[test]
+    fn phase_ended_pattern_round_trips() {
+        let p = EventPattern::PhaseEnded {
+            phase: Phase::Enemy,
+        };
         let json = serde_json::to_string(&p).unwrap();
         let back: EventPattern = serde_json::from_str(&json).unwrap();
         assert_eq!(p, back);

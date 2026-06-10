@@ -20,6 +20,14 @@ pub(crate) mod pathfinding;
 pub use evaluator::EvalContext;
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
 
+// Crate-internal re-exports for `test_support::fire_forced_on_enter`.
+// Neither is public API: `ForcedTriggerPoint` stays internal; the
+// integration test constructs it through the primitive-arg helper so
+// it never needs to name the enum. `fire_forced_triggers` is wired into
+// `move_action` (EnteredLocation) and `enemy_phase_end`/`upkeep_phase_end`
+// (PhaseEnded).
+pub(crate) use dispatch::forced_triggers::{fire_forced_triggers, ForcedTriggerPoint};
+
 use crate::action::Action;
 use crate::event::Event;
 use crate::scenario::ScenarioRegistry;

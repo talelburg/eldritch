@@ -23,7 +23,7 @@ trigger-ordering (`#213`), folding in `#117`.
 |---|---|---|---|
 | — | [#216](https://github.com/talelburg/eldritch/issues/216) — kickoff: spec + engine-spine plans + breakdown | — | ✅ PR #217 |
 | A1 | [#214](https://github.com/talelburg/eldritch/issues/214) — engine-spine primitives (DealDamage/DealHorror, EnteredLocation, Act/Agenda CardCode) | `plans/2026-06-10-…-engine-spine-primitives.md` | ✅ PR #218 |
-| A2 | [#215](https://github.com/talelburg/eldritch/issues/215) — forced-trigger dispatch (`fire_forced_triggers`) — depends on A1 | `plans/2026-06-10-…-forced-trigger-dispatch.md` | ⏳ planned |
+| A2 | [#215](https://github.com/talelburg/eldritch/issues/215) — forced-trigger dispatch (`fire_forced_triggers`) — depends on A1 | `plans/2026-06-10-…-forced-trigger-dispatch.md` | ✅ PR #219 |
 | B | scenario plumbing: `reference_card` + symbol routing; roster/seating + `StartScenario` selection; real-registry swap (D5) | TBD | 📐 spec'd |
 | C | content: Gathering scenario cards + setup + Roland + signature/weakness + starter deck | TBD | 📐 spec'd |
 | D | integration & web: investigator/scenario picker; end-to-end Won/Lost gate | TBD | 📐 spec'd |

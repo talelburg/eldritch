@@ -273,7 +273,19 @@ pub(super) fn move_action(
         from,
         to: destination,
     });
-    EngineOutcome::Done
+    // Terminal step: the entered location's Forced on-enter abilities fire,
+    // and their outcome becomes the move's outcome. This runs *after* the
+    // move is applied, so if it returns Rejected (e.g. 2+ simultaneous
+    // forced triggers, #213), `apply`'s structural rollback restores the
+    // pre-move state — the partial mutation above is safe (same reliance on
+    // the apply-loop snapshot that `play_card` documents).
+    super::forced_triggers::fire_forced_triggers(
+        cx,
+        super::forced_triggers::ForcedTriggerPoint::EnteredLocation {
+            investigator,
+            location: destination,
+        },
+    )
 }
 
 /// Validate the prefix shared by Fight and Evade: phase, active

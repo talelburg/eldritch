@@ -181,6 +181,10 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
 /// Enemy phase. Called only from `end_turn`'s terminal branch (the last
 /// investigator has taken a turn this round).
 fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
+    // No forced-trigger dispatch here: only Enemy and Upkeep phase-ends have
+    // slice consumers (agenda 01107). A `PhaseEnded { Investigation }` forced
+    // ability would NOT fire until #212's emit_event restructure centralises
+    // forced dispatch across all framework windows.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
@@ -391,6 +395,18 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
+    // Fire forced act/agenda abilities keyed to `PhaseEnded { Enemy }`.
+    // Single-trigger path: 0 → Done (no-op); 1 → resolves immediately;
+    // 2+ → rejects loudly (#213 adds the ordering loop).
+    let forced = super::forced_triggers::fire_forced_triggers(
+        cx,
+        super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
+            phase: Phase::Enemy,
+        },
+    );
+    if !matches!(forced, EngineOutcome::Done) {
+        return forced; // 2+-trigger loud reject (unreachable in-slice); propagate
+    }
     // Enemy → Upkeep; calls upkeep_phase. This may now suspend at step
     // 4.5 (hand-size discard, #111), so the outcome propagates rather
     // than being asserted Done.
@@ -410,6 +426,10 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
     //     driver — mirror of step 1.1's PhaseStarted ownership in
     //     mythos_phase. Rules Reference p.24: "This step formalizes
     //     the end of the mythos phase."
+    // No forced-trigger dispatch here: only Enemy and Upkeep phase-ends have
+    // slice consumers (agenda 01107). A `PhaseEnded { Mythos }` forced ability
+    // would NOT fire until #212's emit_event restructure centralises forced
+    // dispatch across all framework windows.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });
@@ -466,6 +486,22 @@ fn upkeep_phase_end(cx: &mut Cx) {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });
+    // Fire forced act/agenda abilities keyed to `PhaseEnded { Upkeep }`
+    // ("at end of round"). The () return cannot propagate a 2+-trigger
+    // reject; `debug_assert!` guards it for now. #212's `emit_event`
+    // restructure will centralise forced-trigger dispatch and remove this
+    // limitation.
+    let forced = super::forced_triggers::fire_forced_triggers(
+        cx,
+        super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
+            phase: Phase::Upkeep,
+        },
+    );
+    debug_assert!(
+        matches!(forced, EngineOutcome::Done),
+        "upkeep_phase_end forced trigger did not resolve to Done: {forced:?} \
+         (2+ simultaneous forced at round end needs #213)"
+    );
     // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
     // transition can suspend (hunter movement), so this never does.
     let outcome = step_phase(cx);
