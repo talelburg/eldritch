@@ -58,14 +58,14 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 by_controller: true,
             },
             EventTiming::After,
-            discover_clue(LocationTarget::ControllerLocation, 1),
+            discover_clue(LocationTarget::YourLocation, 1),
         )]),
         BYSTANDER_REACTION => Some(vec![on_event(
             EventPattern::EnemyDefeated {
                 by_controller: false,
             },
             EventTiming::After,
-            gain_resources(InvestigatorTarget::Controller, 1),
+            gain_resources(InvestigatorTarget::You, 1),
         )]),
         TWO_REACTIONS => Some(vec![
             on_event(
@@ -73,14 +73,14 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                     by_controller: true,
                 },
                 EventTiming::After,
-                discover_clue(LocationTarget::ControllerLocation, 1),
+                discover_clue(LocationTarget::YourLocation, 1),
             ),
             on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,
                 },
                 EventTiming::After,
-                gain_resources(InvestigatorTarget::Controller, 1),
+                gain_resources(InvestigatorTarget::You, 1),
             ),
         ]),
         _ => None,

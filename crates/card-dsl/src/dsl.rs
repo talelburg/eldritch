@@ -536,11 +536,13 @@ pub enum SkillTestKind {
 /// Single-investigator target spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvestigatorTarget {
-    /// The controller of the ability — the investigator who played /
-    /// activated this card.
-    Controller,
+    /// The investigator this ability acts on — "you" in card text. For
+    /// a played/activated card that's whoever played it; for a forced
+    /// trigger it's the affected investigator the dispatcher binds (e.g.
+    /// the one entering a location for an "After you enter" effect).
+    You,
     /// The active investigator at evaluation time. May or may not be
-    /// the controller; matters during reactions across turns.
+    /// "you"; matters during reactions across turns.
     Active,
     /// The controller picks an investigator. The evaluator presents
     /// the choice via `AwaitingInput`.
@@ -559,8 +561,9 @@ pub enum InvestigatorTargetSet {
 /// Single-location target spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LocationTarget {
-    /// The location the controller is currently at.
-    ControllerLocation,
+    /// The location "you" are currently at — the location of the
+    /// investigator this ability acts on (see [`InvestigatorTarget::You`]).
+    YourLocation,
     /// The controller picks a location.
     ChosenByController,
     /// The location associated with the in-flight skill test. For
@@ -854,12 +857,12 @@ mod tests {
     /// — the canonical `OnPlay` + `DiscoverClue` shape.
     #[test]
     fn working_a_hunch_compiles() {
-        let ability = on_play(discover_clue(LocationTarget::ControllerLocation, 1));
+        let ability = on_play(discover_clue(LocationTarget::YourLocation, 1));
         assert_eq!(ability.trigger, Trigger::OnPlay);
         assert!(matches!(
             ability.effect,
             Effect::DiscoverClue {
-                from: LocationTarget::ControllerLocation,
+                from: LocationTarget::YourLocation,
                 count: 1,
             }
         ));
@@ -875,7 +878,7 @@ mod tests {
             Condition::SkillTest {
                 outcome: TestOutcome::Success,
             },
-            discover_clue(LocationTarget::ControllerLocation, 1),
+            discover_clue(LocationTarget::YourLocation, 1),
         ));
         assert_eq!(ability.trigger, Trigger::OnCommit);
         // Distinct enum variant — compiler enforces the difference at
@@ -913,8 +916,8 @@ mod tests {
     #[test]
     fn seq_composition_nests_two_effects() {
         let effect = seq([
-            gain_resources(InvestigatorTarget::Controller, 1),
-            discover_clue(LocationTarget::ControllerLocation, 1),
+            gain_resources(InvestigatorTarget::You, 1),
+            discover_clue(LocationTarget::YourLocation, 1),
         ]);
         match effect {
             Effect::Seq(inner) => assert_eq!(inner.len(), 2),
@@ -929,14 +932,14 @@ mod tests {
             Condition::SkillTest {
                 outcome: TestOutcome::Success,
             },
-            discover_clue(LocationTarget::ControllerLocation, 1),
+            discover_clue(LocationTarget::YourLocation, 1),
         );
         let with_else = if_else(
             Condition::SkillTest {
                 outcome: TestOutcome::Success,
             },
-            discover_clue(LocationTarget::ControllerLocation, 1),
-            gain_resources(InvestigatorTarget::Controller, 1),
+            discover_clue(LocationTarget::YourLocation, 1),
+            gain_resources(InvestigatorTarget::You, 1),
         );
         assert!(matches!(bare, Effect::If { else_: None, .. }));
         assert!(matches!(with_else, Effect::If { else_: Some(_), .. }));
@@ -962,8 +965,8 @@ mod tests {
     #[test]
     fn choose_one_collects_alternatives() {
         let effect = choose_one([
-            gain_resources(InvestigatorTarget::Controller, 2),
-            discover_clue(LocationTarget::ControllerLocation, 1),
+            gain_resources(InvestigatorTarget::You, 2),
+            discover_clue(LocationTarget::YourLocation, 1),
         ]);
         match effect {
             Effect::ChooseOne(alts) => assert_eq!(alts.len(), 2),
@@ -971,15 +974,15 @@ mod tests {
         }
     }
 
-    /// `InvestigatorTarget::Controller` and `Active` are distinct
+    /// `InvestigatorTarget::You` and `Active` are distinct
     /// variants — they coincide during the controller's own turn but
     /// differ during reactions across turns. The compiler enforces
     /// the difference at every match site; this test pins the
     /// distinction at the type level.
     #[test]
     fn investigator_target_controller_and_active_are_distinct() {
-        assert_ne!(InvestigatorTarget::Controller, InvestigatorTarget::Active);
-        let controller_effect = gain_resources(InvestigatorTarget::Controller, 1);
+        assert_ne!(InvestigatorTarget::You, InvestigatorTarget::Active);
+        let controller_effect = gain_resources(InvestigatorTarget::You, 1);
         let active_effect = gain_resources(InvestigatorTarget::Active, 1);
         assert_ne!(controller_effect, active_effect);
     }
@@ -1001,8 +1004,8 @@ mod tests {
                 modify(Stat::Intellect, -1, ModifierScope::ThisSkillTest),
             ),
             choose_one([
-                discover_clue(LocationTarget::ControllerLocation, 1),
-                gain_resources(InvestigatorTarget::Controller, 2),
+                discover_clue(LocationTarget::YourLocation, 1),
+                gain_resources(InvestigatorTarget::You, 2),
             ]),
         ]);
         let json = serde_json::to_string(&original).expect("serialize");
@@ -1022,7 +1025,7 @@ mod tests {
                 by_controller: true,
             },
             EventTiming::After,
-            discover_clue(LocationTarget::ControllerLocation, 1),
+            discover_clue(LocationTarget::YourLocation, 1),
         );
         assert_eq!(
             ability.trigger,
@@ -1036,7 +1039,7 @@ mod tests {
         assert!(matches!(
             ability.effect,
             Effect::DiscoverClue {
-                from: LocationTarget::ControllerLocation,
+                from: LocationTarget::YourLocation,
                 count: 1,
             },
         ));
@@ -1091,7 +1094,7 @@ mod tests {
                     by_controller: true,
                 },
                 timing,
-                discover_clue(LocationTarget::ControllerLocation, 1),
+                discover_clue(LocationTarget::YourLocation, 1),
             );
             let json = serde_json::to_string(&original).expect("serialize");
             let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
@@ -1104,12 +1107,12 @@ mod tests {
     /// level so the compiler enforces the difference at every match site.
     #[test]
     fn revelation_builder_constructs_treachery_shape() {
-        let ability = revelation(gain_resources(InvestigatorTarget::Controller, 1));
+        let ability = revelation(gain_resources(InvestigatorTarget::You, 1));
         assert_eq!(ability.trigger, Trigger::Revelation);
         assert!(matches!(
             ability.effect,
             Effect::GainResources {
-                target: InvestigatorTarget::Controller,
+                target: InvestigatorTarget::You,
                 amount: 1,
             },
         ));
@@ -1126,7 +1129,7 @@ mod tests {
 
     #[test]
     fn revelation_ability_round_trips_through_serde_json() {
-        let original = revelation(gain_resources(InvestigatorTarget::Controller, 1));
+        let original = revelation(gain_resources(InvestigatorTarget::You, 1));
         let json = serde_json::to_string(&original).expect("serialize");
         let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(original, recovered);
@@ -1214,8 +1217,8 @@ mod tests {
                 modify(Stat::Intellect, -1, ModifierScope::ThisSkillTest),
             ),
             choose_one([
-                discover_clue(LocationTarget::ControllerLocation, 1),
-                gain_resources(InvestigatorTarget::Controller, 2),
+                discover_clue(LocationTarget::YourLocation, 1),
+                gain_resources(InvestigatorTarget::You, 2),
             ]),
         ]);
         let cloned = original.clone();

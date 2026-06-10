@@ -74,8 +74,8 @@ use super::Cx;
 #[non_exhaustive]
 pub struct EvalContext {
     /// The investigator whose card-effect we're resolving — the
-    /// "you" in card text. Resolves [`InvestigatorTarget::Controller`]
-    /// and [`LocationTarget::ControllerLocation`].
+    /// "you" in card text. Resolves [`InvestigatorTarget::You`]
+    /// and [`LocationTarget::YourLocation`].
     pub controller: crate::state::InvestigatorId,
     /// The in-play card-instance that triggered this effect, if any.
     /// Set by [`activate_ability`](crate::engine) so pushed
@@ -475,7 +475,7 @@ fn apply_seq(cx: &mut Cx, effects: &[Effect], eval_ctx: EvalContext) -> EngineOu
 /// (outside the Investigation phase). Card authors reaching for
 /// `Active` from a Mythos- or Enemy-phase reaction will silently
 /// fail until reaction windows wire an active-investigator-equivalent
-/// into `EvalContext`. Use [`InvestigatorTarget::Controller`] for
+/// into `EvalContext`. Use [`InvestigatorTarget::You`] for
 /// "the player who triggered this" — it doesn't depend on phase.
 fn resolve_investigator_target(
     state: &GameState,
@@ -483,7 +483,7 @@ fn resolve_investigator_target(
     target: InvestigatorTarget,
 ) -> Result<crate::state::InvestigatorId, &'static str> {
     match target {
-        InvestigatorTarget::Controller => Ok(ctx.controller),
+        InvestigatorTarget::You => Ok(ctx.controller),
         InvestigatorTarget::Active => state
             .active_investigator
             .ok_or("InvestigatorTarget::Active but no active investigator (outside Investigation)"),
@@ -502,11 +502,11 @@ fn resolve_location_target(
     target: LocationTarget,
 ) -> Result<crate::state::LocationId, &'static str> {
     match target {
-        LocationTarget::ControllerLocation => state
+        LocationTarget::YourLocation => state
             .investigators
             .get(&ctx.controller)
             .and_then(|i| i.current_location)
-            .ok_or("LocationTarget::ControllerLocation but the controller is between locations"),
+            .ok_or("LocationTarget::YourLocation but the controller is between locations"),
         LocationTarget::ChosenByController => {
             Err("LocationTarget::ChosenByController requires AwaitingInput plumbing")
         }
@@ -696,7 +696,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::Controller, 3),
+            &gain_resources(InvestigatorTarget::You, 3),
             ctx(1),
         );
 
@@ -776,7 +776,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::ControllerLocation, 1),
+            &discover_clue(LocationTarget::YourLocation, 1),
             ctx(1),
         );
 
@@ -814,7 +814,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::ControllerLocation, 3),
+            &discover_clue(LocationTarget::YourLocation, 3),
             ctx(1),
         );
 
@@ -850,7 +850,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::ControllerLocation, 1),
+            &discover_clue(LocationTarget::YourLocation, 1),
             ctx(1),
         );
 
@@ -862,8 +862,8 @@ mod tests {
 
     #[test]
     fn discover_clue_rejects_when_controller_is_between_locations() {
-        // Controller has no current_location — LocationTarget::
-        // ControllerLocation can't resolve.
+        // "You" has no current_location — LocationTarget::
+        // YourLocation can't resolve.
         let mut state = TestGame::new()
             .with_investigator(test_investigator(1)) // current_location = None
             .build();
@@ -874,7 +874,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::ControllerLocation, 1),
+            &discover_clue(LocationTarget::YourLocation, 1),
             ctx(1),
         );
 
@@ -1043,7 +1043,7 @@ mod tests {
         let effect = if_else(
             Condition::SkillTestKind(SkillTestKind::Investigate),
             discover_clue(LocationTarget::TestedLocation, 1),
-            gain_resources(InvestigatorTarget::Controller, 2),
+            gain_resources(InvestigatorTarget::You, 2),
         );
         let resources_before = state.investigators[&InvestigatorId(1)].resources;
 
@@ -1179,8 +1179,8 @@ mod tests {
                 events: &mut events,
             },
             &seq([
-                gain_resources(InvestigatorTarget::Controller, 2),
-                discover_clue(LocationTarget::ControllerLocation, 1),
+                gain_resources(InvestigatorTarget::You, 2),
+                discover_clue(LocationTarget::YourLocation, 1),
             ]),
             ctx(1),
         );
@@ -1215,7 +1215,7 @@ mod tests {
             },
             &seq([
                 gain_resources(InvestigatorTarget::Active, 1), // rejects
-                discover_clue(LocationTarget::ControllerLocation, 1), // shouldn't run
+                discover_clue(LocationTarget::YourLocation, 1), // shouldn't run
             ]),
             ctx(1),
         );
@@ -1322,7 +1322,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &Effect::ChooseOne(vec![gain_resources(InvestigatorTarget::Controller, 1)]),
+            &Effect::ChooseOne(vec![gain_resources(InvestigatorTarget::You, 1)]),
             ctx(1),
         );
         match outcome {
@@ -1692,7 +1692,7 @@ mod tests {
         };
         let outcome = apply_effect(
             &mut cx,
-            &deal_damage(InvestigatorTarget::Controller, 2),
+            &deal_damage(InvestigatorTarget::You, 2),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -1716,7 +1716,7 @@ mod tests {
         };
         let outcome = apply_effect(
             &mut cx,
-            &deal_horror(InvestigatorTarget::Controller, 1),
+            &deal_horror(InvestigatorTarget::You, 1),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -1743,7 +1743,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &deal_damage(InvestigatorTarget::Controller, 3),
+            &deal_damage(InvestigatorTarget::You, 3),
             EvalContext::for_controller(id),
         );
         assert_eq!(outcome, EngineOutcome::Done);

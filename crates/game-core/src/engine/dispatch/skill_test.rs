@@ -470,7 +470,7 @@ fn apply_skill_test_follow_up(
     match follow_up {
         SkillTestFollowUp::None => {}
         SkillTestFollowUp::Investigate => {
-            let effect = discover_clue(LocationTarget::ControllerLocation, 1);
+            let effect = discover_clue(LocationTarget::YourLocation, 1);
             let eval_ctx = EvalContext::for_controller(investigator);
             // Same caveat as the pre-refactor `investigate`: the only
             // remaining rejection path inside `discover_clue` is
