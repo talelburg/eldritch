@@ -53,7 +53,10 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
     }
 
     // StartScenario → mulligan (keep hand).
-    let r1 = apply(base, Action::Player(PlayerAction::StartScenario));
+    let r1 = apply(
+        base,
+        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+    );
     assert_eq!(r1.outcome, EngineOutcome::Done);
 
     let r2 = apply(
@@ -128,7 +131,7 @@ fn upkeep_round_replay_is_deterministic() {
 
     // --- First pass: drive and collect the action log. ---
     let actions = vec![
-        Action::Player(PlayerAction::StartScenario),
+        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
         Action::Player(PlayerAction::Mulligan {
             investigator: inv1,
             indices_to_redraw: vec![],

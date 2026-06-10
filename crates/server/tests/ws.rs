@@ -51,7 +51,7 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
     send(
         &mut a,
         &ClientMessage::Submit {
-            action: PlayerAction::StartScenario,
+            action: PlayerAction::StartScenario { roster: vec![] },
         },
     )
     .await;

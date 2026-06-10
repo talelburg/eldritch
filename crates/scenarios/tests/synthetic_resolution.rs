@@ -61,7 +61,7 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
     let (mut state, _) = drive(
         state,
         vec![
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
             Action::Player(PlayerAction::Mulligan {
                 investigator: inv,
                 indices_to_redraw: vec![],
@@ -98,7 +98,7 @@ fn synthetic_scenario_resolves_lost_via_doom() {
     let (mut state, _) = drive(
         base,
         vec![
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
             Action::Player(PlayerAction::Mulligan {
                 investigator: inv,
                 indices_to_redraw: vec![],

@@ -52,7 +52,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     if cx.state.mulligan_pending.is_some()
         && !matches!(
             action,
-            PlayerAction::Mulligan { .. } | PlayerAction::StartScenario
+            PlayerAction::Mulligan { .. } | PlayerAction::StartScenario { .. }
         )
     {
         return EngineOutcome::Rejected {
@@ -139,7 +139,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     }
 
     let outcome = match action {
-        PlayerAction::StartScenario => phases::start_scenario(cx),
+        PlayerAction::StartScenario { roster } => phases::start_scenario(cx, roster),
         PlayerAction::EndTurn => phases::end_turn(cx),
         PlayerAction::PerformSkillTest {
             investigator,

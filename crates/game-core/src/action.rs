@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind};
+use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind};
 
 /// A single entry in the action log.
 ///
@@ -38,10 +38,15 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum PlayerAction {
-    /// Begin a scenario session. Carries no payload at this stage; later
-    /// phases will attach scenario code, investigator selections, deck
-    /// snapshots, etc.
-    StartScenario,
+    /// Begin a scenario session, seating the chosen investigators.
+    ///
+    /// `roster` pairs each investigator card code with the deck the
+    /// player chose for them. Stats are resolved from card data at
+    /// seat time (not carried here); the deck is taken verbatim — a
+    /// free input that Phase 9's decklist import will populate.
+    /// An empty roster seats no one; `start_scenario` rejects unless at
+    /// least one investigator ends up seated.
+    StartScenario { roster: Vec<RosterEntry> },
     /// Active investigator ends their turn during the Investigation phase.
     EndTurn,
     /// Spend clues to advance the current act. Rules Reference p.3:
@@ -251,6 +256,18 @@ pub enum PlayerAction {
         /// The chosen response payload.
         response: InputResponse,
     },
+}
+
+/// One seat in a scenario: which investigator, and the deck the player
+/// chose for them. Crosses the wire and lands in the action log, so the
+/// deck composition replays deterministically.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RosterEntry {
+    /// Investigator card code (e.g. `"01001"` for Roland Banks).
+    pub investigator: CardCode,
+    /// The player's chosen deck, top-to-bottom. Taken verbatim by
+    /// seating; deckbuilding-legality validation is Phase 9.
+    pub deck: Vec<CardCode>,
 }
 
 /// Engine-recorded events.
