@@ -239,7 +239,7 @@ pub enum EventPattern {
     /// from the trigger context — no narrowing fields needed.
     ///
     /// DSL surface only here; the matching + forced auto-fire wiring
-    /// lands in a later task. Until then the engine ignores it.
+    /// lands in #215. Until then the engine ignores it.
     EnteredLocation,
 }
 
