@@ -22,14 +22,14 @@
 //! [`EventPattern::EnemyDefeated`] pattern narrowed by
 //! `by_controller: true` (Roland's "After **you** defeat an enemy")
 //! at [`EventTiming::After`], discovering 1 clue at
-//! [`LocationTarget::ControllerLocation`]. The "Limit once per round"
+//! [`LocationTarget::YourLocation`]. The "Limit once per round"
 //! clause attaches as a [`UsageLimit`] with `count: 1, period:
 //! UsagePeriod::Round`.
 //!
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`EventPattern::EnemyDefeated`]: card_dsl::dsl::EventPattern::EnemyDefeated
 //! [`EventTiming::After`]: card_dsl::dsl::EventTiming::After
-//! [`LocationTarget::ControllerLocation`]: card_dsl::dsl::LocationTarget::ControllerLocation
+//! [`LocationTarget::YourLocation`]: card_dsl::dsl::LocationTarget::YourLocation
 //! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 
 use card_dsl::dsl::{
@@ -50,7 +50,7 @@ pub fn abilities() -> Vec<Ability> {
             by_controller: true,
         },
         EventTiming::After,
-        discover_clue(LocationTarget::ControllerLocation, 1),
+        discover_clue(LocationTarget::YourLocation, 1),
     )
     .with_usage_limit(UsageLimit {
         count: 1,
@@ -80,7 +80,7 @@ mod tests {
         assert!(matches!(
             abilities[0].effect,
             Effect::DiscoverClue {
-                from: LocationTarget::ControllerLocation,
+                from: LocationTarget::YourLocation,
                 count: 1,
             },
         ));

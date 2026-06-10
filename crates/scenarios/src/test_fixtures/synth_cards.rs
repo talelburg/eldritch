@@ -240,13 +240,10 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 /// `abilities_for` function pointer used by [`TEST_REGISTRY`].
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
-        SYNTH_TREACHERY_CODE | SYNTH_SURGE_TREACHERY_CODE => Some(vec![revelation(
-            gain_resources(InvestigatorTarget::Controller, 1),
-        )]),
-        SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(
-            InvestigatorTarget::Controller,
-            1,
-        ))]),
+        SYNTH_TREACHERY_CODE | SYNTH_SURGE_TREACHERY_CODE => {
+            Some(vec![revelation(gain_resources(InvestigatorTarget::You, 1))])
+        }
+        SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(InvestigatorTarget::You, 1))]),
         // SYNTH_ENEMY_CODE intentionally returns None — the synthetic
         // enemy has no Revelation effect; the spawn handler is the
         // only thing exercised by the integration test.

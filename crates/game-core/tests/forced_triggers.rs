@@ -56,7 +56,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         Some(vec![on_event(
             EventPattern::EnteredLocation,
             EventTiming::After,
-            deal_horror(InvestigatorTarget::Controller, 1),
+            deal_horror(InvestigatorTarget::You, 1),
         )])
     } else if code.as_str() == DOOM_AGENDA || code.as_str() == DOOM_ACT {
         Some(vec![on_event(
@@ -64,7 +64,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 phase: DslPhase::Enemy,
             },
             EventTiming::After,
-            deal_horror(InvestigatorTarget::Controller, 1),
+            deal_horror(InvestigatorTarget::You, 1),
         )])
     } else if code.as_str() == DOUBLE_FORCED {
         // Two distinct forced `EnteredLocation` abilities at the same timing
@@ -73,12 +73,12 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             on_event(
                 EventPattern::EnteredLocation,
                 EventTiming::After,
-                deal_horror(InvestigatorTarget::Controller, 1),
+                deal_horror(InvestigatorTarget::You, 1),
             ),
             on_event(
                 EventPattern::EnteredLocation,
                 EventTiming::After,
-                deal_horror(InvestigatorTarget::Controller, 1),
+                deal_horror(InvestigatorTarget::You, 1),
             ),
         ])
     } else {

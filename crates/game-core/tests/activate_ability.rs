@@ -61,12 +61,12 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         FAST_RESOURCE_LOOP => Some(vec![activated(
             0,
             vec![Cost::Resources(1)],
-            gain_resources(InvestigatorTarget::Controller, 1),
+            gain_resources(InvestigatorTarget::You, 1),
         )]),
         ACTION_EXHAUST_GAIN => Some(vec![activated(
             1,
             vec![Cost::Exhaust],
-            gain_resources(InvestigatorTarget::Controller, 1),
+            gain_resources(InvestigatorTarget::You, 1),
         )]),
         CONSTANT_ONLY => Some(vec![constant(modify(
             Stat::Willpower,
@@ -76,7 +76,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         DISCARD_COST_ABILITY => Some(vec![activated(
             0,
             vec![Cost::DiscardCardFromHand],
-            gain_resources(InvestigatorTarget::Controller, 1),
+            gain_resources(InvestigatorTarget::You, 1),
         )]),
         SKILL_BOOST => Some(vec![activated(
             0,

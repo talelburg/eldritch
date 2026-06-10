@@ -19,10 +19,7 @@ pub const CODE: &str = "01037";
 /// On play, discover 1 clue at the controller's location.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_play(discover_clue(
-        LocationTarget::ControllerLocation,
-        1,
-    ))]
+    vec![on_play(discover_clue(LocationTarget::YourLocation, 1))]
 }
 
 #[cfg(test)]
@@ -37,7 +34,7 @@ mod tests {
         assert!(matches!(
             abilities[0].effect,
             Effect::DiscoverClue {
-                from: LocationTarget::ControllerLocation,
+                from: LocationTarget::YourLocation,
                 count: 1,
             }
         ));
