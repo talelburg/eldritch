@@ -48,7 +48,10 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     }
 
     // StartScenario → mulligan (keep hand).
-    let r1 = apply(base, Action::Player(PlayerAction::StartScenario));
+    let r1 = apply(
+        base,
+        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+    );
     assert_eq!(r1.outcome, EngineOutcome::Done);
 
     let r2 = apply(
@@ -186,7 +189,7 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
     let indices: Vec<u32> = (0..discard_count).collect();
 
     let actions = vec![
-        Action::Player(PlayerAction::StartScenario),
+        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
         Action::Player(PlayerAction::Mulligan {
             investigator: inv1,
             indices_to_redraw: vec![],

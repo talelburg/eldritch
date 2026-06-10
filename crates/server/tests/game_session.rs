@@ -95,7 +95,10 @@ async fn apply_persists_accepted_action_and_advances_state() {
         .await
         .unwrap();
 
-    let (_events, outcome) = session.apply(PlayerAction::StartScenario).await.unwrap();
+    let (_events, outcome) = session
+        .apply(PlayerAction::StartScenario { roster: vec![] })
+        .await
+        .unwrap();
 
     assert!(!matches!(outcome, EngineOutcome::Rejected { .. }));
     // StartScenario moves the round from 0 to 1.
@@ -142,7 +145,10 @@ async fn load_replays_log_to_reproduce_live_state() {
     let mut session = GameSession::create(pool.clone(), "g4", ScenarioId::new(TEST_SCENARIO_ID))
         .await
         .unwrap();
-    session.apply(PlayerAction::StartScenario).await.unwrap();
+    session
+        .apply(PlayerAction::StartScenario { roster: vec![] })
+        .await
+        .unwrap();
 
     let loaded = GameSession::load(pool.clone(), &GameId::new("g4"))
         .await

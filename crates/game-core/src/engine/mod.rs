@@ -222,7 +222,10 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .build();
-        let start_result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let start_result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
 
         assert_eq!(start_result.outcome, EngineOutcome::Done);
         assert_eq!(start_result.state.round, 1);
@@ -295,7 +298,10 @@ mod tests {
     #[test]
     fn start_scenario_on_already_started_state_is_rejected() {
         let state = TestGame::new().with_round(7).build();
-        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
 
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 7);
@@ -1056,7 +1062,10 @@ mod tests {
         // StartScenario: round 0 → 1, phase Investigation (mulligan window
         // open). The Investigation phase does NOT begin until the last
         // investigator mulligans — active_investigator is None here.
-        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
         let state = result.state;
         assert_eq!(state.round, 1);
         assert_eq!(state.phase, Phase::Investigation);
@@ -1182,7 +1191,11 @@ mod tests {
 
         // StartScenario: round 0 → 1, mulligan window opens.
         // active_investigator is None until mulligan completion.
-        let after_start = apply(state, Action::Player(PlayerAction::StartScenario)).state;
+        let after_start = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        )
+        .state;
         assert_eq!(after_start.round, 1);
         assert_eq!(
             after_start.active_investigator, None,
@@ -1264,7 +1277,10 @@ mod tests {
             .with_turn_order([id])
             .with_rng_seed(42)
             .build();
-        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -1297,7 +1313,10 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .build();
-        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         // Empty-deck no-op shuffle: no event.
@@ -1324,7 +1343,10 @@ mod tests {
             .with_turn_order([id])
             .with_rng_seed(7)
             .build();
-        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -1351,8 +1373,14 @@ mod tests {
             .with_rng_seed(123)
             .build();
 
-        let result_a = apply(state_a, Action::Player(PlayerAction::StartScenario));
-        let result_b = apply(state_b, Action::Player(PlayerAction::StartScenario));
+        let result_a = apply(
+            state_a,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
+        let result_b = apply(
+            state_b,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
 
         assert_eq!(
             result_a.state.investigators[&id].deck,
@@ -1409,7 +1437,10 @@ mod tests {
             inv.deck = make_test_deck(8);
             tg = tg.with_investigator(inv);
         }
-        let result = apply(tg.build(), Action::Player(PlayerAction::StartScenario));
+        let result = apply(
+            tg.build(),
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
         assert_eq!(result.outcome, EngineOutcome::Done);
 
         // Each investigator drew 5 cards and has 3 left in deck.
@@ -3148,7 +3179,10 @@ mod tests {
             .with_investigator(inv)
             .with_turn_order([id])
             .build();
-        let result = apply(state, Action::Player(PlayerAction::StartScenario));
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_eq!(result.state.mulligan_pending, Some(id));
     }

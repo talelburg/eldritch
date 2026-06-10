@@ -433,7 +433,7 @@ async fn start_scenario_is_the_only_control_at_round_zero() {
     leptos::task::tick().await;
     let frame = rx.try_recv().expect("a frame after tick");
     match submit_action(frame) {
-        PlayerAction::StartScenario => {}
+        PlayerAction::StartScenario { .. } => {}
         other => panic!("expected StartScenario, got {other:?}"),
     }
 }

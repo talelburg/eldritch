@@ -104,7 +104,7 @@ fn won_walk_full_cycle_replays_identically() {
         response: InputResponse::CommitCards { indices: vec![] },
     });
     let log = vec![
-        Action::Player(PlayerAction::StartScenario),
+        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
         Action::Player(PlayerAction::Mulligan {
             investigator: inv,
             indices_to_redraw: vec![],
@@ -173,7 +173,7 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     // when a Mythos draw is pending and breaking on resolution. Record the
     // realized action log so the round-trip replays exactly what ran.
     let mut log = vec![
-        Action::Player(PlayerAction::StartScenario),
+        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
         Action::Player(PlayerAction::Mulligan {
             investigator: inv,
             indices_to_redraw: vec![],

@@ -330,7 +330,7 @@ pub fn ActionControls() -> impl IntoView {
                         "Start scenario",
                         !has(ActionControl::StartScenario),
                         tx.clone(),
-                        PlayerAction::StartScenario,
+                        PlayerAction::StartScenario { roster: vec![] },
                     )}
                     {investigate}
                     {advance_act}

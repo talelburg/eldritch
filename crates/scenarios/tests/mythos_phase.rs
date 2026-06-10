@@ -68,7 +68,7 @@ fn setup_at_mythos_draw(state: game_core::state::GameState) -> game_core::state:
         state,
         vec![
             // Round 1 begins; mulligan window opens.
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
             // Close mulligan window (empty redraw = keep hand).
             Action::Player(PlayerAction::Mulligan {
                 investigator: inv1,
@@ -264,7 +264,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     let (state, _) = drive(
         base,
         vec![
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
             Action::Player(PlayerAction::Mulligan {
                 investigator: InvestigatorId(1),
                 indices_to_redraw: vec![],
@@ -360,7 +360,7 @@ fn mythos_phase_multi_investigator_player_order() {
     let (state, _) = drive(
         base,
         vec![
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
             Action::Player(PlayerAction::Mulligan {
                 investigator: inv1,
                 indices_to_redraw: vec![],
@@ -473,7 +473,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     let (state, _) = drive(
         base,
         vec![
-            Action::Player(PlayerAction::StartScenario),
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
             Action::Player(PlayerAction::Mulligan {
                 investigator: inv1,
                 indices_to_redraw: vec![],
