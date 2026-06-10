@@ -19,6 +19,8 @@
 //! engine's resolution-hook integration test. Real scenarios (The
 //! Gathering, Dunwich, …) land in subsequent phases.
 
+pub mod the_gathering;
+
 #[cfg(any(test, feature = "test_fixtures"))]
 pub mod test_fixtures;
 
