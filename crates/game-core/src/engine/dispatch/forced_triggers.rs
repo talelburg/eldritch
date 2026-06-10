@@ -96,7 +96,7 @@ fn collect_forced_hits(
                     &act.code,
                     lead,
                     &mut hits,
-                    |p| matches!(p, crate::dsl::EventPattern::PhaseEnded { phase } if phase == want_phase),
+                    |p| matches!(p, EventPattern::PhaseEnded { phase } if phase == want_phase),
                 );
             }
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
@@ -105,7 +105,7 @@ fn collect_forced_hits(
                     &agenda.code,
                     lead,
                     &mut hits,
-                    |p| matches!(p, crate::dsl::EventPattern::PhaseEnded { phase } if phase == want_phase),
+                    |p| matches!(p, EventPattern::PhaseEnded { phase } if phase == want_phase),
                 );
             }
         }

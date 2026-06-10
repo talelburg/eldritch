@@ -23,7 +23,7 @@ use game_core::dsl::{
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{Agenda, CardCode, InvestigatorId, LocationId, Phase};
+use game_core::state::{Act, Agenda, CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
     fire_forced_on_enter, fire_forced_on_phase_end, test_investigator, test_location, TestGame,
 };
@@ -37,6 +37,10 @@ const HORROR_ATTIC: &str = "test-attic";
 /// ability that deals 1 horror to the controller (lead investigator).
 const DOOM_AGENDA: &str = "test-agenda";
 
+/// Mock act code: one `EventPattern::PhaseEnded { phase: Enemy }` forced
+/// ability that deals 1 horror to the controller (lead investigator).
+const DOOM_ACT: &str = "test-act";
+
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
@@ -48,7 +52,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             EventTiming::After,
             deal_horror(InvestigatorTarget::Controller, 1),
         )])
-    } else if code.as_str() == DOOM_AGENDA {
+    } else if code.as_str() == DOOM_AGENDA || code.as_str() == DOOM_ACT {
         Some(vec![on_event(
             EventPattern::PhaseEnded {
                 phase: DslPhase::Enemy,
@@ -244,14 +248,8 @@ fn forced_on_phase_end_wrong_phase_fires_nothing() {
     );
 }
 
-/// Cover all four `dsl_phase` mappings: each phase fires the ability only for
-/// the matching engine `Phase`. We reuse four separate agenda codes whose
-/// abilities are keyed to each dsl `Phase`, all mapped into the mock registry
-/// via a local helper.
-///
-/// Because the mock registry is installed once per process (`OnceLock`), this
-/// test uses `DOOM_AGENDA` (Enemy) and separately verifies the three non-Enemy
-/// phases all produce zero hits (the agenda is only keyed to Enemy).
+/// The three non-Enemy phases do not fire an Enemy-keyed forced ability —
+/// exercises the `dsl_phase` mapping's negative side.
 #[test]
 fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
     install_mock_registry();
@@ -335,4 +333,42 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(events.is_empty(), "no events without a lead investigator");
+}
+
+#[test]
+fn forced_on_phase_end_fires_act_ability() {
+    install_mock_registry();
+
+    let inv = test_investigator(1);
+    let mut state = TestGame::new()
+        .with_investigator(inv)
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+    // Set current act to DOOM_ACT, no matching agenda (plain code → None).
+    state.act_deck = vec![Act {
+        code: CardCode(DOOM_ACT.into()),
+        clue_threshold: 3,
+        resolution: None,
+    }];
+    state.act_index = 0;
+    state.agenda_deck = vec![Agenda {
+        code: CardCode("plain-agenda".into()),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+    state.agenda_index = 0;
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(
+        state.investigators[&InvestigatorId(1)].horror,
+        1,
+        "lead investigator should have taken 1 horror from act forced ability"
+    );
+    assert_event!(
+        events,
+        Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+    );
 }
