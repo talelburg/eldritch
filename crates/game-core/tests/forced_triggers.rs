@@ -41,6 +41,12 @@ const DOOM_AGENDA: &str = "test-agenda";
 /// ability that deals 1 horror to the controller (lead investigator).
 const DOOM_ACT: &str = "test-act";
 
+/// Mock location code: TWO `EventPattern::EnteredLocation` forced abilities,
+/// both dealing 1 horror to the entering investigator. Used to test that a
+/// single timing point with 2+ simultaneous forced triggers rejects loudly
+/// instead of silently choosing an order.
+const DOUBLE_FORCED: &str = "test-double-forced";
+
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
@@ -60,6 +66,21 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             EventTiming::After,
             deal_horror(InvestigatorTarget::Controller, 1),
         )])
+    } else if code.as_str() == DOUBLE_FORCED {
+        // Two distinct forced `EnteredLocation` abilities at the same timing
+        // point — exercises the 2+-simultaneous reject path.
+        Some(vec![
+            on_event(
+                EventPattern::EnteredLocation,
+                EventTiming::After,
+                deal_horror(InvestigatorTarget::Controller, 1),
+            ),
+            on_event(
+                EventPattern::EnteredLocation,
+                EventTiming::After,
+                deal_horror(InvestigatorTarget::Controller, 1),
+            ),
+        ])
     } else {
         None
     }
@@ -370,5 +391,37 @@ fn forced_on_phase_end_fires_act_ability() {
     assert_event!(
         events,
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+    );
+}
+
+#[test]
+fn two_simultaneous_forced_triggers_reject_loudly() {
+    install_mock_registry();
+
+    let mut loc = test_location(10, "Double-Forced Room");
+    loc.code = CardCode(DOUBLE_FORCED.into());
+
+    let mut state = TestGame::new()
+        .with_investigator_at(test_investigator(1), LocationId(10))
+        .with_location(loc)
+        .with_active_investigator(InvestigatorId(1))
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
+
+    // 2+ simultaneous forced triggers reject loudly — no order is chosen.
+    // `fire_forced_triggers` counts hits first, before calling `apply_effect`,
+    // so the reject happens before any effect is resolved.
+    assert!(
+        matches!(outcome, EngineOutcome::Rejected { .. }),
+        "expected Rejected for 2+ simultaneous forced triggers; got {outcome:?}"
+    );
+    // No horror was applied — the reject fires before any effect runs.
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    // No events were emitted on this path.
+    assert!(
+        events.is_empty(),
+        "no events should be emitted on the 2+ reject path"
     );
 }
