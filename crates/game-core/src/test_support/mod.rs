@@ -14,28 +14,27 @@ pub use builder::TestGame;
 pub use fixtures::{awaiting_commit_input, test_enemy, test_investigator, test_location};
 pub use resolver::{apply_no_commits, drive, ChoiceResolver, ScriptedResolver, TestSession};
 
-// Re-export `ForcedTriggerPoint` so integration tests at
-// `crates/game-core/tests/forced_triggers.rs` (a separate binary with
-// their own `OnceLock<CardRegistry>`) can test `fire_forced_at` without
-// reaching into the private `dispatch` module. The function is not yet
-// wired into any action handler — Task 3 of #215 does the wiring.
-pub use crate::engine::ForcedTriggerPoint;
-
-/// Test helper: build a `Cx` from `state` and `events`, call
-/// `fire_forced_triggers(point)`, and return the `EngineOutcome`.
+/// Test helper: fire forced triggers for an investigator entering a
+/// location, returning the `EngineOutcome`. Constructs the internal
+/// `ForcedTriggerPoint` so integration tests don't need it public.
 ///
-/// Lives in `test_support` (rather than in-crate tests) because
-/// `fire_forced_triggers` needs a custom `CardRegistry` and
-/// `OnceLock<CardRegistry>` is process-global — an in-crate install
-/// would collide with `card_registry::tests::install_is_idempotent`.
-/// Integration tests in `crates/game-core/tests/` run in separate
-/// processes, each with their own `OnceLock`, so collision is
-/// impossible.
-pub fn fire_forced_at(
+/// Lives in `test_support` because `fire_forced_triggers` needs a custom
+/// `CardRegistry` and `OnceLock<CardRegistry>` is process-global — an
+/// in-crate install would collide with `card_registry::tests`. Integration
+/// tests in `crates/game-core/tests/` run in separate processes.
+/// Not yet wired into a handler — Task 3 of #215 wires `move_action`.
+pub fn fire_forced_on_enter(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,
-    point: ForcedTriggerPoint,
+    investigator: crate::state::InvestigatorId,
+    location: crate::state::LocationId,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    crate::engine::fire_forced_triggers(&mut cx, point)
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        crate::engine::ForcedTriggerPoint::EnteredLocation {
+            investigator,
+            location,
+        },
+    )
 }

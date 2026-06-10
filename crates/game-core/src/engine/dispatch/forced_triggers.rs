@@ -17,10 +17,12 @@ use super::Cx;
 /// abilities on scenario-structure cards may fire. Each variant carries
 /// the binding context the fired effect needs.
 ///
-/// `pub` so [`crate::test_support`] can expose it as part of the
-/// `fire_forced_at` test-helper API. Task 3 wires this into `move_action`.
+/// `pub(crate)` — not part of the public API. [`crate::test_support`]
+/// constructs it internally via `fire_forced_on_enter` (a primitive-arg
+/// helper), so integration tests never need to name this type directly.
+/// Task 3 wires this into `move_action`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ForcedTriggerPoint {
+pub(crate) enum ForcedTriggerPoint {
     /// An investigator entered a location. Scans that location's card
     /// for `EventPattern::EnteredLocation` forced abilities; binds
     /// controller = the entering investigator.

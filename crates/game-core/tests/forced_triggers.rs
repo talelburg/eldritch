@@ -23,9 +23,7 @@ use game_core::dsl::{
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{CardCode, InvestigatorId, LocationId};
-use game_core::test_support::{
-    fire_forced_at, test_investigator, test_location, ForcedTriggerPoint, TestGame,
-};
+use game_core::test_support::{fire_forced_on_enter, test_investigator, test_location, TestGame};
 
 /// Mock location code: one `EventPattern::EnteredLocation` forced ability
 /// that deals 1 horror to the entering investigator.
@@ -71,14 +69,7 @@ fn forced_on_enter_resolves_immediately() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_at(
-        &mut state,
-        &mut events,
-        ForcedTriggerPoint::EnteredLocation {
-            investigator: InvestigatorId(1),
-            location: LocationId(10),
-        },
-    );
+    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
@@ -103,14 +94,7 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_at(
-        &mut state,
-        &mut events,
-        ForcedTriggerPoint::EnteredLocation {
-            investigator: InvestigatorId(1),
-            location: LocationId(10),
-        },
-    );
+    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);

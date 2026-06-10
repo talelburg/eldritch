@@ -20,13 +20,12 @@ pub(crate) mod pathfinding;
 pub use evaluator::EvalContext;
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
 
-// Re-exported for `test_support::fire_forced_at` — the only consumer
-// before Task 3 wires `fire_forced_triggers` into `move_action`.
-// `ForcedTriggerPoint` is pub so the integration test at
-// `crates/game-core/tests/forced_triggers.rs` can name it via
-// `game_core::test_support::ForcedTriggerPoint`.
-pub(crate) use dispatch::forced_triggers::fire_forced_triggers;
-pub use dispatch::forced_triggers::ForcedTriggerPoint;
+// Crate-internal re-exports for `test_support::fire_forced_on_enter`.
+// Neither is public API: `ForcedTriggerPoint` stays internal; the
+// integration test constructs it through the primitive-arg helper so
+// it never needs to name the enum. Task 3 wires `fire_forced_triggers`
+// into `move_action`.
+pub(crate) use dispatch::forced_triggers::{fire_forced_triggers, ForcedTriggerPoint};
 
 use crate::action::Action;
 use crate::event::Event;
