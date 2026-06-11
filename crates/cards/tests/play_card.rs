@@ -18,7 +18,7 @@ use std::sync::Once;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{CardCode, InvestigatorId, Phase, Status, Zone};
-use game_core::test_support::{test_investigator, test_location, TestGame};
+use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 use game_core::PlayerAction;
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 use game_core::{Action, LocationId};
@@ -74,7 +74,7 @@ fn play_state(hand: Vec<&str>) -> (game_core::GameState, InvestigatorId, Locatio
 
     let location = test_location(101, "Study");
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
@@ -358,7 +358,7 @@ fn play_card_after_defeat_is_rejected() {
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];
     inv.status = Status::Killed;
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)

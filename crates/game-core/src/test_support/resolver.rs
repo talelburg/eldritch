@@ -30,12 +30,12 @@
 //! ```
 //! use game_core::action::{Action, PlayerAction};
 //! use game_core::engine::EngineOutcome;
-//! use game_core::test_support::TestGame;
+//! use game_core::test_support::GameStateBuilder;
 //!
 //! // A skill-test action with no investigator in state still rejects
 //! // — useful as a tiny smoke test for the fluent API without needing
 //! // a real chaos bag.
-//! let result = TestGame::new()
+//! let result = GameStateBuilder::new()
 //!     .session()
 //!     .apply(Action::Player(PlayerAction::EndTurn))
 //!     .run();
@@ -329,7 +329,7 @@ where
 /// a scripted resolver, then [`run`](Self::run) the engine through to a
 /// terminal outcome.
 ///
-/// Construct via [`TestGame::session`](super::TestGame::session) or
+/// Construct via [`GameStateBuilder::session`](super::GameStateBuilder::session) or
 /// [`TestSession::new`].
 #[derive(Debug)]
 #[must_use = "TestSession does nothing until you call .run()"]
@@ -337,6 +337,20 @@ pub struct TestSession {
     state: GameState,
     action: Option<Action>,
     resolver: ScriptedResolver,
+}
+
+impl crate::state::GameStateBuilder {
+    /// Build into a [`TestSession`] for driving the engine with a
+    /// scripted [`ChoiceResolver`].
+    ///
+    /// Equivalent to `TestSession::new(self.build())`; sugar so
+    /// resolver-driven tests can write
+    /// `GameStateBuilder::new()...session().apply(...).resolve_choices(...).run()`.
+    /// Lives here (test-only) rather than on the builder itself so the
+    /// production builder in [`crate::state`] carries no test dependency.
+    pub fn session(self) -> TestSession {
+        TestSession::new(self.build())
+    }
 }
 
 impl TestSession {
@@ -362,9 +376,9 @@ impl TestSession {
     /// sequence:
     ///
     /// ```
-    /// # use game_core::test_support::TestGame;
+    /// # use game_core::test_support::GameStateBuilder;
     /// # use game_core::action::{Action, PlayerAction};
-    /// let _session = TestGame::new()
+    /// let _session = GameStateBuilder::new()
     ///     .session()
     ///     .resolve_choices(|c| {
     ///         c.confirm();
@@ -391,10 +405,10 @@ mod tests {
     use crate::action::{Action, InputResponse, PlayerAction};
     use crate::engine::{InputRequest, ResumeToken};
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_investigator, test_location, TestGame};
+    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
 
     fn empty_state() -> GameState {
-        TestGame::new().build()
+        GameStateBuilder::new().build()
     }
 
     fn req(prompt: &str) -> InputRequest {
@@ -445,7 +459,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = crate::test_support::test_investigator(1);
         inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-        let mut state = TestGame::new().with_investigator(inv).build();
+        let mut state = GameStateBuilder::new().with_investigator(inv).build();
         state.in_flight_skill_test = Some(InFlightSkillTest {
             investigator: id,
             skill: crate::state::SkillKind::Intellect,
@@ -708,7 +722,7 @@ mod tests {
     #[test]
     fn test_session_fluent_round_trip() {
         let id = InvestigatorId(1);
-        let result = TestGame::new()
+        let result = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(test_investigator(1))
             .with_location(test_location(10, "Study"))
@@ -727,6 +741,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "call .apply(action) before .run()")]
     fn test_session_run_without_apply_panics() {
-        let _ = TestGame::new().session().run();
+        let _ = GameStateBuilder::new().session().run();
     }
 }

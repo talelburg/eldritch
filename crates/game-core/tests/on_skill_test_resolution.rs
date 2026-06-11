@@ -25,7 +25,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, test_investigator, test_location, ScriptedResolver, TestGame,
+    apply_no_commits, drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
 use game_core::{assert_event, assert_event_count, assert_no_event, Action, PlayerAction};
 
@@ -95,7 +95,7 @@ fn state_with_hand_and_location(
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     let mut location = test_location(10, "Study");
     location.clues = initial_clues;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_investigator(inv)

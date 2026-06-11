@@ -915,17 +915,17 @@ mod fast_actor_scope_tests {
 #[cfg(test)]
 mod next_enemy_id_tests {
     use super::*;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn game_state_has_next_enemy_id_counter_starting_at_zero() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         assert_eq!(state.next_enemy_id, 0);
     }
 
     #[test]
     fn next_enemy_id_round_trips_through_serde() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.next_enemy_id = 42;
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
@@ -935,11 +935,11 @@ mod next_enemy_id_tests {
 
 #[cfg(test)]
 mod mythos_draw_pending_tests {
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn game_state_default_has_no_mythos_draw_pending() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         assert_eq!(state.mythos_draw_pending, None);
     }
 }
@@ -948,17 +948,17 @@ mod mythos_draw_pending_tests {
 mod enemy_attack_pending_tests {
     use super::*;
     use crate::state::InvestigatorId;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn game_state_default_has_no_enemy_attack_pending() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         assert_eq!(state.enemy_attack_pending, None);
     }
 
     #[test]
     fn enemy_attack_pending_round_trips_through_serde() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.enemy_attack_pending = Some(InvestigatorId(7));
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
@@ -970,11 +970,11 @@ mod enemy_attack_pending_tests {
 mod encounter_deck_tests {
     use super::*;
     use crate::state::CardCode;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn encounter_deck_and_discard_serde_roundtrip() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.encounter_deck.push_back(CardCode("01001".into()));
         state.encounter_deck.push_back(CardCode("01002".into()));
         state.encounter_discard.push(CardCode("01099".into()));
@@ -991,7 +991,7 @@ mod encounter_deck_tests {
 
     #[test]
     fn fresh_state_has_empty_encounter_deck_and_discard() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         assert!(state.encounter_deck.is_empty());
         assert!(state.encounter_discard.is_empty());
     }
@@ -1088,11 +1088,11 @@ mod partial_eq_tests {
 #[cfg(test)]
 mod starting_location_tests {
     use super::*;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn game_state_starting_location_defaults_to_none_and_roundtrips() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         assert_eq!(state.starting_location, None, "default must be None");
 
         state.starting_location = Some(crate::state::LocationId(7));

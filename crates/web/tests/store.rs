@@ -2,7 +2,7 @@
 //! the DOM rendered from it. wasm32-only (browser DOM); native jobs skip.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::test_support::builder::TestGame;
+use game_core::state::GameStateBuilder;
 use game_core::test_support::fixtures::test_investigator;
 use game_core::EngineOutcome;
 use leptos::prelude::Update;
@@ -36,7 +36,7 @@ async fn hello_renders_state_present() {
         body_html()
     );
 
-    let game = TestGame::new()
+    let game = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
     store.update(|s| {

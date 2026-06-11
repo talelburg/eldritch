@@ -68,7 +68,7 @@ pub(crate) fn shortest_first_steps(
 mod tests {
     use super::*;
     use crate::state::{LocationId, Phase};
-    use crate::test_support::{test_location, TestGame};
+    use crate::test_support::{test_location, GameStateBuilder};
 
     /// Build a diamond: A(1) connects to B(2) and C(3); both connect to
     /// D(4). Bidirectional edges.
@@ -81,7 +81,7 @@ mod tests {
         b.connections = vec![LocationId(1), LocationId(4)];
         c.connections = vec![LocationId(1), LocationId(4)];
         d.connections = vec![LocationId(2), LocationId(3)];
-        TestGame::new()
+        GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -113,7 +113,7 @@ mod tests {
         let mut a = test_location(1, "A");
         let island = test_location(9, "Island");
         a.connections = vec![];
-        let s = TestGame::new()
+        let s = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(island)
@@ -130,7 +130,7 @@ mod tests {
         a.connections = vec![LocationId(2)];
         b.connections = vec![LocationId(1), LocationId(4)];
         d.connections = vec![LocationId(2)];
-        let s = TestGame::new()
+        let s = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -156,7 +156,7 @@ mod tests {
         let mut a = test_location(1, "A");
         let island = test_location(9, "Island");
         a.connections = vec![];
-        let s = TestGame::new()
+        let s = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(island)

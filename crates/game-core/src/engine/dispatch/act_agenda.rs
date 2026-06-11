@@ -187,13 +187,13 @@ pub(super) fn request_resolution(state: &mut GameState, resolution: crate::scena
 mod doom_agenda_tests {
     use super::*;
     use crate::event::Event;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_no_event};
 
     #[test]
     fn place_doom_increments_agenda_doom() {
         use crate::state::{Agenda, CardCode};
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![Agenda {
             code: CardCode("_test_agenda".into()),
             doom_threshold: 2,
@@ -216,7 +216,7 @@ mod doom_agenda_tests {
     fn doom_threshold_advances_non_terminal_agenda() {
         use crate::scenario::Resolution;
         use crate::state::{Agenda, CardCode};
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![
             Agenda {
                 code: CardCode("_test_agenda_1".into()),
@@ -250,7 +250,7 @@ mod doom_agenda_tests {
     fn doom_threshold_on_terminal_agenda_sets_resolution_latch() {
         use crate::scenario::Resolution;
         use crate::state::{Agenda, CardCode};
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![Agenda {
             code: CardCode("_test_agenda".into()),
             doom_threshold: 2,
@@ -275,7 +275,7 @@ mod doom_agenda_tests {
     #[test]
     fn doom_threshold_not_met_does_nothing() {
         use crate::state::{Agenda, CardCode};
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![Agenda {
             code: CardCode("_test_agenda".into()),
             doom_threshold: 3,
@@ -295,7 +295,7 @@ mod doom_agenda_tests {
     #[test]
     fn request_resolution_is_first_writer_wins() {
         use crate::scenario::Resolution;
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         request_resolution(
             &mut state,
             Resolution::Lost {
@@ -320,7 +320,7 @@ mod advance_act_tests {
     use crate::engine::{apply, EngineOutcome};
     use crate::event::Event;
     use crate::state::{InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
     #[test]
@@ -329,7 +329,7 @@ mod advance_act_tests {
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 1;
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(investigator)
             .with_active_investigator(inv)
@@ -360,7 +360,7 @@ mod advance_act_tests {
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 3;
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(investigator)
             .with_active_investigator(inv)
@@ -400,7 +400,7 @@ mod advance_act_tests {
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 2;
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(investigator)
             .with_active_investigator(inv)
@@ -438,7 +438,7 @@ mod advance_act_tests {
         inv1.clues = 1;
         let mut inv2 = test_investigator(2);
         inv2.clues = 2;
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(inv1)
             .with_investigator(inv2)

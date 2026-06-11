@@ -1,16 +1,19 @@
-//! Test-only support: fluent state builder, fixtures, event-assertion
-//! macros.
+//! Test-only support: fixtures, event-assertion macros, and a
+//! convenience re-export of the production [`GameStateBuilder`].
 //!
 //! The macros are exported at the crate root via `#[macro_export]`,
 //! so callers see [`assert_event!`](crate::assert_event) regardless
 //! of where they import the supporting types from.
+//!
+//! The state builder itself lives in [`crate::state`] (it constructs
+//! production `GameState`s, not just test ones); it is re-exported here
+//! so the existing test imports keep working.
 
 pub mod assertions;
-pub mod builder;
 pub mod fixtures;
 pub mod resolver;
 
-pub use builder::TestGame;
+pub use crate::state::GameStateBuilder;
 pub use fixtures::{awaiting_commit_input, test_enemy, test_investigator, test_location};
 pub use resolver::{apply_no_commits, drive, ChoiceResolver, ScriptedResolver, TestSession};
 

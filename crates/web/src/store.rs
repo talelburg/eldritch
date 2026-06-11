@@ -66,11 +66,11 @@ pub fn use_store() -> StoreSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::test_support::builder::TestGame;
+    use game_core::state::GameStateBuilder;
     use game_core::test_support::fixtures::test_investigator;
 
     fn sample_state() -> GameState {
-        TestGame::new()
+        GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build()
     }

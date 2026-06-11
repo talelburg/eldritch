@@ -13,7 +13,9 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_investigator, test_location, TestGame};
+use game_core::test_support::{
+    apply_no_commits, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{assert_event, Action, PlayerAction};
 
 const MAGNIFYING_GLASS: &str = "01030";
@@ -44,7 +46,7 @@ fn state_with_mg_in_hand() -> (game_core::GameState, InvestigatorId, LocationId)
     location.shroud = 4;
     location.clues = 1;
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)

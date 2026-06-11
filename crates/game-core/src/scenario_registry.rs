@@ -68,10 +68,10 @@ mod tests {
     use crate::event::Event;
     use crate::scenario::{Resolution, ScenarioId, ScenarioModule};
     use crate::state::GameState;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     fn empty_state() -> GameState {
-        TestGame::new().build()
+        GameStateBuilder::new().build()
     }
 
     fn no_op_apply(_res: &Resolution, _state: &mut GameState, _events: &mut Vec<Event>) {}

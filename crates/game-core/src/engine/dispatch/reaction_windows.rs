@@ -1007,11 +1007,11 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
 #[cfg(test)]
 mod check_play_card_tests {
     use super::*;
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn check_play_card_returns_err_for_unknown_hand_index() {
-        let state = TestGame::default()
+        let state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
@@ -1025,7 +1025,7 @@ mod check_play_card_tests {
 
     #[test]
     fn check_play_card_returns_err_when_investigator_missing() {
-        let state = TestGame::default().build();
+        let state = GameStateBuilder::default().build();
         let err = check_play_card(&state, InvestigatorId(99), 0)
             .expect_err("missing investigator should reject");
         assert!(
@@ -1038,11 +1038,11 @@ mod check_play_card_tests {
 #[cfg(test)]
 mod check_activate_ability_tests {
     use super::*;
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn check_activate_ability_returns_err_for_missing_instance() {
-        let state = TestGame::default()
+        let state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
@@ -1056,7 +1056,7 @@ mod check_activate_ability_tests {
 
     #[test]
     fn check_activate_ability_returns_err_when_investigator_missing() {
-        let state = TestGame::default().build();
+        let state = GameStateBuilder::default().build();
         let err = check_activate_ability(&state, InvestigatorId(99), CardInstanceId(1), 0)
             .expect_err("missing investigator should reject");
         assert!(
@@ -1069,17 +1069,17 @@ mod check_activate_ability_tests {
 #[cfg(test)]
 mod any_fast_play_eligible_tests {
     use super::*;
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn returns_false_when_no_investigators() {
-        let state = TestGame::default().build();
+        let state = GameStateBuilder::default().build();
         assert!(!any_fast_play_eligible(&state));
     }
 
     #[test]
     fn returns_false_when_hands_and_in_play_empty() {
-        let state = TestGame::default()
+        let state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .build();
         assert!(!any_fast_play_eligible(&state));
@@ -1091,13 +1091,13 @@ mod open_fast_window_tests {
     use super::*;
     use crate::event::Event;
     use crate::state::{EnemyId, WindowKind};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn open_fast_window_with_no_eligibility_emits_open_then_close_inline() {
         // No reactions, no Fast-eligible cards → auto-skip: window
         // opens and closes without ever landing on state.open_windows.
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
@@ -1138,7 +1138,7 @@ mod open_fast_window_tests {
     fn run_window_continuation_for_no_continuation_kind_does_nothing() {
         // AfterEnemyDefeated has no continuation. Calling it must be a
         // no-op (no events, no state change).
-        let mut state = TestGame::default().build();
+        let mut state = GameStateBuilder::default().build();
         let mut events = Vec::new();
         let result = run_window_continuation(
             &mut Cx {

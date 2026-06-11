@@ -40,6 +40,36 @@ pub struct Location {
     pub connections: Vec<LocationId>,
 }
 
+impl Location {
+    /// Construct a revealed location with no connections, from its
+    /// printed identity and stats (`code`, `name`, `shroud`, `clues`).
+    ///
+    /// Set `connections` (and `revealed`, for cards that enter play
+    /// face-down) afterward via the public fields — those are
+    /// scenario-layout concerns, not printed on the card. This is the
+    /// cross-crate constructor scenarios use to build their board; the
+    /// struct is `#[non_exhaustive]`, so a struct literal won't compile
+    /// outside `game-core`.
+    #[must_use]
+    pub fn new(
+        id: LocationId,
+        code: CardCode,
+        name: impl Into<String>,
+        shroud: u8,
+        clues: u8,
+    ) -> Self {
+        Self {
+            id,
+            code,
+            name: name.into(),
+            shroud,
+            clues,
+            revealed: true,
+            connections: Vec::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod location_code_tests {
     use super::*;
@@ -57,6 +87,18 @@ mod location_code_tests {
             connections: Vec::new(),
         };
         assert_eq!(loc.code, CardCode("01112".into()));
+    }
+
+    #[test]
+    fn location_new_builds_revealed_unconnected_location() {
+        let loc = Location::new(LocationId(3), CardCode("01111".into()), "Study", 2, 2);
+        assert_eq!(loc.id, LocationId(3));
+        assert_eq!(loc.code, CardCode("01111".into()));
+        assert_eq!(loc.name, "Study");
+        assert_eq!(loc.shroud, 2);
+        assert_eq!(loc.clues, 2);
+        assert!(loc.revealed, "new locations are revealed");
+        assert!(loc.connections.is_empty(), "new locations are unconnected");
     }
 
     #[test]

@@ -27,7 +27,7 @@ use game_core::state::{
     InvestigatorId, LocationId, OpenWindow, Phase, PhaseStep, TokenModifiers, WindowKind,
 };
 use game_core::test_support::{
-    apply_no_commits, test_enemy, test_investigator, test_location, TestGame,
+    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
 use game_core::{
     assert_event, assert_event_count, assert_no_event, Action, InputResponse, PlayerAction,
@@ -124,7 +124,7 @@ fn fight_to_defeat_scenario(
     enemy.engaged_with = Some(inv_id);
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -340,7 +340,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     enemy.engaged_with = Some(attacker);
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(attacker)
         .with_turn_order([attacker, bystander])
@@ -386,7 +386,7 @@ fn unqualified_pattern_matches_any_defeat() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(attacker);
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(attacker)
         .with_turn_order([attacker, bystander])
@@ -675,7 +675,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     enemy.engaged_with = Some(inv_id);
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -784,7 +784,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(active);
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(active)
         .with_turn_order([active, other])

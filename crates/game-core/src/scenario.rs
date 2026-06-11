@@ -160,10 +160,10 @@ fn reference_card_with_registry(
 mod tests {
     use super::*;
     use crate::state::GameState;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     fn dummy_setup() -> GameState {
-        TestGame::new().build()
+        GameStateBuilder::new().build()
     }
     fn dummy_resolution(_: &Resolution, _: &mut GameState, _: &mut Vec<Event>) {}
 
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn returns_reference_card_for_active_scenario() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_scenario_id(ScenarioId::new("the-gathering"))
             .build();
         assert_eq!(
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn returns_none_when_no_scenario_id() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         assert_eq!(
             reference_card_with_registry(&state, Some(&registry())),
             None,
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn returns_none_when_no_registry_installed() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_scenario_id(ScenarioId::new("the-gathering"))
             .build();
         assert_eq!(reference_card_with_registry(&state, None), None);
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn returns_none_for_unknown_scenario() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_scenario_id(ScenarioId::new("nonexistent"))
             .build();
         assert_eq!(

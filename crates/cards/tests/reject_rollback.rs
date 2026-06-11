@@ -15,7 +15,7 @@ use game_core::dsl::{gain_resources, modify, on_play, seq, Ability};
 use game_core::dsl::{InvestigatorTarget, ModifierScope, Stat};
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_investigator, test_location, TestGame};
+use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 use game_core::{Action, PlayerAction};
 
 /// Code for the synthetic probe card. Not in the real corpus; only the
@@ -87,7 +87,7 @@ fn mid_resolution_reject_leaves_state_and_events_untouched() {
     inv.current_location = Some(loc_id);
     inv.hand = vec![CardCode::new(PROBE)];
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)

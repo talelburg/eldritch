@@ -3,8 +3,8 @@
 //! wasm32-only (browser DOM); native jobs skip this file.
 #![cfg(target_arch = "wasm32")]
 
+use game_core::state::GameStateBuilder;
 use game_core::state::{Act, Agenda, CardCode, Phase};
-use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
 use game_core::EngineOutcome;
 use leptos::prelude::{provide_context, RwSignal, Update};
@@ -47,7 +47,7 @@ async fn render_state(state: game_core::state::GameState) -> String {
 
 #[wasm_bindgen_test]
 async fn phase_bar_renders_phase_round_act_agenda() {
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_phase(Phase::Investigation)
         .with_round(3)
@@ -86,7 +86,7 @@ async fn locations_panel_renders_name_shroud_clues_revealed() {
     let mut loc = test_location(7, "Rivertown");
     loc.shroud = 3;
     loc.clues = 2;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_location(loc)
         .build();
@@ -118,7 +118,7 @@ async fn investigators_panel_renders_stats_and_hand() {
         CardCode::new("_synth_asset"),
         CardInstanceId(0),
     )];
-    let state = TestGame::new().with_investigator(inv).build();
+    let state = GameStateBuilder::new().with_investigator(inv).build();
 
     let html = render_state(state).await;
 
@@ -150,7 +150,7 @@ async fn enemies_panel_renders_name_stats_engagement() {
     let mut enemy = test_enemy(4, "Swarm of Rats");
     enemy.damage = 1; // 1/2
     enemy.engaged_with = Some(InvestigatorId(1));
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_enemy(enemy)
         .build();
@@ -221,7 +221,7 @@ fn last_resolution_html() -> String {
 #[wasm_bindgen_test]
 async fn resolution_banner_renders_won() {
     use game_core::Resolution;
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
     state.resolution = Some(Resolution::Won { id: "demo".into() });
@@ -236,7 +236,7 @@ async fn resolution_banner_renders_won() {
 #[wasm_bindgen_test]
 async fn resolution_banner_renders_lost() {
     use game_core::Resolution;
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
     state.resolution = Some(Resolution::Lost {

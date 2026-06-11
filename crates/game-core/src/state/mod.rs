@@ -5,6 +5,7 @@
 //! These are pure data with no engine logic — they describe the world,
 //! they don't run the game.
 
+pub mod builder;
 pub mod card;
 pub mod chaos_bag;
 pub mod enemy;
@@ -13,6 +14,7 @@ pub mod investigator;
 pub mod location;
 pub mod phase;
 
+pub use builder::GameStateBuilder;
 pub use card::{AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, UseKind, Zone};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use enemy::{Enemy, EnemyId};

@@ -17,7 +17,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
     TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_investigator, TestGame};
+use game_core::test_support::{apply_no_commits, test_investigator, GameStateBuilder};
 use game_core::{assert_event, Action, PlayerAction};
 
 const HYPERAWARENESS: &str = "01034";
@@ -48,7 +48,7 @@ fn state_with_hyperawareness() -> (game_core::GameState, InvestigatorId, CardIns
         instance_id,
     ));
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)

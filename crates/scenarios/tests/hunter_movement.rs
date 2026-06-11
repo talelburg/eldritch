@@ -7,7 +7,7 @@ use std::sync::Once;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_enemy, test_investigator, test_location, TestGame};
+use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::Action;
 use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
@@ -84,7 +84,7 @@ fn hunter_movement_pick_location_replays_identically() {
         let mut hunter = test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
-        TestGame::new()
+        GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_location(loc_a)
             .with_location(loc_b)

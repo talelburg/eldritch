@@ -867,14 +867,14 @@ mod investigation_phase_tests {
     use crate::engine::dispatch::apply_player_action;
     use crate::engine::outcome::EngineOutcome;
     use crate::state::{InvestigatorId, Phase, Status, WindowKind};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn mulligan_completion_kicks_off_investigation_phase() {
         // After the last investigator mulligans, setup ends and the
         // Investigation phase begins (Rules Reference p.27: no action
         // windows during setup; the game begins after mulligans).
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
@@ -939,7 +939,7 @@ mod investigation_phase_tests {
         // window (which auto-skips in tests — no card registry installed),
         // and then rotate to the first investigator in turn_order
         // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Mythos)
@@ -995,7 +995,9 @@ mod investigation_phase_tests {
         // Phase starts as Investigation (matching the real call-site
         // shape: step_phase sets state.phase before calling
         // investigation_phase).
-        let mut state = TestGame::default().with_phase(Phase::Investigation).build();
+        let mut state = GameStateBuilder::default()
+            .with_phase(Phase::Investigation)
+            .build();
         state.turn_order.clear();
         state.active_investigator = None;
 
@@ -1025,7 +1027,7 @@ mod investigation_phase_tests {
     fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
         // Investigator 1 (lead) is Killed; investigator 2 is Active.
         // investigation_phase must skip Id(1) and rotate to Id(2).
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Mythos)
@@ -1056,7 +1058,7 @@ mod investigation_phase_tests {
         // Single investigator ends their turn: TurnEnded (2.2.2), then
         // PhaseEnded(Investigation) (2.3) from investigation_phase_end,
         // then the cascade enters the Enemy phase.
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
@@ -1107,7 +1109,7 @@ mod investigation_phase_tests {
     fn end_turn_rotates_to_next_active_and_opens_turn_window() {
         // Two investigators: ending #1's turn returns to 2.2 for #2 and
         // opens the InvestigatorTurnBegins window for them.
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Investigation)
@@ -1150,7 +1152,7 @@ mod investigation_phase_tests {
         // step_phase must NOT emit PhaseEnded(Investigation); the
         // downstream cascade may emit PhaseEnded for Enemy/Upkeep via
         // their own *_end helpers, but that's correct and expected.
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
@@ -1177,7 +1179,7 @@ mod investigation_phase_tests {
         // Round ≥2 entry via step_phase (Mythos→Investigation) auto-skips
         // both windows (no registry → nothing Fast-eligible) and lands
         // the lead active, with no PhaseEnded yet.
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
@@ -1223,11 +1225,11 @@ mod investigation_phase_tests {
 mod mythos_phase_tests {
     use super::*;
     use crate::state::{InvestigatorId, Phase, Status};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn mythos_phase_emits_phase_started_and_seeds_draw_pending() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Mythos)
@@ -1255,7 +1257,9 @@ mod mythos_phase_tests {
 
     #[test]
     fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
-        let mut state = TestGame::default().with_phase(Phase::Mythos).build();
+        let mut state = GameStateBuilder::default()
+            .with_phase(Phase::Mythos)
+            .build();
         state.turn_order.clear();
         state.mythos_draw_pending = None;
         let mut events = Vec::new();
@@ -1310,7 +1314,7 @@ mod mythos_phase_tests {
 
     #[test]
     fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
@@ -1349,7 +1353,7 @@ mod mythos_phase_tests {
     /// than blindly taking `turn_order.first()`.
     #[test]
     fn mythos_phase_skips_eliminated_lead_when_seeding_cursor() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Mythos)
@@ -1384,7 +1388,7 @@ mod mythos_phase_tests {
     /// `mythos_phase_with_empty_turn_order_opens_after_draws_window_inline`.
     #[test]
     fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
@@ -1416,7 +1420,7 @@ mod mythos_phase_tests {
     /// advance from inv1 to inv3.
     #[test]
     fn advance_mythos_draw_pending_skips_eliminated_middle_investigator() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_investigator(test_investigator(3))
@@ -1446,7 +1450,7 @@ mod mythos_phase_tests {
 
     #[test]
     fn first_active_investigator_finds_first_active_skipping_eliminated() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_investigator(test_investigator(3))
@@ -1472,7 +1476,7 @@ mod mythos_phase_tests {
 
     #[test]
     fn first_active_investigator_returns_none_when_all_eliminated() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -1490,7 +1494,7 @@ mod mythos_phase_tests {
 
     #[test]
     fn first_active_investigator_returns_none_when_turn_order_empty() {
-        let state = TestGame::default().build();
+        let state = GameStateBuilder::default().build();
         assert_eq!(
             super::super::cursor::first_active_investigator(&state),
             None
@@ -1499,7 +1503,7 @@ mod mythos_phase_tests {
 
     #[test]
     fn next_active_investigator_after_skips_eliminated_middle() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_investigator(test_investigator(3))
@@ -1536,7 +1540,7 @@ mod mythos_phase_tests {
 
     #[test]
     fn next_active_investigator_after_returns_none_when_current_not_in_turn_order() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -1552,7 +1556,7 @@ mod mythos_phase_tests {
         // Defeated-mid-loop semantics: `current` may be Killed by the
         // time we advance from them. The cursor still finds the right
         // successor.
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .build();
@@ -1580,7 +1584,7 @@ mod upkeep_phase_tests {
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_sequence, assert_no_event};
 
     #[test]
@@ -1589,7 +1593,7 @@ mod upkeep_phase_tests {
         // window auto-skips inline, the continuation runs, and the
         // cascade lands in Mythos.
         let id = InvestigatorId(1);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Enemy)
             .build();
@@ -1670,7 +1674,7 @@ mod upkeep_phase_tests {
         inv.cards_in_play = vec![card];
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.exhausted = true;
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(inv)
             .with_enemy(enemy)
             .build();
@@ -1701,7 +1705,7 @@ mod upkeep_phase_tests {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.exhausted = true; // exhausted + disengaged, e.g. survived a successful Evade
         enemy.current_location = Some(LocationId(10));
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator_at(test_investigator(1), LocationId(10))
             .with_location(loc)
             .with_enemy(enemy)
@@ -1733,7 +1737,7 @@ mod upkeep_phase_tests {
     fn ready_exhausted_cards_leaves_ready_cards_untouched() {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.exhausted = false; // already ready
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .build();
@@ -1758,7 +1762,7 @@ mod upkeep_phase_tests {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.exhausted = true;
         enemy.current_location = Some(LocationId(10));
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1)) // current_location stays None — NOT co-located
             .with_location(loc)
             .with_enemy(enemy)
@@ -1786,7 +1790,7 @@ mod upkeep_phase_tests {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.exhausted = true; // exhausted but still engaged (e.g. attacked last Enemy phase)
         enemy.engaged_with = Some(inv_id);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .build();
@@ -1820,7 +1824,7 @@ mod upkeep_phase_tests {
         let res_b = inv_b.resources;
         let res_c = inv_c.resources;
         let hand_a = inv_a.hand.len();
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(inv_a)
             .with_investigator(inv_b)
             .with_investigator(inv_c)
@@ -1855,7 +1859,7 @@ mod upkeep_phase_tests {
         inv_a.deck = vec![CardCode::new("01000")];
         let mut inv_b = test_investigator(2);
         inv_b.deck = vec![CardCode::new("01001")];
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(inv_a)
             .with_investigator(inv_b)
             .build();
@@ -1889,7 +1893,7 @@ mod upkeep_phase_tests {
         let mut inv_b = test_investigator(2);
         inv_b.actions_remaining = 0;
         inv_b.status = Status::Killed;
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(inv_a)
             .with_investigator(inv_b)
             .build();
@@ -1921,7 +1925,7 @@ mod upkeep_phase_tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.actions_remaining = ACTIONS_PER_TURN;
-        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
         state.turn_order = vec![id];
         let mut events = Vec::new();
 
@@ -1939,7 +1943,7 @@ mod upkeep_phase_tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.actions_remaining = 1;
-        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
         rotate_to_active(
@@ -1967,7 +1971,7 @@ mod upkeep_phase_tests {
         // The bump now lives in mythos_phase step 1.1 (this task);
         // the test asserts observable behavior, which is unchanged.
         let id = InvestigatorId(1);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Upkeep)
             .build();
@@ -1999,7 +2003,7 @@ mod upkeep_phase_tests {
         inv.cards_in_play = vec![card];
         let res_before = inv.resources;
         let hand_before = inv.hand.len();
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(inv)
             .with_phase(Phase::Investigation)
             .build();
@@ -2041,7 +2045,7 @@ mod enemy_phase_tests {
     use crate::state::{
         EnemyId, FastActorScope, InvestigatorId, LocationId, OpenWindow, Phase, Status, WindowKind,
     };
-    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
     fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
@@ -2054,7 +2058,7 @@ mod enemy_phase_tests {
         let mut hunter = test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -2098,7 +2102,7 @@ mod enemy_phase_tests {
         let mut hunter = test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -2139,7 +2143,7 @@ mod enemy_phase_tests {
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
         enemy.attack_horror = 0;
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .build();
@@ -2210,7 +2214,7 @@ mod enemy_phase_tests {
         e3.engaged_with = Some(inv_id);
         e3.attack_damage = 1;
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_enemy(e1)
             .with_enemy(e2)
@@ -2276,7 +2280,7 @@ mod enemy_phase_tests {
         e_higher.engaged_with = Some(inv_id);
         e_higher.attack_damage = 2;
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator({
                 let mut inv = test_investigator(1);
                 inv.max_health = 100; // survive both attacks
@@ -2325,7 +2329,7 @@ mod enemy_phase_tests {
         e2.engaged_with = Some(inv_id);
         e2.attack_damage = 5;
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator({
                 let mut inv = test_investigator(1);
                 inv.max_health = 1; // e1's attack defeats
@@ -2385,7 +2389,7 @@ mod enemy_phase_tests {
         // cascades through both windows + enemy_phase_end +
         // Upkeep → Mythos.
         let inv_id = InvestigatorId(1);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
@@ -2481,7 +2485,7 @@ mod enemy_phase_tests {
     fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Investigation)
@@ -2532,7 +2536,7 @@ mod enemy_phase_tests {
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
         let id3 = InvestigatorId(3);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_investigator(test_investigator(3))
@@ -2566,7 +2570,7 @@ mod enemy_phase_tests {
     #[test]
     fn enemy_phase_with_all_eliminated_opens_after_all_directly() {
         let id1 = InvestigatorId(1);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
@@ -2614,7 +2618,7 @@ mod enemy_phase_tests {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .with_phase(Phase::Investigation)
@@ -2653,7 +2657,7 @@ mod enemy_phase_tests {
         // Direct unit-level check: step_phase emits no PhaseEnded itself,
         // so the Enemy→Upkeep step must not emit PhaseEnded(Enemy)
         // (enemy_phase_end owns that emit).
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Enemy)
             .build();
@@ -2714,7 +2718,7 @@ mod enemy_phase_tests {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .with_phase(Phase::Enemy)
@@ -2785,13 +2789,13 @@ mod hand_size_tests {
     use super::*;
     use crate::assert_no_event;
     use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn over_cap_investigators_lists_only_over_eight_in_player_order() {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_turn_order([inv2, inv1]) // player order: inv2 first
@@ -2811,7 +2815,7 @@ mod hand_size_tests {
     fn check_hand_size_suspends_for_over_cap_investigator() {
         use crate::state::CardCode;
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
@@ -2841,7 +2845,7 @@ mod hand_size_tests {
     fn check_hand_size_is_noop_when_all_at_or_below_cap() {
         use crate::state::CardCode;
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
@@ -2862,7 +2866,7 @@ mod hand_size_tests {
     fn upkeep_resume_parks_at_hand_size_discard() {
         use crate::state::CardCode;
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
@@ -2900,7 +2904,7 @@ mod hand_size_tests {
         use crate::action::InputResponse;
         use crate::state::CardCode;
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
@@ -2955,7 +2959,7 @@ mod hand_size_tests {
         use crate::action::InputResponse;
         use crate::state::CardCode;
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
@@ -2993,7 +2997,7 @@ mod hand_size_tests {
         use crate::state::CardCode;
         let id = InvestigatorId(1);
         let build = || {
-            let mut s = TestGame::new()
+            let mut s = GameStateBuilder::new()
                 .with_investigator(test_investigator(1))
                 .with_turn_order([id])
                 .with_phase(Phase::Upkeep)
@@ -3041,7 +3045,7 @@ mod hand_size_tests {
         use crate::state::CardCode;
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_turn_order([inv1, inv2])
@@ -3079,7 +3083,7 @@ mod hand_size_tests {
         use crate::action::InputResponse;
         use crate::state::CardCode;
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
@@ -3117,12 +3121,12 @@ mod start_scenario_tests {
     use crate::action::{Action, PlayerAction, RosterEntry};
     use crate::engine::apply;
     use crate::state::CardCode;
-    use crate::test_support::builder::TestGame;
+    use crate::state::GameStateBuilder;
     use crate::test_support::fixtures::test_investigator;
 
     #[test]
     fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         let result = apply(
             state,
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
@@ -3135,7 +3139,7 @@ mod start_scenario_tests {
     #[test]
     fn start_scenario_empty_roster_passes_through_with_preseated_investigator() {
         let id = crate::state::InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .build();
@@ -3158,7 +3162,7 @@ mod start_scenario_tests {
     // `crates/cards` integration test, which installs `cards::REGISTRY`.
     #[test]
     fn start_scenario_rejects_unresolvable_roster_entry() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         let roster = vec![RosterEntry {
             investigator: CardCode::new("01001"),
             deck: vec![],
