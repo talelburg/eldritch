@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::card::{CardCode, CardInPlay};
 use super::location::LocationId;
+use super::Skills;
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -126,51 +127,10 @@ pub enum DefeatCause {
     Resigned,
 }
 
-/// The four base skill values.
-///
-/// Deliberately NOT `#[non_exhaustive]`: the four skills are fixed by
-/// FFG's rules. Card effects modify these values at query time; they
-/// don't add new fields.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Skills {
-    /// Used for tests against effects of the will / fear.
-    pub willpower: i8,
-    /// Used for investigate tests.
-    pub intellect: i8,
-    /// Used for fight tests.
-    pub combat: i8,
-    /// Used for evade tests.
-    pub agility: i8,
-}
-
-impl Skills {
-    /// Lookup the value for a given [`SkillKind`].
-    #[must_use]
-    pub fn value(&self, kind: SkillKind) -> i8 {
-        match kind {
-            SkillKind::Willpower => self.willpower,
-            SkillKind::Intellect => self.intellect,
-            SkillKind::Combat => self.combat,
-            SkillKind::Agility => self.agility,
-        }
-    }
-}
-
-/// Which of the four skill values a skill test is being made against.
-///
-/// Deliberately NOT `#[non_exhaustive]` — same rationale as [`Skills`]:
-/// the four skill kinds are fixed by FFG's rules.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum SkillKind {
-    /// Tests against the will, fear, sanity-eroding effects.
-    Willpower,
-    /// Tests for investigating, deduction, lore.
-    Intellect,
-    /// Tests for fighting, combat, physical strength.
-    Combat,
-    /// Tests for evading, dexterity, speed.
-    Agility,
-}
+// `Skills` and `SkillKind` moved down to `card-dsl`
+// (`card_dsl::card_data`) — pure data shared across the engine-corpus
+// boundary. Re-exported at `game_core::state::{Skills, SkillKind}` (see
+// `state/mod.rs`).
 
 #[cfg(test)]
 mod removed_from_game_tests {

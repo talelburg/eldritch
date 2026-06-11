@@ -42,7 +42,7 @@ pub enum CardKind {
     Event { class: Class, cost: Option<i8>, xp: Option<u8>, skill_icons: SkillIcons, is_fast: bool, deck_limit: u8 },
     Skill { class: Class, xp: Option<u8>, skill_icons: SkillIcons, deck_limit: u8 },
     Investigator { class: Class, skills: Skills, health: u8, sanity: u8 },
-    Enemy { health: Option<u8>, surge: bool, peril: bool, quantity: u8 },
+    Enemy { health: Option<u8>, spawn: Option<Spawn>, surge: bool, peril: bool, quantity: u8 },
     Treachery { surge: bool, peril: bool, quantity: u8 },
 }
 ```

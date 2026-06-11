@@ -23,6 +23,7 @@ pub use game_state::{
     InFlightSkillTest, OpenWindow, PendingSkillModifier, PendingTrigger, PhaseStep,
     SkillTestFollowUp, SpawnEngagePending, WindowKind,
 };
-pub use investigator::{DefeatCause, Investigator, InvestigatorId, SkillKind, Skills, Status};
+pub use card_dsl::card_data::{SkillKind, Skills};
+pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};
 pub use phase::Phase;

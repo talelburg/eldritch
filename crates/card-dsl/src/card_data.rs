@@ -77,6 +77,53 @@ pub struct SkillIcons {
     pub wild: u8,
 }
 
+/// The four base skill values.
+///
+/// Deliberately NOT `#[non_exhaustive]`: the four skills are fixed by
+/// FFG's rules. Card effects modify these values at query time; they
+/// don't add new fields. Pure data — `game-core` re-exports it at
+/// `game_core::state::Skills`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Skills {
+    /// Used for tests against effects of the will / fear.
+    pub willpower: i8,
+    /// Used for investigate tests.
+    pub intellect: i8,
+    /// Used for fight tests.
+    pub combat: i8,
+    /// Used for evade tests.
+    pub agility: i8,
+}
+
+impl Skills {
+    /// Lookup the value for a given [`SkillKind`].
+    #[must_use]
+    pub fn value(&self, kind: SkillKind) -> i8 {
+        match kind {
+            SkillKind::Willpower => self.willpower,
+            SkillKind::Intellect => self.intellect,
+            SkillKind::Combat => self.combat,
+            SkillKind::Agility => self.agility,
+        }
+    }
+}
+
+/// Which of the four skill values a skill test is being made against.
+///
+/// Deliberately NOT `#[non_exhaustive]` — same rationale as [`Skills`]:
+/// the four skill kinds are fixed by FFG's rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SkillKind {
+    /// Tests against the will, fear, sanity-eroding effects.
+    Willpower,
+    /// Tests for investigating, deduction, lore.
+    Intellect,
+    /// Tests for fighting, combat, physical strength.
+    Combat,
+    /// Tests for evading, dexterity, speed.
+    Agility,
+}
+
 /// Where on the location map an encounter enemy spawns.
 ///
 /// Phase-4 minimal set: just a printed location code. Future variants
@@ -224,6 +271,25 @@ pub struct CardMetadata {
     /// can carry the keyword and the engine's step-2 call site can
     /// become load-bearing when the enforcement PR lands.
     pub peril: bool,
+}
+
+#[cfg(test)]
+mod skills_tests {
+    use super::{SkillKind, Skills};
+
+    #[test]
+    fn skills_value_indexes_each_kind() {
+        let s = Skills {
+            willpower: 3,
+            intellect: 2,
+            combat: 4,
+            agility: 1,
+        };
+        assert_eq!(s.value(SkillKind::Willpower), 3);
+        assert_eq!(s.value(SkillKind::Intellect), 2);
+        assert_eq!(s.value(SkillKind::Combat), 4);
+        assert_eq!(s.value(SkillKind::Agility), 1);
+    }
 }
 
 #[cfg(test)]
