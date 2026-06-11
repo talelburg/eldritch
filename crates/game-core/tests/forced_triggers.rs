@@ -25,7 +25,8 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{Act, Agenda, CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
-    fire_forced_on_enter, fire_forced_on_phase_end, test_investigator, test_location, TestGame,
+    fire_forced_on_enter, fire_forced_on_phase_end, test_investigator, test_location,
+    GameStateBuilder,
 };
 use game_core::{apply, Action, PlayerAction};
 
@@ -103,7 +104,7 @@ fn forced_on_enter_resolves_immediately() {
     let mut loc = test_location(10, "Attic");
     loc.code = CardCode(HORROR_ATTIC.into());
 
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LocationId(10))
         .with_location(loc)
         .with_active_investigator(InvestigatorId(1))
@@ -136,7 +137,7 @@ fn move_into_forced_location_fires_its_effect() {
     inv.current_location = Some(LocationId(10));
     inv.actions_remaining = 3;
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
@@ -192,7 +193,7 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
     let mut loc = test_location(10, "Plain Room");
     loc.code = CardCode("plain-loc".into());
 
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LocationId(10))
         .with_location(loc)
         .with_active_investigator(InvestigatorId(1))
@@ -215,7 +216,7 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
 /// forced horror) as the current agenda and `InvestigatorId(1)` as the lead.
 fn state_with_doom_agenda() -> game_core::state::GameState {
     let inv = test_investigator(1);
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
         .build();
@@ -302,7 +303,7 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     install_mock_registry();
 
     let inv = test_investigator(1);
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
         .build();
@@ -328,11 +329,11 @@ fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
 
     // Empty decks — common fixture shape for tests not modeling scenarios.
     let inv = test_investigator(1);
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
         .build();
-    // state.agenda_deck / act_deck are empty by default from TestGame.
+    // state.agenda_deck / act_deck are empty by default from GameStateBuilder.
 
     let mut events = Vec::new();
     let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
@@ -361,7 +362,7 @@ fn forced_on_phase_end_fires_act_ability() {
     install_mock_registry();
 
     let inv = test_investigator(1);
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
         .build();
@@ -401,7 +402,7 @@ fn two_simultaneous_forced_triggers_reject_loudly() {
     let mut loc = test_location(10, "Double-Forced Room");
     loc.code = CardCode(DOUBLE_FORCED.into());
 
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LocationId(10))
         .with_location(loc)
         .with_active_investigator(InvestigatorId(1))

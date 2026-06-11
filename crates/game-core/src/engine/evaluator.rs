@@ -672,7 +672,7 @@ mod tests {
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, SkillKind,
     };
-    use crate::test_support::{test_investigator, test_location, TestGame};
+    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
     use super::{apply_effect, constant_skill_modifier, EngineOutcome, EvalContext};
@@ -685,7 +685,7 @@ mod tests {
     #[test]
     fn gain_resources_increments_target_wallet_and_emits_event() {
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let resources_before = state.investigators[&id].resources;
@@ -715,7 +715,7 @@ mod tests {
         // skips target resolution, so an `Active` target with no
         // active investigator doesn't reject for amount=0.
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let resources_before = state.investigators[&id].resources;
@@ -739,7 +739,7 @@ mod tests {
     fn gain_resources_active_target_rejects_without_active_investigator() {
         // No active investigator (default phase is Mythos), so
         // InvestigatorTarget::Active should fail to resolve.
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
@@ -765,7 +765,7 @@ mod tests {
         let mut location = test_location(10, "Study");
         location.clues = 3;
 
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location(location)
             .build();
@@ -803,7 +803,7 @@ mod tests {
         let mut location = test_location(10, "Study");
         location.clues = 1;
 
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location(location)
             .build();
@@ -839,7 +839,7 @@ mod tests {
         investigator.current_location = Some(loc_id);
         let location = test_location(10, "Study"); // 0 clues by default
 
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location(location)
             .build();
@@ -864,7 +864,7 @@ mod tests {
     fn discover_clue_rejects_when_controller_is_between_locations() {
         // "You" has no current_location — LocationTarget::
         // YourLocation can't resolve.
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1)) // current_location = None
             .build();
         let mut events = Vec::new();
@@ -897,7 +897,7 @@ mod tests {
         tested_loc.clues = 2;
         let elsewhere_loc = test_location(30, "Hall");
 
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location(tested_loc)
             .with_location(elsewhere_loc)
@@ -934,7 +934,7 @@ mod tests {
         // No in-flight skill test → TestedLocation can't resolve.
         let mut investigator = test_investigator(1);
         investigator.current_location = Some(LocationId(10));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location({
                 let mut l = test_location(10, "Study");
@@ -960,7 +960,7 @@ mod tests {
     // ---- Effect::If + Condition::SkillTestKind tests -------------
 
     fn state_with_in_flight_kind(kind: SkillTestKind) -> crate::state::GameState {
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator({
                 let mut inv = test_investigator(1);
                 inv.current_location = Some(LocationId(10));
@@ -1068,7 +1068,7 @@ mod tests {
     #[test]
     fn if_skill_test_kind_rejects_without_in_flight_test() {
         use crate::dsl::{discover_clue, if_, Condition};
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
@@ -1130,7 +1130,7 @@ mod tests {
     fn tested_location_rejects_when_test_has_no_location_snapshot() {
         // In-flight test exists but tested_location is None (e.g.
         // bare PerformSkillTest invoked while between locations).
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
@@ -1167,7 +1167,7 @@ mod tests {
         let mut location = test_location(10, "Study");
         location.clues = 1;
 
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location(location)
             .build();
@@ -1202,7 +1202,7 @@ mod tests {
         let mut location = test_location(10, "Study");
         location.clues = 1;
 
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location(location)
             .build();
@@ -1231,7 +1231,7 @@ mod tests {
         // WhileInPlay belongs under Trigger::Constant; reaching the
         // evaluator with this combination means the card author
         // wired the ability wrong. Reject loudly.
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
         let outcome = apply_effect(
             &mut Cx {
@@ -1247,7 +1247,7 @@ mod tests {
     #[test]
     fn modify_with_this_skill_test_scope_pushes_pending_modifier() {
         let id = InvestigatorId(1);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
@@ -1273,7 +1273,7 @@ mod tests {
     fn modify_pushes_source_when_ctx_has_one() {
         let id = InvestigatorId(1);
         let src = CardInstanceId(42);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
@@ -1292,7 +1292,7 @@ mod tests {
 
     #[test]
     fn modify_with_this_turn_scope_rejects_with_todo() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
         let outcome = apply_effect(
             &mut Cx {
@@ -1315,7 +1315,7 @@ mod tests {
 
     #[test]
     fn choose_one_is_rejected_with_todo_message() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
         let outcome = apply_effect(
             &mut Cx {
@@ -1407,7 +1407,7 @@ mod tests {
                 )
             })
             .collect();
-        let state = TestGame::new().with_investigator(inv).build();
+        let state = GameStateBuilder::new().with_investigator(inv).build();
         (state, id)
     }
 
@@ -1511,7 +1511,7 @@ mod tests {
 
     #[test]
     fn constant_modifier_zero_for_unknown_controller() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         let reg = fake_registry();
         assert_eq!(
             constant_skill_modifier(
@@ -1599,7 +1599,7 @@ mod tests {
     use crate::state::PendingSkillModifier;
 
     fn state_with_pending(pending: Vec<PendingSkillModifier>) -> crate::state::GameState {
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         state.pending_skill_modifiers = pending;
@@ -1681,7 +1681,7 @@ mod tests {
 
     #[test]
     fn deal_damage_adds_damage_and_emits_event() {
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
@@ -1705,7 +1705,7 @@ mod tests {
 
     #[test]
     fn deal_horror_adds_horror_and_emits_event() {
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
@@ -1736,7 +1736,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.max_health = 3;
-        let mut state = TestGame::new().with_investigator(inv).build();
+        let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events = Vec::new();
         let outcome = apply_effect(
             &mut Cx {

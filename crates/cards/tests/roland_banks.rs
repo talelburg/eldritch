@@ -24,8 +24,8 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase, TokenModifiers, WindowKind,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, test_enemy, test_investigator, test_location, ScriptedResolver,
-    TestGame,
+    apply_no_commits, drive, test_enemy, test_investigator, test_location, GameStateBuilder,
+    ScriptedResolver,
 };
 use game_core::{assert_event, assert_no_event, Action, PlayerAction};
 
@@ -75,7 +75,7 @@ fn roland_at_location_with_enemy(
     let mut loc = test_location(10, "Study");
     loc.clues = location_clues;
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_round(round)
         .with_active_investigator(inv_id)

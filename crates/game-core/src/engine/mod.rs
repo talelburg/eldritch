@@ -200,7 +200,7 @@ mod tests {
         TokenModifiers, TokenResolution, Zone,
     };
     use crate::test_support::{
-        apply_no_commits, test_enemy, test_investigator, test_location, TestGame,
+        apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
     };
     use crate::{assert_event, assert_event_count, assert_no_event};
 
@@ -218,7 +218,7 @@ mod tests {
         // fired) is covered by
         // `investigation_phase_tests::mulligan_completion_kicks_off_investigation_phase`.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .build();
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn start_scenario_on_already_started_state_is_rejected() {
-        let state = TestGame::new().with_round(7).build();
+        let state = GameStateBuilder::new().with_round(7).build();
         let result = apply(
             state,
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
@@ -313,7 +313,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut roland = test_investigator(1);
         roland.actions_remaining = 3;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(roland)
             .with_active_investigator(id)
@@ -335,7 +335,9 @@ mod tests {
 
     #[test]
     fn end_turn_with_no_active_investigator_is_rejected() {
-        let state = TestGame::new().with_phase(Phase::Investigation).build();
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
@@ -346,7 +348,7 @@ mod tests {
     #[test]
     fn end_turn_outside_investigation_phase_is_rejected() {
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
             .with_investigator(test_investigator(1))
             .with_active_investigator(id)
@@ -360,7 +362,7 @@ mod tests {
 
     #[test]
     fn rejected_actions_do_not_mutate_state() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         let round_before = state.round;
         let phase_before = state.phase;
         let active_before = state.active_investigator;
@@ -391,7 +393,7 @@ mod tests {
         // rollback path — where a handler mutates *then* rejects — is
         // covered by `rejected_resolve_input_rewinds_to_pause_state_not_pre_action`
         // and the integration test in `crates/cards/tests/reject_rollback.rs`.
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
@@ -418,7 +420,7 @@ mod tests {
         // Drive a skill test to its commit-window AwaitingInput, then submit
         // a malformed response. The reject must rewind to the *pause* state
         // (in_flight_skill_test still set), not to before the skill test.
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
@@ -479,7 +481,9 @@ mod tests {
 
     #[test]
     fn perform_skill_test_with_unknown_investigator_is_rejected() {
-        let state = TestGame::new().with_chaos_bag(bag_only_zero()).build();
+        let state = GameStateBuilder::new()
+            .with_chaos_bag(bag_only_zero())
+            .build();
         let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::PerformSkillTest {
@@ -495,7 +499,7 @@ mod tests {
     #[test]
     fn perform_skill_test_with_empty_bag_is_rejected() {
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let result = apply_no_commits(
@@ -513,7 +517,7 @@ mod tests {
     #[test]
     fn perform_skill_test_with_negative_difficulty_is_rejected() {
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -534,7 +538,7 @@ mod tests {
         // Default skills are 3/3/3/3; bag only has Numeric(0), so total=3.
         // Difficulty 3 → margin 0 → success.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -578,7 +582,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut strong = test_investigator(1);
         strong.skills.combat = 5;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(strong)
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -604,7 +608,7 @@ mod tests {
         // Skills 3/3/3/3, bag Numeric(0), difficulty 5 → margin -2 →
         // FailureReason::Total, by: 2.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -639,7 +643,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut high = test_investigator(1);
         high.skills.willpower = 99;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(high)
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
@@ -670,7 +674,7 @@ mod tests {
         // but AutoFail forces total = 0 AND tags the result as a
         // failure regardless. by = 0 here, reason = AutoFail.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
@@ -700,7 +704,7 @@ mod tests {
         // skill 3 + Skull(−6) = −3, clamped to 0. Difficulty 2 →
         // by = 2, reason Total (NOT AutoFail).
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::Skull]))
             .with_token_modifiers(TokenModifiers {
@@ -733,7 +737,7 @@ mod tests {
         // ElderSign as +0 placeholder until per-investigator ability
         // dispatch lands. Skill 3, difficulty 3 → margin 0 → success.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::ElderSign]))
             .build();
@@ -762,7 +766,7 @@ mod tests {
         // Bag is one Skull. Standard-difficulty NotZ: skull = -1.
         // Skill 3 + (-1) = 2 vs difficulty 2 → margin 0 → success.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::Skull]))
             .with_token_modifiers(night_of_the_zealot_standard())
@@ -794,7 +798,7 @@ mod tests {
         // leave inv2's intact for their own future test.
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_chaos_bag(bag_only_zero())
@@ -836,7 +840,7 @@ mod tests {
         // Determinism: applying the same PerformSkillTest action twice
         // from identical initial state produces identical post-state.
         let id = InvestigatorId(1);
-        let initial = TestGame::new()
+        let initial = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([
                 ChaosToken::Numeric(1),
@@ -878,7 +882,7 @@ mod tests {
         let mut loc = test_location(10, "Study");
         loc.clues = clues;
         loc.shroud = shroud;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_location(loc)
             .with_chaos_bag(bag_only_zero())
@@ -1053,7 +1057,7 @@ mod tests {
     fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_turn_order([inv1, inv2])
@@ -1184,7 +1188,7 @@ mod tests {
         // subsequent DrawEncounterCard action (needs registry, covered by
         // crates/scenarios/tests/mythos_phase.rs).
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .build();
@@ -1246,7 +1250,7 @@ mod tests {
 
     #[test]
     fn deck_shuffled_engine_record_with_unknown_investigator_is_rejected() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         let result = apply(
             state,
             Action::Engine(EngineRecord::DeckShuffled {
@@ -1272,7 +1276,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.deck = make_test_deck(10);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_turn_order([id])
             .with_rng_seed(42)
@@ -1309,7 +1313,7 @@ mod tests {
     #[test]
     fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .build();
@@ -1338,7 +1342,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.deck = make_test_deck(3);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_turn_order([id])
             .with_rng_seed(7)
@@ -1362,12 +1366,12 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.deck = make_test_deck(20);
-        let state_a = TestGame::new()
+        let state_a = GameStateBuilder::new()
             .with_investigator(inv.clone())
             .with_turn_order([id])
             .with_rng_seed(123)
             .build();
-        let state_b = TestGame::new()
+        let state_b = GameStateBuilder::new()
             .with_investigator(inv)
             .with_turn_order([id])
             .with_rng_seed(123)
@@ -1399,7 +1403,7 @@ mod tests {
         let mut inv = test_investigator(1);
         inv.deck = make_test_deck(8);
         let original_deck = inv.deck.clone();
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_rng_seed(99)
             .build();
@@ -1431,7 +1435,7 @@ mod tests {
         // iteration is sorted, so shuffle order is deterministic.
         // Each investigator gets their own deck + hand independently.
         let ids = [InvestigatorId(1), InvestigatorId(5), InvestigatorId(9)];
-        let mut tg = TestGame::new().with_rng_seed(2026);
+        let mut tg = GameStateBuilder::new().with_rng_seed(2026);
         for id in ids {
             let mut inv = test_investigator(id.0);
             inv.deck = make_test_deck(8);
@@ -1488,7 +1492,7 @@ mod tests {
         let mut loc_a = test_location(10, "A");
         loc_a.connections = vec![b];
         let loc_b = test_location(11, "B");
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -1709,7 +1713,7 @@ mod tests {
         enemy.evade = 3;
         enemy.max_health = 2;
         enemy.engaged_with = Some(inv_id);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_enemy(enemy)
             .with_chaos_bag(bag_only_zero())
@@ -2625,7 +2629,7 @@ mod tests {
         let b = crate::state::LocationId(11);
         let mut loc_a = test_location(10, "A");
         loc_a.connections = vec![b];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(i1)
             .with_investigator(i2)
             .with_location(loc_a)
@@ -2721,7 +2725,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.status = Status::Killed;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -2750,7 +2754,7 @@ mod tests {
         let mut inv = test_investigator(1);
         inv.current_location = Some(a);
         inv.actions_remaining = 3;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_location(test_location(10, "A"))
             .with_phase(Phase::Investigation)
@@ -2973,7 +2977,7 @@ mod tests {
             CardCode::new("d-3"),
             CardCode::new("d-4"),
         ];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_rng_seed(2026)
             .with_turn_order([id])
@@ -3125,7 +3129,7 @@ mod tests {
         let mut a = test_investigator(1);
         a.status = Status::Killed;
         let b = test_investigator(2);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(a)
             .with_investigator(b)
             .with_turn_order([inv1, inv2])
@@ -3175,7 +3179,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.deck = make_test_deck(10);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_turn_order([id])
             .build();
@@ -3200,7 +3204,7 @@ mod tests {
         inv.actions_remaining = 3;
         let mut loc_a = test_location(10, "A");
         loc_a.connections = vec![b];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_location(loc_a)
             .with_location(test_location(11, "B"))
@@ -3247,7 +3251,7 @@ mod tests {
         let mut b = test_investigator(2);
         a.hand = vec![CardCode::new("a-0")];
         b.hand = vec![CardCode::new("b-0")];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(a)
             .with_investigator(b)
             .with_turn_order([inv1, inv2])
@@ -3286,7 +3290,7 @@ mod tests {
         let mut b = test_investigator(2);
         a.hand = vec![CardCode::new("a-0")];
         b.hand = vec![CardCode::new("b-0")];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(a)
             .with_investigator(b)
             .with_turn_order([inv1, inv2])
@@ -3329,7 +3333,7 @@ mod tests {
         ];
         b.hand = vec![CardCode::new("b-h-0"), CardCode::new("b-h-1")];
         b.deck = vec![CardCode::new("b-d-0")];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(a)
             .with_investigator(b)
             .with_turn_order([inv1, inv2])
@@ -3392,7 +3396,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.hand = hand;
-        let mut builder = TestGame::new()
+        let mut builder = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(inv);
         if active {
@@ -3406,7 +3410,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.hand = vec![CardCode::new("01059")];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
             .with_investigator(inv)
             .with_active_investigator(id)
@@ -3447,7 +3451,7 @@ mod tests {
         let mut inv = test_investigator(1);
         inv.hand = vec![CardCode::new("01059")];
         inv.status = Status::Killed;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(inv)
             .with_active_investigator(id)
@@ -3508,7 +3512,7 @@ mod tests {
             CardCode::new("01059"),
             instance_id,
         ));
-        let mut builder = TestGame::new()
+        let mut builder = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(inv);
         if active {
@@ -3526,7 +3530,7 @@ mod tests {
             CardCode::new("01059"),
             instance_id,
         ));
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
             .with_investigator(inv)
             .with_active_investigator(id)
@@ -3583,7 +3587,7 @@ mod tests {
             CardCode::new("01059"),
             instance_id,
         ));
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(inv)
             .with_active_investigator(id)
@@ -3608,7 +3612,7 @@ mod tests {
         // and ChaosTokenRevealed. The first `apply` returns
         // AwaitingInput with only SkillTestStarted on the events list.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -3644,7 +3648,7 @@ mod tests {
         // ChaosTokenRevealed and the rest of resolution fire on the
         // second apply.
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -3690,7 +3694,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.hand = vec![CardCode::new("A"), CardCode::new("B")];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -3750,7 +3754,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.hand = vec![CardCode::new("A")];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -3787,7 +3791,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.hand = vec![CardCode::new("A"), CardCode::new("B")];
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -3824,7 +3828,7 @@ mod tests {
         // rejects every other player action (mirrors the
         // mulligan_pending guard).
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(test_investigator(1))
             .with_active_investigator(id)
@@ -3855,7 +3859,7 @@ mod tests {
     #[test]
     fn resolve_input_with_wrong_response_variant_rejects() {
         let id = InvestigatorId(1);
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
@@ -3882,7 +3886,7 @@ mod tests {
     fn resolve_input_without_any_outstanding_prompt_rejects() {
         // No prior `apply` opened a commit window — the engine has
         // nothing to resume.
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         let result = apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
@@ -3937,7 +3941,7 @@ mod tests {
     }
 
     fn unused_setup() -> crate::state::GameState {
-        TestGame::new().build()
+        GameStateBuilder::new().build()
     }
 
     static STAMP_MODULE: ScenarioModule = ScenarioModule {
@@ -3961,7 +3965,7 @@ mod tests {
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 1;
-        let mut builder = TestGame::new()
+        let mut builder = GameStateBuilder::new()
             .with_phase(crate::state::Phase::Investigation)
             .with_investigator(investigator)
             .with_active_investigator(inv)

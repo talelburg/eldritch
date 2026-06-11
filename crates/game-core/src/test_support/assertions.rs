@@ -26,10 +26,10 @@
 //! use game_core::{
 //!     apply, Action, Event, InvestigatorId, PlayerAction, Phase,
 //!     assert_event, assert_no_event,
-//!     test_support::{test_investigator, TestGame},
+//!     test_support::{test_investigator, GameStateBuilder},
 //! };
 //!
-//! let state = TestGame::new()
+//! let state = GameStateBuilder::new()
 //!     .with_phase(Phase::Investigation)
 //!     .with_investigator(test_investigator(1))
 //!     .with_active_investigator(InvestigatorId(1))

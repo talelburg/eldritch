@@ -9,7 +9,9 @@ use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::scenario::Resolution;
 use game_core::state::{CardCode, InvestigatorId, LocationId};
-use game_core::test_support::{fire_forced_on_enter, test_investigator, test_location, TestGame};
+use game_core::test_support::{
+    fire_forced_on_enter, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{Action, PlayerAction};
 use scenarios::{the_gathering, REGISTRY};
 
@@ -106,7 +108,7 @@ fn attic_forced_enter_deals_one_horror() {
     // isn't reachable until C1b's Door-on-the-Floor transition).
     let mut attic = test_location(20, "Attic");
     attic.code = CardCode("01113".into());
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LocationId(20))
         .with_location(attic)
         .build();
@@ -126,7 +128,7 @@ fn cellar_forced_enter_deals_one_damage() {
     install_registries();
     let mut cellar = test_location(21, "Cellar");
     cellar.code = CardCode("01114".into());
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LocationId(21))
         .with_location(cellar)
         .build();

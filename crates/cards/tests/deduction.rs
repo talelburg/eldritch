@@ -17,7 +17,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    drive, test_investigator, test_location, ScriptedResolver, TestGame,
+    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
 use game_core::{assert_event, assert_event_count, assert_no_event, Action, PlayerAction};
 
@@ -46,7 +46,7 @@ fn state_with_deduction(
     let mut location = test_location(10, "Study");
     location.shroud = shroud;
     location.clues = initial_clues;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)

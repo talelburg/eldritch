@@ -451,11 +451,11 @@ pub(super) fn resume_spawn_engage(
 #[cfg(test)]
 mod resolve_prey_tests {
     use super::*;
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn resolve_prey_default_single_candidate_is_one() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let r = resolve_prey(
@@ -468,7 +468,7 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_default_multiple_is_tie() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .build();
@@ -482,7 +482,7 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_empty_is_none() {
-        let state = TestGame::new().build();
+        let state = GameStateBuilder::new().build();
         let r = resolve_prey(&state, crate::card_data::Prey::Default, &[]);
         assert!(matches!(r, PreyResolution::None));
     }
@@ -493,7 +493,7 @@ mod resolve_prey_tests {
         hi.skills.combat = 5;
         let mut lo = test_investigator(2);
         lo.skills.combat = 2;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(hi)
             .with_investigator(lo)
             .build();
@@ -511,7 +511,7 @@ mod resolve_prey_tests {
         a.skills.combat = 4;
         let mut b = test_investigator(2);
         b.skills.combat = 4;
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(a)
             .with_investigator(b)
             .build();
@@ -529,7 +529,7 @@ mod hunter_movement_tests {
     use super::*;
     use crate::engine::Cx;
     use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
     #[test]
@@ -547,7 +547,7 @@ mod hunter_movement_tests {
         let mut ghoul = test_enemy(1, "Swarm");
         ghoul.hunter = true;
         ghoul.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -583,7 +583,7 @@ mod hunter_movement_tests {
         let mut h = test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -617,7 +617,7 @@ mod hunter_movement_tests {
         let mut h = test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(9));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(island)
@@ -649,7 +649,7 @@ mod hunter_movement_tests {
         h.hunter = true;
         h.exhausted = true;
         h.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -680,7 +680,7 @@ mod hunter_movement_tests {
         let mut e = test_enemy(1, "Slug");
         e.hunter = false;
         e.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -713,7 +713,7 @@ mod hunter_movement_tests {
         let mut h = test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -746,7 +746,7 @@ mod hunter_resume_tests {
     use crate::assert_event;
     use crate::engine::Cx;
     use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
     fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
@@ -765,7 +765,7 @@ mod hunter_resume_tests {
         let mut hunter = test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -816,7 +816,7 @@ mod hunter_resume_tests {
         let mut hunter = test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -862,7 +862,7 @@ mod hunter_resume_tests {
         let mut h = test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(a)
             .with_location(b)
@@ -919,7 +919,7 @@ mod hunter_resume_tests {
         hunter.hunter = true;
         hunter.prey = crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat);
         hunter.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -968,7 +968,7 @@ mod hunter_resume_tests {
         let mut clean_hunter = test_enemy(2, "Clean Hunter");
         clean_hunter.hunter = true;
         clean_hunter.current_location = Some(LocationId(2)); // single step B->D
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -1024,7 +1024,7 @@ mod hunter_resume_tests {
         let mut hunter = test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -1077,7 +1077,7 @@ mod hunter_resume_tests {
         let mut hunter = test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
             .with_location(loc_a)
             .with_location(loc_b)
@@ -1124,7 +1124,7 @@ mod reengage_tests {
     use crate::assert_event;
     use crate::assert_no_event;
     use crate::engine::Cx;
-    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
     fn reengage_at_location_engages_sole_co_located_survivor() {
@@ -1141,7 +1141,7 @@ mod reengage_tests {
             e.engaged_with = None;
             e
         };
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(survivor)
             .with_location(test_location(1, "Study"))
             .with_enemy(enemy)
@@ -1171,7 +1171,7 @@ mod reengage_tests {
             e.engaged_with = None;
             e
         };
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_location(test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([])
@@ -1208,7 +1208,7 @@ mod reengage_tests {
             e.prey = crate::card_data::Prey::Default;
             e
         };
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(mk(2))
             .with_investigator(mk(3))
             .with_location(test_location(1, "Study"))
@@ -1250,7 +1250,7 @@ mod reengage_tests {
             e.exhausted = true; // exhausted unengaged enemy does not engage (RR p.10)
             e
         };
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(survivor)
             .with_location(test_location(1, "Study"))
             .with_enemy(enemy)
@@ -1278,7 +1278,7 @@ mod reengage_tests {
             e.engaged_with = None;
             e
         };
-        let mut state = TestGame::default().with_enemy(enemy).build();
+        let mut state = GameStateBuilder::default().with_enemy(enemy).build();
         let mut events = Vec::new();
         reengage_at_location(
             &mut Cx {

@@ -37,7 +37,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, FastActorScope, InvestigatorId, LocationId, Phase,
     PhaseStep, WindowKind,
 };
-use game_core::test_support::{test_investigator, test_location, TestGame};
+use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 
 fn install_cards_registry() {
     static INSTALL: Once = Once::new();
@@ -58,7 +58,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
     let mut a = test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
@@ -96,7 +96,7 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
     let mut b = test_investigator(2);
     b.resources = 5;
     b.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
         .with_phase(Phase::Investigation)
@@ -136,7 +136,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
     let mut b = test_investigator(2);
     b.resources = 5;
     b.hand.push(CardCode::new("01059")); // Holy Rosary — non-Fast asset, cost 2.
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
         .with_phase(Phase::Investigation)
@@ -176,7 +176,7 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
     let mut a = test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
@@ -206,7 +206,7 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
         CardCode::new("01034"),
         CardInstanceId(1),
     ));
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
         .with_phase(Phase::Investigation)
@@ -244,7 +244,7 @@ fn fast_activated_ability_rejected_when_no_permissive_window() {
         CardCode::new("01034"),
         CardInstanceId(1),
     ));
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
         .with_phase(Phase::Investigation)
@@ -288,7 +288,7 @@ fn fast_event_playable_by_active_investigator_outside_investigation_in_permissiv
     a.hand.push(CardCode::new("01037"));
     let mut location = test_location(101, "Study");
     location.clues = 1;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_location(location)
         .with_phase(Phase::Mythos)
@@ -350,7 +350,7 @@ fn fast_event_playable_by_non_owner_when_window_permits() {
     b.hand.push(CardCode::new("01037"));
     let mut location = test_location(101, "Study");
     location.clues = 1;
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
         .with_location(location)
@@ -388,7 +388,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     let mut a = test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast asset.
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))

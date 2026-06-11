@@ -1,19 +1,22 @@
-//! Fluent [`TestGame`] builder.
+//! Fluent [`GameStateBuilder`].
 //!
-//! The single most important piece of test infrastructure in the
-//! engine. Every card, scenario, and engine test that follows depends
-//! on this — if the API is awkward, every test pays the cost. Keep it
-//! ergonomic.
+//! The cross-crate constructor for [`GameState`] (which is
+//! `#[non_exhaustive]`, so it can't be struct-literalled outside this
+//! crate). Scenario `setup()` functions use it to build the initial
+//! board, and it is also the single most-used piece of engine test
+//! infrastructure — every card, scenario, and engine test depends on it,
+//! so if the API is awkward, every caller pays. Keep it ergonomic.
 //!
 //! # Example
 //!
 //! ```
 //! use game_core::{
 //!     apply, Action, PlayerAction, Phase, InvestigatorId,
-//!     test_support::{test_investigator, test_location, TestGame},
+//!     state::GameStateBuilder,
+//!     test_support::{test_investigator, test_location},
 //! };
 //!
-//! let state = TestGame::new()
+//! let state = GameStateBuilder::new()
 //!     .with_phase(Phase::Investigation)
 //!     .with_investigator(test_investigator(1))
 //!     .with_location(test_location(10, "Study"))
@@ -34,12 +37,12 @@ use crate::state::{
 
 /// Fluent builder for a [`GameState`].
 ///
-/// Construct with [`TestGame::new`], chain `.with_*` setters and
-/// adders, then call [`build`](TestGame::build) to get a `GameState`
+/// Construct with [`GameStateBuilder::new`], chain `.with_*` setters and
+/// adders, then call [`build`](GameStateBuilder::build) to get a `GameState`
 /// ready for [`apply`](crate::apply).
 #[derive(Debug, Clone)]
-#[must_use = "TestGame is a builder; call .build() to produce a GameState"]
-pub struct TestGame {
+#[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
+pub struct GameStateBuilder {
     investigators: BTreeMap<InvestigatorId, Investigator>,
     locations: BTreeMap<crate::state::LocationId, Location>,
     enemies: BTreeMap<EnemyId, Enemy>,
@@ -56,7 +59,7 @@ pub struct TestGame {
     scenario_id: Option<ScenarioId>,
 }
 
-impl TestGame {
+impl GameStateBuilder {
     /// Start a new builder with empty investigators / locations / chaos
     /// bag, `Phase::Mythos`, round 0, no active investigator, RNG
     /// seeded at zero. Most tests override the seed explicitly via
@@ -102,10 +105,10 @@ impl TestGame {
     /// ```
     /// use game_core::{
     ///     InvestigatorId, LocationId,
-    ///     test_support::{test_investigator, test_location, TestGame},
+    ///     test_support::{test_investigator, test_location, GameStateBuilder},
     /// };
     ///
-    /// let state = TestGame::new()
+    /// let state = GameStateBuilder::new()
     ///     .with_investigator_at(test_investigator(1), LocationId(10))
     ///     .with_location(test_location(10, "Study"))
     ///     .build();
@@ -237,7 +240,7 @@ impl TestGame {
     }
 
     /// Set the scenario id this state belongs to. `None` (the
-    /// default from [`TestGame::new`]) means the engine's post-apply
+    /// default from [`GameStateBuilder::new`]) means the engine's post-apply
     /// resolution hook will short-circuit. Passing a `ScenarioId`
     /// means a `ScenarioRegistry` capable of resolving it must be
     /// installed *if you want resolutions to fire* — the resolution
@@ -246,19 +249,6 @@ impl TestGame {
     pub fn with_scenario_id(mut self, id: ScenarioId) -> Self {
         self.scenario_id = Some(id);
         self
-    }
-
-    /// Build into a [`TestSession`] for driving the engine with a
-    /// scripted [`ChoiceResolver`].
-    ///
-    /// Equivalent to `TestSession::new(self.build())`; sugar so
-    /// resolver-driven tests can write
-    /// `TestGame::new()...session().apply(...).resolve_choices(...).run()`.
-    ///
-    /// [`TestSession`]: super::resolver::TestSession
-    /// [`ChoiceResolver`]: super::resolver::ChoiceResolver
-    pub fn session(self) -> super::resolver::TestSession {
-        super::resolver::TestSession::new(self.build())
     }
 
     /// Materialize the configured [`GameState`].
@@ -299,7 +289,7 @@ impl TestGame {
     }
 }
 
-impl Default for TestGame {
+impl Default for GameStateBuilder {
     fn default() -> Self {
         Self::new()
     }
@@ -313,7 +303,7 @@ mod with_open_window_tests {
 
     #[test]
     fn with_open_window_pushes_onto_the_stack() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_open_window(
                 WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
@@ -327,7 +317,7 @@ mod with_open_window_tests {
 
     #[test]
     fn with_open_window_stacks_in_order() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_open_window(
                 WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),

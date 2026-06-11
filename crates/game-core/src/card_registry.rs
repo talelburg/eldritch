@@ -28,7 +28,7 @@
 //!
 //! `OnceLock` is process-global, so all tests in a process share the
 //! same registry. Today no test mocks card data — tests use the real
-//! corpus or skip card lookups entirely via the `TestGame` builder —
+//! corpus or skip card lookups entirely via the `GameStateBuilder` builder —
 //! so this is fine. If/when per-test mocking is needed, we'll move to
 //! a registry threaded through `apply()` or stored on `GameState`.
 

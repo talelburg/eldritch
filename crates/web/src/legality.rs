@@ -89,8 +89,8 @@ mod tests {
         AdvanceAct, Draw, EndTurn, Evade, Fight, Investigate, Move, PlayCard,
     };
     use super::{enabled_controls, ActionControl};
+    use game_core::state::GameStateBuilder;
     use game_core::state::{InvestigatorId, Phase};
-    use game_core::test_support::builder::TestGame;
     use game_core::test_support::fixtures::{awaiting_commit_input, test_investigator};
     use game_core::{EngineOutcome, Resolution};
     use std::collections::BTreeSet;
@@ -98,7 +98,7 @@ mod tests {
     fn investigation_game() -> game_core::state::GameState {
         // round 1: an in-progress game is never round 0 (the engine bumps
         // to 1 at StartScenario), and round 0 now gates to StartScenario.
-        TestGame::new()
+        GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .with_phase(Phase::Investigation)
@@ -110,7 +110,7 @@ mod tests {
     fn round_zero_enables_only_start_scenario() {
         // The state straight from a scenario `setup()`: phase Mythos,
         // round 0, no cursors. The only legal action is StartScenario.
-        let game = TestGame::new()
+        let game = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();

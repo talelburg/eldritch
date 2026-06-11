@@ -5,8 +5,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc;
+use game_core::state::GameStateBuilder;
 use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
 use game_core::{EngineOutcome, PlayerAction};
 use leptos::prelude::*;
@@ -72,7 +72,7 @@ fn click_in(section: &web_sys::Element, selector: &str) {
 /// `round 1` because an in-progress game is never round 0 (round 0 is the
 /// pre-start state that gates to `StartScenario`).
 fn investigation_game() -> game_core::state::GameState {
-    TestGame::new()
+    GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Investigation)
@@ -134,7 +134,7 @@ async fn draw_encounter_submits_draw_encounter_card() {
     // Mythos phase with this investigator on the draw cursor: only
     // DrawEncounter is legal. `mythos_draw_pending` has no builder setter,
     // so mutate the built state directly (legality.rs tests do the same).
-    let mut game = TestGame::new()
+    let mut game = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Mythos)
@@ -156,7 +156,7 @@ async fn draw_encounter_submits_draw_encounter_card() {
 async fn illegal_controls_are_disabled_and_do_not_submit() {
     // Mythos + draw cursor: only DrawEncounter is legal, so End turn is
     // disabled and DrawEncounter is not.
-    let mut game = TestGame::new()
+    let mut game = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Mythos)
@@ -195,7 +195,7 @@ async fn move_picker_submits_move_to_connected_destination() {
     let mut loc1 = test_location(1, "Study");
     loc1.connections = vec![LocationId(2)];
     let loc2 = test_location(2, "Hallway");
-    let game = TestGame::new()
+    let game = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LocationId(1))
         .with_active_investigator(InvestigatorId(1))
         .with_location(loc1)
@@ -235,7 +235,7 @@ async fn play_picker_submits_play_card_by_hand_index() {
         CardCode::new("_synth_event_a"),
         CardCode::new("_synth_event_b"),
     ];
-    let game = TestGame::new()
+    let game = GameStateBuilder::new()
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Investigation)
@@ -274,7 +274,7 @@ fn mulligan_game() -> game_core::state::GameState {
         CardCode::new("_synth_event_a"),
         CardCode::new("_synth_event_b"),
     ];
-    TestGame::new()
+    GameStateBuilder::new()
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Investigation)
@@ -334,7 +334,7 @@ async fn mulligan_with_no_selection_keeps_hand() {
 fn investigation_game_with_engaged_enemy() -> game_core::state::GameState {
     let mut enemy = test_enemy(7, "Ghoul");
     enemy.engaged_with = Some(InvestigatorId(1));
-    TestGame::new()
+    GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .with_phase(Phase::Investigation)
@@ -405,7 +405,7 @@ async fn start_scenario_is_the_only_control_at_round_zero() {
     // no cursors, no active investigator. The only legal action is
     // StartScenario — this is the state the server hands a freshly created
     // game, so the player must be able to start it.
-    let game = TestGame::new()
+    let game = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
     assert_eq!(game.round, 0, "precondition: pre-start state");

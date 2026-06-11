@@ -15,7 +15,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_investigator, TestGame};
+use game_core::test_support::{apply_no_commits, test_investigator, GameStateBuilder};
 use game_core::{assert_event, Action, PlayerAction};
 
 const HOLY_ROSARY: &str = "01059";
@@ -39,7 +39,7 @@ fn state_with_rosary_in_hand() -> (game_core::GameState, InvestigatorId) {
     let mut inv = test_investigator(1);
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)

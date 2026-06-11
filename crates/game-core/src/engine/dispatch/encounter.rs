@@ -617,7 +617,7 @@ pub(super) fn advance_mythos_draw_pending(cx: &mut Cx) {
 #[cfg(test)]
 mod encounter_card_revealed_tests {
     use crate::state::CardCode;
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     /// Exercises the early-reject guard: when the handler cannot
     /// proceed past the registry / metadata checks, it must reject
@@ -645,7 +645,7 @@ mod encounter_card_revealed_tests {
     fn rejects_when_no_card_registry_installed() {
         use crate::action::EngineRecord;
         use crate::state::InvestigatorId;
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         // Seed the encounter deck so we can prove the reject fires
@@ -702,11 +702,11 @@ mod encounter_deck_helper_tests {
     use crate::event::Event;
     use crate::rng::RngState;
     use crate::state::CardCode;
-    use crate::test_support::TestGame;
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.rng = RngState::new(42);
         state.encounter_deck.push_back(CardCode("a".into()));
         state.encounter_deck.push_back(CardCode("b".into()));
@@ -735,7 +735,7 @@ mod encounter_deck_helper_tests {
     #[test]
     fn shuffle_encounter_deck_is_silent_on_zero_or_one_card() {
         for n in 0..=1 {
-            let mut state = TestGame::new().build();
+            let mut state = GameStateBuilder::new().build();
             for i in 0..n {
                 state.encounter_deck.push_back(CardCode(format!("c{i}")));
             }
@@ -750,7 +750,7 @@ mod encounter_deck_helper_tests {
 
     #[test]
     fn reshuffle_encounter_discard_moves_discard_into_deck_and_shuffles() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.rng = RngState::new(7);
         for i in 0..5 {
             state.encounter_discard.push(CardCode(format!("d{i}")));
@@ -775,7 +775,7 @@ mod encounter_deck_helper_tests {
 
     #[test]
     fn reshuffle_encounter_discard_is_silent_when_discard_has_one_card() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.encounter_discard.push(CardCode("solo".into()));
 
         let mut events = Vec::new();
@@ -791,7 +791,7 @@ mod encounter_deck_helper_tests {
 
     #[test]
     fn draw_encounter_top_drains_deck_then_returns_none() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.encounter_deck.push_back(CardCode("a".into()));
         state.encounter_deck.push_back(CardCode("b".into()));
         state.encounter_deck.push_back(CardCode("c".into()));
@@ -834,7 +834,7 @@ mod encounter_deck_helper_tests {
 
     #[test]
     fn draw_encounter_top_reshuffles_discard_on_empty_deck() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.rng = RngState::new(13);
         state.encounter_discard.push(CardCode("x".into()));
         state.encounter_discard.push(CardCode("y".into()));
@@ -870,7 +870,7 @@ mod encounter_deck_helper_tests {
 
     #[test]
     fn draw_encounter_top_returns_none_when_deck_and_discard_both_empty() {
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
         assert_eq!(
             draw_encounter_top(&mut Cx {
@@ -887,7 +887,7 @@ mod encounter_deck_helper_tests {
         use crate::action::{Action, EngineRecord};
         use crate::engine::apply;
 
-        let mut state = TestGame::new().build();
+        let mut state = GameStateBuilder::new().build();
         state.rng = RngState::new(99);
         for i in 0..4 {
             state.encounter_deck.push_back(CardCode(format!("c{i}")));
@@ -915,7 +915,7 @@ mod encounter_deck_helper_tests {
     #[test]
     fn encounter_deck_shuffle_is_deterministic_from_seed() {
         fn shuffle_with_seed(seed: u64) -> Vec<CardCode> {
-            let mut state = TestGame::new().build();
+            let mut state = GameStateBuilder::new().build();
             state.rng = RngState::new(seed);
             for i in 0..10 {
                 state.encounter_deck.push_back(CardCode(format!("c{i:02}")));
@@ -944,7 +944,7 @@ mod encounter_deck_helper_tests {
 mod spawn_enemy_tests {
     use super::*;
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_investigator, test_location, TestGame};
+    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_sequence, assert_no_event};
     use card_dsl::card_data::{CardMetadata, CardType, Class, SkillIcons, Spawn, SpawnLocation};
 
@@ -979,7 +979,7 @@ mod spawn_enemy_tests {
     fn spawn_at_specific_location_with_one_investigator_engages_them() {
         let mut loc = test_location(10, "Synth Loc");
         loc.code = CardCode("_synth_loc".into());
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
@@ -1027,7 +1027,7 @@ mod spawn_enemy_tests {
     fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
         let mut loc = test_location(10, "Synth Loc");
         loc.code = CardCode("_synth_loc".into());
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
             .build();
@@ -1057,7 +1057,7 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_at_specific_location_rejects_when_location_not_in_play() {
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let metadata = synth_enemy_metadata(Some(Spawn {
@@ -1089,7 +1089,7 @@ mod spawn_enemy_tests {
     fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
         let mut loc = test_location(10, "Demo");
         loc.code = CardCode("_demo_loc".into());
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
@@ -1126,7 +1126,7 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location() {
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         // Investigator has no current_location.
@@ -1160,7 +1160,7 @@ mod spawn_enemy_tests {
         loc.code = CardCode("_loc".into());
         let mut inv = test_investigator(1);
         inv.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
             .with_location(loc)
             .with_investigator(inv)
@@ -1190,7 +1190,7 @@ mod spawn_enemy_tests {
         i1.current_location = Some(LocationId(1));
         let mut i2 = test_investigator(2);
         i2.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
             .with_location(loc)
             .with_investigator(i1)
@@ -1227,7 +1227,7 @@ mod spawn_enemy_tests {
         i1.current_location = Some(LocationId(1));
         let mut i2 = test_investigator(2);
         i2.current_location = Some(LocationId(1));
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
             .with_location(loc)
             .with_investigator(i1)
@@ -1272,7 +1272,7 @@ mod spawn_enemy_tests {
     fn spawn_mints_distinct_enemy_ids() {
         let mut loc = test_location(10, "L");
         loc.code = CardCode("_l".into());
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
             .build();
@@ -1316,7 +1316,7 @@ mod spawn_enemy_tests {
 mod mythos_draw_for_tests {
     use super::*;
     use crate::state::{CardCode, InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     /// Exercises the early-reject guard for the registry / unknown-card
     /// checks. Depending on which tests have run in this process:
@@ -1333,7 +1333,7 @@ mod mythos_draw_for_tests {
     /// at most one) matching the `encounter_card_revealed_tests` pattern.
     #[test]
     fn rejects_when_registry_not_installed_or_unknown_code() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
@@ -1379,11 +1379,11 @@ mod mythos_draw_for_tests {
 mod draw_encounter_card_tests {
     use super::*;
     use crate::state::{InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn rejects_outside_mythos_phase() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
@@ -1404,7 +1404,7 @@ mod draw_encounter_card_tests {
 
     #[test]
     fn rejects_when_no_draw_pending() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
@@ -1425,7 +1425,7 @@ mod draw_encounter_card_tests {
 
     #[test]
     fn rejects_when_out_of_order() {
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Mythos)

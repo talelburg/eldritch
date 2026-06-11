@@ -8,7 +8,7 @@ use std::sync::Once;
 use game_core::action::{PlayerAction, RosterEntry};
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{CardCode, InvestigatorId, Skills};
-use game_core::test_support::TestGame;
+use game_core::test_support::GameStateBuilder;
 use game_core::Action;
 
 /// Install the real card registry exactly once for this integration-test
@@ -29,7 +29,7 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
         investigator: CardCode::new("01001"),
         deck: deck.clone(),
     }];
-    let state = TestGame::new().build();
+    let state = GameStateBuilder::new().build();
 
     let result = apply(
         state,
@@ -67,7 +67,7 @@ fn rejects_non_investigator_code() {
         investigator: CardCode::new("01030"),
         deck: vec![],
     }];
-    let state = TestGame::new().build();
+    let state = GameStateBuilder::new().build();
     let result = apply(
         state,
         Action::Player(PlayerAction::StartScenario { roster }),
@@ -84,7 +84,7 @@ fn rejects_unknown_code() {
         investigator: CardCode::new("99999"),
         deck: vec![],
     }];
-    let state = TestGame::new().build();
+    let state = GameStateBuilder::new().build();
     let result = apply(
         state,
         Action::Player(PlayerAction::StartScenario { roster }),

@@ -20,7 +20,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, SkillKind, TokenModifiers, Zone,
 };
-use game_core::test_support::{drive, test_investigator, ScriptedResolver, TestGame};
+use game_core::test_support::{drive, test_investigator, GameStateBuilder, ScriptedResolver};
 use game_core::{assert_event, assert_event_count, assert_no_event, Action, PlayerAction};
 
 const PERCEPTION: &str = "01090";
@@ -45,7 +45,7 @@ fn state_with_hand(hand: &[&str]) -> (game_core::GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())

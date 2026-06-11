@@ -17,9 +17,9 @@
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, LocationId, TokenModifiers,
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, Location, LocationId,
+    TokenModifiers,
 };
-use game_core::test_support::{test_location, TestGame};
 
 /// String id used to look this module up in [`crate::REGISTRY`].
 pub const ID: &str = "the-gathering";
@@ -60,16 +60,10 @@ fn standard_chaos_bag() -> ChaosBag {
 /// No investigators — the `StartScenario` roster step seats them.
 pub fn setup() -> GameState {
     // The Study (01111): shroud 2, clues 2, revealed, no connections
-    // (Act 1 is "trapped in the Study"). `test_location` is the only
-    // cross-crate GameState/Location constructor (both are
-    // `#[non_exhaustive]`); we override its fields, exactly as the
-    // synthetic fixture does.
-    let mut study = test_location(STUDY_ID.0, "Study");
-    study.code = CardCode("01111".into());
-    study.shroud = 2;
-    study.clues = 2;
-    study.revealed = true;
-    study.connections = Vec::new();
+    // (Act 1 is "trapped in the Study"). `Location::new` gives a
+    // revealed, unconnected location; the Study's connection graph is
+    // C1b's Door-on-the-Floor transition.
+    let study = Location::new(STUDY_ID, CardCode("01111".into()), "Study", 2, 2);
 
     // The Gathering's symbol effects are printed on reference card 01104
     // (board-dependent; evaluated in C2). Until then these flat NotZ
@@ -82,7 +76,7 @@ pub fn setup() -> GameState {
     token_modifiers.tablet = -3;
     token_modifiers.elder_thing = -4;
 
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         .with_location(study)
         .with_chaos_bag(standard_chaos_bag())
         .with_scenario_id(ScenarioId::new(ID))

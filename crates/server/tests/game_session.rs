@@ -4,8 +4,8 @@
 //! `StartScenario` is accepted and `EndTurn` is rejected).
 
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
+use game_core::state::GameStateBuilder;
 use game_core::state::{GameState, InvestigatorId};
-use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::test_investigator;
 use game_core::{EngineOutcome, Event, PlayerAction, Resolution};
 use server::session::GameSession;
@@ -16,7 +16,7 @@ use sqlx::SqlitePool;
 const TEST_SCENARIO_ID: &str = "test-scenario";
 
 fn test_setup() -> GameState {
-    TestGame::new()
+    GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_turn_order([InvestigatorId(1)])
         .with_scenario_id(ScenarioId::new(TEST_SCENARIO_ID))

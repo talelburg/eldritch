@@ -5,8 +5,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc;
+use game_core::state::GameStateBuilder;
 use game_core::state::{CardCode, InvestigatorId};
-use game_core::test_support::builder::TestGame;
 use game_core::test_support::fixtures::{awaiting_commit_input, test_investigator};
 use game_core::{InputResponse, PlayerAction};
 use leptos::prelude::*;
@@ -26,7 +26,7 @@ fn two_card_game() -> game_core::state::GameState {
         CardCode::new("_synth_event_a"),
         CardCode::new("_synth_event_b"),
     ];
-    TestGame::new()
+    GameStateBuilder::new()
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
         .build()

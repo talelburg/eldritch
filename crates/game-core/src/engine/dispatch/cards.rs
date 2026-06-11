@@ -534,12 +534,12 @@ pub(super) fn play_card(
 mod grant_resources_tests {
     use super::*;
     use crate::state::InvestigatorId;
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn grant_resources_adds_to_wallet_and_emits() {
         let id = InvestigatorId(1);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
@@ -564,7 +564,7 @@ mod grant_resources_tests {
     #[test]
     fn grant_resources_zero_is_silent_noop() {
         let id = InvestigatorId(1);
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
@@ -588,7 +588,7 @@ mod grant_resources_tests {
 mod draw_one_with_deckout_tests {
     use super::*;
     use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{test_investigator, TestGame};
+    use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
@@ -598,7 +598,7 @@ mod draw_one_with_deckout_tests {
         inv.discard = vec![CardCode::new("01000"), CardCode::new("01001")];
         inv.horror = 0;
         let hand_before = inv.hand.len();
-        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
         draw_one_with_deckout(

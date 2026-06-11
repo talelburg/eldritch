@@ -14,7 +14,7 @@ use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
 use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId,
 };
-use game_core::test_support::{test_investigator, test_location, TestGame};
+use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 
 use super::synth_cards::{SYNTH_LOC_CODE, SYNTH_TREACHERY_CODE};
 
@@ -35,7 +35,7 @@ pub const ID: &str = "synthetic";
 /// Investigate → discover-clue → `AdvanceAct` (Won) path needs, which is
 /// what the browser demo and `tests/closing_demo.rs` exercise. A real
 /// scenario's setup does the same (seats investigators, prints clue
-/// counts on locations, fills the chaos bag); the bare `TestGame` /
+/// counts on locations, fills the chaos bag); the bare `GameStateBuilder` /
 /// `test_location` defaults (unplaced, 0 clues, empty bag) do not.
 ///
 /// The encounter-deck seeding gives the #126 / #127 integration
@@ -62,7 +62,7 @@ pub fn setup() -> GameState {
     // counts on locations; the bare `test_location` default is 0.
     location.clues = 4;
 
-    let mut state = TestGame::new()
+    let mut state = GameStateBuilder::new()
         // Place the investigator at the demo location: scenario setup
         // seats investigators at a starting location, and Investigate /
         // Move reject on a `None` current_location. `test_location(10, …)`

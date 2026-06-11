@@ -24,7 +24,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
     Status, TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_investigator, TestGame};
+use game_core::test_support::{apply_no_commits, test_investigator, GameStateBuilder};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 use game_core::{Action, PlayerAction};
 
@@ -109,7 +109,7 @@ fn state_with_in_play(code: &str) -> (game_core::GameState, InvestigatorId, Card
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(code), instance_id));
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
@@ -317,7 +317,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
         instance_id,
     ));
 
-    let state = TestGame::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)

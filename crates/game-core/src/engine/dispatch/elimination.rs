@@ -250,7 +250,7 @@ mod elimination_tests {
     use super::*;
     use crate::assert_event;
     use crate::assert_no_event;
-    use crate::test_support::{test_enemy, test_investigator, test_location, TestGame};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
     fn elimination_step1_removes_controlled_and_owned_cards() {
@@ -265,7 +265,7 @@ mod elimination_tests {
             CardInstanceId(1),
         )];
 
-        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
         apply_investigator_defeat(
@@ -308,7 +308,7 @@ mod elimination_tests {
         let mut loc = test_location(1, "Study");
         loc.clues = 1;
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(inv)
             .with_location(loc)
             .build();
@@ -358,7 +358,7 @@ mod elimination_tests {
             e
         };
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(dying)
             .with_investigator(survivor)
             .with_location(test_location(1, "Study"))
@@ -408,7 +408,7 @@ mod elimination_tests {
             e
         };
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(dying)
             .with_location(test_location(1, "Study"))
             .with_enemy(enemy)
@@ -442,7 +442,7 @@ mod elimination_tests {
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.max_sanity = 1;
-        let mut state = TestGame::new()
+        let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(investigator)
             .with_active_investigator(inv)
@@ -491,7 +491,7 @@ mod elimination_tests {
             e
         };
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(dying)
             .with_investigator(survivor)
             .with_location(test_location(1, "Study"))
@@ -540,7 +540,7 @@ mod elimination_tests {
             e
         };
 
-        let mut state = TestGame::default()
+        let mut state = GameStateBuilder::default()
             .with_investigator(dying)
             .with_investigator(survivor)
             .with_location(test_location(1, "Study"))
@@ -576,7 +576,7 @@ mod elimination_tests {
         inv.clues = 3;
         inv.resources = 2;
 
-        let mut state = TestGame::default().with_investigator(inv).build();
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
         apply_investigator_defeat(

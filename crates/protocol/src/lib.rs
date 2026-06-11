@@ -120,12 +120,12 @@ mod id_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::test_support::builder::TestGame;
+    use game_core::state::GameStateBuilder;
     use game_core::test_support::fixtures::test_investigator;
 
     #[test]
     fn hello_round_trips_through_json() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let msg = ServerMessage::Hello {
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn applied_round_trips_through_json() {
-        let state = TestGame::new()
+        let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
         let msg = ServerMessage::Applied {
