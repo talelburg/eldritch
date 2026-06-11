@@ -83,7 +83,7 @@ pub fn current() -> Option<&'static CardRegistry> {
 #[cfg(test)]
 mod tests {
     use super::{CardRegistry, REGISTRY};
-    use crate::card_data::{CardMetadata, CardType, Class, SkillIcons};
+    use crate::card_data::{CardKind, CardMetadata, CardType, Class, SkillIcons};
     use crate::dsl::{constant, modify, ModifierScope, Stat};
     use crate::state::CardCode;
     use std::sync::OnceLock;
@@ -93,26 +93,20 @@ mod tests {
         CardMetadata {
             code: "TEST1".to_string(),
             name: "Test Card".to_string(),
-            class: Class::Neutral,
-            card_type: CardType::Asset,
-            cost: Some(0),
-            xp: Some(0),
             text: None,
-            flavor: None,
-            illustrator: None,
             traits: vec![],
-            slots: vec![],
-            skill_icons: SkillIcons::default(),
-            health: None,
-            sanity: None,
-            deck_limit: 2,
-            quantity: 1,
             pack_code: "test".to_string(),
-            position: 1,
-            is_fast: false,
-            spawn: None,
-            surge: false,
-            peril: false,
+            kind: CardKind::Asset {
+                class: Class::Neutral,
+                cost: Some(0),
+                xp: Some(0),
+                slots: vec![],
+                health: None,
+                sanity: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: false,
+                deck_limit: 2,
+            },
         }
     }
 
@@ -157,7 +151,7 @@ mod tests {
         let code = CardCode::new("TEST1");
         let meta = (reg.metadata_for)(&code).expect("known code should resolve");
         assert_eq!(meta.code, "TEST1");
-        assert_eq!(meta.card_type, CardType::Asset);
+        assert_eq!(meta.card_type(), CardType::Asset);
     }
 
     #[test]

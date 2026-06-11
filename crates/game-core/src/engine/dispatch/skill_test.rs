@@ -357,13 +357,14 @@ fn sum_committed_icons(hand: &[CardCode], indices: &[u8], skill: SkillKind) -> i
         .map(|&idx| {
             let code = &hand[usize::from(idx)];
             (reg.metadata_for)(code).map_or(0_i8, |meta| {
+                let icons = meta.skill_icons();
                 let matching = match skill {
-                    SkillKind::Willpower => meta.skill_icons.willpower,
-                    SkillKind::Intellect => meta.skill_icons.intellect,
-                    SkillKind::Combat => meta.skill_icons.combat,
-                    SkillKind::Agility => meta.skill_icons.agility,
+                    SkillKind::Willpower => icons.willpower,
+                    SkillKind::Intellect => icons.intellect,
+                    SkillKind::Combat => icons.combat,
+                    SkillKind::Agility => icons.agility,
                 };
-                let raw = matching.saturating_add(meta.skill_icons.wild);
+                let raw = matching.saturating_add(icons.wild);
                 i8::try_from(raw).unwrap_or(i8::MAX)
             })
         })

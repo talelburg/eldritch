@@ -10,29 +10,10 @@ use crate::state::{
 };
 
 use crate::action::RosterEntry;
-use crate::card_data::{CardMetadata, CardType};
+use crate::card_data::CardKind;
 use crate::state::{Investigator, Skills, Status};
 
 use super::Cx;
-
-/// Base skill values for an investigator card, or `None` for any other
-/// card type. For investigator cards `skill_icons` carries the printed
-/// base skills (`wild` is always 0 and ignored); this reinterprets them
-/// as [`Skills`]. `i8::try_from` never fails for real base skills
-/// (single-digit) — an impossible overflow yields `None` rather than a
-/// panic. Lives here, not on `CardMetadata`, because `Skills` is a
-/// `game-core` type and `card-dsl` must not depend on `game-core`.
-fn investigator_skills(meta: &CardMetadata) -> Option<Skills> {
-    if meta.card_type != CardType::Investigator {
-        return None;
-    }
-    Some(Skills {
-        willpower: i8::try_from(meta.skill_icons.willpower).ok()?,
-        intellect: i8::try_from(meta.skill_icons.intellect).ok()?,
-        combat: i8::try_from(meta.skill_icons.combat).ok()?,
-        agility: i8::try_from(meta.skill_icons.agility).ok()?,
-    })
-}
 
 /// Action points granted to an investigator at the start of their
 /// turn during the Investigation phase. Per the Arkham Horror LCG
@@ -67,8 +48,12 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 reason: format!("unknown investigator code {}", entry.investigator).into(),
             };
         };
-        let (Some(skills), Some(health), Some(sanity)) =
-            (investigator_skills(meta), meta.health, meta.sanity)
+        let CardKind::Investigator {
+            skills,
+            health,
+            sanity,
+            ..
+        } = meta.kind
         else {
             return EngineOutcome::Rejected {
                 reason: format!("card {} is not a seatable investigator", entry.investigator)
@@ -3174,77 +3159,5 @@ mod start_scenario_tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod investigator_skills_tests {
-    use super::*;
-    use crate::card_data::{CardMetadata, CardType, Class, SkillIcons};
-    use crate::state::Skills;
-
-    fn meta(card_type: CardType, icons: SkillIcons) -> CardMetadata {
-        CardMetadata {
-            code: "x".to_owned(),
-            name: "x".to_owned(),
-            class: Class::Guardian,
-            card_type,
-            cost: None,
-            xp: None,
-            text: None,
-            flavor: None,
-            illustrator: None,
-            traits: Vec::new(),
-            slots: Vec::new(),
-            skill_icons: icons,
-            health: Some(9),
-            sanity: Some(5),
-            deck_limit: 0,
-            quantity: 1,
-            pack_code: "core".to_owned(),
-            position: 1,
-            is_fast: false,
-            spawn: None,
-            surge: false,
-            peril: false,
-        }
-    }
-
-    #[test]
-    fn investigator_skills_reads_base_skills_for_investigator_cards() {
-        let m = meta(
-            CardType::Investigator,
-            SkillIcons {
-                willpower: 3,
-                intellect: 3,
-                combat: 4,
-                agility: 2,
-                wild: 0,
-            },
-        );
-        assert_eq!(
-            investigator_skills(&m),
-            Some(Skills {
-                willpower: 3,
-                intellect: 3,
-                combat: 4,
-                agility: 2,
-            }),
-        );
-    }
-
-    #[test]
-    fn investigator_skills_is_none_for_non_investigator_cards() {
-        let m = meta(
-            CardType::Asset,
-            SkillIcons {
-                willpower: 1,
-                intellect: 0,
-                combat: 0,
-                agility: 0,
-                wild: 0,
-            },
-        );
-        assert_eq!(investigator_skills(&m), None);
     }
 }

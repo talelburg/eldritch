@@ -118,8 +118,8 @@ mod tests {
         // that the generated corpus is non-empty and indexable.
         let mag = by_code("01030").expect("Magnifying Glass should exist");
         assert_eq!(mag.name, "Magnifying Glass");
-        assert_eq!(mag.class, Class::Seeker);
-        assert_eq!(mag.card_type, CardType::Asset);
+        assert_eq!(mag.class(), Some(Class::Seeker));
+        assert_eq!(mag.card_type(), CardType::Asset);
     }
 
     #[test]

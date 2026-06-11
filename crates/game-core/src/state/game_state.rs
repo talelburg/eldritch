@@ -13,8 +13,8 @@ use super::{
     phase::Phase,
 };
 use crate::dsl::{SkillTestKind, Stat};
-use card_dsl::card_data::SkillKind;
 use crate::rng::RngState;
+use card_dsl::card_data::SkillKind;
 
 /// The full state of a scenario at a single point in time.
 ///

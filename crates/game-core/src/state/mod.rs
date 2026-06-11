@@ -16,6 +16,7 @@ pub mod phase;
 
 pub use builder::GameStateBuilder;
 pub use card::{AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, UseKind, Zone};
+pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
@@ -23,7 +24,6 @@ pub use game_state::{
     InFlightSkillTest, OpenWindow, PendingSkillModifier, PendingTrigger, PhaseStep,
     SkillTestFollowUp, SpawnEngagePending, WindowKind,
 };
-pub use card_dsl::card_data::{SkillKind, Skills};
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};
 pub use phase::Phase;
