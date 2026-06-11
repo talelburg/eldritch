@@ -14,27 +14,27 @@
 //! [`game_core::scenario_registry::install`]
 //! before running actions that touch scenario data.
 //!
-//! Phase-4 ships one module: the
-//! [`synthetic`](test_fixtures::synthetic) fixture used by the
-//! engine's resolution-hook integration test. Real scenarios (The
-//! Gathering, Dunwich, …) land in subsequent phases.
+//! [`the_gathering`] is the first real scenario module (Night of the
+//! Zealot, scenario 1; Slice 1 C1a skeleton). The
+//! [`synthetic`](test_fixtures::synthetic) fixture remains, gated behind
+//! `test_fixtures`, as the minimal teaching example and the engine's
+//! resolution-hook integration-test target. Further scenarios (the rest
+//! of Night of the Zealot, Dunwich, …) land in later phases.
+
+pub mod the_gathering;
 
 #[cfg(any(test, feature = "test_fixtures"))]
 pub mod test_fixtures;
 
-#[cfg(any(test, feature = "test_fixtures"))]
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 
 /// Look up a scenario module by id. Returns `None` for ids not
 /// known to this crate.
-///
-/// Gated behind `test_fixtures` for now — once a real scenario
-/// (Phase 7 Gathering) lands, this becomes the unconditional
-/// implementation.
-#[cfg(any(test, feature = "test_fixtures"))]
 #[must_use]
 pub fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
     match id.as_str() {
+        the_gathering::ID => Some(&the_gathering::MODULE),
+        #[cfg(any(test, feature = "test_fixtures"))]
         test_fixtures::synthetic::ID => Some(&test_fixtures::synthetic::MODULE),
         _ => None,
     }
@@ -43,13 +43,11 @@ pub fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 /// Ready-made [`ScenarioRegistry`] backed by this crate's scenario
 /// modules. The host installs it once at startup with
 /// [`game_core::scenario_registry::install`].
-#[cfg(any(test, feature = "test_fixtures"))]
 pub const REGISTRY: ScenarioRegistry = ScenarioRegistry { module_for };
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::scenario::ScenarioId;
 
     #[test]
     fn module_for_resolves_synthetic() {
@@ -67,6 +65,13 @@ mod tests {
     fn registry_dispatches_to_module_for() {
         let id = ScenarioId::new(test_fixtures::synthetic::ID);
         assert!((REGISTRY.module_for)(&id).is_some());
+    }
+
+    #[test]
+    fn module_for_resolves_the_gathering() {
+        let id = ScenarioId::new(the_gathering::ID);
+        let module = module_for(&id).expect("the-gathering module present");
+        assert_eq!(module.reference_card, "01104");
     }
 }
 

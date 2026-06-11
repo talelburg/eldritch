@@ -104,6 +104,10 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // roster with pre-seated investigators would overwrite id 1; #224
     // removes the pre-seated path and makes the roster the sole seater,
     // retiring this assumption.
+    // Seated investigators start at the scenario's starting location
+    // (set by setup()). None leaves them unplaced — the pre-seated path.
+    let start = cx.state.starting_location;
+
     for (idx, (skills, health, sanity, name, deck)) in resolved.into_iter().enumerate() {
         let id = InvestigatorId(u32::try_from(idx).unwrap_or(0) + 1);
         cx.state.investigators.insert(
@@ -111,7 +115,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
             Investigator {
                 id,
                 name,
-                current_location: None,
+                current_location: start,
                 skills,
                 max_health: health,
                 damage: 0,

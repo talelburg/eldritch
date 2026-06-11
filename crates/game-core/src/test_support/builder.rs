@@ -266,6 +266,7 @@ impl TestGame {
         GameState {
             investigators: self.investigators,
             locations: self.locations,
+            starting_location: None,
             enemies: self.enemies,
             chaos_bag: self.chaos_bag,
             token_modifiers: self.token_modifiers,
