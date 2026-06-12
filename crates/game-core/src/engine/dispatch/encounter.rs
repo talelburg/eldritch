@@ -1,6 +1,6 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
-use crate::card_data::{CardMetadata, CardType, Spawn, SpawnLocation};
+use crate::card_data::{CardKind, CardMetadata, CardType, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
@@ -107,7 +107,7 @@ fn resolve_encounter_card(
     code: CardCode,
     metadata: &CardMetadata,
 ) -> EngineOutcome {
-    let card_type = metadata.card_type;
+    let card_type = metadata.card_type();
 
     // Emit BEFORE Revelation resolves — see caveat in encounter_card_revealed.
     cx.events.push(Event::CardRevealed {
@@ -248,8 +248,16 @@ fn spawn_enemy(
     code: CardCode,
     metadata: &CardMetadata,
 ) -> EngineOutcome {
+    // spawn_enemy is only reached for Enemy cards; pull the enemy-specific
+    // stats out of the kind.
+    let CardKind::Enemy { spawn, health, .. } = &metadata.kind else {
+        return EngineOutcome::Rejected {
+            reason: format!("spawn_enemy: card {code} is not an enemy").into(),
+        };
+    };
+
     // 1. Resolve spawn location (validate-first).
-    let location_id = match &metadata.spawn {
+    let location_id = match spawn {
         Some(Spawn {
             location: SpawnLocation::Specific(loc_code),
         }) => match cx
@@ -303,7 +311,7 @@ fn spawn_enemy(
         name: metadata.name.clone(),
         fight: 1,
         evade: 1,
-        max_health: metadata.health.unwrap_or(1),
+        max_health: health.unwrap_or(1),
         damage: 0,
         attack_damage: 0,
         attack_horror: 0,
@@ -352,7 +360,7 @@ fn spawn_enemy(
                 enemy: enemy_id,
                 investigator_to_draw: investigator,
                 candidates: tied.clone(),
-                surge: metadata.surge,
+                surge: metadata.surge(),
                 chain_count: 0,
             });
             EngineOutcome::AwaitingInput {
@@ -563,7 +571,7 @@ pub(super) fn run_mythos_draw_chain(
         };
 
         // Step 2: Check for the peril keyword on the drawn card.
-        super::skill_test::peril_check(cx, &code, investigator, metadata.peril);
+        super::skill_test::peril_check(cx, &code, investigator, metadata.peril());
 
         // Step 3 + 4: Resolve revelation, then enemy-spawn if applicable.
         let outcome = resolve_encounter_card(cx, investigator, code.clone(), metadata);
@@ -582,7 +590,7 @@ pub(super) fn run_mythos_draw_chain(
         }
 
         // Step 5: If the drawn card has the surge keyword, loop.
-        draw_more = metadata.surge;
+        draw_more = metadata.surge();
     }
 
     // Chain complete — advance the cursor.
@@ -946,32 +954,22 @@ mod spawn_enemy_tests {
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_sequence, assert_no_event};
-    use card_dsl::card_data::{CardMetadata, CardType, Class, SkillIcons, Spawn, SpawnLocation};
+    use card_dsl::card_data::{CardKind, CardMetadata, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
         CardMetadata {
             code: "_synth_enemy".into(),
             name: "Synth Enemy".into(),
-            class: Class::Mythos,
-            card_type: CardType::Enemy,
-            cost: None,
-            xp: None,
             text: None,
-            flavor: None,
-            illustrator: None,
             traits: Vec::new(),
-            slots: Vec::new(),
-            skill_icons: SkillIcons::default(),
-            health: Some(1),
-            sanity: None,
-            deck_limit: 1,
-            quantity: 1,
             pack_code: "_synth".into(),
-            position: 1,
-            is_fast: false,
-            spawn,
-            surge: false,
-            peril: false,
+            kind: CardKind::Enemy {
+                health: Some(1),
+                spawn,
+                surge: false,
+                peril: false,
+                quantity: 1,
+            },
         }
     }
 

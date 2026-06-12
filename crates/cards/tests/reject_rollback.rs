@@ -9,7 +9,7 @@
 
 use std::sync::OnceLock;
 
-use game_core::card_data::{CardMetadata, CardType, Class, SkillIcons};
+use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{gain_resources, modify, on_play, seq, Ability};
 use game_core::dsl::{InvestigatorTarget, ModifierScope, Stat};
@@ -43,26 +43,20 @@ fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
     Some(M.get_or_init(|| CardMetadata {
         code: PROBE.to_string(),
         name: "Rollback Probe".to_string(),
-        class: Class::Neutral,
-        card_type: CardType::Asset,
-        cost: Some(0),
-        xp: Some(0),
         text: None,
-        flavor: None,
-        illustrator: None,
         traits: vec![],
-        slots: vec![],
-        skill_icons: SkillIcons::default(),
-        health: None,
-        sanity: None,
-        deck_limit: 2,
-        quantity: 1,
         pack_code: "test".to_string(),
-        position: 1,
-        is_fast: false,
-        spawn: None,
-        surge: false,
-        peril: false,
+        kind: CardKind::Asset {
+            class: Class::Neutral,
+            cost: Some(0),
+            xp: Some(0),
+            slots: vec![],
+            health: None,
+            sanity: None,
+            skill_icons: SkillIcons::default(),
+            is_fast: false,
+            deck_limit: 2,
+        },
     }))
 }
 

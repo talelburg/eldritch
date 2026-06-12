@@ -15,7 +15,7 @@
 
 use std::sync::OnceLock;
 
-use game_core::card_data::{CardMetadata, CardType, Class, SkillIcons, Spawn, SpawnLocation};
+use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Spawn, SpawnLocation};
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{gain_resources, on_play, revelation, Ability, InvestigatorTarget};
 use game_core::state::CardCode;
@@ -60,40 +60,20 @@ pub const SYNTH_SURGE_TREACHERY_CODE: &str = "_synth_surge_treachery";
 /// inside a permissive window.
 pub const SYNTH_FAST_EVENT_CODE: &str = "_synth_fast_event";
 
-/// Static metadata for the synthetic treachery. Fields populated with
-/// trivial defaults — only `code`, `name`, `card_type`, and
-/// `deck_limit`/`quantity` carry meaning for the tests; the rest
-/// satisfy `CardMetadata`'s non-`#[non_exhaustive]` struct shape.
+/// Static metadata for the synthetic treachery. Only `code`/`name`/the
+/// `Treachery` kind carry meaning for the tests.
 fn synth_treachery_metadata() -> CardMetadata {
     CardMetadata {
         code: SYNTH_TREACHERY_CODE.to_owned(),
         name: "Synthetic Treachery".to_owned(),
-        class: Class::Mythos,
-        card_type: CardType::Treachery,
-        cost: None,
-        xp: None,
         text: Some("Revelation - You gain 1 resource. (Synthetic; not a printed card.)".to_owned()),
-        flavor: None,
-        illustrator: None,
         traits: Vec::new(),
-        slots: Vec::new(),
-        skill_icons: SkillIcons {
-            willpower: 0,
-            intellect: 0,
-            combat: 0,
-            agility: 0,
-            wild: 0,
-        },
-        health: None,
-        sanity: None,
-        deck_limit: 1,
-        quantity: 1,
         pack_code: "_synth".to_owned(),
-        position: 1,
-        is_fast: false,
-        spawn: None,
-        surge: false,
-        peril: false,
+        kind: CardKind::Treachery {
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
     }
 }
 
@@ -106,34 +86,18 @@ fn synth_enemy_metadata() -> CardMetadata {
     CardMetadata {
         code: SYNTH_ENEMY_CODE.to_owned(),
         name: "Synthetic Enemy".to_owned(),
-        class: Class::Mythos,
-        card_type: CardType::Enemy,
-        cost: None,
-        xp: None,
         text: Some("Spawn: Synthetic Location. (Synthetic; not a printed card.)".to_owned()),
-        flavor: None,
-        illustrator: None,
         traits: Vec::new(),
-        slots: Vec::new(),
-        skill_icons: SkillIcons {
-            willpower: 0,
-            intellect: 0,
-            combat: 0,
-            agility: 0,
-            wild: 0,
-        },
-        health: Some(1),
-        sanity: None,
-        deck_limit: 1,
-        quantity: 1,
         pack_code: "_synth".to_owned(),
-        position: 2,
-        is_fast: false,
-        spawn: Some(Spawn {
-            location: SpawnLocation::Specific(SYNTH_LOC_CODE.to_owned()),
-        }),
-        surge: false,
-        peril: false,
+        kind: CardKind::Enemy {
+            health: Some(1),
+            spawn: Some(Spawn {
+                location: SpawnLocation::Specific(SYNTH_LOC_CODE.to_owned()),
+            }),
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
     }
 }
 
@@ -146,36 +110,18 @@ fn synth_surge_treachery_metadata() -> CardMetadata {
     CardMetadata {
         code: SYNTH_SURGE_TREACHERY_CODE.to_owned(),
         name: "Synthetic Surge Treachery".to_owned(),
-        class: Class::Mythos,
-        card_type: CardType::Treachery,
-        cost: None,
-        xp: None,
         text: Some(
             "Revelation - You gain 1 resource. Surge. \
              (Synthetic; not a printed card.)"
                 .to_owned(),
         ),
-        flavor: None,
-        illustrator: None,
         traits: Vec::new(),
-        slots: Vec::new(),
-        skill_icons: SkillIcons {
-            willpower: 0,
-            intellect: 0,
-            combat: 0,
-            agility: 0,
-            wild: 0,
-        },
-        health: None,
-        sanity: None,
-        deck_limit: 1,
-        quantity: 1,
         pack_code: "_synth".to_owned(),
-        position: 3,
-        is_fast: false,
-        spawn: None,
-        surge: true,
-        peril: false,
+        kind: CardKind::Treachery {
+            surge: true,
+            peril: false,
+            quantity: 1,
+        },
     }
 }
 
@@ -188,36 +134,21 @@ fn synth_fast_event_metadata() -> CardMetadata {
     CardMetadata {
         code: SYNTH_FAST_EVENT_CODE.to_owned(),
         name: "Synthetic Fast Event".to_owned(),
-        class: Class::Neutral,
-        card_type: CardType::Event,
-        cost: Some(0),
-        xp: None,
         text: Some(
             "Fast. Play at any player window. \
              You gain 1 resource. (Synthetic; not a printed card.)"
                 .to_owned(),
         ),
-        flavor: None,
-        illustrator: None,
         traits: Vec::new(),
-        slots: Vec::new(),
-        skill_icons: SkillIcons {
-            willpower: 0,
-            intellect: 0,
-            combat: 0,
-            agility: 0,
-            wild: 0,
-        },
-        health: None,
-        sanity: None,
-        deck_limit: 3,
-        quantity: 3,
         pack_code: "_synth".to_owned(),
-        position: 4,
-        is_fast: true,
-        spawn: None,
-        surge: false,
-        peril: false,
+        kind: CardKind::Event {
+            class: Class::Neutral,
+            cost: Some(0),
+            xp: None,
+            skill_icons: SkillIcons::default(),
+            is_fast: true,
+            deck_limit: 3,
+        },
     }
 }
 
@@ -273,7 +204,7 @@ mod tests {
         let code = CardCode(SYNTH_TREACHERY_CODE.into());
         let meta = metadata_for(&code).expect("synth treachery must resolve");
         assert_eq!(meta.code, SYNTH_TREACHERY_CODE);
-        assert_eq!(meta.card_type, CardType::Treachery);
+        assert_eq!(meta.card_type(), game_core::card_data::CardType::Treachery);
     }
 
     #[test]
@@ -302,11 +233,11 @@ mod tests {
         let code = CardCode(SYNTH_ENEMY_CODE.into());
         let meta = metadata_for(&code).expect("synth enemy must resolve");
         assert_eq!(meta.code, SYNTH_ENEMY_CODE);
-        assert_eq!(meta.card_type, game_core::card_data::CardType::Enemy);
-        let spawn = meta
-            .spawn
-            .as_ref()
-            .expect("synth enemy must carry a spawn rule");
+        assert_eq!(meta.card_type(), game_core::card_data::CardType::Enemy);
+        let CardKind::Enemy { spawn, .. } = &meta.kind else {
+            panic!("synth enemy must be an Enemy kind");
+        };
+        let spawn = spawn.as_ref().expect("synth enemy must carry a spawn rule");
         match &spawn.location {
             game_core::card_data::SpawnLocation::Specific(code) => {
                 assert_eq!(code, SYNTH_LOC_CODE);

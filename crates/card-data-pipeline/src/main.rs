@@ -132,8 +132,6 @@ struct RawCard {
     code: String,
     name: Option<String>,
     text: Option<String>,
-    flavor: Option<String>,
-    illustrator: Option<String>,
     traits: Option<String>,
     slot: Option<String>,
     cost: Option<i32>,
@@ -143,7 +141,6 @@ struct RawCard {
     deck_limit: Option<u8>,
     quantity: Option<u8>,
     pack_code: String,
-    position: u32,
     faction_code: Option<String>,
     type_code: Option<String>,
     skill_willpower: Option<u8>,
@@ -164,8 +161,6 @@ struct NormalizedCard {
     cost: Option<i8>,
     xp: Option<u8>,
     text: Option<String>,
-    flavor: Option<String>,
-    illustrator: Option<String>,
     traits: Vec<String>,
     slots: Vec<&'static str>,
     skill_willpower: u8,
@@ -178,7 +173,6 @@ struct NormalizedCard {
     deck_limit: u8,
     quantity: u8,
     pack_code: String,
-    position: u32,
     is_fast: bool,
 }
 
@@ -206,8 +200,6 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         cost,
         xp: raw.xp.and_then(|n| u8::try_from(n).ok()),
         text: raw.text,
-        flavor: raw.flavor,
-        illustrator: raw.illustrator,
         traits: parse_traits(raw.traits.as_deref()),
         slots: parse_slots(raw.slot.as_deref()),
         skill_willpower: raw.skill_willpower.unwrap_or(0),
@@ -220,7 +212,6 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         deck_limit: raw.deck_limit.unwrap_or(0),
         quantity: raw.quantity.unwrap_or(1),
         pack_code: raw.pack_code,
-        position: raw.position,
         is_fast,
     })
 }
@@ -309,7 +300,7 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     let mut out = String::new();
     out.push_str(GENERATED_HEADER);
     out.push_str(
-        "use card_dsl::card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};\n\n\
+        "use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills, Slot};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",
@@ -335,10 +326,7 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
     let _ = writeln!(out, "        CardMetadata {{");
     let _ = writeln!(out, "            code: {}.to_owned(),", str_lit(&c.code));
     let _ = writeln!(out, "            name: {}.to_owned(),", str_lit(&c.name));
-    let _ = writeln!(out, "            class: Class::{},", c.class);
-    let _ = writeln!(out, "            card_type: CardType::{},", c.card_type);
-    let _ = writeln!(out, "            cost: {},", opt_i8(c.cost));
-    let _ = writeln!(out, "            xp: {},", opt_u8(c.xp));
+    let _ = writeln!(out, "            traits: {},", string_vec(&c.traits));
     let _ = writeln!(
         out,
         "            text: {},",
@@ -346,44 +334,81 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
     );
     let _ = writeln!(
         out,
-        "            flavor: {},",
-        opt_owned_str(c.flavor.as_deref())
-    );
-    let _ = writeln!(
-        out,
-        "            illustrator: {},",
-        opt_owned_str(c.illustrator.as_deref())
-    );
-    let _ = writeln!(out, "            traits: {},", string_vec(&c.traits));
-    let _ = writeln!(out, "            slots: {},", slot_vec(&c.slots));
-    let _ = writeln!(out, "            skill_icons: SkillIcons {{");
-    let _ = writeln!(out, "                willpower: {},", c.skill_willpower);
-    let _ = writeln!(out, "                intellect: {},", c.skill_intellect);
-    let _ = writeln!(out, "                combat: {},", c.skill_combat);
-    let _ = writeln!(out, "                agility: {},", c.skill_agility);
-    let _ = writeln!(out, "                wild: {},", c.skill_wild);
-    let _ = writeln!(out, "            }},");
-    let _ = writeln!(out, "            health: {},", opt_u8(c.health));
-    let _ = writeln!(out, "            sanity: {},", opt_u8(c.sanity));
-    let _ = writeln!(out, "            deck_limit: {},", c.deck_limit);
-    let _ = writeln!(out, "            quantity: {},", c.quantity);
-    let _ = writeln!(
-        out,
         "            pack_code: {}.to_owned(),",
         str_lit(&c.pack_code)
     );
-    let _ = writeln!(out, "            position: {},", c.position);
-    let _ = writeln!(out, "            is_fast: {},", c.is_fast);
-    // spawn: None for every generated card. Pipeline doesn't yet
-    // parse upstream spawn text — the first Phase-7+ PR that needs
-    // structured spawn data adds the parser and starts emitting
-    // Some(...) for spawn-bearing enemies. Until then, the corpus
-    // expresses "default spawn (engaged with drawing investigator)"
-    // for every enemy, which is the Rules Reference p.24 fallback.
-    let _ = writeln!(out, "            spawn: None,");
-    let _ = writeln!(out, "            surge: false,");
-    let _ = writeln!(out, "            peril: false,");
+    let _ = writeln!(out, "            kind: {},", render_kind(c));
     let _ = writeln!(out, "        }},");
+}
+
+/// Render the `CardKind` literal for `c`, dispatched on its card type.
+///
+/// `spawn`/`surge`/`peril` emit their not-yet-parsed defaults
+/// (`None`/`false`); enemy combat stats and the encounter variants
+/// (Location/Act/Agenda) land with encounter ingestion (#252).
+fn render_kind(c: &NormalizedCard) -> String {
+    let icons = format!(
+        "SkillIcons {{ willpower: {}, intellect: {}, combat: {}, agility: {}, wild: {} }}",
+        c.skill_willpower, c.skill_intellect, c.skill_combat, c.skill_agility, c.skill_wild,
+    );
+    match c.card_type {
+        "Investigator" => format!(
+            "CardKind::Investigator {{ class: Class::{}, \
+             skills: Skills {{ willpower: {}, intellect: {}, combat: {}, agility: {} }}, \
+             health: {}, sanity: {} }}",
+            c.class,
+            i8::try_from(c.skill_willpower).unwrap_or(0),
+            i8::try_from(c.skill_intellect).unwrap_or(0),
+            i8::try_from(c.skill_combat).unwrap_or(0),
+            i8::try_from(c.skill_agility).unwrap_or(0),
+            c.health.unwrap_or(0),
+            c.sanity.unwrap_or(0),
+        ),
+        "Asset" => format!(
+            "CardKind::Asset {{ class: Class::{}, cost: {}, xp: {}, slots: {}, \
+             health: {}, sanity: {}, skill_icons: {}, is_fast: {}, deck_limit: {} }}",
+            c.class,
+            opt_i8(c.cost),
+            opt_u8(c.xp),
+            slot_vec(&c.slots),
+            opt_u8(c.health),
+            opt_u8(c.sanity),
+            icons,
+            c.is_fast,
+            c.deck_limit,
+        ),
+        "Event" => format!(
+            "CardKind::Event {{ class: Class::{}, cost: {}, xp: {}, \
+             skill_icons: {}, is_fast: {}, deck_limit: {} }}",
+            c.class,
+            opt_i8(c.cost),
+            opt_u8(c.xp),
+            icons,
+            c.is_fast,
+            c.deck_limit,
+        ),
+        "Skill" => format!(
+            "CardKind::Skill {{ class: Class::{}, xp: {}, skill_icons: {}, deck_limit: {} }}",
+            c.class,
+            opt_u8(c.xp),
+            icons,
+            c.deck_limit,
+        ),
+        "Enemy" => format!(
+            "CardKind::Enemy {{ health: {}, spawn: None, surge: false, peril: false, quantity: {} }}",
+            opt_u8(c.health),
+            c.quantity,
+        ),
+        "Treachery" => format!(
+            "CardKind::Treachery {{ surge: false, peril: false, quantity: {} }}",
+            c.quantity,
+        ),
+        other => panic!(
+            "card {}: card_type {other:?} has no CardKind variant yet \
+             (encounter types Location/Act/Agenda land in #252)",
+            c.code
+        ),
+    }
 }
 
 fn str_lit(s: &str) -> String {
@@ -465,8 +490,6 @@ mod tests {
             code: code.to_owned(),
             name: Some(format!("Card {code}")),
             text: None,
-            flavor: None,
-            illustrator: None,
             traits: None,
             slot: None,
             cost: None,
@@ -476,7 +499,6 @@ mod tests {
             deck_limit: None,
             quantity: None,
             pack_code: "core".to_owned(),
-            position: 1,
             faction_code: Some("seeker".to_owned()),
             type_code: Some("asset".to_owned()),
             skill_willpower: None,
@@ -646,8 +668,6 @@ mod tests {
         let mut raw = raw_card("TEST01");
         raw.name = Some("Test Card".to_owned());
         raw.text = Some("Test ability text.".to_owned());
-        raw.flavor = Some("Test flavor.".to_owned());
-        raw.illustrator = Some("Test Artist".to_owned());
         raw.traits = Some("Alpha. Beta.".to_owned());
         raw.slot = None;
         raw.cost = Some(0);
@@ -666,8 +686,6 @@ mod tests {
         assert_eq!(n.cost, Some(0));
         assert_eq!(n.xp, Some(0));
         assert_eq!(n.text.as_deref(), Some("Test ability text."));
-        assert_eq!(n.flavor.as_deref(), Some("Test flavor."));
-        assert_eq!(n.illustrator.as_deref(), Some("Test Artist"));
         assert_eq!(n.traits, vec!["Alpha", "Beta"]);
         assert!(n.slots.is_empty());
         assert_eq!(n.skill_intellect, 1);
@@ -800,8 +818,6 @@ mod tests {
             code: "01030".into(),
             name: Some("Magnifying Glass".into()),
             text: Some("Fast.\nYou get +1 [intellect] while investigating.".into()),
-            flavor: None,
-            illustrator: None,
             traits: None,
             slot: Some("Hand".into()),
             cost: Some(1),
@@ -811,7 +827,6 @@ mod tests {
             deck_limit: Some(2),
             quantity: Some(1),
             pack_code: "core".into(),
-            position: 30,
             faction_code: Some("seeker".into()),
             type_code: Some("asset".into()),
             skill_willpower: None,
@@ -828,10 +843,9 @@ mod tests {
     }
 
     #[test]
-    fn emitted_card_includes_spawn_none_field() {
-        // Pipeline should emit `spawn: None,` as the last field of
-        // every generated card literal so the cards crate compiles
-        // against the new CardMetadata.spawn field.
+    fn emitted_treachery_renders_treachery_kind() {
+        // A treachery emits a `CardKind::Treachery { … }` with its
+        // surge/peril defaults and quantity — and carries no class.
         let card = NormalizedCard {
             code: "01001".into(),
             name: "Test".into(),
@@ -840,8 +854,6 @@ mod tests {
             cost: None,
             xp: None,
             text: None,
-            flavor: None,
-            illustrator: None,
             traits: Vec::new(),
             slots: Vec::new(),
             skill_willpower: 0,
@@ -854,14 +866,17 @@ mod tests {
             deck_limit: 0,
             quantity: 1,
             pack_code: "core".into(),
-            position: 1,
             is_fast: false,
         };
         let mut buf = String::new();
         emit_card(&mut buf, &card);
         assert!(
-            buf.contains("spawn: None,"),
-            "emitted card should include `spawn: None,` field; got:\n{buf}",
+            buf.contains("CardKind::Treachery {"),
+            "emitted treachery should render a Treachery kind; got:\n{buf}",
+        );
+        assert!(
+            !buf.contains("class:"),
+            "treachery carries no class; got:\n{buf}",
         );
     }
 
@@ -873,8 +888,6 @@ mod tests {
             text: Some(
                 "[fast] Spend 1 resource: You get +1 [intellect] for this skill test.".into(),
             ),
-            flavor: None,
-            illustrator: None,
             traits: None,
             slot: None,
             cost: Some(2),
@@ -884,7 +897,6 @@ mod tests {
             deck_limit: Some(2),
             quantity: Some(1),
             pack_code: "core".into(),
-            position: 34,
             faction_code: Some("seeker".into()),
             type_code: Some("asset".into()),
             skill_willpower: None,

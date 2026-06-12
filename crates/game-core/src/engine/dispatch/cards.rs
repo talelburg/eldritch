@@ -379,8 +379,8 @@ pub(super) fn resolve_play_target(
             reason: format!("PlayCard: unknown card code {code}").into(),
         });
     };
-    let is_fast = metadata.is_fast;
-    let card_type = metadata.card_type;
+    let is_fast = metadata.is_fast();
+    let card_type = metadata.card_type();
     let destination = match card_type {
         CardType::Asset => super::PlayDestination::InPlay,
         CardType::Event => super::PlayDestination::Discard,

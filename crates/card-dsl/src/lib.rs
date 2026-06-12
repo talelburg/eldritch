@@ -31,7 +31,9 @@
 pub mod card_data;
 pub mod dsl;
 
-pub use card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};
+pub use card_data::{
+    CardKind, CardMetadata, CardType, Class, SkillIcons, SkillKind, Skills, Slot, Spawn,
+};
 pub use dsl::{
     activated, choose_one, constant, discover_clue, for_each, gain_resources, if_, if_else, modify,
     on_commit, on_event, on_play, on_skill_test_resolution, seq, Ability, Condition, Cost, Effect,

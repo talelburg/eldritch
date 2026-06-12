@@ -53,8 +53,8 @@ pub enum CardType {
 
 /// An equipment slot occupied by an asset in play.
 ///
-/// Multi-slot items (e.g. two-handed weapons) appear in
-/// [`CardMetadata::slots`] as multiple entries of the same variant.
+/// Multi-slot items (e.g. two-handed weapons) appear in an asset's
+/// [`CardKind::Asset`] `slots` as multiple entries of the same variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Slot {
     Hand,
@@ -75,6 +75,53 @@ pub struct SkillIcons {
     pub agility: u8,
     /// Wild icons match any skill in a skill test.
     pub wild: u8,
+}
+
+/// The four base skill values.
+///
+/// Deliberately NOT `#[non_exhaustive]`: the four skills are fixed by
+/// FFG's rules. Card effects modify these values at query time; they
+/// don't add new fields. Pure data — `game-core` re-exports it at
+/// `game_core::state::Skills`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Skills {
+    /// Used for tests against effects of the will / fear.
+    pub willpower: i8,
+    /// Used for investigate tests.
+    pub intellect: i8,
+    /// Used for fight tests.
+    pub combat: i8,
+    /// Used for evade tests.
+    pub agility: i8,
+}
+
+impl Skills {
+    /// Lookup the value for a given [`SkillKind`].
+    #[must_use]
+    pub fn value(&self, kind: SkillKind) -> i8 {
+        match kind {
+            SkillKind::Willpower => self.willpower,
+            SkillKind::Intellect => self.intellect,
+            SkillKind::Combat => self.combat,
+            SkillKind::Agility => self.agility,
+        }
+    }
+}
+
+/// Which of the four skill values a skill test is being made against.
+///
+/// Deliberately NOT `#[non_exhaustive]` — same rationale as [`Skills`]:
+/// the four skill kinds are fixed by FFG's rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SkillKind {
+    /// Tests against the will, fear, sanity-eroding effects.
+    Willpower,
+    /// Tests for investigating, deduction, lore.
+    Intellect,
+    /// Tests for fighting, combat, physical strength.
+    Combat,
+    /// Tests for evading, dexterity, speed.
+    Agility,
 }
 
 /// Where on the location map an encounter enemy spawns.
@@ -99,7 +146,7 @@ pub enum SpawnLocation {
 
 /// Spawn rule for an encounter-deck enemy.
 ///
-/// `None` on [`CardMetadata::spawn`] means "no spawn instruction" — per
+/// `None` on [`CardKind::Enemy`]'s `spawn` means "no spawn instruction" — per
 /// Rules Reference p.24, the enemy spawns engaged with the drawing
 /// investigator, placed in that investigator's threat area.
 ///
@@ -138,92 +185,215 @@ pub enum Prey {
     HighestStat(Stat),
 }
 
-/// Static metadata for one card as printed.
-///
-/// This is the universal shape; type-specific data (location shroud,
-/// enemy stats, agenda doom thresholds, etc.) will land in dedicated
-/// types in later phases. For Phase 2 the universal fields are enough.
+/// Static metadata for one card as printed: an identity core shared by
+/// every card, plus type-specific data in [`kind`](CardMetadata::kind).
 ///
 /// Construction sites live in the `cards` crate (the pipeline-generated
-/// corpus); the struct deliberately isn't `#[non_exhaustive]` so
-/// generated code can use a struct literal. Adding a field requires
+/// corpus) and in mocks; deliberately NOT `#[non_exhaustive]` so those
+/// downstream crates can use a struct literal. Adding a field requires
 /// regenerating the corpus, which is the pipeline's job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardMetadata {
-    /// Five-character `ArkhamDB` code (e.g. `"01059"`).
+    /// Five-character `ArkhamDB` code (e.g. `"01059"`). Identity and the
+    /// registry's binary-search / sort key.
     pub code: String,
     /// Display name.
     pub name: String,
-    /// Investigator class.
-    pub class: Class,
-    /// Top-level card type.
-    pub card_type: CardType,
-    /// Resource cost to play. `None` for skill cards, investigators,
-    /// scenario cards, and a handful of cards with X-cost.
-    pub cost: Option<i8>,
-    /// XP cost in deckbuilding. `None` for cards that can't be added
-    /// at deckbuilding time (encounter cards, scenario cards).
-    pub xp: Option<u8>,
+    /// Traits (Item, Tool, Ghoul, …). Empty when the card has none.
+    pub traits: Vec<String>,
     /// Card text (game rules text), as printed.
     pub text: Option<String>,
-    /// Flavor text, as printed.
-    pub flavor: Option<String>,
-    /// Illustrator credit.
-    pub illustrator: Option<String>,
-    /// Traits (Item, Tool, Insight, …). Parsed from upstream's period-
-    /// delimited string into a clean list.
-    pub traits: Vec<String>,
-    /// Slots occupied while in play. Empty for non-asset cards or
-    /// assets without slots.
-    pub slots: Vec<Slot>,
-    /// Skill icons committed when this card is committed to a test.
-    pub skill_icons: SkillIcons,
-    /// Maximum health. Applies to assets (allies) and enemies.
-    pub health: Option<u8>,
-    /// Maximum sanity. Applies to assets (allies).
-    pub sanity: Option<u8>,
-    /// Maximum copies of this card per deck during deckbuilding.
-    pub deck_limit: u8,
-    /// Number of copies of this card per box (printing run quantity,
-    /// not deckbuilding limit).
-    pub quantity: u8,
     /// Pack code this card belongs to (e.g. `"core"`, `"dwl"`).
     pub pack_code: String,
-    /// 1-based card position within the pack.
-    pub position: u32,
-    /// True if the card text begins with a "Fast." paragraph — i.e.
-    /// the card may be played as a Fast action, outside the normal
-    /// Investigation-phase + active-investigator timing. Detected by
-    /// the card-data-pipeline from raw `text` ("Fast." paragraph
-    /// prefix). Phase-3 / Phase-4 scope: only asset and event cards
-    /// can carry Fast (skill and treachery use is irrelevant to
-    /// `PlayCard`); the field is populated on every card for
-    /// uniformity. See `engine::dispatch::play_card` for the gate it
-    /// drives.
-    pub is_fast: bool,
-    /// Spawn rule for encounter-deck enemies. `None` for enemies
-    /// that don't spawn from the encounter deck (placed at scenario
-    /// setup directly), for non-enemy card types, and as the
-    /// pipeline's default for all generated entries until Phase-7's
-    /// structured-spawn-text parsing lands.
-    pub spawn: Option<Spawn>,
-    /// Surge keyword (Rules Reference p.19). When `true`, after the
-    /// card is drawn and resolved during a Mythos encounter draw, the
-    /// drawing investigator immediately draws another encounter card.
-    /// The pipeline emits `false` for every card until the first
-    /// Phase-7+ scenario with a real surge-bearing card forces the
-    /// pipeline-update work; the synthetic fixture sets `true`
-    /// on its surge-bearing treachery to exercise the engine path.
-    pub surge: bool,
-    /// Peril keyword (Rules Reference p.18, referenced in p.24 1.4
-    /// step 2). When `true`, the drawing investigator cannot confer
-    /// and other players cannot play cards / trigger abilities /
-    /// commit to that investigator's skill tests during resolution.
-    /// Enforcement is not yet wired — no machinery exists for
-    /// cross-investigator commit blocking. The field exists so cards
-    /// can carry the keyword and the engine's step-2 call site can
-    /// become load-bearing when the enforcement PR lands.
-    pub peril: bool,
+    /// Type-specific data.
+    pub kind: CardKind,
+}
+
+/// Per-card-type data. The discriminant mirrors [`CardType`] — read it
+/// via [`CardMetadata::card_type`]. Player variants carry a [`Class`];
+/// encounter variants do not (encounter cards have no player class).
+///
+/// Location / Act / Agenda variants and the `Enemy` combat stats land
+/// with encounter-card ingestion (issue #252); this is the current
+/// corpus's six types. Not `#[non_exhaustive]` for the same reason as
+/// [`CardMetadata`] — the generated corpus constructs these variants.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardKind {
+    /// Investigator — the player character; never deckbuilt.
+    Investigator {
+        /// Investigator class.
+        class: Class,
+        /// Base willpower / intellect / combat / agility.
+        skills: Skills,
+        /// Starting maximum health.
+        health: u8,
+        /// Starting maximum sanity.
+        sanity: u8,
+    },
+    /// Asset — played to a play area; allies may hold health/sanity soak.
+    Asset {
+        /// Card class.
+        class: Class,
+        /// Resource cost to play (`None` for X-cost).
+        cost: Option<i8>,
+        /// XP cost in deckbuilding.
+        xp: Option<u8>,
+        /// Slots occupied while in play.
+        slots: Vec<Slot>,
+        /// Maximum health soak (allies).
+        health: Option<u8>,
+        /// Maximum sanity soak (allies).
+        sanity: Option<u8>,
+        /// Skill icons committed when this card is committed to a test.
+        skill_icons: SkillIcons,
+        /// Whether the card may be played as a Fast action.
+        is_fast: bool,
+        /// Maximum copies per deck.
+        deck_limit: u8,
+    },
+    /// Event — played from hand, then discarded.
+    Event {
+        /// Card class.
+        class: Class,
+        /// Resource cost to play.
+        cost: Option<i8>,
+        /// XP cost in deckbuilding.
+        xp: Option<u8>,
+        /// Skill icons committed when this card is committed to a test.
+        skill_icons: SkillIcons,
+        /// Whether the card may be played as a Fast action.
+        is_fast: bool,
+        /// Maximum copies per deck.
+        deck_limit: u8,
+    },
+    /// Skill — committed to a skill test (never played for a cost).
+    Skill {
+        /// Card class.
+        class: Class,
+        /// XP cost in deckbuilding.
+        xp: Option<u8>,
+        /// Skill icons contributed when committed.
+        skill_icons: SkillIcons,
+        /// Maximum copies per deck.
+        deck_limit: u8,
+    },
+    /// Enemy — an encounter (or weakness) creature. Combat stats
+    /// (fight/evade/damage/horror) land with encounter ingestion (#252).
+    Enemy {
+        /// Maximum health.
+        health: Option<u8>,
+        /// Spawn rule (`None` = default: engaged with the drawing
+        /// investigator, Rules Reference p.24).
+        spawn: Option<Spawn>,
+        /// Surge keyword (Rules Reference p.19).
+        surge: bool,
+        /// Peril keyword (Rules Reference p.18).
+        peril: bool,
+        /// Copies of this card in the encounter deck (build multiplicity).
+        quantity: u8,
+    },
+    /// Treachery — a one-shot encounter card resolved on reveal.
+    Treachery {
+        /// Surge keyword (Rules Reference p.19).
+        surge: bool,
+        /// Peril keyword (Rules Reference p.18).
+        peril: bool,
+        /// Copies of this card in the encounter deck (build multiplicity).
+        quantity: u8,
+    },
+}
+
+impl CardMetadata {
+    /// The card's [`CardType`] discriminant, derived from
+    /// [`kind`](Self::kind).
+    #[must_use]
+    pub fn card_type(&self) -> CardType {
+        match self.kind {
+            CardKind::Investigator { .. } => CardType::Investigator,
+            CardKind::Asset { .. } => CardType::Asset,
+            CardKind::Event { .. } => CardType::Event,
+            CardKind::Skill { .. } => CardType::Skill,
+            CardKind::Enemy { .. } => CardType::Enemy,
+            CardKind::Treachery { .. } => CardType::Treachery,
+        }
+    }
+
+    /// The player [`Class`], or `None` for encounter cards (which have
+    /// no player class).
+    #[must_use]
+    pub fn class(&self) -> Option<Class> {
+        match &self.kind {
+            CardKind::Investigator { class, .. }
+            | CardKind::Asset { class, .. }
+            | CardKind::Event { class, .. }
+            | CardKind::Skill { class, .. } => Some(*class),
+            CardKind::Enemy { .. } | CardKind::Treachery { .. } => None,
+        }
+    }
+
+    /// Skill icons contributed when this card is committed to a skill
+    /// test. Player commit-cards (Asset/Event/Skill) carry them; every
+    /// other kind contributes none (the default, all-zero icons).
+    #[must_use]
+    pub fn skill_icons(&self) -> SkillIcons {
+        match &self.kind {
+            CardKind::Asset { skill_icons, .. }
+            | CardKind::Event { skill_icons, .. }
+            | CardKind::Skill { skill_icons, .. } => *skill_icons,
+            CardKind::Investigator { .. } | CardKind::Enemy { .. } | CardKind::Treachery { .. } => {
+                SkillIcons::default()
+            }
+        }
+    }
+
+    /// Whether the card may be played as a Fast action. Only Asset and
+    /// Event cards can; everything else is `false`.
+    #[must_use]
+    pub fn is_fast(&self) -> bool {
+        matches!(
+            self.kind,
+            CardKind::Asset { is_fast: true, .. } | CardKind::Event { is_fast: true, .. }
+        )
+    }
+
+    /// Surge keyword (Rules Reference p.19). Only Enemy/Treachery
+    /// encounter cards carry it; everything else is `false`.
+    #[must_use]
+    pub fn surge(&self) -> bool {
+        matches!(
+            self.kind,
+            CardKind::Enemy { surge: true, .. } | CardKind::Treachery { surge: true, .. }
+        )
+    }
+
+    /// Peril keyword (Rules Reference p.18). Only Enemy/Treachery
+    /// encounter cards carry it; everything else is `false`.
+    #[must_use]
+    pub fn peril(&self) -> bool {
+        matches!(
+            self.kind,
+            CardKind::Enemy { peril: true, .. } | CardKind::Treachery { peril: true, .. }
+        )
+    }
+}
+
+#[cfg(test)]
+mod skills_tests {
+    use super::{SkillKind, Skills};
+
+    #[test]
+    fn skills_value_indexes_each_kind() {
+        let s = Skills {
+            willpower: 3,
+            intellect: 2,
+            combat: 4,
+            agility: 1,
+        };
+        assert_eq!(s.value(SkillKind::Willpower), 3);
+        assert_eq!(s.value(SkillKind::Intellect), 2);
+        assert_eq!(s.value(SkillKind::Combat), 4);
+        assert_eq!(s.value(SkillKind::Agility), 1);
+    }
 }
 
 #[cfg(test)]
@@ -235,31 +405,25 @@ mod is_fast_tests {
         let original = CardMetadata {
             code: "01030".into(),
             name: "Magnifying Glass".into(),
-            class: Class::Seeker,
-            card_type: CardType::Asset,
-            cost: Some(1),
-            xp: Some(0),
             text: Some("Fast.\nYou get +1 [intellect] while investigating.".into()),
-            flavor: None,
-            illustrator: None,
             traits: vec!["Item".into(), "Tool".into()],
-            slots: vec![Slot::Hand],
-            skill_icons: SkillIcons::default(),
-            health: None,
-            sanity: None,
-            deck_limit: 2,
-            quantity: 1,
             pack_code: "core".into(),
-            position: 30,
-            is_fast: true,
-            spawn: None,
-            surge: false,
-            peril: false,
+            kind: CardKind::Asset {
+                class: Class::Seeker,
+                cost: Some(1),
+                xp: Some(0),
+                slots: vec![Slot::Hand],
+                health: None,
+                sanity: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: true,
+                deck_limit: 2,
+            },
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
-        assert!(back.is_fast);
+        assert!(matches!(back.kind, CardKind::Asset { is_fast: true, .. }));
     }
 
     #[test]
@@ -267,32 +431,63 @@ mod is_fast_tests {
         let original = CardMetadata {
             code: "_synth_surge_treachery".into(),
             name: "Synth Surge Treachery".into(),
-            class: Class::Mythos,
-            card_type: CardType::Treachery,
-            cost: None,
-            xp: None,
             text: None,
-            flavor: None,
-            illustrator: None,
             traits: Vec::new(),
-            slots: Vec::new(),
-            skill_icons: SkillIcons::default(),
-            health: None,
-            sanity: None,
-            deck_limit: 1,
-            quantity: 1,
             pack_code: "_synth".into(),
-            position: 1,
-            is_fast: false,
-            spawn: None,
-            surge: true,
-            peril: false,
+            kind: CardKind::Treachery {
+                surge: true,
+                peril: false,
+                quantity: 1,
+            },
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
-        assert!(back.surge);
-        assert!(!back.peril);
+        assert!(matches!(
+            back.kind,
+            CardKind::Treachery {
+                surge: true,
+                peril: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn card_type_is_derived_from_kind() {
+        let m = CardMetadata {
+            code: "x".into(),
+            name: "X".into(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".into(),
+            kind: CardKind::Skill {
+                class: Class::Seeker,
+                xp: None,
+                skill_icons: SkillIcons::default(),
+                deck_limit: 2,
+            },
+        };
+        assert_eq!(m.card_type(), CardType::Skill);
+        assert_eq!(m.class(), Some(Class::Seeker));
+    }
+
+    #[test]
+    fn encounter_cards_have_no_class() {
+        let m = CardMetadata {
+            code: "y".into(),
+            name: "Y".into(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".into(),
+            kind: CardKind::Treachery {
+                surge: false,
+                peril: false,
+                quantity: 1,
+            },
+        };
+        assert_eq!(m.card_type(), CardType::Treachery);
+        assert_eq!(m.class(), None);
     }
 }
 
@@ -341,28 +536,18 @@ mod spawn_tests {
         let original = CardMetadata {
             code: "_synth_enemy".into(),
             name: "Synth Enemy".into(),
-            class: Class::Mythos,
-            card_type: CardType::Enemy,
-            cost: None,
-            xp: None,
             text: None,
-            flavor: None,
-            illustrator: None,
             traits: Vec::new(),
-            slots: Vec::new(),
-            skill_icons: SkillIcons::default(),
-            health: Some(1),
-            sanity: None,
-            deck_limit: 1,
-            quantity: 1,
             pack_code: "_synth".into(),
-            position: 1,
-            is_fast: false,
-            spawn: Some(Spawn {
-                location: SpawnLocation::Specific("_synth_loc".into()),
-            }),
-            surge: false,
-            peril: false,
+            kind: CardKind::Enemy {
+                health: Some(1),
+                spawn: Some(Spawn {
+                    location: SpawnLocation::Specific("_synth_loc".into()),
+                }),
+                surge: false,
+                peril: false,
+                quantity: 1,
+            },
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
@@ -374,30 +559,18 @@ mod spawn_tests {
         let original = CardMetadata {
             code: "01000".into(),
             name: "Random Basic Weakness".into(),
-            class: Class::Neutral,
-            card_type: CardType::Treachery,
-            cost: None,
-            xp: None,
             text: None,
-            flavor: None,
-            illustrator: None,
             traits: Vec::new(),
-            slots: Vec::new(),
-            skill_icons: SkillIcons::default(),
-            health: None,
-            sanity: None,
-            deck_limit: 0,
-            quantity: 1,
             pack_code: "core".into(),
-            position: 0,
-            is_fast: false,
-            spawn: None,
-            surge: false,
-            peril: false,
+            kind: CardKind::Treachery {
+                surge: false,
+                peril: false,
+                quantity: 1,
+            },
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
-        assert!(back.spawn.is_none());
+        assert!(matches!(back.kind, CardKind::Treachery { .. }));
     }
 }

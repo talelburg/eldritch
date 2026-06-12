@@ -8,12 +8,13 @@ use super::{
     card::{CardCode, CardInstanceId},
     chaos_bag::{ChaosBag, TokenModifiers},
     enemy::{Enemy, EnemyId},
-    investigator::{Investigator, InvestigatorId, SkillKind},
+    investigator::{Investigator, InvestigatorId},
     location::{Location, LocationId},
     phase::Phase,
 };
 use crate::dsl::{SkillTestKind, Stat};
 use crate::rng::RngState;
+use card_dsl::card_data::SkillKind;
 
 /// The full state of a scenario at a single point in time.
 ///
