@@ -107,6 +107,9 @@ mod hunter_prey_field_tests {
     #[test]
     fn test_enemy_fixture_carries_a_code() {
         let e = crate::test_support::test_enemy(7, "Ghoul");
-        assert!(!e.code.as_str().is_empty(), "every enemy carries its printed code");
+        assert!(
+            !e.code.as_str().is_empty(),
+            "every enemy carries its printed code"
+        );
     }
 }
