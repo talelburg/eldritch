@@ -898,6 +898,29 @@ impl GameState {
         self.set_aside_locations.push(loc);
         id
     }
+
+    /// Find a location by id across both the in-play and set-aside zones.
+    fn location_mut(&mut self, id: LocationId) -> Option<&mut Location> {
+        if let Some(loc) = self.locations.get_mut(&id) {
+            return Some(loc);
+        }
+        self.set_aside_locations.iter_mut().find(|l| l.id == id)
+    }
+
+    /// Wire a **bidirectional** connection between two locations (each gains
+    /// the other in its `connections`). Resolves both ids across the in-play
+    /// and set-aside zones. `expect`s each to exist — a build-time invariant
+    /// (callers connect freshly-minted ids).
+    pub fn connect(&mut self, a: LocationId, b: LocationId) {
+        self.location_mut(a)
+            .unwrap_or_else(|| panic!("connect: location {a:?} not found"))
+            .connections
+            .push(b);
+        self.location_mut(b)
+            .unwrap_or_else(|| panic!("connect: location {b:?} not found"))
+            .connections
+            .push(a);
+    }
 }
 
 #[cfg(test)]
@@ -1228,6 +1251,75 @@ mod add_location_tests {
             },
         };
         state.add_location(&meta);
+    }
+}
+
+#[cfg(test)]
+mod connect_tests {
+    use crate::state::{CardCode, Location, LocationId};
+    use crate::test_support::GameStateBuilder;
+
+    #[test]
+    fn connect_wires_both_directions() {
+        let mut state = GameStateBuilder::new()
+            .with_location(Location::new(
+                LocationId(1),
+                CardCode("a".into()),
+                "A",
+                1,
+                0,
+            ))
+            .with_location(Location::new(
+                LocationId(2),
+                CardCode("b".into()),
+                "B",
+                1,
+                0,
+            ))
+            .build();
+        state.connect(LocationId(1), LocationId(2));
+        assert_eq!(
+            state.locations[&LocationId(1)].connections,
+            vec![LocationId(2)]
+        );
+        assert_eq!(
+            state.locations[&LocationId(2)].connections,
+            vec![LocationId(1)]
+        );
+    }
+
+    #[test]
+    fn connect_resolves_set_aside_locations() {
+        // Both endpoints live in the set-aside zone (The Gathering wires
+        // its board there before Act 1 brings it into play).
+        let mut state = GameStateBuilder::new().build();
+        state.set_aside_locations.push(Location::new(
+            LocationId(2),
+            CardCode("hub".into()),
+            "Hub",
+            1,
+            0,
+        ));
+        state.set_aside_locations.push(Location::new(
+            LocationId(3),
+            CardCode("spoke".into()),
+            "Spoke",
+            1,
+            0,
+        ));
+        state.connect(LocationId(2), LocationId(3));
+        let hub = state
+            .set_aside_locations
+            .iter()
+            .find(|l| l.id == LocationId(2))
+            .unwrap();
+        let spoke = state
+            .set_aside_locations
+            .iter()
+            .find(|l| l.id == LocationId(3))
+            .unwrap();
+        assert_eq!(hub.connections, vec![LocationId(3)]);
+        assert_eq!(spoke.connections, vec![LocationId(2)]);
     }
 }
 
