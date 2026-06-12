@@ -16,7 +16,7 @@ use super::outcome::EngineOutcome;
 use super::Cx;
 
 mod abilities;
-mod act_agenda;
+pub(crate) mod act_agenda;
 mod actions;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).

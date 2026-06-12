@@ -190,6 +190,19 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             cx.state.locations.remove(&target);
             EngineOutcome::Done
         }
+        Effect::AdvanceCurrentAct => {
+            use crate::engine::dispatch::act_agenda::{advance_act, request_resolution};
+            if cx.state.act_deck.is_empty() {
+                return EngineOutcome::Rejected {
+                    reason: "AdvanceCurrentAct: no act deck is modeled".into(),
+                };
+            }
+            match cx.state.act_deck[cx.state.act_index].resolution.clone() {
+                Some(resolution) => request_resolution(cx.state, resolution),
+                None => advance_act(cx),
+            }
+            EngineOutcome::Done
+        }
     }
 }
 
@@ -1926,5 +1939,68 @@ mod tests {
             events,
             Event::InvestigatorDefeated { investigator, .. } if *investigator == id
         );
+    }
+
+    #[test]
+    fn advance_current_act_non_terminal_bumps_cursor() {
+        use crate::scenario::Resolution;
+        use crate::state::{Act, CardCode, InvestigatorId};
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new()
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.act_deck = vec![
+            Act {
+                code: CardCode("a1".into()),
+                clue_threshold: 0,
+                resolution: None,
+            },
+            Act {
+                code: CardCode("a2".into()),
+                clue_threshold: 0,
+                resolution: Some(Resolution::Won { id: "R1".into() }),
+            },
+        ];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::AdvanceCurrentAct,
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.act_index, 1);
+        assert!(state.resolution.is_none());
+    }
+
+    #[test]
+    fn advance_current_act_terminal_latches_resolution() {
+        use crate::scenario::Resolution;
+        use crate::state::{Act, CardCode, InvestigatorId};
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new()
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.act_deck = vec![Act {
+            code: CardCode("a1".into()),
+            clue_threshold: 0,
+            resolution: Some(Resolution::Won { id: "R1".into() }),
+        }];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::AdvanceCurrentAct,
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.act_index, 0, "terminal act does not move the cursor");
+        assert!(matches!(state.resolution, Some(Resolution::Won { .. })));
     }
 }

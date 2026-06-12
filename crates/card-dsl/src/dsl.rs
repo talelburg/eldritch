@@ -478,6 +478,11 @@ pub enum Effect {
     /// Remove the in-play location with this printed `code` from the
     /// game. Rejects if no such location is in play.
     RemoveLocationFromGame { location: String },
+    /// Advance the current act one step. If the act is terminal (carries
+    /// a resolution) the scenario resolves; otherwise the cursor moves
+    /// and the act's on-advance reverse fires. Used by act objectives
+    /// like 01110 ("If the Ghoul Priest is Defeated, advance.").
+    AdvanceCurrentAct,
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -840,6 +845,12 @@ pub fn remove_location_from_game(location: impl Into<String>) -> Effect {
     Effect::RemoveLocationFromGame {
         location: location.into(),
     }
+}
+
+/// Build an [`Effect::AdvanceCurrentAct`].
+#[must_use]
+pub fn advance_current_act() -> Effect {
+    Effect::AdvanceCurrentAct
 }
 
 // ---- tests ----------------------------------------------------
