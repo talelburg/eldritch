@@ -12,7 +12,7 @@ use super::{
     location::{Location, LocationId},
     phase::Phase,
 };
-use crate::card_data::{CardKind, CardMetadata, ClueValue};
+use crate::card_data::{CardKind, CardMetadata};
 use crate::dsl::{SkillTestKind, Stat};
 use crate::rng::RngState;
 use card_dsl::card_data::SkillKind;
@@ -873,17 +873,14 @@ impl GameState {
                 metadata.code
             ),
         };
-        let base = match printed_clues {
-            ClueValue::PerInvestigator(n) | ClueValue::Fixed(n) => n,
-        };
         let id = self.mint_location_id();
         Location {
             id,
             code: CardCode::new(metadata.code.clone()),
             name: metadata.name.clone(),
             shroud,
-            clues: base,
-            revealed: true,
+            clues: 0,
+            revealed: false,
             printed_clues,
             connections: Vec::new(),
         }
@@ -1229,9 +1226,14 @@ mod add_location_tests {
         let study = &state.locations[&a];
         assert_eq!(study.code.as_str(), "01111");
         assert_eq!(study.name, "Study");
-        assert_eq!((study.shroud, study.clues), (2, 2));
+        assert_eq!(study.shroud, 2);
+        assert_eq!(study.clues, 0, "enters unrevealed with no clues");
+        assert!(!study.revealed);
+        assert_eq!(
+            study.printed_clues,
+            crate::card_data::ClueValue::PerInvestigator(2)
+        );
         assert!(study.connections.is_empty());
-        assert!(study.revealed);
         assert_eq!(state.next_location_id, 2, "counter advanced twice");
     }
 

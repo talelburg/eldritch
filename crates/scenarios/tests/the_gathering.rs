@@ -72,6 +72,9 @@ fn roster_seating_places_investigator_at_study() {
         roland.current_location, study,
         "seating must place investigators at setup()'s starting_location",
     );
+    let study_loc = &state.locations[&state.starting_location.unwrap()];
+    assert!(study_loc.revealed, "seating reveals the starting location");
+    assert_eq!(study_loc.clues, 2, "1 investigator × 2 per-investigator");
 }
 
 #[test]
@@ -196,4 +199,13 @@ fn advancing_act_1_rebuilds_the_board() {
 
     // Act cursor moved to Act 2.
     assert_eq!(result.state.act_index, 1);
+
+    // Hallway (01112) was revealed when the investigator was relocated there.
+    let hallway = result
+        .state
+        .locations
+        .values()
+        .find(|l| l.code.as_str() == "01112")
+        .unwrap();
+    assert!(hallway.revealed, "relocate-to-Hallway reveals it");
 }

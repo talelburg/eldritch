@@ -1685,6 +1685,38 @@ mod tests {
     }
 
     #[test]
+    fn move_to_a_set_aside_location_is_rejected() {
+        use crate::state::{CardCode, Location, LocationId};
+        let (inv_id, a, _b, mut state) = move_scenario();
+        // A location that exists only in the set-aside zone is out of play.
+        state.set_aside_locations.push(Location::new(
+            LocationId(99),
+            CardCode("setaside".into()),
+            "Aside",
+            1,
+            0,
+        ));
+        // Illegally connect the current location to it; the move must STILL be rejected (not in play).
+        state
+            .locations
+            .get_mut(&a)
+            .unwrap()
+            .connections
+            .push(LocationId(99));
+        let r = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: LocationId(99),
+            }),
+        );
+        assert!(
+            matches!(r.outcome, EngineOutcome::Rejected { .. }),
+            "set-aside location is out of play"
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "state-corruption invariant violation")]
     fn investigate_with_active_investigator_missing_from_map_panics() {
         // Same corruption pattern as above, applied to Investigate.
