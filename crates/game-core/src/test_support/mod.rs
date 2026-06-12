@@ -36,7 +36,7 @@ pub fn fire_forced_on_enter(
     let mut cx = crate::engine::Cx { state, events };
     crate::engine::fire_forced_triggers(
         &mut cx,
-        crate::engine::ForcedTriggerPoint::EnteredLocation {
+        &crate::engine::ForcedTriggerPoint::EnteredLocation {
             investigator,
             location,
         },
@@ -54,6 +54,20 @@ pub fn fire_forced_on_phase_end(
     let mut cx = crate::engine::Cx { state, events };
     crate::engine::fire_forced_triggers(
         &mut cx,
-        crate::engine::ForcedTriggerPoint::PhaseEnded { phase },
+        &crate::engine::ForcedTriggerPoint::PhaseEnded { phase },
+    )
+}
+
+/// Test helper: fire forced triggers for an act advancing, returning the
+/// `EngineOutcome`. See `fire_forced_on_enter`.
+pub fn fire_forced_on_act_advance(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    code: crate::state::CardCode,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::ActAdvanced { code },
     )
 }

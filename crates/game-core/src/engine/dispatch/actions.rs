@@ -281,7 +281,7 @@ pub(super) fn move_action(
     // the apply-loop snapshot that `play_card` documents).
     super::forced_triggers::fire_forced_triggers(
         cx,
-        super::forced_triggers::ForcedTriggerPoint::EnteredLocation {
+        &super::forced_triggers::ForcedTriggerPoint::EnteredLocation {
             investigator,
             location: destination,
         },
