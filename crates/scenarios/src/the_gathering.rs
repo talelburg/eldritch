@@ -112,6 +112,8 @@ pub fn setup() -> GameState {
     // here (scenario map knowledge — the corpus carries none) so they enter
     // play already connected when Act 1's (01108) Forced on-advance reverse
     // fires. The Hallway is the hub; Attic/Cellar/Parlor are the spokes.
+    // TODO(#260): replace the hand-assigned LocationIds + manual connection
+    // wiring with a location-construction/id-allocation helper.
     let make = |id: LocationId, code: &str, name: &str| {
         let (shroud, clues) = location_stats(code);
         Location::new(id, CardCode(code.into()), name, shroud, clues)
