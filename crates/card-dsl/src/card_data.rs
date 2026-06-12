@@ -277,11 +277,20 @@ pub enum CardKind {
         /// Maximum copies per deck.
         deck_limit: u8,
     },
-    /// Enemy — an encounter (or weakness) creature. Combat stats
-    /// (fight/evade/damage/horror) land with encounter ingestion (#252).
+    /// Enemy — an encounter (or weakness) creature.
     Enemy {
+        /// Fight (combat difficulty).
+        fight: u8,
+        /// Evade difficulty.
+        evade: u8,
+        /// Damage dealt to an investigator on attack.
+        damage: u8,
+        /// Horror dealt to an investigator on attack.
+        horror: u8,
         /// Maximum health.
         health: Option<u8>,
+        /// Victory points awarded when defeated (in the victory display).
+        victory: Option<u8>,
         /// Spawn rule (`None` = default: engaged with the drawing
         /// investigator, Rules Reference p.24).
         spawn: Option<Spawn>,
@@ -301,6 +310,28 @@ pub enum CardKind {
         /// Copies of this card in the encounter deck (build multiplicity).
         quantity: u8,
     },
+    /// Location — a place investigators move between and investigate.
+    Location {
+        /// Shroud (investigate difficulty).
+        shroud: u8,
+        /// Clues placed on the location at scenario setup.
+        clues: u8,
+        /// Victory points when in the victory display.
+        victory: Option<u8>,
+    },
+    /// Act — the investigators' side of the act/agenda deck.
+    Act {
+        /// Clues the group spends to advance, or `None` for acts that
+        /// advance on a non-clue objective.
+        clue_threshold: Option<u8>,
+        /// Victory points, if any.
+        victory: Option<u8>,
+    },
+    /// Agenda — the doom side of the act/agenda deck.
+    Agenda {
+        /// Doom in play required to advance.
+        doom_threshold: u8,
+    },
 }
 
 impl CardMetadata {
@@ -315,6 +346,9 @@ impl CardMetadata {
             CardKind::Skill { .. } => CardType::Skill,
             CardKind::Enemy { .. } => CardType::Enemy,
             CardKind::Treachery { .. } => CardType::Treachery,
+            CardKind::Location { .. } => CardType::Location,
+            CardKind::Act { .. } => CardType::Act,
+            CardKind::Agenda { .. } => CardType::Agenda,
         }
     }
 
@@ -327,7 +361,11 @@ impl CardMetadata {
             | CardKind::Asset { class, .. }
             | CardKind::Event { class, .. }
             | CardKind::Skill { class, .. } => Some(*class),
-            CardKind::Enemy { .. } | CardKind::Treachery { .. } => None,
+            CardKind::Enemy { .. }
+            | CardKind::Treachery { .. }
+            | CardKind::Location { .. }
+            | CardKind::Act { .. }
+            | CardKind::Agenda { .. } => None,
         }
     }
 
@@ -340,9 +378,12 @@ impl CardMetadata {
             CardKind::Asset { skill_icons, .. }
             | CardKind::Event { skill_icons, .. }
             | CardKind::Skill { skill_icons, .. } => *skill_icons,
-            CardKind::Investigator { .. } | CardKind::Enemy { .. } | CardKind::Treachery { .. } => {
-                SkillIcons::default()
-            }
+            CardKind::Investigator { .. }
+            | CardKind::Enemy { .. }
+            | CardKind::Treachery { .. }
+            | CardKind::Location { .. }
+            | CardKind::Act { .. }
+            | CardKind::Agenda { .. } => SkillIcons::default(),
         }
     }
 
@@ -489,6 +530,34 @@ mod is_fast_tests {
         assert_eq!(m.card_type(), CardType::Treachery);
         assert_eq!(m.class(), None);
     }
+
+    #[test]
+    fn new_encounter_kinds_have_no_class_and_right_type() {
+        let loc = CardMetadata {
+            code: "01111".into(),
+            name: "Study".into(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".into(),
+            kind: CardKind::Location {
+                shroud: 2,
+                clues: 2,
+                victory: None,
+            },
+        };
+        assert_eq!(loc.card_type(), CardType::Location);
+        assert_eq!(loc.class(), None);
+
+        let agenda = CardMetadata {
+            code: "01105".into(),
+            name: "Agenda".into(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".into(),
+            kind: CardKind::Agenda { doom_threshold: 3 },
+        };
+        assert_eq!(agenda.card_type(), CardType::Agenda);
+    }
 }
 
 #[cfg(test)]
@@ -540,7 +609,12 @@ mod spawn_tests {
             traits: Vec::new(),
             pack_code: "_synth".into(),
             kind: CardKind::Enemy {
+                fight: 3,
+                evade: 2,
+                damage: 1,
+                horror: 1,
                 health: Some(1),
+                victory: None,
                 spawn: Some(Spawn {
                     location: SpawnLocation::Specific("_synth_loc".into()),
                 }),
