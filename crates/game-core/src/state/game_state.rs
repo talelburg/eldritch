@@ -12,7 +12,7 @@ use super::{
     location::{Location, LocationId},
     phase::Phase,
 };
-use crate::card_data::{CardKind, CardMetadata};
+use crate::card_data::{CardKind, CardMetadata, ClueValue};
 use crate::dsl::{SkillTestKind, Stat};
 use crate::rng::RngState;
 use card_dsl::card_data::SkillKind;
@@ -863,7 +863,16 @@ impl GameState {
     /// invariant — scenarios hand their own location cards).
     fn location_from_metadata(&mut self, metadata: &CardMetadata) -> Location {
         let (shroud, clues) = match &metadata.kind {
-            CardKind::Location { shroud, clues, .. } => (*shroud, *clues),
+            CardKind::Location {
+                shroud,
+                printed_clues,
+                ..
+            } => {
+                let base = match printed_clues {
+                    ClueValue::PerInvestigator(n) | ClueValue::Fixed(n) => *n,
+                };
+                (*shroud, base)
+            }
             other => panic!(
                 "add_location: card {} is not a Location ({other:?})",
                 metadata.code
@@ -1192,7 +1201,7 @@ mod partial_eq_tests {
 
 #[cfg(test)]
 mod add_location_tests {
-    use crate::card_data::{CardKind, CardMetadata};
+    use crate::card_data::{CardKind, CardMetadata, ClueValue};
     use crate::test_support::GameStateBuilder;
 
     fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
@@ -1204,7 +1213,7 @@ mod add_location_tests {
             pack_code: "core".to_string(),
             kind: CardKind::Location {
                 shroud,
-                clues,
+                printed_clues: ClueValue::PerInvestigator(clues),
                 victory: None,
             },
         }

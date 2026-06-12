@@ -165,6 +165,7 @@ struct RawCard {
     // Encounter-card stats (locations / acts / agendas / enemies).
     shroud: Option<u8>,
     clues: Option<u8>,
+    clues_fixed: Option<bool>,
     victory: Option<u8>,
     doom: Option<u8>,
     enemy_fight: Option<u8>,
@@ -201,6 +202,7 @@ struct NormalizedCard {
     // act's advance threshold (same JSON field); consumer interprets by kind.
     shroud: Option<u8>,
     clues: Option<u8>,
+    clues_fixed: bool,
     victory: Option<u8>,
     doom: Option<u8>,
     enemy_fight: Option<u8>,
@@ -248,6 +250,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         is_fast,
         shroud: raw.shroud,
         clues: raw.clues,
+        clues_fixed: raw.clues_fixed.unwrap_or(false),
         victory: raw.victory,
         doom: raw.doom,
         enemy_fight: raw.enemy_fight,
@@ -341,7 +344,7 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     let mut out = String::new();
     out.push_str(GENERATED_HEADER);
     out.push_str(
-        "use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills, Slot};\n\n\
+        "use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, SkillIcons, Skills, Slot};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",
@@ -451,9 +454,9 @@ fn render_kind(c: &NormalizedCard) -> String {
             c.quantity,
         ),
         "Location" => format!(
-            "CardKind::Location {{ shroud: {}, clues: {}, victory: {} }}",
+            "CardKind::Location {{ shroud: {}, printed_clues: {}, victory: {} }}",
             c.shroud.unwrap_or(0),
-            c.clues.unwrap_or(0),
+            clue_value_lit(c.clues.unwrap_or(0), c.clues_fixed),
             opt_u8(c.victory),
         ),
         "Act" => format!(
@@ -500,6 +503,15 @@ fn opt_u8(v: Option<u8>) -> String {
     }
 }
 
+/// Emit the `ClueValue` literal for a location's clues.
+fn clue_value_lit(clues: u8, fixed: bool) -> String {
+    if fixed {
+        format!("ClueValue::Fixed({clues})")
+    } else {
+        format!("ClueValue::PerInvestigator({clues})")
+    }
+}
+
 fn string_vec(xs: &[String]) -> String {
     if xs.is_empty() {
         return "Vec::new()".into();
@@ -538,8 +550,8 @@ const GENERATED_HEADER: &str = "\
 #[cfg(test)]
 mod tests {
     use super::{
-        emit_card, map_card_type, map_class, normalize, parse_slots, parse_traits, process_raw,
-        NormalizedCard, RawCard,
+        clue_value_lit, emit_card, map_card_type, map_class, normalize, parse_slots, parse_traits,
+        process_raw, NormalizedCard, RawCard,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -570,6 +582,7 @@ mod tests {
             skill_wild: None,
             shroud: None,
             clues: None,
+            clues_fixed: None,
             victory: None,
             doom: None,
             enemy_fight: None,
@@ -605,6 +618,7 @@ mod tests {
             is_fast: false,
             shroud: None,
             clues: None,
+            clues_fixed: false,
             victory: None,
             doom: None,
             enemy_fight: None,
@@ -941,6 +955,7 @@ mod tests {
             skill_wild: None,
             shroud: None,
             clues: None,
+            clues_fixed: None,
             victory: None,
             doom: None,
             enemy_fight: None,
@@ -980,9 +995,17 @@ mod tests {
         let mut buf = String::new();
         emit_card(&mut buf, &c);
         assert!(
-            buf.contains("CardKind::Location { shroud: 2, clues: 2"),
+            buf.contains(
+                "CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2)"
+            ),
             "got:\n{buf}",
         );
+    }
+
+    #[test]
+    fn location_clue_value_reflects_clues_fixed() {
+        assert_eq!(clue_value_lit(2, false), "ClueValue::PerInvestigator(2)");
+        assert_eq!(clue_value_lit(2, true), "ClueValue::Fixed(2)");
     }
 
     #[test]
@@ -1035,6 +1058,7 @@ mod tests {
             skill_wild: None,
             shroud: None,
             clues: None,
+            clues_fixed: None,
             victory: None,
             doom: None,
             enemy_fight: None,

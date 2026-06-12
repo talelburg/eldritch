@@ -326,8 +326,8 @@ pub enum CardKind {
     Location {
         /// Shroud (investigate difficulty).
         shroud: u8,
-        /// Clues placed on the location at scenario setup.
-        clues: u8,
+        /// Printed clue value (per-investigator or fixed).
+        printed_clues: ClueValue,
         /// Victory points when in the victory display.
         victory: Option<u8>,
     },
@@ -553,7 +553,7 @@ mod is_fast_tests {
             pack_code: "core".into(),
             kind: CardKind::Location {
                 shroud: 2,
-                clues: 2,
+                printed_clues: ClueValue::PerInvestigator(2),
                 victory: None,
             },
         };
