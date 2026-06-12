@@ -41,7 +41,7 @@ pub struct GameState {
     /// Locations set aside, out of play (Rules Reference p.3, "set
     /// aside"). Brought into play by card effects — The Gathering's
     /// Act-1 reverse drains these via the `PutSetAsideLocationsIntoPlay`
-    /// DSL effect (added in a later task).
+    /// DSL effect.
     pub set_aside_locations: Vec<Location>,
     /// Where roster-seated investigators are placed at scenario start.
     /// `setup()` sets it (e.g. The Gathering -> the Study); the

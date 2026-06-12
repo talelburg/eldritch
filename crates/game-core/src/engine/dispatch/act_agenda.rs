@@ -156,6 +156,10 @@ fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
 /// missing-successor case is `unreachable!()` (a terminal act must carry a
 /// resolution point — malformed scenario data otherwise). Mirrors
 /// [`advance_agenda`].
+///
+/// Invariant: the leaving act's on-advance Forced effect must not itself
+/// re-advance the act (no in-scope card does; a re-advance from that
+/// effect would recurse here). Revisit if such an ability lands.
 pub(crate) fn advance_act(cx: &mut Cx) {
     let from = cx.state.act_index;
     let leaving_code = cx.state.act_deck[from].code.clone();
