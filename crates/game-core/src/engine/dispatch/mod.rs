@@ -33,6 +33,7 @@ pub(super) mod forced_triggers;
 mod hunters;
 mod phases;
 mod reaction_windows;
+pub(crate) mod reveal;
 mod skill_test;
 
 /// Apply a [`PlayerAction`] to the state, pushing events.

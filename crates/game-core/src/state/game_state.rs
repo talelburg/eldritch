@@ -862,30 +862,31 @@ impl GameState {
     /// Panics if `metadata` is not a `Location` card (a build-time
     /// invariant — scenarios hand their own location cards).
     fn location_from_metadata(&mut self, metadata: &CardMetadata) -> Location {
-        let (shroud, clues) = match &metadata.kind {
+        let (shroud, printed_clues) = match &metadata.kind {
             CardKind::Location {
                 shroud,
                 printed_clues,
                 ..
-            } => {
-                let base = match printed_clues {
-                    ClueValue::PerInvestigator(n) | ClueValue::Fixed(n) => *n,
-                };
-                (*shroud, base)
-            }
+            } => (*shroud, *printed_clues),
             other => panic!(
                 "add_location: card {} is not a Location ({other:?})",
                 metadata.code
             ),
         };
+        let base = match printed_clues {
+            ClueValue::PerInvestigator(n) | ClueValue::Fixed(n) => n,
+        };
         let id = self.mint_location_id();
-        Location::new(
+        Location {
             id,
-            CardCode::new(metadata.code.clone()),
-            metadata.name.clone(),
+            code: CardCode::new(metadata.code.clone()),
+            name: metadata.name.clone(),
             shroud,
-            clues,
-        )
+            clues: base,
+            revealed: true,
+            printed_clues,
+            connections: Vec::new(),
+        }
     }
 
     /// Add a location **into play** from its card metadata, returning the

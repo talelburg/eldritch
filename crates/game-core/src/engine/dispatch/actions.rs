@@ -273,6 +273,9 @@ pub(super) fn move_action(
         from,
         to: destination,
     });
+    // Reveal the destination if this is the first investigator entry
+    // (Rules Reference p.14). No-op if already revealed.
+    super::reveal::reveal_location(cx, destination);
     // Terminal step: the entered location's Forced on-enter abilities fire,
     // and their outcome becomes the move's outcome. This runs *after* the
     // move is applied, so if it returns Rejected (e.g. 2+ simultaneous

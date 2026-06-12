@@ -119,6 +119,13 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         );
         cx.state.turn_order.push(id);
     }
+    // Reveal the starting location on first entry (Rules Reference p.14).
+    // investigators.len() is now final (all roster entries seated), so
+    // per-investigator clue counts are correct. No-op when start is None
+    // (pre-seated test path) or already revealed.
+    if let Some(loc) = start {
+        super::reveal::reveal_location(cx, loc);
+    }
 
     // Round 1: scenario starts directly in Investigation phase —
     // Mythos is skipped entirely per Rules Reference p.24 "During
