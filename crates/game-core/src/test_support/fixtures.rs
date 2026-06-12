@@ -96,6 +96,7 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
     Enemy {
         id: EnemyId(id),
         name: name.into(),
+        code: CardCode::new(format!("_test_enemy_{id}")),
         fight: 2,
         evade: 2,
         max_health: 2,

@@ -22,7 +22,7 @@ use super::Cx;
 /// helper), so integration tests never need to name this type directly.
 /// Wired into `move_action` (`EnteredLocation`) and
 /// `enemy_phase_end`/`upkeep_phase_end` (`PhaseEnded`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ForcedTriggerPoint {
     /// An investigator entered a location. Scans that location's card
     /// for `EventPattern::EnteredLocation` forced abilities; binds
@@ -37,6 +37,22 @@ pub(crate) enum ForcedTriggerPoint {
     /// `EventPattern::PhaseEnded { phase }` forced abilities; binds
     /// controller = the lead investigator (board-wide effects ignore it).
     PhaseEnded { phase: Phase },
+    /// An act advanced (its reverse side resolves). Scans the *leaving*
+    /// act's card for `EventPattern::ActAdvanced` forced abilities; binds
+    /// controller = the lead investigator.
+    ActAdvanced {
+        /// Printed code of the act that advanced.
+        code: CardCode,
+    },
+    /// An enemy was defeated. Scans the *current act* for
+    /// `EventPattern::EnemyDefeated` forced abilities whose `code` narrow
+    /// matches (or is `None`); binds controller = the lead investigator.
+    /// The act-3 objective (01110) advances on the Ghoul Priest's defeat
+    /// through this point.
+    EnemyDefeated {
+        /// Printed code of the defeated enemy (for `code`-narrow matching).
+        code: CardCode,
+    },
 }
 
 struct ForcedHit {
@@ -48,7 +64,7 @@ struct ForcedHit {
 /// Fire Forced abilities matching `point`. Single-trigger path: 0 → Done;
 /// 1 → resolve via `apply_effect`; 2+ → reject loudly (no silently-chosen
 /// order — #213 adds the ordering loop).
-pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: ForcedTriggerPoint) -> EngineOutcome {
+pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> EngineOutcome {
     let hits = collect_forced_hits(cx.state, point);
     match hits.len() {
         0 => EngineOutcome::Done,
@@ -66,7 +82,7 @@ pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: ForcedTriggerPoint) -> En
 
 fn collect_forced_hits(
     state: &crate::state::GameState,
-    point: ForcedTriggerPoint,
+    point: &ForcedTriggerPoint,
 ) -> Vec<ForcedHit> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
@@ -77,15 +93,15 @@ fn collect_forced_hits(
             investigator,
             location,
         } => {
-            let Some(loc) = state.locations.get(&location) else {
+            let Some(loc) = state.locations.get(location) else {
                 return hits;
             };
-            push_matching(reg, &loc.code, investigator, &mut hits, |p| {
+            push_matching(reg, &loc.code, *investigator, &mut hits, |p| {
                 matches!(p, EventPattern::EnteredLocation)
             });
         }
         ForcedTriggerPoint::PhaseEnded { phase } => {
-            let want_phase = dsl_phase(phase);
+            let want_phase = dsl_phase(*phase);
             // Lead investigator binds the controller for board-wide effects
             // (which ignore it). First of turn_order is the lead.
             let Some(lead) = state.turn_order.first().copied() else {
@@ -97,7 +113,7 @@ fn collect_forced_hits(
                     &act.code,
                     lead,
                     &mut hits,
-                    |p| matches!(p, EventPattern::PhaseEnded { phase } if phase == want_phase),
+                    |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
             }
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
@@ -106,8 +122,30 @@ fn collect_forced_hits(
                     &agenda.code,
                     lead,
                     &mut hits,
-                    |p| matches!(p, EventPattern::PhaseEnded { phase } if phase == want_phase),
+                    |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
+            }
+        }
+        ForcedTriggerPoint::ActAdvanced { code } => {
+            let Some(lead) = state.turn_order.first().copied() else {
+                return hits;
+            };
+            push_matching(reg, code, lead, &mut hits, |p| {
+                matches!(p, EventPattern::ActAdvanced)
+            });
+        }
+        ForcedTriggerPoint::EnemyDefeated { code } => {
+            let Some(lead) = state.turn_order.first().copied() else {
+                return hits;
+            };
+            if let Some(act) = state.act_deck.get(state.act_index) {
+                push_matching(reg, &act.code, lead, &mut hits, |p| {
+                    matches!(
+                        p,
+                        EventPattern::EnemyDefeated { code: narrow, .. }
+                            if narrow.as_deref().is_none_or(|c| c == code.as_str())
+                    )
+                });
             }
         }
     }
@@ -130,17 +168,17 @@ fn push_matching(
     code: &CardCode,
     controller: InvestigatorId,
     out: &mut Vec<ForcedHit>,
-    want: impl Fn(EventPattern) -> bool,
+    want: impl Fn(&EventPattern) -> bool,
 ) {
     let Some(abilities) = (reg.abilities_for)(code) else {
         return;
     };
     for (idx, ability) in abilities.iter().enumerate() {
-        if let Trigger::OnEvent { pattern, timing } = ability.trigger {
+        if let Trigger::OnEvent { pattern, timing } = &ability.trigger {
             // Only `After` timing is handled in this slice; no in-scope
             // Forced card uses `Before` ("when X would Y") timing.
             // Revisit when such a card lands.
-            if timing == EventTiming::After && want(pattern) {
+            if *timing == EventTiming::After && want(pattern) {
                 out.push(ForcedHit {
                     code: code.clone(),
                     ability_index: idx,

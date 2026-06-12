@@ -256,6 +256,7 @@ impl GameStateBuilder {
         GameState {
             investigators: self.investigators,
             locations: self.locations,
+            set_aside_locations: Vec::new(),
             starting_location: None,
             enemies: self.enemies,
             chaos_bag: self.chaos_bag,
@@ -292,6 +293,17 @@ impl GameStateBuilder {
 impl Default for GameStateBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod set_aside_locations_tests {
+    use super::*;
+
+    #[test]
+    fn build_starts_with_empty_set_aside_locations() {
+        let state = GameStateBuilder::new().build();
+        assert!(state.set_aside_locations.is_empty());
     }
 }
 

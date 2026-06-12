@@ -1,18 +1,19 @@
 //! The Gathering (Night of the Zealot, scenario 1) — Slice 1 C1a skeleton.
 //!
 //! Builds the faithful **Act-1 board**: only the Study is in play (the
-//! Hallway/Attic/Cellar/Parlor are set aside and enter via the Act-1
-//! "Door on the Floor" transition — C1b). `setup()` builds the world;
-//! the `StartScenario` roster step seats investigators at
-//! [`STUDY_ID`] via `GameState.starting_location`.
+//! Hallway/Attic/Cellar/Parlor are set aside (`set_aside_locations`) and
+//! enter play via Act 1's (01108) Forced on-advance reverse, which also
+//! relocates investigators to the Hallway and removes the Study).
+//! `setup()` builds the world; the `StartScenario` roster step seats
+//! investigators at [`STUDY_ID`] via `GameState.starting_location`.
 //!
 //! Faithful where it can be (agenda doom 3/7/10; the verified Standard
 //! chaos bag; Study shroud/clues); structural stand-in where the rest of
-//! Group C owns fidelity (act 01110's clue threshold is a placeholder —
-//! its real "Ghoul Priest defeated" objective is C1b; symbol-token
-//! effects on reference card 01104 are C2). C1a does not claim faithful
-//! win/lose semantics — only structural reachability, proven by
-//! `tests/the_gathering.rs`.
+//! Group C owns fidelity (act 01110 advances via its Forced `EnemyDefeated`
+//! objective (01116; in `cards`) — its R1/R2 resolution choice is Phase-9
+//! — TODO; symbol-token effects on reference card 01104 are C2). C1a does
+//! not claim faithful win/lose semantics — only structural reachability,
+//! proven by `tests/the_gathering.rs`.
 
 use game_core::card_data::CardKind;
 use game_core::event::Event;
@@ -39,12 +40,11 @@ fn agenda_doom(code: &str) -> u8 {
     }
 }
 
-/// Read an act's printed clue threshold from the corpus, falling back to
-/// `placeholder` for acts that advance on a non-clue objective (`01110`,
-/// "Ghoul Priest defeated" — C1b owns that).
-fn act_clue_threshold(code: &str, placeholder: u8) -> u8 {
+/// Read an act's printed clue threshold from the corpus. Acts that
+/// advance on a non-clue objective (01110) carry `null` clues -> 0.
+fn act_clue_threshold(code: &str) -> u8 {
     match cards::by_code(code).expect("act code in corpus").kind {
-        CardKind::Act { clue_threshold, .. } => clue_threshold.unwrap_or(placeholder),
+        CardKind::Act { clue_threshold, .. } => clue_threshold.unwrap_or(0),
         ref k => panic!("{code} is not an Act ({k:?})"),
     }
 }
@@ -83,13 +83,22 @@ fn standard_chaos_bag() -> ChaosBag {
     ])
 }
 
+/// The Hallway's [`LocationId`] — the hub of the Act-2 board.
+const HALLWAY_ID: LocationId = LocationId(2);
+/// The Attic's [`LocationId`].
+const ATTIC_ID: LocationId = LocationId(3);
+/// The Cellar's [`LocationId`].
+const CELLAR_ID: LocationId = LocationId(4);
+/// The Parlor's [`LocationId`].
+const PARLOR_ID: LocationId = LocationId(5);
+
 /// Build the initial [`GameState`]: the Study in play (isolated), the
-/// act/agenda decks, the Standard chaos bag, and `starting_location`.
+/// four set-aside locations (Hallway/Attic/Cellar/Parlor, pre-connected),
+/// the act/agenda decks, the Standard chaos bag, and `starting_location`.
 /// No investigators — the `StartScenario` roster step seats them.
 pub fn setup() -> GameState {
     // The Study (01111): shroud/clues read from the corpus. `Location::new`
-    // gives a revealed, unconnected location (Act 1 is "trapped in the
-    // Study"); the connection graph is C1b's Door-on-the-Floor transition.
+    // gives a revealed, unconnected location (Act 1 is "trapped in the Study").
     let (study_shroud, study_clues) = location_stats("01111");
     let study = Location::new(
         STUDY_ID,
@@ -98,6 +107,25 @@ pub fn setup() -> GameState {
         study_shroud,
         study_clues,
     );
+
+    // LocationIds 2–5: the four set-aside locations. Connections are wired
+    // here (scenario map knowledge — the corpus carries none) so they enter
+    // play already connected when Act 1's (01108) Forced on-advance reverse
+    // fires. The Hallway is the hub; Attic/Cellar/Parlor are the spokes.
+    // TODO(#260): replace the hand-assigned LocationIds + manual connection
+    // wiring with a location-construction/id-allocation helper.
+    let make = |id: LocationId, code: &str, name: &str| {
+        let (shroud, clues) = location_stats(code);
+        Location::new(id, CardCode(code.into()), name, shroud, clues)
+    };
+    let mut hallway = make(HALLWAY_ID, "01112", "Hallway");
+    hallway.connections = vec![ATTIC_ID, CELLAR_ID, PARLOR_ID];
+    let mut attic = make(ATTIC_ID, "01113", "Attic");
+    attic.connections = vec![HALLWAY_ID];
+    let mut cellar = make(CELLAR_ID, "01114", "Cellar");
+    cellar.connections = vec![HALLWAY_ID];
+    let mut parlor = make(PARLOR_ID, "01115", "Parlor");
+    parlor.connections = vec![HALLWAY_ID];
 
     // The Gathering's symbol effects are printed on reference card 01104
     // (board-dependent; evaluated in C2). Until then these flat NotZ
@@ -118,25 +146,29 @@ pub fn setup() -> GameState {
         .build();
 
     state.starting_location = Some(STUDY_ID);
+    state.set_aside_locations = vec![hallway, attic, cellar, parlor];
 
     // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
-    // corpus; 01110's printed threshold is null (it advances on "Ghoul
-    // Priest defeated" — C1b), so it falls back to a placeholder. The
-    // terminal act carries the Won latch.
+    // corpus. 01110 advances via its Forced EnemyDefeated objective
+    // (01116; in cards::act_01110), not a clue spend — its printed clue
+    // threshold is null, which the reader maps to 0.
+    // TODO(#231): the Ghoul Priest (01116) spawns at Act-2 (01109) advance — C3b.
+    // TODO(#phase-9): the reverse is the lead investigator's R1/R2 resolution choice (campaign log).
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
-            clue_threshold: act_clue_threshold("01108", 0),
+            clue_threshold: act_clue_threshold("01108"),
             resolution: None,
         },
         Act {
             code: CardCode("01109".into()),
-            clue_threshold: act_clue_threshold("01109", 0),
+            clue_threshold: act_clue_threshold("01109"),
             resolution: None,
         },
         Act {
+            // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::act_01110), not a clue spend.
             code: CardCode("01110".into()),
-            clue_threshold: act_clue_threshold("01110", 2), // 2 = C1b placeholder
+            clue_threshold: act_clue_threshold("01110"),
             resolution: Some(Resolution::Won { id: "R1".into() }),
         },
     ];
@@ -208,18 +240,65 @@ mod tests {
     }
 
     #[test]
-    fn setup_places_only_the_isolated_study() {
+    fn setup_places_study_in_play_and_four_set_aside() {
         let s = setup();
-        assert_eq!(s.locations.len(), 1, "Act-1 board is the Study only");
+        // In play: only the Study (Act-1 board).
+        assert_eq!(s.locations.len(), 1);
         let study = s.locations.get(&STUDY_ID).expect("Study present");
         assert_eq!(study.code, CardCode("01111".into()));
-        assert_eq!(study.shroud, 2);
-        assert_eq!(study.clues, 2);
-        assert!(study.revealed);
-        assert!(study.connections.is_empty(), "Study is isolated in Act 1");
+        assert!(study.connections.is_empty(), "Study is isolated");
+        // Set aside: Hallway, Attic, Cellar, Parlor, each pre-connected.
+        let codes: Vec<_> = s
+            .set_aside_locations
+            .iter()
+            .map(|l| l.code.as_str().to_owned())
+            .collect();
+        assert_eq!(codes, ["01112", "01113", "01114", "01115"]);
+        let hallway = s
+            .set_aside_locations
+            .iter()
+            .find(|l| l.code.as_str() == "01112")
+            .unwrap();
+        let mut hall_conns: Vec<_> = hallway.connections.clone();
+        hall_conns.sort();
+        let mut others: Vec<_> = s
+            .set_aside_locations
+            .iter()
+            .filter(|l| l.code.as_str() != "01112")
+            .map(|l| l.id)
+            .collect();
+        others.sort();
+        assert_eq!(
+            hall_conns, others,
+            "Hallway connects to Attic/Cellar/Parlor"
+        );
+        for l in s
+            .set_aside_locations
+            .iter()
+            .filter(|l| l.code.as_str() != "01112")
+        {
+            assert_eq!(
+                l.connections,
+                vec![hallway.id],
+                "spokes connect back to the Hallway"
+            );
+        }
         assert_eq!(s.starting_location, Some(STUDY_ID));
-        assert_eq!(s.scenario_id, Some(ScenarioId::new(ID)));
         assert!(s.investigators.is_empty(), "setup() seats no one");
+    }
+
+    #[test]
+    fn act_three_advances_on_objective_not_clues() {
+        let s = setup();
+        assert_eq!(s.act_deck[2].code.as_str(), "01110");
+        assert_eq!(
+            s.act_deck[2].clue_threshold, 0,
+            "01110 advances on Ghoul-Priest-defeat, not clues"
+        );
+        assert!(matches!(
+            s.act_deck[2].resolution,
+            Some(Resolution::Won { .. })
+        ));
     }
 
     #[test]

@@ -6,7 +6,8 @@
 Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
 (the Gathering content) is decomposed into sub-slices C1–C7
 ([#227](https://github.com/talelburg/eldritch/issues/227)–[#245](https://github.com/talelburg/eldritch/issues/245),
-kickoff [#246](https://github.com/talelburg/eldritch/issues/246)).
+kickoff [#246](https://github.com/talelburg/eldritch/issues/246)). Shipped:
+C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat).
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
 [Group C decomposition](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
@@ -48,11 +49,11 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | Sub | Issue | What | State |
 |---|---|---|---|
 | C1a | [#227](https://github.com/talelburg/eldritch/issues/227) | `setup()` world-build + forced location effects | ✅ PR #250 |
-| C1b | [#228](https://github.com/talelburg/eldritch/issues/228) | act-advancement objective types (01109 / 01110) | — |
+| C1b | [#228](https://github.com/talelburg/eldritch/issues/228) | Act-1 (01108) reverse board-build + Act-3 (01110) forced advance-on-defeat (act-2 01109 objective → C3c) | ✅ PR #259 |
 | C2 | [#229](https://github.com/talelburg/eldritch/issues/229) | 01104 symbol-token effects + victory points | — |
 | C3a | [#230](https://github.com/talelburg/eldritch/issues/230) | Prey variants + Retaliate | — |
 | C3b | [#231](https://github.com/talelburg/eldritch/issues/231) | the six encounter enemies | — |
-| C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) | — |
+| C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) **+ act-2 (01109) round-end objective (moved from C1b)** | — |
 | C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | — |
 | C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | — |
 | C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area treacheries (×3) | — |
@@ -114,6 +115,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **Card metadata is a `CardKind` enum, and encounter cards + their stats are in the corpus** ([#254](https://github.com/talelburg/eldritch/issues/254) remodel, [#252](https://github.com/talelburg/eldritch/issues/252) ingestion — both infra PRs, not phase-7 issues, but load-bearing for all of Group C). `CardMetadata` is now an identity core + a `kind: CardKind` enum (`Investigator`/`Asset`/`Event`/`Skill`/`Enemy`/`Location`/`Act`/`Agenda`/`Treachery`); read `card_type()`/`class()` via accessors and match on `kind` for type-specific stats. The 8 in-scope encounter files are ingested, so **locations/acts/agendas/enemies/treacheries carry their printed stats in the corpus** (`CardKind::Location { shroud, clues, victory }`, `Act { clue_threshold, victory }`, `Agenda { doom_threshold }`, `Enemy { fight, evade, damage, horror, health, victory, quantity, … }`). Consequences for Group C: read stats via `cards::by_code`/`metadata_for` instead of hand-typing (C1b set-aside locations, C2 victory points, C3 enemy stats, C4 treachery `quantity`); `scenario`-type cards (e.g. ref card `01104`) are **not** in the corpus — their effects live in `abilities()` impls; and C3b (#231) must wire `spawn_enemy` to read combat stats from `CardKind::Enemy` (it still hardcodes `fight: 1, evade: 1`).
 
 - **`emit_event` unification (#212) lands *after* Group C, not before it.** C is built on the existing `ForcedTriggerPoint` enum-dispatcher + reaction-window pipeline, extended with new timing points (`RoundEnded`, `EndOfTurn`, `AfterLocationInvestigated`, `GameEnd`, damage/investigate windows) as content demands them; #212 then consolidates those into one emit-driven chokepoint, validated against all of C's real content. The dispatch surface C adds is a handful of points through already-generic machinery (the 7 treacheries share one Revelation hook; locations and Beat Cop reuse existing paths), so front-loading #212 would design its event taxonomy before the cards defining its requirements exist. **#213** (player-choice simultaneous-trigger ordering) is deferred further still — until then simultaneous triggers resolve in a fixed **deterministic** order. C4a (#233) lands the one in-C consolidation seam (shared scan source over `cards_in_play` + threat area) that #212 later absorbs.
+
+- **Act-2 (01109)'s round-end objective moved from C1b to C3c ([#232](https://github.com/talelburg/eldritch/issues/232)); C1b (#228, PR #259) shipped Pillars 1+3 only.** A faithful "when the round ends, investigators in the hallway *may*, as a group, spend clues to advance" requires the engine to *pause at round end* — a suspendable round-end **player window** (threading `upkeep_phase_end`, which returns `()` today, plus `AdvanceAct` re-gating + a Hallway contributor filter). That lands on the same round-end point C3c is already adding (`RoundEnded`, for the agenda's forced doom), so C3c builds the window once and act-2's optional advance rides it. **C3c's scope therefore includes the act-2 round-end clue gate** (threshold 3, Hallway-restricted); C1b left act 2 on the interim action-driven `AdvanceAct`. C1b's two pillars (Act-1 reverse board-build via a Forced `OnEvent(ActAdvanced)` ability on the act card; Act-3 forced advance on the Ghoul Priest's defeat via `ForcedTriggerPoint::EnemyDefeated` → `Effect::AdvanceCurrentAct`) both ride the existing forced-trigger rails — adding `EventPattern::EnemyDefeated`'s code narrow dropped `Copy` from `EventPattern`/`Trigger`, and `Enemy` gained a `code` field. New deferral issues filed: **#257** (location reveal-on-entry + per-investigator clues — currently the `revealed` field is dormant) and **#258** (Lita Chantler / Parlor barrier / Resign).
 
 ## Open questions
 

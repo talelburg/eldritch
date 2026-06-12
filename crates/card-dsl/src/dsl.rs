@@ -65,7 +65,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
 /// `OnLeavePlay`, and additional reactive patterns as cards demand.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Trigger {
     /// Always-on while the card is in play. The ability's `effect`
     /// describes a passive contribution to engine queries (most
@@ -186,7 +186,7 @@ pub enum Trigger {
 /// movement, clue placement, …); the engine evaluator exhaustively
 /// matches on this enum so adding a variant is a deliberate change
 /// rather than a silent broadening.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EventPattern {
     /// An enemy was defeated. `by_controller` narrows the match to
     /// defeats credited to the ability's controller — Roland Banks's
@@ -198,6 +198,10 @@ pub enum EventPattern {
         /// `game_core::Event::EnemyDefeated`). If `false`, any defeat
         /// matches.
         by_controller: bool,
+        /// Narrow the match to a specific defeated enemy printed code
+        /// (e.g. the Ghoul Priest's `"01116"` for Act 3's objective).
+        /// `None` matches any enemy's defeat (e.g. Roland's reaction).
+        code: Option<String>,
     },
     /// An encounter card was revealed (drawn from the encounter deck
     /// and announced via the engine's on-draw path). `card_type`
@@ -252,6 +256,11 @@ pub enum EventPattern {
     /// wired for Enemy and Upkeep phase-ends only; Mythos and
     /// Investigation are not wired (see #212).
     PhaseEnded { phase: Phase },
+    /// The act this ability is printed on advanced (its reverse side
+    /// resolves). Fired forced via `ForcedTriggerPoint::ActAdvanced`;
+    /// binds controller = the lead investigator (board-wide reverse
+    /// effects ignore it).
+    ActAdvanced,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -459,6 +468,21 @@ pub enum Effect {
     /// branch's effect. Requires an `AwaitingInput` round-trip; the
     /// evaluator stub for this lands in Phase 3 alongside skill tests.
     ChooseOne(Vec<Effect>),
+    /// Put every location in `set_aside_locations` into play (Rules
+    /// Reference p.3 "set aside" -> in play). Board-wide; ignores the
+    /// controller.
+    PutSetAsideLocationsIntoPlay,
+    /// Move every investigator to the in-play location with this
+    /// printed `code`. Rejects if no such location is in play.
+    RelocateAllInvestigators { to: String },
+    /// Remove the in-play location with this printed `code` from the
+    /// game. Rejects if no such location is in play.
+    RemoveLocationFromGame { location: String },
+    /// Advance the current act one step. If the act is terminal (carries
+    /// a resolution) the scenario resolves; otherwise the cursor moves
+    /// and the act's on-advance reverse fires. Used by act objectives
+    /// like 01110 ("If the Ghoul Priest is Defeated, advance.").
+    AdvanceCurrentAct,
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -801,6 +825,34 @@ pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
     Effect::ChooseOne(effects.into_iter().collect())
 }
 
+/// Build an [`Effect::PutSetAsideLocationsIntoPlay`].
+#[must_use]
+pub fn put_set_aside_locations_into_play() -> Effect {
+    Effect::PutSetAsideLocationsIntoPlay
+}
+
+/// Build an [`Effect::RelocateAllInvestigators`] targeting `to` (a
+/// printed location code).
+#[must_use]
+pub fn relocate_all_investigators(to: impl Into<String>) -> Effect {
+    Effect::RelocateAllInvestigators { to: to.into() }
+}
+
+/// Build an [`Effect::RemoveLocationFromGame`] targeting `location` (a
+/// printed location code).
+#[must_use]
+pub fn remove_location_from_game(location: impl Into<String>) -> Effect {
+    Effect::RemoveLocationFromGame {
+        location: location.into(),
+    }
+}
+
+/// Build an [`Effect::AdvanceCurrentAct`].
+#[must_use]
+pub fn advance_current_act() -> Effect {
+    Effect::AdvanceCurrentAct
+}
+
 // ---- tests ----------------------------------------------------
 
 #[cfg(test)]
@@ -1023,6 +1075,7 @@ mod tests {
         let ability = on_event(
             EventPattern::EnemyDefeated {
                 by_controller: true,
+                code: None,
             },
             EventTiming::After,
             discover_clue(LocationTarget::YourLocation, 1),
@@ -1032,6 +1085,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EnemyDefeated {
                     by_controller: true,
+                    code: None,
                 },
                 timing: EventTiming::After,
             },
@@ -1057,18 +1111,21 @@ mod tests {
         let after_any = Trigger::OnEvent {
             pattern: EventPattern::EnemyDefeated {
                 by_controller: false,
+                code: None,
             },
             timing: EventTiming::After,
         };
         let after_controller = Trigger::OnEvent {
             pattern: EventPattern::EnemyDefeated {
                 by_controller: true,
+                code: None,
             },
             timing: EventTiming::After,
         };
         let before_controller = Trigger::OnEvent {
             pattern: EventPattern::EnemyDefeated {
                 by_controller: true,
+                code: None,
             },
             timing: EventTiming::Before,
         };
@@ -1092,6 +1149,7 @@ mod tests {
             let original = on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,
+                    code: None,
                 },
                 timing,
                 discover_clue(LocationTarget::YourLocation, 1),
@@ -1161,6 +1219,7 @@ mod tests {
         };
         let enemy_defeated = EventPattern::EnemyDefeated {
             by_controller: true,
+            code: None,
         };
         assert_ne!(revealed_treachery, enemy_defeated);
     }
@@ -1178,6 +1237,7 @@ mod tests {
         let spawned = EventPattern::EnemySpawned;
         let defeated = EventPattern::EnemyDefeated {
             by_controller: true,
+            code: None,
         };
         let revealed = EventPattern::CardRevealed { card_type: None };
         assert_ne!(spawned, defeated);
@@ -1200,6 +1260,35 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: EventPattern = serde_json::from_str(&json).unwrap();
         assert_eq!(p, back);
+    }
+
+    #[test]
+    fn world_build_effect_builders_have_expected_shape() {
+        assert!(matches!(
+            put_set_aside_locations_into_play(),
+            Effect::PutSetAsideLocationsIntoPlay
+        ));
+        assert!(matches!(
+            relocate_all_investigators("01112"),
+            Effect::RelocateAllInvestigators { to } if to == "01112"
+        ));
+        assert!(matches!(
+            remove_location_from_game("01111"),
+            Effect::RemoveLocationFromGame { location } if location == "01111"
+        ));
+    }
+
+    #[test]
+    fn enemy_defeated_carries_optional_code_narrow() {
+        let any = EventPattern::EnemyDefeated {
+            by_controller: false,
+            code: None,
+        };
+        let narrowed = EventPattern::EnemyDefeated {
+            by_controller: false,
+            code: Some("01116".into()),
+        };
+        assert_ne!(any, narrowed);
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).

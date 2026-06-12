@@ -48,6 +48,7 @@ pub fn abilities() -> Vec<Ability> {
     vec![on_event(
         EventPattern::EnemyDefeated {
             by_controller: true,
+            code: None,
         },
         EventTiming::After,
         discover_clue(LocationTarget::YourLocation, 1),
@@ -73,6 +74,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EnemyDefeated {
                     by_controller: true,
+                    code: None,
                 },
                 timing: EventTiming::After,
             },

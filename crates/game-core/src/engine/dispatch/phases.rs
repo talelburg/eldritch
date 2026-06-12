@@ -493,7 +493,7 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 2+ → rejects loudly (#213 adds the ordering loop).
     let forced = super::forced_triggers::fire_forced_triggers(
         cx,
-        super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
+        &super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
             phase: Phase::Enemy,
         },
     );
@@ -586,7 +586,7 @@ fn upkeep_phase_end(cx: &mut Cx) {
     // limitation.
     let forced = super::forced_triggers::fire_forced_triggers(
         cx,
-        super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
+        &super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
             phase: Phase::Upkeep,
         },
     );

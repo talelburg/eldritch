@@ -8,7 +8,7 @@ use std::sync::Once;
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::scenario::Resolution;
-use game_core::state::{CardCode, InvestigatorId, LocationId};
+use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
     fire_forced_on_enter, test_investigator, test_location, GameStateBuilder,
 };
@@ -80,10 +80,11 @@ fn drives_to_a_won_resolution() {
     let inv = InvestigatorId(1);
     let mut state = setup_and_seat();
 
-    // Hand the investigator enough clues to clear all three act
-    // thresholds (2 + 3 + 2 = 7); AdvanceAct spends from group clues,
-    // no chaos draw involved. Proves the resolution latch fires for the
-    // real act deck, deterministically.
+    // Hand the investigator enough clues to clear acts 1 and 2 (2 + 3 = 5
+    // needed); act 3 (01110) has threshold 0 — it advances on Ghoul-Priest-
+    // defeat, not a clue spend. 7 is comfortably enough. AdvanceAct spends
+    // from group clues, no chaos draw involved. Proves the resolution latch
+    // fires for the real act deck, deterministically.
     state.investigators.get_mut(&inv).unwrap().clues = 7;
 
     for _ in 0..3 {
@@ -141,4 +142,58 @@ fn cellar_forced_enter_deals_one_damage() {
         1,
         "entering the Cellar deals 1 damage to the entering investigator",
     );
+}
+
+#[test]
+fn advancing_act_1_rebuilds_the_board() {
+    install_registries();
+    let mut state = the_gathering::setup();
+
+    // Seat one investigator at the Study with the 2 clues Act 1 needs.
+    let inv = InvestigatorId(1);
+    let mut investigator = test_investigator(1);
+    investigator.current_location = Some(the_gathering::STUDY_ID);
+    investigator.clues = 2;
+    state.investigators.insert(inv, investigator);
+    state.turn_order = vec![inv];
+    state.active_investigator = Some(inv);
+    state.phase = Phase::Investigation;
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+
+    // Board rebuilt: four locations in play, Study gone, set-aside empty.
+    let codes: std::collections::BTreeSet<String> = result
+        .state
+        .locations
+        .values()
+        .map(|l| l.code.as_str().to_owned())
+        .collect();
+    assert_eq!(
+        codes,
+        ["01112", "01113", "01114", "01115"]
+            .into_iter()
+            .map(String::from)
+            .collect()
+    );
+    assert!(result.state.set_aside_locations.is_empty());
+
+    // Investigator relocated to the Hallway (01112).
+    let hallway_id = result
+        .state
+        .locations
+        .values()
+        .find(|l| l.code.as_str() == "01112")
+        .unwrap()
+        .id;
+    assert_eq!(
+        result.state.investigators[&inv].current_location,
+        Some(hallway_id)
+    );
+
+    // Act cursor moved to Act 2.
+    assert_eq!(result.state.act_index, 1);
 }

@@ -150,13 +150,33 @@ fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
     );
 }
 
-/// Advance the act deck one step: emit [`Event::ActAdvanced`] and move the
-/// cursor. Only called for a non-terminal act; the missing-successor case
-/// is `unreachable!()` (a terminal act must carry a resolution point —
-/// malformed scenario data otherwise). Mirrors [`advance_agenda`].
-fn advance_act(cx: &mut Cx) {
+/// Advance the act deck one step: emit [`Event::ActAdvanced`], fire the
+/// leaving act's Forced on-advance reverse effect via the registry, then
+/// move the cursor. Only called for a non-terminal act; the
+/// missing-successor case is `unreachable!()` (a terminal act must carry a
+/// resolution point — malformed scenario data otherwise). Mirrors
+/// [`advance_agenda`].
+///
+/// Invariant: the leaving act's on-advance Forced effect must not itself
+/// re-advance the act (no in-scope card does; a re-advance from that
+/// effect would recurse here). Revisit if such an ability lands.
+pub(crate) fn advance_act(cx: &mut Cx) {
     let from = cx.state.act_index;
+    let leaving_code = cx.state.act_deck[from].code.clone();
     cx.events.push(crate::event::Event::ActAdvanced { from });
+    // Resolve the leaving act's Forced on-advance reverse effect (the
+    // board world-build) before the next act becomes current — Rules
+    // Reference p.3: flip the card, follow the reverse, then the next
+    // card becomes current. `()` return can't propagate a 2+-trigger
+    // reject; `debug_assert!` guards it (mirror of `upkeep_phase_end`).
+    let forced = super::forced_triggers::fire_forced_triggers(
+        cx,
+        &super::forced_triggers::ForcedTriggerPoint::ActAdvanced { code: leaving_code },
+    );
+    debug_assert!(
+        matches!(forced, EngineOutcome::Done),
+        "advance_act on-advance forced did not resolve to Done: {forced:?} (2+ needs #213)"
+    );
     cx.state.act_index += 1;
     if cx.state.act_index >= cx.state.act_deck.len() {
         unreachable!(
@@ -177,7 +197,7 @@ fn advance_act(cx: &mut Cx) {
 /// outcome `apply` clears events but does not roll back `state`, so a
 /// latch set on a doomed path would persist. All current callers latch
 /// only on their success branches.
-pub(super) fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
+pub(crate) fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
     if state.resolution.is_none() {
         state.resolution = Some(resolution);
     }
@@ -427,6 +447,43 @@ mod advance_act_tests {
         ));
         assert_no_event!(result.events, Event::ActAdvanced { .. });
         assert_eq!(result.state.investigators[&inv].clues, 0);
+    }
+
+    #[test]
+    fn advance_act_without_registry_still_advances() {
+        use crate::scenario::Resolution;
+        use crate::state::{Act, CardCode, InvestigatorId, Phase};
+        use crate::test_support::{test_investigator, GameStateBuilder};
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 2;
+        let mut state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .build();
+        state.act_deck = vec![
+            Act {
+                code: CardCode("01108".into()),
+                clue_threshold: 2,
+                resolution: None,
+            },
+            Act {
+                code: CardCode("01109".into()),
+                clue_threshold: 3,
+                resolution: Some(Resolution::Won { id: "R1".into() }),
+            },
+        ];
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(
+            result.state.act_index, 1,
+            "cursor advances even with no forced ability"
+        );
     }
 
     #[test]

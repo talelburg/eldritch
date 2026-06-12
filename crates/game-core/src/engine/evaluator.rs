@@ -143,6 +143,66 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
         } => apply_if(cx, eval_ctx, condition, then, else_.as_deref()),
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(_) => awaiting_input_stub("ChooseOne"),
+        Effect::PutSetAsideLocationsIntoPlay => {
+            let drained = std::mem::take(&mut cx.state.set_aside_locations);
+            for loc in drained {
+                cx.state.locations.insert(loc.id, loc);
+            }
+            EngineOutcome::Done
+        }
+        Effect::RelocateAllInvestigators { to } => {
+            let Some(dest) = location_id_by_code(cx.state, to) else {
+                return EngineOutcome::Rejected {
+                    reason: format!("RelocateAllInvestigators: no in-play location with code {to}")
+                        .into(),
+                };
+            };
+            let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
+            for id in ids {
+                let inv = cx
+                    .state
+                    .investigators
+                    .get_mut(&id)
+                    .expect("id sourced from keys()");
+                let from = inv.current_location;
+                inv.current_location = Some(dest);
+                if let Some(from_id) = from {
+                    if from_id != dest {
+                        cx.events.push(Event::InvestigatorMoved {
+                            investigator: id,
+                            from: from_id,
+                            to: dest,
+                        });
+                    }
+                }
+            }
+            EngineOutcome::Done
+        }
+        Effect::RemoveLocationFromGame { location } => {
+            let Some(target) = location_id_by_code(cx.state, location) else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "RemoveLocationFromGame: no in-play location with code {location}"
+                    )
+                    .into(),
+                };
+            };
+            cx.state.locations.remove(&target);
+            EngineOutcome::Done
+        }
+        Effect::AdvanceCurrentAct => {
+            use crate::engine::dispatch::act_agenda::{advance_act, request_resolution};
+            if cx.state.act_deck.is_empty() {
+                return EngineOutcome::Rejected {
+                    reason: "AdvanceCurrentAct: no act deck is modeled".into(),
+                };
+            }
+            match cx.state.act_deck[cx.state.act_index].resolution.clone() {
+                Some(resolution) => request_resolution(cx.state, resolution),
+                None => advance_act(cx),
+            }
+            EngineOutcome::Done
+        }
     }
 }
 
@@ -659,6 +719,15 @@ fn stat_matches_skill(stat: Stat, skill: SkillKind) -> bool {
             | (Stat::Combat, SkillKind::Combat)
             | (Stat::Agility, SkillKind::Agility)
     )
+}
+
+/// Find the in-play location whose printed code equals `code`.
+fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state::LocationId> {
+    state
+        .locations
+        .iter()
+        .find(|(_, loc)| loc.code.as_str() == code)
+        .map(|(id, _)| *id)
 }
 
 #[cfg(test)]
@@ -1727,6 +1796,124 @@ mod tests {
         );
     }
 
+    // ---- world-build effect tests --------------------------------
+
+    #[test]
+    fn put_set_aside_drains_into_locations() {
+        use crate::state::{CardCode, Location, LocationId};
+        let mut state = crate::test_support::GameStateBuilder::new().build();
+        state.set_aside_locations = vec![Location::new(
+            LocationId(2),
+            CardCode("01112".into()),
+            "Hallway",
+            1,
+            0,
+        )];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::PutSetAsideLocationsIntoPlay,
+            EvalContext::for_controller(crate::state::InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(state.set_aside_locations.is_empty());
+        assert!(state.locations.contains_key(&LocationId(2)));
+    }
+
+    #[test]
+    fn relocate_all_moves_everyone_to_named_code() {
+        use crate::state::{CardCode, InvestigatorId, Location, LocationId};
+        use crate::test_support::{test_investigator, GameStateBuilder};
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(1));
+        let mut state = GameStateBuilder::new()
+            .with_location(Location::new(
+                LocationId(1),
+                CardCode("01111".into()),
+                "Study",
+                2,
+                2,
+            ))
+            .with_location(Location::new(
+                LocationId(2),
+                CardCode("01112".into()),
+                "Hallway",
+                1,
+                0,
+            ))
+            .with_investigator(inv)
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::RelocateAllInvestigators { to: "01112".into() },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert!(events.iter().any(|e| matches!(e,
+            Event::InvestigatorMoved { investigator, from, to }
+                if *investigator == InvestigatorId(1) && *from == LocationId(1) && *to == LocationId(2))));
+    }
+
+    #[test]
+    fn remove_location_drops_it_from_play() {
+        use crate::state::{CardCode, Location, LocationId};
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new()
+            .with_location(Location::new(
+                LocationId(1),
+                CardCode("01111".into()),
+                "Study",
+                2,
+                2,
+            ))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::RemoveLocationFromGame {
+                location: "01111".into(),
+            },
+            EvalContext::for_controller(crate::state::InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(state.locations.is_empty());
+    }
+
+    #[test]
+    fn relocate_to_missing_code_rejects() {
+        use crate::state::InvestigatorId;
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new().build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::RelocateAllInvestigators { to: "09999".into() },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert!(matches!(out, EngineOutcome::Rejected { .. }));
+    }
+
     #[test]
     fn deal_damage_at_max_health_defeats_investigator() {
         // Build an investigator with a known low max_health (3), then
@@ -1752,5 +1939,68 @@ mod tests {
             events,
             Event::InvestigatorDefeated { investigator, .. } if *investigator == id
         );
+    }
+
+    #[test]
+    fn advance_current_act_non_terminal_bumps_cursor() {
+        use crate::scenario::Resolution;
+        use crate::state::{Act, CardCode, InvestigatorId};
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new()
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.act_deck = vec![
+            Act {
+                code: CardCode("a1".into()),
+                clue_threshold: 0,
+                resolution: None,
+            },
+            Act {
+                code: CardCode("a2".into()),
+                clue_threshold: 0,
+                resolution: Some(Resolution::Won { id: "R1".into() }),
+            },
+        ];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::AdvanceCurrentAct,
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.act_index, 1);
+        assert!(state.resolution.is_none());
+    }
+
+    #[test]
+    fn advance_current_act_terminal_latches_resolution() {
+        use crate::scenario::Resolution;
+        use crate::state::{Act, CardCode, InvestigatorId};
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new()
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.act_deck = vec![Act {
+            code: CardCode("a1".into()),
+            clue_threshold: 0,
+            resolution: Some(Resolution::Won { id: "R1".into() }),
+        }];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = apply_effect(
+            &mut cx,
+            &Effect::AdvanceCurrentAct,
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.act_index, 0, "terminal act does not move the cursor");
+        assert!(matches!(state.resolution, Some(Resolution::Won { .. })));
     }
 }
