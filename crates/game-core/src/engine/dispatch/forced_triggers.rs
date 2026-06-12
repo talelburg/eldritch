@@ -44,6 +44,15 @@ pub(crate) enum ForcedTriggerPoint {
         /// Printed code of the act that advanced.
         code: CardCode,
     },
+    /// An enemy was defeated. Scans the *current act* for
+    /// `EventPattern::EnemyDefeated` forced abilities whose `code` narrow
+    /// matches (or is `None`); binds controller = the lead investigator.
+    /// The act-3 objective (01110) advances on the Ghoul Priest's defeat
+    /// through this point.
+    EnemyDefeated {
+        /// Printed code of the defeated enemy (for `code`-narrow matching).
+        code: CardCode,
+    },
 }
 
 struct ForcedHit {
@@ -124,6 +133,20 @@ fn collect_forced_hits(
             push_matching(reg, code, lead, &mut hits, |p| {
                 matches!(p, EventPattern::ActAdvanced)
             });
+        }
+        ForcedTriggerPoint::EnemyDefeated { code } => {
+            let Some(lead) = state.turn_order.first().copied() else {
+                return hits;
+            };
+            if let Some(act) = state.act_deck.get(state.act_index) {
+                push_matching(reg, &act.code, lead, &mut hits, |p| {
+                    matches!(
+                        p,
+                        EventPattern::EnemyDefeated { code: narrow, .. }
+                            if narrow.as_deref().is_none_or(|c| c == code.as_str())
+                    )
+                });
+            }
         }
     }
     hits

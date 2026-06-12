@@ -25,6 +25,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         new_damage,
     });
     if new_damage >= enemy.max_health {
+        let defeated_code = enemy.code.clone(); // capture before the enemy is removed
         cx.events.push(Event::EnemyDefeated {
             enemy: enemy_id,
             by,
@@ -42,6 +43,22 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
                 enemy: enemy_id,
                 by,
             },
+        );
+        // Forced act objectives keyed to this defeat (Act 3's "If the
+        // Ghoul Priest is Defeated, advance."). `()` return can't
+        // propagate a 2+-trigger reject; debug_assert guards it (mirror of
+        // upkeep_phase_end / advance_act). Ordering vs. the
+        // AfterEnemyDefeated reaction window is fixed-deterministic for
+        // now; #212/#213 revisit.
+        let forced = super::forced_triggers::fire_forced_triggers(
+            cx,
+            &super::forced_triggers::ForcedTriggerPoint::EnemyDefeated {
+                code: defeated_code,
+            },
+        );
+        debug_assert!(
+            matches!(forced, crate::engine::EngineOutcome::Done),
+            "EnemyDefeated forced did not resolve to Done: {forced:?} (2+ needs #213)"
         );
     }
 }
@@ -285,5 +302,28 @@ pub(super) fn resolve_attacks_for_investigator(cx: &mut Cx, investigator: Invest
         });
         enemy.exhausted = true;
         cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
+    }
+}
+
+#[cfg(test)]
+mod combat_tests {
+    use super::super::Cx;
+    use crate::state::{EnemyId, InvestigatorId};
+    use crate::test_support::{test_enemy, GameStateBuilder};
+
+    #[test]
+    fn defeating_enemy_without_registry_still_removes_it() {
+        let eid = EnemyId(1);
+        let mut enemy = test_enemy(1, "Ghoul");
+        enemy.max_health = 1;
+        let mut state = GameStateBuilder::new().build();
+        state.enemies.insert(eid, enemy);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        super::damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
+        assert!(!state.enemies.contains_key(&eid), "defeated enemy removed");
     }
 }

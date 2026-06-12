@@ -71,3 +71,17 @@ pub fn fire_forced_on_act_advance(
         &crate::engine::ForcedTriggerPoint::ActAdvanced { code },
     )
 }
+
+/// Test helper: fire forced triggers for an enemy defeat, returning the
+/// `EngineOutcome`. See `fire_forced_on_enter`.
+pub fn fire_forced_on_enemy_defeat(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    code: crate::state::CardCode,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::EnemyDefeated { code },
+    )
+}
