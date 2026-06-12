@@ -964,7 +964,12 @@ mod spawn_enemy_tests {
             traits: Vec::new(),
             pack_code: "_synth".into(),
             kind: CardKind::Enemy {
+                fight: 1,
+                evade: 1,
+                damage: 0,
+                horror: 0,
                 health: Some(1),
+                victory: None,
                 spawn,
                 surge: false,
                 peril: false,

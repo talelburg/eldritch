@@ -14,12 +14,40 @@
 //! win/lose semantics — only structural reachability, proven by
 //! `tests/the_gathering.rs`.
 
+use game_core::card_data::CardKind;
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
 use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, Location, LocationId,
     TokenModifiers,
 };
+
+/// Read a location's printed `(shroud, clues)` from the generated corpus.
+/// The code is a build-time invariant of the corpus, so a miss is a bug.
+fn location_stats(code: &str) -> (u8, u8) {
+    match cards::by_code(code).expect("location code in corpus").kind {
+        CardKind::Location { shroud, clues, .. } => (shroud, clues),
+        ref k => panic!("{code} is not a Location ({k:?})"),
+    }
+}
+
+/// Read an agenda's printed doom threshold from the corpus.
+fn agenda_doom(code: &str) -> u8 {
+    match cards::by_code(code).expect("agenda code in corpus").kind {
+        CardKind::Agenda { doom_threshold } => doom_threshold,
+        ref k => panic!("{code} is not an Agenda ({k:?})"),
+    }
+}
+
+/// Read an act's printed clue threshold from the corpus, falling back to
+/// `placeholder` for acts that advance on a non-clue objective (`01110`,
+/// "Ghoul Priest defeated" — C1b owns that).
+fn act_clue_threshold(code: &str, placeholder: u8) -> u8 {
+    match cards::by_code(code).expect("act code in corpus").kind {
+        CardKind::Act { clue_threshold, .. } => clue_threshold.unwrap_or(placeholder),
+        ref k => panic!("{code} is not an Act ({k:?})"),
+    }
+}
 
 /// String id used to look this module up in [`crate::REGISTRY`].
 pub const ID: &str = "the-gathering";
@@ -59,11 +87,17 @@ fn standard_chaos_bag() -> ChaosBag {
 /// act/agenda decks, the Standard chaos bag, and `starting_location`.
 /// No investigators — the `StartScenario` roster step seats them.
 pub fn setup() -> GameState {
-    // The Study (01111): shroud 2, clues 2, revealed, no connections
-    // (Act 1 is "trapped in the Study"). `Location::new` gives a
-    // revealed, unconnected location; the Study's connection graph is
-    // C1b's Door-on-the-Floor transition.
-    let study = Location::new(STUDY_ID, CardCode("01111".into()), "Study", 2, 2);
+    // The Study (01111): shroud/clues read from the corpus. `Location::new`
+    // gives a revealed, unconnected location (Act 1 is "trapped in the
+    // Study"); the connection graph is C1b's Door-on-the-Floor transition.
+    let (study_shroud, study_clues) = location_stats("01111");
+    let study = Location::new(
+        STUDY_ID,
+        CardCode("01111".into()),
+        "Study",
+        study_shroud,
+        study_clues,
+    );
 
     // The Gathering's symbol effects are printed on reference card 01104
     // (board-dependent; evaluated in C2). Until then these flat NotZ
@@ -85,43 +119,44 @@ pub fn setup() -> GameState {
 
     state.starting_location = Some(STUDY_ID);
 
-    // Act deck 01108 -> 01109 -> 01110. Clue thresholds 2/3 are the real
-    // printed values; 01110's is a placeholder (its real "Ghoul Priest
-    // defeated" objective is C1b). The terminal act carries the Won latch.
+    // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
+    // corpus; 01110's printed threshold is null (it advances on "Ghoul
+    // Priest defeated" — C1b), so it falls back to a placeholder. The
+    // terminal act carries the Won latch.
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
-            clue_threshold: 2,
+            clue_threshold: act_clue_threshold("01108", 0),
             resolution: None,
         },
         Act {
             code: CardCode("01109".into()),
-            clue_threshold: 3,
+            clue_threshold: act_clue_threshold("01109", 0),
             resolution: None,
         },
         Act {
             code: CardCode("01110".into()),
-            clue_threshold: 2, // placeholder; real objective is C1b
+            clue_threshold: act_clue_threshold("01110", 2), // 2 = C1b placeholder
             resolution: Some(Resolution::Won { id: "R1".into() }),
         },
     ];
 
-    // Agenda deck 01105 -> 01106 -> 01107. Doom thresholds 3/7/10 are the
-    // real printed values. The terminal agenda carries the Lost latch.
+    // Agenda deck 01105 -> 01106 -> 01107. Doom thresholds read from the
+    // corpus. The terminal agenda carries the Lost latch.
     state.agenda_deck = vec![
         Agenda {
             code: CardCode("01105".into()),
-            doom_threshold: 3,
+            doom_threshold: agenda_doom("01105"),
             resolution: None,
         },
         Agenda {
             code: CardCode("01106".into()),
-            doom_threshold: 7,
+            doom_threshold: agenda_doom("01106"),
             resolution: None,
         },
         Agenda {
             code: CardCode("01107".into()),
-            doom_threshold: 10,
+            doom_threshold: agenda_doom("01107"),
             resolution: Some(Resolution::Lost {
                 reason: "The ghouls break free".into(),
             }),
@@ -151,6 +186,26 @@ pub const MODULE: ScenarioModule = ScenarioModule {
 mod tests {
     use super::*;
     use game_core::state::ChaosToken;
+
+    #[test]
+    fn setup_reads_card_stats_from_corpus() {
+        // The hardcoded literals are gone — these values now come from
+        // cards::by_code. Pinning them guards both the corpus data and
+        // the reader helpers.
+        let s = setup();
+        let study = s.locations.get(&STUDY_ID).unwrap();
+        assert_eq!((study.shroud, study.clues), (2, 2), "Study 01111 stats");
+        assert_eq!(
+            s.agenda_deck
+                .iter()
+                .map(|a| a.doom_threshold)
+                .collect::<Vec<_>>(),
+            [3, 7, 10],
+            "agenda doom thresholds from corpus",
+        );
+        assert_eq!(s.act_deck[0].clue_threshold, 2, "act 01108 from corpus");
+        assert_eq!(s.act_deck[1].clue_threshold, 3, "act 01109 from corpus");
+    }
 
     #[test]
     fn setup_places_only_the_isolated_study() {

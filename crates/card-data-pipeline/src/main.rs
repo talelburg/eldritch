@@ -17,11 +17,9 @@
 //! cargo run -p card-data-pipeline
 //! ```
 //!
-//! Inputs (relative to repo root):
-//! - `data/arkhamdb-snapshot/pack/core/core.json`
-//! - `data/arkhamdb-snapshot/pack/dwl/*.json` (excluding the
-//!   `*_encounter.json` companion files; encounter sets are handled
-//!   in a later phase)
+//! Inputs (relative to repo root): the Core + Dunwich player files and
+//! their `*_encounter.json` companions (see [`PACK_FILES`]). Encounter
+//! `scenario`/`story`-type cards are skipped (no `CardKind` variant).
 //!
 //! Output:
 //! - `crates/cards/src/generated/cards.rs`
@@ -36,9 +34,11 @@ use serde::Deserialize;
 const SNAPSHOT_DIR: &str = "data/arkhamdb-snapshot";
 const OUTPUT_PATH: &str = "crates/cards/src/generated/cards.rs";
 
-/// Pack files we read for Phase 2. Encounter-companion files
-/// (`*_encounter.json`) are skipped — encounter-set support lands
-/// when scenario plumbing does.
+/// Pack files we read: the player files plus their `*_encounter.json`
+/// companions (the in-scope Core + Dunwich snapshot). Encounter
+/// `scenario`/`story`-type cards have no `CardKind` variant and are
+/// skipped in `process_raw`; everything else (locations/acts/agendas/
+/// enemies/treacheries/story-assets) is ingested.
 const PACK_FILES: &[&str] = &[
     "pack/core/core.json",
     "pack/dwl/dwl.json",
@@ -48,6 +48,14 @@ const PACK_FILES: &[&str] = &[
     "pack/dwl/uau.json",
     "pack/dwl/wda.json",
     "pack/dwl/litas.json",
+    "pack/core/core_encounter.json",
+    "pack/dwl/dwl_encounter.json",
+    "pack/dwl/tmm_encounter.json",
+    "pack/dwl/tece_encounter.json",
+    "pack/dwl/bota_encounter.json",
+    "pack/dwl/uau_encounter.json",
+    "pack/dwl/wda_encounter.json",
+    "pack/dwl/litas_encounter.json",
 ];
 
 fn main() -> ExitCode {
@@ -103,6 +111,12 @@ fn process_raw(
     if raw.name.is_none() {
         return Ok(());
     }
+    // Encounter `scenario` / `story` cards have no `CardKind` variant
+    // (e.g. the Gathering reference card 01104 — its symbol effects live
+    // in an abilities() impl, not metadata). Skip them like skeletons.
+    if matches!(raw.type_code.as_deref(), Some("scenario" | "story")) {
+        return Ok(());
+    }
     let normalized =
         normalize(raw).map_err(|e| format!("normalizing card in {}: {e}", path.display()))?;
     if let Some(prev) = all.insert(normalized.code.clone(), normalized) {
@@ -148,6 +162,15 @@ struct RawCard {
     skill_combat: Option<u8>,
     skill_agility: Option<u8>,
     skill_wild: Option<u8>,
+    // Encounter-card stats (locations / acts / agendas / enemies).
+    shroud: Option<u8>,
+    clues: Option<u8>,
+    victory: Option<u8>,
+    doom: Option<u8>,
+    enemy_fight: Option<u8>,
+    enemy_evade: Option<u8>,
+    enemy_damage: Option<u8>,
+    enemy_horror: Option<u8>,
 }
 
 // ---- normalized shape we emit -----------------------------------
@@ -174,6 +197,16 @@ struct NormalizedCard {
     quantity: u8,
     pack_code: String,
     is_fast: bool,
+    // Encounter-card stats. `clues` is a location's starting clues AND an
+    // act's advance threshold (same JSON field); consumer interprets by kind.
+    shroud: Option<u8>,
+    clues: Option<u8>,
+    victory: Option<u8>,
+    doom: Option<u8>,
+    enemy_fight: Option<u8>,
+    enemy_evade: Option<u8>,
+    enemy_damage: Option<u8>,
+    enemy_horror: Option<u8>,
 }
 
 fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
@@ -213,6 +246,14 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         quantity: raw.quantity.unwrap_or(1),
         pack_code: raw.pack_code,
         is_fast,
+        shroud: raw.shroud,
+        clues: raw.clues,
+        victory: raw.victory,
+        doom: raw.doom,
+        enemy_fight: raw.enemy_fight,
+        enemy_evade: raw.enemy_evade,
+        enemy_damage: raw.enemy_damage,
+        enemy_horror: raw.enemy_horror,
     })
 }
 
@@ -395,17 +436,38 @@ fn render_kind(c: &NormalizedCard) -> String {
             c.deck_limit,
         ),
         "Enemy" => format!(
-            "CardKind::Enemy {{ health: {}, spawn: None, surge: false, peril: false, quantity: {} }}",
+            "CardKind::Enemy {{ fight: {}, evade: {}, damage: {}, horror: {}, \
+             health: {}, victory: {}, spawn: None, surge: false, peril: false, quantity: {} }}",
+            c.enemy_fight.unwrap_or(0),
+            c.enemy_evade.unwrap_or(0),
+            c.enemy_damage.unwrap_or(0),
+            c.enemy_horror.unwrap_or(0),
             opt_u8(c.health),
+            opt_u8(c.victory),
             c.quantity,
         ),
         "Treachery" => format!(
             "CardKind::Treachery {{ surge: false, peril: false, quantity: {} }}",
             c.quantity,
         ),
+        "Location" => format!(
+            "CardKind::Location {{ shroud: {}, clues: {}, victory: {} }}",
+            c.shroud.unwrap_or(0),
+            c.clues.unwrap_or(0),
+            opt_u8(c.victory),
+        ),
+        "Act" => format!(
+            "CardKind::Act {{ clue_threshold: {}, victory: {} }}",
+            opt_u8(c.clues),
+            opt_u8(c.victory),
+        ),
+        "Agenda" => format!(
+            "CardKind::Agenda {{ doom_threshold: {} }}",
+            c.doom.unwrap_or(0),
+        ),
         other => panic!(
-            "card {}: card_type {other:?} has no CardKind variant yet \
-             (encounter types Location/Act/Agenda land in #252)",
+            "card {}: card_type {other:?} has no CardKind variant \
+             (`scenario`/`story` are skipped in process_raw)",
             c.code
         ),
     }
@@ -506,6 +568,49 @@ mod tests {
             skill_combat: None,
             skill_agility: None,
             skill_wild: None,
+            shroud: None,
+            clues: None,
+            victory: None,
+            doom: None,
+            enemy_fight: None,
+            enemy_evade: None,
+            enemy_damage: None,
+            enemy_horror: None,
+        }
+    }
+
+    /// Build a `NormalizedCard` with all-default fields for the given
+    /// code/name/type — so emit tests don't repeat the full literal.
+    fn normalized(code: &str, name: &str, card_type: &'static str) -> NormalizedCard {
+        NormalizedCard {
+            code: code.into(),
+            name: name.into(),
+            class: "Mythos",
+            card_type,
+            cost: None,
+            xp: None,
+            text: None,
+            traits: Vec::new(),
+            slots: Vec::new(),
+            skill_willpower: 0,
+            skill_intellect: 0,
+            skill_combat: 0,
+            skill_agility: 0,
+            skill_wild: 0,
+            health: None,
+            sanity: None,
+            deck_limit: 0,
+            quantity: 1,
+            pack_code: "core".into(),
+            is_fast: false,
+            shroud: None,
+            clues: None,
+            victory: None,
+            doom: None,
+            enemy_fight: None,
+            enemy_evade: None,
+            enemy_damage: None,
+            enemy_horror: None,
         }
     }
 
@@ -834,6 +939,14 @@ mod tests {
             skill_combat: None,
             skill_agility: None,
             skill_wild: None,
+            shroud: None,
+            clues: None,
+            victory: None,
+            doom: None,
+            enemy_fight: None,
+            enemy_evade: None,
+            enemy_damage: None,
+            enemy_horror: None,
         };
         let norm = normalize(raw).expect("normalize");
         assert!(
@@ -846,28 +959,7 @@ mod tests {
     fn emitted_treachery_renders_treachery_kind() {
         // A treachery emits a `CardKind::Treachery { … }` with its
         // surge/peril defaults and quantity — and carries no class.
-        let card = NormalizedCard {
-            code: "01001".into(),
-            name: "Test".into(),
-            class: "Mythos",
-            card_type: "Treachery",
-            cost: None,
-            xp: None,
-            text: None,
-            traits: Vec::new(),
-            slots: Vec::new(),
-            skill_willpower: 0,
-            skill_intellect: 0,
-            skill_combat: 0,
-            skill_agility: 0,
-            skill_wild: 0,
-            health: None,
-            sanity: None,
-            deck_limit: 0,
-            quantity: 1,
-            pack_code: "core".into(),
-            is_fast: false,
-        };
+        let card = normalized("01001", "Test", "Treachery");
         let mut buf = String::new();
         emit_card(&mut buf, &card);
         assert!(
@@ -878,6 +970,43 @@ mod tests {
             !buf.contains("class:"),
             "treachery carries no class; got:\n{buf}",
         );
+    }
+
+    #[test]
+    fn emitted_location_renders_location_kind() {
+        let mut c = normalized("01111", "Study", "Location");
+        c.shroud = Some(2);
+        c.clues = Some(2);
+        let mut buf = String::new();
+        emit_card(&mut buf, &c);
+        assert!(
+            buf.contains("CardKind::Location { shroud: 2, clues: 2"),
+            "got:\n{buf}",
+        );
+    }
+
+    #[test]
+    fn emitted_enemy_renders_combat_stats() {
+        let mut c = normalized("01116", "Ghoul Priest", "Enemy");
+        c.enemy_fight = Some(4);
+        c.enemy_evade = Some(4);
+        c.health = Some(5);
+        let mut buf = String::new();
+        emit_card(&mut buf, &c);
+        assert!(
+            buf.contains("CardKind::Enemy { fight: 4, evade: 4,"),
+            "got:\n{buf}",
+        );
+    }
+
+    #[test]
+    fn scenario_type_card_is_skipped() {
+        let mut raw = raw_card("01104");
+        raw.type_code = Some("scenario".to_owned());
+        let mut all = BTreeMap::new();
+        process_raw(raw, &mut all, Path::new("fixture.json"))
+            .expect("scenario skip is not an error");
+        assert!(all.is_empty(), "scenario-type cards are skipped");
     }
 
     #[test]
@@ -904,6 +1033,14 @@ mod tests {
             skill_combat: None,
             skill_agility: Some(1),
             skill_wild: None,
+            shroud: None,
+            clues: None,
+            victory: None,
+            doom: None,
+            enemy_fight: None,
+            enemy_evade: None,
+            enemy_damage: None,
+            enemy_horror: None,
         };
         let norm = normalize(raw).expect("normalize");
         assert!(
