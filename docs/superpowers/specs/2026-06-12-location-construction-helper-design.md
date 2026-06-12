@@ -119,26 +119,41 @@ Study id. The ~8 references migrate:
   scenarios exist to migrate (the rest of Group C is Gathering *content*, not new
   boards).
 
-## Testing
+### Where the registry-reading methods are tested
+
+`add_location` / `add_set_aside_location` read `card_registry::current()`. The
+game-core lib test binary can't supply real location metadata (it can't depend
+on `cards`, and its existing `card_registry` test already pins a `TEST1`-only
+global fake — `install` is first-wins, so a competing global install is
+unreliable). So these two methods are **not** unit-tested inside game-core;
+they're covered where the real corpus is reachable — the `scenarios` crate,
+which installs `cards::REGISTRY` and exercises them against the **actual**
+Study/Hallway/Attic/Cellar/Parlor metadata. This mirrors how the engine's
+`encounter.rs` spawn handlers (which also read `current()`) are integration-
+tested rather than unit-tested with fakes. `connect` and the `next_location_id`
+counter are registry-free, so they keep direct game-core unit tests.
 
 - **Engine unit (`game_state.rs` / `builder.rs`):** `next_location_id` starts at
-  0 and round-trips through serde; `add_location` mints sequential ids, inserts
-  into `locations`, and reads stats from the metadata (with a test registry, as
-  `card_registry`'s existing tests do); `add_set_aside_location` inserts into the
-  set-aside zone; `connect` makes both locations reference each other and works
-  across the in-play/set-aside split.
-- **Scenario (`the_gathering.rs`):** the existing setup tests, updated for the
-  registry install + `STUDY_ID` → `starting_location` migration, still pin the
-  board shape (Study in play with code `01111` + shroud/clues `(2,2)`; four
-  set-aside locations in order; Hallway ↔ Attic/Cellar/Parlor; Study isolated).
+  0 and round-trips through serde; `connect` makes both locations reference each
+  other and works across the in-play / set-aside split (build the two locations
+  via direct insertion of `Location::new` fixtures — no registry needed).
+- **Scenario unit (`the_gathering.rs` `#[cfg(test)]`):** install `cards::REGISTRY`,
+  then the setup tests (updated for the `STUDY_ID` → `starting_location`
+  migration) pin the board built by the real `add_location` calls: Study in play
+  with code `01111` + shroud/clues `(2,2)`; four set-aside locations in order
+  with distinct ids; Hallway ↔ Attic/Cellar/Parlor; Study isolated; the four
+  minted ids are distinct from the Study's. This is the coverage for
+  `add_location` / `add_set_aside_location` against actual locations.
 - **Integration (`tests/the_gathering.rs`):** unchanged behavior — the seating
   and act-1 board-rebuild tests still pass via `starting_location`.
 
 ## Open questions
 
-None. The single design fork (registry-based `GameState` method vs. a
-`scenarios`-layer helper using `cards::by_code`) is settled in favour of the
-`GameState` method: it matches the "on game state" intent, keeps the API
-reusable from any registry-having host, and uses the engine's sanctioned
-card-data path — at the cost of one registry-install line in `setup()`'s unit
-tests.
+None. The registry-based `GameState` method (over a `scenarios`-layer helper
+using `cards::by_code`) was chosen for the "on game state" intent + the engine's
+sanctioned card-data path. The one concern it raised — unit-testing a method
+that reads the process-global registry inside game-core — is resolved by testing
+`add_location` / `add_set_aside_location` at the `scenarios` layer against the
+**actual** location corpus (see Testing), rather than with game-core fakes; the
+methods need no in-game-core unit test, exactly like the `encounter.rs` spawn
+handlers that also read `current()`.
