@@ -175,13 +175,33 @@ fn trigger_matches(
         // PhaseEnded is matched only by the forced dispatch path
         // (`engine::dispatch::forced_triggers`), never by player reaction
         // windows.
+        // PlayerWindow steps open for timing reasons; no
+        // Trigger::OnEvent pattern matches them — those windows gate
+        // Fast actions, not after-event reactions. AfterEnemyDefeated
+        // windows only match EnemyDefeated patterns (handled above);
+        // encounter-reveal patterns return false.
+        //
+        // EnemySpawned: no WindowKind opens specifically for "enemy
+        // spawned" in Phase 4. A future PR (likely Phase-7+) that wants
+        // to react to spawns will add the corresponding WindowKind
+        // variant and update this arm.
+        // EnteredLocation is matched by the forced auto-fire path in
+        // `engine::dispatch::forced_triggers` (fired from `move_action`),
+        // not by reaction windows.
+        // PhaseEnded is matched only by the forced dispatch path
+        // (`engine::dispatch::forced_triggers`), never by player reaction
+        // windows.
+        // ActAdvanced is matched only by the forced dispatch path
+        // (`ForcedTriggerPoint::ActAdvanced`), never by player reaction
+        // windows.
         (
             WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
             | EventPattern::EnteredLocation
-            | EventPattern::PhaseEnded { .. },
+            | EventPattern::PhaseEnded { .. }
+            | EventPattern::ActAdvanced,
         ) => false,
     }
 }

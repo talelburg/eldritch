@@ -252,6 +252,11 @@ pub enum EventPattern {
     /// wired for Enemy and Upkeep phase-ends only; Mythos and
     /// Investigation are not wired (see #212).
     PhaseEnded { phase: Phase },
+    /// The act this ability is printed on advanced (its reverse side
+    /// resolves). Fired forced via `ForcedTriggerPoint::ActAdvanced`;
+    /// binds controller = the lead investigator (board-wide reverse
+    /// effects ignore it).
+    ActAdvanced,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -459,6 +464,16 @@ pub enum Effect {
     /// branch's effect. Requires an `AwaitingInput` round-trip; the
     /// evaluator stub for this lands in Phase 3 alongside skill tests.
     ChooseOne(Vec<Effect>),
+    /// Put every location in `set_aside_locations` into play (Rules
+    /// Reference p.3 "set aside" -> in play). Board-wide; ignores the
+    /// controller.
+    PutSetAsideLocationsIntoPlay,
+    /// Move every investigator to the in-play location with this
+    /// printed `code`. Rejects if no such location is in play.
+    RelocateAllInvestigators { to: String },
+    /// Remove the in-play location with this printed `code` from the
+    /// game. Rejects if no such location is in play.
+    RemoveLocationFromGame { location: String },
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -799,6 +814,28 @@ pub fn for_each(targets: InvestigatorTargetSet, body: Effect) -> Effect {
 #[must_use]
 pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
     Effect::ChooseOne(effects.into_iter().collect())
+}
+
+/// Build an [`Effect::PutSetAsideLocationsIntoPlay`].
+#[must_use]
+pub fn put_set_aside_locations_into_play() -> Effect {
+    Effect::PutSetAsideLocationsIntoPlay
+}
+
+/// Build an [`Effect::RelocateAllInvestigators`] targeting `to` (a
+/// printed location code).
+#[must_use]
+pub fn relocate_all_investigators(to: impl Into<String>) -> Effect {
+    Effect::RelocateAllInvestigators { to: to.into() }
+}
+
+/// Build an [`Effect::RemoveLocationFromGame`] targeting `location` (a
+/// printed location code).
+#[must_use]
+pub fn remove_location_from_game(location: impl Into<String>) -> Effect {
+    Effect::RemoveLocationFromGame {
+        location: location.into(),
+    }
 }
 
 // ---- tests ----------------------------------------------------
@@ -1200,6 +1237,22 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: EventPattern = serde_json::from_str(&json).unwrap();
         assert_eq!(p, back);
+    }
+
+    #[test]
+    fn world_build_effect_builders_have_expected_shape() {
+        assert!(matches!(
+            put_set_aside_locations_into_play(),
+            Effect::PutSetAsideLocationsIntoPlay
+        ));
+        assert!(matches!(
+            relocate_all_investigators("01112"),
+            Effect::RelocateAllInvestigators { to } if to == "01112"
+        ));
+        assert!(matches!(
+            remove_location_from_game("01111"),
+            Effect::RemoveLocationFromGame { location } if location == "01111"
+        ));
     }
 
     /// Effects clone deeply (the recursive Box doesn't break Clone).

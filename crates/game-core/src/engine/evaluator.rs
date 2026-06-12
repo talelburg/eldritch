@@ -143,6 +143,9 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
         } => apply_if(cx, eval_ctx, condition, then, else_.as_deref()),
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(_) => awaiting_input_stub("ChooseOne"),
+        Effect::PutSetAsideLocationsIntoPlay => world_build_stub("PutSetAsideLocationsIntoPlay"),
+        Effect::RelocateAllInvestigators { .. } => world_build_stub("RelocateAllInvestigators"),
+        Effect::RemoveLocationFromGame { .. } => world_build_stub("RemoveLocationFromGame"),
     }
 }
 
@@ -274,6 +277,20 @@ fn awaiting_input_stub(name: &'static str) -> EngineOutcome {
         reason: format!(
             "TODO: {name} evaluator needs AwaitingInput + ResolveInput resume; \
              no engine consumer has landed yet."
+        )
+        .into(),
+    }
+}
+
+/// Standard rejection message for world-build effect variants whose
+/// evaluator behavior lands in a later task (Task 3 / #228). The DSL
+/// variants exist now so card declarations compile; the state mutations
+/// are not yet wired.
+fn world_build_stub(name: &'static str) -> EngineOutcome {
+    EngineOutcome::Rejected {
+        reason: format!(
+            "TODO(#228): {name} evaluator not yet implemented; \
+             world-build effect behavior lands in Task 3."
         )
         .into(),
     }
