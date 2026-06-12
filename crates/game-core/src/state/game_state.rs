@@ -12,6 +12,7 @@ use super::{
     location::{Location, LocationId},
     phase::Phase,
 };
+use crate::card_data::{CardKind, CardMetadata};
 use crate::dsl::{SkillTestKind, Stat};
 use crate::rng::RngState;
 use card_dsl::card_data::SkillKind;
@@ -848,6 +849,55 @@ impl GameState {
             .iter()
             .rposition(|w| !w.pending_triggers.is_empty())
     }
+
+    /// Mint a fresh, deterministic [`LocationId`] (sequential from
+    /// `next_location_id`).
+    fn mint_location_id(&mut self) -> LocationId {
+        let id = LocationId(self.next_location_id);
+        self.next_location_id = self.next_location_id.saturating_add(1);
+        id
+    }
+
+    /// Build a [`Location`] from its card `metadata`, minting a fresh id.
+    /// Panics if `metadata` is not a `Location` card (a build-time
+    /// invariant — scenarios hand their own location cards).
+    fn location_from_metadata(&mut self, metadata: &CardMetadata) -> Location {
+        let (shroud, clues) = match &metadata.kind {
+            CardKind::Location { shroud, clues, .. } => (*shroud, *clues),
+            other => panic!(
+                "add_location: card {} is not a Location ({other:?})",
+                metadata.code
+            ),
+        };
+        let id = self.mint_location_id();
+        Location::new(
+            id,
+            CardCode::new(metadata.code.clone()),
+            metadata.name.clone(),
+            shroud,
+            clues,
+        )
+    }
+
+    /// Add a location **into play** from its card metadata, returning the
+    /// minted [`LocationId`]. The id is deterministic (construction order),
+    /// so scenarios never hand-pick id literals.
+    pub fn add_location(&mut self, metadata: &CardMetadata) -> LocationId {
+        let loc = self.location_from_metadata(metadata);
+        let id = loc.id;
+        self.locations.insert(id, loc);
+        id
+    }
+
+    /// Add a location to the **set-aside** (out-of-play) zone from its card
+    /// metadata, returning the minted [`LocationId`]. Card effects (e.g. The
+    /// Gathering's Act-1 reverse) later move it into play.
+    pub fn add_set_aside_location(&mut self, metadata: &CardMetadata) -> LocationId {
+        let loc = self.location_from_metadata(metadata);
+        let id = loc.id;
+        self.set_aside_locations.push(loc);
+        id
+    }
 }
 
 #[cfg(test)]
@@ -1114,6 +1164,70 @@ mod partial_eq_tests {
     fn game_state_is_partial_eq() {
         fn assert_partial_eq<T: PartialEq>() {}
         assert_partial_eq::<GameState>();
+    }
+}
+
+#[cfg(test)]
+mod add_location_tests {
+    use crate::card_data::{CardKind, CardMetadata};
+    use crate::test_support::GameStateBuilder;
+
+    fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
+        CardMetadata {
+            code: code.to_string(),
+            name: name.to_string(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".to_string(),
+            kind: CardKind::Location {
+                shroud,
+                clues,
+                victory: None,
+            },
+        }
+    }
+
+    #[test]
+    fn add_location_mints_sequential_ids_and_extracts_metadata() {
+        let mut state = GameStateBuilder::new().build();
+        let a = state.add_location(&location_meta("01111", "Study", 2, 2));
+        let b = state.add_location(&location_meta("01112", "Hallway", 1, 0));
+        assert_ne!(a, b, "ids are distinct");
+        let study = &state.locations[&a];
+        assert_eq!(study.code.as_str(), "01111");
+        assert_eq!(study.name, "Study");
+        assert_eq!((study.shroud, study.clues), (2, 2));
+        assert!(study.connections.is_empty());
+        assert!(study.revealed);
+        assert_eq!(state.next_location_id, 2, "counter advanced twice");
+    }
+
+    #[test]
+    fn add_set_aside_location_goes_to_the_set_aside_zone() {
+        let mut state = GameStateBuilder::new().build();
+        let id = state.add_set_aside_location(&location_meta("01113", "Attic", 1, 2));
+        assert!(!state.locations.contains_key(&id), "not in play");
+        assert_eq!(state.set_aside_locations.len(), 1);
+        assert_eq!(state.set_aside_locations[0].id, id);
+        assert_eq!(state.set_aside_locations[0].code.as_str(), "01113");
+    }
+
+    #[test]
+    #[should_panic(expected = "not a Location")]
+    fn add_location_panics_on_non_location_metadata() {
+        let mut state = GameStateBuilder::new().build();
+        let meta = CardMetadata {
+            code: "01108".to_string(),
+            name: "Trapped".to_string(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".to_string(),
+            kind: CardKind::Act {
+                clue_threshold: Some(2),
+                victory: None,
+            },
+        };
+        state.add_location(&meta);
     }
 }
 
