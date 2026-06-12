@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{investigator::InvestigatorId, location::LocationId};
+use super::{card::CardCode, investigator::InvestigatorId, location::LocationId};
 use crate::card_data::Prey;
 
 /// Stable identifier for an enemy within a scenario.
@@ -31,6 +31,11 @@ pub struct Enemy {
     pub id: EnemyId,
     /// Display name.
     pub name: String,
+    /// Printed `ArkhamDB` code (e.g. `"01116"` for the Ghoul Priest).
+    /// Carried so framework effects keyed on a specific enemy — Act 3's
+    /// "If the Ghoul Priest is Defeated, advance." — can match after the
+    /// enemy leaves `state.enemies`.
+    pub code: CardCode,
     /// Difficulty for Fight tests against this enemy.
     pub fight: i8,
     /// Difficulty for Evade tests against this enemy.
@@ -93,8 +98,15 @@ mod hunter_prey_field_tests {
             engaged_with: None,
             hunter: true,
             prey: Prey::Default,
+            code: crate::CardCode::new("01116"),
         };
         assert!(e.hunter);
         assert_eq!(e.prey, Prey::Default);
+    }
+
+    #[test]
+    fn test_enemy_fixture_carries_a_code() {
+        let e = crate::test_support::test_enemy(7, "Ghoul");
+        assert!(!e.code.as_str().is_empty(), "every enemy carries its printed code");
     }
 }

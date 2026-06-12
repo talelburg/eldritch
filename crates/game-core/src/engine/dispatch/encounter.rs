@@ -309,6 +309,7 @@ fn spawn_enemy(
     let enemy = Enemy {
         id: enemy_id,
         name: metadata.name.clone(),
+        code: CardCode::new(metadata.code.clone()),
         fight: 1,
         evade: 1,
         max_health: health.unwrap_or(1),
