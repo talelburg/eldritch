@@ -80,10 +80,11 @@ fn drives_to_a_won_resolution() {
     let inv = InvestigatorId(1);
     let mut state = setup_and_seat();
 
-    // Hand the investigator enough clues to clear all three act
-    // thresholds (2 + 3 + 2 = 7); AdvanceAct spends from group clues,
-    // no chaos draw involved. Proves the resolution latch fires for the
-    // real act deck, deterministically.
+    // Hand the investigator enough clues to clear acts 1 and 2 (2 + 3 = 5
+    // needed); act 3 (01110) has threshold 0 — it advances on Ghoul-Priest-
+    // defeat, not a clue spend. 7 is comfortably enough. AdvanceAct spends
+    // from group clues, no chaos draw involved. Proves the resolution latch
+    // fires for the real act deck, deterministically.
     state.investigators.get_mut(&inv).unwrap().clues = 7;
 
     for _ in 0..3 {

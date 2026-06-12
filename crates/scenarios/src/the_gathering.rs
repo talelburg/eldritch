@@ -9,11 +9,11 @@
 //!
 //! Faithful where it can be (agenda doom 3/7/10; the verified Standard
 //! chaos bag; Study shroud/clues); structural stand-in where the rest of
-//! Group C owns fidelity (act 01110's clue threshold is a placeholder —
-//! its real "Ghoul Priest defeated" objective is C1b; symbol-token
-//! effects on reference card 01104 are C2). C1a does not claim faithful
-//! win/lose semantics — only structural reachability, proven by
-//! `tests/the_gathering.rs`.
+//! Group C owns fidelity (act 01110 advances via its Forced `EnemyDefeated`
+//! objective (01116; in `cards`) — its R1/R2 resolution choice is Phase-9
+//! — TODO; symbol-token effects on reference card 01104 are C2). C1a does
+//! not claim faithful win/lose semantics — only structural reachability,
+//! proven by `tests/the_gathering.rs`.
 
 use game_core::card_data::CardKind;
 use game_core::event::Event;
@@ -40,12 +40,11 @@ fn agenda_doom(code: &str) -> u8 {
     }
 }
 
-/// Read an act's printed clue threshold from the corpus, falling back to
-/// `placeholder` for acts that advance on a non-clue objective (`01110`,
-/// "Ghoul Priest defeated" — C1b owns that).
-fn act_clue_threshold(code: &str, placeholder: u8) -> u8 {
+/// Read an act's printed clue threshold from the corpus. Acts that
+/// advance on a non-clue objective (01110) carry `null` clues -> 0.
+fn act_clue_threshold(code: &str) -> u8 {
     match cards::by_code(code).expect("act code in corpus").kind {
-        CardKind::Act { clue_threshold, .. } => clue_threshold.unwrap_or(placeholder),
+        CardKind::Act { clue_threshold, .. } => clue_threshold.unwrap_or(0),
         ref k => panic!("{code} is not an Act ({k:?})"),
     }
 }
@@ -148,23 +147,26 @@ pub fn setup() -> GameState {
     state.set_aside_locations = vec![hallway, attic, cellar, parlor];
 
     // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
-    // corpus; 01110's printed threshold is null (it advances on "Ghoul
-    // Priest defeated" — C1b), so it falls back to a placeholder. The
-    // terminal act carries the Won latch.
+    // corpus. 01110 advances via its Forced EnemyDefeated objective
+    // (01116; in cards::act_01110), not a clue spend — its printed clue
+    // threshold is null, which the reader maps to 0.
+    // TODO(#231): the Ghoul Priest (01116) spawns at Act-2 (01109) advance — C3b.
+    // TODO(#phase-9): the reverse is the lead investigator's R1/R2 resolution choice (campaign log).
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
-            clue_threshold: act_clue_threshold("01108", 0),
+            clue_threshold: act_clue_threshold("01108"),
             resolution: None,
         },
         Act {
             code: CardCode("01109".into()),
-            clue_threshold: act_clue_threshold("01109", 0),
+            clue_threshold: act_clue_threshold("01109"),
             resolution: None,
         },
         Act {
+            // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::act_01110), not a clue spend.
             code: CardCode("01110".into()),
-            clue_threshold: act_clue_threshold("01110", 2), // 2 = C1b placeholder
+            clue_threshold: act_clue_threshold("01110"),
             resolution: Some(Resolution::Won { id: "R1".into() }),
         },
     ];
@@ -281,6 +283,20 @@ mod tests {
         }
         assert_eq!(s.starting_location, Some(STUDY_ID));
         assert!(s.investigators.is_empty(), "setup() seats no one");
+    }
+
+    #[test]
+    fn act_three_advances_on_objective_not_clues() {
+        let s = setup();
+        assert_eq!(s.act_deck[2].code.as_str(), "01110");
+        assert_eq!(
+            s.act_deck[2].clue_threshold, 0,
+            "01110 advances on Ghoul-Priest-defeat, not clues"
+        );
+        assert!(matches!(
+            s.act_deck[2].resolution,
+            Some(Resolution::Won { .. })
+        ));
     }
 
     #[test]
