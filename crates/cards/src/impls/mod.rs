@@ -40,12 +40,14 @@
 //!   reaction (`EnemyDefeated { by_controller: true }`, `After`) +
 //!   `UsageLimit { count: 1, period: Round }` for "Limit once per
 //!   round." Elder-sign half stubbed pending #118.
+//! - Trapped (01108) — Act 1; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance board build.
 //!
 //! The remaining Phase-3 card (Study #56) blocks on the
 //! location-state shape.
 
 use card_dsl::dsl::Ability;
 
+pub mod act_01108;
 pub mod attic;
 pub mod cellar;
 pub mod deduction;
@@ -60,6 +62,7 @@ pub mod working_a_hunch;
 #[must_use]
 pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     match code {
+        act_01108::CODE => Some(act_01108::abilities()),
         attic::CODE => Some(attic::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
