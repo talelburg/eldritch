@@ -56,6 +56,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         ROLAND_REACTION => Some(vec![on_event(
             EventPattern::EnemyDefeated {
                 by_controller: true,
+                code: None,
             },
             EventTiming::After,
             discover_clue(LocationTarget::YourLocation, 1),
@@ -63,6 +64,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         BYSTANDER_REACTION => Some(vec![on_event(
             EventPattern::EnemyDefeated {
                 by_controller: false,
+                code: None,
             },
             EventTiming::After,
             gain_resources(InvestigatorTarget::You, 1),
@@ -71,6 +73,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,
+                    code: None,
                 },
                 EventTiming::After,
                 discover_clue(LocationTarget::YourLocation, 1),
@@ -78,6 +81,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,
+                    code: None,
                 },
                 EventTiming::After,
                 gain_resources(InvestigatorTarget::You, 1),

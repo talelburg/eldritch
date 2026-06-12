@@ -98,10 +98,10 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
                 continue;
             };
             for (idx, ability) in abilities.iter().enumerate() {
-                let Trigger::OnEvent { pattern, timing } = ability.trigger else {
+                let Trigger::OnEvent { pattern, timing } = &ability.trigger else {
                     continue;
                 };
-                if !trigger_matches(kind, pattern, timing, id) {
+                if !trigger_matches(kind, pattern, *timing, id) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -141,7 +141,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
 /// scanning hook when the first such card lands.
 fn trigger_matches(
     kind: WindowKind,
-    pattern: EventPattern,
+    pattern: &EventPattern,
     timing: EventTiming,
     controller: InvestigatorId,
 ) -> bool {
@@ -151,9 +151,12 @@ fn trigger_matches(
     match (kind, pattern) {
         (
             WindowKind::AfterEnemyDefeated { by, .. },
-            EventPattern::EnemyDefeated { by_controller },
+            EventPattern::EnemyDefeated {
+                by_controller,
+                code: _,
+            },
         ) => {
-            if by_controller {
+            if *by_controller {
                 by == Some(controller)
             } else {
                 true

@@ -104,7 +104,7 @@ fn collect_forced_hits(
                     &act.code,
                     lead,
                     &mut hits,
-                    |p| matches!(p, EventPattern::PhaseEnded { phase } if phase == want_phase),
+                    |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
             }
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
@@ -113,7 +113,7 @@ fn collect_forced_hits(
                     &agenda.code,
                     lead,
                     &mut hits,
-                    |p| matches!(p, EventPattern::PhaseEnded { phase } if phase == want_phase),
+                    |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
             }
         }
@@ -145,17 +145,17 @@ fn push_matching(
     code: &CardCode,
     controller: InvestigatorId,
     out: &mut Vec<ForcedHit>,
-    want: impl Fn(EventPattern) -> bool,
+    want: impl Fn(&EventPattern) -> bool,
 ) {
     let Some(abilities) = (reg.abilities_for)(code) else {
         return;
     };
     for (idx, ability) in abilities.iter().enumerate() {
-        if let Trigger::OnEvent { pattern, timing } = ability.trigger {
+        if let Trigger::OnEvent { pattern, timing } = &ability.trigger {
             // Only `After` timing is handled in this slice; no in-scope
             // Forced card uses `Before` ("when X would Y") timing.
             // Revisit when such a card lands.
-            if timing == EventTiming::After && want(pattern) {
+            if *timing == EventTiming::After && want(pattern) {
                 out.push(ForcedHit {
                     code: code.clone(),
                     ability_index: idx,
