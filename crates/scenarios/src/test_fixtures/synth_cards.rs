@@ -90,7 +90,12 @@ fn synth_enemy_metadata() -> CardMetadata {
         traits: Vec::new(),
         pack_code: "_synth".to_owned(),
         kind: CardKind::Enemy {
+            fight: 1,
+            evade: 1,
+            damage: 0,
+            horror: 0,
             health: Some(1),
+            victory: None,
             spawn: Some(Spawn {
                 location: SpawnLocation::Specific(SYNTH_LOC_CODE.to_owned()),
             }),
