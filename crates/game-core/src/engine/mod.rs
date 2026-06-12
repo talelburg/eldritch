@@ -1717,6 +1717,48 @@ mod tests {
     }
 
     #[test]
+    fn moving_to_an_unrevealed_location_reveals_it_and_places_clues() {
+        use crate::card_data::ClueValue;
+        // 1 investigator; destination `b` is in play but unrevealed with a
+        // per-investigator clue value. Entering reveals it and places clues.
+        let (inv_id, _a, b, mut state) = move_scenario();
+        let loc_b = state.locations.get_mut(&b).unwrap();
+        loc_b.revealed = false;
+        loc_b.clues = 0;
+        loc_b.printed_clues = ClueValue::PerInvestigator(2);
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: b,
+            }),
+        );
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        let loc_b = &result.state.locations[&b];
+        assert!(loc_b.revealed, "entering an unrevealed location reveals it");
+        assert_eq!(loc_b.clues, 2, "1 investigator × 2 per-investigator");
+    }
+
+    #[test]
+    fn investigate_on_an_unrevealed_location_is_rejected() {
+        // An unrevealed location is not yet investigatable (Rules Reference
+        // p.14). In practice unreachable (entering reveals), but the gate
+        // makes the rule explicit.
+        let (inv_id, loc_id, mut state) = investigate_scenario(2, 2);
+        state.locations.get_mut(&loc_id).unwrap().revealed = false;
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "unrevealed location cannot be investigated"
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "state-corruption invariant violation")]
     fn investigate_with_active_investigator_missing_from_map_panics() {
         // Same corruption pattern as above, applied to Investigate.
