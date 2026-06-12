@@ -185,7 +185,9 @@ single Won/R1 latch is retained; the R1-vs-R2 choice (01110 back) is Phase-9.
 
 ## State & DSL surface added
 
-- `GameState.set_aside_locations: Vec<Location>`.
+- `GameState.set_aside_locations: Vec<Location>`; `Enemy.code: CardCode` (the
+  `Enemy` struct carries no printed code today — needed so Act 3 can route on
+  the *defeated* enemy's code after it leaves `state.enemies`).
 - `card-dsl`: `EventPattern::ActAdvanced`; `EventPattern::EnemyDefeated.code:
   Option<CardCode>` (drops `Copy` from `EventPattern`/`Trigger` — see note);
   `Effect::{PutSetAsideLocationsIntoPlay, RelocateAllInvestigators,
