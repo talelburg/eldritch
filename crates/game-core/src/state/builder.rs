@@ -269,6 +269,7 @@ impl GameStateBuilder {
             mulligan_pending: self.mulligan_pending,
             next_card_instance_id: 0,
             next_enemy_id: 0,
+            next_location_id: 0,
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
             open_windows: self.open_windows,

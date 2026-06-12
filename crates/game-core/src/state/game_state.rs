@@ -106,6 +106,12 @@ pub struct GameState {
     /// because [`EnemyId`] and [`CardInstanceId`] are distinct types —
     /// enemies aren't tracked in the `CardInPlay` registry.
     pub next_enemy_id: u32,
+    /// Monotonic counter for assigning [`LocationId`]s when scenarios
+    /// build their board via `add_location` / `add_set_aside_location`
+    /// (added in a later task). Starts at 0 and increments after each
+    /// assignment; guarantees uniqueness within a scenario and
+    /// deterministic ids across replays.
+    pub next_location_id: u32,
     /// In-flight skill modifiers contributed by activated / triggered
     /// abilities with [`ModifierScope::ThisSkillTest`] scope.
     /// Accumulates between activation and skill-test resolution; the
@@ -915,6 +921,26 @@ mod fast_actor_scope_tests {
             let back: FastActorScope = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(back, scope);
         }
+    }
+}
+
+#[cfg(test)]
+mod next_location_id_tests {
+    use crate::test_support::GameStateBuilder;
+
+    #[test]
+    fn game_state_starts_next_location_id_at_zero() {
+        let state = GameStateBuilder::new().build();
+        assert_eq!(state.next_location_id, 0);
+    }
+
+    #[test]
+    fn next_location_id_round_trips_through_serde() {
+        let mut state = GameStateBuilder::new().build();
+        state.next_location_id = 7;
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: crate::state::GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.next_location_id, 7);
     }
 }
 
