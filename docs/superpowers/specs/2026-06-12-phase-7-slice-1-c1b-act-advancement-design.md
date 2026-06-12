@@ -7,11 +7,11 @@ skeleton it builds on (`crates/scenarios/src/the_gathering.rs`, PR #250).
 
 ## Goal
 
-Make The Gathering's three-act spine real: the Act-1 board transition (the
-isolated Study expands into the four-location map) and the act-2 / act-3
-**objective types** that govern how those acts advance. After C1b, advancing
-act 1 rebuilds the board; act 2 advances by an optional round-end clue spend
-from the Hallway; act 3 advances — forced — when the Ghoul Priest is defeated.
+Make The Gathering's act spine real on the existing forced-trigger rails:
+the **Act-1 board transition** (the isolated Study expands into the four-
+location map) and the **Act-3 forced objective** (advance when the Ghoul Priest
+is defeated). Act 2's round-end objective is built later, in C3c (#232),
+alongside that slice's round-end dispatch — see Scope.
 
 ## Scope
 
@@ -19,13 +19,25 @@ from the Hallway; act 3 advances — forced — when the Ghoul Priest is defeate
 
 - **Pillar 1** — Act-1 (01108) reverse effect: the board world-build, modeled
   as a forced `OnEvent` ability *on the act card* (Option C below).
-- **Pillar 2** — Act-2 (01109) objective: a round-end, Hallway-restricted,
-  optional ("may") group clue-spend advance.
 - **Pillar 3** — Act-3 (01110) objective: a **forced** advance when the Ghoul
   Priest (01116) is defeated, replacing C1a's placeholder clue threshold.
 
+Both ride the existing forced-trigger rails (`fire_forced_triggers` /
+`ForcedTriggerPoint`) with **no new window/suspend machinery**.
+
 **Out of scope (deferred, tracked — see Deferrals & follow-ups)**
 
+- **Pillar 2 — Act-2 (01109) round-end objective → moved to C3c (#232).**
+  Planning found that a faithful "may, as a group, spend clues *when the round
+  ends*" needs a suspendable round-end **player window** (the engine must pause
+  at round end to offer the choice) — substantial new suspend machinery that
+  directly overlaps C3c, which is *already* adding the round-end dispatch point
+  (`ForcedTriggerPoint::RoundEnded`) for the agenda's forced doom. Building the
+  round-end window once, in C3c, shared by act-2's optional advance and the
+  agenda doom, avoids building it twice and avoids rework against #212's
+  emit_event restructure. Act 2 keeps its current functional clue-spend
+  (action-driven `AdvanceAct`, threshold 3) in the interim — playable, not yet
+  round-end-faithful.
 - Location reveal-on-entry + per-investigator clue placement → **#257**.
 - Act-2 back content: Ghoul Priest spawn → **#231** (C3b); Lita / Parlor
   barrier → **#258**.
@@ -130,26 +142,22 @@ scenarios reuse (chosen over a `revealed`/`in_play` flag on `Location`).
 The connections are wired at setup time against the LocationIds assigned to all
 five up front, so the four enter play already connected when act 1 advances.
 
-### Pillar 2 — Act-2 (01109) round-end objective
+### Pillar 2 — Act-2 (01109) round-end objective → C3c (#232)
 
 01109 front (verbatim): *"When the round ends, investigators in the hallway
-may, as a group, spend the requisite number of clues to advance."* Clue
-threshold 3 (from the corpus).
+may, as a group, spend the requisite number of clues to advance."*
 
-**Round-end hook.** "The round ends" = end of Upkeep (the Upkeep→Mythos
-boundary). Open the act-2 advancement window there.
-
-**Optional window.** It is a "may", so an optional `AwaitingInput` window: at
-round end, **iff** the current act is 01109 and investigators *at the Hallway*
-collectively hold ≥3 clues, offer "advance act 2?". Accept → spend 3 clues
-(Hallway-filtered contributors, reusing `spend_clues` + `advance_act` so the
-act-1-style reverse-effect path also fires for any future act-2 ability) →
-advance. Decline → proceed to Mythos. The Hallway filter is a Hallway-restricted
-variant of the existing `clue_contributors`.
-
-**Act-2 back** (Parlor reveal / Lita / Ghoul Priest spawn) is entirely
-deferred (see follow-ups); 01109 has no `abilities()` impl in C1b, so the
-forced on-advance dispatch finds nothing and returns `Done`.
+**Moved out of C1b during planning.** Faithfully, the engine must *pause at
+round end* to offer the optional "may" choice — i.e. a suspendable round-end
+**player window** threaded through `upkeep_phase_end` (today a `()`-returning,
+non-suspending step) plus `AdvanceAct` re-gating and a Hallway-restricted
+contributor filter. That is substantial new suspend/window machinery, and it
+lands on the **same round-end point** C3c (#232) is already adding
+(`ForcedTriggerPoint::RoundEnded`, for the agenda's forced doom). Building the
+window once in C3c — shared by act-2's optional advance and the agenda doom —
+avoids duplicate machinery and rework against #212. C1b leaves act 2 on its
+current action-driven `AdvanceAct` (threshold 3): functional, not yet
+round-end-faithful.
 
 ### Pillar 3 — Act-3 (01110) forced objective
 
@@ -179,11 +187,22 @@ single Won/R1 latch is retained; the R1-vs-R2 choice (01110 back) is Phase-9.
 
 - `GameState.set_aside_locations: Vec<Location>`.
 - `card-dsl`: `EventPattern::ActAdvanced`; `EventPattern::EnemyDefeated.code:
-  Option<CardCode>`; `Effect::{PutSetAsideLocationsIntoPlay,
-  RelocateAllInvestigators, RemoveLocationFromGame, AdvanceCurrentAct}`.
-- `engine`: `ForcedTriggerPoint::{ActAdvanced, EnemyDefeated}` + their dispatch
-  + evaluator arms for the new effects; round-end act-2 window at Upkeep end.
+  Option<CardCode>` (drops `Copy` from `EventPattern`/`Trigger` — see note);
+  `Effect::{PutSetAsideLocationsIntoPlay, RelocateAllInvestigators,
+  RemoveLocationFromGame, AdvanceCurrentAct}`.
+- `engine`: `ForcedTriggerPoint::{ActAdvanced, EnemyDefeated}` + their
+  `collect_forced_hits` arms; evaluator arms for the new effects; `advance_act`
+  and the `damage_enemy` defeat path fire their forced points (the `()`-return
+  sites use the established `debug_assert!(matches!(_, Done))` guard).
 - `cards`: `01108` abilities (reverse), `01110` abilities (objective).
+
+**`Copy` note:** adding a `CardCode` (`String`-backed) field to
+`EventPattern::EnemyDefeated` removes the `Copy` derive from `EventPattern` and
+`Trigger`. The ~4 sites that move out of `ability.trigger` by `Copy`
+(`forced_triggers`, `reaction_windows`, `abilities`, `skill_test`) switch to
+`&ability.trigger` with reference patterns; `push_matching`'s `want:
+impl Fn(EventPattern)` becomes `Fn(&EventPattern)`. Bounded, and honest DSL
+growth (string-bearing patterns are inevitable).
 - `scenarios`: `setup()` builds five locations + graph + set-aside split; drops
   the 01110 placeholder threshold.
 
@@ -193,6 +212,7 @@ Every deferral gets a `TODO(#NN)` at the code site and a note in the phase doc.
 
 | Deferred | Surfaces at | Tracking |
 |---|---|---|
+| Act-2 round-end objective (the window) | act 2 front | C3c (**#232**) |
 | Ghoul Priest spawn in Hallway | act-2 back | `TODO(#231)` (C3b) |
 | Lita Chantler / Parlor barrier / Resign | act-2 back, 01115, R1 | `TODO(#258)` |
 | R1/R2 resolution choice + consequences | act-3 back | `TODO` → Phase 9 |
@@ -203,16 +223,16 @@ Every deferral gets a `TODO(#NN)` at the code site and a note in the phase doc.
 
 Per the test-layering convention (cards → engine unit → integration):
 
-- **Engine unit** (`act_agenda.rs`, `forced_triggers.rs`):
+- **Engine unit** (`act_agenda.rs`, `forced_triggers.rs`, `evaluator.rs`):
   - Act-1 advance fires the world-build: set-aside locations move into play with
     connections, all investigators relocate to the Hallway, the Study is
     removed.
-  - Act-2 round-end window: offered only when current act is 01109 and Hallway
-    investigators hold ≥3 clues; accept spends 3 + advances; decline leaves
-    state unchanged; non-Hallway clues don't count.
   - Act-3: a synthetic 01116 defeat advances 01110 → Won/R1 latch; an unrelated
-    enemy's defeat does not.
+    enemy's defeat does not (code narrowing).
 - **Card tests** — 01108 and 01110 abilities (per the per-card convention).
+- **Integration** (`crates/cards/tests/`, real registry): act-1 reverse fires
+  through `fire_forced_triggers` end-to-end; defeating a real corpus 01116
+  enemy advances act 3 to Won.
 - **`the_gathering.rs` setup tests** — updated for the set-aside split and the
   real 01110 objective (drop the placeholder-threshold assertions).
 - **Scenario integration** (`scenarios/tests/the_gathering.rs`) — drive setup →
@@ -221,7 +241,7 @@ Per the test-layering convention (cards → engine unit → integration):
 
 ## Open questions
 
-None blocking. The act-2 round-end window is the most novel surface; if the
-optional-input plumbing proves heavier than expected during planning, the
-fallback is to gate the existing action-driven `AdvanceAct` to round end — but
-the optional window is the faithful model and the current target.
+None blocking. Act 2's round-end objective is the deferred surface (→ C3c
+#232); C1b's two pillars both extend the existing single-trigger forced path,
+so the only genuinely new engine surface is the four DSL effects and the
+`EventPattern` `Copy`→`Clone` adjustment.
