@@ -67,9 +67,9 @@ fn roster_seating_places_investigator_at_study() {
         .investigators
         .get(&InvestigatorId(1))
         .expect("Roland seated");
+    let study = state.starting_location;
     assert_eq!(
-        roland.current_location,
-        Some(the_gathering::STUDY_ID),
+        roland.current_location, study,
         "seating must place investigators at setup()'s starting_location",
     );
 }
@@ -152,7 +152,7 @@ fn advancing_act_1_rebuilds_the_board() {
     // Seat one investigator at the Study with the 2 clues Act 1 needs.
     let inv = InvestigatorId(1);
     let mut investigator = test_investigator(1);
-    investigator.current_location = Some(the_gathering::STUDY_ID);
+    investigator.current_location = state.starting_location;
     investigator.clues = 2;
     state.investigators.insert(inv, investigator);
     state.turn_order = vec![inv];
