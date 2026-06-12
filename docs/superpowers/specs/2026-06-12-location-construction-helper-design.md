@@ -40,57 +40,58 @@ New field:
   and deterministically** in construction order, so callers never write
   `LocationId(N)` literals while replay/serialization determinism is preserved.
 
-New methods:
+New methods (all **registry-free** — they take the card metadata as a parameter;
+see below):
 
-- `add_location(&mut self, code: &str) -> LocationId` — mint the next id, read
-  `name`/`shroud`/`clues` from the card metadata, insert into `locations`,
-  return the id.
-- `add_set_aside_location(&mut self, code: &str) -> LocationId` — identical, but
-  insert into the `set_aside_locations` zone instead.
+- `add_location(&mut self, metadata: &CardMetadata) -> LocationId` — mint the
+  next id; build a `Location` from `metadata` (`code`, `name`, and
+  `shroud`/`clues` out of `CardKind::Location`); insert into `locations`; return
+  the id.
+- `add_set_aside_location(&mut self, metadata: &CardMetadata) -> LocationId` —
+  identical, but insert into the `set_aside_locations` zone instead.
 - `connect(&mut self, a: LocationId, b: LocationId)` — add a **bidirectional**
   connection (push `b` onto `a`'s `connections` and `a` onto `b`'s). It resolves
   each id across **both** `locations` and `set_aside_locations` (The Gathering's
-  connections are wired among set-aside locations before they enter play).
+  connections are wired among set-aside locations before they enter play), and
+  `expect`s each id to resolve (a build-time invariant — `connect` is called with
+  freshly-minted ids).
 
-The Gathering's `setup()` becomes:
+A non-`Location` `metadata.kind` is a build-time invariant violation (a scenario
+hands its own location cards), so the extraction `panic!`s with a clear message —
+matching what `location_stats` does today on a kind mismatch. The methods return
+`LocationId` (not `Result`) to keep `setup()` ergonomic.
+
+### The corpus read stays in the scenario layer (metadata passed in)
+
+`game-core` cannot call `cards::by_code` (that crate is a layer above it), and we
+deliberately **don't** make these methods read the process-global
+`card_registry` either — doing so makes them un-unit-testable inside game-core
+(its lib test binary already pins a `TEST1`-only global fake; `install` is
+first-wins). Instead the **scenario** does the corpus lookup (it already depends
+on `cards`) and passes the `&CardMetadata` in. game-core stays registry-free for
+construction and the methods are trivially unit-testable with a constructed
+`CardMetadata` (which is deliberately not `#[non_exhaustive]`, expressly for
+mocks).
+
+The Gathering's `setup()` becomes (a small local closure keeps the corpus lookup
+terse):
 
 ```rust
-let study   = state.add_location("01111");
-let hallway = state.add_set_aside_location("01112");
-let attic   = state.add_set_aside_location("01113");
-let cellar  = state.add_set_aside_location("01114");
-let parlor  = state.add_set_aside_location("01115");
+let meta = |code| cards::by_code(code).expect("Gathering location in corpus");
+let study   = state.add_location(meta("01111"));
+let hallway  = state.add_set_aside_location(meta("01112"));
+let attic   = state.add_set_aside_location(meta("01113"));
+let cellar  = state.add_set_aside_location(meta("01114"));
+let parlor  = state.add_set_aside_location(meta("01115"));
 state.connect(hallway, attic);
 state.connect(hallway, cellar);
 state.connect(hallway, parlor);
 state.starting_location = Some(study);
 ```
 
-`location_stats` is deleted (the metadata read moves into `add_location`).
-
-### Corpus read goes through the card registry
-
-`game-core` cannot call `cards::by_code` (that crate is a layer above it); it
-reaches card metadata only through the installed **`card_registry`** — the same
-path `PlayCard` and forced-trigger dispatch already use. So `add_location` /
-`add_set_aside_location` read via `card_registry::current()` →
-`(metadata_for)(code)` → `CardKind::Location { shroud, clues, .. }` + the
-metadata's `name`.
-
-A missing registry, a code absent from the corpus, or a non-`Location` card is
-a **build-time invariant violation** (a scenario knows its own location codes),
-so these panic with a clear message — matching what `location_stats` does today
-(`.expect("location code in corpus")` + a kind mismatch `panic!`). The methods
-return `LocationId` (not `Result`) to keep `setup()` ergonomic.
-
-**Consequence:** `setup()`'s in-crate unit tests (`setup_reads_card_stats_from_corpus`,
-`setup_places_study_in_play_and_four_set_aside`, etc.) currently rely on the
-direct `cards::by_code` path and do **not** install the registry. They must now
-install it (`let _ = game_core::card_registry::install(cards::REGISTRY);` — a
-shared test helper or one line each). The integration tests in
-`crates/scenarios/tests/the_gathering.rs` already install it. This is arguably
-more honest: a scenario's `setup()` genuinely depends on card data being
-available.
+`location_stats` and the `make` closure are deleted (their work moves into
+`add_location`). `setup()`'s unit tests keep using the direct `cards::by_code`
+path — **no registry install needed** (only the `STUDY_ID` migration below).
 
 ### `STUDY_ID` is removed
 
@@ -119,41 +120,33 @@ Study id. The ~8 references migrate:
   scenarios exist to migrate (the rest of Group C is Gathering *content*, not new
   boards).
 
-### Where the registry-reading methods are tested
-
-`add_location` / `add_set_aside_location` read `card_registry::current()`. The
-game-core lib test binary can't supply real location metadata (it can't depend
-on `cards`, and its existing `card_registry` test already pins a `TEST1`-only
-global fake — `install` is first-wins, so a competing global install is
-unreliable). So these two methods are **not** unit-tested inside game-core;
-they're covered where the real corpus is reachable — the `scenarios` crate,
-which installs `cards::REGISTRY` and exercises them against the **actual**
-Study/Hallway/Attic/Cellar/Parlor metadata. This mirrors how the engine's
-`encounter.rs` spawn handlers (which also read `current()`) are integration-
-tested rather than unit-tested with fakes. `connect` and the `next_location_id`
-counter are registry-free, so they keep direct game-core unit tests.
+Because the methods are registry-free (metadata passed in), everything is
+directly testable in its own layer with no fakes-fighting-the-global.
 
 - **Engine unit (`game_state.rs` / `builder.rs`):** `next_location_id` starts at
-  0 and round-trips through serde; `connect` makes both locations reference each
-  other and works across the in-play / set-aside split (build the two locations
-  via direct insertion of `Location::new` fixtures — no registry needed).
-- **Scenario unit (`the_gathering.rs` `#[cfg(test)]`):** install `cards::REGISTRY`,
-  then the setup tests (updated for the `STUDY_ID` → `starting_location`
-  migration) pin the board built by the real `add_location` calls: Study in play
-  with code `01111` + shroud/clues `(2,2)`; four set-aside locations in order
-  with distinct ids; Hallway ↔ Attic/Cellar/Parlor; Study isolated; the four
-  minted ids are distinct from the Study's. This is the coverage for
-  `add_location` / `add_set_aside_location` against actual locations.
+  0 and round-trips through serde. `add_location` mints a sequential id, inserts
+  into `locations`, and extracts `code`/`name`/`shroud`/`clues` — tested with a
+  constructed `CardMetadata { kind: CardKind::Location { shroud, clues, victory } }`
+  (no registry; `CardMetadata` is non-`#[non_exhaustive]` for exactly this). A
+  second metadata with a non-`Location` kind asserts the panic. `add_set_aside_location`
+  inserts into the set-aside zone. `connect` makes both locations reference each
+  other and works across the in-play / set-aside split (insert two `Location::new`
+  fixtures, call `connect`, assert both `connections`).
+- **Scenario unit (`the_gathering.rs` `#[cfg(test)]`):** the existing setup tests,
+  updated only for the `STUDY_ID` → `starting_location` migration (no registry
+  install needed — `cards::by_code` is direct), still pin the board built by the
+  real metadata: Study in play with code `01111` + shroud/clues `(2,2)`; four
+  set-aside locations in order with distinct ids; Hallway ↔ Attic/Cellar/Parlor;
+  Study isolated.
 - **Integration (`tests/the_gathering.rs`):** unchanged behavior — the seating
   and act-1 board-rebuild tests still pass via `starting_location`.
 
 ## Open questions
 
-None. The registry-based `GameState` method (over a `scenarios`-layer helper
-using `cards::by_code`) was chosen for the "on game state" intent + the engine's
-sanctioned card-data path. The one concern it raised — unit-testing a method
-that reads the process-global registry inside game-core — is resolved by testing
-`add_location` / `add_set_aside_location` at the `scenarios` layer against the
-**actual** location corpus (see Testing), rather than with game-core fakes; the
-methods need no in-game-core unit test, exactly like the `encounter.rs` spawn
-handlers that also read `current()`.
+None. The design fork over how the corpus stats reach `add_location` is settled:
+the **scenario passes `&CardMetadata` in** (it already has `cards::by_code`),
+keeping the id-allocation + construction on `GameState` while leaving game-core
+registry-free and directly unit-testable. This is simpler than reading the
+process-global `card_registry` from a `GameState` method (which the game-core
+lib test binary can't reliably supply, given its first-wins `TEST1` global fake)
+and avoids putting the corpus read in a separate `scenarios`-layer helper.
