@@ -5,7 +5,8 @@
 //! enter play via Act 1's (01108) Forced on-advance reverse, which also
 //! relocates investigators to the Hallway and removes the Study).
 //! `setup()` builds the world; the `StartScenario` roster step seats
-//! investigators at [`STUDY_ID`] via `GameState.starting_location`.
+//! investigators at the starting location (the Study, `01111`) via
+//! `GameState.starting_location`.
 //!
 //! Faithful where it can be (agenda doom 3/7/10; the verified Standard
 //! chaos bag; Study shroud/clues); structural stand-in where the rest of
@@ -19,18 +20,8 @@ use game_core::card_data::CardKind;
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, Location, LocationId,
-    TokenModifiers,
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, TokenModifiers,
 };
-
-/// Read a location's printed `(shroud, clues)` from the generated corpus.
-/// The code is a build-time invariant of the corpus, so a miss is a bug.
-fn location_stats(code: &str) -> (u8, u8) {
-    match cards::by_code(code).expect("location code in corpus").kind {
-        CardKind::Location { shroud, clues, .. } => (shroud, clues),
-        ref k => panic!("{code} is not a Location ({k:?})"),
-    }
-}
 
 /// Read an agenda's printed doom threshold from the corpus.
 fn agenda_doom(code: &str) -> u8 {
@@ -54,9 +45,6 @@ pub const ID: &str = "the-gathering";
 
 /// `ArkhamDB` reference-card code (chaos-symbol effects; evaluated in C2).
 pub const REFERENCE_CARD: &str = "01104";
-
-/// The Study's [`LocationId`] — the scenario's starting location.
-pub const STUDY_ID: LocationId = LocationId(1);
 
 /// The verified Standard-difficulty Night of the Zealot chaos bag (16
 /// tokens). Source: `data/campaign-guides/SOURCE.md` (campaign guide
@@ -83,50 +71,11 @@ fn standard_chaos_bag() -> ChaosBag {
     ])
 }
 
-/// The Hallway's [`LocationId`] — the hub of the Act-2 board.
-const HALLWAY_ID: LocationId = LocationId(2);
-/// The Attic's [`LocationId`].
-const ATTIC_ID: LocationId = LocationId(3);
-/// The Cellar's [`LocationId`].
-const CELLAR_ID: LocationId = LocationId(4);
-/// The Parlor's [`LocationId`].
-const PARLOR_ID: LocationId = LocationId(5);
-
 /// Build the initial [`GameState`]: the Study in play (isolated), the
 /// four set-aside locations (Hallway/Attic/Cellar/Parlor, pre-connected),
 /// the act/agenda decks, the Standard chaos bag, and `starting_location`.
 /// No investigators — the `StartScenario` roster step seats them.
 pub fn setup() -> GameState {
-    // The Study (01111): shroud/clues read from the corpus. `Location::new`
-    // gives a revealed, unconnected location (Act 1 is "trapped in the Study").
-    let (study_shroud, study_clues) = location_stats("01111");
-    let study = Location::new(
-        STUDY_ID,
-        CardCode("01111".into()),
-        "Study",
-        study_shroud,
-        study_clues,
-    );
-
-    // LocationIds 2–5: the four set-aside locations. Connections are wired
-    // here (scenario map knowledge — the corpus carries none) so they enter
-    // play already connected when Act 1's (01108) Forced on-advance reverse
-    // fires. The Hallway is the hub; Attic/Cellar/Parlor are the spokes.
-    // TODO(#260): replace the hand-assigned LocationIds + manual connection
-    // wiring with a location-construction/id-allocation helper.
-    let make = |id: LocationId, code: &str, name: &str| {
-        let (shroud, clues) = location_stats(code);
-        Location::new(id, CardCode(code.into()), name, shroud, clues)
-    };
-    let mut hallway = make(HALLWAY_ID, "01112", "Hallway");
-    hallway.connections = vec![ATTIC_ID, CELLAR_ID, PARLOR_ID];
-    let mut attic = make(ATTIC_ID, "01113", "Attic");
-    attic.connections = vec![HALLWAY_ID];
-    let mut cellar = make(CELLAR_ID, "01114", "Cellar");
-    cellar.connections = vec![HALLWAY_ID];
-    let mut parlor = make(PARLOR_ID, "01115", "Parlor");
-    parlor.connections = vec![HALLWAY_ID];
-
     // The Gathering's symbol effects are printed on reference card 01104
     // (board-dependent; evaluated in C2). Until then these flat NotZ
     // fallbacks stand in; they are off the C1a structural test path.
@@ -139,14 +88,29 @@ pub fn setup() -> GameState {
     token_modifiers.elder_thing = -4;
 
     let mut state = GameStateBuilder::new()
-        .with_location(study)
         .with_chaos_bag(standard_chaos_bag())
         .with_scenario_id(ScenarioId::new(ID))
         .with_token_modifiers(token_modifiers)
         .build();
 
-    state.starting_location = Some(STUDY_ID);
-    state.set_aside_locations = vec![hallway, attic, cellar, parlor];
+    // The Gathering board. Ids are minted by `add_location` /
+    // `add_set_aside_location` (deterministic, construction order), so no
+    // hand-assigned LocationId literals. The scenario looks up each
+    // location's metadata in the corpus and hands it to the engine; stats
+    // (shroud/clues) come from the metadata. The Study starts in play
+    // (isolated — Act 1 is "trapped in the Study"); the Hallway hub +
+    // Attic/Cellar/Parlor spokes are set aside until Act 1's (01108)
+    // Forced on-advance reverse brings them into play.
+    let meta = |code: &str| cards::by_code(code).expect("Gathering location in corpus");
+    let study = state.add_location(meta("01111"));
+    let hallway = state.add_set_aside_location(meta("01112"));
+    let attic = state.add_set_aside_location(meta("01113"));
+    let cellar = state.add_set_aside_location(meta("01114"));
+    let parlor = state.add_set_aside_location(meta("01115"));
+    state.connect(hallway, attic);
+    state.connect(hallway, cellar);
+    state.connect(hallway, parlor);
+    state.starting_location = Some(study);
 
     // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
     // corpus. 01110 advances via its Forced EnemyDefeated objective
@@ -225,7 +189,7 @@ mod tests {
         // cards::by_code. Pinning them guards both the corpus data and
         // the reader helpers.
         let s = setup();
-        let study = s.locations.get(&STUDY_ID).unwrap();
+        let study = &s.locations[&s.starting_location.unwrap()];
         assert_eq!((study.shroud, study.clues), (2, 2), "Study 01111 stats");
         assert_eq!(
             s.agenda_deck
@@ -244,7 +208,7 @@ mod tests {
         let s = setup();
         // In play: only the Study (Act-1 board).
         assert_eq!(s.locations.len(), 1);
-        let study = s.locations.get(&STUDY_ID).expect("Study present");
+        let study = &s.locations[&s.starting_location.unwrap()];
         assert_eq!(study.code, CardCode("01111".into()));
         assert!(study.connections.is_empty(), "Study is isolated");
         // Set aside: Hallway, Attic, Cellar, Parlor, each pre-connected.
@@ -283,7 +247,10 @@ mod tests {
                 "spokes connect back to the Hallway"
             );
         }
-        assert_eq!(s.starting_location, Some(STUDY_ID));
+        assert_eq!(
+            s.locations[&s.starting_location.unwrap()].code.as_str(),
+            "01111"
+        );
         assert!(s.investigators.is_empty(), "setup() seats no one");
     }
 
