@@ -6,7 +6,7 @@
 
 #![allow(clippy::too_many_lines, clippy::needless_raw_string_hashes)]
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills, Slot};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, SkillIcons, Skills, Slot};
 
 /// Every card from the pinned snapshot, sorted by code.
 #[must_use]
@@ -898,7 +898,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "01112".to_owned(),
@@ -906,7 +906,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "01113".to_owned(),
@@ -914,7 +914,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you enter the Attic: Take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "01114".to_owned(),
@@ -922,7 +922,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you enter the Cellar: Take 1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "01115".to_owned(),
@@ -930,7 +930,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action] <b>Resign.</b> \"This is too much for me!\" You run out the front door, fleeing in panic.\nWhile Lita Chantler is not controlled by a player, she gains: \"[action]: <b>Parley.</b> Test [intellect] (4). If you succeed, take control of Lita Chantler.\"".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "01116".to_owned(),
@@ -1002,7 +1002,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("<b>Forced</b> - When the Ghoul Priest spawns: Spawn it here instead of at its normal location.\n[action]: Draw 1 card and gain 1 resource. (Limit once per turn.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01125".to_owned(),
@@ -1010,7 +1010,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned(), "Central".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01126".to_owned(),
@@ -1018,7 +1018,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Draw 3 cards. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01127".to_owned(),
@@ -1026,7 +1026,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Search your deck for an [[Ally]] asset and add it to your hand. Shuffle your deck. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01128".to_owned(),
@@ -1034,7 +1034,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Heal 3 damage. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01129".to_owned(),
@@ -1042,7 +1042,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Search the top 6 cards of your deck for a [[Tome]] or [[Spell]] card and add it to your hand. Shuffle your deck.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "01130".to_owned(),
@@ -1050,7 +1050,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Gain 3 resources. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01131".to_owned(),
@@ -1058,7 +1058,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Heal 3 horror. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "01132".to_owned(),
@@ -1066,7 +1066,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("While you are in Easttown, reduce the cost of each [[Ally]] asset you play by 2.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01133".to_owned(),
@@ -1074,7 +1074,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("<b>Forced</b> - After you enter the Graveyard: Test [willpower] (3). If you fail, you must either take 2 horror or move to Rivertown.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "01134".to_owned(),
@@ -1082,7 +1082,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action] Spend 5 resources: Gain 2 clues from the token pool. (Group limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "01135".to_owned(),
@@ -1194,7 +1194,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("The Main Path is connected to each other [[Woods]] location.\n[action]: <b>Resign.</b> \"There's nothing we can do to stop them!\" You flee from the woods, leaving Arkham to its grisly fate.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "01150".to_owned(),
@@ -1202,7 +1202,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("<b>Forced</b> - After you enter this location: Test [willpower] (4). If you fail, take 1 horror and 1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01151".to_owned(),
@@ -1210,7 +1210,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("<b>Forced</b> - When you move out of this location: Test [intellect] (3). If you fail, cancel the effects of the move.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01152".to_owned(),
@@ -1218,7 +1218,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("This location is investigated using [willpower] instead of the skill indicated by the investigation attempt.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01153".to_owned(),
@@ -1226,7 +1226,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("This location is investigated using [agility] instead of the skill indicated by the investigation attempt.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01154".to_owned(),
@@ -1234,7 +1234,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("This location is investigated using [combat] instead of the skill indicated by the investigation attempt.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "01155".to_owned(),
@@ -1242,7 +1242,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("[action]: Heal 1 damage or heal 1 horror. (Limit once per turn.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "01156".to_owned(),
@@ -1250,7 +1250,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Cave".to_owned()],
             text: Some("<b>Forced</b> - At the end of the round, if there are fewer than 2 clues per investigator on Ritual Site: Add clues to it until it has 2 clues per investigator on it.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "01157".to_owned(),
@@ -1834,7 +1834,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action]: <b>Resign.</b> \"We can't find Rice anywhere...\" You leave the campus, hoping Armitage will forgive you.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02049".to_owned(),
@@ -1842,7 +1842,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - At the end of your turn, if you are in the Humanities Building: Discard the top X cards of your deck, where X is the amount of horror on you.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02050".to_owned(),
@@ -1850,7 +1850,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("You must spend 1 additional action to investigate the Orne Library.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: Some(1) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
             code: "02051".to_owned(),
@@ -1858,7 +1858,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Student Union is revealed: Put the set-aside Dormitories into play.\n[action] [action]: Heal 1 damage and 1 horror.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02052".to_owned(),
@@ -1866,7 +1866,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Objective</b> - If investigators in the Dormitories spend 3 [per_investigator] clues, as a group: <b>(→R2)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 3, victory: Some(1) },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(3), victory: Some(1) },
         },
         CardMetadata {
             code: "02053".to_owned(),
@@ -1874,7 +1874,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Administration Building is revealed: Put the set-aside Faculty Offices into play.\n<b>Forced</b> - At the end of your turn, if you are in the Administration Building: Discard the top card of your deck.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02054".to_owned(),
@@ -1882,7 +1882,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Faculty Offices is revealed: Search the encounter deck and discard pile for a [[Humanoid]] enemy and spawn it here. Shuffle the encounter deck.\n<b>Objective</b> - If investigators in the Faculty Offices spend 2 [per_investigator] clues, as a group: <b>(→R1)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "02055".to_owned(),
@@ -1890,7 +1890,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: None,
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02056".to_owned(),
@@ -1898,7 +1898,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Science Building is revealed: Put the set-aside Alchemy Labs into play.\n<b>Forced</b> - When you fail a [willpower] test in the Science Building: Take 1 damage.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02057".to_owned(),
@@ -1906,7 +1906,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action]: <b>Investigate.</b> If you are successful, instead of discovering clues, take the Alchemical Concoction from underneath this location if able.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 5, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 5, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02058".to_owned(),
@@ -2002,7 +2002,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: <b>Resign.</b> This was a bust.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02071".to_owned(),
@@ -2010,7 +2010,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While it is Act 1, Clover Club Lounge gains:\n\"[action] Discard an [[Ally]] asset from your hand: Gain 2 clues from the token pool. (Limit once per game.)\"".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02072".to_owned(),
@@ -2018,7 +2018,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While it is Act 1, Clover Club Bar gains:\n\"[action] Spend 2 resources: Gain 2 clues from the token pool and draw 2 cards. Remember that you have 'had a drink.' (Limit once per game.)\"".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02073".to_owned(),
@@ -2026,7 +2026,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While it is Act 1, Clover Club Cardroom gains:\n\"[action] Spend 2 resources: Reveal a random chaos token.\nIf it is a [elder_sign] symbol, gain 2 clues and 2 resources from the token bank.\nIf it is an even number, gain 2 clues from the token bank.\nIf it is an odd number or a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol, nothing happens.\"".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02074".to_owned(),
@@ -2034,7 +2034,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("<b>Forced</b> - When Darkened Hall is revealed: Put into play the 3 set-aside Back Hall Doorway locations.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02075".to_owned(),
@@ -2042,7 +2042,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating the Art Gallery: Lose 2 resources.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: Some(1) },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
             code: "02076".to_owned(),
@@ -2050,7 +2050,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While you are in the VIP Area, you cannot draw cards or gain resources during the upkeep phase.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: Some(1) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
             code: "02077".to_owned(),
@@ -2058,7 +2058,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("[action]: <b>Resign.</b> We can get out this way!".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 1, victory: Some(1) },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
             code: "02078".to_owned(),
@@ -2442,7 +2442,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("Investigators at the Museum Entrance cannot gain resources.\n[action] <b>Resign.</b> \"Eh. How important can a book really be, anyway?\"".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02127".to_owned(),
@@ -2450,7 +2450,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("Museum Halls is connected to each copy of Exhibit Hall.\n[action] Investigators in the Museum Halls spend 1 [per_investigator] clues, as a group: Put the top card of the Exhibit deck into play, unrevealed.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02128".to_owned(),
@@ -2458,7 +2458,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action] [action]: Search the top 6 cards of your deck for a card and add it to your hand. Shuffle the rest back into your deck. (Limit once per turn.)".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02129".to_owned(),
@@ -2466,7 +2466,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action] [action]: Look at the revealed side of an Exhibit Hall in play, or the top card of the Exhibit deck. (Limit once per turn.)".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02130".to_owned(),
@@ -2474,7 +2474,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("You cannot investigate Administration Office while you have 4 or fewer resources.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02131".to_owned(),
@@ -2482,7 +2482,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("You cannot investigate Administration Office while you have 4 or fewer cards in your hand.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02132".to_owned(),
@@ -2490,7 +2490,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you enter this location: Lose all of your remaining actions and immediately end your turn.\nWhile you are in this location, you get +2 [agility].".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02133".to_owned(),
@@ -2498,7 +2498,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating this location: Discard an asset you control.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: Some(1) },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
             code: "02134".to_owned(),
@@ -2506,7 +2506,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you enter this location: Discard 2 cards from your hand at random.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: Some(1) },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
             code: "02135".to_owned(),
@@ -2514,7 +2514,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating this location: Lose 1 action.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "02136".to_owned(),
@@ -2522,7 +2522,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating this location: Take 1 horror.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "02137".to_owned(),
@@ -2530,7 +2530,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("While Hunting Horror is at this location, this location cannot be investigated.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "02138".to_owned(),
@@ -2762,7 +2762,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [agility] icons or take 2 damage.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 3, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(3), victory: None },
         },
         CardMetadata {
             code: "02168".to_owned(),
@@ -2770,7 +2770,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [combat] icons or take 2 damage.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02169".to_owned(),
@@ -2778,7 +2778,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [willpower] icons or take 2 horror.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02170".to_owned(),
@@ -2786,7 +2786,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [intellect] icons or take 2 horror.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02171".to_owned(),
@@ -2794,7 +2794,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard a card from your hand with at least 1 [wild] icon or take 1 damage and 1 horror.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02172".to_owned(),
@@ -2802,7 +2802,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Sleeping Car is connected to the locations to the left and right of it.\n[action]: Gain 3 resources. Remember that you have \"stolen a passenger's luggage.\" (Group limit once per game).".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
             code: "02173".to_owned(),
@@ -2810,7 +2810,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Dining Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you reveal Dining Car: Search the encounter deck and discard pile for a Grappling Horror and draw it.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02174".to_owned(),
@@ -2818,7 +2818,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Parlor Car is connected to the locations to the left and right of it.\nParlor Car cannot be investigated.\n[action] Spend 3 resources: Discover 1 clue in the Parlor Car.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: Some(1) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
             code: "02175".to_owned(),
@@ -2826,7 +2826,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Engine Car is connected to the location to the left of it.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "02176".to_owned(),
@@ -2834,7 +2834,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Engine Car is connected to the location to the left of it.\n<b>Forced</b> - After you reveal Engine Car: Search the encounter deck and discard pile for a Grappling Horror and draw it. Shuffle the encounter deck.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "02177".to_owned(),
@@ -2842,7 +2842,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Engine Car is connected to the location to the left of it.\n<b>Forced</b> - After you reveal Engine Car: Draw the top 3 cards of the encounter deck.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 2, victory: Some(1) },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
             code: "02178".to_owned(),
@@ -3026,7 +3026,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Central".to_owned()],
             text: Some("[action] <b>Resign.</b> \"This is suicide! We're better off hiding out the night.\"".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02202".to_owned(),
@@ -3034,7 +3034,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy at Bishop's Brook deals +1 horror while it is attacking.\n[fast] If there are no clues here: Draw the encounter card underneath Bishop's Brook. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02203".to_owned(),
@@ -3042,7 +3042,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("If there is an investigator at Bishop's Brook, other investigators cannot enter Bishop's Brook.\n[fast] If there are no clues here: Draw the encounter card underneath Bishop's Brook. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02204".to_owned(),
@@ -3050,7 +3050,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy in the Burned Ruins gets +1 evade.\n[fast] If there are no clues here: Draw the encounter card underneath Burned Ruins. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 3, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
             code: "02205".to_owned(),
@@ -3058,7 +3058,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating the Burned Ruins: Flip 1 clue token on the Burned Ruins to its doom side.\n[fast] If there are no clues here: Draw the encounter card underneath Burned Ruins. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 3, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
             code: "02206".to_owned(),
@@ -3066,7 +3066,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("You cannot gain resources while you are in Osborn's General Store.\n[fast] If there are no clues here: Draw the encounter card underneath Osborn's General Store. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02207".to_owned(),
@@ -3074,7 +3074,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action]Spend 1 resource: Search the top 3 cards of your deck for an [[Item]] card and add it to your hand. Shuffle your deck.\n[fast] If there are no clues here: Draw the encounter card underneath Osborn's General Store. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02208".to_owned(),
@@ -3082,7 +3082,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - After Congregational Church is revealed: Search the encounter deck for a [[Humanoid]] enemy and spawn it at the Village Commons. Shuffle the encounter deck.\n[fast] If there are no clues here: Draw the encounter card underneath Congregational Church. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02209".to_owned(),
@@ -3090,7 +3090,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action] Choose and discard a card from your hand: Gain 2 resources.\n[fast] If there are no clues here: Draw the encounter card underneath Congregational Church. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02210".to_owned(),
@@ -3098,7 +3098,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("While you are in the House in the Reeds, you cannot play events.\n[fast] If there are no clues here: Draw the encounter card underneath House in the Reeds. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02211".to_owned(),
@@ -3106,7 +3106,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - After House in the Reeds is revealed: Search the encounter deck for a [[Nightgaunt]] enemy and spawn it in the Village Commons. Shuffle the encounter deck.\n[fast] If there are no clues here: Draw the encounter card underneath House in the Reeds. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02212".to_owned(),
@@ -3114,7 +3114,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("While you are in the Schoolhouse, you cannot commit skill cards to skill tests.\n[fast] If there are no clues here: Draw the encounter card underneath Schoolhouse. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
             code: "02213".to_owned(),
@@ -3122,7 +3122,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("You cannot discover clues here except by investigating.\n[fast] If there are no clues here: Draw the encounter card underneath Schoolhouse. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
             code: "02214".to_owned(),
@@ -3130,7 +3130,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Revelation</b> - Put The Hidden Chamber into play.\nThe Hidden Chamber and the location from which it was drawn are connected to one another.\nThe door to The Hidden Chamber is locked. You cannot enter The Hidden Chamber unless Key to the Chamber is attached to The Hidden Chamber.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: Some(2) },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: Some(2) },
         },
         CardMetadata {
             code: "02215".to_owned(),
@@ -3346,7 +3346,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action]: <b>Resign.</b> You hide from the rampaging creatures.\n[fast]: You borrow some hounds to track the creatures by scent. An investigator in Dunwich Village may place 1 of his or her clues on any [[Abomination]] enemy in play. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
             code: "02243".to_owned(),
@@ -3354,7 +3354,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action]: <b>Resign.</b> You hide from the rampaging creatures.\n[action]: Move a Brood of Yog-Sothoth enemy once toward Dunwich Village.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 3, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
             code: "02244".to_owned(),
@@ -3362,7 +3362,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy in Cold Spring Glen gets -1 evade.\n[fast]: You lure the creature into the dense tree cover, and it becomes tangled. Investigators in Cold Spring Glen may, as a group, place up to 2 of their clues on an [[Abomination]] enemy in Cold Spring Glen. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02245".to_owned(),
@@ -3370,7 +3370,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy in Cold Spring Glen gets -1 evade.\n[reaction] After Cold Spring Glen is chosen as a random location: An investigator in Cold Spring Glen tests [agility] (3). If successful, choose a different random location.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02246".to_owned(),
@@ -3378,7 +3378,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You lure the monster into the rain. Place 1 clue from the token bank on an [[Abomination]] enemy in Ten-Acre Meadow. At the end of the round, remove 1 clue from that enemy. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
             code: "02247".to_owned(),
@@ -3386,7 +3386,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You set a bait using a live animal. Each investigator in Ten-Acre Meadow may place 1 of his or her clues on an [[Abomination]] enemy in Ten-Acre Meadow. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 3, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
             code: "02248".to_owned(),
@@ -3394,7 +3394,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You lure the creature into a patch of sand. Investigators in Blasted Heath may, as a group, place up to 2 of their clues on an [[Abomination]] enemy in Blasted Heath. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 3, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
             code: "02249".to_owned(),
@@ -3402,7 +3402,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - At the end of your turn, if you are in Blasted Heath: Take 1 damage.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02250".to_owned(),
@@ -3410,7 +3410,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each investigator in Whateley Ruins gets -1 [willpower].\n[fast]: You hurl a nearby canister of paint at the monster. An investigator in Whateley Ruins may place up to 3 of his or her clues on an [[Abomination]] enemy in Whateley Ruins. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02251".to_owned(),
@@ -3418,7 +3418,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each investigator in Whateley Ruins gets -1 [willpower].\n[action]: Test [intellect] (4). If you are successful, move a Brood of Yog-Sothoth enemy 1 location in any direction.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02252".to_owned(),
@@ -3426,7 +3426,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You lure the creature into the thick fog. An investigator in Devil's Hop Yard may place up to 2 of his or her clues on an [[Abomination]] enemy in Devil's Hop Yard. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02253".to_owned(),
@@ -3434,7 +3434,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: The creature follows you into the mud. Each investigator in Devil's Hop Yard may place 1 of his or her clues on an [[Abomination]] enemy in Devil's Hop Yard. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02254".to_owned(),
@@ -3658,7 +3658,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Sentinel Hill".to_owned()],
             text: Some("Base of the Hill is connected to each copy of Diverging Path.\n[action]: <b>Investigate.</b> If you succeed, instead of discovering clues, put a random set-aside Diverging Path into play. (Limit once per round.)\n[action]: <b>Resign.</b> \"This is more than I signed up for!\"".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02283".to_owned(),
@@ -3666,7 +3666,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Sentinel Hill".to_owned()],
             text: Some("Ascending Path is connected to each copy of Altered Path.\n[action]: <b>Investigate.</b> If you succeed, instead of discovering clues, put a random set-aside Altered Path into play. (Limit once per round.)".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02284".to_owned(),
@@ -3674,7 +3674,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Sentinel Hill".to_owned()],
             text: Some("<b>Forced</b> - When an investigator at this location draws a [[Hex]] card: That investigator takes 1 damage.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 2, victory: Some(2) },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(2) },
         },
         CardMetadata {
             code: "02285".to_owned(),
@@ -3682,7 +3682,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Slaughtered Woods: Take 2 horror if you have no actions remaining.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02286".to_owned(),
@@ -3690,7 +3690,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Eerie Glade: Discard the top 2 cards of your deck for each action you have remaining.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02287".to_owned(),
@@ -3698,7 +3698,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Destroyed Path: Place 1 [per_investigator] doom on it.\n[action]: <b>Investigate.</b> If you succeed, instead of discovering clues, remove 1 doom from Destroyed Path.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02288".to_owned(),
@@ -3706,7 +3706,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Frozen Spring: Lose the remainder of your actions and immediately end your turn.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02289".to_owned(),
@@ -3714,7 +3714,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Dimensional Gap: Discard cards from the top of the encounter deck until an enemy is discarded. Spawn that enemy here (instead of its normal spawn location).".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02290".to_owned(),
@@ -3722,7 +3722,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal A Tear in the Path: Take 2 damage if you have no actions remaining.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02291".to_owned(),
@@ -3730,7 +3730,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Uprooted Woods: Discard the top 5 cards of your deck if you have no actions remaining.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02292".to_owned(),
@@ -3738,7 +3738,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Lost Memories: Take 1 horror for each action you have remaining.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02293".to_owned(),
@@ -3954,7 +3954,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned()],
             text: Some("<b>Forced</b> - When a location leaves play: Move each investigator and unengaged enemy at that location to Another Dimension. Cannot be canceled.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 6, clues: 0, victory: None },
+            kind: CardKind::Location { shroud: 6, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
             code: "02321".to_owned(),
@@ -3962,7 +3962,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned()],
             text: Some("You must have at least 2 clues in order to move to The Edge of the Universe.\nInvestigators at The Edge of the Universe cannot draw cards during the upkeep phase.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02322".to_owned(),
@@ -3970,7 +3970,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned()],
             text: Some("[action] Spend 2 clues: <b>Resign.</b> You find a new path and hope that it leads back to safety.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
             code: "02323".to_owned(),
@@ -3986,7 +3986,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("Surge.\n<b>Revelation</b> - Put Tear Through Space into play.\n<b>Forced</b> - At the end of the round: Either place 1 doom on Tear Through Space, or discard it.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 1, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
             code: "02325".to_owned(),
@@ -3994,7 +3994,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Prismatic Cascade into play and discard a random card from your hand.\n<b>Forced</b> - After the last clue on Prismatic Cascade is removed: Discard Prismatic Cascade.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 3, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
             code: "02326".to_owned(),
@@ -4002,7 +4002,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Endless Bridge into play and lose 2 resources.\n<b>Forced</b> - After an investigator leaves Endless Bridge: Either place 1 doom on Endless Bridge, or discard it.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 4, clues: 2, victory: None },
+            kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
             code: "02327".to_owned(),
@@ -4010,7 +4010,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Steps of Y'hagharl into play. Then, draw the topmost [[Madness]] card in your discard pile.\n<b>Forced</b> - When you would leave Steps of Y'hagharl: Test [willpower] (2). If you fail, shuffle Steps of Y'hagharl into the encounter deck instead of moving to your original destination.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 3, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02328".to_owned(),
@@ -4018,7 +4018,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Dimensional Doorway into play. Then, draw the topmost [[Hex]] card in the encounter discard pile.\n<b>Forced</b> - At the end of your turn, if you are at Dimensional Doorway: You must either spend 2 resources or shuffle Dimensional Doorway into the encounter deck.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Location { shroud: 2, clues: 1, victory: None },
+            kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
             code: "02329".to_owned(),

@@ -209,6 +209,18 @@ pub struct CardMetadata {
     pub kind: CardKind,
 }
 
+/// A location's printed clue value. `PerInvestigator(n)` places
+/// `n × (number of investigators who started the scenario)` on reveal;
+/// `Fixed(n)` places exactly `n`. Distinguishes `ArkhamDB`'s `clues_fixed`
+/// (absent/false → per-investigator; `true` → fixed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClueValue {
+    /// `value × #investigators` at reveal time.
+    PerInvestigator(u8),
+    /// Exactly `value`, regardless of investigator count.
+    Fixed(u8),
+}
+
 /// Per-card-type data. The discriminant mirrors [`CardType`] — read it
 /// via [`CardMetadata::card_type`]. Player variants carry a [`Class`];
 /// encounter variants do not (encounter cards have no player class).
@@ -314,8 +326,8 @@ pub enum CardKind {
     Location {
         /// Shroud (investigate difficulty).
         shroud: u8,
-        /// Clues placed on the location at scenario setup.
-        clues: u8,
+        /// Printed clue value (per-investigator or fixed).
+        printed_clues: ClueValue,
         /// Victory points when in the victory display.
         victory: Option<u8>,
     },
@@ -541,7 +553,7 @@ mod is_fast_tests {
             pack_code: "core".into(),
             kind: CardKind::Location {
                 shroud: 2,
-                clues: 2,
+                printed_clues: ClueValue::PerInvestigator(2),
                 victory: None,
             },
         };
@@ -583,6 +595,20 @@ mod prey_tests {
         let json = serde_json::to_string(&original).expect("serialize");
         let back: Prey = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
+    }
+}
+
+#[cfg(test)]
+mod clue_value_tests {
+    use super::*;
+
+    #[test]
+    fn clue_value_round_trips_through_serde() {
+        for cv in [ClueValue::PerInvestigator(2), ClueValue::Fixed(3)] {
+            let json = serde_json::to_string(&cv).expect("serialize");
+            let back: ClueValue = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(cv, back);
+        }
     }
 }
 

@@ -88,6 +88,11 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
              is not in the locations map; this is a state-corruption invariant violation"
         )
     });
+    if !location.revealed {
+        return EngineOutcome::Rejected {
+            reason: format!("Investigate: location {location_id:?} is not revealed").into(),
+        };
+    }
     // Shroud is u8 in state but skill-test difficulty is i8. Saturate
     // at i8::MAX for the absurd case; realistic shrouds are 0–6.
     let difficulty = i8::try_from(location.shroud).unwrap_or(i8::MAX);
@@ -273,6 +278,9 @@ pub(super) fn move_action(
         from,
         to: destination,
     });
+    // Reveal the destination if this is the first investigator entry
+    // (Rules Reference p.14). No-op if already revealed.
+    super::reveal::reveal_location(cx, destination);
     // Terminal step: the entered location's Forced on-enter abilities fire,
     // and their outcome becomes the move's outcome. This runs *after* the
     // move is applied, so if it returns Rejected (e.g. 2+ simultaneous

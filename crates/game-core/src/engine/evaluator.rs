@@ -176,6 +176,9 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
                     }
                 }
             }
+            // Reveal the destination on first investigator entry
+            // (Rules Reference p.14). No-op if already revealed.
+            crate::engine::dispatch::reveal::reveal_location(cx, dest);
             EngineOutcome::Done
         }
         Effect::RemoveLocationFromGame { location } => {

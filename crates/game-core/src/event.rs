@@ -465,6 +465,14 @@ pub enum Event {
         /// moved).
         from: usize,
     },
+    /// A location was revealed (turned face-up) on first investigator
+    /// entry; `clues` were placed on it.
+    LocationRevealed {
+        /// The revealed location.
+        location: LocationId,
+        /// Clues placed at reveal.
+        clues: u8,
+    },
 }
 
 /// Why a skill test failed.

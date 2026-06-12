@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use card_dsl::card_data::ClueValue;
+
 use super::card::CardCode;
 
 /// Stable identifier for a location within a scenario.
@@ -33,6 +35,10 @@ pub struct Location {
     pub shroud: u8,
     /// Clues currently on the location.
     pub clues: u8,
+    /// The printed clue value on the location card (used to place clues
+    /// at reveal time). `PerInvestigator(n)` means `n × investigator_count`
+    /// clues are placed; `Fixed(n)` places exactly `n` regardless of count.
+    pub printed_clues: ClueValue,
     /// Whether the location is face-up. Unrevealed locations show only
     /// their "back" name and aren't yet investigatable.
     pub revealed: bool,
@@ -64,6 +70,7 @@ impl Location {
             name: name.into(),
             shroud,
             clues,
+            printed_clues: ClueValue::Fixed(clues),
             revealed: true,
             connections: Vec::new(),
         }
@@ -83,6 +90,7 @@ mod location_code_tests {
             name: "Hallway".into(),
             shroud: 2,
             clues: 0,
+            printed_clues: ClueValue::Fixed(0),
             revealed: true,
             connections: Vec::new(),
         };
@@ -109,6 +117,7 @@ mod location_code_tests {
             name: "Demo Location".into(),
             shroud: 1,
             clues: 3,
+            printed_clues: ClueValue::Fixed(3),
             revealed: false,
             connections: vec![LocationId(1)],
         };

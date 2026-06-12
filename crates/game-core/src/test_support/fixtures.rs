@@ -17,7 +17,7 @@
 //! field's intent. Phase-2+ reviewers: flag missing fixture updates
 //! when a field addition lands.
 
-use crate::card_data::Prey;
+use crate::card_data::{ClueValue, Prey};
 use crate::engine::{EngineOutcome, InputRequest, ResumeToken};
 use crate::state::{
     CardCode, Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
@@ -75,6 +75,7 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
         name: name.into(),
         shroud: 2,
         clues: 0,
+        printed_clues: ClueValue::Fixed(0),
         revealed: true,
         connections: Vec::new(),
     }

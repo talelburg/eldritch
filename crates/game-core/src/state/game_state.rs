@@ -862,21 +862,28 @@ impl GameState {
     /// Panics if `metadata` is not a `Location` card (a build-time
     /// invariant — scenarios hand their own location cards).
     fn location_from_metadata(&mut self, metadata: &CardMetadata) -> Location {
-        let (shroud, clues) = match &metadata.kind {
-            CardKind::Location { shroud, clues, .. } => (*shroud, *clues),
+        let (shroud, printed_clues) = match &metadata.kind {
+            CardKind::Location {
+                shroud,
+                printed_clues,
+                ..
+            } => (*shroud, *printed_clues),
             other => panic!(
                 "add_location: card {} is not a Location ({other:?})",
                 metadata.code
             ),
         };
         let id = self.mint_location_id();
-        Location::new(
+        Location {
             id,
-            CardCode::new(metadata.code.clone()),
-            metadata.name.clone(),
+            code: CardCode::new(metadata.code.clone()),
+            name: metadata.name.clone(),
             shroud,
-            clues,
-        )
+            clues: 0,
+            revealed: false,
+            printed_clues,
+            connections: Vec::new(),
+        }
     }
 
     /// Add a location **into play** from its card metadata, returning the
@@ -1192,7 +1199,7 @@ mod partial_eq_tests {
 
 #[cfg(test)]
 mod add_location_tests {
-    use crate::card_data::{CardKind, CardMetadata};
+    use crate::card_data::{CardKind, CardMetadata, ClueValue};
     use crate::test_support::GameStateBuilder;
 
     fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
@@ -1204,7 +1211,7 @@ mod add_location_tests {
             pack_code: "core".to_string(),
             kind: CardKind::Location {
                 shroud,
-                clues,
+                printed_clues: ClueValue::PerInvestigator(clues),
                 victory: None,
             },
         }
@@ -1219,9 +1226,14 @@ mod add_location_tests {
         let study = &state.locations[&a];
         assert_eq!(study.code.as_str(), "01111");
         assert_eq!(study.name, "Study");
-        assert_eq!((study.shroud, study.clues), (2, 2));
+        assert_eq!(study.shroud, 2);
+        assert_eq!(study.clues, 0, "enters unrevealed with no clues");
+        assert!(!study.revealed);
+        assert_eq!(
+            study.printed_clues,
+            crate::card_data::ClueValue::PerInvestigator(2)
+        );
         assert!(study.connections.is_empty());
-        assert!(study.revealed);
         assert_eq!(state.next_location_id, 2, "counter advanced twice");
     }
 

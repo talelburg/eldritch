@@ -181,6 +181,7 @@ pub const MODULE: ScenarioModule = ScenarioModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use game_core::card_data::ClueValue;
     use game_core::state::ChaosToken;
 
     #[test]
@@ -190,7 +191,14 @@ mod tests {
         // the reader helpers.
         let s = setup();
         let study = &s.locations[&s.starting_location.unwrap()];
-        assert_eq!((study.shroud, study.clues), (2, 2), "Study 01111 stats");
+        assert_eq!(study.shroud, 2, "Study 01111 shroud");
+        assert_eq!(study.clues, 0, "Study enters unrevealed with no clues");
+        assert!(!study.revealed, "Study enters unrevealed");
+        assert_eq!(
+            study.printed_clues,
+            ClueValue::PerInvestigator(2),
+            "Study 01111 printed_clues"
+        );
         assert_eq!(
             s.agenda_deck
                 .iter()
