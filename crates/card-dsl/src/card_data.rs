@@ -253,6 +253,20 @@ pub enum ClueValue {
     Fixed(u8),
 }
 
+/// An enemy's printed health. Mirrors [`ClueValue`]: `PerInvestigator(n)`
+/// scales by the number of investigators in the game (Rules Reference
+/// p.12); `Fixed(n)` is a flat value. Distinguishes `ArkhamDB`'s
+/// `health_per_investigator` (absent/false → fixed; `true` →
+/// per-investigator). Note the polarity is the opposite of [`ClueValue`],
+/// whose clues default to per-investigator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HealthValue {
+    /// Exactly `value`, regardless of investigator count.
+    Fixed(u8),
+    /// `value × #investigators` at spawn time.
+    PerInvestigator(u8),
+}
+
 /// Per-card-type data. The discriminant mirrors [`CardType`] — read it
 /// via [`CardMetadata::card_type`]. Player variants carry a [`Class`];
 /// encounter variants do not (encounter cards have no player class).
@@ -331,8 +345,8 @@ pub enum CardKind {
         damage: u8,
         /// Horror dealt to an investigator on attack.
         horror: u8,
-        /// Maximum health.
-        health: Option<u8>,
+        /// Maximum health (per-investigator or fixed).
+        health: Option<HealthValue>,
         /// Victory points awarded when defeated (in the victory display).
         victory: Option<u8>,
         /// Spawn rule (`None` = default: engaged with the drawing
@@ -342,6 +356,13 @@ pub enum CardKind {
         surge: bool,
         /// Peril keyword (Rules Reference p.18).
         peril: bool,
+        /// Hunter keyword (Rules Reference p.12).
+        hunter: bool,
+        /// Retaliate keyword (Rules Reference p.18).
+        retaliate: bool,
+        /// Prey instruction (Rules Reference p.17); `Prey::Default` when
+        /// the card prints no prey line.
+        prey: Prey,
         /// Copies of this card in the encounter deck (build multiplicity).
         quantity: u8,
     },
@@ -673,6 +694,17 @@ mod spawn_tests {
     }
 
     #[test]
+    fn health_value_serde_roundtrip() {
+        for hv in [HealthValue::Fixed(4), HealthValue::PerInvestigator(5)] {
+            let json = serde_json::to_string(&hv).expect("serialize");
+            assert_eq!(
+                serde_json::from_str::<HealthValue>(&json).expect("deserialize"),
+                hv
+            );
+        }
+    }
+
+    #[test]
     fn card_metadata_serde_roundtrip_preserves_spawn_specific() {
         let original = CardMetadata {
             code: "_synth_enemy".into(),
@@ -685,13 +717,16 @@ mod spawn_tests {
                 evade: 2,
                 damage: 1,
                 horror: 1,
-                health: Some(1),
+                health: Some(HealthValue::Fixed(1)),
                 victory: None,
                 spawn: Some(Spawn {
                     location: SpawnLocation::Specific("_synth_loc".into()),
                 }),
                 surge: false,
                 peril: false,
+                hunter: false,
+                retaliate: false,
+                prey: Prey::Default,
                 quantity: 1,
             },
         };
