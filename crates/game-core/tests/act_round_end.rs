@@ -76,6 +76,10 @@ fn resolve_confirm_routes_to_resume_and_advances() {
     );
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert_eq!(r.state.act_index, 1, "advanced act 2 -> act 3");
-    assert_eq!(r.state.investigators[&InvestigatorId(1)].clues, 0, "spent 3");
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].clues,
+        0,
+        "spent 3"
+    );
     assert!(r.state.act_round_end_pending.is_none());
 }

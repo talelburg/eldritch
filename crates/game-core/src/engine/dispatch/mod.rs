@@ -145,9 +145,10 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
-            reason: "an act round-end advance choice is pending; submit a PlayerAction::ResolveInput \
+            reason:
+                "an act round-end advance choice is pending; submit a PlayerAction::ResolveInput \
                      with InputResponse::Confirm or Skip before any other action"
-                .into(),
+                    .into(),
         };
     }
 

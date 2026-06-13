@@ -6,8 +6,7 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::event::Event;
 use crate::state::{
     ActRoundEndPending, CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase,
-    PhaseStep, WindowKind,
-    Zone,
+    PhaseStep, WindowKind, Zone,
 };
 
 use crate::action::RosterEntry;
@@ -2164,7 +2163,12 @@ mod upkeep_phase_tests {
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         assert!(state.act_round_end_pending.is_some());
         assert_eq!(state.phase, Phase::Upkeep, "parked: did not transition");
-        assert_no_event!(events, Event::PhaseStarted { phase: Phase::Mythos });
+        assert_no_event!(
+            events,
+            Event::PhaseStarted {
+                phase: Phase::Mythos
+            }
+        );
     }
 
     #[test]
@@ -2251,7 +2255,7 @@ mod upkeep_phase_tests {
     fn affordability_counts_only_contributor_location() {
         use crate::state::{CardCode, Location, LocationId};
         let (mut state, _) = round_end_window_state(0); // Hallway inv holds 0
-        // A second investigator elsewhere holds plenty — must NOT count.
+                                                        // A second investigator elsewhere holds plenty — must NOT count.
         let other = InvestigatorId(2);
         let mut o = test_investigator(2);
         o.current_location = Some(LocationId(9));

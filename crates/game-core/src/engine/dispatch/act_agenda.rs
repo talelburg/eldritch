@@ -167,13 +167,7 @@ pub(crate) fn investigators_at(state: &GameState, location: LocationId) -> Vec<I
         .turn_order
         .iter()
         .copied()
-        .filter(|id| {
-            state
-                .investigators
-                .get(id)
-                .and_then(|i| i.current_location)
-                == Some(location)
-        })
+        .filter(|id| state.investigators.get(id).and_then(|i| i.current_location) == Some(location))
         .collect()
 }
 
@@ -453,10 +447,7 @@ mod advance_act_tests {
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.act_index, 0, "act did not advance");
-        assert_eq!(
-            result.state.investigators[&inv].clues, 9,
-            "no clues spent"
-        );
+        assert_eq!(result.state.investigators[&inv].clues, 9, "no clues spent");
     }
 
     #[test]
