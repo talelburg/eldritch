@@ -75,6 +75,12 @@ pub struct Enemy {
     /// enemy pursues / engages when it has a choice. `Prey::Default`
     /// for enemies with no printed prey line.
     pub prey: Prey,
+    /// Whether this enemy has the Retaliate keyword (Rules Reference
+    /// p.18): after an investigator fails a Fight test against this
+    /// enemy while it is ready, it performs an attack against that
+    /// investigator (without exhausting). `false` for enemies with no
+    /// printed Retaliate line.
+    pub retaliate: bool,
 }
 
 #[cfg(test)]
@@ -98,10 +104,12 @@ mod hunter_prey_field_tests {
             engaged_with: None,
             hunter: true,
             prey: Prey::Default,
+            retaliate: true,
             code: crate::CardCode::new("01116"),
         };
         assert!(e.hunter);
         assert_eq!(e.prey, Prey::Default);
+        assert!(e.retaliate);
     }
 
     #[test]

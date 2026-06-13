@@ -3,24 +3,7 @@
 //! These are pure lookup functions with no side effects; they call only into
 //! `crate::state` / `crate::dsl` and are called by multiple dispatch handlers.
 
-use crate::dsl::Stat;
-use crate::state::{GameState, InvestigatorId, LocationId, SkillKind, Status};
-
-/// Map a prey `Stat` to the `SkillKind` used for investigator lookup.
-/// Only the four base skills are valid prey stats in Phase-4 scope; a
-/// `MaxHealth`/`MaxSanity` prey would be a card-impl bug.
-pub(super) fn stat_to_skill_kind(stat: Stat) -> SkillKind {
-    match stat {
-        Stat::Willpower => SkillKind::Willpower,
-        Stat::Intellect => SkillKind::Intellect,
-        Stat::Combat => SkillKind::Combat,
-        Stat::Agility => SkillKind::Agility,
-        Stat::MaxHealth | Stat::MaxSanity => unreachable!(
-            "resolve_prey: prey stat {stat:?} is not a base skill; no in-scope \
-             prey instruction uses MaxHealth/MaxSanity — card-impl bug"
-        ),
-    }
-}
+use crate::state::{GameState, InvestigatorId, LocationId, Status};
 
 /// Investigators (Active, on the map) at `loc`, in `turn_order` order
 /// so prey ties carry a deterministic, lead-first candidate list.

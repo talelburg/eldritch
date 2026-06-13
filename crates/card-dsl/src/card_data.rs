@@ -14,7 +14,6 @@
 //! looked up through the registry too but lives in
 //! [`crate::dsl::Ability`].
 
-use crate::dsl::Stat;
 use serde::{Deserialize, Serialize};
 
 /// Investigator class. Translation of upstream's `faction_code` field
@@ -166,13 +165,14 @@ pub struct Spawn {
 /// An enemy's prey instruction (Rules Reference p.17): which
 /// investigator it pursues / engages when it has a choice.
 ///
-/// Phase-4 ships `Default` + `HighestStat`. `Default` covers "no prey
-/// instruction" and "Prey – nearest" — among equidistant / co-located
-/// investigators all are equal, so the lead investigator breaks the tie
-/// (p.12 / p.17). `HighestStat(Stat::Combat)` is Ghoul Priest's
-/// `Prey – Highest [combat]`. Other printed variants (`Lowest`,
-/// `Bearer only`, `Most clues`, …) land with their first card consumer;
-/// `#[non_exhaustive]` keeps that additive.
+/// `Default` covers "no prey instruction" and "Prey – nearest" — among
+/// equidistant / co-located investigators all are equal, so the lead
+/// investigator breaks the tie (p.12 / p.17). [`Ranked`](Self::Ranked)
+/// covers every *comparative* prey line as a `{ direction, measure }`
+/// pair: Ghoul Priest's `Highest [combat]` (`Highest` +
+/// `Skill(Combat)`) and Ravenous Ghoul's "Lowest remaining health"
+/// (`Lowest` + `RemainingHealth`). `#[non_exhaustive]` leaves room for
+/// genuinely non-comparative future shapes (e.g. "Bearer only").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Prey {
@@ -180,9 +180,41 @@ pub enum Prey {
     /// lead investigator breaks ties.
     #[default]
     Default,
-    /// Pursue / engage the investigator with the highest value of the
-    /// given stat; ties fall to the lead investigator.
-    HighestStat(Stat),
+    /// Pursue / engage the investigator with the highest or lowest value
+    /// of `measure`; ties fall to the lead investigator.
+    Ranked {
+        /// Whether the highest or lowest measure value is preferred.
+        direction: PreyDirection,
+        /// The quantity investigators are ranked by.
+        measure: PreyMeasure,
+    },
+}
+
+/// Whether a [`Prey::Ranked`] instruction prefers the highest or lowest
+/// value of its [`PreyMeasure`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PreyDirection {
+    /// Prefer the investigator with the greatest measure value.
+    Highest,
+    /// Prefer the investigator with the least measure value.
+    Lowest,
+}
+
+/// The quantity a [`Prey::Ranked`] instruction ranks investigators by.
+///
+/// Exhaustive (unlike [`Prey`]): adding a measure must force the engine's
+/// `resolve_prey` to wire it, so the compiler flags the site. New printed
+/// measures land here with their first card consumer — `RemainingSanity`
+/// (Lowest remaining sanity), `Clues` (Most clues), `CardsInHand` (Fewest
+/// cards in hand), ….
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PreyMeasure {
+    /// One of the four skills (Rules Reference p.17). Ghoul Priest's
+    /// `Highest [combat]` is `Skill(SkillKind::Combat)`.
+    Skill(SkillKind),
+    /// Remaining health = base health − damage (Rules Reference p.12).
+    /// Ravenous Ghoul's "Lowest remaining health".
+    RemainingHealth,
 }
 
 /// Static metadata for one card as printed: an identity core shared by
@@ -582,8 +614,22 @@ mod prey_tests {
     }
 
     #[test]
-    fn prey_serde_roundtrip_highest_stat() {
-        let original = Prey::HighestStat(Stat::Combat);
+    fn prey_serde_roundtrip_ranked_skill() {
+        let original = Prey::Ranked {
+            direction: PreyDirection::Highest,
+            measure: PreyMeasure::Skill(SkillKind::Combat),
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: Prey = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn prey_serde_roundtrip_ranked_remaining_health() {
+        let original = Prey::Ranked {
+            direction: PreyDirection::Lowest,
+            measure: PreyMeasure::RemainingHealth,
+        };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: Prey = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
