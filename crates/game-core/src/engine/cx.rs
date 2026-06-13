@@ -19,7 +19,11 @@ use crate::state::GameState;
 /// Mutable engine working set: the state being mutated plus the event
 /// buffer being emitted into. Threaded as `cx: &mut Cx` through dispatch
 /// handlers and the effect evaluator.
-pub(crate) struct Cx<'a> {
+///
+/// Public because it is the effect-resolution context passed to a
+/// [`NativeEffectFn`](crate::card_registry::NativeEffectFn): a card-local
+/// Rust effect mutates `state` and pushes `events` through it.
+pub struct Cx<'a> {
     /// The game state being mutated.
     pub state: &'a mut GameState,
     /// The events emitted by the current `apply` call.

@@ -483,6 +483,12 @@ pub enum Effect {
     /// and the act's on-advance reverse fires. Used by act objectives
     /// like 01110 ("If the Ghoul Priest is Defeated, advance.").
     AdvanceCurrentAct,
+    /// A card-local Rust effect, resolved by tag through the host's
+    /// `CardRegistry.native_effect_for`. The generic escape hatch for
+    /// single-use card logic that doesn't earn a shared `Effect` variant
+    /// (see issue #276). The `cards` crate maps the tag to a Rust fn; the
+    /// evaluator rejects loudly on an unknown tag or absent registry.
+    Native { tag: String },
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -853,6 +859,13 @@ pub fn advance_current_act() -> Effect {
     Effect::AdvanceCurrentAct
 }
 
+/// Build an [`Effect::Native`] referencing a host-registered Rust effect
+/// by `tag` (convention: `"<cardcode>:<name>"`).
+#[must_use]
+pub fn native(tag: impl Into<String>) -> Effect {
+    Effect::Native { tag: tag.into() }
+}
+
 // ---- tests ----------------------------------------------------
 
 #[cfg(test)]
@@ -1063,6 +1076,14 @@ mod tests {
         let json = serde_json::to_string(&original).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn native_effect_round_trips_through_serde_json() {
+        let effect = native("01108:board-build");
+        let json = serde_json::to_string(&effect).expect("serialize");
+        let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(effect, recovered);
     }
 
     /// Roland-Banks-shaped reaction: "after you defeat an enemy,

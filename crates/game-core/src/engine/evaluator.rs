@@ -206,6 +206,19 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             }
             EngineOutcome::Done
         }
+        Effect::Native { tag } => {
+            let Some(reg) = crate::card_registry::current() else {
+                return EngineOutcome::Rejected {
+                    reason: format!("Native effect {tag:?}: no card registry installed").into(),
+                };
+            };
+            let Some(f) = (reg.native_effect_for)(tag) else {
+                return EngineOutcome::Rejected {
+                    reason: format!("Native effect {tag:?}: no handler registered").into(),
+                };
+            };
+            f(cx, &eval_ctx)
+        }
     }
 }
 
@@ -1513,6 +1526,7 @@ mod tests {
         CardRegistry {
             metadata_for: mock_registry,
             abilities_for: fake_abilities_for,
+            native_effect_for: |_| None,
         }
     }
 

@@ -11,7 +11,7 @@
 //! current state bit-for-bit.
 
 mod cx;
-pub(crate) use cx::Cx;
+pub use cx::Cx;
 mod dispatch;
 pub mod evaluator;
 mod outcome;

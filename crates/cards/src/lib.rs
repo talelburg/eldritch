@@ -91,6 +91,7 @@ fn registry_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>
 pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
+    native_effect_for: |_| None,
 };
 
 #[cfg(test)]

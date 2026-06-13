@@ -203,6 +203,7 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for,
     abilities_for,
+    native_effect_for: |_| None,
 };
 
 #[cfg(test)]
