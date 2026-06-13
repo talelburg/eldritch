@@ -260,6 +260,7 @@ fn spawn_enemy(
         hunter,
         retaliate,
         prey,
+        victory,
         ..
     } = &metadata.kind
     else {
@@ -348,6 +349,7 @@ fn spawn_enemy(
         hunter: *hunter,
         prey,
         retaliate: *retaliate,
+        victory: *victory,
     };
     cx.state.enemies.insert(enemy_id, enemy);
 
@@ -994,6 +996,7 @@ mod spawn_enemy_tests {
             1,
             0,
             0,
+            None,
         )
     }
 
@@ -1008,6 +1011,7 @@ mod spawn_enemy_tests {
         evade: u8,
         damage: u8,
         horror: u8,
+        victory: Option<u8>,
     ) -> CardMetadata {
         CardMetadata {
             code: "_synth_enemy".into(),
@@ -1021,7 +1025,7 @@ mod spawn_enemy_tests {
                 damage,
                 horror,
                 health: Some(health),
-                victory: None,
+                victory,
                 spawn,
                 surge: false,
                 peril: false,
@@ -1058,6 +1062,7 @@ mod spawn_enemy_tests {
             4,
             2,
             2,
+            None,
         );
         let mut events = Vec::new();
         spawn_enemy(
@@ -1108,6 +1113,7 @@ mod spawn_enemy_tests {
             4,
             2,
             2,
+            None,
         );
         let mut events = Vec::new();
         spawn_enemy(
@@ -1122,6 +1128,48 @@ mod spawn_enemy_tests {
 
         let enemy = state.enemies.values().next().expect("enemy spawned");
         assert_eq!(enemy.max_health, 10, "5 health × 2 investigators");
+    }
+
+    #[test]
+    fn spawn_enemy_reads_victory_from_metadata() {
+        let mut loc = test_location(10, "Loc");
+        loc.code = CardCode("_l".into());
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+
+        let metadata = enemy_metadata(
+            None,
+            HealthValue::Fixed(5),
+            false,
+            false,
+            Prey::Default,
+            4,
+            4,
+            2,
+            2,
+            Some(2),
+        );
+        let mut events = Vec::new();
+        spawn_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        let enemy = state.enemies.values().next().expect("enemy spawned");
+        assert_eq!(enemy.victory, Some(2));
     }
 
     #[test]
