@@ -71,7 +71,7 @@ mod tests {
     fn module_for_resolves_the_gathering() {
         let id = ScenarioId::new(the_gathering::ID);
         let module = module_for(&id).expect("the-gathering module present");
-        assert_eq!(module.reference_card, "01104");
+        assert!(module.resolve_symbol.is_none());
     }
 }
 

@@ -4019,7 +4019,7 @@ mod tests {
     }
 
     static STAMP_MODULE: ScenarioModule = ScenarioModule {
-        reference_card: "",
+        resolve_symbol: None,
         setup: unused_setup,
         apply_resolution: stamp_apply,
     };

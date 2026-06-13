@@ -43,9 +43,6 @@ fn act_clue_threshold(code: &str) -> u8 {
 /// String id used to look this module up in [`crate::REGISTRY`].
 pub const ID: &str = "the-gathering";
 
-/// `ArkhamDB` reference-card code (chaos-symbol effects; evaluated in C2).
-pub const REFERENCE_CARD: &str = "01104";
-
 /// The verified Standard-difficulty Night of the Zealot chaos bag (16
 /// tokens). Source: `data/campaign-guides/SOURCE.md` (campaign guide
 /// p.1, "Assemble the campaign chaos bag", Standard).
@@ -173,7 +170,7 @@ pub fn apply_resolution(
 
 /// The [`ScenarioModule`] value for The Gathering.
 pub const MODULE: ScenarioModule = ScenarioModule {
-    reference_card: REFERENCE_CARD,
+    resolve_symbol: None,
     setup,
     apply_resolution,
 };
