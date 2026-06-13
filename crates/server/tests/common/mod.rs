@@ -86,7 +86,7 @@ pub async fn connect(addr: SocketAddr, game_id: &str) -> Client {
 /// Send a client message as JSON text.
 pub async fn send(ws: &mut Client, msg: &ClientMessage) {
     let json = serde_json::to_string(msg).expect("serialize ClientMessage");
-    ws.send(Message::Text(json)).await.expect("ws send");
+    ws.send(Message::Text(json.into())).await.expect("ws send");
 }
 
 /// Receive the next [`ServerMessage`], skipping ping/pong frames.
@@ -94,7 +94,7 @@ pub async fn recv(ws: &mut Client) -> ServerMessage {
     loop {
         match ws.next().await.expect("stream open").expect("no ws error") {
             Message::Text(text) => {
-                return serde_json::from_str(&text).expect("valid ServerMessage");
+                return serde_json::from_str(text.as_str()).expect("valid ServerMessage");
             }
             Message::Close(_) => panic!("server closed the connection unexpectedly"),
             _ => {}
