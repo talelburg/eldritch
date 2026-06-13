@@ -4209,6 +4209,7 @@ mod tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 1,
             resolution: Some(Resolution::Won { id: "test".into() }),
+            round_end_advance: None,
         }];
         state
     }

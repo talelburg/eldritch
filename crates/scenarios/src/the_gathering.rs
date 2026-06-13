@@ -21,7 +21,9 @@ use game_core::event::Event;
 use game_core::scenario::{
     Resolution, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
 };
-use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
+use game_core::state::{
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, RoundEndAdvance,
+};
 
 /// Read an agenda's printed doom threshold from the corpus.
 fn agenda_doom(code: &str) -> u8 {
@@ -144,24 +146,35 @@ pub fn setup() -> GameState {
     // corpus. 01110 advances via its Forced EnemyDefeated objective
     // (01116; in cards::act_01110), not a clue spend — its printed clue
     // threshold is null, which the reader maps to 0.
-    // TODO(#231): the Ghoul Priest (01116) spawns at Act-2 (01109) advance — C3b.
-    // TODO(#phase-9): the reverse is the lead investigator's R1/R2 resolution choice (campaign log).
+    // TODO(#280): Act-2 (01109) reverse — reveal the Parlor and spawn the
+    // set-aside Ghoul Priest (01116) in the Hallway (needs set-aside-enemy
+    // support). Lita Chantler -> #258. (Not C3b/#231, which was enemy stats.)
+    // TODO(#281): agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul)
+    // + an `AgendaAdvanced` forced point — `advance_agenda` fires no reverse today.
+    // TODO(#phase-9): act-3 (01110) reverse is the lead's R1/R2 resolution choice.
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
             clue_threshold: act_clue_threshold("01108"),
             resolution: None,
+            round_end_advance: None,
         },
         Act {
             code: CardCode("01109".into()),
             clue_threshold: act_clue_threshold("01109"),
             resolution: None,
+            // "When the round ends, investigators in the hallway may, as a
+            // group, spend the requisite number of clues to advance." (C3d)
+            round_end_advance: Some(RoundEndAdvance {
+                contributor_location: CardCode("01112".into()), // the Hallway
+            }),
         },
         Act {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::act_01110), not a clue spend.
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
             resolution: Some(Resolution::Won { id: "R1".into() }),
+            round_end_advance: None,
         },
     ];
 

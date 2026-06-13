@@ -78,29 +78,57 @@ fn roster_seating_places_investigator_at_study() {
 }
 
 #[test]
-fn drives_to_a_won_resolution() {
+fn drives_act_1_then_act_2_via_round_end_window() {
     install_registries();
     let inv = InvestigatorId(1);
     let mut state = setup_and_seat();
 
-    // Hand the investigator enough clues to clear acts 1 and 2 (2 + 3 = 5
-    // needed); act 3 (01110) has threshold 0 — it advances on Ghoul-Priest-
-    // defeat, not a clue spend. 7 is comfortably enough. AdvanceAct spends
-    // from group clues, no chaos draw involved. Proves the resolution latch
-    // fires for the real act deck, deterministically.
-    state.investigators.get_mut(&inv).unwrap().clues = 7;
-
-    for _ in 0..3 {
-        state = apply_checked(
-            state,
-            &Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-        );
+    // Enough clues to clear act 1 (threshold 2, AdvanceAct) and then act 2
+    // (threshold 3) via its round-end objective; a small deck so the upkeep
+    // draw doesn't deck out. Act 3 (01110) advances on Ghoul-Priest-defeat —
+    // covered by cards/tests/act_advancement.rs — so this test stops at
+    // reaching act 3 through the real deck.
+    {
+        let i = state.investigators.get_mut(&inv).unwrap();
+        i.clues = 7;
+        i.deck = (0..5).map(|n| CardCode(format!("filler{n}"))).collect();
     }
 
+    // Act 1: the normal Investigation-phase clue spend. Board builds and the
+    // investigator relocates to the Hallway (01112) — the act-2 contributors.
+    state = apply_checked(
+        state,
+        &Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+    );
+    assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
+
+    // End the round: the cascade reaches step 4.6 and opens act 2's round-end
+    // window (Hallway investigator holds >= 3 clues).
+    let r = apply(state, Action::Player(PlayerAction::EndTurn));
     assert!(
-        matches!(state.resolution, Some(Resolution::Won { .. })),
-        "advancing through the terminal act latches Won, got {:?}",
-        state.resolution,
+        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "round end opens the act-2 clue-spend window, got {:?}",
+        r.outcome,
+    );
+    assert!(r.state.act_round_end_pending.is_some());
+
+    // Spend the clues as a group: act 2 advances to act 3.
+    let r = apply(
+        r.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: game_core::action::InputResponse::Confirm,
+        }),
+    );
+    assert!(
+        !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+        "Confirm rejected: {:?}",
+        r.outcome,
+    );
+    assert_eq!(r.state.act_index, 2, "act 2 advanced to act 3 (01110)");
+    assert_eq!(
+        r.state.act_deck[2].resolution,
+        Some(Resolution::Won { id: "R1".into() }),
+        "the terminal act carries the Won resolution (latched on Ghoul-Priest defeat)",
     );
 }
 

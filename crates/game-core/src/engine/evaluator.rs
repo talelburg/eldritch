@@ -1893,11 +1893,13 @@ mod tests {
                 code: CardCode("a1".into()),
                 clue_threshold: 0,
                 resolution: None,
+                round_end_advance: None,
             },
             Act {
                 code: CardCode("a2".into()),
                 clue_threshold: 0,
                 resolution: Some(Resolution::Won { id: "R1".into() }),
+                round_end_advance: None,
             },
         ];
         let mut events = Vec::new();
@@ -1927,6 +1929,7 @@ mod tests {
             code: CardCode("a1".into()),
             clue_threshold: 0,
             resolution: Some(Resolution::Won { id: "R1".into() }),
+            round_end_advance: None,
         }];
         let mut events = Vec::new();
         let mut cx = Cx {

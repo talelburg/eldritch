@@ -10,7 +10,16 @@ kickoff [#246](https://github.com/talelburg/eldritch/issues/246)). Shipped:
 C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
 C2 (01104 symbol-token effects + location victory points),
 C3a (Prey – Lowest remaining health + Retaliate keyword),
-C3b (the six encounter enemies + pipeline keyword/spawn/health parsing).
+C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
+C3c (agenda 01107 forced abilities), C3d (act-2 round-end window).
+
+> **Next (directive — do before C4):** [#280](https://github.com/talelburg/eldritch/issues/280)
+> (act-2 reverse: spawn the set-aside Ghoul Priest + reveal the Parlor) then
+> [#281](https://github.com/talelburg/eldritch/issues/281) (agenda reverses 01105/01106 +
+> `AgendaAdvanced` forced point). These close the act/agenda **reverse-coverage**
+> gap (see the table below) that blocks the real win/lose path, so they take
+> priority over C4. Then resume C4 → C7.
+
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
 [Group C decomposition](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
@@ -58,7 +67,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C3b | [#231](https://github.com/talelburg/eldritch/issues/231) | the six encounter enemies | ✅ PR #272 |
 | — | [#276](https://github.com/talelburg/eldritch/issues/276) | infra: `Effect::Native` card-local-Rust bridge (prerequisite for C3c's agenda + future bespoke cards) | ✅ PR #277 |
 | C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) | ✅ PR #278 |
-| C3d | [#275](https://github.com/talelburg/eldritch/issues/275) | act-2 (01109) round-end clue-spend window (split from C3c) | — |
+| C3d | [#275](https://github.com/talelburg/eldritch/issues/275) | act-2 (01109) round-end clue-spend window (split from C3c) | ✅ PR #279 |
 | C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | — |
 | C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | — |
 | C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area treacheries (×3) | — |
@@ -72,6 +81,28 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards | — |
 | C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | — |
 | C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test | — |
+
+### Act/agenda reverse coverage
+
+Every act and agenda **reverse** (its `back_text` — what happens when it
+advances) must be implemented for a faithful slice; the Group C rows above
+covered some piecemeal (fronts + a couple of reverses), so this table is
+the explicit coverage check. Fronts (objectives/forced) are tracked in the
+breakdown rows; this is reverses only.
+
+| Card | Reverse | Status |
+|---|---|---|
+| Act 1 (01108) | board build | ✅ `act_01108.rs` (C1b) |
+| Act 2 (01109) | reveal Parlor, put Lita, spawn Ghoul Priest | ⛔ [#280](https://github.com/talelburg/eldritch/issues/280) (Lita → [#258](https://github.com/talelburg/eldritch/issues/258)) |
+| Act 3 (01110) | R1/R2 resolution choice | ⚠️ R1 Won latch (C1b); R2 + choice → Phase 9 |
+| Agenda 1 (01105) | lead: each discards 1 random, or lead takes 2 horror | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
+| Agenda 2 (01106) | dig encounter deck until a [[Ghoul]], lead draws it | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
+| Agenda 3 (01107) | (→R3) Lost | ✅ terminal Lost latch |
+
+Infra note: acts fire their reverse via `ForcedTriggerPoint::ActAdvanced`
+(from `advance_act`); **agendas have no equivalent** — `advance_agenda`
+fires nothing, so the agenda reverses need an `AgendaAdvanced` forced point
+first ([#281](https://github.com/talelburg/eldritch/issues/281)).
 
 ## Future slices (after Slice 1)
 
@@ -130,6 +161,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **Enemy keywords / spawn-location / per-investigator health are parsed in the pipeline into the corpus, not hand-written per-enemy (C3b, [#231](https://github.com/talelburg/eldritch/issues/231), PR #272).** `CardKind::Enemy` gained `hunter`/`retaliate`/`prey`, and `health: Option<u8>` became `Option<HealthValue>` (a new enum mirroring `ClueValue`; polarity flipped — ArkhamDB `health_per_investigator` defaults false → `Fixed`). The pipeline parses these from card text (incl. resolving `Spawn - <name>` to a location code via a name→code index over Location cards); `spawn_enemy` reads all stats/keywords from the corpus and scales `PerInvestigator` health by the in-game investigator count (same source as the per-investigator clue path in `reveal.rs`). **Future enemies need no hand-written impl** — they land via the snapshot + a regen. Out-of-scope keyword forms not yet modeled (e.g. `Prey - Most clues`, `Spawn - Engaged with Prey`) default + emit a build warning rather than failing or silently approximating. `surge`/`peril` remain unparsed (#138).
 
 - **Bespoke card logic lives card-locally via `Effect::Native { tag }`, not new shared `Effect` variants ([#276](https://github.com/talelburg/eldritch/issues/276), PR #277).** The registry's only behavior hook is `abilities_for → Vec<Ability>` and an `Ability`'s behavior is an `Effect`, so "implement in Rust" previously meant adding a variant to the shared `card_dsl::Effect` enum — accreting single-use scenario logic (C1b added three such variants). `Effect::Native { tag }` (serializable; `Effect` keeps its serde contract) + a new `CardRegistry.native_effect_for: fn(&str) -> Option<NativeEffectFn>` (`NativeEffectFn = fn(&mut Cx, &EvalContext) -> EngineOutcome`) lets the `cards` crate supply the Rust card-locally, dispatched by tag (convention `"<cardcode>:<name>"`). The bridge lives in the registry because `card-dsl` is below `game-core` and can't name `GameState`/`Cx`; `Cx` + `location_id_by_code`/`reveal_location` are now `pub`. **Add an `Effect` variant only when logic is genuinely reused across cards** (e.g. `AdvanceCurrentAct`); single-use logic is a native fn. C1b's three variants were migrated to `act_01108`'s `01108:board-build` native fn and removed. Orthogonal to #212 (that unifies *trigger dispatch*, not effect *supply*).
+
+- **`upkeep_phase_end` is now suspendable; act round-end objectives are a kernel `Act.round_end_advance` field (C3d, [#275](https://github.com/talelburg/eldritch/issues/275), PR #279).** `upkeep_phase_end` returns `EngineOutcome` (both callers propagate) and, after the round-end forced dispatch, opens a Confirm/Skip window when the current act carries `round_end_advance: Some(RoundEndAdvance { contributor_location })` **and** the investigators at that location can afford the act's `clue_threshold`. Suspension uses `act_round_end_pending` + an action-gate guard + `resolve_input` routing + `resume_act_round_end_advance`, mirroring hand-size discard; Confirm spends from the contributor-location investigators and `advance_act`s, Skip continues, either way Upkeep→Mythos. `AdvanceAct` is re-gated to reject for round-end-advance acts (act-1 still uses it; act-3 uses its forced `EnemyDefeated`). **Modeling:** the threshold stays corpus-sourced (`CardKind::Act`), but the objective shape is **content-set** in `the_gathering.rs` — ArkhamDB has no structured field for it, it's a single consumer, and sibling act objectives (01108/01110) are likewise hand-authored. A card-local native effect was rejected: the window lifecycle + Upkeep→Mythos continuation are inherently kernel, and suspendable forced/native dispatch is the #212/#213 north-star. **Future round-end act objectives reuse this field + window**; multi-investigator clue *allocation* stays the deterministic spend (#153).
 
 - **`RoundEnded` is a distinct framework timing point, separate from `PhaseEnded { Upkeep }` (C3c, [#232](https://github.com/talelburg/eldritch/issues/232), PR #278).** `EventPattern::RoundEnded` + `ForcedTriggerPoint::RoundEnded` fire in `upkeep_phase_end` *after* the upkeep-phase-end forced dispatch ("Upkeep phase ends. Round ends.", RR p.24). Kept separate so an end-of-upkeep-phase and an end-of-round card can coexist without conflation. Agenda 01107's two abilities are card-local native fns (per the #276 decision): `01107:move-ghouls` (enemy-phase-end, unengaged Ghouls step toward the Parlor — deterministic lowest-`LocationId` tie-break, unreachable on this star map; engagement-on-arrival unmodeled) and `01107:round-end-doom` (1 doom per Ghoul in Hallway/Parlor, no threshold check — RR checks doom at Mythos 1.3). **C3d ([#275](https://github.com/talelburg/eldritch/issues/275)) reuses this `RoundEnded` point** for act-2's round-end window. `shortest_first_steps` is now `pub`.
 
