@@ -188,7 +188,8 @@ fn trigger_matches(
             | EventPattern::EnemySpawned
             | EventPattern::EnteredLocation
             | EventPattern::PhaseEnded { .. }
-            | EventPattern::ActAdvanced,
+            | EventPattern::ActAdvanced
+            | EventPattern::RoundEnded,
         ) => false,
     }
 }
