@@ -512,6 +512,92 @@ fn clue_value_lit(clues: u8, fixed: bool) -> String {
     }
 }
 
+/// Strip ArkhamDB bold markup so keyword lines can be matched plainly.
+fn strip_html_bold(s: &str) -> String {
+    s.replace("<b>", "").replace("</b>", "")
+}
+
+/// True if `text` contains the standalone keyword token `"<kw>."`
+/// (e.g. `"Hunter."`). Bold tags are stripped first.
+fn has_keyword(text: &str, keyword: &str) -> bool {
+    strip_html_bold(text).contains(&format!("{keyword}."))
+}
+
+/// Parsed Prey line. `None` = no printed prey (emit `Prey::Default`);
+/// `Unrecognized` = a "Prey - …" form we don't model yet (emit
+/// `Prey::Default` + warn, matching `surge`/`peril`'s default-stub).
+#[derive(Debug, PartialEq, Eq)]
+enum PreyParse {
+    None,
+    /// `Prey - Highest [<skill>]`; payload is the `SkillKind` ident.
+    HighestSkill(&'static str),
+    /// `Prey - Lowest remaining health`.
+    LowestRemainingHealth,
+    /// A "Prey - …" clause not yet modeled (the clause text, trimmed).
+    Unrecognized(String),
+}
+
+/// Parse an enemy's Prey line out of `text`.
+fn parse_prey(text: &str) -> PreyParse {
+    let stripped = strip_html_bold(text);
+    let Some(rest) = stripped.split("Prey - ").nth(1) else {
+        return PreyParse::None;
+    };
+    // The clause runs to the next period.
+    let clause = rest.split('.').next().unwrap_or("").trim();
+    match clause {
+        "Highest [willpower]" => PreyParse::HighestSkill("Willpower"),
+        "Highest [intellect]" => PreyParse::HighestSkill("Intellect"),
+        "Highest [combat]" => PreyParse::HighestSkill("Combat"),
+        "Highest [agility]" => PreyParse::HighestSkill("Agility"),
+        "Lowest remaining health" => PreyParse::LowestRemainingHealth,
+        other => PreyParse::Unrecognized(other.to_owned()),
+    }
+}
+
+/// Emit the `Prey` literal for a parsed prey line.
+fn prey_lit(p: &PreyParse) -> String {
+    match p {
+        PreyParse::None | PreyParse::Unrecognized(_) => "Prey::Default".to_owned(),
+        PreyParse::HighestSkill(skill) => format!(
+            "Prey::Ranked {{ direction: PreyDirection::Highest, \
+             measure: PreyMeasure::Skill(SkillKind::{skill}) }}"
+        ),
+        PreyParse::LowestRemainingHealth => "Prey::Ranked { direction: PreyDirection::Lowest, \
+             measure: PreyMeasure::RemainingHealth }"
+            .to_owned(),
+    }
+}
+
+/// Parse the location name from a `Spawn - <name>.` line, if present.
+fn parse_spawn_name(text: &str) -> Option<String> {
+    let stripped = strip_html_bold(text);
+    let rest = stripped.split("Spawn - ").nth(1)?;
+    Some(rest.split('.').next().unwrap_or("").trim().to_owned())
+}
+
+/// Emit the `Option<Spawn>` literal for an enemy's resolved spawn code.
+fn spawn_lit(spawn_code: Option<&str>) -> String {
+    match spawn_code {
+        Some(code) => format!(
+            "Some(Spawn {{ location: SpawnLocation::Specific({}.to_owned()) }})",
+            str_lit(code)
+        ),
+        None => "None".to_owned(),
+    }
+}
+
+/// Emit the `Option<HealthValue>` literal for an enemy's health, mirroring
+/// `clue_value_lit`. Polarity is the opposite of clues: per-investigator
+/// only when ArkhamDB's `health_per_investigator` is set.
+fn health_value_opt_lit(health: Option<u8>, per_investigator: bool) -> String {
+    match health {
+        None => "None".to_owned(),
+        Some(n) if per_investigator => format!("Some(HealthValue::PerInvestigator({n}))"),
+        Some(n) => format!("Some(HealthValue::Fixed({n}))"),
+    }
+}
+
 fn string_vec(xs: &[String]) -> String {
     if xs.is_empty() {
         return "Vec::new()".into();
@@ -550,11 +636,99 @@ const GENERATED_HEADER: &str = "\
 #[cfg(test)]
 mod tests {
     use super::{
-        clue_value_lit, emit_card, map_card_type, map_class, normalize, parse_slots, parse_traits,
-        process_raw, NormalizedCard, RawCard,
+        clue_value_lit, emit_card, has_keyword, health_value_opt_lit, map_card_type, map_class,
+        normalize, parse_prey, parse_slots, parse_spawn_name, parse_traits, prey_lit, process_raw,
+        strip_html_bold, NormalizedCard, PreyParse, RawCard,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
+
+    #[test]
+    fn strip_html_bold_removes_bold_tags() {
+        assert_eq!(
+            strip_html_bold("<b>Prey</b> - Highest [combat]."),
+            "Prey - Highest [combat]."
+        );
+    }
+
+    #[test]
+    fn has_keyword_matches_standalone_token() {
+        assert!(has_keyword("Hunter. Retaliate.", "Hunter"));
+        assert!(has_keyword("Hunter. Retaliate.", "Retaliate"));
+        assert!(!has_keyword("<b>Spawn</b> - Attic.", "Hunter"));
+    }
+
+    #[test]
+    fn parse_prey_recognizes_highest_combat() {
+        assert_eq!(
+            parse_prey("<b>Prey</b> - Highest [combat].\nHunter. Retaliate."),
+            PreyParse::HighestSkill("Combat"),
+        );
+    }
+
+    #[test]
+    fn parse_prey_recognizes_lowest_remaining_health() {
+        assert_eq!(
+            parse_prey("<b>Prey</b> - Lowest remaining health."),
+            PreyParse::LowestRemainingHealth,
+        );
+    }
+
+    #[test]
+    fn parse_prey_none_when_no_prey_line() {
+        assert_eq!(parse_prey("Hunter."), PreyParse::None);
+    }
+
+    #[test]
+    fn parse_prey_unrecognized_keeps_clause() {
+        assert_eq!(
+            parse_prey("<b>Prey</b> - Most clues."),
+            PreyParse::Unrecognized("Most clues".to_owned()),
+        );
+    }
+
+    #[test]
+    fn prey_lit_emits_expected_literals() {
+        assert_eq!(prey_lit(&PreyParse::None), "Prey::Default");
+        assert_eq!(
+            prey_lit(&PreyParse::Unrecognized("Most clues".to_owned())),
+            "Prey::Default"
+        );
+        assert_eq!(
+            prey_lit(&PreyParse::HighestSkill("Combat")),
+            "Prey::Ranked { direction: PreyDirection::Highest, measure: PreyMeasure::Skill(SkillKind::Combat) }",
+        );
+        assert_eq!(
+            prey_lit(&PreyParse::LowestRemainingHealth),
+            "Prey::Ranked { direction: PreyDirection::Lowest, measure: PreyMeasure::RemainingHealth }",
+        );
+    }
+
+    #[test]
+    fn parse_spawn_name_extracts_location_name() {
+        assert_eq!(
+            parse_spawn_name("<b>Spawn</b> - Attic."),
+            Some("Attic".to_owned())
+        );
+        assert_eq!(
+            parse_spawn_name("<b>Spawn</b> - Cellar."),
+            Some("Cellar".to_owned())
+        );
+        assert_eq!(parse_spawn_name("Hunter."), None);
+    }
+
+    #[test]
+    fn health_value_opt_lit_mirrors_clue_value() {
+        assert_eq!(health_value_opt_lit(None, false), "None");
+        assert_eq!(
+            health_value_opt_lit(Some(4), false),
+            "Some(HealthValue::Fixed(4))"
+        );
+        assert_eq!(
+            health_value_opt_lit(Some(5), true),
+            "Some(HealthValue::PerInvestigator(5))"
+        );
+    }
 
     /// Minimal `RawCard` fixture with the required fields populated and
     /// optional fields cleared. Tweak by mutating the returned value
