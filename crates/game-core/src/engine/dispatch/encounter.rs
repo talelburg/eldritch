@@ -5,7 +5,8 @@ use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Enemy, EnemyId, InvestigatorId, Phase, PhaseStep, SpawnEngagePending, WindowKind,
+    CardCode, Enemy, EnemyId, InvestigatorId, LocationId, Phase, PhaseStep, SpawnEngagePending,
+    WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -241,48 +242,21 @@ fn resolve_encounter_card(
 /// resolves inline or suspends (`AwaitingInput`) with the enemy already
 /// minted into `state.enemies` and `Event::EnemySpawned` pushed (the
 /// pending choice carries the rest of the work to [`resume_spawn_engage`]).
-#[allow(clippy::too_many_lines)]
 fn spawn_enemy(
     cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
     metadata: &CardMetadata,
 ) -> EngineOutcome {
-    // spawn_enemy is only reached for Enemy cards; pull the enemy-specific
-    // stats out of the kind.
-    let CardKind::Enemy {
-        spawn,
-        health,
-        fight,
-        evade,
-        damage,
-        horror,
-        hunter,
-        retaliate,
-        prey,
-        victory,
-        ..
-    } = &metadata.kind
-    else {
+    // Resolve the spawn location (validate-first). Only the card's `spawn`
+    // rule is read here; the full stat read + mint happens in
+    // [`spawn_enemy_at`]. A `Specific` spawn names an in-play location; the
+    // default rule (`None`) spawns at the drawing investigator's location.
+    let CardKind::Enemy { spawn, .. } = &metadata.kind else {
         return EngineOutcome::Rejected {
             reason: format!("spawn_enemy: card {code} is not an enemy").into(),
         };
     };
-    let prey = *prey;
-
-    // Resolve health. PerInvestigator scales by the number of investigators
-    // in the game (Rules Reference p.12); matches the per-investigator clue
-    // path in reveal.rs (its future started-count caveat applies here too).
-    let max_health = match health {
-        Some(HealthValue::Fixed(n)) => *n,
-        Some(HealthValue::PerInvestigator(n)) => {
-            let count = u8::try_from(cx.state.investigators.len()).unwrap_or(u8::MAX);
-            n.saturating_mul(count)
-        }
-        None => 1,
-    };
-
-    // 1. Resolve spawn location (validate-first).
     let location_id = match spawn {
         Some(Spawn {
             location: SpawnLocation::Specific(loc_code),
@@ -317,6 +291,57 @@ fn spawn_enemy(
                 };
             }
         },
+    };
+    spawn_enemy_at(cx, investigator, code, metadata, location_id)
+}
+
+/// Mint an enemy from `metadata` at an explicit `location_id`, resolving
+/// engagement-on-spawn (prey). The reusable spawn core: [`spawn_enemy`]
+/// supplies a location from the card's own spawn rule;
+/// [`spawn_set_aside_enemy`] supplies a location named by the bringing
+/// effect (The Gathering's Act-2 reverse spawns the Ghoul Priest in the
+/// Hallway). `investigator` is the drawing/controlling investigator —
+/// used only to carry the engagement-tie resume (`investigator_to_draw`);
+/// the engagement candidates come from `location_id` itself.
+#[allow(clippy::too_many_lines)]
+pub(super) fn spawn_enemy_at(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    code: CardCode,
+    metadata: &CardMetadata,
+    location_id: LocationId,
+) -> EngineOutcome {
+    // spawn_enemy_at is only reached for Enemy cards; pull the
+    // enemy-specific stats out of the kind.
+    let CardKind::Enemy {
+        health,
+        fight,
+        evade,
+        damage,
+        horror,
+        hunter,
+        retaliate,
+        prey,
+        victory,
+        ..
+    } = &metadata.kind
+    else {
+        return EngineOutcome::Rejected {
+            reason: format!("spawn_enemy_at: card {code} is not an enemy").into(),
+        };
+    };
+    let prey = *prey;
+
+    // Resolve health. PerInvestigator scales by the number of investigators
+    // in the game (Rules Reference p.12); matches the per-investigator clue
+    // path in reveal.rs (its future started-count caveat applies here too).
+    let max_health = match health {
+        Some(HealthValue::Fixed(n)) => *n,
+        Some(HealthValue::PerInvestigator(n)) => {
+            let count = u8::try_from(cx.state.investigators.len()).unwrap_or(u8::MAX);
+            n.saturating_mul(count)
+        }
+        None => 1,
     };
 
     // 2. Resolve engagement-on-spawn (validate-first). The co-located
@@ -403,6 +428,61 @@ fn spawn_enemy(
             }
         }
     }
+}
+
+/// Bring a **set-aside enemy** into play at the location named by
+/// `location_code`, minting its stats from the corpus (so per-investigator
+/// health scales by the live investigator count). The set-aside-enemy
+/// path: [`GameState::add_set_aside_enemy`](crate::state::GameState::add_set_aside_enemy)
+/// records the code at `setup()`; a card effect calls this to spawn it
+/// (The Gathering's Act-2 reverse, `01109:reverse`).
+///
+/// Validate-first: rejects (mutating nothing) if `enemy_code` isn't in the
+/// set-aside zone, no card registry is installed, the code has no metadata,
+/// or `location_code` isn't in play. Only after every check passes does it
+/// remove the code from the zone and mint the enemy via `spawn_enemy_at`.
+/// `controller` is the lead investigator (carried into engagement-tie
+/// resume; the engagement candidates come from the spawn location).
+pub fn spawn_set_aside_enemy(
+    cx: &mut Cx,
+    controller: InvestigatorId,
+    enemy_code: &str,
+    location_code: &str,
+) -> EngineOutcome {
+    let Some(pos) = cx
+        .state
+        .set_aside_enemies
+        .iter()
+        .position(|c| c.as_str() == enemy_code)
+    else {
+        return EngineOutcome::Rejected {
+            reason: format!("spawn_set_aside_enemy: {enemy_code} is not set aside").into(),
+        };
+    };
+    let Some(registry) = card_registry::current() else {
+        return EngineOutcome::Rejected {
+            reason: "spawn_set_aside_enemy: no card registry installed".into(),
+        };
+    };
+    let Some(metadata) = (registry.metadata_for)(&CardCode::new(enemy_code)) else {
+        return EngineOutcome::Rejected {
+            reason: format!("spawn_set_aside_enemy: no metadata for {enemy_code}").into(),
+        };
+    };
+    let Some(location_id) = crate::engine::location_id_by_code(cx.state, location_code) else {
+        return EngineOutcome::Rejected {
+            reason: format!("spawn_set_aside_enemy: location {location_code} not in play").into(),
+        };
+    };
+    // All checks passed — mutate.
+    cx.state.set_aside_enemies.remove(pos);
+    spawn_enemy_at(
+        cx,
+        controller,
+        CardCode::new(enemy_code),
+        metadata,
+        location_id,
+    )
 }
 
 /// Fisher-Yates shuffle of the shared encounter deck using the
@@ -1035,6 +1115,110 @@ mod spawn_enemy_tests {
                 quantity: 1,
             },
         }
+    }
+
+    #[test]
+    fn spawn_enemy_at_places_enemy_at_the_given_location_not_the_drawers() {
+        // The investigator is at loc 10; spawn_enemy_at is told loc 11. The
+        // enemy must land at 11 (the explicit location wins), unlike
+        // spawn_enemy's investigator-location fallback.
+        let mut here = test_location(10, "Here");
+        here.code = CardCode("_here".into());
+        let mut there = test_location(11, "There");
+        there.code = CardCode("_there".into());
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(here)
+            .with_location(there)
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+
+        let metadata = synth_enemy_metadata(None);
+        let mut events = Vec::new();
+        let outcome = spawn_enemy_at(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+            LocationId(11),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        let enemy = state.enemies.values().next().expect("enemy spawned");
+        assert_eq!(
+            enemy.current_location,
+            Some(LocationId(11)),
+            "the explicit location wins over the drawer's location",
+        );
+        assert_event!(
+            events,
+            Event::EnemySpawned { location, .. } if *location == LocationId(11)
+        );
+    }
+
+    #[test]
+    fn spawn_set_aside_enemy_rejects_when_not_set_aside() {
+        // Empty set-aside zone — the spawn must reject before touching the
+        // registry or location, and mint nothing.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        let mut events = Vec::new();
+        let outcome = spawn_set_aside_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            "01116",
+            "01112",
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::Rejected { .. }),
+            "spawning an enemy that isn't set aside must reject, got {outcome:?}",
+        );
+        assert!(state.enemies.is_empty(), "no enemy minted on reject");
+    }
+
+    #[test]
+    fn spawn_set_aside_enemy_keeps_the_code_aside_on_a_failed_spawn() {
+        // The enemy is set aside, but the target location isn't in play (and
+        // no usable metadata is guaranteed in a bare unit test) — the spawn
+        // must reject without removing the code from the set-aside zone
+        // (validate-first: no mutation on reject).
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.set_aside_enemies.push(CardCode::new("01116"));
+        let mut events = Vec::new();
+        let outcome = spawn_set_aside_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            "01116",
+            "01112", // not in play
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::Rejected { .. }),
+            "missing target location must reject, got {outcome:?}",
+        );
+        assert_eq!(
+            state.set_aside_enemies,
+            vec![CardCode::new("01116")],
+            "the code stays set aside when the spawn rejects",
+        );
+        assert!(state.enemies.is_empty(), "no enemy minted on reject");
     }
 
     #[test]

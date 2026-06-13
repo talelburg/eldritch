@@ -26,7 +26,9 @@ mod cursor;
 // pub(super): evaluator reaches take_damage/take_horror via the full path
 // crate::engine::dispatch::elimination (a sibling of dispatch).
 pub(super) mod elimination;
-mod encounter;
+// pub(crate): engine/mod.rs re-exports `spawn_set_aside_enemy` for the
+// `cards` crate (The Gathering's Act-2 reverse).
+pub(crate) mod encounter;
 // pub(super): engine/mod.rs re-exports ForcedTriggerPoint + fire_forced_triggers
 // via pub(crate) for test_support::fire_forced_at (Task 2 of #215).
 pub(super) mod forced_triggers;
