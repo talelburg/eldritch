@@ -8,7 +8,8 @@ Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
 ([#227](https://github.com/talelburg/eldritch/issues/227)–[#245](https://github.com/talelburg/eldritch/issues/245),
 kickoff [#246](https://github.com/talelburg/eldritch/issues/246)). Shipped:
 C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
-C2 (01104 symbol-token effects + location victory points).
+C2 (01104 symbol-token effects + location victory points),
+C3a (Prey – Lowest remaining health + Retaliate keyword).
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
 [Group C decomposition](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
@@ -52,7 +53,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C1a | [#227](https://github.com/talelburg/eldritch/issues/227) | `setup()` world-build + forced location effects | ✅ PR #250 |
 | C1b | [#228](https://github.com/talelburg/eldritch/issues/228) | Act-1 (01108) reverse board-build + Act-3 (01110) forced advance-on-defeat (act-2 01109 objective → C3c) | ✅ PR #259 |
 | C2 | [#229](https://github.com/talelburg/eldritch/issues/229) | 01104 symbol-token effects + victory points | ✅ PR #263 |
-| C3a | [#230](https://github.com/talelburg/eldritch/issues/230) | Prey variants + Retaliate | — |
+| C3a | [#230](https://github.com/talelburg/eldritch/issues/230) | Prey variants + Retaliate | ✅ PR #269 |
 | C3b | [#231](https://github.com/talelburg/eldritch/issues/231) | the six encounter enemies | — |
 | C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) **+ act-2 (01109) round-end objective (moved from C1b)** | — |
 | C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | — |
