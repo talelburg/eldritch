@@ -10,7 +10,16 @@ kickoff [#246](https://github.com/talelburg/eldritch/issues/246)). Shipped:
 C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
 C2 (01104 symbol-token effects + location victory points),
 C3a (Prey – Lowest remaining health + Retaliate keyword),
-C3b (the six encounter enemies + pipeline keyword/spawn/health parsing).
+C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
+C3c (agenda 01107 forced abilities), C3d (act-2 round-end window).
+
+> **Next (directive — do before C4):** [#280](https://github.com/talelburg/eldritch/issues/280)
+> (act-2 reverse: spawn the set-aside Ghoul Priest + reveal the Parlor) then
+> [#281](https://github.com/talelburg/eldritch/issues/281) (agenda reverses 01105/01106 +
+> `AgendaAdvanced` forced point). These close the act/agenda **reverse-coverage**
+> gap (see the table below) that blocks the real win/lose path, so they take
+> priority over C4. Then resume C4 → C7.
+
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
 [Group C decomposition](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
