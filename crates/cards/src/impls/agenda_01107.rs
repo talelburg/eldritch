@@ -136,7 +136,8 @@ mod tests {
 
     // Hallway(2) hub connects to Attic(3), Cellar(4), Parlor(5).
     fn star_board() -> game_core::state::GameState {
-        let loc = |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
+        let loc =
+            |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
         let mut state = GameStateBuilder::new()
             .with_location(loc(2, "01112", "Hallway"))
             .with_location(loc(3, "01113", "Attic"))
