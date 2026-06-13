@@ -1,6 +1,6 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
-use crate::card_data::{CardKind, CardMetadata, CardType, Spawn, SpawnLocation};
+use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
@@ -312,7 +312,12 @@ fn spawn_enemy(
         code: CardCode::new(metadata.code.clone()),
         fight: 1,
         evade: 1,
-        max_health: health.unwrap_or(1),
+        // Task 3 replaces this with per-investigator scaling + stat/keyword
+        // reads; here it only adapts to the new HealthValue type to compile.
+        max_health: match health {
+            Some(HealthValue::Fixed(n) | HealthValue::PerInvestigator(n)) => *n,
+            None => 1,
+        },
         damage: 0,
         attack_damage: 0,
         attack_horror: 0,
@@ -956,7 +961,7 @@ mod spawn_enemy_tests {
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_sequence, assert_no_event};
-    use card_dsl::card_data::{CardKind, CardMetadata, Spawn, SpawnLocation};
+    use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
         CardMetadata {
@@ -970,11 +975,14 @@ mod spawn_enemy_tests {
                 evade: 1,
                 damage: 0,
                 horror: 0,
-                health: Some(1),
+                health: Some(HealthValue::Fixed(1)),
                 victory: None,
                 spawn,
                 surge: false,
                 peril: false,
+                hunter: false,
+                retaliate: false,
+                prey: Prey::Default,
                 quantity: 1,
             },
         }

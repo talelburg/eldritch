@@ -84,6 +84,46 @@ fn run() -> Result<(), String> {
         }
     }
 
+    // Resolve enemy Spawn-location names to location codes now that every
+    // card is loaded. Unresolved names (out-of-scope forms like
+    // "Engaged with Prey") stay None and warn — a loud stub, not silent.
+    let loc_index: BTreeMap<String, String> = all
+        .values()
+        .filter(|c| c.card_type == "Location")
+        .map(|c| (c.name.clone(), c.code.clone()))
+        .collect();
+    let mut resolutions: Vec<(String, Option<String>)> = Vec::new();
+    for c in all.values() {
+        if let Some(name) = &c.spawn_name {
+            match loc_index.get(name) {
+                Some(code) => resolutions.push((c.code.clone(), Some(code.clone()))),
+                None => {
+                    eprintln!(
+                        "card-data-pipeline: enemy {} ({}): unresolved Spawn location {name:?} \
+                         — emitting spawn: None",
+                        c.code, c.name
+                    );
+                    resolutions.push((c.code.clone(), None));
+                }
+            }
+        }
+    }
+    for (code, spawn_code) in resolutions {
+        if let Some(c) = all.get_mut(&code) {
+            c.spawn_code = spawn_code;
+        }
+    }
+    // Warn on Prey lines we parsed but do not model yet.
+    for c in all.values() {
+        if let PreyParse::Unrecognized(clause) = &c.prey {
+            eprintln!(
+                "card-data-pipeline: enemy {} ({}): unmodeled Prey clause {clause:?} \
+                 — emitting Prey::Default",
+                c.code, c.name
+            );
+        }
+    }
+
     let output = render(&all);
     let out_path = repo_root.join(OUTPUT_PATH);
     std::fs::write(&out_path, output)
@@ -172,6 +212,7 @@ struct RawCard {
     enemy_evade: Option<u8>,
     enemy_damage: Option<u8>,
     enemy_horror: Option<u8>,
+    health_per_investigator: Option<bool>,
 }
 
 // ---- normalized shape we emit -----------------------------------
@@ -209,6 +250,14 @@ struct NormalizedCard {
     enemy_evade: Option<u8>,
     enemy_damage: Option<u8>,
     enemy_horror: Option<u8>,
+    health_per_investigator: bool,
+    hunter: bool,
+    retaliate: bool,
+    prey: PreyParse,
+    /// Location name parsed from a `Spawn - <name>.` line (pre-resolution).
+    spawn_name: Option<String>,
+    /// Spawn location code, resolved from `spawn_name` after all cards load.
+    spawn_code: Option<String>,
 }
 
 fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
@@ -226,6 +275,16 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         .text
         .as_deref()
         .is_some_and(|t| t.starts_with("Fast.") || t.starts_with("Fast "));
+
+    // Enemy keyword/prey/spawn data parsed from card text (read before
+    // `raw.text` is moved into the struct, mirroring `is_fast`).
+    let hunter = raw.text.as_deref().is_some_and(|t| has_keyword(t, "Hunter"));
+    let retaliate = raw
+        .text
+        .as_deref()
+        .is_some_and(|t| has_keyword(t, "Retaliate"));
+    let prey = raw.text.as_deref().map_or(PreyParse::None, parse_prey);
+    let spawn_name = raw.text.as_deref().and_then(parse_spawn_name);
 
     Ok(NormalizedCard {
         code: raw.code,
@@ -257,6 +316,12 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         enemy_evade: raw.enemy_evade,
         enemy_damage: raw.enemy_damage,
         enemy_horror: raw.enemy_horror,
+        health_per_investigator: raw.health_per_investigator.unwrap_or(false),
+        hunter,
+        retaliate,
+        prey,
+        spawn_name,
+        spawn_code: None,
     })
 }
 
@@ -344,7 +409,7 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     let mut out = String::new();
     out.push_str(GENERATED_HEADER);
     out.push_str(
-        "use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, SkillIcons, Skills, Slot};\n\n\
+        "use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure, SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",
@@ -387,9 +452,9 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
 
 /// Render the `CardKind` literal for `c`, dispatched on its card type.
 ///
-/// `spawn`/`surge`/`peril` emit their not-yet-parsed defaults
-/// (`None`/`false`); enemy combat stats and the encounter variants
-/// (Location/Act/Agenda) land with encounter ingestion (#252).
+/// Enemy `hunter`/`retaliate`/`prey`/`spawn`/`health` are parsed from card
+/// text (C3b); `surge`/`peril` still emit their not-yet-parsed `false`
+/// default (#138).
 fn render_kind(c: &NormalizedCard) -> String {
     let icons = format!(
         "SkillIcons {{ willpower: {}, intellect: {}, combat: {}, agility: {}, wild: {} }}",
@@ -440,13 +505,18 @@ fn render_kind(c: &NormalizedCard) -> String {
         ),
         "Enemy" => format!(
             "CardKind::Enemy {{ fight: {}, evade: {}, damage: {}, horror: {}, \
-             health: {}, victory: {}, spawn: None, surge: false, peril: false, quantity: {} }}",
+             health: {}, victory: {}, spawn: {}, surge: false, peril: false, \
+             hunter: {}, retaliate: {}, prey: {}, quantity: {} }}",
             c.enemy_fight.unwrap_or(0),
             c.enemy_evade.unwrap_or(0),
             c.enemy_damage.unwrap_or(0),
             c.enemy_horror.unwrap_or(0),
-            opt_u8(c.health),
+            health_value_opt_lit(c.health, c.health_per_investigator),
             opt_u8(c.victory),
+            spawn_lit(c.spawn_code.as_deref()),
+            c.hunter,
+            c.retaliate,
+            prey_lit(&c.prey),
             c.quantity,
         ),
         "Treachery" => format!(
@@ -763,6 +833,7 @@ mod tests {
             enemy_evade: None,
             enemy_damage: None,
             enemy_horror: None,
+            health_per_investigator: None,
         }
     }
 
@@ -799,6 +870,12 @@ mod tests {
             enemy_evade: None,
             enemy_damage: None,
             enemy_horror: None,
+            health_per_investigator: false,
+            hunter: false,
+            retaliate: false,
+            prey: PreyParse::None,
+            spawn_name: None,
+            spawn_code: None,
         }
     }
 
@@ -1136,6 +1213,7 @@ mod tests {
             enemy_evade: None,
             enemy_damage: None,
             enemy_horror: None,
+            health_per_investigator: None,
         };
         let norm = normalize(raw).expect("normalize");
         assert!(
@@ -1239,6 +1317,7 @@ mod tests {
             enemy_evade: None,
             enemy_damage: None,
             enemy_horror: None,
+            health_per_investigator: None,
         };
         let norm = normalize(raw).expect("normalize");
         assert!(
