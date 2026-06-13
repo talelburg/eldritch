@@ -63,6 +63,23 @@ pub(super) fn resolve_prey(
                 None => Vec::new(),
             }
         }
+        Prey::LowestRemainingHealth => {
+            let remaining = |id: &InvestigatorId| -> Option<u8> {
+                state
+                    .investigators
+                    .get(id)
+                    .map(|inv| inv.max_health.saturating_sub(inv.damage))
+            };
+            let min = candidates.iter().filter_map(remaining).min();
+            match min {
+                Some(m) => candidates
+                    .iter()
+                    .copied()
+                    .filter(|id| remaining(id) == Some(m))
+                    .collect(),
+                None => Vec::new(),
+            }
+        }
         // `Prey` is #[non_exhaustive]; new variants (Lowest, Most Clues, etc.)
         // must be wired here when their first card consumer lands — an
         // unrecognised variant at runtime is a card-impl bug.
@@ -518,6 +535,49 @@ mod resolve_prey_tests {
         let r = resolve_prey(
             &state,
             crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
+    }
+
+    #[test]
+    fn resolve_prey_lowest_remaining_health_picks_min() {
+        // inv1: max_health 5, damage 4 → remaining 1.
+        // inv2: max_health 5, damage 0 → remaining 5. inv1 is lowest.
+        let mut hurt = test_investigator(1);
+        hurt.max_health = 5;
+        hurt.damage = 4;
+        let mut healthy = test_investigator(2);
+        healthy.max_health = 5;
+        healthy.damage = 0;
+        let state = GameStateBuilder::new()
+            .with_investigator(hurt)
+            .with_investigator(healthy)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::LowestRemainingHealth,
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
+    }
+
+    #[test]
+    fn resolve_prey_lowest_remaining_health_tie_is_tie() {
+        // inv1: 5 − 2 = 3 remaining. inv2: 4 − 1 = 3 remaining. Tie.
+        let mut a = test_investigator(1);
+        a.max_health = 5;
+        a.damage = 2;
+        let mut b = test_investigator(2);
+        b.max_health = 4;
+        b.damage = 1;
+        let state = GameStateBuilder::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::LowestRemainingHealth,
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));

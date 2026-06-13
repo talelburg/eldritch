@@ -183,6 +183,13 @@ pub enum Prey {
     /// Pursue / engage the investigator with the highest value of the
     /// given stat; ties fall to the lead investigator.
     HighestStat(Stat),
+    /// Pursue / engage the investigator with the lowest remaining
+    /// health (base health − damage; Rules Reference p.12). Ties fall to
+    /// the lead investigator. Ravenous Ghoul (`01161`).
+    // TODO: generalize to a `{ measure, direction }` shape (covering
+    // stats *and* derived measures) when a 2nd derived-measure prey
+    // lands — Lowest remaining sanity, Most clues, Fewest cards in hand.
+    LowestRemainingHealth,
 }
 
 /// Static metadata for one card as printed: an identity core shared by
