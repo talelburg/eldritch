@@ -18,6 +18,7 @@ fn act3_state() -> game_core::state::GameState {
         code: CardCode("01110".into()),
         clue_threshold: 0,
         resolution: Some(Resolution::Won { id: "R1".into() }),
+        round_end_advance: None,
     }];
     state
 }

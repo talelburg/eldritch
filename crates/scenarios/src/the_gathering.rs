@@ -21,7 +21,9 @@ use game_core::event::Event;
 use game_core::scenario::{
     Resolution, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
 };
-use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
+use game_core::state::{
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, RoundEndAdvance,
+};
 
 /// Read an agenda's printed doom threshold from the corpus.
 fn agenda_doom(code: &str) -> u8 {
@@ -151,17 +153,24 @@ pub fn setup() -> GameState {
             code: CardCode("01108".into()),
             clue_threshold: act_clue_threshold("01108"),
             resolution: None,
+            round_end_advance: None,
         },
         Act {
             code: CardCode("01109".into()),
             clue_threshold: act_clue_threshold("01109"),
             resolution: None,
+            // "When the round ends, investigators in the hallway may, as a
+            // group, spend the requisite number of clues to advance." (C3d)
+            round_end_advance: Some(RoundEndAdvance {
+                contributor_location: CardCode("01112".into()), // the Hallway
+            }),
         },
         Act {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::act_01110), not a clue spend.
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
             resolution: Some(Resolution::Won { id: "R1".into() }),
+            round_end_advance: None,
         },
     ];
 

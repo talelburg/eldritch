@@ -1,7 +1,7 @@
 //! Act and agenda handlers: doom placement, threshold checking, agenda
 //! advancement, clue spending, and act advancement.
 
-use crate::state::{GameState, InvestigatorId, Phase};
+use crate::state::{GameState, InvestigatorId, LocationId, Phase};
 
 use super::super::outcome::EngineOutcome;
 use super::Cx;
@@ -100,6 +100,16 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
             reason: "AdvanceAct: no act deck is modeled for this scenario".into(),
         };
     }
+    if cx.state.act_deck[cx.state.act_index]
+        .round_end_advance
+        .is_some()
+    {
+        return EngineOutcome::Rejected {
+            reason: "this act advances only at the end of the round (its round-end \
+                     objective), not via the AdvanceAct action"
+                .into(),
+        };
+    }
     let threshold = cx.state.act_deck[cx.state.act_index].clue_threshold;
     let total_clues: u32 = clue_contributors(cx.state, investigator)
         .into_iter()
@@ -148,6 +158,42 @@ fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
         remaining, 0,
         "spend_clues called without enough clues in the group"
     );
+}
+
+/// Investigators currently at `location`, in `turn_order` (deterministic).
+/// Used by the act round-end clue-spend window (01109: Hallway investigators).
+pub(crate) fn investigators_at(state: &GameState, location: LocationId) -> Vec<InvestigatorId> {
+    state
+        .turn_order
+        .iter()
+        .copied()
+        .filter(|id| state.investigators.get(id).and_then(|i| i.current_location) == Some(location))
+        .collect()
+}
+
+/// Total clues held by `ids`.
+pub(crate) fn clues_held(state: &GameState, ids: &[InvestigatorId]) -> u32 {
+    ids.iter()
+        .filter_map(|id| state.investigators.get(id))
+        .map(|i| u32::from(i.clues))
+        .sum()
+}
+
+/// Spend `amount` clues from `ids` in order. Caller must have validated the
+/// group holds at least `amount` (via [`clues_held`]). Mirrors [`spend_clues`].
+pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], amount: u8) {
+    let mut remaining = amount;
+    for id in ids {
+        if remaining == 0 {
+            break;
+        }
+        if let Some(inv) = state.investigators.get_mut(id) {
+            let take = inv.clues.min(remaining);
+            inv.clues -= take;
+            remaining -= take;
+        }
+    }
+    debug_assert_eq!(remaining, 0, "spend_clues_from called without enough clues");
 }
 
 /// Advance the act deck one step: emit [`Event::ActAdvanced`], fire the
@@ -359,6 +405,7 @@ mod advance_act_tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: None,
+            round_end_advance: None,
         }];
 
         let result = apply(
@@ -371,6 +418,36 @@ mod advance_act_tests {
             result.state.investigators[&inv].clues, 1,
             "no clues spent on reject"
         );
+    }
+
+    #[test]
+    fn advance_act_rejected_for_round_end_advance_act() {
+        use crate::state::{Act, CardCode, RoundEndAdvance};
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 9; // plenty — reject must be the objective, not affordability
+        let mut state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .build();
+        state.act_deck = vec![Act {
+            code: CardCode("01109".into()),
+            clue_threshold: 3,
+            resolution: None,
+            round_end_advance: Some(RoundEndAdvance {
+                contributor_location: CardCode("01112".into()),
+            }),
+        }];
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.act_index, 0, "act did not advance");
+        assert_eq!(result.state.investigators[&inv].clues, 9, "no clues spent");
     }
 
     #[test]
@@ -391,11 +468,13 @@ mod advance_act_tests {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: Some(Resolution::Won { id: "demo".into() }),
+                round_end_advance: None,
             },
         ];
 
@@ -430,6 +509,7 @@ mod advance_act_tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: Some(Resolution::Won { id: "demo".into() }),
+            round_end_advance: None,
         }];
 
         let result = apply(
@@ -468,11 +548,13 @@ mod advance_act_tests {
                 code: CardCode("01108".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
             Act {
                 code: CardCode("01109".into()),
                 clue_threshold: 3,
                 resolution: Some(Resolution::Won { id: "R1".into() }),
+                round_end_advance: None,
             },
         ];
         let result = apply(
@@ -511,11 +593,13 @@ mod advance_act_tests {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
         ];
 

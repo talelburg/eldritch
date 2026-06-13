@@ -139,6 +139,19 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         };
     }
 
+    // A pending act round-end advance (#275) blocks every action but
+    // `ResolveInput`. Upkeep-phase only; never coexists with the others.
+    if cx.state.act_round_end_pending.is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason:
+                "an act round-end advance choice is pending; submit a PlayerAction::ResolveInput \
+                     with InputResponse::Confirm or Skip before any other action"
+                    .into(),
+        };
+    }
+
     let outcome = match action {
         PlayerAction::StartScenario { roster } => phases::start_scenario(cx, roster),
         PlayerAction::EndTurn => phases::end_turn(cx),
@@ -324,13 +337,14 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             cx.state.hunter_move_pending.is_some(),
             cx.state.spawn_engage_pending.is_some(),
             cx.state.hand_size_discard_pending.is_some(),
+            cx.state.act_round_end_pending.is_some(),
         ]
         .iter()
         .filter(|b| **b)
         .count()
             <= 1,
-        "hunter movement, spawn engagement, and hand-size discard are mutually exclusive \
-         suspension modes (different phases)",
+        "hunter movement, spawn engagement, hand-size discard, and act round-end advance are \
+         mutually exclusive suspension modes (different phases)",
     );
     if cx.state.hunter_move_pending.is_some() {
         return hunters::resume_hunter_choice(cx, response);
@@ -347,6 +361,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // mid-skill-test, so the two never coexist).
     if cx.state.hand_size_discard_pending.is_some() {
         return phases::resume_hand_size_discard(cx, response);
+    }
+
+    // Act round-end clue-spend window (#275): its own suspension mode,
+    // arising only in Upkeep (never mid-skill-test), so route it before the
+    // reaction-window check like hand-size discard.
+    if cx.state.act_round_end_pending.is_some() {
+        return phases::resume_act_round_end_advance(cx, response);
     }
 
     if cx.state.top_reaction_window().is_some() {

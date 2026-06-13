@@ -99,11 +99,13 @@ pub fn setup() -> GameState {
             code: CardCode("_synth_act_1".into()),
             clue_threshold: 2,
             resolution: None,
+            round_end_advance: None,
         },
         Act {
             code: CardCode("_synth_act_2".into()),
             clue_threshold: 2,
             resolution: Some(Resolution::Won { id: "demo".into() }),
+            round_end_advance: None,
         },
     ];
     state

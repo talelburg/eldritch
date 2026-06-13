@@ -20,9 +20,9 @@ pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
-    Act, Agenda, FastActorScope, FinishContinuation, GameState, HandSizeDiscard, HunterChoice,
-    InFlightSkillTest, OpenWindow, PendingSkillModifier, PendingTrigger, PhaseStep,
-    SkillTestFollowUp, SpawnEngagePending, WindowKind,
+    Act, ActRoundEndPending, Agenda, FastActorScope, FinishContinuation, GameState,
+    HandSizeDiscard, HunterChoice, InFlightSkillTest, OpenWindow, PendingSkillModifier,
+    PendingTrigger, PhaseStep, RoundEndAdvance, SkillTestFollowUp, SpawnEngagePending, WindowKind,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};
