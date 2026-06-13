@@ -238,3 +238,50 @@ fn unrevealed_or_clued_victory_location_is_not_placed() {
         unrevealed.state.victory_display
     );
 }
+
+#[test]
+fn two_cleared_victory_locations_both_enter_display() {
+    install_registries();
+    let inv = InvestigatorId(1);
+    let mut investigator = test_investigator(1);
+    investigator.clues = 1;
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(investigator)
+        .with_active_investigator(inv)
+        .with_turn_order([inv])
+        .with_scenario_id(ScenarioId::new(scenarios::the_gathering::ID))
+        .build();
+    for (lid, code, name) in [(1u32, "01113", "Attic"), (2u32, "01114", "Cellar")] {
+        let mut loc = test_location(lid, name);
+        loc.code = CardCode(code.into());
+        loc.revealed = true;
+        loc.clues = 0;
+        state.locations.insert(loc.id, loc);
+    }
+    state.act_deck = vec![Act {
+        code: CardCode("_test_act".into()),
+        clue_threshold: 1,
+        resolution: Some(Resolution::Won { id: "R1".into() }),
+    }];
+    let r = advance_to_resolution(state);
+    assert!(
+        r.state.victory_display.contains(&CardCode("01113".into())),
+        "Attic (01113) should be in victory_display; got: {:?}",
+        r.state.victory_display
+    );
+    assert!(
+        r.state.victory_display.contains(&CardCode("01114".into())),
+        "Cellar (01114) should be in victory_display; got: {:?}",
+        r.state.victory_display
+    );
+    assert_eq!(
+        r.events
+            .iter()
+            .filter(|e| matches!(e, Event::EnteredVictoryDisplay { .. }))
+            .count(),
+        2,
+        "expected exactly 2 EnteredVictoryDisplay events, events: {:?}",
+        r.events
+    );
+}

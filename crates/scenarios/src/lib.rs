@@ -70,9 +70,10 @@ mod tests {
     #[test]
     fn registry_resolves_the_gathering_and_rejects_unknown() {
         let id = ScenarioId::new(the_gathering::ID);
+        let module = (REGISTRY.module_for)(&id).expect("the-gathering resolves");
         assert!(
-            (REGISTRY.module_for)(&id).is_some(),
-            "the-gathering resolves"
+            module.resolve_symbol.is_some(),
+            "the-gathering must have a symbol hook"
         );
         let unknown = ScenarioId::new("does-not-exist");
         assert!(

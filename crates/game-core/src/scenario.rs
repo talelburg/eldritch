@@ -89,7 +89,7 @@ pub struct SymbolCtx<'a> {
 impl<'a> SymbolCtx<'a> {
     /// Construct a context for `investigator` over `state`.
     #[must_use]
-    pub fn new(state: &'a GameState, investigator: InvestigatorId) -> Self {
+    pub(crate) fn new(state: &'a GameState, investigator: InvestigatorId) -> Self {
         Self {
             state,
             investigator,

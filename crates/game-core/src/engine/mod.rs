@@ -181,11 +181,16 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
         resolution: resolution.clone(),
     });
 
-    // Place victory-point locations in the victory display (RR p.21:
-    // "at the end of a scenario, place each victory point location that
-    // is in play, revealed, and with no clues on it"). Generic across
-    // scenarios; reads victory values from the card registry. No registry
-    // → no metadata → nothing placed (graceful).
+    // Place victory-point locations in the victory display. Runs BEFORE
+    // `(module.apply_resolution)(...)` so the scan captures board state
+    // at the moment the resolution latches, before any post-resolution
+    // cleanup (apply_resolution, Phase 9) runs. Generic across scenarios;
+    // reads victory values from the card registry. No registry → no
+    // metadata → nothing placed (graceful).
+    //
+    // RR p.21: "At the end of a scenario, place each victory point
+    // location that is in play, revealed, and with no clues on it in the
+    // victory display."
     if let Some(card_reg) = crate::card_registry::current() {
         let placed: Vec<(crate::state::CardCode, u8)> = cx
             .state
