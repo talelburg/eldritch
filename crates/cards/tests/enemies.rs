@@ -45,6 +45,25 @@ fn ghoul_priest_full_profile() {
 }
 
 #[test]
+fn ghoul_priest_carries_ghoul_and_elite_traits() {
+    // Traits flow through the pre-existing `parse_traits` onto the corpus
+    // (and onto spawned enemies via `traits.clone()`). "Elite" is modeled
+    // as a trait, not a keyword — the Rules Reference has no standalone
+    // Elite rule; card effects key off it as "non-Elite".
+    let meta = cards::by_code("01116").expect("Ghoul Priest in corpus");
+    assert!(
+        meta.traits.iter().any(|t| t == "Ghoul"),
+        "{:?}",
+        meta.traits
+    );
+    assert!(
+        meta.traits.iter().any(|t| t == "Elite"),
+        "{:?}",
+        meta.traits
+    );
+}
+
+#[test]
 fn flesh_eater_spawns_at_attic() {
     let CardKind::Enemy {
         fight,
