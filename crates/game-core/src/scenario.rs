@@ -30,7 +30,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
-use crate::state::GameState;
+use crate::state::{ChaosToken, GameState, InvestigatorId, LocationId};
 
 /// Stable, serializable identifier for a scenario module.
 ///
@@ -77,6 +77,74 @@ pub enum Resolution {
     },
 }
 
+/// Read-only board view handed to a scenario's symbol-token hook
+/// ([`ScenarioModule::resolve_symbol`]). Carries the testing investigator
+/// and the live state so the hook can compute board-dependent values
+/// (e.g. "number of Ghoul enemies at your location").
+pub struct SymbolCtx<'a> {
+    state: &'a GameState,
+    investigator: InvestigatorId,
+}
+
+impl<'a> SymbolCtx<'a> {
+    /// Construct a context for `investigator` over `state`.
+    #[must_use]
+    pub(crate) fn new(state: &'a GameState, investigator: InvestigatorId) -> Self {
+        Self {
+            state,
+            investigator,
+        }
+    }
+
+    /// The full game state (read-only).
+    #[must_use]
+    pub fn state(&self) -> &GameState {
+        self.state
+    }
+
+    /// The investigator whose skill test drew the symbol.
+    #[must_use]
+    pub fn investigator(&self) -> InvestigatorId {
+        self.investigator
+    }
+
+    /// The testing investigator's current location, if placed.
+    #[must_use]
+    pub fn investigator_location(&self) -> Option<LocationId> {
+        self.state
+            .investigators
+            .get(&self.investigator)
+            .and_then(|inv| inv.current_location)
+    }
+}
+
+/// What a drawn chaos **symbol** token does this skill test: a numeric
+/// modifier plus side effects, split by resolution timing.
+///
+/// The `modifier` is applied to the skill total *before* success/failure
+/// is computed; `immediate` effects apply regardless of outcome (e.g.
+/// 01104 tablet's board-gated damage); `on_fail` effects apply only when
+/// the test fails (e.g. 01104 cultist's horror). The hook is evaluated
+/// once at token reveal, so board-gated branches are decided up front.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SymbolOutcome {
+    /// Added to the test's skill total.
+    pub modifier: i8,
+    /// Applied to the testing investigator regardless of pass/fail.
+    pub immediate: Vec<TokenEffect>,
+    /// Applied to the testing investigator only if the test fails.
+    pub on_fail: Vec<TokenEffect>,
+}
+
+/// A symbol token's side effect on the testing investigator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenEffect {
+    /// Deal N damage to the testing investigator.
+    Damage(u8),
+    /// Deal N horror to the testing investigator.
+    Horror(u8),
+}
+
 /// Static, host-installed bundle of function pointers for one
 /// scenario module.
 ///
@@ -84,22 +152,12 @@ pub enum Resolution {
 /// shape: no `dyn`, no `Box`, [`Copy`]-able.
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioModule {
-    /// `ArkhamDB` card code of this scenario's single reference card —
-    /// the card whose chaos **symbol** abilities (skull / cultist /
-    /// tablet / elder-thing) are printed on it (e.g. `"01104"` for The
-    /// Gathering). Plain data: ownership of the symbol effect stays on
-    /// the card, but access flows through the scenario module.
-    ///
-    /// `&'static str` (not [`CardCode`](crate::state::CardCode)) so the
-    /// struct stays [`Copy`] and const-constructible in `static` /
-    /// `const` module literals, matching the `CODE: &str` convention
-    /// card impls already use. Empty string means the scenario has no
-    /// reference card (test fixtures / synthetic modules).
-    ///
-    /// Slice 1 B1 only *routes* to this code (see
-    /// [`active_reference_card`]); evaluating the symbol ability against
-    /// board state lands in Group C with the `01104` impl.
-    pub reference_card: &'static str,
+    /// Resolve a drawn chaos **symbol** token (Skull/Cultist/Tablet/
+    /// `ElderThing`) against live board state. `None` means this scenario
+    /// has no reference-card symbol effects (test fixtures); the engine
+    /// then falls back to the static [`TokenModifiers`](crate::state::TokenModifiers)
+    /// table. Never called for Numeric/AutoFail/ElderSign tokens.
+    pub resolve_symbol: Option<fn(ChaosToken, &SymbolCtx) -> SymbolOutcome>,
     /// Build the scenario's initial [`GameState`]. Places locations,
     /// populates encounter / act / agenda decks, sets chaos-bag
     /// modifiers, etc.
@@ -128,95 +186,52 @@ pub struct ScenarioRegistry {
     pub module_for: fn(&ScenarioId) -> Option<&'static ScenarioModule>,
 }
 
-/// The active scenario's reference-card code, or `None`.
-///
-/// Routes `state.scenario_id` → the installed scenario registry →
-/// `module_for` → [`ScenarioModule::reference_card`]. Returns `None`
-/// when there is no active scenario, no registry is installed, or the
-/// id is unknown — the same tolerant shape as
-/// [`apply`](crate::engine::apply)'s resolution lookup.
-///
-/// The returned code may be the empty string for fixture/synthetic
-/// modules with no symbol content; callers that evaluate symbol
-/// abilities (Group C) treat `""` as "no reference card".
+/// Resolve a drawn chaos symbol token against the active scenario's
+/// reference-card effects, if any. Routes
+/// `state.scenario_id` → installed scenario registry → `module_for` →
+/// [`ScenarioModule::resolve_symbol`]. Returns `None` when there is no
+/// active scenario, no registry, an unknown id, or the module has no
+/// symbol hook — callers then fall back to the static
+/// [`TokenModifiers`](crate::state::TokenModifiers) path.
 #[must_use]
-pub fn active_reference_card(state: &GameState) -> Option<&'static str> {
-    reference_card_with_registry(state, crate::scenario_registry::current())
-}
-
-/// Registry-parameterized core of [`active_reference_card`], split out so
-/// tests can pass an explicit [`ScenarioRegistry`] instead of relying on
-/// the process-global `OnceLock`.
-fn reference_card_with_registry(
+pub fn resolve_symbol_token(
     state: &GameState,
-    registry: Option<&ScenarioRegistry>,
-) -> Option<&'static str> {
+    token: crate::state::ChaosToken,
+    investigator: InvestigatorId,
+) -> Option<SymbolOutcome> {
     let id = state.scenario_id.as_ref()?;
-    let module = (registry?.module_for)(id)?;
-    Some(module.reference_card)
+    let registry = crate::scenario_registry::current()?;
+    let module = (registry.module_for)(id)?;
+    let hook = module.resolve_symbol?;
+    Some(hook(token, &SymbolCtx::new(state, investigator)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::GameState;
     use crate::test_support::GameStateBuilder;
 
-    fn dummy_setup() -> GameState {
-        GameStateBuilder::new().build()
-    }
-    fn dummy_resolution(_: &Resolution, _: &mut GameState, _: &mut Vec<Event>) {}
-
-    static GATHERING_MODULE: ScenarioModule = ScenarioModule {
-        reference_card: "01104",
-        setup: dummy_setup,
-        apply_resolution: dummy_resolution,
-    };
-
-    fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
-        (id.as_str() == "the-gathering").then_some(&GATHERING_MODULE)
-    }
-
-    fn registry() -> ScenarioRegistry {
-        ScenarioRegistry { module_for }
+    #[test]
+    fn symbol_outcome_default_is_inert() {
+        let out = SymbolOutcome::default();
+        assert_eq!(out.modifier, 0);
+        assert!(out.immediate.is_empty());
+        assert!(out.on_fail.is_empty());
     }
 
     #[test]
-    fn returns_reference_card_for_active_scenario() {
-        let state = GameStateBuilder::new()
-            .with_scenario_id(ScenarioId::new("the-gathering"))
-            .build();
-        assert_eq!(
-            reference_card_with_registry(&state, Some(&registry())),
-            Some("01104"),
-        );
+    fn token_effect_variants_construct() {
+        assert_eq!(TokenEffect::Damage(1), TokenEffect::Damage(1));
+        assert_ne!(TokenEffect::Damage(1), TokenEffect::Horror(1));
     }
 
     #[test]
-    fn returns_none_when_no_scenario_id() {
+    fn symbol_ctx_exposes_investigator_and_state() {
         let state = GameStateBuilder::new().build();
-        assert_eq!(
-            reference_card_with_registry(&state, Some(&registry())),
-            None,
-        );
-    }
-
-    #[test]
-    fn returns_none_when_no_registry_installed() {
-        let state = GameStateBuilder::new()
-            .with_scenario_id(ScenarioId::new("the-gathering"))
-            .build();
-        assert_eq!(reference_card_with_registry(&state, None), None);
-    }
-
-    #[test]
-    fn returns_none_for_unknown_scenario() {
-        let state = GameStateBuilder::new()
-            .with_scenario_id(ScenarioId::new("nonexistent"))
-            .build();
-        assert_eq!(
-            reference_card_with_registry(&state, Some(&registry())),
-            None,
-        );
+        let inv = InvestigatorId(1);
+        let ctx = SymbolCtx::new(&state, inv);
+        assert_eq!(ctx.investigator(), inv);
+        // No investigator placed → location is None.
+        assert!(ctx.investigator_location().is_none());
     }
 }

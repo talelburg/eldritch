@@ -180,6 +180,40 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     cx.events.push(Event::ScenarioResolved {
         resolution: resolution.clone(),
     });
+
+    // Place victory-point locations in the victory display. Runs BEFORE
+    // `(module.apply_resolution)(...)` so the scan captures board state
+    // at the moment the resolution latches, before any post-resolution
+    // cleanup (apply_resolution, Phase 9) runs. Generic across scenarios;
+    // reads victory values from the card registry. No registry → no
+    // metadata → nothing placed (graceful).
+    //
+    // RR p.21: "At the end of a scenario, place each victory point
+    // location that is in play, revealed, and with no clues on it in the
+    // victory display."
+    if let Some(card_reg) = crate::card_registry::current() {
+        let placed: Vec<(crate::state::CardCode, u8)> = cx
+            .state
+            .locations
+            .values()
+            .filter(|loc| loc.revealed && loc.clues == 0)
+            .filter_map(|loc| {
+                let meta = (card_reg.metadata_for)(&loc.code)?;
+                match meta.kind {
+                    crate::card_data::CardKind::Location {
+                        victory: Some(v), ..
+                    } if v > 0 => Some((loc.code.clone(), v)),
+                    _ => None,
+                }
+            })
+            .collect();
+        for (code, victory) in placed {
+            cx.state.victory_display.push(code.clone());
+            cx.events
+                .push(Event::EnteredVictoryDisplay { code, victory });
+        }
+    }
+
     let Some(id) = cx.state.scenario_id.as_ref() else {
         return;
     };
@@ -4019,7 +4053,7 @@ mod tests {
     }
 
     static STAMP_MODULE: ScenarioModule = ScenarioModule {
-        reference_card: "",
+        resolve_symbol: None,
         setup: unused_setup,
         apply_resolution: stamp_apply,
     };
@@ -4135,5 +4169,24 @@ mod tests {
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(result.events, Event::ScenarioResolved { .. });
+    }
+
+    #[test]
+    fn resolution_places_no_victory_without_qualifying_locations() {
+        // No victory-bearing locations in play → nothing placed, no event,
+        // no panic (covers the registry-absent / no-location path).
+        let state = terminal_act_state(Some("stamp"));
+        let reg = ScenarioRegistry {
+            module_for: stamp_module_for,
+        };
+        let result = super::apply_with_scenario_registry(
+            state,
+            Action::Player(PlayerAction::AdvanceAct {
+                investigator: InvestigatorId(1),
+            }),
+            Some(&reg),
+        );
+        assert!(result.state.victory_display.is_empty());
+        assert_no_event!(result.events, Event::EnteredVictoryDisplay { .. });
     }
 }

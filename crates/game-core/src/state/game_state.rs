@@ -248,6 +248,12 @@ pub struct GameState {
     /// `Event::ScenarioResolved` and run `apply_resolution` exactly once
     /// (the idempotency guard formerly tracked as #131).
     pub resolution: Option<crate::scenario::Resolution>,
+    /// The victory display (Rules Reference p.21): an out-of-play zone of
+    /// cards worth experience, scored at scenario end. Victory-point
+    /// locations are placed here when the scenario resolves (in play +
+    /// revealed + no clues); victory-point enemies enter as defeated
+    /// (C3). Phase 9 sums these cards' corpus victory values for XP.
+    pub victory_display: Vec<CardCode>,
 }
 
 /// One agenda card's mechanically-relevant state: the doom needed to

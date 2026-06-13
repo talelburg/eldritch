@@ -77,7 +77,7 @@ mod tests {
     fn no_op_apply(_res: &Resolution, _state: &mut GameState, _events: &mut Vec<Event>) {}
 
     static FAKE_MODULE: ScenarioModule = ScenarioModule {
-        reference_card: "",
+        resolve_symbol: None,
         setup: empty_state,
         apply_resolution: no_op_apply,
     };
