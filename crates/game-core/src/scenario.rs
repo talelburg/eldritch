@@ -90,7 +90,10 @@ impl<'a> SymbolCtx<'a> {
     /// Construct a context for `investigator` over `state`.
     #[must_use]
     pub fn new(state: &'a GameState, investigator: InvestigatorId) -> Self {
-        Self { state, investigator }
+        Self {
+            state,
+            investigator,
+        }
     }
 
     /// The full game state (read-only).
@@ -150,7 +153,7 @@ pub enum TokenEffect {
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioModule {
     /// Resolve a drawn chaos **symbol** token (Skull/Cultist/Tablet/
-    /// ElderThing) against live board state. `None` means this scenario
+    /// `ElderThing`) against live board state. `None` means this scenario
     /// has no reference-card symbol effects (test fixtures); the engine
     /// then falls back to the static [`TokenModifiers`](crate::state::TokenModifiers)
     /// table. Never called for Numeric/AutoFail/ElderSign tokens.
@@ -186,13 +189,7 @@ pub struct ScenarioRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::GameState;
     use crate::test_support::GameStateBuilder;
-
-    fn dummy_setup() -> GameState {
-        GameStateBuilder::new().build()
-    }
-    fn dummy_resolution(_: &Resolution, _: &mut GameState, _: &mut Vec<Event>) {}
 
     #[test]
     fn symbol_outcome_default_is_inert() {
@@ -216,15 +213,5 @@ mod tests {
         assert_eq!(ctx.investigator(), inv);
         // No investigator placed → location is None.
         assert!(ctx.investigator_location().is_none());
-    }
-
-    /// Ensure ScenarioModule is constructible with resolve_symbol: None.
-    #[test]
-    fn scenario_module_with_no_resolve_symbol() {
-        let _module = ScenarioModule {
-            resolve_symbol: None,
-            setup: dummy_setup,
-            apply_resolution: dummy_resolution,
-        };
     }
 }
