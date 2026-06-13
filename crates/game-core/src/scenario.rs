@@ -186,6 +186,26 @@ pub struct ScenarioRegistry {
     pub module_for: fn(&ScenarioId) -> Option<&'static ScenarioModule>,
 }
 
+/// Resolve a drawn chaos symbol token against the active scenario's
+/// reference-card effects, if any. Routes
+/// `state.scenario_id` → installed scenario registry → `module_for` →
+/// [`ScenarioModule::resolve_symbol`]. Returns `None` when there is no
+/// active scenario, no registry, an unknown id, or the module has no
+/// symbol hook — callers then fall back to the static
+/// [`TokenModifiers`](crate::state::TokenModifiers) path.
+#[must_use]
+pub fn resolve_symbol_token(
+    state: &GameState,
+    token: crate::state::ChaosToken,
+    investigator: InvestigatorId,
+) -> Option<SymbolOutcome> {
+    let id = state.scenario_id.as_ref()?;
+    let registry = crate::scenario_registry::current()?;
+    let module = (registry.module_for)(id)?;
+    let hook = module.resolve_symbol?;
+    Some(hook(token, &SymbolCtx::new(state, investigator)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
