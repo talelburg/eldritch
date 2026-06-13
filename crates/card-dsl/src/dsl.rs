@@ -468,21 +468,17 @@ pub enum Effect {
     /// branch's effect. Requires an `AwaitingInput` round-trip; the
     /// evaluator stub for this lands in Phase 3 alongside skill tests.
     ChooseOne(Vec<Effect>),
-    /// Put every location in `set_aside_locations` into play (Rules
-    /// Reference p.3 "set aside" -> in play). Board-wide; ignores the
-    /// controller.
-    PutSetAsideLocationsIntoPlay,
-    /// Move every investigator to the in-play location with this
-    /// printed `code`. Rejects if no such location is in play.
-    RelocateAllInvestigators { to: String },
-    /// Remove the in-play location with this printed `code` from the
-    /// game. Rejects if no such location is in play.
-    RemoveLocationFromGame { location: String },
     /// Advance the current act one step. If the act is terminal (carries
     /// a resolution) the scenario resolves; otherwise the cursor moves
     /// and the act's on-advance reverse fires. Used by act objectives
     /// like 01110 ("If the Ghoul Priest is Defeated, advance.").
     AdvanceCurrentAct,
+    /// A card-local Rust effect, resolved by tag through the host's
+    /// `CardRegistry.native_effect_for`. The generic escape hatch for
+    /// single-use card logic that doesn't earn a shared `Effect` variant
+    /// (see issue #276). The `cards` crate maps the tag to a Rust fn; the
+    /// evaluator rejects loudly on an unknown tag or absent registry.
+    Native { tag: String },
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -825,32 +821,17 @@ pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
     Effect::ChooseOne(effects.into_iter().collect())
 }
 
-/// Build an [`Effect::PutSetAsideLocationsIntoPlay`].
-#[must_use]
-pub fn put_set_aside_locations_into_play() -> Effect {
-    Effect::PutSetAsideLocationsIntoPlay
-}
-
-/// Build an [`Effect::RelocateAllInvestigators`] targeting `to` (a
-/// printed location code).
-#[must_use]
-pub fn relocate_all_investigators(to: impl Into<String>) -> Effect {
-    Effect::RelocateAllInvestigators { to: to.into() }
-}
-
-/// Build an [`Effect::RemoveLocationFromGame`] targeting `location` (a
-/// printed location code).
-#[must_use]
-pub fn remove_location_from_game(location: impl Into<String>) -> Effect {
-    Effect::RemoveLocationFromGame {
-        location: location.into(),
-    }
-}
-
 /// Build an [`Effect::AdvanceCurrentAct`].
 #[must_use]
 pub fn advance_current_act() -> Effect {
     Effect::AdvanceCurrentAct
+}
+
+/// Build an [`Effect::Native`] referencing a host-registered Rust effect
+/// by `tag` (convention: `"<cardcode>:<name>"`).
+#[must_use]
+pub fn native(tag: impl Into<String>) -> Effect {
+    Effect::Native { tag: tag.into() }
 }
 
 // ---- tests ----------------------------------------------------
@@ -1065,6 +1046,14 @@ mod tests {
         assert_eq!(original, recovered);
     }
 
+    #[test]
+    fn native_effect_round_trips_through_serde_json() {
+        let effect = native("01108:board-build");
+        let json = serde_json::to_string(&effect).expect("serialize");
+        let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(effect, recovered);
+    }
+
     /// Roland-Banks-shaped reaction: "after you defeat an enemy,
     /// discover 1 clue at your location" — the canonical motivating
     /// card for [`Trigger::OnEvent`]. The DSL doesn't fire it yet
@@ -1260,22 +1249,6 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: EventPattern = serde_json::from_str(&json).unwrap();
         assert_eq!(p, back);
-    }
-
-    #[test]
-    fn world_build_effect_builders_have_expected_shape() {
-        assert!(matches!(
-            put_set_aside_locations_into_play(),
-            Effect::PutSetAsideLocationsIntoPlay
-        ));
-        assert!(matches!(
-            relocate_all_investigators("01112"),
-            Effect::RelocateAllInvestigators { to } if to == "01112"
-        ));
-        assert!(matches!(
-            remove_location_from_game("01111"),
-            Effect::RemoveLocationFromGame { location } if location == "01111"
-        ));
     }
 
     #[test]

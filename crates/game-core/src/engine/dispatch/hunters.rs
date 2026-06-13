@@ -664,6 +664,7 @@ mod measure_value_tests {
         CardRegistry {
             metadata_for: no_metadata,
             abilities_for: fake_abilities,
+            native_effect_for: |_| None,
         }
     }
 

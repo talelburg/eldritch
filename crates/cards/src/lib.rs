@@ -84,6 +84,11 @@ fn registry_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>
     abilities_for(code.as_str())
 }
 
+/// Adapter from a native-effect tag to its card-local handler.
+fn registry_native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
+    impls::native_effect_for(tag)
+}
+
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
 /// implementations. The host installs it once at startup with
 /// [`game_core::card_registry::install`]; engine code then calls
@@ -91,6 +96,7 @@ fn registry_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>
 pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
+    native_effect_for: registry_native_effect_for,
 };
 
 #[cfg(test)]

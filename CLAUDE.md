@@ -4,15 +4,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 ## Workflow
 
-For any non-trivial change (a feature, a behavior change, a multi-step task), **actually invoke these skills via the Skill tool, in order** — don't just emulate their ideas from memory:
-
-1. `superpowers:brainstorming` — align on design before any code.
-2. `superpowers:writing-plans` — turn the agreed design into a TDD task plan.
-3. `superpowers:subagent-driven-development` — execute it (fresh subagent per task, spec + code-quality review between tasks).
-
-Pure questions and trivial one-liners can skip this — use judgment.
-
-Likewise, **invoke** the `karpathy-guidelines` skill (don't just recall it) whenever writing, reviewing, or refactoring code: state assumptions, prefer the simplest thing that works, make surgical changes, define verifiable success criteria.
+For any non-trivial change, **actually invoke** the relevant `superpowers` skills via the Skill tool (don't just emulate them from memory): brainstorm the design, turn it into a TDD plan, then execute task-by-task with review between tasks. Likewise invoke `andrej-karpathy-skills:karpathy-guidelines` whenever writing, reviewing, or refactoring code. Pure questions and trivial one-liners can skip this — use judgment.
 
 ## Commands
 

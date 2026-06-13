@@ -11,13 +11,14 @@
 //! current state bit-for-bit.
 
 mod cx;
-pub(crate) use cx::Cx;
+pub use cx::Cx;
 mod dispatch;
 pub mod evaluator;
 mod outcome;
 pub(crate) mod pathfinding;
 
-pub use evaluator::EvalContext;
+pub use dispatch::reveal::reveal_location;
+pub use evaluator::{location_id_by_code, EvalContext};
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
 
 // Crate-internal re-exports for `test_support::fire_forced_on_enter`.

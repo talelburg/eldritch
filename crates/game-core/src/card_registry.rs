@@ -36,7 +36,16 @@ use std::sync::OnceLock;
 
 use crate::card_data::CardMetadata;
 use crate::dsl::Ability;
+use crate::engine::{Cx, EngineOutcome, EvalContext};
 use crate::state::CardCode;
+
+/// A card-local Rust effect: mutates state and emits events through the
+/// effect-resolution context, returning the resolution outcome. Provided
+/// by the `cards` crate and dispatched from [`Effect::Native`] via
+/// [`CardRegistry::native_effect_for`].
+///
+/// [`Effect::Native`]: crate::dsl::Effect::Native
+pub type NativeEffectFn = fn(&mut Cx, &EvalContext) -> EngineOutcome;
 
 /// Bundle of card-lookup function pointers.
 ///
@@ -51,6 +60,11 @@ pub struct CardRegistry {
     /// Look up hand-implemented abilities by code. Returns `None` for
     /// unimplemented (or unknown) cards.
     pub abilities_for: fn(&CardCode) -> Option<Vec<Ability>>,
+    /// Look up a card-local Rust effect by its [`Effect::Native`] tag.
+    /// Returns `None` for unregistered tags.
+    ///
+    /// [`Effect::Native`]: crate::dsl::Effect::Native
+    pub native_effect_for: fn(&str) -> Option<NativeEffectFn>,
 }
 
 static REGISTRY: OnceLock<CardRegistry> = OnceLock::new();
@@ -142,6 +156,7 @@ mod tests {
         CardRegistry {
             metadata_for: fake_metadata_for,
             abilities_for: fake_abilities_for,
+            native_effect_for: |_| None,
         }
     }
 
