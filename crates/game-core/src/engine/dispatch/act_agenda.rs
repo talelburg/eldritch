@@ -1,7 +1,7 @@
 //! Act and agenda handlers: doom placement, threshold checking, agenda
 //! advancement, clue spending, and act advancement.
 
-use crate::state::{GameState, InvestigatorId, Phase};
+use crate::state::{GameState, InvestigatorId, LocationId, Phase};
 
 use super::super::outcome::EngineOutcome;
 use super::Cx;
@@ -158,6 +158,48 @@ fn spend_clues(state: &mut GameState, acting: InvestigatorId, amount: u8) {
         remaining, 0,
         "spend_clues called without enough clues in the group"
     );
+}
+
+/// Investigators currently at `location`, in `turn_order` (deterministic).
+/// Used by the act round-end clue-spend window (01109: Hallway investigators).
+pub(crate) fn investigators_at(state: &GameState, location: LocationId) -> Vec<InvestigatorId> {
+    state
+        .turn_order
+        .iter()
+        .copied()
+        .filter(|id| {
+            state
+                .investigators
+                .get(id)
+                .and_then(|i| i.current_location)
+                == Some(location)
+        })
+        .collect()
+}
+
+/// Total clues held by `ids`.
+pub(crate) fn clues_held(state: &GameState, ids: &[InvestigatorId]) -> u32 {
+    ids.iter()
+        .filter_map(|id| state.investigators.get(id))
+        .map(|i| u32::from(i.clues))
+        .sum()
+}
+
+/// Spend `amount` clues from `ids` in order. Caller must have validated the
+/// group holds at least `amount` (via [`clues_held`]). Mirrors [`spend_clues`].
+pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], amount: u8) {
+    let mut remaining = amount;
+    for id in ids {
+        if remaining == 0 {
+            break;
+        }
+        if let Some(inv) = state.investigators.get_mut(id) {
+            let take = inv.clues.min(remaining);
+            inv.clues -= take;
+            remaining -= take;
+        }
+    }
+    debug_assert_eq!(remaining, 0, "spend_clues_from called without enough clues");
 }
 
 /// Advance the act deck one step: emit [`Event::ActAdvanced`], fire the

@@ -208,6 +208,10 @@ pub struct GameState {
     pub spawn_engage_pending: Option<SpawnEngagePending>,
     /// Suspended upkeep hand-size discard (#111). See [`HandSizeDiscard`].
     pub hand_size_discard_pending: Option<HandSizeDiscard>,
+    /// Suspended act round-end clue-spend window (#275). `Some` only while
+    /// awaiting the group's Confirm/Skip at the end of the round. See
+    /// [`ActRoundEndPending`].
+    pub act_round_end_pending: Option<ActRoundEndPending>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -317,6 +321,18 @@ pub struct RoundEndAdvance {
     /// Only investigators at this in-play location (by printed code) may
     /// contribute clues — 01109: the Hallway `01112`.
     pub contributor_location: CardCode,
+}
+
+/// A parked act round-end clue-spend window (see [`RoundEndAdvance`]). The
+/// decision context is snapshotted at park time; resolved via
+/// `resume_act_round_end_advance`. `Some` on [`GameState`] only while
+/// awaiting the group's Confirm/Skip at the end of the round.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActRoundEndPending {
+    /// In-play location whose investigators may contribute clues.
+    pub contributor_location: LocationId,
+    /// Clues to spend to advance (the act's `clue_threshold`).
+    pub threshold: u8,
 }
 
 /// A skill test paused mid-resolution at the commit window.

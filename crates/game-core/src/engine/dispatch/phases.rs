@@ -5,7 +5,8 @@ use crate::action::InputResponse;
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::event::Event;
 use crate::state::{
-    CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase, PhaseStep, WindowKind,
+    ActRoundEndPending, CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase,
+    PhaseStep, WindowKind,
     Zone,
 };
 
@@ -574,23 +575,22 @@ pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     if let outcome @ EngineOutcome::AwaitingInput { .. } = check_hand_size(cx) {
         return outcome; // 4.5 parked for discard; 4.6 runs on resume
     }
-    upkeep_phase_end(cx); // 4.6 + transition
-    EngineOutcome::Done
+    upkeep_phase_end(cx) // 4.6 + transition (may open the act round-end window)
 }
 
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
 /// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` emits no
 /// `PhaseEnded` itself — every phase's `*_end` helper owns its own.
-fn upkeep_phase_end(cx: &mut Cx) {
+fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 4.6 Upkeep phase ends. Round ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });
     // Fire forced act/agenda abilities keyed to `PhaseEnded { Upkeep }`
-    // ("at end of round"). The () return cannot propagate a 2+-trigger
-    // reject; `debug_assert!` guards it for now. #212's `emit_event`
-    // restructure will centralise forced-trigger dispatch and remove this
-    // limitation.
+    // ("at end of round"). The 2+-trigger reject can't propagate through
+    // the forced path here; `debug_assert!` guards it for now. #212's
+    // `emit_event` restructure will centralise forced-trigger dispatch and
+    // remove this limitation.
     let forced = super::forced_triggers::fire_forced_triggers(
         cx,
         &super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
@@ -614,14 +614,86 @@ fn upkeep_phase_end(cx: &mut Cx) {
         "upkeep_phase_end RoundEnded forced did not resolve to Done: {round_end:?} \
          (2+ simultaneous forced at round end needs #213)"
     );
+    // Act objective: a round-end "may spend clues to advance" window
+    // (01109). Opens only when the current act carries it AND the
+    // contributor-location investigators can afford the threshold — the
+    // "may … spend the requisite number" is moot otherwise. Suspends; the
+    // Upkeep→Mythos transition is deferred to resume_act_round_end_advance.
+    if let Some(pending) = round_end_advance_window(cx.state) {
+        let prompt = format!(
+            "End of round: investigators at the contributor location may, as a group, \
+             spend {} clues to advance the current act. Submit ResolveInput with \
+             InputResponse::Confirm to spend and advance, or Skip to decline.",
+            pending.threshold,
+        );
+        cx.state.act_round_end_pending = Some(pending);
+        return EngineOutcome::AwaitingInput {
+            request: InputRequest { prompt },
+            resume_token: ResumeToken(0),
+        };
+    }
     // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
     // transition can suspend (hunter movement), so this never does.
-    let outcome = step_phase(cx);
-    debug_assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "unexpected suspension in Upkeep→Mythos transition"
-    );
+    step_phase(cx)
+}
+
+/// The round-end advance window to open, if the current act offers one and
+/// the contributor-location investigators can afford its `clue_threshold`.
+/// `None` (no window) when the act has no round-end objective or the group
+/// can't afford it.
+fn round_end_advance_window(state: &GameState) -> Option<ActRoundEndPending> {
+    let act = state.act_deck.get(state.act_index)?;
+    let adv = act.round_end_advance.as_ref()?;
+    let loc = crate::engine::location_id_by_code(state, adv.contributor_location.as_str())?;
+    let contributors = super::act_agenda::investigators_at(state, loc);
+    if super::act_agenda::clues_held(state, &contributors) < u32::from(act.clue_threshold) {
+        return None;
+    }
+    Some(ActRoundEndPending {
+        contributor_location: loc,
+        threshold: act.clue_threshold,
+    })
+}
+
+/// Resume a parked act round-end clue-spend window. Confirm spends the
+/// threshold from the contributor-location investigators and advances the
+/// act; Skip declines; either way the round closes (Upkeep→Mythos). A wrong
+/// response kind rejects with state untouched.
+pub(super) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let pending = cx
+        .state
+        .act_round_end_pending
+        .clone()
+        .unwrap_or_else(|| unreachable!("resume_act_round_end_advance: no pending window"));
+    match response {
+        InputResponse::Confirm => {
+            let contributors =
+                super::act_agenda::investigators_at(cx.state, pending.contributor_location);
+            if super::act_agenda::clues_held(cx.state, &contributors) < u32::from(pending.threshold)
+            {
+                return EngineOutcome::Rejected {
+                    reason: "act round-end advance: contributors no longer hold enough clues"
+                        .into(),
+                };
+            }
+            super::act_agenda::spend_clues_from(cx.state, &contributors, pending.threshold);
+            cx.state.act_round_end_pending = None;
+            // The round-end-advance act (01109) is non-terminal (resolution
+            // None) — advance the cursor to the next act.
+            super::act_agenda::advance_act(cx);
+            step_phase(cx)
+        }
+        InputResponse::Skip => {
+            cx.state.act_round_end_pending = None;
+            step_phase(cx)
+        }
+        other => EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: act round-end advance expects Confirm or Skip, got {other:?}"
+            )
+            .into(),
+        },
+    }
 }
 
 /// 4.3 Ready exhausted cards. Rules Reference p.25: "Simultaneously
@@ -815,8 +887,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     remaining.remove(0);
     if remaining.is_empty() {
         cx.state.hand_size_discard_pending = None;
-        upkeep_phase_end(cx); // 4.6 + transition to Mythos
-        EngineOutcome::Done
+        upkeep_phase_end(cx) // 4.6 + transition (may open the act round-end window)
     } else {
         park_hand_size_discard(cx, remaining)
     }
@@ -2036,6 +2107,168 @@ mod upkeep_phase_tests {
             hand_before + 1,
             "drew 1"
         );
+    }
+
+    // ---- act round-end clue-spend window (#275) ------------------
+
+    /// Act 2 (round-end objective, Hallway contributors) current, a Hallway
+    /// investigator holding `clues`, phase Upkeep. Act 3 is non-terminal's
+    /// successor (terminal, with a resolution).
+    fn round_end_window_state(clues: u8) -> (crate::state::GameState, InvestigatorId) {
+        use crate::scenario::Resolution;
+        use crate::state::{Act, Location, RoundEndAdvance};
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([inv])
+            .with_phase(Phase::Upkeep)
+            .with_location(Location::new(
+                LocationId(2),
+                CardCode("01112".into()),
+                "Hallway",
+                1,
+                0,
+            ))
+            .build();
+        let i = state.investigators.get_mut(&inv).unwrap();
+        i.current_location = Some(LocationId(2));
+        i.clues = clues;
+        state.act_deck = vec![
+            Act {
+                code: CardCode("01109".into()),
+                clue_threshold: 3,
+                resolution: None,
+                round_end_advance: Some(RoundEndAdvance {
+                    contributor_location: CardCode("01112".into()),
+                }),
+            },
+            Act {
+                code: CardCode("01110".into()),
+                clue_threshold: 0,
+                resolution: Some(Resolution::Won { id: "R1".into() }),
+                round_end_advance: None,
+            },
+        ];
+        state.act_index = 0;
+        (state, inv)
+    }
+
+    #[test]
+    fn upkeep_phase_end_opens_window_when_affordable() {
+        let (mut state, _) = round_end_window_state(3);
+        let mut events = Vec::new();
+        let out = upkeep_phase_end(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.act_round_end_pending.is_some());
+        assert_eq!(state.phase, Phase::Upkeep, "parked: did not transition");
+        assert_no_event!(events, Event::PhaseStarted { phase: Phase::Mythos });
+    }
+
+    #[test]
+    fn upkeep_phase_end_skips_window_when_unaffordable() {
+        let (mut state, _) = round_end_window_state(2); // < threshold 3
+        let mut events = Vec::new();
+        let out = upkeep_phase_end(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(state.act_round_end_pending.is_none());
+        assert_eq!(state.phase, Phase::Mythos, "no window → straight to Mythos");
+    }
+
+    #[test]
+    fn resume_confirm_spends_and_advances() {
+        use crate::action::InputResponse;
+        let (mut state, inv) = round_end_window_state(3);
+        let mut events = Vec::new();
+        let _ = upkeep_phase_end(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        let out = resume_act_round_end_advance(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::Confirm,
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.act_index, 1, "advanced act 2 -> act 3");
+        assert_eq!(state.investigators[&inv].clues, 0, "spent 3 clues");
+        assert!(state.act_round_end_pending.is_none());
+        assert_eq!(state.phase, Phase::Mythos);
+    }
+
+    #[test]
+    fn resume_skip_advances_nothing_and_continues() {
+        use crate::action::InputResponse;
+        let (mut state, inv) = round_end_window_state(3);
+        let mut events = Vec::new();
+        let _ = upkeep_phase_end(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        let out = resume_act_round_end_advance(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::Skip,
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.act_index, 0, "no advance on Skip");
+        assert_eq!(state.investigators[&inv].clues, 3, "no clues spent");
+        assert!(state.act_round_end_pending.is_none());
+        assert_eq!(state.phase, Phase::Mythos);
+    }
+
+    #[test]
+    fn resume_rejects_wrong_response_kind() {
+        use crate::action::InputResponse;
+        let (mut state, _) = round_end_window_state(3);
+        let mut events = Vec::new();
+        let _ = upkeep_phase_end(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        let out = resume_act_round_end_advance(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::DiscardCards { indices: vec![] },
+        );
+        assert!(matches!(out, EngineOutcome::Rejected { .. }));
+        assert!(state.act_round_end_pending.is_some(), "still pending");
+        assert_eq!(state.phase, Phase::Upkeep);
+    }
+
+    #[test]
+    fn affordability_counts_only_contributor_location() {
+        use crate::state::{CardCode, Location, LocationId};
+        let (mut state, _) = round_end_window_state(0); // Hallway inv holds 0
+        // A second investigator elsewhere holds plenty — must NOT count.
+        let other = InvestigatorId(2);
+        let mut o = test_investigator(2);
+        o.current_location = Some(LocationId(9));
+        o.clues = 9;
+        state.investigators.insert(other, o);
+        state.turn_order.push(other);
+        state.locations.insert(
+            LocationId(9),
+            Location::new(LocationId(9), CardCode("99999".into()), "Far", 1, 0),
+        );
+        let mut events = Vec::new();
+        let out = upkeep_phase_end(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        assert_eq!(out, EngineOutcome::Done, "unaffordable by Hallway alone");
+        assert!(state.act_round_end_pending.is_none());
     }
 }
 
