@@ -45,25 +45,41 @@ It does **not** wire the real enemies. The two consumers are:
   ends* (discard committed cards, return tokens). "After applying all results"
   = after the whole of ST.7, before ST.8.
 
-## 1. `Prey::LowestRemainingHealth`
+## 1. Prey — unified `Ranked { direction, measure }`
 
-- Add a variant to the `#[non_exhaustive]` `Prey` enum
-  (`crates/card-dsl/src/card_data.rs`). **Specific, not generic** — "lowest
-  remaining health" is a derived measure, *not* a `Stat`, so it can't be a
-  symmetric `LowestStat(Stat)`; the honest general form is a `{ measure,
-  direction }` shape spanning stats and derived quantities (remaining
-  health/sanity, clues, cards-in-hand), which is speculative with one consumer.
-  Per CLAUDE.md (no speculative DSL primitives; wait for 2+ consumers) and the
-  enum's own doc convention ("other printed variants … land with their first
-  card consumer"), ship the specific variant with a doc-note:
-  `// TODO: generalize to { measure, direction } when a 2nd derived-measure
-  prey lands (Lowest remaining sanity, Most clues, …).`
-- Wire it in `resolve_prey` (`crates/game-core/src/engine/dispatch/hunters.rs`)
-  as a new branch mirroring `HighestStat`, keeping candidates that **minimize**
-  `inv.max_health − inv.damage` (saturating). Returns `One` / `Tie` / `None` via
-  the existing post-narrowing match.
-- Tests (mirror the `HighestStat` set in `resolve_prey_tests`): single clear
-  minimum → `One`; two-way tie at the minimum → `Tie`; all-equal → `Tie`.
+> **Revised after first review.** Originally shipped as a specific
+> `Prey::LowestRemainingHealth` variant (deferring generalization). On a second
+> look we unified instead: the "wait for 2+ consumers" rule was *already* met —
+> `Prey::HighestStat(Combat)` and lowest-remaining-health are two consumers of
+> the same ranked-measure pattern. So both collapse into one `{ direction,
+> measure }` shape now, while we have full information about the axis.
+
+- Replace `Prey::HighestStat(Stat)` **and** the would-be `LowestRemainingHealth`
+  with one variant on the `#[non_exhaustive]` `Prey` enum
+  (`crates/card-dsl/src/card_data.rs`):
+  `Prey::Ranked { direction: PreyDirection, measure: PreyMeasure }`.
+  - `PreyDirection { Highest, Lowest }` — exhaustive.
+  - `PreyMeasure { Skill(SkillKind), RemainingHealth }` — **exhaustive** (not
+    `#[non_exhaustive]`): adding a measure must force `resolve_prey` to wire it
+    at compile time. Uses `SkillKind` (the four skills), *not* `Stat` — `Stat`
+    also has `MaxHealth`/`MaxSanity`, nonsensical as a prey measure alongside a
+    dedicated `RemainingHealth`; `SkillKind` makes illegal states
+    unrepresentable and lets `Skills::value` be called directly (dropping the
+    `cursor::stat_to_skill_kind` hop, which this change removes as dead code).
+  - Ghoul Priest's "Highest [combat]" = `Highest` + `Skill(Combat)`; Ravenous
+    Ghoul's "Lowest remaining health" = `Lowest` + `RemainingHealth`.
+  - Future printed measures (`RemainingSanity`, `Clues`, `CardsInHand`, …) add a
+    `PreyMeasure` variant + one `measure_value` arm. `Prey` stays
+    `#[non_exhaustive]` for genuinely non-comparative future shapes ("Bearer
+    only").
+- `resolve_prey` (`crates/game-core/src/engine/dispatch/hunters.rs`) gets one
+  `Ranked` branch: score each candidate via a `measure_value(measure, inv) ->
+  i32` helper (`i32` so `base_health − damage` can't underflow and skills/health
+  share a comparable type), take `max`/`min` per `direction`, keep the matchers.
+  Returns `One` / `Tie` / `None` via the existing post-narrowing match.
+- Tests in `resolve_prey_tests`: highest-skill single → `One` and tie → `Tie`;
+  lowest-remaining-health single → `One` and tie → `Tie`; serde round-trips for
+  both `Ranked` forms in `card_data.rs`.
 
 ## 2. Retaliate
 
@@ -136,8 +152,11 @@ and the `PostOnResolution` teardown.
 
 ## Decisions for the phase doc (on merge)
 
-- `Prey::LowestRemainingHealth` is a **specific** variant (not a generic
-  measure/direction shape) — generalize on the second derived-measure consumer.
+- Prey comparative instructions are one unified `Prey::Ranked { direction,
+  measure }` shape (`PreyDirection` × `PreyMeasure`), replacing the old
+  `HighestStat(Stat)`. `PreyMeasure` is exhaustive + uses `SkillKind`, so a new
+  measure is compile-forced to wire `resolve_prey`. New measures
+  (`RemainingSanity`, `Clues`, `CardsInHand`) land with their first consumer.
 - Retaliate fires in a dedicated `FinishContinuation::PostRetaliate` step after
   ST.7's OnSkillTestResolution triggers and before ST.8 teardown (RR p.26
   "after applying all results") — also the future home of after-enemy-attacks

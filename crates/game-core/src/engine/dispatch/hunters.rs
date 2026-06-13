@@ -1,9 +1,11 @@
 //! Hunter-movement and prey-resolution helpers (Enemy phase step 3.2).
 
-use crate::card_data::Prey;
+use crate::card_data::{Prey, PreyDirection, PreyMeasure};
 use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
 use crate::event::Event;
-use crate::state::{Enemy, EnemyId, GameState, HunterChoice, InvestigatorId, LocationId};
+use crate::state::{
+    Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId, LocationId,
+};
 
 use super::cursor;
 use super::Cx;
@@ -22,12 +24,23 @@ pub(super) enum PreyResolution {
     None,
 }
 
+/// The value an investigator scores for a comparative prey
+/// [`PreyMeasure`]. Widened to `i32` so `base_health − damage` can't
+/// underflow and so skills/health share one comparable type. Higher or
+/// lower is selected by the [`PreyDirection`] in [`Prey::Ranked`].
+fn measure_value(measure: PreyMeasure, inv: &Investigator) -> i32 {
+    match measure {
+        PreyMeasure::Skill(kind) => i32::from(inv.skills.value(kind)),
+        PreyMeasure::RemainingHealth => i32::from(inv.max_health) - i32::from(inv.damage),
+    }
+}
+
 /// Narrow `candidates` by `prey`. `Default` treats all candidates as
-/// equal; `HighestStat` keeps those with the maximum value of the
-/// stat. Returns `One` (single best), `Tie` (2+ best — lead decides),
-/// or `None` (empty candidate set). Caller supplies the candidate set
-/// (equidistant-nearest investigators for movement; co-located
-/// investigators for engagement).
+/// equal; `Ranked` keeps those with the most extreme measure value (max
+/// for `Highest`, min for `Lowest`). Returns `One` (single best), `Tie`
+/// (2+ best — lead decides), or `None` (empty candidate set). Caller
+/// supplies the candidate set (equidistant-nearest investigators for
+/// movement; co-located investigators for engagement).
 pub(super) fn resolve_prey(
     state: &GameState,
     prey: Prey,
@@ -38,51 +51,33 @@ pub(super) fn resolve_prey(
     }
     let best: Vec<InvestigatorId> = match prey {
         Prey::Default => candidates.to_vec(),
-        Prey::HighestStat(stat) => {
-            let skill = cursor::stat_to_skill_kind(stat);
-            let max = candidates
+        Prey::Ranked { direction, measure } => {
+            let scored: Vec<(InvestigatorId, i32)> = candidates
                 .iter()
                 .filter_map(|id| {
                     state
                         .investigators
                         .get(id)
-                        .map(|inv| inv.skills.value(skill))
+                        .map(|inv| (*id, measure_value(measure, inv)))
                 })
-                .max();
-            match max {
-                Some(m) => candidates
-                    .iter()
-                    .copied()
-                    .filter(|id| {
-                        state
-                            .investigators
-                            .get(id)
-                            .is_some_and(|inv| inv.skills.value(skill) == m)
-                    })
-                    .collect(),
-                None => Vec::new(),
-            }
-        }
-        Prey::LowestRemainingHealth => {
-            let remaining = |id: &InvestigatorId| -> Option<u8> {
-                state
-                    .investigators
-                    .get(id)
-                    .map(|inv| inv.max_health.saturating_sub(inv.damage))
+                .collect();
+            let extreme = match direction {
+                PreyDirection::Highest => scored.iter().map(|(_, v)| *v).max(),
+                PreyDirection::Lowest => scored.iter().map(|(_, v)| *v).min(),
             };
-            let min = candidates.iter().filter_map(remaining).min();
-            match min {
-                Some(m) => candidates
+            match extreme {
+                Some(target) => scored
                     .iter()
-                    .copied()
-                    .filter(|id| remaining(id) == Some(m))
+                    .filter(|(_, v)| *v == target)
+                    .map(|(id, _)| *id)
                     .collect(),
                 None => Vec::new(),
             }
         }
-        // `Prey` is #[non_exhaustive]; new variants (Lowest, Most Clues, etc.)
-        // must be wired here when their first card consumer lands — an
-        // unrecognised variant at runtime is a card-impl bug.
+        // `Prey` is #[non_exhaustive]; new *comparative* measures are
+        // added to `PreyMeasure` (compile-forced — exhaustive), so this
+        // arm only guards genuinely new non-`Ranked` shapes (e.g.
+        // "Bearer only"), which must be wired here when they land.
         _ => unreachable!(
             "resolve_prey: unrecognised Prey variant {prey:?} — \
              card-impl bug or new variant needs engine wiring"
@@ -516,7 +511,10 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Highest,
+                measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+            },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
@@ -534,7 +532,10 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Highest,
+                measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+            },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
@@ -556,7 +557,10 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::LowestRemainingHealth,
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Lowest,
+                measure: crate::card_data::PreyMeasure::RemainingHealth,
+            },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
@@ -577,7 +581,10 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::LowestRemainingHealth,
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Lowest,
+                measure: crate::card_data::PreyMeasure::RemainingHealth,
+            },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
@@ -961,7 +968,7 @@ mod hunter_resume_tests {
     #[test]
     fn highest_combat_prey_breaks_move_tie_without_prompt() {
         // Fan A(1)-{B(2),C(3)}. inv1 at B combat 5; inv2 at C combat 2.
-        // hunter at A with HighestStat(Combat) prey. resolve_prey picks
+        // hunter at A with Ranked Highest-combat prey. resolve_prey picks
         // inv1 unambiguously -> moves A->B, engages, no prompt.
         let mut loc_a = test_location(1, "A");
         let mut loc_b = test_location(2, "B");
@@ -977,7 +984,10 @@ mod hunter_resume_tests {
         inv2.skills.combat = 2;
         let mut hunter = test_enemy(1, "Ghoul Priest");
         hunter.hunter = true;
-        hunter.prey = crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat);
+        hunter.prey = crate::card_data::Prey::Ranked {
+            direction: crate::card_data::PreyDirection::Highest,
+            measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+        };
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)
