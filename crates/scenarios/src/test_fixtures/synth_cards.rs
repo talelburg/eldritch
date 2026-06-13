@@ -15,7 +15,9 @@
 
 use std::sync::OnceLock;
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Spawn, SpawnLocation};
+use game_core::card_data::{
+    CardKind, CardMetadata, Class, HealthValue, Prey, SkillIcons, Spawn, SpawnLocation,
+};
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{gain_resources, on_play, revelation, Ability, InvestigatorTarget};
 use game_core::state::CardCode;
@@ -94,13 +96,16 @@ fn synth_enemy_metadata() -> CardMetadata {
             evade: 1,
             damage: 0,
             horror: 0,
-            health: Some(1),
+            health: Some(HealthValue::Fixed(1)),
             victory: None,
             spawn: Some(Spawn {
                 location: SpawnLocation::Specific(SYNTH_LOC_CODE.to_owned()),
             }),
             surge: false,
             peril: false,
+            hunter: false,
+            retaliate: false,
+            prey: Prey::Default,
             quantity: 1,
         },
     }

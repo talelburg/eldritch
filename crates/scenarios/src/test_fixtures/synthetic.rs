@@ -133,7 +133,7 @@ pub fn apply_resolution(
 /// the `setup` / `apply_resolution` `fn` pointers above; referenced
 /// from [`crate::module_for`].
 pub const MODULE: ScenarioModule = ScenarioModule {
-    reference_card: "",
+    resolve_symbol: None,
     setup,
     apply_resolution,
 };

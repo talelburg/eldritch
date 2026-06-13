@@ -287,6 +287,7 @@ impl GameStateBuilder {
             act_deck: Vec::new(),
             act_index: 0,
             resolution: None,
+            victory_display: Vec::new(),
         }
     }
 }

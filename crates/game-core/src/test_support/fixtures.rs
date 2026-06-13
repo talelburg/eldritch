@@ -110,6 +110,8 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         engaged_with: None,
         hunter: false,
         prey: Prey::Default,
+        retaliate: false,
+        victory: None,
     }
 }
 

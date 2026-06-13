@@ -180,6 +180,40 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     cx.events.push(Event::ScenarioResolved {
         resolution: resolution.clone(),
     });
+
+    // Place victory-point locations in the victory display. Runs BEFORE
+    // `(module.apply_resolution)(...)` so the scan captures board state
+    // at the moment the resolution latches, before any post-resolution
+    // cleanup (apply_resolution, Phase 9) runs. Generic across scenarios;
+    // reads victory values from the card registry. No registry → no
+    // metadata → nothing placed (graceful).
+    //
+    // RR p.21: "At the end of a scenario, place each victory point
+    // location that is in play, revealed, and with no clues on it in the
+    // victory display."
+    if let Some(card_reg) = crate::card_registry::current() {
+        let placed: Vec<(crate::state::CardCode, u8)> = cx
+            .state
+            .locations
+            .values()
+            .filter(|loc| loc.revealed && loc.clues == 0)
+            .filter_map(|loc| {
+                let meta = (card_reg.metadata_for)(&loc.code)?;
+                match meta.kind {
+                    crate::card_data::CardKind::Location {
+                        victory: Some(v), ..
+                    } if v > 0 => Some((loc.code.clone(), v)),
+                    _ => None,
+                }
+            })
+            .collect();
+        for (code, victory) in placed {
+            cx.state.victory_display.push(code.clone());
+            cx.events
+                .push(Event::EnteredVictoryDisplay { code, victory });
+        }
+    }
+
     let Some(id) = cx.state.scenario_id.as_ref() else {
         return;
     };
@@ -1854,6 +1888,127 @@ mod tests {
         assert_no_event!(result.events, Event::EnemyDefeated { .. });
         assert_eq!(result.state.enemies[&enemy_id].damage, 0);
         assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+    }
+
+    #[test]
+    fn failed_fight_against_ready_retaliate_enemy_triggers_attack() {
+        // Combat 1 vs fight 3 → fail. Enemy retaliates 1 dmg + 1 horror.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.combat = 1;
+        let e = state.enemies.get_mut(&enemy_id).unwrap();
+        e.retaliate = true;
+        e.attack_damage = 1;
+        e.attack_horror = 1;
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestFailed { .. });
+        // Retaliate attack lands (damage + horror, simultaneously).
+        assert_event!(result.events, Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id);
+        assert_event!(result.events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id);
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        // Enemy does NOT exhaust after a retaliate attack (RR p.18).
+        assert!(!result.state.enemies[&enemy_id].exhausted);
+        // Failed fight dealt no damage to the enemy.
+        assert_no_event!(result.events, Event::EnemyDamaged { .. });
+        // Skill test still tears down.
+        assert_event!(result.events, Event::SkillTestEnded { .. });
+    }
+
+    #[test]
+    fn successful_fight_against_retaliate_enemy_does_not_trigger_attack() {
+        // Combat 3 vs fight 3 → success; retaliate must NOT fire.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.combat = 3;
+        let e = state.enemies.get_mut(&enemy_id).unwrap();
+        e.retaliate = true;
+        e.attack_damage = 1;
+        e.attack_horror = 1;
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_event!(result.events, Event::SkillTestSucceeded { .. });
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_no_event!(result.events, Event::HorrorTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+    }
+
+    #[test]
+    fn failed_fight_against_exhausted_retaliate_enemy_does_not_trigger_attack() {
+        // Retaliate requires a READY enemy (RR p.18). Exhausted → no attack.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.combat = 1;
+        let e = state.enemies.get_mut(&enemy_id).unwrap();
+        e.retaliate = true;
+        e.exhausted = true;
+        e.attack_damage = 1;
+        e.attack_horror = 1;
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_event!(result.events, Event::SkillTestFailed { .. });
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+    }
+
+    #[test]
+    fn failed_fight_against_non_retaliate_enemy_does_not_trigger_attack() {
+        // No retaliate flag → no attack on failure.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.combat = 1;
+        let e = state.enemies.get_mut(&enemy_id).unwrap();
+        e.attack_damage = 1;
+        e.attack_horror = 1;
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_event!(result.events, Event::SkillTestFailed { .. });
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+    }
+
+    #[test]
+    fn failed_evade_against_retaliate_enemy_does_not_trigger_attack() {
+        // Retaliate is "while attacking" — a failed Evade must NOT fire it.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.agility = 1; // vs evade 3 → fail
+        let e = state.enemies.get_mut(&enemy_id).unwrap();
+        e.retaliate = true;
+        e.attack_damage = 1;
+        e.attack_horror = 1;
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Evade {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_event!(result.events, Event::SkillTestFailed { .. });
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_eq!(result.state.investigators[&inv_id].damage, 0);
     }
 
     #[test]
@@ -4019,7 +4174,7 @@ mod tests {
     }
 
     static STAMP_MODULE: ScenarioModule = ScenarioModule {
-        reference_card: "",
+        resolve_symbol: None,
         setup: unused_setup,
         apply_resolution: stamp_apply,
     };
@@ -4135,5 +4290,24 @@ mod tests {
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(result.events, Event::ScenarioResolved { .. });
+    }
+
+    #[test]
+    fn resolution_places_no_victory_without_qualifying_locations() {
+        // No victory-bearing locations in play → nothing placed, no event,
+        // no panic (covers the registry-absent / no-location path).
+        let state = terminal_act_state(Some("stamp"));
+        let reg = ScenarioRegistry {
+            module_for: stamp_module_for,
+        };
+        let result = super::apply_with_scenario_registry(
+            state,
+            Action::Player(PlayerAction::AdvanceAct {
+                investigator: InvestigatorId(1),
+            }),
+            Some(&reg),
+        );
+        assert!(result.state.victory_display.is_empty());
+        assert_no_event!(result.events, Event::EnteredVictoryDisplay { .. });
     }
 }

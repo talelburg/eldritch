@@ -640,6 +640,57 @@ pub fn constant_skill_modifier(
     skill: SkillKind,
     kind: SkillTestKind,
 ) -> i8 {
+    sum_constant_modify(
+        state,
+        registry,
+        controller,
+        |scope| scope_applies(scope, kind),
+        |stat| stat_matches_skill(stat, skill),
+    )
+}
+
+/// Sum a controller's *unconditional* constant modifiers to `stat`: only
+/// [`ModifierScope::WhileInPlay`] `Trigger::Constant` `Effect::Modify`
+/// abilities matching that exact stat (Beat Cop's always-on
+/// `+1 [combat]`, or a future "+N max health"). Excludes
+/// [`WhileInPlayDuring`](ModifierScope::WhileInPlayDuring) (which need a
+/// skill-test context) and every non-constant scope.
+///
+/// Used by prey ranking ([#270]): a prey instruction like
+/// `Highest [combat]` or "Lowest remaining health" compares *modified*
+/// values (Rules Reference p.18 Modifiers, p.12 remaining health), but
+/// resolves outside any skill test, so only always-on modifiers apply.
+///
+/// [#270]: https://github.com/talelburg/eldritch/issues/270
+#[must_use]
+pub fn unconditional_constant_stat_modifier(
+    state: &GameState,
+    registry: &CardRegistry,
+    controller: InvestigatorId,
+    stat: Stat,
+) -> i8 {
+    sum_constant_modify(
+        state,
+        registry,
+        controller,
+        |scope| matches!(scope, ModifierScope::WhileInPlay),
+        |s| s == stat,
+    )
+}
+
+/// Shared core of [`constant_skill_modifier`] and
+/// [`unconditional_constant_stat_modifier`]: sum the `delta` of every
+/// `Trigger::Constant` `Effect::Modify` on `controller`'s cards in play
+/// whose scope and stat both satisfy the given predicates. Silently skips
+/// cards whose code the registry can't resolve (same policy as the
+/// callers — the deck-import gate keeps unimplemented codes out of play).
+fn sum_constant_modify(
+    state: &GameState,
+    registry: &CardRegistry,
+    controller: InvestigatorId,
+    scope_ok: impl Fn(ModifierScope) -> bool,
+    stat_ok: impl Fn(Stat) -> bool,
+) -> i8 {
     let Some(inv) = state.investigators.get(&controller) else {
         return 0;
     };
@@ -655,10 +706,7 @@ pub fn constant_skill_modifier(
             let Effect::Modify { stat, delta, scope } = &ability.effect else {
                 continue;
             };
-            if !scope_applies(*scope, kind) {
-                continue;
-            }
-            if stat_matches_skill(*stat, skill) {
+            if scope_ok(*scope) && stat_ok(*stat) {
                 total = total.saturating_add(*delta);
             }
         }
@@ -747,7 +795,10 @@ mod tests {
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
-    use super::{apply_effect, constant_skill_modifier, EngineOutcome, EvalContext};
+    use super::{
+        apply_effect, constant_skill_modifier, unconditional_constant_stat_modifier, EngineOutcome,
+        EvalContext,
+    };
     use crate::engine::Cx;
 
     fn ctx(id: u32) -> EvalContext {
@@ -1489,6 +1540,42 @@ mod tests {
         let reg = fake_registry();
         assert_eq!(
             constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
+            0
+        );
+    }
+
+    #[test]
+    fn unconditional_modifier_counts_while_in_play_constant() {
+        let (state, id) = state_with_cards_in_play(&["willpower-plus-1"]);
+        let reg = fake_registry();
+        assert_eq!(
+            unconditional_constant_stat_modifier(&state, &reg, id, Stat::Willpower),
+            1
+        );
+    }
+
+    #[test]
+    fn unconditional_modifier_excludes_while_in_play_during() {
+        // WhileInPlayDuring needs a skill-test context; prey has none.
+        let (state, id) = state_with_cards_in_play(&["intellect-plus-1-while-investigating"]);
+        let reg = fake_registry();
+        assert_eq!(
+            unconditional_constant_stat_modifier(&state, &reg, id, Stat::Intellect),
+            0
+        );
+    }
+
+    #[test]
+    fn unconditional_modifier_matches_exact_stat_including_max_health() {
+        let (state, id) = state_with_cards_in_play(&["max-health-plus-1", "willpower-plus-1"]);
+        let reg = fake_registry();
+        assert_eq!(
+            unconditional_constant_stat_modifier(&state, &reg, id, Stat::MaxHealth),
+            1
+        );
+        // The willpower buff must not leak into a different stat's query.
+        assert_eq!(
+            unconditional_constant_stat_modifier(&state, &reg, id, Stat::Combat),
             0
         );
     }

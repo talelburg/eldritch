@@ -1,9 +1,14 @@
 //! Hunter-movement and prey-resolution helpers (Enemy phase step 3.2).
 
-use crate::card_data::Prey;
+use crate::card_data::{Prey, PreyDirection, PreyMeasure, SkillKind};
+use crate::card_registry::{self, CardRegistry};
+use crate::dsl::Stat;
+use crate::engine::evaluator::unconditional_constant_stat_modifier;
 use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
 use crate::event::Event;
-use crate::state::{Enemy, EnemyId, GameState, HunterChoice, InvestigatorId, LocationId};
+use crate::state::{
+    Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId, LocationId,
+};
 
 use super::cursor;
 use super::Cx;
@@ -22,12 +27,55 @@ pub(super) enum PreyResolution {
     None,
 }
 
+/// The value an investigator scores for a comparative prey
+/// [`PreyMeasure`]. Widened to `i32` so `base_health − damage` can't
+/// underflow and so skills/health share one comparable type. Higher or
+/// lower is selected by the [`PreyDirection`] in [`Prey::Ranked`].
+///
+/// The *modified* value (Rules Reference p.18 Modifiers, p.12 remaining
+/// health): the base value plus the investigator's always-on constant
+/// modifiers to that stat, floored at zero (RR p.15 — a stat cannot
+/// function below zero). Prey resolves outside any skill test, so only
+/// unconditional (`WhileInPlay`) modifiers apply — see
+/// [`unconditional_constant_stat_modifier`]. `registry` is `None` in
+/// engine-only tests with no card data installed (base values only).
+fn measure_value(
+    state: &GameState,
+    registry: Option<&CardRegistry>,
+    inv: &Investigator,
+    measure: PreyMeasure,
+) -> i32 {
+    let (base, stat) = match measure {
+        PreyMeasure::Skill(kind) => (i32::from(inv.skills.value(kind)), skill_to_stat(kind)),
+        PreyMeasure::RemainingHealth => (
+            i32::from(inv.max_health) - i32::from(inv.damage),
+            Stat::MaxHealth,
+        ),
+    };
+    let modifier = registry.map_or(0, |reg| {
+        i32::from(unconditional_constant_stat_modifier(
+            state, reg, inv.id, stat,
+        ))
+    });
+    (base + modifier).max(0)
+}
+
+/// Map a prey skill measure to its [`Stat`] for the modifier lookup.
+fn skill_to_stat(kind: SkillKind) -> Stat {
+    match kind {
+        SkillKind::Willpower => Stat::Willpower,
+        SkillKind::Intellect => Stat::Intellect,
+        SkillKind::Combat => Stat::Combat,
+        SkillKind::Agility => Stat::Agility,
+    }
+}
+
 /// Narrow `candidates` by `prey`. `Default` treats all candidates as
-/// equal; `HighestStat` keeps those with the maximum value of the
-/// stat. Returns `One` (single best), `Tie` (2+ best — lead decides),
-/// or `None` (empty candidate set). Caller supplies the candidate set
-/// (equidistant-nearest investigators for movement; co-located
-/// investigators for engagement).
+/// equal; `Ranked` keeps those with the most extreme measure value (max
+/// for `Highest`, min for `Lowest`). Returns `One` (single best), `Tie`
+/// (2+ best — lead decides), or `None` (empty candidate set). Caller
+/// supplies the candidate set (equidistant-nearest investigators for
+/// movement; co-located investigators for engagement).
 pub(super) fn resolve_prey(
     state: &GameState,
     prey: Prey,
@@ -36,36 +84,36 @@ pub(super) fn resolve_prey(
     if candidates.is_empty() {
         return PreyResolution::None;
     }
+    let registry = card_registry::current();
     let best: Vec<InvestigatorId> = match prey {
         Prey::Default => candidates.to_vec(),
-        Prey::HighestStat(stat) => {
-            let skill = cursor::stat_to_skill_kind(stat);
-            let max = candidates
+        Prey::Ranked { direction, measure } => {
+            let scored: Vec<(InvestigatorId, i32)> = candidates
                 .iter()
                 .filter_map(|id| {
                     state
                         .investigators
                         .get(id)
-                        .map(|inv| inv.skills.value(skill))
+                        .map(|inv| (*id, measure_value(state, registry, inv, measure)))
                 })
-                .max();
-            match max {
-                Some(m) => candidates
+                .collect();
+            let extreme = match direction {
+                PreyDirection::Highest => scored.iter().map(|(_, v)| *v).max(),
+                PreyDirection::Lowest => scored.iter().map(|(_, v)| *v).min(),
+            };
+            match extreme {
+                Some(target) => scored
                     .iter()
-                    .copied()
-                    .filter(|id| {
-                        state
-                            .investigators
-                            .get(id)
-                            .is_some_and(|inv| inv.skills.value(skill) == m)
-                    })
+                    .filter(|(_, v)| *v == target)
+                    .map(|(id, _)| *id)
                     .collect(),
                 None => Vec::new(),
             }
         }
-        // `Prey` is #[non_exhaustive]; new variants (Lowest, Most Clues, etc.)
-        // must be wired here when their first card consumer lands — an
-        // unrecognised variant at runtime is a card-impl bug.
+        // `Prey` is #[non_exhaustive]; new *comparative* measures are
+        // added to `PreyMeasure` (compile-forced — exhaustive), so this
+        // arm only guards genuinely new non-`Ranked` shapes (e.g.
+        // "Bearer only"), which must be wired here when they land.
         _ => unreachable!(
             "resolve_prey: unrecognised Prey variant {prey:?} — \
              card-impl bug or new variant needs engine wiring"
@@ -499,7 +547,10 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Highest,
+                measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+            },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
@@ -517,10 +568,178 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat),
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Highest,
+                measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+            },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
+    }
+
+    #[test]
+    fn resolve_prey_lowest_remaining_health_picks_min() {
+        // inv1: max_health 5, damage 4 → remaining 1.
+        // inv2: max_health 5, damage 0 → remaining 5. inv1 is lowest.
+        let mut hurt = test_investigator(1);
+        hurt.max_health = 5;
+        hurt.damage = 4;
+        let mut healthy = test_investigator(2);
+        healthy.max_health = 5;
+        healthy.damage = 0;
+        let state = GameStateBuilder::new()
+            .with_investigator(hurt)
+            .with_investigator(healthy)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Lowest,
+                measure: crate::card_data::PreyMeasure::RemainingHealth,
+            },
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
+    }
+
+    #[test]
+    fn resolve_prey_lowest_remaining_health_tie_is_tie() {
+        // inv1: 5 − 2 = 3 remaining. inv2: 4 − 1 = 3 remaining. Tie.
+        let mut a = test_investigator(1);
+        a.max_health = 5;
+        a.damage = 2;
+        let mut b = test_investigator(2);
+        b.max_health = 4;
+        b.damage = 1;
+        let state = GameStateBuilder::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .build();
+        let r = resolve_prey(
+            &state,
+            crate::card_data::Prey::Ranked {
+                direction: crate::card_data::PreyDirection::Lowest,
+                measure: crate::card_data::PreyMeasure::RemainingHealth,
+            },
+            &[InvestigatorId(1), InvestigatorId(2)],
+        );
+        assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
+    }
+}
+
+#[cfg(test)]
+mod measure_value_tests {
+    use super::*;
+    use crate::card_registry::CardRegistry;
+    use crate::dsl::{constant, modify, Ability, ModifierScope};
+    use crate::state::{CardCode, CardInPlay, CardInstanceId};
+    use crate::test_support::{test_investigator, GameStateBuilder};
+
+    fn no_metadata(_: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+        None
+    }
+
+    fn fake_abilities(code: &CardCode) -> Option<Vec<Ability>> {
+        match code.as_str() {
+            "combat+1" => Some(vec![constant(modify(
+                Stat::Combat,
+                1,
+                ModifierScope::WhileInPlay,
+            ))]),
+            "combat-5" => Some(vec![constant(modify(
+                Stat::Combat,
+                -5,
+                ModifierScope::WhileInPlay,
+            ))]),
+            "maxhealth+2" => Some(vec![constant(modify(
+                Stat::MaxHealth,
+                2,
+                ModifierScope::WhileInPlay,
+            ))]),
+            _ => None,
+        }
+    }
+
+    fn fake_registry() -> CardRegistry {
+        CardRegistry {
+            metadata_for: no_metadata,
+            abilities_for: fake_abilities,
+        }
+    }
+
+    /// Build a state holding investigator 1 (the modifier lookup reads
+    /// `state.investigators[inv.id].cards_in_play`, so the investigator
+    /// must be in the state, not merely passed by reference).
+    fn state_with(cards: &[&str], damage: u8) -> GameState {
+        let mut inv = test_investigator(1); // combat 3, max_health 8
+        inv.damage = damage;
+        inv.cards_in_play = cards
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                CardInPlay::enter_play(
+                    CardCode::new(*c),
+                    #[allow(clippy::cast_possible_truncation)]
+                    CardInstanceId(i as u32),
+                )
+            })
+            .collect();
+        GameStateBuilder::new().with_investigator(inv).build()
+    }
+
+    #[test]
+    fn base_value_when_no_registry() {
+        let state = state_with(&[], 0);
+        let inv = &state.investigators[&InvestigatorId(1)];
+        assert_eq!(
+            measure_value(&state, None, inv, PreyMeasure::Skill(SkillKind::Combat)),
+            3
+        );
+    }
+
+    #[test]
+    fn folds_constant_skill_modifier() {
+        let state = state_with(&["combat+1"], 0);
+        let inv = &state.investigators[&InvestigatorId(1)];
+        let reg = fake_registry();
+        assert_eq!(
+            measure_value(
+                &state,
+                Some(&reg),
+                inv,
+                PreyMeasure::Skill(SkillKind::Combat)
+            ),
+            4
+        );
+    }
+
+    #[test]
+    fn folds_max_health_modifier_into_remaining_health() {
+        // max_health 8 − damage 1 + 2 = 9.
+        let state = state_with(&["maxhealth+2"], 1);
+        let inv = &state.investigators[&InvestigatorId(1)];
+        let reg = fake_registry();
+        assert_eq!(
+            measure_value(&state, Some(&reg), inv, PreyMeasure::RemainingHealth),
+            9
+        );
+    }
+
+    #[test]
+    fn clamps_at_zero() {
+        // combat 3 − 5 = −2, floored to 0 (RR p.15).
+        let state = state_with(&["combat-5"], 0);
+        let inv = &state.investigators[&InvestigatorId(1)];
+        let reg = fake_registry();
+        assert_eq!(
+            measure_value(
+                &state,
+                Some(&reg),
+                inv,
+                PreyMeasure::Skill(SkillKind::Combat)
+            ),
+            0
+        );
     }
 }
 
@@ -901,7 +1120,7 @@ mod hunter_resume_tests {
     #[test]
     fn highest_combat_prey_breaks_move_tie_without_prompt() {
         // Fan A(1)-{B(2),C(3)}. inv1 at B combat 5; inv2 at C combat 2.
-        // hunter at A with HighestStat(Combat) prey. resolve_prey picks
+        // hunter at A with Ranked Highest-combat prey. resolve_prey picks
         // inv1 unambiguously -> moves A->B, engages, no prompt.
         let mut loc_a = test_location(1, "A");
         let mut loc_b = test_location(2, "B");
@@ -917,7 +1136,10 @@ mod hunter_resume_tests {
         inv2.skills.combat = 2;
         let mut hunter = test_enemy(1, "Ghoul Priest");
         hunter.hunter = true;
-        hunter.prey = crate::card_data::Prey::HighestStat(crate::dsl::Stat::Combat);
+        hunter.prey = crate::card_data::Prey::Ranked {
+            direction: crate::card_data::PreyDirection::Highest,
+            measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+        };
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Enemy)

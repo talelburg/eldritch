@@ -27,7 +27,7 @@ fn test_setup() -> GameState {
 fn noop_resolution(_: &Resolution, _: &mut GameState, _: &mut Vec<Event>) {}
 
 static TEST_MODULE: ScenarioModule = ScenarioModule {
-    reference_card: "",
+    resolve_symbol: None,
     setup: test_setup,
     apply_resolution: noop_resolution,
 };

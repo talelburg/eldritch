@@ -6,7 +6,10 @@
 
 #![allow(clippy::too_many_lines, clippy::needless_raw_string_hashes)]
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, SkillIcons, Skills, Slot};
+use card_dsl::card_data::{
+    CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,
+    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation,
+};
 
 /// Every card from the pinned snapshot, sorted by code.
 #[must_use]
@@ -826,7 +829,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned()],
             text: Some("<b>Prey</b> - Bearer only.\nHunter.\n[action] Spend 4 resources: <b>Parley.</b> Discard Mob Enforcer.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 0, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01102".to_owned(),
@@ -834,7 +837,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned(), "Silver Twilight".to_owned()],
             text: Some("<b>Prey</b> - Bearer only.\nHunter.\n<b>Forced</b> - After Silver Twilight Acolyte attacks: Place 1 doom on the current agenda.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01103".to_owned(),
@@ -842,7 +845,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Detective".to_owned()],
             text: Some("<b>Prey</b> - Bearer only.\nHunter.\nWhile Stubborn Detective is at your location, treat your investigator as if his or her printed text box were blank (except for [[Traits]]).".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(2), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01105".to_owned(),
@@ -938,7 +941,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned(), "Elite".to_owned()],
             text: Some("<b>Prey</b> - Highest [combat].\nHunter. Retaliate.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 4, damage: 2, horror: 2, health: Some(5), victory: Some(2), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::PerInvestigator(5)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Ranked { direction: PreyDirection::Highest, measure: PreyMeasure::Skill(SkillKind::Combat) }, quantity: 1 },
         },
         CardMetadata {
             code: "01117".to_owned(),
@@ -954,7 +957,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: Some("<b>Spawn</b> - Attic.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 1, damage: 1, horror: 2, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 1, damage: 1, horror: 2, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01113".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01119".to_owned(),
@@ -962,7 +965,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: Some("<b>Spawn</b> - Cellar.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 1, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01114".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01121a".to_owned(),
@@ -978,7 +981,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned(), "Elite".to_owned()],
             text: Some("<b>Spawn</b> - Engaged with Prey.\n<b>Prey</b> - Most clues.\nHunter.\nThe Masked Hunter gets +2 health per investigator.\nWhile you are engaged with The Masked Hunter, you cannot discover or spend clues.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(4), victory: Some(2), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01122".to_owned(),
@@ -1106,7 +1109,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Downtown.\n<b>Forced</b> - When \"Wolf-Man\" Drew attacks: Heal 1 damage from him.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01131".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01138".to_owned(),
@@ -1114,7 +1117,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Graveyard.\n[action] Choose and discard 4 cards from your hand: <b>Parley.</b> Add Herman Collins to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 1, horror: 1, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01133".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01139".to_owned(),
@@ -1122,7 +1125,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Miskatonic University.\n[action] Spend 2 clues: <b>Parley.</b> Add Peter Warren to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(3), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01129".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01140".to_owned(),
@@ -1130,7 +1133,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Northside.\n[action] Spend 5 resources: <b>Parley.</b> Add Victoria Devereux to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(3), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01134".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01141".to_owned(),
@@ -1138,7 +1141,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - St. Mary's Hospital.\n<b>Forced</b> - After Ruth Turner is evaded: Add her to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 5, damage: 1, horror: 0, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 2, evade: 5, damage: 1, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01143".to_owned(),
@@ -1258,7 +1261,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ancient One".to_owned(), "Elite".to_owned()],
             text: Some("Hunter. Massive.\nUmôrdhoth gets +4 health per investigator.\n<b>Forced</b> - At the end of each investigator's turn: Ready Umôrdhoth.\n[action] If you control Lita Chantler: \"It's only after her!\" You throw Lita to Umôrdhoth in order to spare your lives. <b>(→R3)</b>".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 5, evade: 6, damage: 3, horror: 3, health: Some(6), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 5, evade: 6, damage: 3, horror: 3, health: Some(HealthValue::Fixed(6)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01158".to_owned(),
@@ -1274,7 +1277,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned()],
             text: Some("Hunter.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 1, evade: 3, damage: 1, horror: 0, health: Some(1), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 1, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "01160".to_owned(),
@@ -1282,7 +1285,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(2), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "01161".to_owned(),
@@ -1290,7 +1293,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: Some("<b>Prey</b> - Lowest remaining health.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Ranked { direction: PreyDirection::Lowest, measure: PreyMeasure::RemainingHealth }, quantity: 1 },
         },
         CardMetadata {
             code: "01162".to_owned(),
@@ -1354,7 +1357,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Any empty location.\n<b>Forced</b> - After Acolyte enters play: Place 1 doom on it.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(1), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "01170".to_owned(),
@@ -1362,7 +1365,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Any empty location.\nRetaliate.\n<b>Forced</b> - At the end of the mythos phase: Place 1 doom on Wizard of the Order.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 0, health: Some(2), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01171".to_owned(),
@@ -1378,7 +1381,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Nightgaunt".to_owned()],
             text: Some("Hunter.\nWhile attempting to evade Hunting Nightgaunt, double the negative modifier of each revealed chaos token.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 1, damage: 1, horror: 1, health: Some(4), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 3, evade: 1, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "01173".to_owned(),
@@ -1402,7 +1405,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Byakhee".to_owned()],
             text: Some("<b>Prey</b> - Lowest remaining sanity.\nHunter.\nWhile engaged with an investigator with remaining sanity 4 or fewer, Screeching Byakhee gets +1 fight and +1 evade.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 2, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 2, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "01176".to_owned(),
@@ -1418,7 +1421,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Yithian".to_owned()],
             text: Some("<b>Prey</b> - Fewest cards in hand.\n<b>Forced</b> - When Yithian Observer attacks you: Discard 1 card at random from your hand. If you cannot, Yithian Observer deals +1 damage and +1 horror for this attack.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 1, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "01178".to_owned(),
@@ -1434,7 +1437,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Dark Young".to_owned()],
             text: Some("<b>Prey</b> - Lowest [agility].\n<b>Forced</b> - At the end of the round: Heal 2 damage from Relentless Dark Young.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(5), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01180".to_owned(),
@@ -1442,7 +1445,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned()],
             text: Some("Hunter. Retaliate.\n<b>Forced</b> - When Goat Spawn is defeated: Each investigator at this location takes 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "01181".to_owned(),
@@ -1450,7 +1453,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Deep One".to_owned()],
             text: Some("<b>Prey</b> - Lowest [combat].\nHunter.\n<b>Forced</b> - After Young Deep One engages you: Take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "01182".to_owned(),
@@ -1914,7 +1917,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned(), "Elite".to_owned()],
             text: Some("Massive.\nThe Experiment gets +3 [per_investigator] health.\n<b>Forced</b> - When the enemy phase begins: Ready The Experiment.\n<b>Objective</b> - If The Experiment is defeated, advance to act 3b.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(7), victory: Some(2), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(HealthValue::Fixed(7)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02059".to_owned(),
@@ -2066,7 +2069,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned(), "Elite".to_owned()],
             text: Some("<b>Prey</b> - Highest [intellect].\nHunter.\n<b>Forced</b> - After an investigator at Clover Club Pit Boss's location gains any number of clues: Clover Club Pit Boss readies, engages that investigator, and makes an immediate attack.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 2, horror: 0, health: Some(4), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 2, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Ranked { direction: PreyDirection::Highest, measure: PreyMeasure::Skill(SkillKind::Intellect) }, quantity: 1 },
         },
         CardMetadata {
             code: "02079".to_owned(),
@@ -2130,7 +2133,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Spawn</b> - Location with the most clues.\nRetaliate.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(2), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "02087".to_owned(),
@@ -2138,7 +2141,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Sorcerer".to_owned()],
             text: Some("<b>Prey</b> - Least cards in hand.\nHunter.\n<b>Forced</b> - When the engaged investigator draws a [[Hex]] or [[Pact]] card: Wizard of Yog-Sothoth attacks that investigator.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 2, health: Some(3), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02088".to_owned(),
@@ -2162,7 +2165,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned()],
             text: Some("Aloof. Hunter.\nEach investigator at Whippoorwill's location gets -1 [willpower], -1 [intellect], -1 [combat], and -1 [agility].".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 4, damage: 0, horror: 1, health: Some(1), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 2, evade: 4, damage: 0, horror: 1, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "02091".to_owned(),
@@ -2194,7 +2197,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned(), "Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Prey</b> - Lowest [intellect].\nHunter.\nWhile Avian Thrall is being attacked using a [[Ranged]], [[Firearm]], or [[Spell]] asset, it gets -3 fight.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 5, evade: 3, damage: 1, horror: 1, health: Some(4), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 5, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02095".to_owned(),
@@ -2202,7 +2205,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned(), "Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Spawn</b> - Farthest location from you.\n<b>Prey</b> - Lowest [agility].\nHunter. Retaliate.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 4, damage: 1, horror: 1, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 4, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02096".to_owned(),
@@ -2218,7 +2221,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned(), "Syndicate".to_owned()],
             text: Some("While O'Bannion's Thug is engaged with you, you cannot gain resources.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(2), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02098".to_owned(),
@@ -2226,7 +2229,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned(), "Syndicate".to_owned()],
             text: Some("Retaliate.\n<b>Forced</b> - After Mobster attacks you: Lose 1 resource.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 0, health: Some(2), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02099".to_owned(),
@@ -2266,7 +2269,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Prey</b> - Lowest [willpower].\nHunter.\n<b>Forced</b> - After you perform an attack against the Conglomeration of Spheres using a [[Melee]] card: Discard that card.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 1, evade: 4, damage: 1, horror: 1, health: Some(6), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 1, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(6)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02104".to_owned(),
@@ -2274,7 +2277,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Prey</b> - Lowest [agility].\nHunter.\n<b>Forced</b> - When Servant of the Lurker attacks you: Discard the top 2 cards of your deck.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(5), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02105".to_owned(),
@@ -2562,7 +2565,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Elite".to_owned()],
             text: Some("Hunter. Retaliate.\n<b>Forced</b> - At the start of the enemy phase: Reveal a random token from the chaos bag. If the revealed token has a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol, ready Hunting Horror.\n<b>Forced</b> - When Hunting Horror leaves play, place it in the void.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02142".to_owned(),
@@ -2882,7 +2885,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("Hunter.\nWhile you are engaged with Grappling Horror, you cannot move.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 1, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02183".to_owned(),
@@ -2890,7 +2893,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Spawn</b> - The location to your right (or your location if there is no location to your right).\nEmergent Monstrosity enters play exhausted.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 2, horror: 2, health: Some(5), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02184".to_owned(),
@@ -3146,7 +3149,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned(), "Elite".to_owned()],
             text: Some("Massive.\nSilas Bishop cannot make attacks of opportunity.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 7, damage: 2, horror: 2, health: Some(6), victory: Some(2), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 7, damage: 2, horror: 2, health: Some(HealthValue::PerInvestigator(6)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02217".to_owned(),
@@ -3210,7 +3213,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned()],
             text: Some("<b>Spawn</b> - Any empty location.\nRetaliate.\n[reaction] After you defeat Servant of Many Mouths: Discover 1 clue at any location.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 1, damage: 2, horror: 0, health: Some(2), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 3, evade: 1, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "02225".to_owned(),
@@ -3450,7 +3453,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("Massive.\nBrood of Yog-Sothoth gets +1 [per_investigator] health and cannot be damaged or attacked except using the ability on Esoteric Formula.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Enemy { fight: 6, evade: 3, damage: 2, horror: 2, health: Some(1), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 5 },
+            kind: CardKind::Enemy { fight: 6, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(1)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 5 },
         },
         CardMetadata {
             code: "02256".to_owned(),
@@ -3746,7 +3749,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Sorcerer".to_owned(), "Elite".to_owned()],
             text: Some("Retaliate.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Enemy { fight: 5, evade: 5, damage: 1, horror: 1, health: Some(3), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 5, evade: 5, damage: 1, horror: 1, health: Some(HealthValue::PerInvestigator(3)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02294".to_owned(),
@@ -3754,7 +3757,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Sorcerer".to_owned()],
             text: Some("<b>Spawn</b> - Base of the Hill.\n<b>Forced</b> - At the end of the enemy phase, Devotee of the Key moves once toward Sentinel Peak. If Devotee of the Key is already at Sentinel Peak, discard it and add 2 doom to the current agenda, instead.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Specific("02282".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02295".to_owned(),
@@ -3762,7 +3765,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Shoggoth".to_owned()],
             text: Some("<b>Spawn</b> - Nearest [[Altered]] location.\n<b>Forced</b> - When Crazed Shoggoth attacks: If this attack would defeat an investigator, that investigator is instead killed.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 2, health: Some(6), victory: Some(1), spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::Fixed(6)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02296".to_owned(),
@@ -3978,7 +3981,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ancient One".to_owned(), "Elite".to_owned()],
             text: Some("Massive. Hunter. Retaliate.\nYog-Sothoth gets +6 [per_investigator] health.\nYog-Sothoth cannot be evaded and cannot make attacks of opportunity.\n[reaction] When Yog-Sothoth attacks you: Instead of taking up to X horror, you may discard the top X cards from your deck. Then, if you have no cards in your deck, you are driven insane.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 0, damage: 1, horror: 5, health: Some(4), victory: None, spawn: None, surge: false, peril: false, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 0, damage: 1, horror: 5, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02324".to_owned(),
@@ -4026,7 +4029,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Yithian".to_owned()],
             text: Some("<b>Spawn</b> - Any [[Extradimensional]] location.\nHunter.\n<b>Forced</b> - When Interstellar Traveler enters a location: Flip 1 clue on that location to its doom side and place it on Interstellar Traveler, or place 1 doom on Interstellar Traveler if there are no clues on that location.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 2, health: Some(3), victory: None, spawn: None, surge: false, peril: false, quantity: 3 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "02330".to_owned(),
@@ -4034,7 +4037,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Yithian".to_owned()],
             text: Some("<b>Spawn</b> - Another Dimension.\nRetaliate.\n<b>Forced</b> - When Yithian Starseeker attacks an investigator with more than 10 cards in his or her discard pile: Place 1 doom on Yithian Starseeker.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Enemy { fight: 3, evade: 5, damage: 2, horror: 1, health: Some(4), victory: None, spawn: None, surge: false, peril: false, quantity: 2 },
+            kind: CardKind::Enemy { fight: 3, evade: 5, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Specific("02320".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02331".to_owned(),

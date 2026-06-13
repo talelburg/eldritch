@@ -1,6 +1,6 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
-use crate::card_data::{CardKind, CardMetadata, CardType, Spawn, SpawnLocation};
+use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
@@ -250,10 +250,36 @@ fn spawn_enemy(
 ) -> EngineOutcome {
     // spawn_enemy is only reached for Enemy cards; pull the enemy-specific
     // stats out of the kind.
-    let CardKind::Enemy { spawn, health, .. } = &metadata.kind else {
+    let CardKind::Enemy {
+        spawn,
+        health,
+        fight,
+        evade,
+        damage,
+        horror,
+        hunter,
+        retaliate,
+        prey,
+        victory,
+        ..
+    } = &metadata.kind
+    else {
         return EngineOutcome::Rejected {
             reason: format!("spawn_enemy: card {code} is not an enemy").into(),
         };
+    };
+    let prey = *prey;
+
+    // Resolve health. PerInvestigator scales by the number of investigators
+    // in the game (Rules Reference p.12); matches the per-investigator clue
+    // path in reveal.rs (its future started-count caveat applies here too).
+    let max_health = match health {
+        Some(HealthValue::Fixed(n)) => *n,
+        Some(HealthValue::PerInvestigator(n)) => {
+            let count = u8::try_from(cx.state.investigators.len()).unwrap_or(u8::MAX);
+            n.saturating_mul(count)
+        }
+        None => 1,
     };
 
     // 1. Resolve spawn location (validate-first).
@@ -294,9 +320,9 @@ fn spawn_enemy(
     };
 
     // 2. Resolve engagement-on-spawn (validate-first). The co-located
-    //    set is narrowed by the enemy's prey — every spawn uses
-    //    `Prey::Default` (Task 2), so a 2+ set always ties and suspends
-    //    for the lead investigator's `PickInvestigator` (option A).
+    //    set is narrowed by the enemy's `prey`; with `Prey::Default` a 2+
+    //    set ties and suspends for the lead investigator's
+    //    `PickInvestigator` (option A).
     let candidates = super::cursor::active_investigators_at(cx.state, location_id);
 
     // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
@@ -310,22 +336,24 @@ fn spawn_enemy(
         id: enemy_id,
         name: metadata.name.clone(),
         code: CardCode::new(metadata.code.clone()),
-        fight: 1,
-        evade: 1,
-        max_health: health.unwrap_or(1),
+        fight: i8::try_from(*fight).unwrap_or(i8::MAX),
+        evade: i8::try_from(*evade).unwrap_or(i8::MAX),
+        max_health,
         damage: 0,
-        attack_damage: 0,
-        attack_horror: 0,
+        attack_damage: *damage,
+        attack_horror: *horror,
         current_location: Some(location_id),
         exhausted: false,
         traits: metadata.traits.clone(),
         engaged_with: None,
-        hunter: false,
-        prey: crate::card_data::Prey::Default,
+        hunter: *hunter,
+        prey,
+        retaliate: *retaliate,
+        victory: *victory,
     };
     cx.state.enemies.insert(enemy_id, enemy);
 
-    match super::hunters::resolve_prey(cx.state, crate::card_data::Prey::Default, &candidates) {
+    match super::hunters::resolve_prey(cx.state, prey, &candidates) {
         super::hunters::PreyResolution::None => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
@@ -955,9 +983,36 @@ mod spawn_enemy_tests {
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_sequence, assert_no_event};
-    use card_dsl::card_data::{CardKind, CardMetadata, Spawn, SpawnLocation};
+    use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
+        enemy_metadata(
+            spawn,
+            HealthValue::Fixed(1),
+            false,
+            false,
+            Prey::Default,
+            1,
+            1,
+            0,
+            0,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn enemy_metadata(
+        spawn: Option<Spawn>,
+        health: HealthValue,
+        hunter: bool,
+        retaliate: bool,
+        prey: Prey,
+        fight: u8,
+        evade: u8,
+        damage: u8,
+        horror: u8,
+        victory: Option<u8>,
+    ) -> CardMetadata {
         CardMetadata {
             code: "_synth_enemy".into(),
             name: "Synth Enemy".into(),
@@ -965,18 +1020,156 @@ mod spawn_enemy_tests {
             traits: Vec::new(),
             pack_code: "_synth".into(),
             kind: CardKind::Enemy {
-                fight: 1,
-                evade: 1,
-                damage: 0,
-                horror: 0,
-                health: Some(1),
-                victory: None,
+                fight,
+                evade,
+                damage,
+                horror,
+                health: Some(health),
+                victory,
                 spawn,
                 surge: false,
                 peril: false,
+                hunter,
+                retaliate,
+                prey,
                 quantity: 1,
             },
         }
+    }
+
+    #[test]
+    fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
+        let mut loc = test_location(10, "Loc");
+        loc.code = CardCode("_l".into());
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+
+        let metadata = enemy_metadata(
+            None,
+            HealthValue::Fixed(5),
+            true,
+            true,
+            Prey::Default,
+            4,
+            4,
+            2,
+            2,
+            None,
+        );
+        let mut events = Vec::new();
+        spawn_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        let enemy = state.enemies.values().next().expect("enemy spawned");
+        assert_eq!(enemy.fight, 4);
+        assert_eq!(enemy.evade, 4);
+        assert_eq!(enemy.attack_damage, 2);
+        assert_eq!(enemy.attack_horror, 2);
+        assert_eq!(enemy.max_health, 5);
+        assert!(enemy.hunter);
+        assert!(enemy.retaliate);
+    }
+
+    #[test]
+    fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
+        let mut loc = test_location(10, "Loc");
+        loc.code = CardCode("_l".into());
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(loc)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .build();
+        for id in [1, 2] {
+            state
+                .investigators
+                .get_mut(&InvestigatorId(id))
+                .unwrap()
+                .current_location = Some(LocationId(10));
+        }
+
+        let metadata = enemy_metadata(
+            None,
+            HealthValue::PerInvestigator(5),
+            false,
+            false,
+            Prey::Default,
+            4,
+            4,
+            2,
+            2,
+            None,
+        );
+        let mut events = Vec::new();
+        spawn_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        let enemy = state.enemies.values().next().expect("enemy spawned");
+        assert_eq!(enemy.max_health, 10, "5 health × 2 investigators");
+    }
+
+    #[test]
+    fn spawn_enemy_reads_victory_from_metadata() {
+        let mut loc = test_location(10, "Loc");
+        loc.code = CardCode("_l".into());
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+
+        let metadata = enemy_metadata(
+            None,
+            HealthValue::Fixed(5),
+            false,
+            false,
+            Prey::Default,
+            4,
+            4,
+            2,
+            2,
+            Some(2),
+        );
+        let mut events = Vec::new();
+        spawn_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        let enemy = state.enemies.values().next().expect("enemy spawned");
+        assert_eq!(enemy.victory, Some(2));
     }
 
     #[test]

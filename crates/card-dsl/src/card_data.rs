@@ -14,7 +14,6 @@
 //! looked up through the registry too but lives in
 //! [`crate::dsl::Ability`].
 
-use crate::dsl::Stat;
 use serde::{Deserialize, Serialize};
 
 /// Investigator class. Translation of upstream's `faction_code` field
@@ -166,13 +165,14 @@ pub struct Spawn {
 /// An enemy's prey instruction (Rules Reference p.17): which
 /// investigator it pursues / engages when it has a choice.
 ///
-/// Phase-4 ships `Default` + `HighestStat`. `Default` covers "no prey
-/// instruction" and "Prey – nearest" — among equidistant / co-located
-/// investigators all are equal, so the lead investigator breaks the tie
-/// (p.12 / p.17). `HighestStat(Stat::Combat)` is Ghoul Priest's
-/// `Prey – Highest [combat]`. Other printed variants (`Lowest`,
-/// `Bearer only`, `Most clues`, …) land with their first card consumer;
-/// `#[non_exhaustive]` keeps that additive.
+/// `Default` covers "no prey instruction" and "Prey – nearest" — among
+/// equidistant / co-located investigators all are equal, so the lead
+/// investigator breaks the tie (p.12 / p.17). [`Ranked`](Self::Ranked)
+/// covers every *comparative* prey line as a `{ direction, measure }`
+/// pair: Ghoul Priest's `Highest [combat]` (`Highest` +
+/// `Skill(Combat)`) and Ravenous Ghoul's "Lowest remaining health"
+/// (`Lowest` + `RemainingHealth`). `#[non_exhaustive]` leaves room for
+/// genuinely non-comparative future shapes (e.g. "Bearer only").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Prey {
@@ -180,9 +180,41 @@ pub enum Prey {
     /// lead investigator breaks ties.
     #[default]
     Default,
-    /// Pursue / engage the investigator with the highest value of the
-    /// given stat; ties fall to the lead investigator.
-    HighestStat(Stat),
+    /// Pursue / engage the investigator with the highest or lowest value
+    /// of `measure`; ties fall to the lead investigator.
+    Ranked {
+        /// Whether the highest or lowest measure value is preferred.
+        direction: PreyDirection,
+        /// The quantity investigators are ranked by.
+        measure: PreyMeasure,
+    },
+}
+
+/// Whether a [`Prey::Ranked`] instruction prefers the highest or lowest
+/// value of its [`PreyMeasure`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PreyDirection {
+    /// Prefer the investigator with the greatest measure value.
+    Highest,
+    /// Prefer the investigator with the least measure value.
+    Lowest,
+}
+
+/// The quantity a [`Prey::Ranked`] instruction ranks investigators by.
+///
+/// Exhaustive (unlike [`Prey`]): adding a measure must force the engine's
+/// `resolve_prey` to wire it, so the compiler flags the site. New printed
+/// measures land here with their first card consumer — `RemainingSanity`
+/// (Lowest remaining sanity), `Clues` (Most clues), `CardsInHand` (Fewest
+/// cards in hand), ….
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PreyMeasure {
+    /// One of the four skills (Rules Reference p.17). Ghoul Priest's
+    /// `Highest [combat]` is `Skill(SkillKind::Combat)`.
+    Skill(SkillKind),
+    /// Remaining health = base health − damage (Rules Reference p.12).
+    /// Ravenous Ghoul's "Lowest remaining health".
+    RemainingHealth,
 }
 
 /// Static metadata for one card as printed: an identity core shared by
@@ -219,6 +251,20 @@ pub enum ClueValue {
     PerInvestigator(u8),
     /// Exactly `value`, regardless of investigator count.
     Fixed(u8),
+}
+
+/// An enemy's printed health. Mirrors [`ClueValue`]: `PerInvestigator(n)`
+/// scales by the number of investigators in the game (Rules Reference
+/// p.12); `Fixed(n)` is a flat value. Distinguishes `ArkhamDB`'s
+/// `health_per_investigator` (absent/false → fixed; `true` →
+/// per-investigator). Note the polarity is the opposite of [`ClueValue`],
+/// whose clues default to per-investigator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HealthValue {
+    /// Exactly `value`, regardless of investigator count.
+    Fixed(u8),
+    /// `value × #investigators` at spawn time.
+    PerInvestigator(u8),
 }
 
 /// Per-card-type data. The discriminant mirrors [`CardType`] — read it
@@ -299,8 +345,8 @@ pub enum CardKind {
         damage: u8,
         /// Horror dealt to an investigator on attack.
         horror: u8,
-        /// Maximum health.
-        health: Option<u8>,
+        /// Maximum health (per-investigator or fixed).
+        health: Option<HealthValue>,
         /// Victory points awarded when defeated (in the victory display).
         victory: Option<u8>,
         /// Spawn rule (`None` = default: engaged with the drawing
@@ -310,6 +356,13 @@ pub enum CardKind {
         surge: bool,
         /// Peril keyword (Rules Reference p.18).
         peril: bool,
+        /// Hunter keyword (Rules Reference p.12).
+        hunter: bool,
+        /// Retaliate keyword (Rules Reference p.18).
+        retaliate: bool,
+        /// Prey instruction (Rules Reference p.17); `Prey::Default` when
+        /// the card prints no prey line.
+        prey: Prey,
         /// Copies of this card in the encounter deck (build multiplicity).
         quantity: u8,
     },
@@ -582,8 +635,22 @@ mod prey_tests {
     }
 
     #[test]
-    fn prey_serde_roundtrip_highest_stat() {
-        let original = Prey::HighestStat(Stat::Combat);
+    fn prey_serde_roundtrip_ranked_skill() {
+        let original = Prey::Ranked {
+            direction: PreyDirection::Highest,
+            measure: PreyMeasure::Skill(SkillKind::Combat),
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: Prey = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn prey_serde_roundtrip_ranked_remaining_health() {
+        let original = Prey::Ranked {
+            direction: PreyDirection::Lowest,
+            measure: PreyMeasure::RemainingHealth,
+        };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: Prey = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
@@ -627,6 +694,17 @@ mod spawn_tests {
     }
 
     #[test]
+    fn health_value_serde_roundtrip() {
+        for hv in [HealthValue::Fixed(4), HealthValue::PerInvestigator(5)] {
+            let json = serde_json::to_string(&hv).expect("serialize");
+            assert_eq!(
+                serde_json::from_str::<HealthValue>(&json).expect("deserialize"),
+                hv
+            );
+        }
+    }
+
+    #[test]
     fn card_metadata_serde_roundtrip_preserves_spawn_specific() {
         let original = CardMetadata {
             code: "_synth_enemy".into(),
@@ -639,13 +717,16 @@ mod spawn_tests {
                 evade: 2,
                 damage: 1,
                 horror: 1,
-                health: Some(1),
+                health: Some(HealthValue::Fixed(1)),
                 victory: None,
                 spawn: Some(Spawn {
                     location: SpawnLocation::Specific("_synth_loc".into()),
                 }),
                 surge: false,
                 peril: false,
+                hunter: false,
+                retaliate: false,
+                prey: Prey::Default,
                 quantity: 1,
             },
         };

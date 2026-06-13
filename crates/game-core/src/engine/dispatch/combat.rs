@@ -26,11 +26,22 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
     });
     if new_damage >= enemy.max_health {
         let defeated_code = enemy.code.clone(); // capture before the enemy is removed
+        let defeated_victory = enemy.victory; // ditto
         cx.events.push(Event::EnemyDefeated {
             enemy: enemy_id,
             by,
         });
         cx.state.enemies.remove(&enemy_id);
+        // RR p.21: a defeated enemy with a Victory value enters the victory
+        // display. Captured here (not scanned at scenario resolution like
+        // victory locations) because the enemy is removed above.
+        if let Some(victory) = defeated_victory.filter(|v| *v > 0) {
+            cx.state.victory_display.push(defeated_code.clone());
+            cx.events.push(Event::EnteredVictoryDisplay {
+                code: defeated_code.clone(),
+                victory,
+            });
+        }
         // Queue the post-defeat reaction window. Emits
         // `Event::WindowOpened` immediately (inside queue_reaction_window);
         // the skill-test driver then suspends at the next step boundary
@@ -308,8 +319,52 @@ pub(super) fn resolve_attacks_for_investigator(cx: &mut Cx, investigator: Invest
 #[cfg(test)]
 mod combat_tests {
     use super::super::Cx;
+    use crate::event::Event;
     use crate::state::{EnemyId, InvestigatorId};
     use crate::test_support::{test_enemy, GameStateBuilder};
+    use crate::{assert_event, assert_no_event};
+
+    #[test]
+    fn defeating_victory_enemy_places_it_in_the_victory_display() {
+        let eid = EnemyId(1);
+        let mut enemy = test_enemy(1, "Ghoul Priest");
+        enemy.code = crate::CardCode::new("01116");
+        enemy.max_health = 1;
+        enemy.victory = Some(2);
+        let mut state = GameStateBuilder::new().build();
+        state.enemies.insert(eid, enemy);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        super::damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
+
+        assert_eq!(state.victory_display, vec![crate::CardCode::new("01116")]);
+        assert_event!(
+            events,
+            Event::EnteredVictoryDisplay { code, victory: 2 } if code.as_str() == "01116"
+        );
+    }
+
+    #[test]
+    fn defeating_non_victory_enemy_places_nothing() {
+        let eid = EnemyId(1);
+        let mut enemy = test_enemy(1, "Ghoul");
+        enemy.max_health = 1;
+        enemy.victory = None;
+        let mut state = GameStateBuilder::new().build();
+        state.enemies.insert(eid, enemy);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        super::damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
+
+        assert!(state.victory_display.is_empty());
+        assert_no_event!(events, Event::EnteredVictoryDisplay { .. });
+    }
 
     #[test]
     fn defeating_enemy_without_registry_still_removes_it() {

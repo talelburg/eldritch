@@ -11,8 +11,8 @@ use crate::card_registry;
 use crate::dsl::{discover_clue, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, FinishContinuation, GameState, InFlightSkillTest, InvestigatorId,
-    SkillKind, SkillTestFollowUp, Status, TokenResolution, Zone,
+    resolve_token, CardCode, ChaosToken, FinishContinuation, GameState, InFlightSkillTest,
+    InvestigatorId, SkillKind, SkillTestFollowUp, Status, TokenResolution, Zone,
 };
 
 use super::super::evaluator::{
@@ -250,6 +250,14 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                     .in_flight_skill_test
                     .as_mut()
                     .expect("in_flight_skill_test must persist across driver steps")
+                    .continuation = FinishContinuation::PostRetaliate { succeeded };
+            }
+            FinishContinuation::PostRetaliate { succeeded } => {
+                fire_retaliate_if_any(cx, investigator, succeeded);
+                cx.state
+                    .in_flight_skill_test
+                    .as_mut()
+                    .expect("in_flight_skill_test must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
             FinishContinuation::PostOnResolution { succeeded: _ } => {
@@ -390,7 +398,21 @@ fn resolve_chaos_token_and_emit(
 ) -> bool {
     let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
     let token = cx.state.chaos_bag.tokens[token_idx];
-    let resolution = resolve_token(token, &cx.state.token_modifiers);
+
+    // Symbol tokens may route to the active scenario's reference-card
+    // effects (modifier + deferred side effects). Numeric/AutoFail/
+    // ElderSign never do; nor do scenarios without a hook (static path).
+    let symbol_outcome = match token {
+        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
+            crate::scenario::resolve_symbol_token(cx.state, token, investigator)
+        }
+        _ => None,
+    };
+
+    let resolution = match &symbol_outcome {
+        Some(outcome) => TokenResolution::Modifier(outcome.modifier),
+        None => resolve_token(token, &cx.state.token_modifiers),
+    };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
 
@@ -417,6 +439,12 @@ fn resolve_chaos_token_and_emit(
             by,
         });
     }
+
+    // Symbol side effects resolve after success/failure is known.
+    if let Some(outcome) = symbol_outcome {
+        apply_symbol_outcome(cx, investigator, &outcome, succeeded);
+    }
+
     succeeded
 }
 
@@ -508,6 +536,46 @@ fn apply_skill_test_follow_up(
             });
             cx.events.push(Event::EnemyExhausted { enemy });
         }
+    }
+}
+
+/// Fire a Retaliate attack if the just-resolved test was a *failed Fight*
+/// against a ready enemy with the retaliate keyword.
+///
+/// Rules Reference p.18: *"Each time an investigator fails a skill test
+/// while attacking a ready enemy with the retaliate keyword, after
+/// applying all results for that skill test, that enemy performs an
+/// attack against the attacking investigator. An enemy does not exhaust
+/// after performing a retaliate attack."*
+///
+/// Runs at the `PostRetaliate` step — after `fire_on_skill_test_resolution`
+/// (the rest of ST.7) and before the `PostOnResolution` teardown (ST.8) —
+/// matching "after applying all results." The attack routes through
+/// [`super::combat::enemy_attack`], which does not exhaust the attacker,
+/// satisfying the no-exhaust clause for free.
+///
+/// No-op unless every condition holds: the test failed; its follow-up was
+/// `Fight`; the enemy is still in play, ready (`!exhausted`), and has
+/// `retaliate`. A missing enemy is skipped quietly — a failed fight deals
+/// no damage, so the target can't have been defeated mid-test; this only
+/// guards against future enemy-removing commit effects. This step is also
+/// the future home of the "after an enemy attacks" reaction window (Guard
+/// Dog C5b, Roland's reaction).
+fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: bool) {
+    if succeeded {
+        return;
+    }
+    let follow_up = cx.state.in_flight_skill_test.as_ref().map(|t| t.follow_up);
+    let Some(SkillTestFollowUp::Fight { enemy }) = follow_up else {
+        return;
+    };
+    let retaliates = cx
+        .state
+        .enemies
+        .get(&enemy)
+        .is_some_and(|e| e.retaliate && !e.exhausted);
+    if retaliates {
+        super::combat::enemy_attack(cx, enemy, investigator);
     }
 }
 
@@ -622,4 +690,93 @@ pub(super) fn peril_check(
     //   (a) play cards, (b) trigger abilities, or (c) commit to the
     //   drawing investigator's skill tests until this card's
     //   resolution completes.
+}
+
+/// Apply a resolved symbol token's side effects to the testing
+/// investigator: `immediate` effects always, `on_fail` effects only when
+/// the test failed. Routes through the same elimination paths as
+/// `Effect::DealDamage` / `Effect::DealHorror`, so defeat handling and
+/// the `DamageTaken` / `HorrorTaken` events are reused.
+fn apply_symbol_outcome(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    outcome: &crate::scenario::SymbolOutcome,
+    succeeded: bool,
+) {
+    use crate::scenario::TokenEffect;
+    let mut effects: Vec<TokenEffect> = outcome.immediate.clone();
+    if !succeeded {
+        effects.extend(outcome.on_fail.iter().copied());
+    }
+    for effect in effects {
+        match effect {
+            TokenEffect::Damage(n) => {
+                crate::engine::dispatch::elimination::take_damage(cx, investigator, n);
+            }
+            TokenEffect::Horror(n) => {
+                crate::engine::dispatch::elimination::take_horror(cx, investigator, n);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::assert_event;
+    use crate::assert_no_event;
+    use crate::event::Event;
+    use crate::scenario::{SymbolOutcome, TokenEffect};
+    use crate::test_support::{test_investigator, GameStateBuilder};
+
+    #[test]
+    fn apply_symbol_outcome_runs_immediate_always_and_on_fail_only_on_failure() {
+        let inv = InvestigatorId(1);
+
+        let run = |succeeded: bool, outcome: SymbolOutcome| {
+            let mut state = GameStateBuilder::new()
+                .with_investigator(test_investigator(1))
+                .build();
+            let mut events = Vec::new();
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            apply_symbol_outcome(&mut cx, inv, &outcome, succeeded);
+            events
+        };
+
+        // Case 1: immediate Damage(1), test succeeded → DamageTaken present.
+        let ev = run(
+            true,
+            SymbolOutcome {
+                modifier: 0,
+                immediate: vec![TokenEffect::Damage(1)],
+                on_fail: vec![],
+            },
+        );
+        assert_event!(ev, Event::DamageTaken { investigator, amount: 1 } if *investigator == inv);
+
+        // Case 2: on_fail Horror(1), test succeeded → HorrorTaken absent.
+        let ev = run(
+            true,
+            SymbolOutcome {
+                modifier: 0,
+                immediate: vec![],
+                on_fail: vec![TokenEffect::Horror(1)],
+            },
+        );
+        assert_no_event!(ev, Event::HorrorTaken { .. });
+
+        // Case 3: on_fail Horror(1), test failed → HorrorTaken present.
+        let ev = run(
+            false,
+            SymbolOutcome {
+                modifier: 0,
+                immediate: vec![],
+                on_fail: vec![TokenEffect::Horror(1)],
+            },
+        );
+        assert_event!(ev, Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv);
+    }
 }
