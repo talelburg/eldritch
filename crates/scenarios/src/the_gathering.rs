@@ -18,10 +18,10 @@
 
 use game_core::card_data::CardKind;
 use game_core::event::Event;
-use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
-use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, TokenModifiers,
+use game_core::scenario::{
+    Resolution, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
 };
+use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 
 /// Read an agenda's printed doom threshold from the corpus.
 fn agenda_doom(code: &str) -> u8 {
@@ -68,26 +68,57 @@ fn standard_chaos_bag() -> ChaosBag {
     ])
 }
 
+/// Number of Ghoul-trait enemies at the testing investigator's location.
+fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
+    let Some(loc) = cx.investigator_location() else {
+        return 0;
+    };
+    let n = cx
+        .state()
+        .enemies
+        .values()
+        .filter(|e| e.current_location == Some(loc) && e.traits.iter().any(|t| t == "Ghoul"))
+        .count();
+    u8::try_from(n).unwrap_or(u8::MAX)
+}
+
+/// 01104 The Gathering chaos-symbol effects (verified card text):
+/// `[skull]` −X (X = Ghouls at your location); `[cultist]` −1, 1 horror
+/// on failure; `[tablet]` −2, 1 damage if a Ghoul is at your location.
+/// The Gathering's Standard bag has no Elder Thing token.
+fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> SymbolOutcome {
+    let ghouls = ghoul_count_at_investigator_location(cx);
+    match token {
+        ChaosToken::Skull => SymbolOutcome {
+            modifier: -(i8::try_from(ghouls).unwrap_or(i8::MAX)),
+            ..SymbolOutcome::default()
+        },
+        ChaosToken::Cultist => SymbolOutcome {
+            modifier: -1,
+            on_fail: vec![TokenEffect::Horror(1)],
+            ..SymbolOutcome::default()
+        },
+        ChaosToken::Tablet => SymbolOutcome {
+            modifier: -2,
+            immediate: if ghouls > 0 {
+                vec![TokenEffect::Damage(1)]
+            } else {
+                vec![]
+            },
+            ..SymbolOutcome::default()
+        },
+        _ => SymbolOutcome::default(),
+    }
+}
+
 /// Build the initial [`GameState`]: the Study in play (isolated), the
 /// four set-aside locations (Hallway/Attic/Cellar/Parlor, pre-connected),
 /// the act/agenda decks, the Standard chaos bag, and `starting_location`.
 /// No investigators — the `StartScenario` roster step seats them.
 pub fn setup() -> GameState {
-    // The Gathering's symbol effects are printed on reference card 01104
-    // (board-dependent; evaluated in C2). Until then these flat NotZ
-    // fallbacks stand in; they are off the C1a structural test path.
-    // TokenModifiers is #[non_exhaustive], so we build via Default +
-    // field mutation (same pattern used elsewhere outside game-core).
-    let mut token_modifiers = TokenModifiers::default();
-    token_modifiers.skull = -1;
-    token_modifiers.cultist = -2;
-    token_modifiers.tablet = -3;
-    token_modifiers.elder_thing = -4;
-
     let mut state = GameStateBuilder::new()
         .with_chaos_bag(standard_chaos_bag())
         .with_scenario_id(ScenarioId::new(ID))
-        .with_token_modifiers(token_modifiers)
         .build();
 
     // The Gathering board. Ids are minted by `add_location` /
@@ -170,7 +201,7 @@ pub fn apply_resolution(
 
 /// The [`ScenarioModule`] value for The Gathering.
 pub const MODULE: ScenarioModule = ScenarioModule {
-    resolve_symbol: None,
+    resolve_symbol: Some(resolve_symbol),
     setup,
     apply_resolution,
 };
