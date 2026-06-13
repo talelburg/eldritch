@@ -9,7 +9,8 @@ Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
 kickoff [#246](https://github.com/talelburg/eldritch/issues/246)). Shipped:
 C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
 C2 (01104 symbol-token effects + location victory points),
-C3a (Prey – Lowest remaining health + Retaliate keyword).
+C3a (Prey – Lowest remaining health + Retaliate keyword),
+C3b (the six encounter enemies + pipeline keyword/spawn/health parsing).
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
 [Group C decomposition](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
@@ -54,7 +55,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C1b | [#228](https://github.com/talelburg/eldritch/issues/228) | Act-1 (01108) reverse board-build + Act-3 (01110) forced advance-on-defeat (act-2 01109 objective → C3c) | ✅ PR #259 |
 | C2 | [#229](https://github.com/talelburg/eldritch/issues/229) | 01104 symbol-token effects + victory points | ✅ PR #263 |
 | C3a | [#230](https://github.com/talelburg/eldritch/issues/230) | Prey variants + Retaliate | ✅ PR #269 |
-| C3b | [#231](https://github.com/talelburg/eldritch/issues/231) | the six encounter enemies | — |
+| C3b | [#231](https://github.com/talelburg/eldritch/issues/231) | the six encounter enemies | ✅ PR #272 |
 | C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) **+ act-2 (01109) round-end objective (moved from C1b)** | — |
 | C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | — |
 | C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | — |
@@ -123,6 +124,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **Scenario chaos-symbol effects live on `ScenarioModule.resolve_symbol`, not card `abilities()` (C2, [#229](https://github.com/talelburg/eldritch/issues/229), PR #263).** A reference card is one-per-scenario, never a card-object (never played/revealed/moved), and board-dependent, so it doesn't fit the `abilities()` model; the scenario module — already the context-taking home for `setup`/`apply_resolution` — owns it via a plain-Rust `fn(ChaosToken, &SymbolCtx) -> SymbolOutcome` hook returning a `modifier` (applied to the total before pass/fail) plus `immediate`/`on_fail` `TokenEffect`s (applied after, routed through the existing `DealDamage`/`DealHorror` paths). **No new DSL primitives** — 01104's Ghoul-count is inline Rust in `the_gathering.rs`. **Future scenarios' reference cards add a `resolve_symbol` hook, not card impls.** This removed B1's dead `reference_card` field + `active_reference_card` lookup ([#223](https://github.com/talelburg/eldritch/issues/223)) in the same PR; the static `TokenModifiers` path remains for hook-less fixtures.
 
 - **Location victory points are placed at scenario resolution, not on clear (C2, [#229](https://github.com/talelburg/eldritch/issues/229), PR #263).** Per RR p.21 ("at the end of a scenario, place each victory point location that is in play, revealed, and with no clues on it in the victory display"), the engine generically scans `state.locations` at the `fire_scenario_resolution` chokepoint and places qualifying victory-bearing locations (reading `CardKind::Location { victory }` from the corpus) into a new `GameState.victory_display: Vec<CardCode>`. The victory-point **enemy** path (place as defeated) plugs into the same zone in **C3**; Phase 9 sums the zone for XP.
+
+- **Enemy keywords / spawn-location / per-investigator health are parsed in the pipeline into the corpus, not hand-written per-enemy (C3b, [#231](https://github.com/talelburg/eldritch/issues/231), PR #272).** `CardKind::Enemy` gained `hunter`/`retaliate`/`prey`, and `health: Option<u8>` became `Option<HealthValue>` (a new enum mirroring `ClueValue`; polarity flipped — ArkhamDB `health_per_investigator` defaults false → `Fixed`). The pipeline parses these from card text (incl. resolving `Spawn - <name>` to a location code via a name→code index over Location cards); `spawn_enemy` reads all stats/keywords from the corpus and scales `PerInvestigator` health by the in-game investigator count (same source as the per-investigator clue path in `reveal.rs`). **Future enemies need no hand-written impl** — they land via the snapshot + a regen. Out-of-scope keyword forms not yet modeled (e.g. `Prey - Most clues`, `Spawn - Engaged with Prey`) default + emit a build warning rather than failing or silently approximating. `surge`/`peril` remain unparsed (#138).
 
 ## Open questions
 
