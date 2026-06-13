@@ -73,6 +73,28 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | — |
 | C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test | — |
 
+### Act/agenda reverse coverage
+
+Every act and agenda **reverse** (its `back_text` — what happens when it
+advances) must be implemented for a faithful slice; the Group C rows above
+covered some piecemeal (fronts + a couple of reverses), so this table is
+the explicit coverage check. Fronts (objectives/forced) are tracked in the
+breakdown rows; this is reverses only.
+
+| Card | Reverse | Status |
+|---|---|---|
+| Act 1 (01108) | board build | ✅ `act_01108.rs` (C1b) |
+| Act 2 (01109) | reveal Parlor, put Lita, spawn Ghoul Priest | ⛔ [#280](https://github.com/talelburg/eldritch/issues/280) (Lita → [#258](https://github.com/talelburg/eldritch/issues/258)) |
+| Act 3 (01110) | R1/R2 resolution choice | ⚠️ R1 Won latch (C1b); R2 + choice → Phase 9 |
+| Agenda 1 (01105) | lead: each discards 1 random, or lead takes 2 horror | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
+| Agenda 2 (01106) | dig encounter deck until a [[Ghoul]], lead draws it | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
+| Agenda 3 (01107) | (→R3) Lost | ✅ terminal Lost latch |
+
+Infra note: acts fire their reverse via `ForcedTriggerPoint::ActAdvanced`
+(from `advance_act`); **agendas have no equivalent** — `advance_agenda`
+fires nothing, so the agenda reverses need an `AgendaAdvanced` forced point
+first ([#281](https://github.com/talelburg/eldritch/issues/281)).
+
 ## Future slices (after Slice 1)
 
 Not yet specced/planned in detail — recorded here so the arc survives a

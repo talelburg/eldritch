@@ -146,8 +146,12 @@ pub fn setup() -> GameState {
     // corpus. 01110 advances via its Forced EnemyDefeated objective
     // (01116; in cards::act_01110), not a clue spend — its printed clue
     // threshold is null, which the reader maps to 0.
-    // TODO(#231): the Ghoul Priest (01116) spawns at Act-2 (01109) advance — C3b.
-    // TODO(#phase-9): the reverse is the lead investigator's R1/R2 resolution choice (campaign log).
+    // TODO(#280): Act-2 (01109) reverse — reveal the Parlor and spawn the
+    // set-aside Ghoul Priest (01116) in the Hallway (needs set-aside-enemy
+    // support). Lita Chantler -> #258. (Not C3b/#231, which was enemy stats.)
+    // TODO(#281): agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul)
+    // + an `AgendaAdvanced` forced point — `advance_agenda` fires no reverse today.
+    // TODO(#phase-9): act-3 (01110) reverse is the lead's R1/R2 resolution choice.
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
