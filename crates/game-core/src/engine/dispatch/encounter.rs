@@ -322,6 +322,7 @@ fn spawn_enemy(
         engaged_with: None,
         hunter: false,
         prey: crate::card_data::Prey::Default,
+        retaliate: false,
     };
     cx.state.enemies.insert(enemy_id, enemy);
 
