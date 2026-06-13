@@ -28,6 +28,13 @@ pub(super) enum PreyResolution {
 /// [`PreyMeasure`]. Widened to `i32` so `base_health − damage` can't
 /// underflow and so skills/health share one comparable type. Higher or
 /// lower is selected by the [`PreyDirection`] in [`Prey::Ranked`].
+///
+/// TODO(#270): uses **base** skill / health only. Per RR p.18 (Modifiers)
+/// and p.12 (remaining health), prey comparisons should use the *modified*
+/// value (active constant modifiers folded in, as the skill-test path does
+/// via `constant_skill_modifier`). Deferred: only matters with 2+ tied
+/// candidates and a constant-modifier card (Beat Cop, C5d), neither in
+/// current scope.
 fn measure_value(measure: PreyMeasure, inv: &Investigator) -> i32 {
     match measure {
         PreyMeasure::Skill(kind) => i32::from(inv.skills.value(kind)),
