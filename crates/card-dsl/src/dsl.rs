@@ -247,8 +247,8 @@ pub enum EventPattern {
     EnteredLocation,
     /// A game phase ended. Forced agenda/act effects keyed to a phase
     /// boundary listen here: agenda `01107` moves Ghouls at
-    /// `PhaseEnded { phase: Enemy }` and places doom at the end of the
-    /// round (`PhaseEnded { phase: Upkeep }`).
+    /// `PhaseEnded { phase: Enemy }`. (Its end-of-round doom keys off
+    /// [`RoundEnded`](Self::RoundEnded), not `PhaseEnded { Upkeep }`.)
     ///
     /// Matched only by the forced dispatch path
     /// (`engine::dispatch::forced_triggers`), never by player reaction
@@ -261,6 +261,14 @@ pub enum EventPattern {
     /// binds controller = the lead investigator (board-wide reverse
     /// effects ignore it).
     ActAdvanced,
+    /// The round ended (Rules Reference p.24: the round ends at the close
+    /// of the upkeep phase). Forced agenda/act effects keyed to "at the
+    /// end of the round" listen here — agenda `01107` places doom. Fired
+    /// forced via `ForcedTriggerPoint::RoundEnded`; binds controller =
+    /// the lead investigator (board-wide effects ignore it). Distinct
+    /// from `PhaseEnded { Upkeep }` so an "end of upkeep phase" and an
+    /// "end of round" card can coexist.
+    RoundEnded,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can

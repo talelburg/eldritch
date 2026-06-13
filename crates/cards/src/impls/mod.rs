@@ -50,6 +50,7 @@ use card_dsl::dsl::Ability;
 
 pub mod act_01108;
 pub mod act_01110;
+pub mod agenda_01107;
 pub mod attic;
 pub mod cellar;
 pub mod deduction;
@@ -66,6 +67,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     match code {
         act_01108::CODE => Some(act_01108::abilities()),
         act_01110::CODE => Some(act_01110::abilities()),
+        agenda_01107::CODE => Some(agenda_01107::abilities()),
         attic::CODE => Some(attic::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
@@ -83,5 +85,5 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
 /// per-card delegation; returns `None` for unregistered tags.
 #[must_use]
 pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
-    act_01108::native_effect_for(tag)
+    act_01108::native_effect_for(tag).or_else(|| agenda_01107::native_effect_for(tag))
 }

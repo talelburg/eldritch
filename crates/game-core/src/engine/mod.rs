@@ -20,6 +20,7 @@ pub(crate) mod pathfinding;
 pub use dispatch::reveal::reveal_location;
 pub use evaluator::{location_id_by_code, EvalContext};
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
+pub use pathfinding::shortest_first_steps;
 
 // Crate-internal re-exports for `test_support::fire_forced_on_enter`.
 // Neither is public API: `ForcedTriggerPoint` stays internal; the

@@ -58,6 +58,17 @@ pub fn fire_forced_on_phase_end(
     )
 }
 
+/// Test helper: fire `ForcedTriggerPoint::RoundEnded` against `state`,
+/// returning the `EngineOutcome`. See `fire_forced_on_enter`. Exercises
+/// round-end Forced abilities (agenda 01107's doom).
+pub fn fire_forced_on_round_end(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(&mut cx, &crate::engine::ForcedTriggerPoint::RoundEnded)
+}
+
 /// Test helper: fire forced triggers for an act advancing, returning the
 /// `EngineOutcome`. See `fire_forced_on_enter`.
 pub fn fire_forced_on_act_advance(

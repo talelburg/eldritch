@@ -602,6 +602,18 @@ fn upkeep_phase_end(cx: &mut Cx) {
         "upkeep_phase_end forced trigger did not resolve to Done: {forced:?} \
          (2+ simultaneous forced at round end needs #213)"
     );
+    // "Upkeep phase ends. Round ends." (RR p.24) — fire round-end Forced
+    // effects (agenda 01107's doom) after the upkeep-phase-end ones. Both
+    // resolve to Done in-slice (doom just increments a counter).
+    let round_end = super::forced_triggers::fire_forced_triggers(
+        cx,
+        &super::forced_triggers::ForcedTriggerPoint::RoundEnded,
+    );
+    debug_assert!(
+        matches!(round_end, EngineOutcome::Done),
+        "upkeep_phase_end RoundEnded forced did not resolve to Done: {round_end:?} \
+         (2+ simultaneous forced at round end needs #213)"
+    );
     // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
     // transition can suspend (hunter movement), so this never does.
     let outcome = step_phase(cx);

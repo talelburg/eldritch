@@ -53,6 +53,10 @@ pub(crate) enum ForcedTriggerPoint {
         /// Printed code of the defeated enemy (for `code`-narrow matching).
         code: CardCode,
     },
+    /// The round ended (step 4.6). Scans the current act and agenda for
+    /// `EventPattern::RoundEnded` forced abilities; binds controller =
+    /// the lead investigator (board-wide effects ignore it).
+    RoundEnded,
 }
 
 struct ForcedHit {
@@ -145,6 +149,21 @@ fn collect_forced_hits(
                         EventPattern::EnemyDefeated { code: narrow, .. }
                             if narrow.as_deref().is_none_or(|c| c == code.as_str())
                     )
+                });
+            }
+        }
+        ForcedTriggerPoint::RoundEnded => {
+            let Some(lead) = state.turn_order.first().copied() else {
+                return hits;
+            };
+            if let Some(act) = state.act_deck.get(state.act_index) {
+                push_matching(reg, &act.code, lead, &mut hits, |p| {
+                    matches!(p, EventPattern::RoundEnded)
+                });
+            }
+            if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
+                push_matching(reg, &agenda.code, lead, &mut hits, |p| {
+                    matches!(p, EventPattern::RoundEnded)
                 });
             }
         }
