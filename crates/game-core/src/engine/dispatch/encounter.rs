@@ -984,7 +984,17 @@ mod spawn_enemy_tests {
     use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
-        enemy_metadata(spawn, HealthValue::Fixed(1), false, false, Prey::Default, 1, 1, 0, 0)
+        enemy_metadata(
+            spawn,
+            HealthValue::Fixed(1),
+            false,
+            false,
+            Prey::Default,
+            1,
+            1,
+            0,
+            0,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1038,10 +1048,23 @@ mod spawn_enemy_tests {
             .unwrap()
             .current_location = Some(LocationId(10));
 
-        let metadata = enemy_metadata(None, HealthValue::Fixed(5), true, true, Prey::Default, 4, 4, 2, 2);
+        let metadata = enemy_metadata(
+            None,
+            HealthValue::Fixed(5),
+            true,
+            true,
+            Prey::Default,
+            4,
+            4,
+            2,
+            2,
+        );
         let mut events = Vec::new();
         spawn_enemy(
-            &mut Cx { state: &mut state, events: &mut events },
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
@@ -1075,11 +1098,23 @@ mod spawn_enemy_tests {
                 .current_location = Some(LocationId(10));
         }
 
-        let metadata =
-            enemy_metadata(None, HealthValue::PerInvestigator(5), false, false, Prey::Default, 4, 4, 2, 2);
+        let metadata = enemy_metadata(
+            None,
+            HealthValue::PerInvestigator(5),
+            false,
+            false,
+            Prey::Default,
+            4,
+            4,
+            2,
+            2,
+        );
         let mut events = Vec::new();
         spawn_enemy(
-            &mut Cx { state: &mut state, events: &mut events },
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
             InvestigatorId(1),
             CardCode("_synth_enemy".into()),
             &metadata,
