@@ -2,7 +2,8 @@
 //! investigator enters a location it is revealed and clues are placed
 //! (`PerInvestigator(n) → n × #investigators`, or `Fixed(n)`). Enemy
 //! movement does not reveal — only the investigator-entry call sites
-//! (seating, `move_action`, `RelocateAllInvestigators`) call this.
+//! (seating, `move_action`, and act-1's board-build native effect) call
+//! this.
 
 use crate::card_data::ClueValue;
 use crate::event::Event;

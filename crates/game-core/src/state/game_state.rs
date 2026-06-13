@@ -41,8 +41,8 @@ pub struct GameState {
     pub locations: BTreeMap<LocationId, Location>,
     /// Locations set aside, out of play (Rules Reference p.3, "set
     /// aside"). Brought into play by card effects — The Gathering's
-    /// Act-1 reverse drains these via the `PutSetAsideLocationsIntoPlay`
-    /// DSL effect.
+    /// Act-1 reverse drains these into play (the `01108:board-build`
+    /// native effect).
     pub set_aside_locations: Vec<Location>,
     /// Where roster-seated investigators are placed at scenario start.
     /// `setup()` sets it (e.g. The Gathering -> the Study); the
