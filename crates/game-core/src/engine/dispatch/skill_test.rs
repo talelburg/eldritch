@@ -250,6 +250,14 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                     .in_flight_skill_test
                     .as_mut()
                     .expect("in_flight_skill_test must persist across driver steps")
+                    .continuation = FinishContinuation::PostRetaliate { succeeded };
+            }
+            FinishContinuation::PostRetaliate { succeeded } => {
+                fire_retaliate_if_any(cx, investigator, succeeded);
+                cx.state
+                    .in_flight_skill_test
+                    .as_mut()
+                    .expect("in_flight_skill_test must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
             FinishContinuation::PostOnResolution { succeeded: _ } => {
@@ -528,6 +536,46 @@ fn apply_skill_test_follow_up(
             });
             cx.events.push(Event::EnemyExhausted { enemy });
         }
+    }
+}
+
+/// Fire a Retaliate attack if the just-resolved test was a *failed Fight*
+/// against a ready enemy with the retaliate keyword.
+///
+/// Rules Reference p.18: *"Each time an investigator fails a skill test
+/// while attacking a ready enemy with the retaliate keyword, after
+/// applying all results for that skill test, that enemy performs an
+/// attack against the attacking investigator. An enemy does not exhaust
+/// after performing a retaliate attack."*
+///
+/// Runs at the `PostRetaliate` step — after `fire_on_skill_test_resolution`
+/// (the rest of ST.7) and before the `PostOnResolution` teardown (ST.8) —
+/// matching "after applying all results." The attack routes through
+/// [`super::combat::enemy_attack`], which does not exhaust the attacker,
+/// satisfying the no-exhaust clause for free.
+///
+/// No-op unless every condition holds: the test failed; its follow-up was
+/// `Fight`; the enemy is still in play, ready (`!exhausted`), and has
+/// `retaliate`. A missing enemy is skipped quietly — a failed fight deals
+/// no damage, so the target can't have been defeated mid-test; this only
+/// guards against future enemy-removing commit effects. This step is also
+/// the future home of the "after an enemy attacks" reaction window (Guard
+/// Dog C5b, Roland's reaction).
+fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: bool) {
+    if succeeded {
+        return;
+    }
+    let follow_up = cx.state.in_flight_skill_test.as_ref().map(|t| t.follow_up);
+    let Some(SkillTestFollowUp::Fight { enemy }) = follow_up else {
+        return;
+    };
+    let retaliates = cx
+        .state
+        .enemies
+        .get(&enemy)
+        .is_some_and(|e| e.retaliate && !e.exhausted);
+    if retaliates {
+        super::combat::enemy_attack(cx, enemy, investigator);
     }
 }
 

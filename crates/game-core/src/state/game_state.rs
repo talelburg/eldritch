@@ -433,6 +433,16 @@ pub enum FinishContinuation {
         succeeded: bool,
     },
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
+    /// iteration fires a Retaliate attack if the test was a failed Fight
+    /// against a ready retaliate enemy (Rules Reference p.18 — "after
+    /// applying all results for that skill test"), then advances to
+    /// teardown.
+    PostRetaliate {
+        /// The chaos-token resolution's success determination — Retaliate
+        /// fires only on failure.
+        succeeded: bool,
+    },
+    /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration discards committed cards, emits
     /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
     /// the in-flight record.
