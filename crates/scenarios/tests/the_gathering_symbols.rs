@@ -5,11 +5,12 @@
 use std::sync::Once;
 
 use game_core::action::{Action, PlayerAction};
-use game_core::engine::EngineOutcome;
+use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::scenario::ScenarioId;
+use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
-    ChaosBag, ChaosToken, InvestigatorId, LocationId, SkillKind, TokenResolution,
+    Act, CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind,
+    TokenResolution,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -158,5 +159,82 @@ fn tablet_is_minus_two_and_damage_iff_ghoul_present() {
             .any(|e| matches!(e, Event::DamageTaken { .. })),
         "expected NO DamageTaken on tablet without ghoul, events: {:?}",
         no_ghoul.events
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Victory display tests (C2 — location VPs at scenario end)
+// ---------------------------------------------------------------------------
+
+/// A terminal-act Gathering state with `attic` revealed/cleared or not,
+/// so a single `AdvanceAct` latches Won and triggers the victory scan.
+fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::GameState {
+    let inv = InvestigatorId(1);
+    let mut investigator = test_investigator(1);
+    investigator.clues = 1;
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(investigator)
+        .with_active_investigator(inv)
+        .with_turn_order([inv])
+        .with_scenario_id(ScenarioId::new(scenarios::the_gathering::ID))
+        .build();
+    let mut attic = test_location(1, "Attic");
+    attic.code = CardCode("01113".into());
+    attic.revealed = revealed;
+    attic.clues = clues;
+    state.locations.insert(attic.id, attic);
+    state.act_deck = vec![Act {
+        code: CardCode("_test_act".into()),
+        clue_threshold: 1,
+        resolution: Some(Resolution::Won { id: "R1".into() }),
+    }];
+    state
+}
+
+fn advance_to_resolution(state: game_core::state::GameState) -> game_core::engine::ApplyResult {
+    let r = apply(
+        state,
+        Action::Player(PlayerAction::AdvanceAct {
+            investigator: InvestigatorId(1),
+        }),
+    );
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    r
+}
+
+#[test]
+fn cleared_revealed_victory_location_enters_victory_display() {
+    install_registries();
+    let r = advance_to_resolution(resolvable_state_with_attic(true, 0));
+    assert!(
+        r.state.victory_display.contains(&CardCode("01113".into())),
+        "Attic (01113) should be in victory_display; got: {:?}",
+        r.state.victory_display
+    );
+    assert!(
+        r.events.iter().any(|e| matches!(
+            e,
+            Event::EnteredVictoryDisplay { code, victory: 1 } if code.as_str() == "01113"
+        )),
+        "expected EnteredVictoryDisplay for 01113 with victory=1, events: {:?}",
+        r.events
+    );
+}
+
+#[test]
+fn unrevealed_or_clued_victory_location_is_not_placed() {
+    install_registries();
+    let clued = advance_to_resolution(resolvable_state_with_attic(true, 2));
+    assert!(
+        clued.state.victory_display.is_empty(),
+        "clued Attic should not enter victory display; got: {:?}",
+        clued.state.victory_display
+    );
+    let unrevealed = advance_to_resolution(resolvable_state_with_attic(false, 0));
+    assert!(
+        unrevealed.state.victory_display.is_empty(),
+        "unrevealed Attic should not enter victory display; got: {:?}",
+        unrevealed.state.victory_display
     );
 }

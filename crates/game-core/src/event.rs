@@ -443,6 +443,14 @@ pub enum Event {
         /// The resolution returned by the scenario module.
         resolution: Resolution,
     },
+    /// A card was placed in the victory display (Rules Reference p.21).
+    /// Emitted for each victory-point location at scenario resolution.
+    EnteredVictoryDisplay {
+        /// The placed card's printed code.
+        code: CardCode,
+        /// Its corpus victory value.
+        victory: u8,
+    },
 
     /// The agenda deck advanced: the agenda at `from` met its doom
     /// threshold and the next agenda became current. Doom was reset to
