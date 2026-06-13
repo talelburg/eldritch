@@ -11,8 +11,8 @@ use crate::card_registry;
 use crate::dsl::{discover_clue, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, FinishContinuation, GameState, InFlightSkillTest, InvestigatorId,
-    SkillKind, SkillTestFollowUp, Status, TokenResolution, Zone,
+    resolve_token, CardCode, ChaosToken, FinishContinuation, GameState, InFlightSkillTest,
+    InvestigatorId, SkillKind, SkillTestFollowUp, Status, TokenResolution, Zone,
 };
 
 use super::super::evaluator::{
@@ -390,7 +390,21 @@ fn resolve_chaos_token_and_emit(
 ) -> bool {
     let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
     let token = cx.state.chaos_bag.tokens[token_idx];
-    let resolution = resolve_token(token, &cx.state.token_modifiers);
+
+    // Symbol tokens may route to the active scenario's reference-card
+    // effects (modifier + deferred side effects). Numeric/AutoFail/
+    // ElderSign never do; nor do scenarios without a hook (static path).
+    let symbol_outcome = match token {
+        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
+            crate::scenario::resolve_symbol_token(cx.state, token, investigator)
+        }
+        _ => None,
+    };
+
+    let resolution = match &symbol_outcome {
+        Some(outcome) => TokenResolution::Modifier(outcome.modifier),
+        None => resolve_token(token, &cx.state.token_modifiers),
+    };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
 
@@ -417,6 +431,12 @@ fn resolve_chaos_token_and_emit(
             by,
         });
     }
+
+    // Symbol side effects resolve after success/failure is known.
+    if let Some(outcome) = symbol_outcome {
+        apply_symbol_outcome(cx, investigator, &outcome, succeeded);
+    }
+
     succeeded
 }
 
@@ -629,8 +649,6 @@ pub(super) fn peril_check(
 /// the test failed. Routes through the same elimination paths as
 /// `Effect::DealDamage` / `Effect::DealHorror`, so defeat handling and
 /// the `DamageTaken` / `HorrorTaken` events are reused.
-// wired in Task 3
-#[allow(dead_code)]
 fn apply_symbol_outcome(
     cx: &mut Cx,
     investigator: InvestigatorId,
