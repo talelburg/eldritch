@@ -81,6 +81,10 @@ pub struct Enemy {
     /// investigator (without exhausting). `false` for enemies with no
     /// printed Retaliate line.
     pub retaliate: bool,
+    /// Printed Victory value (Rules Reference p.21). `Some(n)` places the
+    /// enemy in the victory display when it is defeated; `None` for enemies
+    /// that award no victory points.
+    pub victory: Option<u8>,
 }
 
 #[cfg(test)]
@@ -106,6 +110,7 @@ mod hunter_prey_field_tests {
             prey: Prey::Default,
             retaliate: true,
             code: crate::CardCode::new("01116"),
+            victory: Some(2),
         };
         assert!(e.hunter);
         assert_eq!(e.prey, Prey::Default);
