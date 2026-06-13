@@ -95,16 +95,15 @@ fn run() -> Result<(), String> {
     let mut resolutions: Vec<(String, Option<String>)> = Vec::new();
     for c in all.values() {
         if let Some(name) = &c.spawn_name {
-            match loc_index.get(name) {
-                Some(code) => resolutions.push((c.code.clone(), Some(code.clone()))),
-                None => {
-                    eprintln!(
-                        "card-data-pipeline: enemy {} ({}): unresolved Spawn location {name:?} \
-                         — emitting spawn: None",
-                        c.code, c.name
-                    );
-                    resolutions.push((c.code.clone(), None));
-                }
+            if let Some(code) = loc_index.get(name) {
+                resolutions.push((c.code.clone(), Some(code.clone())));
+            } else {
+                eprintln!(
+                    "card-data-pipeline: enemy {} ({}): unresolved Spawn location {name:?} \
+                     — emitting spawn: None",
+                    c.code, c.name
+                );
+                resolutions.push((c.code.clone(), None));
             }
         }
     }
@@ -218,6 +217,7 @@ struct RawCard {
 // ---- normalized shape we emit -----------------------------------
 
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)] // mirrors ArkhamDB's flag fields
 struct NormalizedCard {
     code: String,
     name: String,
@@ -278,7 +278,10 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
 
     // Enemy keyword/prey/spawn data parsed from card text (read before
     // `raw.text` is moved into the struct, mirroring `is_fast`).
-    let hunter = raw.text.as_deref().is_some_and(|t| has_keyword(t, "Hunter"));
+    let hunter = raw
+        .text
+        .as_deref()
+        .is_some_and(|t| has_keyword(t, "Hunter"));
     let retaliate = raw
         .text
         .as_deref()
@@ -409,7 +412,9 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     let mut out = String::new();
     out.push_str(GENERATED_HEADER);
     out.push_str(
-        "use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure, SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation};\n\n\
+        "use card_dsl::card_data::{\n    \
+         CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,\n    \
+         SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation,\n};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",
@@ -582,7 +587,7 @@ fn clue_value_lit(clues: u8, fixed: bool) -> String {
     }
 }
 
-/// Strip ArkhamDB bold markup so keyword lines can be matched plainly.
+/// Strip `ArkhamDB` bold markup so keyword lines can be matched plainly.
 fn strip_html_bold(s: &str) -> String {
     s.replace("<b>", "").replace("</b>", "")
 }
@@ -659,7 +664,7 @@ fn spawn_lit(spawn_code: Option<&str>) -> String {
 
 /// Emit the `Option<HealthValue>` literal for an enemy's health, mirroring
 /// `clue_value_lit`. Polarity is the opposite of clues: per-investigator
-/// only when ArkhamDB's `health_per_investigator` is set.
+/// only when `ArkhamDB`'s `health_per_investigator` is set.
 fn health_value_opt_lit(health: Option<u8>, per_investigator: bool) -> String {
     match health {
         None => "None".to_owned(),

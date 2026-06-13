@@ -6,7 +6,10 @@
 
 #![allow(clippy::too_many_lines, clippy::needless_raw_string_hashes)]
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure, SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation};
+use card_dsl::card_data::{
+    CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,
+    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation,
+};
 
 /// Every card from the pinned snapshot, sorted by code.
 #[must_use]
