@@ -299,6 +299,24 @@ pub struct Act {
     /// The printed resolution point on this act's reverse. `Some` on a
     /// terminal act; `None` otherwise.
     pub resolution: Option<crate::scenario::Resolution>,
+    /// When `Some`, this act offers a round-end clue-spend objective
+    /// instead of an Investigation-phase `AdvanceAct` (see [`RoundEndAdvance`]).
+    /// `None` for acts that advance by the normal action or a forced trigger.
+    pub round_end_advance: Option<RoundEndAdvance>,
+}
+
+/// A round-end "may spend clues to advance" objective (Rules Reference:
+/// act objectives). 01109 "The Barrier": investigators in the Hallway may,
+/// as a group, spend the act's `clue_threshold` clues to advance when the
+/// round ends. Generic mechanics — only the contributor location is
+/// card-specific, so it is set by content (`the_gathering.rs`), not parsed
+/// from the corpus (no structured `ArkhamDB` field exists for it; single
+/// consumer). See issue #275.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoundEndAdvance {
+    /// Only investigators at this in-play location (by printed code) may
+    /// contribute clues — 01109: the Hallway `01112`.
+    pub contributor_location: CardCode,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -1191,6 +1209,7 @@ mod act_agenda_code_tests {
             code: CardCode("01108".into()),
             clue_threshold: 2,
             resolution: None,
+            round_end_advance: None,
         };
         let agenda = Agenda {
             code: CardCode("01105".into()),

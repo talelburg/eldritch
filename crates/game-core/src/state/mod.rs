@@ -22,7 +22,7 @@ pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
     Act, Agenda, FastActorScope, FinishContinuation, GameState, HandSizeDiscard, HunterChoice,
     InFlightSkillTest, OpenWindow, PendingSkillModifier, PendingTrigger, PhaseStep,
-    SkillTestFollowUp, SpawnEngagePending, WindowKind,
+    RoundEndAdvance, SkillTestFollowUp, SpawnEngagePending, WindowKind,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};

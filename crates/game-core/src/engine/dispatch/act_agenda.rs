@@ -100,6 +100,16 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
             reason: "AdvanceAct: no act deck is modeled for this scenario".into(),
         };
     }
+    if cx.state.act_deck[cx.state.act_index]
+        .round_end_advance
+        .is_some()
+    {
+        return EngineOutcome::Rejected {
+            reason: "this act advances only at the end of the round (its round-end \
+                     objective), not via the AdvanceAct action"
+                .into(),
+        };
+    }
     let threshold = cx.state.act_deck[cx.state.act_index].clue_threshold;
     let total_clues: u32 = clue_contributors(cx.state, investigator)
         .into_iter()
@@ -359,6 +369,7 @@ mod advance_act_tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: None,
+            round_end_advance: None,
         }];
 
         let result = apply(
@@ -370,6 +381,39 @@ mod advance_act_tests {
         assert_eq!(
             result.state.investigators[&inv].clues, 1,
             "no clues spent on reject"
+        );
+    }
+
+    #[test]
+    fn advance_act_rejected_for_round_end_advance_act() {
+        use crate::state::{Act, CardCode, RoundEndAdvance};
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 9; // plenty — reject must be the objective, not affordability
+        let mut state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .build();
+        state.act_deck = vec![Act {
+            code: CardCode("01109".into()),
+            clue_threshold: 3,
+            resolution: None,
+            round_end_advance: Some(RoundEndAdvance {
+                contributor_location: CardCode("01112".into()),
+            }),
+        }];
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.act_index, 0, "act did not advance");
+        assert_eq!(
+            result.state.investigators[&inv].clues, 9,
+            "no clues spent"
         );
     }
 
@@ -391,11 +435,13 @@ mod advance_act_tests {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: Some(Resolution::Won { id: "demo".into() }),
+                round_end_advance: None,
             },
         ];
 
@@ -430,6 +476,7 @@ mod advance_act_tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: Some(Resolution::Won { id: "demo".into() }),
+            round_end_advance: None,
         }];
 
         let result = apply(
@@ -468,11 +515,13 @@ mod advance_act_tests {
                 code: CardCode("01108".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
             Act {
                 code: CardCode("01109".into()),
                 clue_threshold: 3,
                 resolution: Some(Resolution::Won { id: "R1".into() }),
+                round_end_advance: None,
             },
         ];
         let result = apply(
@@ -511,11 +560,13 @@ mod advance_act_tests {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: None,
+                round_end_advance: None,
             },
         ];
 
