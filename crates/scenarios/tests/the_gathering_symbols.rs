@@ -2,6 +2,8 @@
 //! real card registry (Ghoul metadata) + the installed scenario module.
 //! Own process so the global registries can be installed once.
 
+use std::sync::Once;
+
 use game_core::action::{Action, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -14,9 +16,13 @@ use game_core::test_support::{
 };
 use scenarios::REGISTRY;
 
+static INSTALL: Once = Once::new();
+
 fn install_registries() {
-    let _ = game_core::scenario_registry::install(REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    INSTALL.call_once(|| {
+        let _ = game_core::scenario_registry::install(REGISTRY);
+        let _ = game_core::card_registry::install(cards::REGISTRY);
+    });
 }
 
 fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState {
@@ -33,7 +39,7 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState
     state.locations.insert(loc, test_location(1, "Study"));
     for i in 0..ghouls {
         let mut e = test_enemy(u32::from(i) + 1, "Ghoul");
-        e.traits = vec!["Ghoul".to_string()];
+        e.traits = vec!["Ghoul".to_string()]; // traits drives ghoul_count; test_enemy's name arg is display-only.
         e.current_location = Some(loc);
         state.enemies.insert(e.id, e);
     }
@@ -41,6 +47,7 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState
 }
 
 fn perform(state: game_core::state::GameState, difficulty: i8) -> game_core::engine::ApplyResult {
+    // apply_no_commits drives past the card-commit window (raw apply stops there with AwaitingInput) so the symbol path resolves end-to-end.
     let r = apply_no_commits(
         state,
         Action::Player(PlayerAction::PerformSkillTest {
