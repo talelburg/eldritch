@@ -11,8 +11,10 @@ use crate::state::LocationId;
 use super::Cx;
 
 /// Reveal `location_id` if it is unrevealed, placing its printed clues.
-/// No-op if the location is absent or already revealed.
-pub(crate) fn reveal_location(cx: &mut Cx, location_id: LocationId) {
+/// No-op if the location is absent or already revealed. Public so
+/// card-local [`Effect::Native`](crate::dsl::Effect::Native) handlers can
+/// reveal a location they move investigators into.
+pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
     // "Number of investigators who started the scenario" — `len()` is
     // faithful because eliminated investigators stay in the map (status
     // flipped, never removed). If that invariant changes, per-investigator

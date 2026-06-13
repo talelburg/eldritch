@@ -77,3 +77,11 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         _ => None,
     }
 }
+
+/// Resolve an [`Effect::Native`](card_dsl::dsl::Effect::Native) tag to the
+/// card-local Rust fn that implements it. Mirrors [`abilities_for`]'s
+/// per-card delegation; returns `None` for unregistered tags.
+#[must_use]
+pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
+    act_01108::native_effect_for(tag)
+}
