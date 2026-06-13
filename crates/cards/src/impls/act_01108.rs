@@ -19,7 +19,7 @@
 //!
 //! The board build is board-dependent, single-use scenario logic, so it
 //! lives card-locally as a [`card_dsl::dsl::Effect::Native`] handler
-//! ([`board_build`]) rather than as shared `Effect` variants (#276).
+//! (the `board_build` fn) rather than as shared `Effect` variants (#276).
 
 use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;

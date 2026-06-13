@@ -737,8 +737,8 @@ fn stat_matches_skill(stat: Stat, skill: SkillKind) -> bool {
 
 /// Find the in-play location whose printed code equals `code`; `None` if
 /// no in-play location carries it. Public so card-local
-/// [`Effect::Native`](crate::dsl::Effect::Native) handlers can resolve a
-/// board location by its printed code.
+/// [`Effect::Native`] handlers can resolve a board location by its
+/// printed code.
 pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state::LocationId> {
     state
         .locations
