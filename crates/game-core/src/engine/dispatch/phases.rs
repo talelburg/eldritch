@@ -114,6 +114,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 hand: Vec::new(),
                 discard: Vec::new(),
                 cards_in_play: Vec::new(),
+                threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
             },
         );
