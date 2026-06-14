@@ -134,9 +134,18 @@ pub fn resolve_encounter_card(
                 .iter()
                 .filter(|a| a.trigger == Trigger::Revelation)
             {
-                let outcome = apply_effect(cx, &ability.effect, eval_ctx);
-                if !matches!(outcome, EngineOutcome::Done) {
-                    return outcome;
+                match apply_effect(cx, &ability.effect, eval_ctx) {
+                    EngineOutcome::Done => {}
+                    outcome @ EngineOutcome::AwaitingInput { .. } => {
+                        // Revelation suspended (e.g. `Effect::SkillTest`
+                        // opened a commit window). The card discards only
+                        // once the suspended resolution completes — record
+                        // it so the resume path (skill-test teardown)
+                        // flushes it to `encounter_discard`.
+                        cx.state.pending_revelation_discard = Some(code.clone());
+                        return outcome;
+                    }
+                    outcome @ EngineOutcome::Rejected { .. } => return outcome,
                 }
             }
             cx.state.encounter_discard.push(code);
