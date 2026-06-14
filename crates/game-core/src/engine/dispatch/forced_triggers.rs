@@ -1,9 +1,9 @@
 //! Forced-trigger dispatch: fires `Trigger::OnEvent` abilities printed
 //! on scenario-structure cards (locations, acts, agendas) at framework
 //! timing points, via an immediate path separate from the player
-//! reaction-window machinery. Single-trigger only in this slice; 2+
-//! simultaneous pending triggers reject loudly (#213 adds the ordering
-//! loop, #212 the universal `emit_event` chokepoint).
+//! reaction-window machinery. Multiple simultaneous triggers resolve in
+//! a fixed deterministic order (see [`fire_forced_triggers`]); #213 adds
+//! player-chosen ordering, #212 the universal `emit_event` chokepoint.
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
@@ -100,23 +100,32 @@ struct ForcedHit {
     source: Option<CardInstanceId>,
 }
 
-/// Fire Forced abilities matching `point`. Single-trigger path: 0 → Done;
-/// 1 → resolve via `apply_effect`; 2+ → reject loudly (no silently-chosen
-/// order — #213 adds the ordering loop).
+/// Fire Forced abilities matching `point`, resolving each hit in a fixed
+/// deterministic order.
+///
+/// The order is the collection order of [`collect_forced_hits`]: board
+/// cards (act before agenda) before threat-area / attachment instances,
+/// investigators by id (`BTreeMap`), instances in zone order. #213 will
+/// replace this with player-chosen ordering (Rules Reference p.17: the
+/// player orders simultaneous triggers, even in solo); a fixed order is a
+/// rules-acceptable stand-in until then.
+///
+/// **Suspension caveat (#212 reentrancy).** A hit that suspends
+/// (`AwaitingInput`) or rejects is surfaced immediately, abandoning any
+/// later hits — re-entry mid-sequence isn't modeled yet. Safe in current
+/// scope: the only multi-hit point is `RoundEnded` (agenda 01107 doom +
+/// Dissonant Voices 01165 discard), whose effects are all synchronous;
+/// the one suspending forced effect (Frozen in Fear 01164's `EndOfTurn`
+/// skill test) is always the sole hit at its point.
 pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> EngineOutcome {
     let hits = collect_forced_hits(cx.state, point);
-    match hits.len() {
-        0 => EngineOutcome::Done,
-        1 => resolve_one(cx, &hits[0]),
-        n => EngineOutcome::Rejected {
-            reason: format!(
-                "fire_forced_triggers: {n} simultaneous forced triggers at {point:?}; \
-                 ordering not yet implemented (see #213). Slice-1 content never produces \
-                 this — investigate the source."
-            )
-            .into(),
-        },
+    for hit in &hits {
+        match resolve_one(cx, hit) {
+            EngineOutcome::Done => {}
+            other => return other,
+        }
     }
+    EngineOutcome::Done
 }
 
 // dispatcher: one match arm per ForcedTriggerPoint.

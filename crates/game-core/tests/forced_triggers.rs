@@ -79,7 +79,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         )])
     } else if code.as_str() == DOUBLE_FORCED {
         // Two distinct forced `EnteredLocation` abilities at the same timing
-        // point — exercises the 2+-simultaneous reject path.
+        // point — exercises ordered multi-resolution (both fire in order).
         Some(vec![
             on_event(
                 EventPattern::EnteredLocation,
@@ -616,7 +616,7 @@ fn successful_investigate_fires_after_location_investigated_forced() {
 }
 
 #[test]
-fn two_simultaneous_forced_triggers_reject_loudly() {
+fn two_simultaneous_forced_triggers_resolve_in_order() {
     install_mock_registry();
 
     let mut loc = test_location(10, "Double-Forced Room");
@@ -631,18 +631,21 @@ fn two_simultaneous_forced_triggers_reject_loudly() {
     let mut events = Vec::new();
     let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
 
-    // 2+ simultaneous forced triggers reject loudly — no order is chosen.
-    // `fire_forced_triggers` counts hits first, before calling `apply_effect`,
-    // so the reject happens before any effect is resolved.
-    assert!(
-        matches!(outcome, EngineOutcome::Rejected { .. }),
-        "expected Rejected for 2+ simultaneous forced triggers; got {outcome:?}"
+    // Both simultaneous forced triggers resolve in a fixed deterministic
+    // order (no reject) — #213 will let the player choose the order; a
+    // fixed order is the stand-in. Each deals 1 horror, so the total is 2.
+    assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "expected ordered resolution of both forced triggers; got {outcome:?}"
     );
-    // No horror was applied — the reject fires before any effect runs.
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
-    // No events were emitted on this path.
-    assert!(
-        events.is_empty(),
-        "no events should be emitted on the 2+ reject path"
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 2);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
+            .count(),
+        2,
+        "both forced effects must emit their HorrorTaken event; events = {events:?}"
     );
 }
