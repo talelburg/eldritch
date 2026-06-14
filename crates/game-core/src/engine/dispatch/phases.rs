@@ -116,6 +116,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 cards_in_play: Vec::new(),
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
+                action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
             },
         );
         cx.state.turn_order.push(id);
@@ -328,6 +329,11 @@ fn mythos_phase(cx: &mut Cx) {
     //     skipped). This is also the future home for a RoundStarted
     //     event when a consumer lands.
     cx.state.round = cx.state.round.saturating_add(1);
+    // New round: clear each investigator's per-round "first-applicable
+    // action surcharge already spent" set (Frozen in Fear 01164).
+    for inv in cx.state.investigators.values_mut() {
+        inv.action_surcharge_spent_this_round.clear();
+    }
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });

@@ -188,6 +188,7 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
         Effect::SkillTest {
             skill,
             difficulty,
+            on_success,
             on_fail,
         } => crate::engine::dispatch::skill_test::start_skill_test(
             cx,
@@ -196,7 +197,9 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             crate::dsl::SkillTestKind::Plain,
             i8::try_from(*difficulty).unwrap_or(i8::MAX),
             crate::state::SkillTestFollowUp::None,
+            on_success.as_ref().map(|b| (**b).clone()),
             Some((**on_fail).clone()),
+            eval_ctx.source,
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Restrict(_) => EngineOutcome::Rejected {
@@ -810,6 +813,64 @@ pub fn play_is_prohibited(
     })
 }
 
+/// The extra action cost `investigator` pays to perform `action_class`,
+/// plus the `first_each_round` source instances to mark spent on commit.
+///
+/// Sums `Restriction::ExtraActionCost` deltas (1 each) from active
+/// `Trigger::Constant` abilities on the investigator's controlled
+/// instances whose `actions` include `action_class` (Frozen in Fear
+/// 01164: move / fight / evade). A `first_each_round` source already in
+/// `action_surcharge_spent_this_round` contributes 0; the returned
+/// instance list is the set the caller marks spent **after** the action
+/// commits (so cost-peek stays read-only for validate-first). Always-on
+/// (`first_each_round == false`) surcharges always contribute and are not
+/// returned for marking.
+#[must_use]
+pub fn pending_action_surcharge(
+    state: &GameState,
+    registry: &CardRegistry,
+    investigator: InvestigatorId,
+    action_class: crate::dsl::ActionClass,
+) -> (u8, Vec<crate::state::CardInstanceId>) {
+    use crate::dsl::Restriction;
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return (0, Vec::new());
+    };
+    let mut extra: u8 = 0;
+    let mut to_mark = Vec::new();
+    for card in inv.controlled_card_instances() {
+        let Some(abilities) = (registry.abilities_for)(&card.code) else {
+            continue;
+        };
+        for a in &abilities {
+            if a.trigger != Trigger::Constant {
+                continue;
+            }
+            let Effect::Restrict(Restriction::ExtraActionCost {
+                actions,
+                first_each_round,
+            }) = &a.effect
+            else {
+                continue;
+            };
+            if !actions.contains(action_class) {
+                continue;
+            }
+            if *first_each_round {
+                if inv
+                    .action_surcharge_spent_this_round
+                    .contains(&card.instance_id)
+                {
+                    continue;
+                }
+                to_mark.push(card.instance_id);
+            }
+            extra = extra.saturating_add(1);
+        }
+    }
+    (extra, to_mark)
+}
+
 /// Shared core of [`constant_skill_modifier`] and
 /// [`unconditional_constant_stat_modifier`]: sum the `delta` of every
 /// `Trigger::Constant` `Effect::Modify` on `controller`'s cards in play
@@ -1170,6 +1231,8 @@ mod tests {
             tested_location: Some(tested),
             follow_up: crate::state::SkillTestFollowUp::Investigate,
             on_fail: None,
+            on_success: None,
+            source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         let mut events = Vec::new();
@@ -1241,6 +1304,8 @@ mod tests {
             tested_location: Some(LocationId(10)),
             follow_up: crate::state::SkillTestFollowUp::None,
             on_fail: None,
+            on_success: None,
+            source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         state
@@ -1403,6 +1468,8 @@ mod tests {
             tested_location: None,
             follow_up: crate::state::SkillTestFollowUp::None,
             on_fail: None,
+            on_success: None,
+            source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         let mut events = Vec::new();
@@ -1652,6 +1719,16 @@ mod tests {
             "cannot-play-assets" => Some(vec![constant(crate::dsl::restrict(
                 crate::dsl::Restriction::CannotPlay(crate::card_data::CardType::Asset),
             ))]),
+            "frozen-surcharge" => Some(vec![constant(crate::dsl::restrict(
+                crate::dsl::Restriction::ExtraActionCost {
+                    actions: crate::dsl::ActionClassSet {
+                        move_: true,
+                        fight: true,
+                        evade: true,
+                    },
+                    first_each_round: true,
+                },
+            ))]),
             _ => None,
         }
     }
@@ -1774,6 +1851,53 @@ mod tests {
         let reg = fake_registry();
         assert!(play_is_prohibited(&state, &reg, id, CardType::Asset));
         assert!(!play_is_prohibited(&state, &reg, id, CardType::Event));
+    }
+
+    #[test]
+    fn surcharge_charges_first_matching_action_then_not_again_until_reset() {
+        use super::pending_action_surcharge;
+        use crate::dsl::ActionClass;
+        let (mut state, id) = state_with_cards_in_play(&["frozen-surcharge"]);
+        let reg = fake_registry();
+
+        // First move this round: +1, and the source (instance 0) to mark.
+        let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Move);
+        assert_eq!(extra, 1);
+        assert_eq!(to_mark, vec![CardInstanceId(0)]);
+
+        // Mark it spent (what the action handler does on commit).
+        state
+            .investigators
+            .get_mut(&id)
+            .unwrap()
+            .action_surcharge_spent_this_round
+            .insert(CardInstanceId(0));
+
+        // Second matching action this round: no surcharge.
+        let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Fight);
+        assert_eq!(extra, 0);
+        assert!(to_mark.is_empty());
+
+        // New round reset → charges again.
+        state
+            .investigators
+            .get_mut(&id)
+            .unwrap()
+            .action_surcharge_spent_this_round
+            .clear();
+        let (extra, _) = pending_action_surcharge(&state, &reg, id, ActionClass::Evade);
+        assert_eq!(extra, 1);
+    }
+
+    #[test]
+    fn surcharge_two_sources_each_charge_the_first_action() {
+        use super::pending_action_surcharge;
+        use crate::dsl::ActionClass;
+        let (state, id) = state_with_cards_in_play(&["frozen-surcharge", "frozen-surcharge"]);
+        let reg = fake_registry();
+        let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Move);
+        assert_eq!(extra, 2, "two Frozen in Fear each surcharge the first action");
+        assert_eq!(to_mark, vec![CardInstanceId(0), CardInstanceId(1)]);
     }
 
     #[test]

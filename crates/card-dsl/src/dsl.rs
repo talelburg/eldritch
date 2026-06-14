@@ -520,6 +520,11 @@ pub enum Effect {
     SkillTest {
         skill: crate::card_data::SkillKind,
         difficulty: u8,
+        /// Effect to run **on success** after the test resolves (the
+        /// success-side mirror of `on_fail`). `None` for tests that only
+        /// branch on failure. Frozen in Fear 01164 discards itself on a
+        /// successful end-of-turn willpower test.
+        on_success: Option<Box<Effect>>,
         on_fail: Box<Effect>,
     },
     /// Run `body` once per point the just-resolved skill test was failed
@@ -973,12 +978,32 @@ pub fn restrict(restriction: Restriction) -> Effect {
 }
 
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against
-/// `difficulty`, running `on_fail` after the test resolves on failure.
+/// `difficulty`, running `on_fail` after the test resolves on failure
+/// (no success-side effect).
 #[must_use]
 pub fn skill_test(skill: crate::card_data::SkillKind, difficulty: u8, on_fail: Effect) -> Effect {
     Effect::SkillTest {
         skill,
         difficulty,
+        on_success: None,
+        on_fail: Box::new(on_fail),
+    }
+}
+
+/// Build an [`Effect::SkillTest`] with both success- and failure-side
+/// follow-ups. Frozen in Fear 01164 discards itself on success and does
+/// nothing on failure (pass `Effect::Seq(vec![])` for the latter).
+#[must_use]
+pub fn skill_test_with_success(
+    skill: crate::card_data::SkillKind,
+    difficulty: u8,
+    on_success: Effect,
+    on_fail: Effect,
+) -> Effect {
+    Effect::SkillTest {
+        skill,
+        difficulty,
+        on_success: Some(Box::new(on_success)),
         on_fail: Box::new(on_fail),
     }
 }

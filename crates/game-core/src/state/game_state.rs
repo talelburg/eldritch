@@ -416,6 +416,17 @@ pub struct InFlightSkillTest {
     /// [`follow_up`](Self::follow_up). Orthogonal to `follow_up` —
     /// success and margin-keyed-failure are separate axes.
     pub on_fail: Option<card_dsl::dsl::Effect>,
+    /// Effect to run **on success** after the chaos token resolves (the
+    /// success-side mirror of [`on_fail`](Self::on_fail)). Carried by
+    /// `Effect::SkillTest` with a success branch — Frozen in Fear 01164's
+    /// end-of-turn willpower test discards the card on success. `None` for
+    /// action tests and failure-only card tests.
+    pub on_success: Option<card_dsl::dsl::Effect>,
+    /// The firing card instance, threaded so the `on_success` / `on_fail`
+    /// eval-contexts can resolve [`Effect::DiscardSelf`] across the
+    /// suspend/resume boundary. `None` for action tests and effects with
+    /// no originating instance.
+    pub source: Option<CardInstanceId>,
     /// Where the resolution driver should resume on the next call to
     /// `drive_skill_test`. Initialized to
     /// [`FinishContinuation::AwaitingCommit`] at

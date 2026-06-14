@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::card::{CardCode, CardInPlay};
+use super::card::{CardCode, CardInPlay, CardInstanceId};
 use super::location::LocationId;
 use super::Skills;
 
@@ -101,6 +101,13 @@ pub struct Investigator {
     /// serialized before this field was added still deserialize.
     #[serde(default)]
     pub removed_from_game: Vec<CardCode>,
+    /// Source instances whose [`ExtraActionCost`](crate::dsl::Restriction::ExtraActionCost)
+    /// with `first_each_round` has already surcharged an action this round
+    /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
+    /// instance so multiple surcharge sources track independently. Defaults
+    /// to empty for backward-compatible deserialization.
+    #[serde(default)]
+    pub action_surcharge_spent_this_round: std::collections::BTreeSet<CardInstanceId>,
 }
 
 impl Investigator {
