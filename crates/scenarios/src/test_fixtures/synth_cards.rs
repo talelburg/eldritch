@@ -70,7 +70,7 @@ pub const SYNTH_FAST_EVENT_CODE: &str = "_synth_fast_event";
 /// Code for the synthetic Cover-Up-shaped treachery (C5a #236). Carries a
 /// `WouldDiscoverClues` before-timing interrupt + a `GameEnd` forced
 /// trauma, both backed by Native effects on [`TEST_REGISTRY`]. Underscore
-/// prefix guarantees no collision with real ArkhamDB codes.
+/// prefix guarantees no collision with real `ArkhamDB` codes.
 pub const SYNTH_COVER_UP_CODE: &str = "_synth_cover_up";
 
 /// Native-effect tag: discard the replaced clue count from the synthetic
@@ -221,7 +221,11 @@ fn synth_cover_up_discard(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         };
     };
     if let Some(inv) = cx.state.investigators.get_mut(&ctx.controller) {
-        for card in inv.threat_area.iter_mut().chain(inv.cards_in_play.iter_mut()) {
+        for card in inv
+            .threat_area
+            .iter_mut()
+            .chain(inv.cards_in_play.iter_mut())
+        {
             if card.instance_id == source {
                 let take = count.min(card.clues);
                 card.clues -= take;

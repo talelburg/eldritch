@@ -537,24 +537,28 @@ fn discover_clue(
             // Read-only scan first (collect the hit), then set the pending
             // state — keeps the immutable borrow of the investigator
             // disjoint from the later mutable write.
-            let hit = cx.state.investigators.get(&eval_ctx.controller).and_then(|inv| {
-                inv.controlled_card_instances().find_map(|card| {
-                    if card.clues == 0 {
-                        return None;
-                    }
-                    let abilities = (reg.abilities_for)(&card.code)?;
-                    let idx = abilities.iter().position(|a| {
-                        matches!(
-                            &a.trigger,
-                            crate::dsl::Trigger::OnEvent {
-                                pattern: crate::dsl::EventPattern::WouldDiscoverClues,
-                                timing: crate::dsl::EventTiming::Before,
-                            }
-                        )
-                    })?;
-                    Some((card.instance_id, idx))
-                })
-            });
+            let hit = cx
+                .state
+                .investigators
+                .get(&eval_ctx.controller)
+                .and_then(|inv| {
+                    inv.controlled_card_instances().find_map(|card| {
+                        if card.clues == 0 {
+                            return None;
+                        }
+                        let abilities = (reg.abilities_for)(&card.code)?;
+                        let idx = abilities.iter().position(|a| {
+                            matches!(
+                                &a.trigger,
+                                crate::dsl::Trigger::OnEvent {
+                                    pattern: crate::dsl::EventPattern::WouldDiscoverClues,
+                                    timing: crate::dsl::EventTiming::Before,
+                                }
+                            )
+                        })?;
+                        Some((card.instance_id, idx))
+                    })
+                });
             if let Some((source, ability_index)) = hit {
                 cx.state.clue_interrupt_pending = Some(crate::state::ClueInterruptPending {
                     controller: eval_ctx.controller,
@@ -592,7 +596,11 @@ pub(crate) fn perform_discovery(
     count: u8,
     controller: crate::state::InvestigatorId,
 ) {
-    let location = cx.state.locations.get(&location_id).expect("location exists");
+    let location = cx
+        .state
+        .locations
+        .get(&location_id)
+        .expect("location exists");
     // Cap the discovery at the location's actual clue count — a card
     // can't pull more clues than exist.
     let actually_taken = count.min(location.clues);

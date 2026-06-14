@@ -16,13 +16,10 @@ use crate::engine::evaluator::{apply_effect, perform_discovery, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 
 pub(crate) fn resume_clue_interrupt(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = match cx.state.clue_interrupt_pending.take() {
-        Some(p) => p,
-        None => {
-            return EngineOutcome::Rejected {
-                reason: "resume_clue_interrupt: no clue interrupt pending".into(),
-            }
-        }
+    let Some(pending) = cx.state.clue_interrupt_pending.take() else {
+        return EngineOutcome::Rejected {
+            reason: "resume_clue_interrupt: no clue interrupt pending".into(),
+        };
     };
     match response {
         InputResponse::Confirm => {

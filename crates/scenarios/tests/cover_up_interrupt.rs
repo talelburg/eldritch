@@ -1,6 +1,6 @@
 //! C5a (#236) integration: Cover Up's before-timing clue-discovery
 //! interrupt and its game-end mental-trauma forced point, against the
-//! synthetic Cover-Up fixture. Own process → installs TEST_REGISTRY.
+//! synthetic Cover-Up fixture. Own process → installs `TEST_REGISTRY`.
 
 use std::sync::Once;
 
@@ -89,7 +89,11 @@ fn confirm_replaces_discovery_with_discard_from_cover_up() {
             response: InputResponse::Confirm,
         }),
     );
-    assert!(matches!(r.outcome, EngineOutcome::Done), "got {:?}", r.outcome);
+    assert!(
+        matches!(r.outcome, EngineOutcome::Done),
+        "got {:?}",
+        r.outcome
+    );
 
     assert_eq!(r.state.locations[&LOC].clues, 2, "location clues unchanged");
     assert_eq!(
@@ -139,7 +143,10 @@ fn no_interrupt_when_cover_up_has_no_clues() {
         "no interrupt expected, got {outcome:?}"
     );
     assert!(state.clue_interrupt_pending.is_none());
-    assert_eq!(state.locations[&LOC].clues, 1, "discovery resolved normally");
+    assert_eq!(
+        state.locations[&LOC].clues, 1,
+        "discovery resolved normally"
+    );
     assert_eq!(state.investigators[&INV].clues, 1);
 }
 

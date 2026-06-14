@@ -297,7 +297,7 @@ pub enum EventPattern {
     /// (paired with [`EventTiming::Before`]), never by the general
     /// reaction-window pipeline — `trigger_matches` returns `false` for
     /// it, like the forced-only patterns above. First consumer: Cover Up
-    /// 01007's "[reaction] When you would discover 1 or more clues at your
+    /// 01007's "`[reaction]` When you would discover 1 or more clues at your
     /// location: Discard that many clues from Cover Up instead." (C5a #236.)
     WouldDiscoverClues,
     /// The game ended (a scenario resolution latched). Fired forced via
