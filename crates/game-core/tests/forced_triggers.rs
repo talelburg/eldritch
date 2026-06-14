@@ -25,8 +25,8 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{Act, Agenda, CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
-    fire_forced_on_enter, fire_forced_on_phase_end, test_investigator, test_location,
-    GameStateBuilder,
+    fire_forced_at_end_of_turn, fire_forced_on_enter, fire_forced_on_phase_end, test_investigator,
+    test_location, GameStateBuilder,
 };
 use game_core::{apply, Action, PlayerAction};
 
@@ -47,6 +47,16 @@ const DOOM_ACT: &str = "test-act";
 /// single timing point with 2+ simultaneous forced triggers rejects loudly
 /// instead of silently choosing an order.
 const DOUBLE_FORCED: &str = "test-double-forced";
+
+/// Mock threat-area card: one `EventPattern::EndOfTurn` forced ability
+/// dealing 1 horror to the controller. The Frozen-in-Fear-shape (C4c),
+/// minus the skill test (kept non-suspending for the C4a firing path).
+const END_OF_TURN_CARD: &str = "test-end-of-turn";
+
+/// Mock threat-area card: one `EventPattern::AfterLocationInvestigated`
+/// forced ability dealing 1 horror to the controller. The
+/// Obscuring-Fog-shape (C4c), minus the location attachment.
+const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
@@ -82,6 +92,18 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 deal_horror(InvestigatorTarget::You, 1),
             ),
         ])
+    } else if code.as_str() == END_OF_TURN_CARD {
+        Some(vec![on_event(
+            EventPattern::EndOfTurn,
+            EventTiming::After,
+            deal_horror(InvestigatorTarget::You, 1),
+        )])
+    } else if code.as_str() == AFTER_INVESTIGATE_CARD {
+        Some(vec![on_event(
+            EventPattern::AfterLocationInvestigated,
+            EventTiming::After,
+            deal_horror(InvestigatorTarget::You, 1),
+        )])
     } else {
         None
     }
@@ -395,6 +417,202 @@ fn forced_on_phase_end_fires_act_ability() {
         events,
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
     );
+}
+
+// ── EndOfTurn tests ───────────────────────────────────────────────────────────
+
+#[test]
+fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
+    use game_core::state::{CardInPlay, CardInstanceId};
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode(END_OF_TURN_CARD.into()),
+        CardInstanceId(1),
+    ));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_event!(
+        events,
+        Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+    );
+}
+
+#[test]
+fn fire_forced_at_end_of_turn_no_op_without_threat_area_card() {
+    install_mock_registry();
+    let mut state = GameStateBuilder::new()
+        .with_investigator(test_investigator(1))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert!(events.is_empty());
+}
+
+#[test]
+fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
+    // End-to-end: EndTurn for a lone investigator with an EndOfTurn
+    // threat-area card fires its forced effect as part of ending the
+    // turn.
+    use game_core::state::{CardInPlay, CardInstanceId};
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 0;
+    // Give the investigator a non-empty deck so Upkeep 4.4
+    // draw_one_with_deckout doesn't fire its "draw from empty deck"
+    // horror penalty and muddy the horror assertion.
+    inv.deck = vec![CardCode("filler-card".into())];
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode(END_OF_TURN_CARD.into()),
+        CardInstanceId(1),
+    ));
+    let state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })),
+        "EndOfTurn forced effect must fire during EndTurn; events = {:?}",
+        result.events
+    );
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
+}
+
+// ── AfterLocationInvestigated tests ───────────────────────────────────────────
+
+#[test]
+fn fire_forced_after_investigate_resolves_threat_area_ability() {
+    use game_core::state::{CardInPlay, CardInstanceId};
+    use game_core::test_support::fire_forced_after_location_investigated;
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode(AFTER_INVESTIGATE_CARD.into()),
+        CardInstanceId(1),
+    ));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_after_location_investigated(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        LocationId(10),
+    );
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_event!(
+        events,
+        Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+    );
+}
+
+#[test]
+fn fire_forced_after_investigate_no_op_without_threat_area_card() {
+    use game_core::test_support::fire_forced_after_location_investigated;
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_after_location_investigated(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        LocationId(10),
+    );
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert!(events.is_empty());
+}
+
+#[test]
+fn successful_investigate_fires_after_location_investigated_forced() {
+    // End-to-end: drive a successful Investigate (shroud 0, intellect 3,
+    // Numeric(0) token → always succeeds) and confirm the threat-area
+    // AfterLocationInvestigated forced effect fires.
+    use game_core::state::{CardInPlay, CardInstanceId, ChaosBag, ChaosToken, TokenModifiers};
+    use game_core::test_support::apply_no_commits;
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.skills.intellect = 3;
+    inv.actions_remaining = 1;
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode(AFTER_INVESTIGATE_CARD.into()),
+        CardInstanceId(1),
+    ));
+    let mut loc = test_location(10, "Study");
+    loc.shroud = 0;
+    loc.clues = 1;
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator(inv)
+        .with_location(loc)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::Investigate {
+            investigator: InvestigatorId(1),
+        }),
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })),
+        "AfterLocationInvestigated forced effect must fire on a successful \
+         investigate; events = {:?}",
+        result.events
+    );
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
 }
 
 #[test]

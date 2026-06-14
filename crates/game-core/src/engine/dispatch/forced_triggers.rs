@@ -65,6 +65,28 @@ pub(crate) enum ForcedTriggerPoint {
     /// `EventPattern::RoundEnded` forced abilities; binds controller =
     /// the lead investigator (board-wide effects ignore it).
     RoundEnded,
+    /// An investigator's turn ended (step 2.2.2). Scans that
+    /// investigator's controlled card instances (threat area + in play)
+    /// for `EventPattern::EndOfTurn` forced abilities; binds controller
+    /// = that investigator. First consumer: Frozen in Fear (01164), C4c.
+    EndOfTurn {
+        /// The investigator whose turn ended.
+        investigator: InvestigatorId,
+    },
+    /// A location was successfully investigated. Scans the investigating
+    /// investigator's controlled card instances (threat area + in play)
+    /// for `EventPattern::AfterLocationInvestigated` forced abilities;
+    /// binds controller = that investigator. C4c (#235) extends the scan
+    /// to the investigated location's attachments for Obscuring Fog
+    /// (01168), the first real consumer.
+    AfterLocationInvestigated {
+        /// The investigator who investigated.
+        investigator: InvestigatorId,
+        /// The location that was investigated. Unused by the C4a scan
+        /// (which keys off the investigator); C4c reads it to scan the
+        /// location's attachment zone.
+        location: LocationId,
+    },
 }
 
 struct ForcedHit {
@@ -92,6 +114,8 @@ pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> E
     }
 }
 
+// dispatcher: one match arm per ForcedTriggerPoint.
+#[allow(clippy::too_many_lines)]
 fn collect_forced_hits(
     state: &crate::state::GameState,
     point: &ForcedTriggerPoint,
@@ -180,6 +204,35 @@ fn collect_forced_hits(
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
                 push_matching(reg, &agenda.code, lead, &mut hits, |p| {
                     matches!(p, EventPattern::RoundEnded)
+                });
+            }
+        }
+        ForcedTriggerPoint::EndOfTurn { investigator } => {
+            let Some(inv) = state.investigators.get(investigator) else {
+                return hits;
+            };
+            // Scan the ending investigator's controlled instances
+            // (threat area + in play). Code-based registry lookup is
+            // fine — abilities are static per code; C4c threads the
+            // source instance when an effect needs to discard itself.
+            for card in inv.controlled_card_instances() {
+                push_matching(reg, &card.code, *investigator, &mut hits, |p| {
+                    matches!(p, EventPattern::EndOfTurn)
+                });
+            }
+        }
+        ForcedTriggerPoint::AfterLocationInvestigated {
+            investigator,
+            location: _location,
+        } => {
+            let Some(inv) = state.investigators.get(investigator) else {
+                return hits;
+            };
+            // C4a scans the investigator's controlled instances; C4c
+            // extends to `_location`'s attachment zone (Obscuring Fog).
+            for card in inv.controlled_card_instances() {
+                push_matching(reg, &card.code, *investigator, &mut hits, |p| {
+                    matches!(p, EventPattern::AfterLocationInvestigated)
                 });
             }
         }

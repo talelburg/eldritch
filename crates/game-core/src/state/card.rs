@@ -67,6 +67,11 @@ pub enum Zone {
     Deck,
     /// Cards currently in play under an investigator's control.
     InPlay,
+    /// An investigator's threat area — the play area holding encounter
+    /// cards engaged with / affecting them (Rules Reference p.20).
+    /// Cards there are at the investigator's location. Used as the
+    /// `from` zone when a threat-area card is discarded.
+    ThreatArea,
 }
 
 /// Unique identifier for a specific copy of a card in play.

@@ -111,3 +111,37 @@ pub fn fire_forced_on_enemy_defeat(
         &crate::engine::ForcedTriggerPoint::EnemyDefeated { code },
     )
 }
+
+/// Test helper: fire `ForcedTriggerPoint::EndOfTurn` for `investigator`,
+/// returning the `EngineOutcome`. See `fire_forced_on_enter`. Exercises
+/// the threat-area "at the end of your turn" forced path.
+pub fn fire_forced_at_end_of_turn(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    investigator: crate::state::InvestigatorId,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::EndOfTurn { investigator },
+    )
+}
+
+/// Test helper: fire `ForcedTriggerPoint::AfterLocationInvestigated`,
+/// returning the `EngineOutcome`. See `fire_forced_on_enter`. Exercises
+/// the threat-area "after successfully investigated" forced path.
+pub fn fire_forced_after_location_investigated(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    investigator: crate::state::InvestigatorId,
+    location: crate::state::LocationId,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::AfterLocationInvestigated {
+            investigator,
+            location,
+        },
+    )
+}

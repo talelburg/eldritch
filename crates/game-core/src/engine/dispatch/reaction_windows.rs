@@ -93,7 +93,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
-        for card in &inv.cards_in_play {
+        for card in inv.controlled_card_instances() {
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
             };
@@ -181,6 +181,8 @@ fn trigger_matches(
         // ActAdvanced is matched only by the forced dispatch path
         // (`ForcedTriggerPoint::ActAdvanced`), never by player reaction
         // windows.
+        // EndOfTurn and AfterLocationInvestigated are likewise forced-only
+        // (`ForcedTriggerPoint::EndOfTurn` / `AfterLocationInvestigated`).
         (
             WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
             EventPattern::EnemyDefeated { .. }
@@ -190,7 +192,9 @@ fn trigger_matches(
             | EventPattern::PhaseEnded { .. }
             | EventPattern::ActAdvanced
             | EventPattern::AgendaAdvanced
-            | EventPattern::RoundEnded,
+            | EventPattern::RoundEnded
+            | EventPattern::EndOfTurn
+            | EventPattern::AfterLocationInvestigated,
         ) => false,
     }
 }
@@ -315,14 +319,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             )
         });
     let card = inv
-        .cards_in_play
-        .iter()
+        .controlled_card_instances()
         .find(|c| c.instance_id == trigger.instance_id)
         .unwrap_or_else(|| {
             unreachable!(
                 "fire_pending_trigger: instance {inst:?} vanished from controller {ctl:?}'s \
-                 cards_in_play while reaction window was open; state-corruption invariant \
-                 violation",
+                 cards_in_play / threat area while reaction window was open; \
+                 state-corruption invariant violation",
                 inst = trigger.instance_id,
                 ctl = trigger.controller,
             )
@@ -419,12 +422,13 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
     let card = inv
         .cards_in_play
         .iter_mut()
+        .chain(inv.threat_area.iter_mut())
         .find(|c| c.instance_id == trigger.instance_id)
         .unwrap_or_else(|| {
             unreachable!(
                 "bump_usage_counter: instance {inst:?} vanished from controller {ctl:?}'s \
-                 cards_in_play while reaction window was open; state-corruption invariant \
-                 violation",
+                 cards_in_play / threat area while reaction window was open; \
+                 state-corruption invariant violation",
                 inst = trigger.instance_id,
                 ctl = trigger.controller,
             )

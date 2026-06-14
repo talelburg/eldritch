@@ -79,6 +79,19 @@ pub struct Investigator {
     /// at enter-play time so duplicate codes are still individually
     /// addressable.
     pub cards_in_play: Vec<CardInPlay>,
+    /// Encounter cards in this investigator's threat area — persistent
+    /// treacheries and weaknesses engaged with / affecting them (Rules
+    /// Reference p.20: "a play area in which encounter cards currently
+    /// engaged with and/or affecting an investigator are placed";
+    /// cards there are at the investigator's location). Mirrors
+    /// [`cards_in_play`](Self::cards_in_play) — same `CardInPlay`
+    /// per-instance state — but holds scenario-bag content rather than
+    /// player cards. Defaults to empty for backward-compat: states
+    /// serialized before this field was added still deserialize.
+    ///
+    /// [`cards_in_play`]: Self::cards_in_play
+    #[serde(default)]
+    pub threat_area: Vec<CardInPlay>,
     /// Cards removed from the game (Rules Reference p.10, "Elimination,"
     /// step 1). When this investigator is eliminated, every card they
     /// control in play (`cards_in_play`) and every card they own in an
@@ -88,6 +101,18 @@ pub struct Investigator {
     /// serialized before this field was added still deserialize.
     #[serde(default)]
     pub removed_from_game: Vec<CardCode>,
+}
+
+impl Investigator {
+    /// Every in-play card instance this investigator controls that can
+    /// carry a triggerable ability: cards in play, then threat-area
+    /// cards. The single definition both the reaction-window scan and
+    /// the forced instance-scan walk, so the threat area is covered by
+    /// both dispatch paths without a duplicate walk. This is the
+    /// shared scan source #212 later absorbs.
+    pub fn controlled_card_instances(&self) -> impl Iterator<Item = &CardInPlay> {
+        self.cards_in_play.iter().chain(self.threat_area.iter())
+    }
 }
 
 /// Whether an investigator is still active in the scenario, and if not,
@@ -131,6 +156,52 @@ pub enum DefeatCause {
 // (`card_dsl::card_data`) — pure data shared across the engine-corpus
 // boundary. Re-exported at `game_core::state::{Skills, SkillKind}` (see
 // `state/mod.rs`).
+
+#[cfg(test)]
+mod threat_area_tests {
+    use super::*;
+    use crate::state::{CardCode, CardInPlay, CardInstanceId};
+
+    #[test]
+    fn new_investigator_has_empty_threat_area() {
+        let inv = crate::test_support::test_investigator(1);
+        assert!(inv.threat_area.is_empty());
+    }
+
+    #[test]
+    fn deserializes_when_threat_area_field_absent() {
+        // A state serialized before `threat_area` existed must still
+        // parse (serde default), proving backward-compat.
+        let json = r#"{
+            "id": 1, "name": "Test", "current_location": null,
+            "skills": {"willpower":3,"intellect":3,"combat":3,"agility":3},
+            "max_health": 8, "damage": 0, "max_sanity": 8, "horror": 0,
+            "clues": 0, "resources": 0, "actions_remaining": 3,
+            "status": "Active", "deck": [], "hand": [], "discard": [],
+            "cards_in_play": []
+        }"#;
+        let inv: Investigator = serde_json::from_str(json).expect("deserialize");
+        assert!(inv.threat_area.is_empty());
+    }
+
+    #[test]
+    fn controlled_card_instances_yields_in_play_then_threat_area() {
+        let mut inv = crate::test_support::test_investigator(1);
+        inv.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new("in-play"),
+            CardInstanceId(1),
+        ));
+        inv.threat_area.push(CardInPlay::enter_play(
+            CardCode::new("threat"),
+            CardInstanceId(2),
+        ));
+        let codes: Vec<&str> = inv
+            .controlled_card_instances()
+            .map(|c| c.code.as_str())
+            .collect();
+        assert_eq!(codes, vec!["in-play", "threat"]);
+    }
+}
 
 #[cfg(test)]
 mod removed_from_game_tests {

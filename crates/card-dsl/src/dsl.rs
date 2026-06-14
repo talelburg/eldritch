@@ -277,6 +277,21 @@ pub enum EventPattern {
     /// from `PhaseEnded { Upkeep }` so an "end of upkeep phase" and an
     /// "end of round" card can coexist.
     RoundEnded,
+    /// The investigator's turn ended (Rules Reference p.24 step 2.2.2,
+    /// "Forced – At the end of your turn"). Fired forced via
+    /// `ForcedTriggerPoint::EndOfTurn` from `end_turn`, scanning the
+    /// ending investigator's controlled card instances (threat area +
+    /// in play); binds controller = that investigator. First consumer:
+    /// Frozen in Fear (01164), C4c (#235).
+    EndOfTurn,
+    /// A location was successfully investigated. Fired forced via
+    /// `ForcedTriggerPoint::AfterLocationInvestigated` from the
+    /// skill-test resolution driver after a successful Investigate;
+    /// binds controller = the investigating investigator. In C4a the
+    /// forced scan covers the investigator's controlled card instances;
+    /// C4c (#235) extends it to the investigated location's attachment
+    /// zone for Obscuring Fog (01168), the first consumer.
+    AfterLocationInvestigated,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can

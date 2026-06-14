@@ -13,9 +13,11 @@ C3a (Prey – Lowest remaining health + Retaliate keyword),
 C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
 C3c (agenda 01107 forced abilities), C3d (act-2 round-end window),
 the act-2 reverse ([#280](https://github.com/talelburg/eldritch/issues/280):
-spawn the set-aside Ghoul Priest + reveal the Parlor), and the agenda
+spawn the set-aside Ghoul Priest + reveal the Parlor), the agenda
 reverses ([#281](https://github.com/talelburg/eldritch/issues/281):
-01105/01106 + the `AgendaAdvanced` forced point). **Next: C4 → C7.**
+01105/01106 + the `AgendaAdvanced` forced point), and C4a (threat-area
+zone + shared scan source + `EndOfTurn`/`AfterLocationInvestigated`
+forced points). **Next: C4b/C4c → C5 → C7.**
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -65,7 +67,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | — | [#276](https://github.com/talelburg/eldritch/issues/276) | infra: `Effect::Native` card-local-Rust bridge (prerequisite for C3c's agenda + future bespoke cards) | ✅ PR #277 |
 | C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) | ✅ PR #278 |
 | C3d | [#275](https://github.com/talelburg/eldritch/issues/275) | act-2 (01109) round-end clue-spend window (split from C3c) | ✅ PR #279 |
-| C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | — |
+| C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | ✅ PR #285 |
 | C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | — |
 | C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area treacheries (×3) | — |
 | C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | — |
@@ -145,6 +147,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **Set-aside *enemies* record a code only; the `Enemy` is minted at spawn (#280, PR #282).** Set-aside *locations* are fully built in `setup()` (`set_aside_locations: Vec<Location>`), but an enemy's per-investigator health (Ghoul Priest 01116 = 5×N) depends on the investigator count, unknown at `setup()` — so `set_aside_enemies: Vec<CardCode>` stores codes and `spawn_set_aside_enemy` mints stats from the corpus when a card effect brings the enemy into play. The shared spawn core is `spawn_enemy_at(cx, controller, code, metadata, location)`, factored out of `spawn_enemy` and reused by both the encounter-draw path (location from the card's spawn rule) and the set-aside path (location named by the bringing effect). **Future set-aside enemies reuse this field + helper, not a new mechanism.** Act-2's reverse (`act_01109`) is the first consumer; "put Lita into play" stays deferred to #258.
 
 - **Agenda reverses fire via an `AgendaAdvanced` forced point mirroring `ActAdvanced`; 01105's interactive choice is deferred to #212 (#281, PR #283).** `advance_agenda` now fires `ForcedTriggerPoint::AgendaAdvanced { code }` (lead-bound) the way `advance_act` fires `ActAdvanced` — the forward-compatible subset #212 will absorb. **01106** is fully deterministic (reshuffle discard → dig the encounter deck discarding non-Ghoul cards → lead draws the Ghoul via the now-public `resolve_encounter_card`/`reshuffle_encounter_discard`); it is a faithful no-op until the encounter deck is assembled (a later C-sub), and is tested against a seeded deck. **01105 is a lead *choice*** (each discards 1 random / lead takes 2 horror) that needs suspendable mid-forced-dispatch `AwaitingInput` — which the engine lacks (`ChooseOne` is a stub; the Mythos 1.3 doom-check resolves inline) and which **#212** ("mid-emit `AwaitingInput` suspension"; absorbs `fire_forced_triggers`) owns. So 01105 ships the deterministic 2-horror branch (a legal outcome, like act-3's R1/R2 single-latch deferral), `TODO(#212)`; the random-discard branch was rejected as the default because it needs *recorded* randomness for replay. **Pattern for future forced "choose one" reverses: defer the interactive choice to #212 with a deterministic legal branch rather than building bespoke suspension now.**
+
+- **The threat-area zone is `Investigator.threat_area`, and `Investigator::controlled_card_instances()` (chains `cards_in_play` + `threat_area`) is the single scan source for both reaction-window and forced instance scans (C4a, [#233](https://github.com/talelburg/eldritch/issues/233), PR #285).** Cards enter/leave via `dispatch::threat_area::{place_in_threat_area, discard_from_threat_area}` (the latter emits `CardDiscarded { from: Zone::ThreatArea }`); both are `#[cfg_attr(not(test), allow(dead_code))]` until **C4c ([#235](https://github.com/talelburg/eldritch/issues/235))** wires the first production caller. The reaction *fire* path (`fire_pending_trigger`/`bump_usage_counter`) was made symmetric with the scan — both search threat area too — so a threat-area reaction can be offered *and* fired. Two new forced points landed: **`EndOfTurn`** (fired from `end_turn`, scans the ending investigator's controlled instances) and **`AfterLocationInvestigated`** (fired from the skill-test `PostOnResolution` step on a successful Investigate). **C4c consequences:** persistent treacheries call `place_in_threat_area` + a self-discard via their forced effect (which needs the *source instance* threaded into the forced `EvalContext` — C4a's `resolve_one` binds controller only, so C4c extends it); and **`AfterLocationInvestigated` currently scans the investigator's controlled instances only — C4c must extend its collect branch to scan the investigated *location's* attachment zone** for Obscuring Fog (01168), which attaches to a location, not the threat area. **Suspension at either forced point is unmodeled** (no resume plumbing; `end_turn` propagates a non-`Done` outcome, the skill-test driver `unreachable!`s) — a forced effect that initiates a skill test there is #212 reentrancy work; no C4c card suspends at these points.
 
 ## Open questions
 
