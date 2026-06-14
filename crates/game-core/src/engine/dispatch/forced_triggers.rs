@@ -44,6 +44,14 @@ pub(crate) enum ForcedTriggerPoint {
         /// Printed code of the act that advanced.
         code: CardCode,
     },
+    /// An agenda advanced (its reverse side resolves on doom). Scans the
+    /// *leaving* agenda's card for `EventPattern::AgendaAdvanced` forced
+    /// abilities; binds controller = the lead investigator. The mirror of
+    /// [`ActAdvanced`](Self::ActAdvanced) — fired from `advance_agenda`.
+    AgendaAdvanced {
+        /// Printed code of the agenda that advanced.
+        code: CardCode,
+    },
     /// An enemy was defeated. Scans the *current act* for
     /// `EventPattern::EnemyDefeated` forced abilities whose `code` narrow
     /// matches (or is `None`); binds controller = the lead investigator.
@@ -136,6 +144,14 @@ fn collect_forced_hits(
             };
             push_matching(reg, code, lead, &mut hits, |p| {
                 matches!(p, EventPattern::ActAdvanced)
+            });
+        }
+        ForcedTriggerPoint::AgendaAdvanced { code } => {
+            let Some(lead) = state.turn_order.first().copied() else {
+                return hits;
+            };
+            push_matching(reg, code, lead, &mut hits, |p| {
+                matches!(p, EventPattern::AgendaAdvanced)
             });
         }
         ForcedTriggerPoint::EnemyDefeated { code } => {

@@ -43,6 +43,8 @@
 //! - Trapped (01108) — Act 1; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance board build.
 //! - The Barrier (01109) — Act 2; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance reverse: reveal the Parlor + spawn the set-aside Ghoul Priest.
 //! - What Have You Done? (01110) — Act 3; `Trigger::OnEvent` (`EnemyDefeated` 01116, `After`) -> `AdvanceCurrentAct`.
+//! - What's Going On?! (01105) — Agenda 1; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: lead takes 2 horror (deferred branch, TODO #212).
+//! - Rise of the Ghouls (01106) — Agenda 2; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: dig the encounter deck until a Ghoul, lead draws it.
 //!
 //! The remaining Phase-3 card (Study #56) blocks on the
 //! location-state shape.
@@ -52,6 +54,8 @@ use card_dsl::dsl::Ability;
 pub mod act_01108;
 pub mod act_01109;
 pub mod act_01110;
+pub mod agenda_01105;
+pub mod agenda_01106;
 pub mod agenda_01107;
 pub mod attic;
 pub mod cellar;
@@ -70,6 +74,8 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         act_01108::CODE => Some(act_01108::abilities()),
         act_01109::CODE => Some(act_01109::abilities()),
         act_01110::CODE => Some(act_01110::abilities()),
+        agenda_01105::CODE => Some(agenda_01105::abilities()),
+        agenda_01106::CODE => Some(agenda_01106::abilities()),
         agenda_01107::CODE => Some(agenda_01107::abilities()),
         attic::CODE => Some(attic::abilities()),
         cellar::CODE => Some(cellar::abilities()),
@@ -90,5 +96,6 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
 pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
     act_01108::native_effect_for(tag)
         .or_else(|| act_01109::native_effect_for(tag))
+        .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
 }

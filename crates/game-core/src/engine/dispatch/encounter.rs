@@ -88,21 +88,25 @@ pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId)
 
 /// Shared post-draw resolution helper. Resolves the per-card 5-step
 /// sub-sequence's steps 3 (Revelation) and 4 (enemy spawn) for an
-/// already-drawn encounter card. Called by [`encounter_card_revealed`]
+/// already-drawn encounter card. Called by `encounter_card_revealed`
 /// (the `EngineRecord::EncounterCardRevealed` path) and by
-/// `mythos_draw_for` (Mythos 1.4 player-driven draws, lands in T11).
+/// `mythos_draw_for` (Mythos 1.4 player-driven draws).
 ///
 /// Body: emits [`Event::CardRevealed`], then dispatches on
 /// `metadata.card_type` — treachery → run Revelation abilities →
-/// push card to `encounter_discard`;
-/// enemy → run Revelation abilities → call [`spawn_enemy`];
-/// any other type → return `Rejected`.
+/// push card to `encounter_discard`; enemy → run Revelation abilities →
+/// spawn it; any other type → return `Rejected`.
 ///
 /// **Mid-resolution caveat:** [`Event::CardRevealed`] emits before
 /// Revelation runs (Before-timing reactions need that ordering,
 /// per #126's design decision). The apply loop's `events.clear()`
 /// on Rejected still wipes the event stream on rejection.
-fn resolve_encounter_card(
+///
+/// Public so card effects that "draw"/"discard until" cards from the
+/// encounter deck can resolve the drawn card faithfully — agenda 01106's
+/// reverse draws the dug-up `Ghoul` enemy through here. Requires an
+/// installed card registry (rejects otherwise).
+pub fn resolve_encounter_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
@@ -513,8 +517,9 @@ pub(super) fn shuffle_encounter_deck(cx: &mut Cx) {
 }
 
 /// Drain `state.encounter_discard` into `state.encounter_deck` and
-/// shuffle the resulting deck. Called by
-/// [`draw_encounter_top`] when the deck runs empty.
+/// shuffle the resulting deck. Called by `draw_encounter_top` when the
+/// deck runs empty, and by card effects that "shuffle the discard into
+/// the encounter deck" (agenda 01106's reverse).
 ///
 /// Does NOT push an `EngineRecord::EncounterDeckShuffled` to the
 /// action log — mid-handler reshuffles rely on RNG determinism for
@@ -522,7 +527,7 @@ pub(super) fn shuffle_encounter_deck(cx: &mut Cx) {
 /// player-deck pattern. The `EngineRecord` variant is reserved for
 /// explicit shuffle actions (future "shuffle X into the encounter
 /// deck" effects).
-pub(super) fn reshuffle_encounter_discard(cx: &mut Cx) {
+pub fn reshuffle_encounter_discard(cx: &mut Cx) {
     cx.state
         .encounter_deck
         .extend(cx.state.encounter_discard.drain(..));

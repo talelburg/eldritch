@@ -54,7 +54,22 @@ pub(super) fn check_doom_threshold(cx: &mut Cx) {
 /// malformation guards from #69.
 pub(super) fn advance_agenda(cx: &mut Cx) {
     let from = cx.state.agenda_index;
+    let leaving_code = cx.state.agenda_deck[from].code.clone();
     cx.events.push(crate::event::Event::AgendaAdvanced { from });
+    // Resolve the leaving agenda's Forced on-advance reverse effect before
+    // the next agenda becomes current — the mirror of `advance_act`'s
+    // `ActAdvanced` firing (`advance_agenda` fired nothing before #281).
+    // The Gathering's reverses (01105 lead discard/horror, 01106
+    // dig-until-Ghoul) resolve here. `()` return can't propagate a
+    // 2+-trigger reject; `debug_assert!` guards it (mirror of `advance_act`).
+    let forced = super::forced_triggers::fire_forced_triggers(
+        cx,
+        &super::forced_triggers::ForcedTriggerPoint::AgendaAdvanced { code: leaving_code },
+    );
+    debug_assert!(
+        matches!(forced, EngineOutcome::Done),
+        "advance_agenda on-advance forced did not resolve to Done: {forced:?} (2+ needs #213)"
+    );
     cx.state.agenda_doom = 0;
     cx.state.agenda_index += 1;
     if cx.state.agenda_index >= cx.state.agenda_deck.len() {

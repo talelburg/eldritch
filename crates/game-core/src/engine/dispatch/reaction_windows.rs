@@ -189,6 +189,7 @@ fn trigger_matches(
             | EventPattern::EnteredLocation
             | EventPattern::PhaseEnded { .. }
             | EventPattern::ActAdvanced
+            | EventPattern::AgendaAdvanced
             | EventPattern::RoundEnded,
         ) => false,
     }
