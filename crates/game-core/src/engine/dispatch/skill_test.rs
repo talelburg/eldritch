@@ -197,8 +197,32 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         None => EvalContext::for_controller(investigator),
     };
 
+    // Pre-advance the continuation to PostFollowUp BEFORE running the
+    // follow-up, so a follow-up that suspends on a clue-discovery interrupt
+    // (Cover Up 01007) resumes at PostFollowUp rather than re-running the
+    // follow-up. `on_success` never co-occurs with a suspending follow-up
+    // in scope (Investigate sets on_success=None; SkillTest-effect tests
+    // set follow_up=None), so running on_success after the follow-up is
+    // safe. (C5a #236.)
+    cx.state
+        .in_flight_skill_test
+        .as_mut()
+        .expect("in_flight_skill_test was Some immediately above")
+        .continuation = FinishContinuation::PostFollowUp { succeeded };
+
     if succeeded {
-        apply_skill_test_follow_up(cx, investigator, follow_up);
+        let outcome = apply_skill_test_follow_up(cx, investigator, follow_up);
+        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+            // The follow-up suspended (clue-discovery interrupt). The
+            // continuation is already PostFollowUp; resume re-enters the
+            // driver there. Don't run on_success now — it doesn't co-occur
+            // with a suspending follow-up in scope.
+            return outcome;
+        }
+        debug_assert!(
+            matches!(outcome, EngineOutcome::Done),
+            "skill-test follow-up must resolve to Done or AwaitingInput: {outcome:?}"
+        );
         if let Some(effect) = &on_success {
             // Success-side card effect (Frozen in Fear 01164 discards
             // itself on a successful end-of-turn willpower test). In-scope
@@ -224,16 +248,6 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
             "revelation on_fail must resolve to Done in C4b scope: {outcome:?}"
         );
     }
-
-    // Step 2 is complete. Advance the continuation (carrying the
-    // outcome forward) and let the driver handle the remaining
-    // steps (including the possibly-queued reaction window from
-    // inside the follow-up).
-    cx.state
-        .in_flight_skill_test
-        .as_mut()
-        .expect("in_flight_skill_test was Some immediately above")
-        .continuation = FinishContinuation::PostFollowUp { succeeded };
 
     drive_skill_test(cx)
 }
@@ -554,31 +568,33 @@ fn apply_skill_test_follow_up(
     cx: &mut Cx,
     investigator: InvestigatorId,
     follow_up: SkillTestFollowUp,
-) {
+) -> EngineOutcome {
     match follow_up {
-        SkillTestFollowUp::None => {}
+        SkillTestFollowUp::None => EngineOutcome::Done,
         SkillTestFollowUp::Investigate => {
             let effect = discover_clue(LocationTarget::YourLocation, 1);
+            // discover_clue may suspend on a before-timing interrupt
+            // (Cover Up 01007). Propagate AwaitingInput; the Investigate
+            // follow-up has no source card, so `for_controller` is correct.
+            // The only rejection path ("controller between locations")
+            // can't occur post-Investigate (the action validated a
+            // location), so a Rejected here is still an invariant violation.
             let eval_ctx = EvalContext::for_controller(investigator);
-            // Same caveat as the pre-refactor `investigate`: the only
-            // remaining rejection path inside `discover_clue` is
-            // "controller is between locations", which the Investigate
-            // action validates before starting the test. Empty-
-            // location is a silent no-op by design. Any rejection
-            // here is a state-corruption invariant violation.
             let outcome = apply_effect(cx, &effect, eval_ctx);
-            if let EngineOutcome::Rejected { reason } = outcome {
+            if let EngineOutcome::Rejected { reason } = &outcome {
                 unreachable!(
                     "Investigate follow-up: discover_clue rejected unexpectedly after \
                      validation: {reason}"
                 );
             }
+            outcome
         }
         SkillTestFollowUp::Fight { enemy } => {
             // Mid-test enemy disappearance isn't possible in Phase 3
             // (no commit-window effects mutate enemies), so
             // damage_enemy's enemy-missing panic stays loud.
             super::combat::damage_enemy(cx, enemy, 1, Some(investigator));
+            EngineOutcome::Done
         }
         SkillTestFollowUp::Evade { enemy } => {
             let e = cx.state.enemies.get_mut(&enemy).unwrap_or_else(|| {
@@ -594,6 +610,7 @@ fn apply_skill_test_follow_up(
                 investigator,
             });
             cx.events.push(Event::EnemyExhausted { enemy });
+            EngineOutcome::Done
         }
     }
 }
