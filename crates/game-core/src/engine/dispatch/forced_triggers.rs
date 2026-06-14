@@ -7,7 +7,7 @@
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
-use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
+use crate::state::{CardCode, CardInstanceId, InvestigatorId, LocationId, Phase};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -93,6 +93,11 @@ struct ForcedHit {
     code: CardCode,
     ability_index: usize,
     controller: InvestigatorId,
+    /// The firing card instance, when the hit came from scanning an
+    /// investigator's controlled instances or a location's attachments
+    /// (so `Effect::DiscardSelf` can find itself). `None` for board-card
+    /// hits (act / agenda).
+    source: Option<CardInstanceId>,
 }
 
 /// Fire Forced abilities matching `point`. Single-trigger path: 0 → Done;
@@ -132,7 +137,7 @@ fn collect_forced_hits(
             let Some(loc) = state.locations.get(location) else {
                 return hits;
             };
-            push_matching(reg, &loc.code, *investigator, &mut hits, |p| {
+            push_matching(reg, &loc.code, *investigator, None, &mut hits, |p| {
                 matches!(p, EventPattern::EnteredLocation)
             });
         }
@@ -148,6 +153,7 @@ fn collect_forced_hits(
                     reg,
                     &act.code,
                     lead,
+                    None,
                     &mut hits,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
@@ -157,6 +163,7 @@ fn collect_forced_hits(
                     reg,
                     &agenda.code,
                     lead,
+                    None,
                     &mut hits,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
@@ -166,7 +173,7 @@ fn collect_forced_hits(
             let Some(lead) = state.turn_order.first().copied() else {
                 return hits;
             };
-            push_matching(reg, code, lead, &mut hits, |p| {
+            push_matching(reg, code, lead, None, &mut hits, |p| {
                 matches!(p, EventPattern::ActAdvanced)
             });
         }
@@ -174,7 +181,7 @@ fn collect_forced_hits(
             let Some(lead) = state.turn_order.first().copied() else {
                 return hits;
             };
-            push_matching(reg, code, lead, &mut hits, |p| {
+            push_matching(reg, code, lead, None, &mut hits, |p| {
                 matches!(p, EventPattern::AgendaAdvanced)
             });
         }
@@ -183,7 +190,7 @@ fn collect_forced_hits(
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(reg, &act.code, lead, &mut hits, |p| {
+                push_matching(reg, &act.code, lead, None, &mut hits, |p| {
                     matches!(
                         p,
                         EventPattern::EnemyDefeated { code: narrow, .. }
@@ -197,14 +204,25 @@ fn collect_forced_hits(
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(reg, &act.code, lead, &mut hits, |p| {
+                push_matching(reg, &act.code, lead, None, &mut hits, |p| {
                     matches!(p, EventPattern::RoundEnded)
                 });
             }
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-                push_matching(reg, &agenda.code, lead, &mut hits, |p| {
+                push_matching(reg, &agenda.code, lead, None, &mut hits, |p| {
                     matches!(p, EventPattern::RoundEnded)
                 });
+            }
+            // Persistent threat-area treacheries discard on RoundEnded
+            // (Dissonant Voices 01165). Scan every investigator's
+            // controlled instances; bind source = the instance so
+            // `Effect::DiscardSelf` finds itself.
+            for (inv_id, inv) in &state.investigators {
+                for card in inv.controlled_card_instances() {
+                    push_matching(reg, &card.code, *inv_id, Some(card.instance_id), &mut hits, |p| {
+                        matches!(p, EventPattern::RoundEnded)
+                    });
+                }
             }
         }
         ForcedTriggerPoint::EndOfTurn { investigator } => {
@@ -216,24 +234,34 @@ fn collect_forced_hits(
             // fine — abilities are static per code; C4c threads the
             // source instance when an effect needs to discard itself.
             for card in inv.controlled_card_instances() {
-                push_matching(reg, &card.code, *investigator, &mut hits, |p| {
+                push_matching(reg, &card.code, *investigator, Some(card.instance_id), &mut hits, |p| {
                     matches!(p, EventPattern::EndOfTurn)
                 });
             }
         }
         ForcedTriggerPoint::AfterLocationInvestigated {
             investigator,
-            location: _location,
+            location,
         } => {
             let Some(inv) = state.investigators.get(investigator) else {
                 return hits;
             };
-            // C4a scans the investigator's controlled instances; C4c
-            // extends to `_location`'s attachment zone (Obscuring Fog).
+            // Scan the investigator's controlled instances (C4a) and the
+            // investigated location's attachment zone (C4c — Obscuring Fog
+            // 01168 attaches to the location, not the threat area). Bind
+            // source = the firing instance so `Effect::DiscardSelf` finds
+            // itself.
             for card in inv.controlled_card_instances() {
-                push_matching(reg, &card.code, *investigator, &mut hits, |p| {
+                push_matching(reg, &card.code, *investigator, Some(card.instance_id), &mut hits, |p| {
                     matches!(p, EventPattern::AfterLocationInvestigated)
                 });
+            }
+            if let Some(loc) = state.locations.get(location) {
+                for att in &loc.attachments {
+                    push_matching(reg, &att.code, *investigator, Some(att.instance_id), &mut hits, |p| {
+                        matches!(p, EventPattern::AfterLocationInvestigated)
+                    });
+                }
             }
         }
     }
@@ -255,6 +283,7 @@ fn push_matching(
     reg: &card_registry::CardRegistry,
     code: &CardCode,
     controller: InvestigatorId,
+    source: Option<CardInstanceId>,
     out: &mut Vec<ForcedHit>,
     want: impl Fn(&EventPattern) -> bool,
 ) {
@@ -271,6 +300,7 @@ fn push_matching(
                     code: code.clone(),
                     ability_index: idx,
                     controller,
+                    source,
                 });
             }
         }
@@ -293,5 +323,9 @@ fn resolve_one(cx: &mut Cx, hit: &ForcedHit) -> EngineOutcome {
         };
     };
     let effect = abilities[hit.ability_index].effect.clone();
-    apply_effect(cx, &effect, EvalContext::for_controller(hit.controller))
+    let ctx = match hit.source {
+        Some(src) => EvalContext::for_controller_with_source(hit.controller, src),
+        None => EvalContext::for_controller(hit.controller),
+    };
+    apply_effect(cx, &effect, ctx)
 }
