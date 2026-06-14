@@ -142,13 +142,19 @@ pub fn setup() -> GameState {
     state.connect(hallway, parlor);
     state.starting_location = Some(study);
 
+    // The Ghoul Priest (01116) starts set aside; Act 2's (01109) reverse
+    // spawns it in the Hallway when the act advances (cards::act_01109).
+    // Recorded by code only — its per-investigator health is minted from
+    // the corpus at spawn, when the investigator count is known.
+    state.add_set_aside_enemy(meta("01116"));
+
     // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
     // corpus. 01110 advances via its Forced EnemyDefeated objective
     // (01116; in cards::act_01110), not a clue spend — its printed clue
     // threshold is null, which the reader maps to 0.
-    // TODO(#280): Act-2 (01109) reverse — reveal the Parlor and spawn the
-    // set-aside Ghoul Priest (01116) in the Hallway (needs set-aside-enemy
-    // support). Lita Chantler -> #258. (Not C3b/#231, which was enemy stats.)
+    // Act-2 (01109) reverse — reveals the Parlor and spawns the set-aside
+    // Ghoul Priest (01116) in the Hallway — ships in cards::act_01109 (#280).
+    // Lita Chantler / the Parlor barrier -> #258.
     // TODO(#281): agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul)
     // + an `AgendaAdvanced` forced point — `advance_agenda` fires no reverse today.
     // TODO(#phase-9): act-3 (01110) reverse is the lead's R1/R2 resolution choice.

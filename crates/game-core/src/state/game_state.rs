@@ -44,6 +44,15 @@ pub struct GameState {
     /// Act-1 reverse drains these into play (the `01108:board-build`
     /// native effect).
     pub set_aside_locations: Vec<Location>,
+    /// Enemies set aside, out of play (Rules Reference p.3, "set aside"),
+    /// recorded by printed code only — their stats (per-investigator
+    /// health, combat) are minted from the corpus at spawn time, when the
+    /// investigator count is known. Brought into play by card effects —
+    /// The Gathering's Act-2 reverse spawns the Ghoul Priest (01116) from
+    /// here (the `01109:reverse` native effect, via [`spawn_set_aside_enemy`]).
+    ///
+    /// [`spawn_set_aside_enemy`]: crate::engine::spawn_set_aside_enemy
+    pub set_aside_enemies: Vec<CardCode>,
     /// Where roster-seated investigators are placed at scenario start.
     /// `setup()` sets it (e.g. The Gathering -> the Study); the
     /// `StartScenario` seating step reads it. `None` leaves seated
@@ -956,6 +965,24 @@ impl GameState {
         id
     }
 
+    /// Add an enemy to the **set-aside** (out-of-play) zone, recording its
+    /// printed code only. Unlike set-aside locations (fully built here),
+    /// an enemy's stats — notably per-investigator health — depend on the
+    /// in-game investigator count, which isn't known at `setup()`; so the
+    /// `Enemy` is minted from the corpus when a card effect brings it into
+    /// play (see [`spawn_set_aside_enemy`](crate::engine::spawn_set_aside_enemy)).
+    /// Panics on non-Enemy metadata — a setup-time invariant.
+    pub fn add_set_aside_enemy(&mut self, metadata: &CardMetadata) {
+        assert!(
+            matches!(metadata.kind, CardKind::Enemy { .. }),
+            "add_set_aside_enemy: card {} is not an Enemy ({:?})",
+            metadata.code,
+            metadata.kind,
+        );
+        self.set_aside_enemies
+            .push(CardCode::new(metadata.code.clone()));
+    }
+
     /// Find a location by id across both the in-play and set-aside zones.
     fn location_mut(&mut self, id: LocationId) -> Option<&mut Location> {
         if let Some(loc) = self.locations.get_mut(&id) {
@@ -1296,6 +1323,50 @@ mod add_location_tests {
         assert_eq!(state.set_aside_locations.len(), 1);
         assert_eq!(state.set_aside_locations[0].id, id);
         assert_eq!(state.set_aside_locations[0].code.as_str(), "01113");
+    }
+
+    fn enemy_meta(code: &str, name: &str) -> CardMetadata {
+        use crate::card_data::Prey;
+        CardMetadata {
+            code: code.to_string(),
+            name: name.to_string(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".to_string(),
+            kind: CardKind::Enemy {
+                fight: 1,
+                evade: 1,
+                damage: 0,
+                horror: 0,
+                health: None,
+                victory: None,
+                spawn: None,
+                surge: false,
+                peril: false,
+                hunter: false,
+                retaliate: false,
+                prey: Prey::Default,
+                quantity: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn add_set_aside_enemy_records_the_code() {
+        let mut state = GameStateBuilder::new().build();
+        state.add_set_aside_enemy(&enemy_meta("01116", "Ghoul Priest"));
+        assert_eq!(
+            state.set_aside_enemies,
+            vec![crate::state::CardCode::new("01116")],
+            "set-aside enemies record only the code (stats minted at spawn)",
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "not an Enemy")]
+    fn add_set_aside_enemy_panics_on_non_enemy_metadata() {
+        let mut state = GameStateBuilder::new().build();
+        state.add_set_aside_enemy(&location_meta("01113", "Attic", 1, 2));
     }
 
     #[test]

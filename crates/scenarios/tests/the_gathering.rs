@@ -130,6 +130,40 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         Some(Resolution::Won { id: "R1".into() }),
         "the terminal act carries the Won resolution (latched on Ghoul-Priest defeat)",
     );
+
+    // Act 2's reverse (#280) fired on advance: the set-aside Ghoul Priest
+    // (01116) is now in play in the Hallway (01112), and the Parlor (01115)
+    // is revealed. This makes act 3's "Ghoul Priest defeated" objective
+    // reachable in real play.
+    assert!(
+        r.state.set_aside_enemies.is_empty(),
+        "the Ghoul Priest left the set-aside zone",
+    );
+    let priest = r
+        .state
+        .enemies
+        .values()
+        .find(|e| e.code.as_str() == "01116")
+        .expect("Ghoul Priest (01116) spawned");
+    let hallway_id = r
+        .state
+        .locations
+        .values()
+        .find(|l| l.code.as_str() == "01112")
+        .unwrap()
+        .id;
+    assert_eq!(
+        priest.current_location,
+        Some(hallway_id),
+        "the Ghoul Priest spawns in the Hallway",
+    );
+    let parlor = r
+        .state
+        .locations
+        .values()
+        .find(|l| l.code.as_str() == "01115")
+        .expect("Parlor (01115) in play");
+    assert!(parlor.revealed, "act 2's reverse reveals the Parlor");
 }
 
 #[test]

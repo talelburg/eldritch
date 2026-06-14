@@ -14,8 +14,8 @@ C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
 C3c (agenda 01107 forced abilities), C3d (act-2 round-end window).
 
 > **Next (directive — do before C4):** [#280](https://github.com/talelburg/eldritch/issues/280)
-> (act-2 reverse: spawn the set-aside Ghoul Priest + reveal the Parlor) then
-> [#281](https://github.com/talelburg/eldritch/issues/281) (agenda reverses 01105/01106 +
+> (act-2 reverse: spawn the set-aside Ghoul Priest + reveal the Parlor) ✅ PR #282;
+> then [#281](https://github.com/talelburg/eldritch/issues/281) (agenda reverses 01105/01106 +
 > `AgendaAdvanced` forced point). These close the act/agenda **reverse-coverage**
 > gap (see the table below) that blocks the real win/lose path, so they take
 > priority over C4. Then resume C4 → C7.
@@ -93,7 +93,7 @@ breakdown rows; this is reverses only.
 | Card | Reverse | Status |
 |---|---|---|
 | Act 1 (01108) | board build | ✅ `act_01108.rs` (C1b) |
-| Act 2 (01109) | reveal Parlor, put Lita, spawn Ghoul Priest | ⛔ [#280](https://github.com/talelburg/eldritch/issues/280) (Lita → [#258](https://github.com/talelburg/eldritch/issues/258)) |
+| Act 2 (01109) | reveal Parlor, put Lita, spawn Ghoul Priest | ✅ `act_01109.rs` (PR #282); Lita → [#258](https://github.com/talelburg/eldritch/issues/258) |
 | Act 3 (01110) | R1/R2 resolution choice | ⚠️ R1 Won latch (C1b); R2 + choice → Phase 9 |
 | Agenda 1 (01105) | lead: each discards 1 random, or lead takes 2 horror | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
 | Agenda 2 (01106) | dig encounter deck until a [[Ghoul]], lead draws it | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
@@ -165,6 +165,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **`upkeep_phase_end` is now suspendable; act round-end objectives are a kernel `Act.round_end_advance` field (C3d, [#275](https://github.com/talelburg/eldritch/issues/275), PR #279).** `upkeep_phase_end` returns `EngineOutcome` (both callers propagate) and, after the round-end forced dispatch, opens a Confirm/Skip window when the current act carries `round_end_advance: Some(RoundEndAdvance { contributor_location })` **and** the investigators at that location can afford the act's `clue_threshold`. Suspension uses `act_round_end_pending` + an action-gate guard + `resolve_input` routing + `resume_act_round_end_advance`, mirroring hand-size discard; Confirm spends from the contributor-location investigators and `advance_act`s, Skip continues, either way Upkeep→Mythos. `AdvanceAct` is re-gated to reject for round-end-advance acts (act-1 still uses it; act-3 uses its forced `EnemyDefeated`). **Modeling:** the threshold stays corpus-sourced (`CardKind::Act`), but the objective shape is **content-set** in `the_gathering.rs` — ArkhamDB has no structured field for it, it's a single consumer, and sibling act objectives (01108/01110) are likewise hand-authored. A card-local native effect was rejected: the window lifecycle + Upkeep→Mythos continuation are inherently kernel, and suspendable forced/native dispatch is the #212/#213 north-star. **Future round-end act objectives reuse this field + window**; multi-investigator clue *allocation* stays the deterministic spend (#153).
 
 - **`RoundEnded` is a distinct framework timing point, separate from `PhaseEnded { Upkeep }` (C3c, [#232](https://github.com/talelburg/eldritch/issues/232), PR #278).** `EventPattern::RoundEnded` + `ForcedTriggerPoint::RoundEnded` fire in `upkeep_phase_end` *after* the upkeep-phase-end forced dispatch ("Upkeep phase ends. Round ends.", RR p.24). Kept separate so an end-of-upkeep-phase and an end-of-round card can coexist without conflation. Agenda 01107's two abilities are card-local native fns (per the #276 decision): `01107:move-ghouls` (enemy-phase-end, unengaged Ghouls step toward the Parlor — deterministic lowest-`LocationId` tie-break, unreachable on this star map; engagement-on-arrival unmodeled) and `01107:round-end-doom` (1 doom per Ghoul in Hallway/Parlor, no threshold check — RR checks doom at Mythos 1.3). **C3d ([#275](https://github.com/talelburg/eldritch/issues/275)) reuses this `RoundEnded` point** for act-2's round-end window. `shortest_first_steps` is now `pub`.
+
+- **Set-aside *enemies* record a code only; the `Enemy` is minted at spawn (#280, PR #282).** Set-aside *locations* are fully built in `setup()` (`set_aside_locations: Vec<Location>`), but an enemy's per-investigator health (Ghoul Priest 01116 = 5×N) depends on the investigator count, unknown at `setup()` — so `set_aside_enemies: Vec<CardCode>` stores codes and `spawn_set_aside_enemy` mints stats from the corpus when a card effect brings the enemy into play. The shared spawn core is `spawn_enemy_at(cx, controller, code, metadata, location)`, factored out of `spawn_enemy` and reused by both the encounter-draw path (location from the card's spawn rule) and the set-aside path (location named by the bringing effect). **Future set-aside enemies reuse this field + helper, not a new mechanism.** Act-2's reverse (`act_01109`) is the first consumer; "put Lita into play" stays deferred to #258.
 
 ## Open questions
 

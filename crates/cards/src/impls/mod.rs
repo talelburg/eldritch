@@ -41,6 +41,7 @@
 //!   `UsageLimit { count: 1, period: Round }` for "Limit once per
 //!   round." Elder-sign half stubbed pending #118.
 //! - Trapped (01108) — Act 1; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance board build.
+//! - The Barrier (01109) — Act 2; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance reverse: reveal the Parlor + spawn the set-aside Ghoul Priest.
 //! - What Have You Done? (01110) — Act 3; `Trigger::OnEvent` (`EnemyDefeated` 01116, `After`) -> `AdvanceCurrentAct`.
 //!
 //! The remaining Phase-3 card (Study #56) blocks on the
@@ -49,6 +50,7 @@
 use card_dsl::dsl::Ability;
 
 pub mod act_01108;
+pub mod act_01109;
 pub mod act_01110;
 pub mod agenda_01107;
 pub mod attic;
@@ -66,6 +68,7 @@ pub mod working_a_hunch;
 pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     match code {
         act_01108::CODE => Some(act_01108::abilities()),
+        act_01109::CODE => Some(act_01109::abilities()),
         act_01110::CODE => Some(act_01110::abilities()),
         agenda_01107::CODE => Some(agenda_01107::abilities()),
         attic::CODE => Some(attic::abilities()),
@@ -85,5 +88,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
 /// per-card delegation; returns `None` for unregistered tags.
 #[must_use]
 pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
-    act_01108::native_effect_for(tag).or_else(|| agenda_01107::native_effect_for(tag))
+    act_01108::native_effect_for(tag)
+        .or_else(|| act_01109::native_effect_for(tag))
+        .or_else(|| agenda_01107::native_effect_for(tag))
 }

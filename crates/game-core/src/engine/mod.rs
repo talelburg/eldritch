@@ -17,6 +17,7 @@ pub mod evaluator;
 mod outcome;
 pub(crate) mod pathfinding;
 
+pub use dispatch::encounter::spawn_set_aside_enemy;
 pub use dispatch::reveal::reveal_location;
 pub use evaluator::{location_id_by_code, EvalContext};
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};

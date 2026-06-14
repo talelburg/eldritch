@@ -257,6 +257,7 @@ impl GameStateBuilder {
             investigators: self.investigators,
             locations: self.locations,
             set_aside_locations: Vec::new(),
+            set_aside_enemies: Vec::new(),
             starting_location: None,
             enemies: self.enemies,
             chaos_bag: self.chaos_bag,

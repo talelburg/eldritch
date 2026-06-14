@@ -43,8 +43,8 @@ pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
 pub use card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};
 pub use card_registry::CardRegistry;
 pub use engine::{
-    apply, location_id_by_code, reveal_location, shortest_first_steps, ApplyResult, Cx,
-    EngineOutcome, EvalContext, InputRequest, ResumeToken,
+    apply, location_id_by_code, reveal_location, shortest_first_steps, spawn_set_aside_enemy,
+    ApplyResult, Cx, EngineOutcome, EvalContext, InputRequest, ResumeToken,
 };
 pub use event::{Event, FailureReason};
 pub use rng::RngState;
