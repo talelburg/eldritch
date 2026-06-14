@@ -112,11 +112,14 @@ struct ForcedHit {
 ///
 /// **Suspension caveat (#212 reentrancy).** A hit that suspends
 /// (`AwaitingInput`) or rejects is surfaced immediately, abandoning any
-/// later hits — re-entry mid-sequence isn't modeled yet. Safe in current
-/// scope: the only multi-hit point is `RoundEnded` (agenda 01107 doom +
-/// Dissonant Voices 01165 discard), whose effects are all synchronous;
-/// the one suspending forced effect (Frozen in Fear 01164's `EndOfTurn`
-/// skill test) is always the sole hit at its point.
+/// later hits — re-entry mid-sequence isn't modeled yet. This is correct
+/// as long as no point produces 2+ simultaneous *suspending* hits;
+/// synchronous multi-hit points (`RoundEnded`: agenda 01107 doom +
+/// Dissonant Voices 01165 discard) all resolve fully. The only suspending
+/// forced effect today is Frozen in Fear 01164's `EndOfTurn` skill test;
+/// since it carries no "Limit 1", two copies on one investigator would
+/// drop the second copy's test at end of turn — a known #212/#213
+/// limitation, not a single-hit guarantee.
 pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> EngineOutcome {
     let hits = collect_forced_hits(cx.state, point);
     for hit in &hits {
