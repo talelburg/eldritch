@@ -11,14 +11,11 @@ C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
 C2 (01104 symbol-token effects + location victory points),
 C3a (Prey – Lowest remaining health + Retaliate keyword),
 C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
-C3c (agenda 01107 forced abilities), C3d (act-2 round-end window).
-
-> **Next (directive — do before C4):** [#280](https://github.com/talelburg/eldritch/issues/280)
-> (act-2 reverse: spawn the set-aside Ghoul Priest + reveal the Parlor) ✅ PR #282;
-> then [#281](https://github.com/talelburg/eldritch/issues/281) (agenda reverses 01105/01106 +
-> `AgendaAdvanced` forced point). These close the act/agenda **reverse-coverage**
-> gap (see the table below) that blocks the real win/lose path, so they take
-> priority over C4. Then resume C4 → C7.
+C3c (agenda 01107 forced abilities), C3d (act-2 round-end window),
+the act-2 reverse ([#280](https://github.com/talelburg/eldritch/issues/280):
+spawn the set-aside Ghoul Priest + reveal the Parlor), and the agenda
+reverses ([#281](https://github.com/talelburg/eldritch/issues/281):
+01105/01106 + the `AgendaAdvanced` forced point). **Next: C4 → C7.**
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -79,30 +76,9 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window | — |
 | C6b | [#242](https://github.com/talelburg/eldritch/issues/242) | Seeker deck cards | — |
 | C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards | — |
+| C6d | [#284](https://github.com/talelburg/eldritch/issues/284) | encounter-deck assembly in `setup()` (quantity-aware, excludes set-aside) — gates C7b; makes Mythos draws + 01106's dig operate live | — |
 | C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | — |
-| C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test | — |
-
-### Act/agenda reverse coverage
-
-Every act and agenda **reverse** (its `back_text` — what happens when it
-advances) must be implemented for a faithful slice; the Group C rows above
-covered some piecemeal (fronts + a couple of reverses), so this table is
-the explicit coverage check. Fronts (objectives/forced) are tracked in the
-breakdown rows; this is reverses only.
-
-| Card | Reverse | Status |
-|---|---|---|
-| Act 1 (01108) | board build | ✅ `act_01108.rs` (C1b) |
-| Act 2 (01109) | reveal Parlor, put Lita, spawn Ghoul Priest | ✅ `act_01109.rs` (PR #282); Lita → [#258](https://github.com/talelburg/eldritch/issues/258) |
-| Act 3 (01110) | R1/R2 resolution choice | ⚠️ R1 Won latch (C1b); R2 + choice → Phase 9 |
-| Agenda 1 (01105) | lead: each discards 1 random, or lead takes 2 horror | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
-| Agenda 2 (01106) | dig encounter deck until a [[Ghoul]], lead draws it | ⛔ [#281](https://github.com/talelburg/eldritch/issues/281) |
-| Agenda 3 (01107) | (→R3) Lost | ✅ terminal Lost latch |
-
-Infra note: acts fire their reverse via `ForcedTriggerPoint::ActAdvanced`
-(from `advance_act`); **agendas have no equivalent** — `advance_agenda`
-fires nothing, so the agenda reverses need an `AgendaAdvanced` forced point
-first ([#281](https://github.com/talelburg/eldritch/issues/281)).
+| C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test (needs C6d) | — |
 
 ## Future slices (after Slice 1)
 
@@ -167,6 +143,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **`RoundEnded` is a distinct framework timing point, separate from `PhaseEnded { Upkeep }` (C3c, [#232](https://github.com/talelburg/eldritch/issues/232), PR #278).** `EventPattern::RoundEnded` + `ForcedTriggerPoint::RoundEnded` fire in `upkeep_phase_end` *after* the upkeep-phase-end forced dispatch ("Upkeep phase ends. Round ends.", RR p.24). Kept separate so an end-of-upkeep-phase and an end-of-round card can coexist without conflation. Agenda 01107's two abilities are card-local native fns (per the #276 decision): `01107:move-ghouls` (enemy-phase-end, unengaged Ghouls step toward the Parlor — deterministic lowest-`LocationId` tie-break, unreachable on this star map; engagement-on-arrival unmodeled) and `01107:round-end-doom` (1 doom per Ghoul in Hallway/Parlor, no threshold check — RR checks doom at Mythos 1.3). **C3d ([#275](https://github.com/talelburg/eldritch/issues/275)) reuses this `RoundEnded` point** for act-2's round-end window. `shortest_first_steps` is now `pub`.
 
 - **Set-aside *enemies* record a code only; the `Enemy` is minted at spawn (#280, PR #282).** Set-aside *locations* are fully built in `setup()` (`set_aside_locations: Vec<Location>`), but an enemy's per-investigator health (Ghoul Priest 01116 = 5×N) depends on the investigator count, unknown at `setup()` — so `set_aside_enemies: Vec<CardCode>` stores codes and `spawn_set_aside_enemy` mints stats from the corpus when a card effect brings the enemy into play. The shared spawn core is `spawn_enemy_at(cx, controller, code, metadata, location)`, factored out of `spawn_enemy` and reused by both the encounter-draw path (location from the card's spawn rule) and the set-aside path (location named by the bringing effect). **Future set-aside enemies reuse this field + helper, not a new mechanism.** Act-2's reverse (`act_01109`) is the first consumer; "put Lita into play" stays deferred to #258.
+
+- **Agenda reverses fire via an `AgendaAdvanced` forced point mirroring `ActAdvanced`; 01105's interactive choice is deferred to #212 (#281, PR #283).** `advance_agenda` now fires `ForcedTriggerPoint::AgendaAdvanced { code }` (lead-bound) the way `advance_act` fires `ActAdvanced` — the forward-compatible subset #212 will absorb. **01106** is fully deterministic (reshuffle discard → dig the encounter deck discarding non-Ghoul cards → lead draws the Ghoul via the now-public `resolve_encounter_card`/`reshuffle_encounter_discard`); it is a faithful no-op until the encounter deck is assembled (a later C-sub), and is tested against a seeded deck. **01105 is a lead *choice*** (each discards 1 random / lead takes 2 horror) that needs suspendable mid-forced-dispatch `AwaitingInput` — which the engine lacks (`ChooseOne` is a stub; the Mythos 1.3 doom-check resolves inline) and which **#212** ("mid-emit `AwaitingInput` suspension"; absorbs `fire_forced_triggers`) owns. So 01105 ships the deterministic 2-horror branch (a legal outcome, like act-3's R1/R2 single-latch deferral), `TODO(#212)`; the random-discard branch was rejected as the default because it needs *recorded* randomness for replay. **Pattern for future forced "choose one" reverses: defer the interactive choice to #212 with a deterministic legal branch rather than building bespoke suspension now.**
 
 ## Open questions
 

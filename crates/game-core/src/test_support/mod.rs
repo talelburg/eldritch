@@ -83,6 +83,21 @@ pub fn fire_forced_on_act_advance(
     )
 }
 
+/// Test helper: fire forced triggers for an agenda advancing, returning
+/// the `EngineOutcome`. See `fire_forced_on_enter`. Exercises the agenda
+/// reverses (01105 discard/horror, 01106 dig-until-Ghoul).
+pub fn fire_forced_on_agenda_advance(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    code: crate::state::CardCode,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::AgendaAdvanced { code },
+    )
+}
+
 /// Test helper: fire forced triggers for an enemy defeat, returning the
 /// `EngineOutcome`. See `fire_forced_on_enter`.
 pub fn fire_forced_on_enemy_defeat(

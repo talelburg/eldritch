@@ -261,6 +261,14 @@ pub enum EventPattern {
     /// binds controller = the lead investigator (board-wide reverse
     /// effects ignore it).
     ActAdvanced,
+    /// The agenda this ability is printed on advanced (its reverse side
+    /// resolves on doom). Fired forced via
+    /// `ForcedTriggerPoint::AgendaAdvanced` from `advance_agenda` (the
+    /// mirror of the act path — `advance_act` fires `ActAdvanced`); binds
+    /// controller = the lead investigator. The Gathering's agenda reverses
+    /// listen here: 01105 (lead's discard/horror choice) and 01106
+    /// (dig the encounter deck until a `Ghoul` enemy, lead draws it).
+    AgendaAdvanced,
     /// The round ended (Rules Reference p.24: the round ends at the close
     /// of the upkeep phase). Forced agenda/act effects keyed to "at the
     /// end of the round" listen here — agenda `01107` places doom. Fired
