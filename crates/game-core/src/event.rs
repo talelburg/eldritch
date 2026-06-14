@@ -26,6 +26,17 @@ use crate::state::{
 /// Phase-1 minimal set. Later phases add events for skill-test
 /// commits, card plays, ability triggers, encounter draws, doom changes,
 /// trauma, scenario resolution, etc.
+/// Which trauma track a [`Event::TraumaSuffered`] applies to. Trauma is a
+/// cross-scenario campaign concept (Phase 9 owns persistence / max-stat
+/// reduction); this event makes it observable now without modeling state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TraumaKind {
+    /// Physical trauma (reduces max health in campaign play).
+    Physical,
+    /// Mental trauma (reduces max sanity in campaign play).
+    Mental,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Event {
@@ -99,6 +110,17 @@ pub enum Event {
         /// Who took horror.
         investigator: InvestigatorId,
         /// Amount of horror.
+        amount: u8,
+    },
+    /// An investigator suffered trauma. Emitted by Cover Up 01007's
+    /// game-end Forced ability. Observable + replay-visible; persistence
+    /// (campaign log, max-stat reduction) is Phase 9 — no state mutation.
+    TraumaSuffered {
+        /// Who suffered the trauma.
+        investigator: InvestigatorId,
+        /// Physical or mental.
+        kind: TraumaKind,
+        /// How many trauma.
         amount: u8,
     },
     /// An investigator gained resources.
@@ -602,5 +624,22 @@ mod card_revealed_event_tests {
         let json = serde_json::to_string(&ev).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, ev);
+    }
+}
+
+#[cfg(test)]
+mod trauma_event_tests {
+    use super::*;
+
+    #[test]
+    fn trauma_suffered_round_trips() {
+        let e = Event::TraumaSuffered {
+            investigator: InvestigatorId(1),
+            kind: TraumaKind::Mental,
+            amount: 1,
+        };
+        let json = serde_json::to_string(&e).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(e, back);
     }
 }

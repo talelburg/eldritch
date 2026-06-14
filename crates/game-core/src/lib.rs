@@ -48,7 +48,7 @@ pub use engine::{
     shortest_first_steps, spawn_set_aside_enemy, take_damage, ApplyResult, Cx, EngineOutcome,
     EvalContext, InputRequest, ResumeToken,
 };
-pub use event::{Event, FailureReason};
+pub use event::{Event, FailureReason, TraumaKind};
 pub use rng::RngState;
 pub use scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
 pub use state::{
