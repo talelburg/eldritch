@@ -6,13 +6,16 @@
 
 use std::sync::Once;
 
-use game_core::action::EngineRecord;
-use game_core::state::{CardCode, InvestigatorId, LocationId};
-use game_core::test_support::{
-    drive, fire_forced_after_location_investigated, test_investigator, test_location,
-    GameStateBuilder, ScriptedResolver,
+use game_core::action::{EngineRecord, PlayerAction};
+use game_core::state::{
+    Agenda, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Location, LocationId,
+    Phase,
 };
-use game_core::{Action, EngineOutcome};
+use game_core::test_support::{
+    drive, fire_forced_after_location_investigated, fire_forced_on_round_end, test_enemy,
+    test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+};
+use game_core::{apply, Action, EngineOutcome};
 
 static INSTALL: Once = Once::new();
 
@@ -86,6 +89,117 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
         "Obscuring Fog discards after its location is investigated",
     );
     assert!(state.encounter_discard.contains(&CardCode::new("01168")));
+}
+
+// ---- Dissonant Voices (01165) --------------------------------------
+
+#[test]
+fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
+    install_registry();
+
+    let result = reveal_top(board_with("01165"));
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    let inv = &result.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.threat_area.len(), 1, "Dissonant Voices in threat area");
+    assert_eq!(inv.threat_area[0].code.as_str(), "01165");
+    assert!(!result.state.encounter_discard.contains(&CardCode::new("01165")));
+
+    // Forced — at the end of the round, discard Dissonant Voices.
+    let mut state = result.state;
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_round_end(&mut state, &mut events);
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert!(
+        state.investigators[&InvestigatorId(1)].threat_area.is_empty(),
+        "Dissonant Voices discards at end of round",
+    );
+    assert!(state.encounter_discard.contains(&CardCode::new("01165")));
+}
+
+#[test]
+fn dissonant_voices_forbids_playing_an_asset() {
+    install_registry();
+    // Investigator mid-investigation with a playable asset (Holy Rosary,
+    // 01059) in hand and Dissonant Voices in their threat area.
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(101));
+    inv.hand = vec![CardCode::new("01059")];
+    inv.threat_area
+        .push(CardInPlay::enter_play(CardCode::new("01165"), CardInstanceId(0)));
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv)
+        .with_active_investigator(InvestigatorId(1))
+        .with_location(test_location(101, "Study"))
+        .build();
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: InvestigatorId(1),
+            hand_index: 0,
+        }),
+    );
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "Dissonant Voices forbids playing assets; got {:?}",
+        result.outcome,
+    );
+    // Validate-first: the asset stays in hand, nothing entered play.
+    let inv = &result.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.hand, vec![CardCode::new("01059")]);
+    assert!(inv.cards_in_play.is_empty());
+}
+
+#[test]
+fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
+    install_registry();
+    // Both Dissonant Voices (threat area) and agenda 01107 carry a
+    // RoundEnded forced ability. They must resolve together (deterministic
+    // multi-resolve), not reject: the agenda places doom per ghoul in the
+    // Hallway/Parlor, and Dissonant Voices discards itself.
+    let loc =
+        |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
+    let mut inv = test_investigator(1);
+    inv.threat_area
+        .push(CardInPlay::enter_play(CardCode::new("01165"), CardInstanceId(0)));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_turn_order([InvestigatorId(1)])
+        .with_location(loc(2, "01112", "Hallway"))
+        .with_location(loc(5, "01115", "Parlor"))
+        .build();
+    let mut ghoul = test_enemy(1, "Ghoul");
+    ghoul.traits = vec!["Monster".into(), "Ghoul".into()];
+    ghoul.current_location = Some(LocationId(2)); // Hallway
+    state.enemies.insert(EnemyId(1), ghoul);
+    state.agenda_deck = vec![Agenda {
+        code: CardCode::new("01107"),
+        doom_threshold: 10,
+        resolution: None,
+    }];
+    state.agenda_index = 0;
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_round_end(&mut state, &mut events);
+    assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "two simultaneous RoundEnded forced triggers resolve in order, not reject",
+    );
+    assert_eq!(
+        state.agenda_deck[0_usize].doom_threshold, 10,
+        "doom_threshold unchanged (sanity)",
+    );
+    assert!(
+        state.agenda_doom >= 1,
+        "agenda 01107 placed doom for the Ghoul in the Hallway; agenda_doom = {}",
+        state.agenda_doom,
+    );
+    assert!(
+        state.investigators[&InvestigatorId(1)].threat_area.is_empty(),
+        "Dissonant Voices also discarded in the same round-end resolution",
+    );
 }
 
 #[test]

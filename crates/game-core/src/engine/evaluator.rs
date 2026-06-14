@@ -199,6 +199,11 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             Some((**on_fail).clone()),
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
+        Effect::Restrict(_) => EngineOutcome::Rejected {
+            reason: "Effect::Restrict is a constant marker — inspected at decision points, \
+                     never executed"
+                .into(),
+        },
     }
 }
 
@@ -775,6 +780,34 @@ pub fn effective_shroud(registry: &CardRegistry, location: &crate::state::Locati
     }
     let total = i32::from(location.shroud) + delta;
     u8::try_from(total.clamp(0, i32::from(u8::MAX))).unwrap_or(u8::MAX)
+}
+
+/// Whether `investigator` is currently forbidden from playing a card of
+/// `card_type` by an active `Restriction::CannotPlay` constant ability on
+/// any of their controlled instances (Dissonant Voices 01165: assets and
+/// events). Checked in `play_card` validation.
+#[must_use]
+pub fn play_is_prohibited(
+    state: &GameState,
+    registry: &CardRegistry,
+    investigator: InvestigatorId,
+    card_type: crate::card_data::CardType,
+) -> bool {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return false;
+    };
+    inv.controlled_card_instances().any(|c| {
+        (registry.abilities_for)(&c.code)
+            .into_iter()
+            .flatten()
+            .any(|a| {
+                a.trigger == Trigger::Constant
+                    && matches!(
+                        &a.effect,
+                        Effect::Restrict(crate::dsl::Restriction::CannotPlay(t)) if *t == card_type
+                    )
+            })
+    })
 }
 
 /// Shared core of [`constant_skill_modifier`] and
@@ -1616,6 +1649,9 @@ mod tests {
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
+            "cannot-play-assets" => Some(vec![constant(crate::dsl::restrict(
+                crate::dsl::Restriction::CannotPlay(crate::card_data::CardType::Asset),
+            ))]),
             _ => None,
         }
     }
@@ -1728,6 +1764,25 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn play_is_prohibited_matches_only_the_forbidden_type() {
+        use super::play_is_prohibited;
+        use crate::card_data::CardType;
+        let (state, id) = state_with_cards_in_play(&["cannot-play-assets"]);
+        let reg = fake_registry();
+        assert!(play_is_prohibited(&state, &reg, id, CardType::Asset));
+        assert!(!play_is_prohibited(&state, &reg, id, CardType::Event));
+    }
+
+    #[test]
+    fn play_is_prohibited_false_with_no_restriction() {
+        use super::play_is_prohibited;
+        use crate::card_data::CardType;
+        let (state, id) = state_with_cards_in_play(&["willpower-plus-1"]);
+        let reg = fake_registry();
+        assert!(!play_is_prohibited(&state, &reg, id, CardType::Asset));
     }
 
     #[test]

@@ -535,6 +535,12 @@ pub enum Effect {
     /// (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
     /// 01168). Rejects if there is no source or the instance isn't found.
     DiscardSelf,
+    /// A constant restriction the source card imposes while in play
+    /// (under [`Trigger::Constant`]). **Inspected, not executed** — the
+    /// engine reads it at the relevant decision point (`play_is_prohibited`
+    /// for `CannotPlay`, `pending_action_surcharge` for `ExtraActionCost`);
+    /// resolving it as an effect is a misuse and rejects.
+    Restrict(Restriction),
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -579,6 +585,67 @@ pub enum ModifierScope {
     ThisSkillTest,
     /// Active until the end of the current investigator turn.
     ThisTurn,
+}
+
+/// A constant restriction a card imposes while in play, carried by a
+/// [`Trigger::Constant`] [`Effect::Restrict`]. The engine inspects these
+/// at decision points rather than executing them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Restriction {
+    /// The controller cannot play cards of this type (Dissonant Voices
+    /// 01165 declares one per forbidden type — assets and events).
+    CannotPlay(crate::card_data::CardType),
+    /// Performing one of `actions` costs 1 additional action. When
+    /// `first_each_round` is set, only the first matching action each
+    /// round is surcharged (Frozen in Fear 01164).
+    ///
+    /// TODO: the `first_each_round` gate also applies to non-cost
+    /// mechanisms (a constant ability that suppresses attacks of
+    /// opportunity on the first action each round; a forced trigger on the
+    /// first move each turn). Promote it to a shared "first-applicable each
+    /// round/turn" scope spanning constant modifiers and forced triggers
+    /// once a second mechanism needs the same gate — not while action cost
+    /// is its only consumer.
+    ExtraActionCost {
+        /// Which action kinds are surcharged.
+        actions: ActionClassSet,
+        /// Gate the surcharge to the first matching action each round.
+        first_each_round: bool,
+    },
+}
+
+/// The set of action kinds an [`Restriction::ExtraActionCost`] surcharges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ActionClassSet {
+    /// Surcharge the Move action.
+    pub move_: bool,
+    /// Surcharge the Fight action.
+    pub fight: bool,
+    /// Surcharge the Evade action.
+    pub evade: bool,
+}
+
+/// One action kind, for querying an [`ActionClassSet`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionClass {
+    /// The Move action.
+    Move,
+    /// The Fight action.
+    Fight,
+    /// The Evade action.
+    Evade,
+}
+
+impl ActionClassSet {
+    /// Whether this set includes `class`.
+    #[must_use]
+    pub fn contains(self, class: ActionClass) -> bool {
+        match class {
+            ActionClass::Move => self.move_,
+            ActionClass::Fight => self.fight,
+            ActionClass::Evade => self.evade,
+        }
+    }
 }
 
 /// Which kind of skill test is running.
@@ -897,6 +964,12 @@ pub fn native(tag: impl Into<String>) -> Effect {
 #[must_use]
 pub fn discard_self() -> Effect {
     Effect::DiscardSelf
+}
+
+/// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].
+#[must_use]
+pub fn restrict(restriction: Restriction) -> Effect {
+    Effect::Restrict(restriction)
 }
 
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against

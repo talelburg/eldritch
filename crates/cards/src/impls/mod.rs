@@ -66,6 +66,7 @@ pub mod magnifying_glass;
 pub mod roland_banks;
 pub mod treachery_01162;
 pub mod treachery_01163;
+pub mod treachery_01165;
 pub mod treachery_01166;
 pub mod treachery_01167;
 pub mod treachery_01168;
@@ -91,6 +92,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         roland_banks::CODE => Some(roland_banks::abilities()),
         treachery_01162::CODE => Some(treachery_01162::abilities()),
         treachery_01163::CODE => Some(treachery_01163::abilities()),
+        treachery_01165::CODE => Some(treachery_01165::abilities()),
         treachery_01166::CODE => Some(treachery_01166::abilities()),
         treachery_01167::CODE => Some(treachery_01167::abilities()),
         treachery_01168::CODE => Some(treachery_01168::abilities()),
@@ -108,6 +110,7 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| act_01109::native_effect_for(tag))
         .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
+        .or_else(|| treachery_01165::native_effect_for(tag))
         .or_else(|| treachery_01166::native_effect_for(tag))
         .or_else(|| treachery_01167::native_effect_for(tag))
         .or_else(|| treachery_01168::native_effect_for(tag))
