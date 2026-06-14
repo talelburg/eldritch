@@ -18,8 +18,13 @@ use std::sync::OnceLock;
 use game_core::card_data::{
     CardKind, CardMetadata, Class, HealthValue, Prey, SkillIcons, Spawn, SpawnLocation,
 };
-use game_core::card_registry::CardRegistry;
-use game_core::dsl::{gain_resources, on_play, revelation, Ability, InvestigatorTarget};
+use game_core::card_registry::{CardRegistry, NativeEffectFn};
+use game_core::dsl::{
+    gain_resources, native, on_event, on_play, revelation, Ability, EventPattern, EventTiming,
+    InvestigatorTarget,
+};
+use game_core::engine::{Cx, EngineOutcome, EvalContext};
+use game_core::event::{Event, TraumaKind};
 use game_core::state::CardCode;
 
 /// Code for the synthetic location used by the synth-enemy's spawn
@@ -61,6 +66,20 @@ pub const SYNTH_SURGE_TREACHERY_CODE: &str = "_synth_surge_treachery";
 /// `card_type: Event` so `check_play_card`'s timing gate allows it
 /// inside a permissive window.
 pub const SYNTH_FAST_EVENT_CODE: &str = "_synth_fast_event";
+
+/// Code for the synthetic Cover-Up-shaped treachery (C5a #236). Carries a
+/// `WouldDiscoverClues` before-timing interrupt + a `GameEnd` forced
+/// trauma, both backed by Native effects on [`TEST_REGISTRY`]. Underscore
+/// prefix guarantees no collision with real ArkhamDB codes.
+pub const SYNTH_COVER_UP_CODE: &str = "_synth_cover_up";
+
+/// Native-effect tag: discard the replaced clue count from the synthetic
+/// Cover Up (C5a #236).
+pub const SYNTH_COVER_UP_DISCARD_TAG: &str = "_synth_cover_up:discard_clues";
+
+/// Native-effect tag: suffer 1 mental trauma at game end if the synthetic
+/// Cover Up still holds clues (C5a #236).
+pub const SYNTH_COVER_UP_TRAUMA_TAG: &str = "_synth_cover_up:trauma";
 
 /// Static metadata for the synthetic treachery. Only `code`/`name`/the
 /// `Treachery` kind carry meaning for the tests.
@@ -167,6 +186,78 @@ fn synth_fast_event_metadata_static() -> &'static CardMetadata {
     M.get_or_init(synth_fast_event_metadata)
 }
 
+fn synth_cover_up_metadata() -> CardMetadata {
+    CardMetadata {
+        code: SYNTH_COVER_UP_CODE.to_owned(),
+        name: "Synthetic Cover Up".to_owned(),
+        text: Some(
+            "Reaction: when you would discover clues at your location, \
+             discard that many from this card instead. Forced: at game end, \
+             if any clues remain, suffer 1 mental trauma. (Synthetic.)"
+                .to_owned(),
+        ),
+        traits: Vec::new(),
+        pack_code: "_synth".to_owned(),
+        kind: CardKind::Treachery {
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
+    }
+}
+
+fn synth_cover_up_metadata_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(synth_cover_up_metadata)
+}
+
+/// Native: discard the replaced clue count from the interrupting card
+/// instance (Cover Up 01007's "discard that many from Cover Up instead").
+fn synth_cover_up_discard(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+    let count = ctx.clue_discovery_count.unwrap_or(0);
+    let Some(source) = ctx.source else {
+        return EngineOutcome::Rejected {
+            reason: "synth_cover_up_discard: no source instance".into(),
+        };
+    };
+    if let Some(inv) = cx.state.investigators.get_mut(&ctx.controller) {
+        for card in inv.threat_area.iter_mut().chain(inv.cards_in_play.iter_mut()) {
+            if card.instance_id == source {
+                let take = count.min(card.clues);
+                card.clues -= take;
+                break;
+            }
+        }
+    }
+    EngineOutcome::Done
+}
+
+/// Native: at game end, if the source card holds any clues, suffer 1
+/// mental trauma (Cover Up 01007's Forced).
+fn synth_cover_up_trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+    let Some(source) = ctx.source else {
+        return EngineOutcome::Rejected {
+            reason: "synth_cover_up_trauma: no source instance".into(),
+        };
+    };
+    let has_clues = cx
+        .state
+        .investigators
+        .get(&ctx.controller)
+        .is_some_and(|inv| {
+            inv.controlled_card_instances()
+                .any(|c| c.instance_id == source && c.clues > 0)
+        });
+    if has_clues {
+        cx.events.push(Event::TraumaSuffered {
+            investigator: ctx.controller,
+            kind: TraumaKind::Mental,
+            amount: 1,
+        });
+    }
+    EngineOutcome::Done
+}
+
 /// `metadata_for` function pointer used by [`TEST_REGISTRY`].
 fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     match code.as_str() {
@@ -174,6 +265,7 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
         SYNTH_ENEMY_CODE => Some(synth_enemy_metadata_static()),
         SYNTH_SURGE_TREACHERY_CODE => Some(synth_surge_treachery_metadata_static()),
         SYNTH_FAST_EVENT_CODE => Some(synth_fast_event_metadata_static()),
+        SYNTH_COVER_UP_CODE => Some(synth_cover_up_metadata_static()),
         _ => None,
     }
 }
@@ -185,9 +277,30 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             Some(vec![revelation(gain_resources(InvestigatorTarget::You, 1))])
         }
         SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(InvestigatorTarget::You, 1))]),
+        SYNTH_COVER_UP_CODE => Some(vec![
+            on_event(
+                EventPattern::WouldDiscoverClues,
+                EventTiming::Before,
+                native(SYNTH_COVER_UP_DISCARD_TAG),
+            ),
+            on_event(
+                EventPattern::GameEnd,
+                EventTiming::After,
+                native(SYNTH_COVER_UP_TRAUMA_TAG),
+            ),
+        ]),
         // SYNTH_ENEMY_CODE intentionally returns None — the synthetic
         // enemy has no Revelation effect; the spawn handler is the
         // only thing exercised by the integration test.
+        _ => None,
+    }
+}
+
+/// `native_effect_for` function pointer used by [`TEST_REGISTRY`].
+fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
+    match tag {
+        SYNTH_COVER_UP_DISCARD_TAG => Some(synth_cover_up_discard),
+        SYNTH_COVER_UP_TRAUMA_TAG => Some(synth_cover_up_trauma),
         _ => None,
     }
 }
@@ -203,7 +316,7 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for,
     abilities_for,
-    native_effect_for: |_| None,
+    native_effect_for,
 };
 
 #[cfg(test)]
@@ -237,6 +350,34 @@ mod tests {
         let code = CardCode(SYNTH_TREACHERY_CODE.into());
         assert!((TEST_REGISTRY.metadata_for)(&code).is_some());
         assert!((TEST_REGISTRY.abilities_for)(&code).is_some());
+    }
+
+    #[test]
+    fn cover_up_fixture_has_interrupt_and_gameend_abilities() {
+        let code = CardCode(SYNTH_COVER_UP_CODE.into());
+        let abilities = abilities_for(&code).expect("cover up abilities");
+        assert_eq!(abilities.len(), 2);
+        assert!(matches!(
+            abilities[0].trigger,
+            game_core::dsl::Trigger::OnEvent {
+                pattern: game_core::dsl::EventPattern::WouldDiscoverClues,
+                timing: game_core::dsl::EventTiming::Before,
+            }
+        ));
+        assert!(matches!(
+            abilities[1].trigger,
+            game_core::dsl::Trigger::OnEvent {
+                pattern: game_core::dsl::EventPattern::GameEnd,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn native_effect_for_resolves_cover_up_tags() {
+        assert!(native_effect_for(SYNTH_COVER_UP_DISCARD_TAG).is_some());
+        assert!(native_effect_for(SYNTH_COVER_UP_TRAUMA_TAG).is_some());
+        assert!(native_effect_for("nope").is_none());
     }
 
     #[test]
