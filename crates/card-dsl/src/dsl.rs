@@ -545,6 +545,9 @@ pub enum Stat {
     Agility,
     MaxHealth,
     MaxSanity,
+    /// A location's shroud (investigate difficulty), adjusted by
+    /// location attachments such as Obscuring Fog 01168's `+2`.
+    Shroud,
 }
 
 /// How long an [`Effect::Modify`] applies.

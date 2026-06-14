@@ -670,6 +670,35 @@ pub fn unconditional_constant_stat_modifier(
     )
 }
 
+/// A location's **effective shroud**: its printed `shroud` plus every
+/// `Stat::Shroud` `Modify(WhileInPlay)` constant ability on its
+/// attachments (Obscuring Fog 01168's `+2`). Clamped to `[0, u8::MAX]`.
+/// Read by `investigate` in place of the raw printed shroud.
+#[must_use]
+pub fn effective_shroud(registry: &CardRegistry, location: &crate::state::Location) -> u8 {
+    let mut delta: i32 = 0;
+    for att in &location.attachments {
+        let Some(abilities) = (registry.abilities_for)(&att.code) else {
+            continue;
+        };
+        for ability in &abilities {
+            if ability.trigger != Trigger::Constant {
+                continue;
+            }
+            if let Effect::Modify {
+                stat: Stat::Shroud,
+                delta: d,
+                scope: ModifierScope::WhileInPlay,
+            } = &ability.effect
+            {
+                delta += i32::from(*d);
+            }
+        }
+    }
+    let total = i32::from(location.shroud) + delta;
+    u8::try_from(total.clamp(0, i32::from(u8::MAX))).unwrap_or(u8::MAX)
+}
+
 /// Shared core of [`constant_skill_modifier`] and
 /// [`unconditional_constant_stat_modifier`]: sum the `delta` of every
 /// `Trigger::Constant` `Effect::Modify` on `controller`'s cards in play
@@ -792,8 +821,8 @@ mod tests {
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
-        apply_effect, constant_skill_modifier, unconditional_constant_stat_modifier, EngineOutcome,
-        EvalContext,
+        apply_effect, constant_skill_modifier, effective_shroud,
+        unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
     };
     use crate::engine::Cx;
 
@@ -1504,6 +1533,11 @@ mod tests {
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
+            "shroud-plus-2" => Some(vec![constant(modify(
+                Stat::Shroud,
+                2,
+                ModifierScope::WhileInPlay,
+            ))]),
             _ => None,
         }
     }
@@ -1532,6 +1566,26 @@ mod tests {
             .collect();
         let state = GameStateBuilder::new().with_investigator(inv).build();
         (state, id)
+    }
+
+    #[test]
+    fn effective_shroud_adds_attachment_shroud_modifiers() {
+        use crate::test_support::test_location;
+        let mut loc = test_location(3, "Study"); // printed shroud 2
+        loc.attachments.push(CardInPlay::enter_play(
+            CardCode::new("shroud-plus-2"),
+            CardInstanceId(0),
+        ));
+        let reg = fake_registry();
+        assert_eq!(effective_shroud(&reg, &loc), 4);
+    }
+
+    #[test]
+    fn effective_shroud_is_printed_value_with_no_attachments() {
+        use crate::test_support::test_location;
+        let loc = test_location(3, "Study"); // printed shroud 2
+        let reg = fake_registry();
+        assert_eq!(effective_shroud(&reg, &loc), 2);
     }
 
     #[test]

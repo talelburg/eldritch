@@ -94,8 +94,15 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
         };
     }
     // Shroud is u8 in state but skill-test difficulty is i8. Saturate
-    // at i8::MAX for the absurd case; realistic shrouds are 0–6.
-    let difficulty = i8::try_from(location.shroud).unwrap_or(i8::MAX);
+    // at i8::MAX for the absurd case; realistic shrouds are 0–6. The
+    // *effective* shroud folds in location-attachment modifiers (Obscuring
+    // Fog 01168's +2); fall back to the printed value when no registry is
+    // installed (bare unit tests).
+    let shroud = match crate::card_registry::current() {
+        Some(reg) => crate::engine::evaluator::effective_shroud(reg, location),
+        None => location.shroud,
+    };
+    let difficulty = i8::try_from(shroud).unwrap_or(i8::MAX);
 
     // Mutate-second: spend the action, fire AoO, then resolve the
     // test. Investigate is NOT on the AoO-exempt list (only Fight,
