@@ -960,6 +960,7 @@ impl GameState {
             revealed: false,
             printed_clues,
             connections: Vec::new(),
+            attachments: Vec::new(),
         }
     }
 

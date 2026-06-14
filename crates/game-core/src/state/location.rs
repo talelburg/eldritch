@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use card_dsl::card_data::ClueValue;
 
-use super::card::CardCode;
+use super::card::{CardCode, CardInPlay};
 
 /// Stable identifier for a location within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -44,6 +44,11 @@ pub struct Location {
     pub revealed: bool,
     /// Locations physically connected to this one (movement targets).
     pub connections: Vec<LocationId>,
+    /// Encounter cards attached to this location (e.g. Obscuring Fog
+    /// 01168 grants `+2` shroud while attached). Empty for the common
+    /// case; discarded back to the encounter discard via
+    /// [`Effect::DiscardSelf`](crate::dsl::Effect::DiscardSelf).
+    pub attachments: Vec<CardInPlay>,
 }
 
 impl Location {
@@ -73,6 +78,7 @@ impl Location {
             printed_clues: ClueValue::Fixed(clues),
             revealed: true,
             connections: Vec::new(),
+            attachments: Vec::new(),
         }
     }
 }
@@ -93,6 +99,7 @@ mod location_code_tests {
             printed_clues: ClueValue::Fixed(0),
             revealed: true,
             connections: Vec::new(),
+            attachments: Vec::new(),
         };
         assert_eq!(loc.code, CardCode("01112".into()));
     }
@@ -120,6 +127,7 @@ mod location_code_tests {
             printed_clues: ClueValue::Fixed(3),
             revealed: false,
             connections: vec![LocationId(1)],
+            attachments: Vec::new(),
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: Location = serde_json::from_str(&json).expect("deserialize");

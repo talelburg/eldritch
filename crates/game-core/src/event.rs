@@ -328,6 +328,19 @@ pub enum Event {
         /// The minted in-play instance id.
         instance_id: CardInstanceId,
     },
+    /// An encounter card was attached to a location (Obscuring Fog
+    /// 01168's Revelation). The location-attachment mirror of
+    /// [`CardEnteredThreatArea`](Event::CardEnteredThreatArea); the
+    /// discard mirror reuses [`CardDiscarded`](Event::CardDiscarded) with
+    /// `from: Zone::LocationAttachment`.
+    CardAttachedToLocation {
+        /// The location the card attached to.
+        location: LocationId,
+        /// The card code that attached.
+        code: CardCode,
+        /// The minted in-play instance id.
+        instance_id: CardInstanceId,
+    },
     /// A card was discarded — moved from `from` to the investigator's
     /// discard pile. Fires for played events after their on-play
     /// effects resolve; future card effects ("discard a card from

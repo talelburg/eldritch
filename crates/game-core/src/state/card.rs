@@ -72,6 +72,10 @@ pub enum Zone {
     /// Cards there are at the investigator's location. Used as the
     /// `from` zone when a threat-area card is discarded.
     ThreatArea,
+    /// A location's attachment zone — encounter cards attached to a
+    /// location (Obscuring Fog 01168). Used as the `from` zone when an
+    /// attachment is discarded.
+    LocationAttachment,
 }
 
 /// Unique identifier for a specific copy of a card in play.

@@ -79,6 +79,7 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
         printed_clues: ClueValue::Fixed(0),
         revealed: true,
         connections: Vec::new(),
+        attachments: Vec::new(),
     }
 }
 

@@ -5,7 +5,7 @@
 //! (#235).
 
 use crate::event::Event;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Zone};
+use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Zone};
 
 use super::Cx;
 
@@ -36,6 +36,40 @@ pub(super) fn place_in_threat_area(
         .push(CardInPlay::enter_play(code.clone(), instance_id));
     cx.events.push(Event::CardEnteredThreatArea {
         investigator,
+        code,
+        instance_id,
+    });
+    Some(instance_id)
+}
+
+/// Attach `code` to `location` as a fresh in-play instance, minting an
+/// instance id from the per-state counter, and emit
+/// [`Event::CardAttachedToLocation`]. Returns the minted id, or `None`
+/// if the location isn't in state.
+///
+/// **No limit enforcement** — "Limit 1 per location" is printed on
+/// specific cards (Obscuring Fog 01168), not a property of all
+/// attachments, so the limit lives in the card's Revelation, not here.
+#[cfg_attr(not(test), allow(dead_code))] // Obscuring Fog (01168, C4c) is the first production caller
+pub(super) fn attach_to_location(
+    cx: &mut Cx,
+    location: LocationId,
+    code: CardCode,
+) -> Option<CardInstanceId> {
+    if !cx.state.locations.contains_key(&location) {
+        return None;
+    }
+    let instance_id = CardInstanceId(cx.state.next_card_instance_id);
+    cx.state.next_card_instance_id = cx.state.next_card_instance_id.saturating_add(1);
+    let loc = cx
+        .state
+        .locations
+        .get_mut(&location)
+        .expect("existence checked above");
+    loc.attachments
+        .push(CardInPlay::enter_play(code.clone(), instance_id));
+    cx.events.push(Event::CardAttachedToLocation {
+        location,
         code,
         instance_id,
     });
@@ -75,7 +109,31 @@ pub(super) fn discard_from_threat_area(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+
+    #[test]
+    fn attach_mints_id_pushes_to_location_and_emits_event() {
+        let mut state = GameStateBuilder::new()
+            .with_location(test_location(7, "Study"))
+            .build();
+        let mut events = Vec::new();
+        let id = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            attach_to_location(&mut cx, LocationId(7), CardCode::new("01168"))
+        };
+        assert_eq!(id, Some(CardInstanceId(0)));
+        let loc = &state.locations[&LocationId(7)];
+        assert_eq!(loc.attachments.len(), 1);
+        assert_eq!(loc.attachments[0].code.as_str(), "01168");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::CardAttachedToLocation { code, location, .. }
+                if code.as_str() == "01168" && *location == LocationId(7)
+        )));
+    }
 
     #[test]
     fn place_mints_id_pushes_instance_and_emits_event() {
