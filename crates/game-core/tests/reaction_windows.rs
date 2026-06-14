@@ -885,6 +885,58 @@ fn skip_after_firing_one_drops_remaining_optionals() {
 }
 
 #[test]
+fn reaction_trigger_in_threat_area_opens_window() {
+    // The shared scan source spans cards_in_play + threat_area, so a
+    // reaction ability on a threat-area card is offered just like one
+    // in play. Build the standard fight-to-defeat scenario but seat
+    // ROLAND_REACTION in the threat area.
+    install_mock_registry();
+    let inv_id = InvestigatorId(1);
+    let enemy_id = EnemyId(100);
+    let loc_id = LocationId(10);
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(loc_id);
+    inv.skills.combat = 3;
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(ROLAND_REACTION),
+        CardInstanceId(7),
+    ));
+    let mut enemy = test_enemy(100, "Mock Ghoul");
+    enemy.fight = 3;
+    enemy.max_health = 2;
+    enemy.damage = 1;
+    enemy.engaged_with = Some(inv_id);
+    let mut loc = test_location(10, "Mock Location");
+    loc.clues = 3;
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(inv_id)
+        .with_turn_order([inv_id])
+        .with_investigator(inv)
+        .with_enemy(enemy)
+        .with_location(loc)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    let result = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+
+    assert!(
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "a threat-area reaction must open a window, got {:?}",
+        result.outcome,
+    );
+    let window = result
+        .state
+        .top_reaction_window()
+        .expect("threat-area reaction must populate the window");
+    assert_eq!(window.pending_triggers.len(), 1);
+    assert_eq!(window.pending_triggers[0].controller, inv_id);
+    assert_eq!(window.pending_triggers[0].instance_id, CardInstanceId(7));
+}
+
+#[test]
 fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top() {
     // Regression for the structural fix in a3958c6: when the stack is
     //   [AfterEnemyDefeated R (with pending triggers), PlayerWindow B (empty)]

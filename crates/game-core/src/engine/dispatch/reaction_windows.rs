@@ -93,7 +93,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
-        for card in &inv.cards_in_play {
+        for card in inv.controlled_card_instances() {
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
             };
