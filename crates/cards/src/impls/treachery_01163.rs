@@ -20,7 +20,11 @@ pub fn abilities() -> Vec<Ability> {
     vec![revelation(skill_test(
         SkillKind::Willpower,
         3,
-        for_each_point_failed(deal_horror(InvestigatorTarget::You, 1)),
+        None,
+        Some(for_each_point_failed(deal_horror(
+            InvestigatorTarget::You,
+            1,
+        ))),
     ))]
 }
 
@@ -36,6 +40,7 @@ mod tests {
         let Effect::SkillTest {
             skill,
             difficulty,
+            on_success,
             on_fail,
         } = &abilities[0].effect
         else {
@@ -43,9 +48,10 @@ mod tests {
         };
         assert_eq!(*skill, SkillKind::Willpower);
         assert_eq!(*difficulty, 3);
+        assert!(on_success.is_none(), "no success-side effect");
         assert!(matches!(
-            **on_fail,
-            Effect::ForEachPointFailed(ref b)
+            on_fail.as_deref(),
+            Some(Effect::ForEachPointFailed(b))
                 if matches!(**b, Effect::DealHorror { amount: 1, .. })
         ));
     }

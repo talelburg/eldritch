@@ -188,6 +188,7 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
         Effect::SkillTest {
             skill,
             difficulty,
+            on_success,
             on_fail,
         } => crate::engine::dispatch::skill_test::start_skill_test(
             cx,
@@ -196,8 +197,101 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             crate::dsl::SkillTestKind::Plain,
             i8::try_from(*difficulty).unwrap_or(i8::MAX),
             crate::state::SkillTestFollowUp::None,
-            Some((**on_fail).clone()),
+            on_success.as_ref().map(|b| (**b).clone()),
+            on_fail.as_ref().map(|b| (**b).clone()),
+            eval_ctx.source,
         ),
+        Effect::DiscardSelf => discard_self(cx, &eval_ctx),
+        Effect::PutIntoThreatArea { code } => {
+            crate::engine::dispatch::threat_area::place_in_threat_area(
+                cx,
+                eval_ctx.controller,
+                crate::state::CardCode::new(code.clone()),
+            );
+            EngineOutcome::Done
+        }
+        Effect::Restrict(_) => EngineOutcome::Rejected {
+            reason: "Effect::Restrict is a constant marker — inspected at decision points, \
+                     never executed"
+                .into(),
+        },
+    }
+}
+
+/// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source` from
+/// whichever threat area or location attachment holds it, push its code
+/// to `encounter_discard`, and emit
+/// [`Event::CardDiscarded`](crate::Event::CardDiscarded) with the
+/// matching `from` zone. Rejects loudly if there is no source or the
+/// instance is not found.
+///
+/// TODO: scoped to the two encounter zones (threat area / location
+/// attachment → encounter discard). Extend to player-controlled zones
+/// (cards in play → owner discard) when a player card first needs to
+/// discard itself by source instance.
+fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
+    use crate::event::Event;
+    use crate::state::Zone;
+    let Some(source) = eval_ctx.source else {
+        return EngineOutcome::Rejected {
+            reason: "DiscardSelf: no source instance in context".into(),
+        };
+    };
+    // Locate first (immutable scan), then mutate — avoids a cross-field
+    // borrow of `cx.state` while iterating one of its maps.
+    let threat_owner = cx.state.investigators.iter().find_map(|(id, inv)| {
+        inv.threat_area
+            .iter()
+            .position(|c| c.instance_id == source)
+            .map(|pos| (*id, pos))
+    });
+    if let Some((inv_id, pos)) = threat_owner {
+        let card = cx
+            .state
+            .investigators
+            .get_mut(&inv_id)
+            .expect("found above")
+            .threat_area
+            .remove(pos);
+        cx.state.encounter_discard.push(card.code.clone());
+        cx.events.push(Event::CardDiscarded {
+            investigator: inv_id,
+            code: card.code,
+            from: Zone::ThreatArea,
+        });
+        return EngineOutcome::Done;
+    }
+
+    let att_owner = cx.state.locations.iter().find_map(|(id, loc)| {
+        loc.attachments
+            .iter()
+            .position(|c| c.instance_id == source)
+            .map(|pos| (*id, pos))
+    });
+    if let Some((loc_id, pos)) = att_owner {
+        let card = cx
+            .state
+            .locations
+            .get_mut(&loc_id)
+            .expect("found above")
+            .attachments
+            .remove(pos);
+        cx.state.encounter_discard.push(card.code.clone());
+        // `CardDiscarded` carries an `investigator`; for a location
+        // attachment, use the controller as the bookkeeping owner.
+        cx.events.push(Event::CardDiscarded {
+            investigator: eval_ctx.controller,
+            code: card.code,
+            from: Zone::LocationAttachment,
+        });
+        return EngineOutcome::Done;
+    }
+
+    EngineOutcome::Rejected {
+        reason: format!(
+            "DiscardSelf: source instance {source:?} not found in any threat area or location attachment"
+        )
+        .into(),
     }
 }
 
@@ -670,6 +764,121 @@ pub fn unconditional_constant_stat_modifier(
     )
 }
 
+/// A location's **effective shroud**: its printed `shroud` plus every
+/// `Stat::Shroud` `Modify(WhileInPlay)` constant ability on its
+/// attachments (Obscuring Fog 01168's `+2`). Clamped to `[0, u8::MAX]`.
+/// Read by `investigate` in place of the raw printed shroud.
+#[must_use]
+pub fn effective_shroud(registry: &CardRegistry, location: &crate::state::Location) -> u8 {
+    let mut delta: i32 = 0;
+    for att in &location.attachments {
+        let Some(abilities) = (registry.abilities_for)(&att.code) else {
+            continue;
+        };
+        for ability in &abilities {
+            if ability.trigger != Trigger::Constant {
+                continue;
+            }
+            if let Effect::Modify {
+                stat: Stat::Shroud,
+                delta: d,
+                scope: ModifierScope::WhileInPlay,
+            } = &ability.effect
+            {
+                delta += i32::from(*d);
+            }
+        }
+    }
+    let total = i32::from(location.shroud) + delta;
+    u8::try_from(total.clamp(0, i32::from(u8::MAX))).unwrap_or(u8::MAX)
+}
+
+/// Whether `investigator` is currently forbidden from playing a card of
+/// `card_type` by an active `Restriction::CannotPlay` constant ability on
+/// any of their controlled instances (Dissonant Voices 01165: assets and
+/// events). Checked in `play_card` validation.
+#[must_use]
+pub fn play_is_prohibited(
+    state: &GameState,
+    registry: &CardRegistry,
+    investigator: InvestigatorId,
+    card_type: crate::card_data::CardType,
+) -> bool {
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return false;
+    };
+    inv.controlled_card_instances().any(|c| {
+        (registry.abilities_for)(&c.code)
+            .into_iter()
+            .flatten()
+            .any(|a| {
+                a.trigger == Trigger::Constant
+                    && matches!(
+                        &a.effect,
+                        Effect::Restrict(crate::dsl::Restriction::CannotPlay(t)) if *t == card_type
+                    )
+            })
+    })
+}
+
+/// The extra action cost `investigator` pays to perform `action_class`,
+/// plus the `first_each_round` source instances to mark spent on commit.
+///
+/// Sums `Restriction::ExtraActionCost` deltas (1 each) from active
+/// `Trigger::Constant` abilities on the investigator's controlled
+/// instances whose `actions` include `action_class` (Frozen in Fear
+/// 01164: move / fight / evade). A `first_each_round` source already in
+/// `action_surcharge_spent_this_round` contributes 0; the returned
+/// instance list is the set the caller marks spent **after** the action
+/// commits (so cost-peek stays read-only for validate-first). Always-on
+/// (`first_each_round == false`) surcharges always contribute and are not
+/// returned for marking.
+#[must_use]
+pub fn pending_action_surcharge(
+    state: &GameState,
+    registry: &CardRegistry,
+    investigator: InvestigatorId,
+    action_class: crate::dsl::ActionClass,
+) -> (u8, Vec<crate::state::CardInstanceId>) {
+    use crate::dsl::Restriction;
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return (0, Vec::new());
+    };
+    let mut extra: u8 = 0;
+    let mut to_mark = Vec::new();
+    for card in inv.controlled_card_instances() {
+        let Some(abilities) = (registry.abilities_for)(&card.code) else {
+            continue;
+        };
+        for a in &abilities {
+            if a.trigger != Trigger::Constant {
+                continue;
+            }
+            let Effect::Restrict(Restriction::ExtraActionCost {
+                actions,
+                first_each_round,
+            }) = &a.effect
+            else {
+                continue;
+            };
+            if !actions.contains(&action_class) {
+                continue;
+            }
+            if *first_each_round {
+                if inv
+                    .action_surcharge_spent_this_round
+                    .contains(&card.instance_id)
+                {
+                    continue;
+                }
+                to_mark.push(card.instance_id);
+            }
+            extra = extra.saturating_add(1);
+        }
+    }
+    (extra, to_mark)
+}
+
 /// Shared core of [`constant_skill_modifier`] and
 /// [`unconditional_constant_stat_modifier`]: sum the `delta` of every
 /// `Trigger::Constant` `Effect::Modify` on `controller`'s cards in play
@@ -792,8 +1001,8 @@ mod tests {
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
-        apply_effect, constant_skill_modifier, unconditional_constant_stat_modifier, EngineOutcome,
-        EvalContext,
+        apply_effect, constant_skill_modifier, effective_shroud,
+        unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
     };
     use crate::engine::Cx;
 
@@ -1030,6 +1239,8 @@ mod tests {
             tested_location: Some(tested),
             follow_up: crate::state::SkillTestFollowUp::Investigate,
             on_fail: None,
+            on_success: None,
+            source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         let mut events = Vec::new();
@@ -1101,6 +1312,8 @@ mod tests {
             tested_location: Some(LocationId(10)),
             follow_up: crate::state::SkillTestFollowUp::None,
             on_fail: None,
+            on_success: None,
+            source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         state
@@ -1263,6 +1476,8 @@ mod tests {
             tested_location: None,
             follow_up: crate::state::SkillTestFollowUp::None,
             on_fail: None,
+            on_success: None,
+            source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         let mut events = Vec::new();
@@ -1504,6 +1719,24 @@ mod tests {
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
+            "shroud-plus-2" => Some(vec![constant(modify(
+                Stat::Shroud,
+                2,
+                ModifierScope::WhileInPlay,
+            ))]),
+            "cannot-play-assets" => Some(vec![constant(crate::dsl::restrict(
+                crate::dsl::Restriction::CannotPlay(crate::card_data::CardType::Asset),
+            ))]),
+            "frozen-surcharge" => Some(vec![constant(crate::dsl::restrict(
+                crate::dsl::Restriction::ExtraActionCost {
+                    actions: vec![
+                        crate::dsl::ActionClass::Move,
+                        crate::dsl::ActionClass::Fight,
+                        crate::dsl::ActionClass::Evade,
+                    ],
+                    first_each_round: true,
+                },
+            ))]),
             _ => None,
         }
     }
@@ -1532,6 +1765,181 @@ mod tests {
             .collect();
         let state = GameStateBuilder::new().with_investigator(inv).build();
         (state, id)
+    }
+
+    #[test]
+    fn discard_self_removes_threat_area_instance_to_encounter_discard() {
+        use crate::event::Event;
+        use crate::state::Zone;
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let inst = CardInstanceId(5);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .threat_area
+            .push(CardInPlay::enter_play(CardCode::new("01165"), inst));
+        let mut events = Vec::new();
+        let outcome = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let mut c = EvalContext::for_controller(InvestigatorId(1));
+            c.source = Some(inst);
+            apply_effect(&mut cx, &super::Effect::DiscardSelf, c)
+        };
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.investigators[&InvestigatorId(1)]
+            .threat_area
+            .is_empty());
+        assert_eq!(state.encounter_discard, vec![CardCode::new("01165")]);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::CardDiscarded { from: Zone::ThreatArea, code, .. } if code.as_str() == "01165"
+        )));
+    }
+
+    #[test]
+    fn discard_self_removes_location_attachment_to_encounter_discard() {
+        use crate::event::Event;
+        use crate::state::Zone;
+        use crate::test_support::test_location;
+        let mut loc = test_location(3, "Study");
+        loc.attachments.push(CardInPlay::enter_play(
+            CardCode::new("01168"),
+            CardInstanceId(9),
+        ));
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .build();
+        let mut events = Vec::new();
+        let outcome = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let mut c = EvalContext::for_controller(InvestigatorId(1));
+            c.source = Some(CardInstanceId(9));
+            apply_effect(&mut cx, &super::Effect::DiscardSelf, c)
+        };
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.locations[&LocationId(3)].attachments.is_empty());
+        assert_eq!(state.encounter_discard, vec![CardCode::new("01168")]);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::CardDiscarded { from: Zone::LocationAttachment, code, .. } if code.as_str() == "01168"
+        )));
+    }
+
+    #[test]
+    fn discard_self_rejects_without_source() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = apply_effect(
+            &mut cx,
+            &super::Effect::DiscardSelf,
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn play_is_prohibited_matches_only_the_forbidden_type() {
+        use super::play_is_prohibited;
+        use crate::card_data::CardType;
+        let (state, id) = state_with_cards_in_play(&["cannot-play-assets"]);
+        let reg = fake_registry();
+        assert!(play_is_prohibited(&state, &reg, id, CardType::Asset));
+        assert!(!play_is_prohibited(&state, &reg, id, CardType::Event));
+    }
+
+    #[test]
+    fn surcharge_charges_first_matching_action_then_not_again_until_reset() {
+        use super::pending_action_surcharge;
+        use crate::dsl::ActionClass;
+        let (mut state, id) = state_with_cards_in_play(&["frozen-surcharge"]);
+        let reg = fake_registry();
+
+        // First move this round: +1, and the source (instance 0) to mark.
+        let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Move);
+        assert_eq!(extra, 1);
+        assert_eq!(to_mark, vec![CardInstanceId(0)]);
+
+        // Mark it spent (what the action handler does on commit).
+        state
+            .investigators
+            .get_mut(&id)
+            .unwrap()
+            .action_surcharge_spent_this_round
+            .insert(CardInstanceId(0));
+
+        // Second matching action this round: no surcharge.
+        let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Fight);
+        assert_eq!(extra, 0);
+        assert!(to_mark.is_empty());
+
+        // New round reset → charges again.
+        state
+            .investigators
+            .get_mut(&id)
+            .unwrap()
+            .action_surcharge_spent_this_round
+            .clear();
+        let (extra, _) = pending_action_surcharge(&state, &reg, id, ActionClass::Evade);
+        assert_eq!(extra, 1);
+    }
+
+    #[test]
+    fn surcharge_two_sources_each_charge_the_first_action() {
+        use super::pending_action_surcharge;
+        use crate::dsl::ActionClass;
+        let (state, id) = state_with_cards_in_play(&["frozen-surcharge", "frozen-surcharge"]);
+        let reg = fake_registry();
+        let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Move);
+        assert_eq!(
+            extra, 2,
+            "two Frozen in Fear each surcharge the first action"
+        );
+        assert_eq!(to_mark, vec![CardInstanceId(0), CardInstanceId(1)]);
+    }
+
+    #[test]
+    fn play_is_prohibited_false_with_no_restriction() {
+        use super::play_is_prohibited;
+        use crate::card_data::CardType;
+        let (state, id) = state_with_cards_in_play(&["willpower-plus-1"]);
+        let reg = fake_registry();
+        assert!(!play_is_prohibited(&state, &reg, id, CardType::Asset));
+    }
+
+    #[test]
+    fn effective_shroud_adds_attachment_shroud_modifiers() {
+        use crate::test_support::test_location;
+        let mut loc = test_location(3, "Study"); // printed shroud 2
+        loc.attachments.push(CardInPlay::enter_play(
+            CardCode::new("shroud-plus-2"),
+            CardInstanceId(0),
+        ));
+        let reg = fake_registry();
+        assert_eq!(effective_shroud(&reg, &loc), 4);
+    }
+
+    #[test]
+    fn effective_shroud_is_printed_value_with_no_attachments() {
+        use crate::test_support::test_location;
+        let loc = test_location(3, "Study"); // printed shroud 2
+        let reg = fake_registry();
+        assert_eq!(effective_shroud(&reg, &loc), 2);
     }
 
     #[test]

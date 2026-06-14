@@ -23,7 +23,8 @@ pub use dispatch::encounter::{
     reshuffle_encounter_discard, resolve_encounter_card, spawn_set_aside_enemy,
 };
 pub use dispatch::reveal::reveal_location;
-pub use evaluator::{location_id_by_code, EvalContext};
+pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
+pub use evaluator::{effective_shroud, location_id_by_code, EvalContext};
 pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
 pub use pathfinding::shortest_first_steps;
 

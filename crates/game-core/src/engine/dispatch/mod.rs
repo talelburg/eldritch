@@ -38,7 +38,7 @@ mod reaction_windows;
 pub(crate) mod reveal;
 // pub(super): engine::evaluator reaches start_skill_test for Effect::SkillTest.
 pub(super) mod skill_test;
-mod threat_area;
+pub(crate) mod threat_area;
 
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
@@ -402,7 +402,20 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         };
     }
     match response {
-        InputResponse::CommitCards { indices } => skill_test::finish_skill_test(cx, indices),
+        InputResponse::CommitCards { indices } => {
+            let outcome = skill_test::finish_skill_test(cx, indices);
+            // If the resolved test was a suspending `EndOfTurn` forced
+            // effect (Frozen in Fear 01164), `end_turn` was stranded before
+            // rotation; resume it now that the test is fully done (C4c,
+            // #235). Only on `Done` — an `AwaitingInput` mid-teardown leaves
+            // `pending_end_turn` set for the next resume.
+            if matches!(outcome, EngineOutcome::Done) {
+                if let Some(active_id) = cx.state.pending_end_turn.take() {
+                    return phases::resume_end_turn(cx, active_id);
+                }
+            }
+            outcome
+        }
         other => EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: skill-test commit window expects InputResponse::CommitCards, \

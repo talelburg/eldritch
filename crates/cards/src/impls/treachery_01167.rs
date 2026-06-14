@@ -30,7 +30,8 @@ pub fn abilities() -> Vec<Ability> {
     vec![revelation(skill_test(
         SkillKind::Willpower,
         4,
-        native(CRYPT_CHILL_FAIL),
+        None,
+        Some(native(CRYPT_CHILL_FAIL)),
     ))]
 }
 
@@ -83,6 +84,7 @@ mod tests {
         let Effect::SkillTest {
             skill,
             difficulty,
+            on_success,
             on_fail,
         } = &abilities[0].effect
         else {
@@ -90,7 +92,10 @@ mod tests {
         };
         assert_eq!(*skill, SkillKind::Willpower);
         assert_eq!(*difficulty, 4);
-        assert!(matches!(**on_fail, Effect::Native { ref tag } if tag == CRYPT_CHILL_FAIL));
+        assert!(on_success.is_none(), "no success-side effect");
+        assert!(
+            matches!(on_fail.as_deref(), Some(Effect::Native { tag }) if tag == CRYPT_CHILL_FAIL)
+        );
         assert!(native_effect_for(CRYPT_CHILL_FAIL).is_some());
         assert!(native_effect_for("nope").is_none());
     }

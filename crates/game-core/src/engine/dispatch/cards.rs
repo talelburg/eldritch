@@ -469,11 +469,24 @@ pub(super) fn play_card(
         destination,
         abilities,
         is_fast: _,
-        card_type: _,
+        card_type,
     } = match super::reaction_windows::check_play_card(cx.state, investigator, hand_index) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
+    // Validate-first: a constant restriction may forbid playing this card
+    // type (Dissonant Voices 01165: "You cannot play assets or events").
+    if let Some(reg) = crate::card_registry::current() {
+        if crate::engine::evaluator::play_is_prohibited(cx.state, reg, investigator, card_type) {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "PlayCard: {investigator:?} cannot play a {card_type:?} \
+                     (a constant restriction forbids it)"
+                )
+                .into(),
+            };
+        }
+    }
     // The code is re-read from state here so we don't pass it through
     // the result (avoiding the lifetime question). The validator already
     // confirmed the hand_index is in bounds and the investigator exists.

@@ -21,6 +21,10 @@ use super::super::evaluator::{
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use super::Cx;
 
+// Nine args: the skill-test parameters are genuinely independent axes
+// (skill, kind, difficulty, success/fail follow-ups, source). A params
+// struct would add indirection without grouping anything cohesive.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::engine) fn start_skill_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -28,7 +32,9 @@ pub(in crate::engine) fn start_skill_test(
     kind: SkillTestKind,
     difficulty: i8,
     follow_up: SkillTestFollowUp,
+    on_success: Option<card_dsl::dsl::Effect>,
     on_fail: Option<card_dsl::dsl::Effect>,
+    source: Option<crate::state::CardInstanceId>,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
     // bag must be non-empty so we can draw; difficulty must be non-
@@ -83,6 +89,8 @@ pub(in crate::engine) fn start_skill_test(
         tested_location,
         follow_up,
         on_fail,
+        on_success,
+        source,
         continuation: FinishContinuation::AwaitingCommit,
     });
     cx.events.push(Event::SkillTestStarted {
@@ -155,6 +163,8 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     let difficulty = in_flight.difficulty;
     let follow_up = in_flight.follow_up;
     let on_fail = in_flight.on_fail.clone();
+    let on_success = in_flight.on_success.clone();
+    let source = in_flight.source;
 
     // Validate the commit indices against the resolving
     // investigator's hand. On Err, state is untouched and the engine
@@ -179,15 +189,34 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     let (succeeded, failed_by) =
         resolve_chaos_token_and_emit(cx, investigator, skill, difficulty, skill_value);
 
+    // Build the eval context for the success/failure card effects,
+    // threading the firing instance (`source`) so `Effect::DiscardSelf`
+    // can find itself across the suspend/resume boundary.
+    let card_ctx = |investigator: InvestigatorId| match source {
+        Some(src) => EvalContext::for_controller_with_source(investigator, src),
+        None => EvalContext::for_controller(investigator),
+    };
+
     if succeeded {
         apply_skill_test_follow_up(cx, investigator, follow_up);
+        if let Some(effect) = &on_success {
+            // Success-side card effect (Frozen in Fear 01164 discards
+            // itself on a successful end-of-turn willpower test). In-scope
+            // effects run to completion; a future suspending on_success is
+            // #212 reentrancy work.
+            let outcome = apply_effect(cx, effect, card_ctx(investigator));
+            debug_assert!(
+                matches!(outcome, EngineOutcome::Done),
+                "skill-test on_success must resolve to Done in scope: {outcome:?}"
+            );
+        }
     } else if let Some(effect) = &on_fail {
         // Margin-keyed failure branch of a treachery-Revelation test
         // (`Effect::SkillTest`). The failure margin is threaded so
         // `Effect::ForEachPointFailed` can scale. In-scope on_fail
         // effects (DealDamage / DealHorror / Native) run to completion;
         // a future suspending on_fail is #212 reentrancy work.
-        let mut ctx = EvalContext::for_controller(investigator);
+        let mut ctx = card_ctx(investigator);
         ctx.failed_by = Some(failed_by);
         let outcome = apply_effect(cx, effect, ctx);
         debug_assert!(
@@ -752,6 +781,8 @@ pub(super) fn perform_skill_test(
         difficulty,
         SkillTestFollowUp::None,
         None,
+        None,
+        None,
     )
 }
 
@@ -887,10 +918,12 @@ mod tests {
             SkillTestKind::Plain,
             2,
             SkillTestFollowUp::None,
+            None,
             Some(for_each_point_failed(deal_damage(
                 InvestigatorTarget::You,
                 1,
             ))),
+            None,
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         // What resolve_encounter_card does on a suspended revelation:
@@ -937,5 +970,44 @@ mod tests {
             "plain test must not set or flush the revelation-discard slot"
         );
         assert!(state.encounter_discard.is_empty());
+    }
+
+    /// A skill test with an `on_success` effect runs it on a successful
+    /// draw (the success-side mirror of the `on_fail` path).
+    #[test]
+    fn skill_test_runs_on_success_effect_on_a_passing_draw() {
+        use crate::dsl::{deal_horror, InvestigatorTarget};
+        use crate::state::ChaosToken;
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            Some(deal_horror(InvestigatorTarget::You, 1)),
+            None,
+            None,
+        );
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
+        let out = finish_skill_test(&mut cx, &[]);
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&inv].horror, 1,
+            "on_success effect ran on the passing draw",
+        );
     }
 }

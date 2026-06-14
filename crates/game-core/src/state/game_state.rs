@@ -215,6 +215,13 @@ pub struct GameState {
     pub hunter_move_pending: Option<HunterChoice>,
     /// Suspended engagement-on-spawn choice (#128). See [`SpawnEngagePending`].
     pub spawn_engage_pending: Option<SpawnEngagePending>,
+    /// Suspended end-of-turn continuation (C4c, #235): `Some(active)` while
+    /// `end_turn` is paused on a suspending `EndOfTurn` forced effect
+    /// (Frozen in Fear 01164's willpower test). The skill-test commit-resume
+    /// path re-enters `resume_end_turn` to run the stranded rotation /
+    /// phase-end once the test resolves. Defaults to `None`.
+    #[serde(default)]
+    pub pending_end_turn: Option<InvestigatorId>,
     /// Suspended upkeep hand-size discard (#111). See [`HandSizeDiscard`].
     pub hand_size_discard_pending: Option<HandSizeDiscard>,
     /// Suspended act round-end clue-spend window (#275). `Some` only while
@@ -416,6 +423,17 @@ pub struct InFlightSkillTest {
     /// [`follow_up`](Self::follow_up). Orthogonal to `follow_up` —
     /// success and margin-keyed-failure are separate axes.
     pub on_fail: Option<card_dsl::dsl::Effect>,
+    /// Effect to run **on success** after the chaos token resolves (the
+    /// success-side mirror of [`on_fail`](Self::on_fail)). Carried by
+    /// `Effect::SkillTest` with a success branch — Frozen in Fear 01164's
+    /// end-of-turn willpower test discards the card on success. `None` for
+    /// action tests and failure-only card tests.
+    pub on_success: Option<card_dsl::dsl::Effect>,
+    /// The firing card instance, threaded so the `on_success` / `on_fail`
+    /// eval-contexts can resolve [`Effect::DiscardSelf`](card_dsl::dsl::Effect::DiscardSelf) across the
+    /// suspend/resume boundary. `None` for action tests and effects with
+    /// no originating instance.
+    pub source: Option<CardInstanceId>,
     /// Where the resolution driver should resume on the next call to
     /// `drive_skill_test`. Initialized to
     /// [`FinishContinuation::AwaitingCommit`] at
@@ -960,6 +978,7 @@ impl GameState {
             revealed: false,
             printed_clues,
             connections: Vec::new(),
+            attachments: Vec::new(),
         }
     }
 

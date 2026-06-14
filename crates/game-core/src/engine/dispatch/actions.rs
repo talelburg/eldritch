@@ -94,8 +94,15 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
         };
     }
     // Shroud is u8 in state but skill-test difficulty is i8. Saturate
-    // at i8::MAX for the absurd case; realistic shrouds are 0–6.
-    let difficulty = i8::try_from(location.shroud).unwrap_or(i8::MAX);
+    // at i8::MAX for the absurd case; realistic shrouds are 0–6. The
+    // *effective* shroud folds in location-attachment modifiers (Obscuring
+    // Fog 01168's +2); fall back to the printed value when no registry is
+    // installed (bare unit tests).
+    let shroud = match crate::card_registry::current() {
+        Some(reg) => crate::engine::evaluator::effective_shroud(reg, location),
+        None => location.shroud,
+    };
+    let difficulty = i8::try_from(shroud).unwrap_or(i8::MAX);
 
     // Mutate-second: spend the action, fire AoO, then resolve the
     // test. Investigate is NOT on the AoO-exempt list (only Fight,
@@ -129,6 +136,8 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
         SkillTestKind::Investigate,
         difficulty,
         SkillTestFollowUp::Investigate,
+        None,
+        None,
         None,
     )
 }
@@ -190,11 +199,6 @@ pub(super) fn move_action(
             .into(),
         };
     }
-    if inv.actions_remaining < 1 {
-        return EngineOutcome::Rejected {
-            reason: "Move requires at least 1 action point".into(),
-        };
-    }
     let Some(from) = inv.current_location else {
         return EngineOutcome::Rejected {
             reason: format!("Move: {investigator:?} has no current_location to move from").into(),
@@ -228,8 +232,11 @@ pub(super) fn move_action(
         };
     }
 
-    // Mutate-second.
-    spend_one_action(cx, investigator);
+    // Mutate-second. Charge the action (base 1 + surcharge) last — after
+    // every move precondition has passed — so a rejected move spends nothing.
+    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Move, "Move") {
+        return rejected;
+    }
 
     // Move triggers attacks of opportunity from each ready engaged
     // enemy. Per the Rules Reference, this happens BEFORE the move
@@ -377,17 +384,64 @@ fn validate_engaged_action<'a>(
 /// `ActionsRemainingChanged`. Caller has already validated that
 /// `actions_remaining >= 1`.
 pub(super) fn spend_one_action(cx: &mut Cx, investigator: InvestigatorId) {
+    spend_actions(cx, investigator, 1);
+}
+
+/// Spend `n` action points from the active investigator and emit a single
+/// `ActionsRemainingChanged`. Caller has already validated that
+/// `actions_remaining >= n`.
+pub(super) fn spend_actions(cx: &mut Cx, investigator: InvestigatorId, n: u8) {
     let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
-        .expect("investigator existence checked before spend_one_action");
-    let new_count = inv.actions_remaining - 1;
+        .expect("investigator existence checked before spend_actions");
+    let new_count = inv.actions_remaining - n;
     inv.actions_remaining = new_count;
     cx.events.push(Event::ActionsRemainingChanged {
         investigator,
         new_count,
     });
+}
+
+/// Charge the action cost for `action_class` (base 1 + any Frozen-in-Fear
+/// `ExtraActionCost` surcharge): validate-first, returning `Err(Rejected)`
+/// without mutating if the investigator lacks the points. On `Ok` the
+/// actions are spent and the surcharge sources are marked spent for the
+/// round. **Mutates on success**, so call it after every other precondition
+/// for the action has passed. Falls back to cost 1 with no surcharge when
+/// no registry is installed (bare unit tests). Shared by move/fight/evade.
+fn charge_action(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    action_class: crate::dsl::ActionClass,
+    action_name: &str,
+) -> Result<(), EngineOutcome> {
+    let (extra, to_mark) = match crate::card_registry::current() {
+        Some(reg) => crate::engine::evaluator::pending_action_surcharge(
+            cx.state,
+            reg,
+            investigator,
+            action_class,
+        ),
+        None => (0, Vec::new()),
+    };
+    let cost = 1u8.saturating_add(extra);
+    let remaining = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .map_or(0, |inv| inv.actions_remaining);
+    if remaining < cost {
+        return Err(EngineOutcome::Rejected {
+            reason: format!("{action_name} requires {cost} action point(s)").into(),
+        });
+    }
+    spend_actions(cx, investigator, cost);
+    if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
+        inv.action_surcharge_spent_this_round.extend(to_mark);
+    }
+    Ok(())
 }
 
 /// Handler for [`PlayerAction::Fight`].
@@ -417,7 +471,10 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         }
         Err(rejected) => return rejected,
     };
-    spend_one_action(cx, investigator);
+    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
+    {
+        return rejected;
+    }
     super::skill_test::start_skill_test(
         cx,
         investigator,
@@ -425,6 +482,8 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         SkillTestKind::Fight,
         fight_difficulty,
         SkillTestFollowUp::Fight { enemy: enemy_id },
+        None,
+        None,
         None,
     )
 }
@@ -450,7 +509,10 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         }
         Err(rejected) => return rejected,
     };
-    spend_one_action(cx, investigator);
+    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Evade, "Evade")
+    {
+        return rejected;
+    }
     super::skill_test::start_skill_test(
         cx,
         investigator,
@@ -458,6 +520,8 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         SkillTestKind::Evade,
         evade_difficulty,
         SkillTestFollowUp::Evade { enemy: enemy_id },
+        None,
+        None,
         None,
     )
 }

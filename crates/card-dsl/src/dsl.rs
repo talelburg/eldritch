@@ -520,7 +520,15 @@ pub enum Effect {
     SkillTest {
         skill: crate::card_data::SkillKind,
         difficulty: u8,
-        on_fail: Box<Effect>,
+        /// Effect to run **on success** after the test resolves. Frozen in
+        /// Fear 01164 discards itself on a successful end-of-turn willpower
+        /// test. `None` for tests with no success-side effect.
+        on_success: Option<Box<Effect>>,
+        /// Effect to run **on failure** after the test resolves, with the
+        /// failure margin available via the evaluator context's `failed_by`.
+        /// `None` for tests with no failure-side effect. Symmetric with
+        /// `on_success` — success and margin-keyed-failure are separate axes.
+        on_fail: Option<Box<Effect>>,
     },
     /// Run `body` once per point the just-resolved skill test was failed
     /// by ("for each point you fail by, …"). Reads the failure margin
@@ -528,6 +536,37 @@ pub enum Effect {
     /// runs `body` zero times. Only meaningful inside an
     /// [`Effect::SkillTest`]'s `on_fail`.
     ForEachPointFailed(Box<Effect>),
+    /// Discard the firing card instance (the evaluator context's
+    /// `source`). Locates the instance in a threat area or location
+    /// attachment, removes it, and discards it to the encounter discard.
+    /// Used by persistent treacheries' `Forced` self-discard abilities
+    /// (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
+    /// 01168). Rejects if there is no source or the instance isn't found.
+    DiscardSelf,
+    /// Put the card with this printed `code` into the controller's threat
+    /// area as a fresh in-play instance. The Revelation of persistent
+    /// threat-area treacheries (Frozen in Fear 01164, Dissonant Voices
+    /// 01165) — the card names its own `CODE`. (Attaching to a *location*
+    /// stays card-local because of per-card rules like Obscuring Fog's
+    /// "Limit 1 per location".)
+    ///
+    /// The `code` is carried because at Revelation the card isn't in play
+    /// yet, so the evaluator context has no instance handle for "self"
+    /// (unlike [`DiscardSelf`](Self::DiscardSelf), which reads the
+    /// already-in-play `EvalContext.source`). `TODO(#290)`: once encounter
+    /// cards are minted as in-play instances *at reveal* (so the source
+    /// instance exists before the Revelation runs), this can drop the
+    /// `code` and place "self" uniformly with `DiscardSelf`.
+    PutIntoThreatArea {
+        /// Printed `ArkhamDB` code of the card to place.
+        code: String,
+    },
+    /// A constant restriction the source card imposes while in play
+    /// (under [`Trigger::Constant`]). **Inspected, not executed** — the
+    /// engine reads it at the relevant decision point (`play_is_prohibited`
+    /// for `CannotPlay`, `pending_action_surcharge` for `ExtraActionCost`);
+    /// resolving it as an effect is a misuse and rejects.
+    Restrict(Restriction),
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -545,6 +584,9 @@ pub enum Stat {
     Agility,
     MaxHealth,
     MaxSanity,
+    /// A location's shroud (investigate difficulty), adjusted by
+    /// location attachments such as Obscuring Fog 01168's `+2`.
+    Shroud,
 }
 
 /// How long an [`Effect::Modify`] applies.
@@ -569,6 +611,45 @@ pub enum ModifierScope {
     ThisSkillTest,
     /// Active until the end of the current investigator turn.
     ThisTurn,
+}
+
+/// A constant restriction a card imposes while in play, carried by a
+/// [`Trigger::Constant`] [`Effect::Restrict`]. The engine inspects these
+/// at decision points rather than executing them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Restriction {
+    /// The controller cannot play cards of this type (Dissonant Voices
+    /// 01165 declares one per forbidden type — assets and events).
+    CannotPlay(crate::card_data::CardType),
+    /// Performing one of `actions` costs 1 additional action. When
+    /// `first_each_round` is set, only the first matching action each
+    /// round is surcharged (Frozen in Fear 01164).
+    ///
+    /// TODO: the `first_each_round` gate also applies to non-cost
+    /// mechanisms (a constant ability that suppresses attacks of
+    /// opportunity on the first action each round; a forced trigger on the
+    /// first move each turn). Promote it to a shared "first-applicable each
+    /// round/turn" scope spanning constant modifiers and forced triggers
+    /// once a second mechanism needs the same gate — not while action cost
+    /// is its only consumer.
+    ExtraActionCost {
+        /// Which action kinds are surcharged (Frozen in Fear 01164: move,
+        /// fight, evade).
+        actions: Vec<ActionClass>,
+        /// Gate the surcharge to the first matching action each round.
+        first_each_round: bool,
+    },
+}
+
+/// One action kind an [`Restriction::ExtraActionCost`] can surcharge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionClass {
+    /// The Move action.
+    Move,
+    /// The Fight action.
+    Fight,
+    /// The Evade action.
+    Evade,
 }
 
 /// Which kind of skill test is running.
@@ -883,14 +964,41 @@ pub fn native(tag: impl Into<String>) -> Effect {
     Effect::Native { tag: tag.into() }
 }
 
-/// Build an [`Effect::SkillTest`] initiating a `skill` test against
-/// `difficulty`, running `on_fail` after the test resolves on failure.
+/// Build an [`Effect::DiscardSelf`].
 #[must_use]
-pub fn skill_test(skill: crate::card_data::SkillKind, difficulty: u8, on_fail: Effect) -> Effect {
+pub fn discard_self() -> Effect {
+    Effect::DiscardSelf
+}
+
+/// Build an [`Effect::PutIntoThreatArea`] for the card with printed `code`.
+#[must_use]
+pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
+    Effect::PutIntoThreatArea { code: code.into() }
+}
+
+/// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].
+#[must_use]
+pub fn restrict(restriction: Restriction) -> Effect {
+    Effect::Restrict(restriction)
+}
+
+/// Build an [`Effect::SkillTest`] initiating a `skill` test against
+/// `difficulty`. `on_success` runs after a passing draw, `on_fail` after a
+/// failing one (with the margin in the evaluator context's `failed_by`);
+/// either may be `None`. Most cards branch on exactly one side — failure
+/// (the one-shot Revelation treacheries) or success (Frozen in Fear 01164).
+#[must_use]
+pub fn skill_test(
+    skill: crate::card_data::SkillKind,
+    difficulty: u8,
+    on_success: Option<Effect>,
+    on_fail: Option<Effect>,
+) -> Effect {
     Effect::SkillTest {
         skill,
         difficulty,
-        on_fail: Box::new(on_fail),
+        on_success: on_success.map(Box::new),
+        on_fail: on_fail.map(Box::new),
     }
 }
 
@@ -1130,7 +1238,11 @@ mod tests {
         let effect = skill_test(
             SkillKind::Agility,
             3,
-            for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
+            None,
+            Some(for_each_point_failed(deal_damage(
+                InvestigatorTarget::You,
+                1,
+            ))),
         );
         let json = serde_json::to_string(&effect).expect("serialize");
         let back: Effect = serde_json::from_str(&json).expect("deserialize");
