@@ -46,8 +46,8 @@ mod tests {
         assert_eq!(*difficulty, 3);
         assert!(on_success.is_none(), "no success-side effect");
         assert!(matches!(
-            **on_fail,
-            Effect::ForEachPointFailed(ref b)
+            on_fail.as_deref(),
+            Some(Effect::ForEachPointFailed(b))
                 if matches!(**b, Effect::DealDamage { amount: 1, .. })
         ));
     }

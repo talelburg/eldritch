@@ -520,12 +520,15 @@ pub enum Effect {
     SkillTest {
         skill: crate::card_data::SkillKind,
         difficulty: u8,
-        /// Effect to run **on success** after the test resolves (the
-        /// success-side mirror of `on_fail`). `None` for tests that only
-        /// branch on failure. Frozen in Fear 01164 discards itself on a
-        /// successful end-of-turn willpower test.
+        /// Effect to run **on success** after the test resolves. Frozen in
+        /// Fear 01164 discards itself on a successful end-of-turn willpower
+        /// test. `None` for tests with no success-side effect.
         on_success: Option<Box<Effect>>,
-        on_fail: Box<Effect>,
+        /// Effect to run **on failure** after the test resolves, with the
+        /// failure margin available via the evaluator context's `failed_by`.
+        /// `None` for tests with no failure-side effect. Symmetric with
+        /// `on_success` — success and margin-keyed-failure are separate axes.
+        on_fail: Option<Box<Effect>>,
     },
     /// Run `body` once per point the just-resolved skill test was failed
     /// by ("for each point you fail by, …"). Reads the failure margin
@@ -540,6 +543,16 @@ pub enum Effect {
     /// (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
     /// 01168). Rejects if there is no source or the instance isn't found.
     DiscardSelf,
+    /// Put the card with this printed `code` into the controller's threat
+    /// area as a fresh in-play instance. The Revelation of persistent
+    /// threat-area treacheries (Frozen in Fear 01164, Dissonant Voices
+    /// 01165) — the card names its own `CODE`. (Attaching to a *location*
+    /// stays card-local because of per-card rules like Obscuring Fog's
+    /// "Limit 1 per location".)
+    PutIntoThreatArea {
+        /// Printed `ArkhamDB` code of the card to place.
+        code: String,
+    },
     /// A constant restriction the source card imposes while in play
     /// (under [`Trigger::Constant`]). **Inspected, not executed** — the
     /// engine reads it at the relevant decision point (`play_is_prohibited`
@@ -612,26 +625,16 @@ pub enum Restriction {
     /// once a second mechanism needs the same gate — not while action cost
     /// is its only consumer.
     ExtraActionCost {
-        /// Which action kinds are surcharged.
-        actions: ActionClassSet,
+        /// Which action kinds are surcharged (Frozen in Fear 01164: move,
+        /// fight, evade).
+        actions: Vec<ActionClass>,
         /// Gate the surcharge to the first matching action each round.
         first_each_round: bool,
     },
 }
 
-/// The set of action kinds an [`Restriction::ExtraActionCost`] surcharges.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct ActionClassSet {
-    /// Surcharge the Move action.
-    pub move_: bool,
-    /// Surcharge the Fight action.
-    pub fight: bool,
-    /// Surcharge the Evade action.
-    pub evade: bool,
-}
-
-/// One action kind, for querying an [`ActionClassSet`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One action kind an [`Restriction::ExtraActionCost`] can surcharge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionClass {
     /// The Move action.
     Move,
@@ -639,18 +642,6 @@ pub enum ActionClass {
     Fight,
     /// The Evade action.
     Evade,
-}
-
-impl ActionClassSet {
-    /// Whether this set includes `class`.
-    #[must_use]
-    pub fn contains(self, class: ActionClass) -> bool {
-        match class {
-            ActionClass::Move => self.move_,
-            ActionClass::Fight => self.fight,
-            ActionClass::Evade => self.evade,
-        }
-    }
 }
 
 /// Which kind of skill test is running.
@@ -971,6 +962,12 @@ pub fn discard_self() -> Effect {
     Effect::DiscardSelf
 }
 
+/// Build an [`Effect::PutIntoThreatArea`] for the card with printed `code`.
+#[must_use]
+pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
+    Effect::PutIntoThreatArea { code: code.into() }
+}
+
 /// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].
 #[must_use]
 pub fn restrict(restriction: Restriction) -> Effect {
@@ -986,25 +983,23 @@ pub fn skill_test(skill: crate::card_data::SkillKind, difficulty: u8, on_fail: E
         skill,
         difficulty,
         on_success: None,
-        on_fail: Box::new(on_fail),
+        on_fail: Some(Box::new(on_fail)),
     }
 }
 
-/// Build an [`Effect::SkillTest`] with both success- and failure-side
-/// follow-ups. Frozen in Fear 01164 discards itself on success and does
-/// nothing on failure (pass `Effect::Seq(vec![])` for the latter).
+/// Build an [`Effect::SkillTest`] that runs `on_success` on a passing draw
+/// and nothing on failure (Frozen in Fear 01164's end-of-turn test).
 #[must_use]
 pub fn skill_test_with_success(
     skill: crate::card_data::SkillKind,
     difficulty: u8,
     on_success: Effect,
-    on_fail: Effect,
 ) -> Effect {
     Effect::SkillTest {
         skill,
         difficulty,
         on_success: Some(Box::new(on_success)),
-        on_fail: Box::new(on_fail),
+        on_fail: None,
     }
 }
 

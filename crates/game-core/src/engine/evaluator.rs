@@ -198,10 +198,18 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             i8::try_from(*difficulty).unwrap_or(i8::MAX),
             crate::state::SkillTestFollowUp::None,
             on_success.as_ref().map(|b| (**b).clone()),
-            Some((**on_fail).clone()),
+            on_fail.as_ref().map(|b| (**b).clone()),
             eval_ctx.source,
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
+        Effect::PutIntoThreatArea { code } => {
+            crate::engine::dispatch::threat_area::place_in_threat_area(
+                cx,
+                eval_ctx.controller,
+                crate::state::CardCode::new(code.clone()),
+            );
+            EngineOutcome::Done
+        }
         Effect::Restrict(_) => EngineOutcome::Rejected {
             reason: "Effect::Restrict is a constant marker — inspected at decision points, \
                      never executed"
@@ -853,7 +861,7 @@ pub fn pending_action_surcharge(
             else {
                 continue;
             };
-            if !actions.contains(action_class) {
+            if !actions.contains(&action_class) {
                 continue;
             }
             if *first_each_round {
@@ -1721,11 +1729,11 @@ mod tests {
             ))]),
             "frozen-surcharge" => Some(vec![constant(crate::dsl::restrict(
                 crate::dsl::Restriction::ExtraActionCost {
-                    actions: crate::dsl::ActionClassSet {
-                        move_: true,
-                        fight: true,
-                        evade: true,
-                    },
+                    actions: vec![
+                        crate::dsl::ActionClass::Move,
+                        crate::dsl::ActionClass::Fight,
+                        crate::dsl::ActionClass::Evade,
+                    ],
                     first_each_round: true,
                 },
             ))]),

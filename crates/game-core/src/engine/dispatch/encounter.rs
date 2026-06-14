@@ -181,16 +181,14 @@ pub fn resolve_encounter_card(
                     outcome @ EngineOutcome::Rejected { .. } => return outcome,
                 }
             }
-            if treachery_is_persistent(&abilities) {
-                // Persistent: the card placed itself (threat area /
-                // attachment) during its Revelation and owns its own
-                // disposition (including Obscuring Fog's limit-1
-                // discard). Do not auto-discard.
-                EngineOutcome::Done
-            } else {
+            // A persistent treachery (one with an ongoing ability) placed
+            // itself during its Revelation and owns its own disposition
+            // (including Obscuring Fog's limit-1 discard); only a one-shot
+            // is auto-discarded here.
+            if !treachery_is_persistent(&abilities) {
                 cx.state.encounter_discard.push(code);
-                EngineOutcome::Done
             }
+            EngineOutcome::Done
         }
         CardType::Enemy => {
             // Revelation effects on enemies (rare, but printed on

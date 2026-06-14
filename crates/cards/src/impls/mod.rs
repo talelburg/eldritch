@@ -112,8 +112,6 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| act_01109::native_effect_for(tag))
         .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
-        .or_else(|| treachery_01164::native_effect_for(tag))
-        .or_else(|| treachery_01165::native_effect_for(tag))
         .or_else(|| treachery_01166::native_effect_for(tag))
         .or_else(|| treachery_01167::native_effect_for(tag))
         .or_else(|| treachery_01168::native_effect_for(tag))

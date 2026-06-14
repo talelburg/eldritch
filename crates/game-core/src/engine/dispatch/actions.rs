@@ -199,13 +199,6 @@ pub(super) fn move_action(
             .into(),
         };
     }
-    let (cost, surcharge_sources) =
-        action_cost_with_surcharge(cx, investigator, crate::dsl::ActionClass::Move);
-    if inv.actions_remaining < cost {
-        return EngineOutcome::Rejected {
-            reason: format!("Move requires {cost} action point(s)").into(),
-        };
-    }
     let Some(from) = inv.current_location else {
         return EngineOutcome::Rejected {
             reason: format!("Move: {investigator:?} has no current_location to move from").into(),
@@ -239,9 +232,11 @@ pub(super) fn move_action(
         };
     }
 
-    // Mutate-second.
-    spend_actions(cx, investigator, cost);
-    mark_surcharge_spent(cx, investigator, surcharge_sources);
+    // Mutate-second. Charge the action (base 1 + surcharge) last — after
+    // every move precondition has passed — so a rejected move spends nothing.
+    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Move, "Move") {
+        return rejected;
+    }
 
     // Move triggers attacks of opportunity from each ready engaged
     // enemy. Per the Rules Reference, this happens BEFORE the move
@@ -409,16 +404,19 @@ pub(super) fn spend_actions(cx: &mut Cx, investigator: InvestigatorId, n: u8) {
     });
 }
 
-/// Compute the total action cost (base 1 + surcharge) for `investigator`
-/// performing `action_class`, returning the cost and the surcharge source
-/// instances to mark spent on commit. Read-only — the marking happens in
-/// the handler's mutate phase. Falls back to cost 1 with nothing to mark
-/// when no registry is installed (bare unit tests).
-fn action_cost_with_surcharge(
-    cx: &Cx,
+/// Charge the action cost for `action_class` (base 1 + any Frozen-in-Fear
+/// `ExtraActionCost` surcharge): validate-first, returning `Err(Rejected)`
+/// without mutating if the investigator lacks the points. On `Ok` the
+/// actions are spent and the surcharge sources are marked spent for the
+/// round. **Mutates on success**, so call it after every other precondition
+/// for the action has passed. Falls back to cost 1 with no surcharge when
+/// no registry is installed (bare unit tests). Shared by move/fight/evade.
+fn charge_action(
+    cx: &mut Cx,
     investigator: InvestigatorId,
     action_class: crate::dsl::ActionClass,
-) -> (u8, Vec<crate::state::CardInstanceId>) {
+    action_name: &str,
+) -> Result<(), EngineOutcome> {
     let (extra, to_mark) = match crate::card_registry::current() {
         Some(reg) => crate::engine::evaluator::pending_action_surcharge(
             cx.state,
@@ -428,22 +426,22 @@ fn action_cost_with_surcharge(
         ),
         None => (0, Vec::new()),
     };
-    (1u8.saturating_add(extra), to_mark)
-}
-
-/// Mark surcharge source instances spent for this round (called in the
-/// mutate phase after the action commits).
-fn mark_surcharge_spent(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    to_mark: Vec<crate::state::CardInstanceId>,
-) {
-    if to_mark.is_empty() {
-        return;
+    let cost = 1u8.saturating_add(extra);
+    let remaining = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .map_or(0, |inv| inv.actions_remaining);
+    if remaining < cost {
+        return Err(EngineOutcome::Rejected {
+            reason: format!("{action_name} requires {cost} action point(s)").into(),
+        });
     }
+    spend_actions(cx, investigator, cost);
     if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
         inv.action_surcharge_spent_this_round.extend(to_mark);
     }
+    Ok(())
 }
 
 /// Handler for [`PlayerAction::Fight`].
@@ -473,15 +471,10 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         }
         Err(rejected) => return rejected,
     };
-    let (cost, surcharge_sources) =
-        action_cost_with_surcharge(cx, investigator, crate::dsl::ActionClass::Fight);
-    if cx.state.investigators[&investigator].actions_remaining < cost {
-        return EngineOutcome::Rejected {
-            reason: format!("Fight requires {cost} action point(s)").into(),
-        };
+    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
+    {
+        return rejected;
     }
-    spend_actions(cx, investigator, cost);
-    mark_surcharge_spent(cx, investigator, surcharge_sources);
     super::skill_test::start_skill_test(
         cx,
         investigator,
@@ -516,15 +509,10 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         }
         Err(rejected) => return rejected,
     };
-    let (cost, surcharge_sources) =
-        action_cost_with_surcharge(cx, investigator, crate::dsl::ActionClass::Evade);
-    if cx.state.investigators[&investigator].actions_remaining < cost {
-        return EngineOutcome::Rejected {
-            reason: format!("Evade requires {cost} action point(s)").into(),
-        };
+    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Evade, "Evade")
+    {
+        return rejected;
     }
-    spend_actions(cx, investigator, cost);
-    mark_surcharge_spent(cx, investigator, surcharge_sources);
     super::skill_test::start_skill_test(
         cx,
         investigator,
