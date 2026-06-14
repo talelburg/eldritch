@@ -106,6 +106,39 @@ pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId)
 /// encounter deck can resolve the drawn card faithfully — agenda 01106's
 /// reverse draws the dug-up `Ghoul` enemy through here. Requires an
 /// installed card registry (rejects otherwise).
+/// A treachery is **persistent** (stays in play after its Revelation,
+/// owning its own disposition) iff it has at least one ability whose
+/// trigger is not [`Trigger::Revelation`] — the ongoing `Constant`
+/// restriction / `OnEvent` forced-discard abilities the three C4c
+/// treacheries carry. One-shot treacheries have only a `Revelation`, so
+/// they auto-discard after it resolves.
+///
+/// TODO: assumes every persistent treachery carries an ongoing ability
+/// and every one-shot carries none (holds for all Core+Dunwich
+/// treacheries). Revisit with an explicit persistence marker only if a
+/// treachery must persist with no ongoing ability, or auto-discard
+/// despite carrying one.
+fn treachery_is_persistent(abilities: &[crate::dsl::Ability]) -> bool {
+    abilities.iter().any(|a| a.trigger != Trigger::Revelation)
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use card_dsl::dsl::{constant, modify, native, revelation, Ability, ModifierScope, Stat};
+
+    #[test]
+    fn persistence_is_derived_from_non_revelation_abilities() {
+        let one_shot: Vec<Ability> = vec![revelation(native("x:rev"))];
+        assert!(!super::treachery_is_persistent(&one_shot));
+
+        let persistent: Vec<Ability> = vec![
+            revelation(native("y:rev")),
+            constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay)),
+        ];
+        assert!(super::treachery_is_persistent(&persistent));
+    }
+}
+
 pub fn resolve_encounter_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -148,8 +181,16 @@ pub fn resolve_encounter_card(
                     outcome @ EngineOutcome::Rejected { .. } => return outcome,
                 }
             }
-            cx.state.encounter_discard.push(code);
-            EngineOutcome::Done
+            if treachery_is_persistent(&abilities) {
+                // Persistent: the card placed itself (threat area /
+                // attachment) during its Revelation and owns its own
+                // disposition (including Obscuring Fog's limit-1
+                // discard). Do not auto-discard.
+                EngineOutcome::Done
+            } else {
+                cx.state.encounter_discard.push(code);
+                EngineOutcome::Done
+            }
         }
         CardType::Enemy => {
             // Revelation effects on enemies (rare, but printed on
