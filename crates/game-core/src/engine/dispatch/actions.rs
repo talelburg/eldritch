@@ -129,6 +129,7 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
         SkillTestKind::Investigate,
         difficulty,
         SkillTestFollowUp::Investigate,
+        None,
     )
 }
 
@@ -424,6 +425,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         SkillTestKind::Fight,
         fight_difficulty,
         SkillTestFollowUp::Fight { enemy: enemy_id },
+        None,
     )
 }
 
@@ -456,5 +458,6 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         SkillTestKind::Evade,
         evade_difficulty,
         SkillTestFollowUp::Evade { enemy: enemy_id },
+        None,
     )
 }

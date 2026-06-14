@@ -468,6 +468,7 @@ mod tests {
             committed_by_active: Vec::new(),
             tested_location: None,
             follow_up: SkillTestFollowUp::None,
+            on_fail: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         state

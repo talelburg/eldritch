@@ -999,6 +999,7 @@ mod tests {
             committed_by_active: Vec::new(),
             tested_location: Some(tested),
             follow_up: crate::state::SkillTestFollowUp::Investigate,
+            on_fail: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         let mut events = Vec::new();
@@ -1069,6 +1070,7 @@ mod tests {
             committed_by_active: Vec::new(),
             tested_location: Some(LocationId(10)),
             follow_up: crate::state::SkillTestFollowUp::None,
+            on_fail: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         state
@@ -1230,6 +1232,7 @@ mod tests {
             committed_by_active: Vec::new(),
             tested_location: None,
             follow_up: crate::state::SkillTestFollowUp::None,
+            on_fail: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
         });
         let mut events = Vec::new();

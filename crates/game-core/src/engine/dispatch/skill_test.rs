@@ -21,13 +21,14 @@ use super::super::evaluator::{
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use super::Cx;
 
-pub(super) fn start_skill_test(
+pub(in crate::engine) fn start_skill_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
     difficulty: i8,
     follow_up: SkillTestFollowUp,
+    on_fail: Option<card_dsl::dsl::Effect>,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
     // bag must be non-empty so we can draw; difficulty must be non-
@@ -81,6 +82,7 @@ pub(super) fn start_skill_test(
         committed_by_active: Vec::new(),
         tested_location,
         follow_up,
+        on_fail,
         continuation: FinishContinuation::AwaitingCommit,
     });
     cx.events.push(Event::SkillTestStarted {
@@ -722,6 +724,7 @@ pub(super) fn perform_skill_test(
         SkillTestKind::Plain,
         difficulty,
         SkillTestFollowUp::None,
+        None,
     )
 }
 
