@@ -528,6 +528,13 @@ pub enum Effect {
     /// runs `body` zero times. Only meaningful inside an
     /// [`Effect::SkillTest`]'s `on_fail`.
     ForEachPointFailed(Box<Effect>),
+    /// Discard the firing card instance (the evaluator context's
+    /// `source`). Locates the instance in a threat area or location
+    /// attachment, removes it, and discards it to the encounter discard.
+    /// Used by persistent treacheries' `Forced` self-discard abilities
+    /// (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
+    /// 01168). Rejects if there is no source or the instance isn't found.
+    DiscardSelf,
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -884,6 +891,12 @@ pub fn advance_current_act() -> Effect {
 #[must_use]
 pub fn native(tag: impl Into<String>) -> Effect {
     Effect::Native { tag: tag.into() }
+}
+
+/// Build an [`Effect::DiscardSelf`].
+#[must_use]
+pub fn discard_self() -> Effect {
+    Effect::DiscardSelf
 }
 
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against

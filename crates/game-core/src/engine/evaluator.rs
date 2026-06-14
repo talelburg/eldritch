@@ -198,6 +198,84 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             crate::state::SkillTestFollowUp::None,
             Some((**on_fail).clone()),
         ),
+        Effect::DiscardSelf => discard_self(cx, &eval_ctx),
+    }
+}
+
+/// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source` from
+/// whichever threat area or location attachment holds it, push its code
+/// to `encounter_discard`, and emit
+/// [`Event::CardDiscarded`](crate::Event::CardDiscarded) with the
+/// matching `from` zone. Rejects loudly if there is no source or the
+/// instance is not found.
+///
+/// TODO: scoped to the two encounter zones (threat area / location
+/// attachment → encounter discard). Extend to player-controlled zones
+/// (cards in play → owner discard) when a player card first needs to
+/// discard itself by source instance.
+fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
+    use crate::event::Event;
+    use crate::state::Zone;
+    let Some(source) = eval_ctx.source else {
+        return EngineOutcome::Rejected {
+            reason: "DiscardSelf: no source instance in context".into(),
+        };
+    };
+    // Locate first (immutable scan), then mutate — avoids a cross-field
+    // borrow of `cx.state` while iterating one of its maps.
+    let threat_owner = cx.state.investigators.iter().find_map(|(id, inv)| {
+        inv.threat_area
+            .iter()
+            .position(|c| c.instance_id == source)
+            .map(|pos| (*id, pos))
+    });
+    if let Some((inv_id, pos)) = threat_owner {
+        let card = cx
+            .state
+            .investigators
+            .get_mut(&inv_id)
+            .expect("found above")
+            .threat_area
+            .remove(pos);
+        cx.state.encounter_discard.push(card.code.clone());
+        cx.events.push(Event::CardDiscarded {
+            investigator: inv_id,
+            code: card.code,
+            from: Zone::ThreatArea,
+        });
+        return EngineOutcome::Done;
+    }
+
+    let att_owner = cx.state.locations.iter().find_map(|(id, loc)| {
+        loc.attachments
+            .iter()
+            .position(|c| c.instance_id == source)
+            .map(|pos| (*id, pos))
+    });
+    if let Some((loc_id, pos)) = att_owner {
+        let card = cx
+            .state
+            .locations
+            .get_mut(&loc_id)
+            .expect("found above")
+            .attachments
+            .remove(pos);
+        cx.state.encounter_discard.push(card.code.clone());
+        // `CardDiscarded` carries an `investigator`; for a location
+        // attachment, use the controller as the bookkeeping owner.
+        cx.events.push(Event::CardDiscarded {
+            investigator: eval_ctx.controller,
+            code: card.code,
+            from: Zone::LocationAttachment,
+        });
+        return EngineOutcome::Done;
+    }
+
+    EngineOutcome::Rejected {
+        reason: format!(
+            "DiscardSelf: source instance {source:?} not found in any threat area or location attachment"
+        )
+        .into(),
     }
 }
 
@@ -1566,6 +1644,90 @@ mod tests {
             .collect();
         let state = GameStateBuilder::new().with_investigator(inv).build();
         (state, id)
+    }
+
+    #[test]
+    fn discard_self_removes_threat_area_instance_to_encounter_discard() {
+        use crate::event::Event;
+        use crate::state::Zone;
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let inst = CardInstanceId(5);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .threat_area
+            .push(CardInPlay::enter_play(CardCode::new("01165"), inst));
+        let mut events = Vec::new();
+        let outcome = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let mut c = EvalContext::for_controller(InvestigatorId(1));
+            c.source = Some(inst);
+            apply_effect(&mut cx, &super::Effect::DiscardSelf, c)
+        };
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.investigators[&InvestigatorId(1)]
+            .threat_area
+            .is_empty());
+        assert_eq!(state.encounter_discard, vec![CardCode::new("01165")]);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::CardDiscarded { from: Zone::ThreatArea, code, .. } if code.as_str() == "01165"
+        )));
+    }
+
+    #[test]
+    fn discard_self_removes_location_attachment_to_encounter_discard() {
+        use crate::event::Event;
+        use crate::state::Zone;
+        use crate::test_support::test_location;
+        let mut loc = test_location(3, "Study");
+        loc.attachments
+            .push(CardInPlay::enter_play(CardCode::new("01168"), CardInstanceId(9)));
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .build();
+        let mut events = Vec::new();
+        let outcome = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let mut c = EvalContext::for_controller(InvestigatorId(1));
+            c.source = Some(CardInstanceId(9));
+            apply_effect(&mut cx, &super::Effect::DiscardSelf, c)
+        };
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.locations[&LocationId(3)].attachments.is_empty());
+        assert_eq!(state.encounter_discard, vec![CardCode::new("01168")]);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::CardDiscarded { from: Zone::LocationAttachment, code, .. } if code.as_str() == "01168"
+        )));
+    }
+
+    #[test]
+    fn discard_self_rejects_without_source() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = apply_effect(
+            &mut cx,
+            &super::Effect::DiscardSelf,
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
     }
 
     #[test]
