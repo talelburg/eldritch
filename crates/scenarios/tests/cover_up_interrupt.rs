@@ -8,8 +8,8 @@ use game_core::engine::{apply, EngineOutcome};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
-    LocationId, Phase,
+    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, ClueInterruptPending,
+    GameState, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 use game_core::{Action, InputResponse, PlayerAction};
@@ -148,6 +148,83 @@ fn no_interrupt_when_cover_up_has_no_clues() {
         "discovery resolved normally"
     );
     assert_eq!(state.investigators[&INV].clues, 1);
+}
+
+/// State paused at a clue-discovery interrupt for a `count`-clue discovery
+/// with a Cover Up holding `cover_up_clues`. Built directly (no `count > 1`
+/// discovery source exists through Investigate in Slice 1) to exercise the
+/// `ClueInterruptPending.count` → `clue_discovery_count` → discard-from-self
+/// coupling and the `min(count, clues)` cap on `Confirm`.
+fn paused_interrupt_state(count: u8, loc_clues: u8, cover_up_clues: u8) -> GameState {
+    let mut investigator = test_investigator(1);
+    investigator.threat_area.push(cover_up(cover_up_clues));
+    let mut location = test_location(10, "Study");
+    location.clues = loc_clues;
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator_at(investigator, LOC)
+        .with_location(location)
+        .with_active_investigator(INV)
+        .with_turn_order([INV])
+        .build();
+    state.clue_interrupt_pending = Some(ClueInterruptPending {
+        controller: INV,
+        location: LOC,
+        count,
+        source: CardInstanceId(1),
+        ability_index: 0,
+    });
+    state
+}
+
+#[test]
+fn confirm_discards_the_full_replaced_count() {
+    install();
+    // count=2, Cover Up holds 3 → discover nothing, discard exactly 2.
+    let r = apply(
+        paused_interrupt_state(2, 5, 3),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
+    assert!(
+        matches!(r.outcome, EngineOutcome::Done),
+        "got {:?}",
+        r.outcome
+    );
+    assert_eq!(r.state.locations[&LOC].clues, 5, "location untouched");
+    assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
+    let cu = r.state.investigators[&INV]
+        .threat_area
+        .iter()
+        .find(|c| c.code.as_str() == SYNTH_COVER_UP_CODE)
+        .unwrap();
+    assert_eq!(cu.clues, 1, "2 of 3 clues discarded from Cover Up");
+}
+
+#[test]
+fn confirm_caps_discard_at_cover_up_clue_count() {
+    install();
+    // count=3 but Cover Up only holds 1 → discard is capped at 1 (no
+    // underflow), and the discovery is still fully replaced.
+    let r = apply(
+        paused_interrupt_state(3, 5, 1),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
+    assert!(
+        matches!(r.outcome, EngineOutcome::Done),
+        "got {:?}",
+        r.outcome
+    );
+    assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
+    let cu = r.state.investigators[&INV]
+        .threat_area
+        .iter()
+        .find(|c| c.code.as_str() == SYNTH_COVER_UP_CODE)
+        .unwrap();
+    assert_eq!(cu.clues, 0, "discard capped at the 1 clue Cover Up held");
 }
 
 /// Terminal-act state whose `AdvanceAct` latches a Won resolution, with a

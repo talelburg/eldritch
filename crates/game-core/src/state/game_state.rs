@@ -828,8 +828,11 @@ pub struct SpawnEngagePending {
 /// replace a discovery (Cover Up 01007's `[reaction]`). The resume path
 /// (`resume_clue_interrupt`) applies the choice, then re-enters
 /// `drive_skill_test` if a test is mid-flight.
+// Not `#[non_exhaustive]`: plain serialized suspension state with no
+// construction invariant, and integration tests build it directly to
+// exercise the resume's count-coupling (no count>1 discovery source exists
+// through Investigate in Slice 1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
 pub struct ClueInterruptPending {
     /// The investigator who would discover (and controls the interrupt card).
     pub controller: InvestigatorId,

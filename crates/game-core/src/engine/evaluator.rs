@@ -560,6 +560,14 @@ fn discover_clue(
                     })
                 });
             if let Some((source, ability_index)) = hit {
+                // TODO(#212): `count` is the *requested* count, not the
+                // capped/actually-discoverable one. Per the card, "discard
+                // that many" means the number you would actually discover
+                // (`min(count, location.clues)`). They coincide in Slice 1
+                // (Investigate is count=1 and the empty-location early-return
+                // above guarantees >= 1 clue present), so this is latent
+                // until a multi-count or sub-availability discovery is
+                // reachable.
                 cx.state.clue_interrupt_pending = Some(crate::state::ClueInterruptPending {
                     controller: eval_ctx.controller,
                     location: location_id,
