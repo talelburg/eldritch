@@ -181,6 +181,8 @@ fn trigger_matches(
         // ActAdvanced is matched only by the forced dispatch path
         // (`ForcedTriggerPoint::ActAdvanced`), never by player reaction
         // windows.
+        // EndOfTurn and AfterLocationInvestigated are likewise forced-only
+        // (`ForcedTriggerPoint::EndOfTurn` / `AfterLocationInvestigated`).
         (
             WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
             EventPattern::EnemyDefeated { .. }
@@ -190,7 +192,9 @@ fn trigger_matches(
             | EventPattern::PhaseEnded { .. }
             | EventPattern::ActAdvanced
             | EventPattern::AgendaAdvanced
-            | EventPattern::RoundEnded,
+            | EventPattern::RoundEnded
+            | EventPattern::EndOfTurn
+            | EventPattern::AfterLocationInvestigated,
         ) => false,
     }
 }
