@@ -508,10 +508,6 @@ fn discover_clue(
         // discovered"). Don't reject; just do nothing.
         return EngineOutcome::Done;
     }
-    // Cap the discovery at the location's actual clue count — a card
-    // can't pull more clues than exist.
-    let actually_taken = count.min(location.clues);
-    let new_location_count = location.clues - actually_taken;
 
     if !cx.state.investigators.contains_key(&eval_ctx.controller) {
         return EngineOutcome::Rejected {
@@ -523,8 +519,84 @@ fn discover_clue(
         };
     }
 
-    // Commit the mutations. From here both writes succeed
-    // unconditionally.
+    // Before-timing clue-discovery interrupt (Cover Up 01007, C5a #236).
+    // Offer the controller a chance to replace this discovery iff they
+    // control a card with a `WouldDiscoverClues` reaction, that card holds
+    // >= 1 clue (RR p.2 — the reaction needs game-state potential), and the
+    // discovery is at the controller's own location ("at your location").
+    // No registry (unit context) or no eligible card → fall through to the
+    // normal discovery below.
+    if let Some(reg) = crate::card_registry::current() {
+        let at_your_location = cx
+            .state
+            .investigators
+            .get(&eval_ctx.controller)
+            .and_then(|i| i.current_location)
+            == Some(location_id);
+        if at_your_location {
+            // Read-only scan first (collect the hit), then set the pending
+            // state — keeps the immutable borrow of the investigator
+            // disjoint from the later mutable write.
+            let hit = cx.state.investigators.get(&eval_ctx.controller).and_then(|inv| {
+                inv.controlled_card_instances().find_map(|card| {
+                    if card.clues == 0 {
+                        return None;
+                    }
+                    let abilities = (reg.abilities_for)(&card.code)?;
+                    let idx = abilities.iter().position(|a| {
+                        matches!(
+                            &a.trigger,
+                            crate::dsl::Trigger::OnEvent {
+                                pattern: crate::dsl::EventPattern::WouldDiscoverClues,
+                                timing: crate::dsl::EventTiming::Before,
+                            }
+                        )
+                    })?;
+                    Some((card.instance_id, idx))
+                })
+            });
+            if let Some((source, ability_index)) = hit {
+                cx.state.clue_interrupt_pending = Some(crate::state::ClueInterruptPending {
+                    controller: eval_ctx.controller,
+                    location: location_id,
+                    count,
+                    source,
+                    ability_index,
+                });
+                return EngineOutcome::AwaitingInput {
+                    request: crate::engine::outcome::InputRequest {
+                        prompt: "You would discover clue(s). Use the interrupt to discard that \
+                                 many from the source card instead? Confirm = replace, \
+                                 Skip = discover normally."
+                            .to_owned(),
+                    },
+                    resume_token: crate::engine::outcome::ResumeToken(0),
+                };
+            }
+        }
+    }
+
+    perform_discovery(cx, location_id, count, eval_ctx.controller);
+    EngineOutcome::Done
+}
+
+/// Move `count` clues (capped at availability) from `location_id` to
+/// `controller`, emitting `CluePlaced` + `LocationCluesChanged`. The
+/// committed mutation half of [`discover_clue`], factored out so the
+/// clue-discovery interrupt's `Skip` resume can perform the deferred
+/// discovery (C5a #236). Caller guarantees both ids exist and the
+/// location has clues.
+pub(crate) fn perform_discovery(
+    cx: &mut Cx,
+    location_id: crate::state::LocationId,
+    count: u8,
+    controller: crate::state::InvestigatorId,
+) {
+    let location = cx.state.locations.get(&location_id).expect("location exists");
+    // Cap the discovery at the location's actual clue count — a card
+    // can't pull more clues than exist.
+    let actually_taken = count.min(location.clues);
+    let new_location_count = location.clues - actually_taken;
     cx.state
         .locations
         .get_mut(&location_id)
@@ -533,19 +605,17 @@ fn discover_clue(
     let investigator = cx
         .state
         .investigators
-        .get_mut(&eval_ctx.controller)
+        .get_mut(&controller)
         .expect("checked above");
     investigator.clues = investigator.clues.saturating_add(actually_taken);
-
     cx.events.push(Event::CluePlaced {
-        investigator: eval_ctx.controller,
+        investigator: controller,
         count: actually_taken,
     });
     cx.events.push(Event::LocationCluesChanged {
         location: location_id,
         new_count: new_location_count,
     });
-    EngineOutcome::Done
 }
 
 fn deal_damage_effect(
@@ -1132,6 +1202,39 @@ mod tests {
             events,
             Event::LocationCluesChanged { location, new_count: 2 } if *location == loc_id
         );
+    }
+
+    #[test]
+    fn discover_clue_without_registry_discovers_normally() {
+        // No registry installed (game-core unit context) → the interrupt
+        // scan finds nothing → discovery proceeds exactly as before.
+        // Regression guard for the seam's "fall through" path (C5a #236).
+        let inv_id = InvestigatorId(1);
+        let loc_id = LocationId(10);
+        let mut investigator = test_investigator(1);
+        investigator.current_location = Some(loc_id);
+        let mut location = test_location(10, "Study");
+        location.clues = 3;
+
+        let mut state = GameStateBuilder::new()
+            .with_investigator(investigator)
+            .with_location(location)
+            .build();
+        let mut events = Vec::new();
+
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &discover_clue(LocationTarget::YourLocation, 1),
+            ctx(1),
+        );
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.clue_interrupt_pending.is_none());
+        assert_eq!(state.locations[&loc_id].clues, 2);
+        assert_eq!(state.investigators[&inv_id].clues, 1);
     }
 
     #[test]
