@@ -855,4 +855,81 @@ mod tests {
         );
         assert_event!(ev, Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv);
     }
+
+    /// A treachery-Revelation `Effect::SkillTest` (simulated via
+    /// `start_skill_test` with an `on_fail` + the `pending_revelation_discard`
+    /// slot `resolve_encounter_card` would set) suspends at the commit
+    /// window, then on a failing draw deals the margin in damage and
+    /// flushes the source treachery to `encounter_discard`.
+    #[test]
+    fn revelation_skill_test_failure_deals_margin_damage_and_discards() {
+        use crate::dsl::{deal_damage, for_each_point_failed, InvestigatorTarget};
+        use crate::state::{CardCode, ChaosToken};
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        // AutoFail forces the total to 0 → fail by `difficulty` (= 2).
+        state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        // What the evaluator's Effect::SkillTest arm does:
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            Some(for_each_point_failed(deal_damage(InvestigatorTarget::You, 1))),
+        );
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
+        // What resolve_encounter_card does on a suspended revelation:
+        cx.state.pending_revelation_discard = Some(CardCode("01162".into()));
+
+        // Resume: commit no cards → AutoFail → fail by 2 → 2 damage.
+        let out = finish_skill_test(&mut cx, &[]);
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.investigators[&inv].damage, 2, "1 damage per point failed");
+        assert!(
+            state.encounter_discard.contains(&CardCode("01162".into())),
+            "suspended treachery flushed to encounter_discard at teardown"
+        );
+        assert!(state.in_flight_skill_test.is_none());
+        assert!(state.pending_revelation_discard.is_none());
+    }
+
+    /// A plain (non-revelation) skill test never touches the
+    /// `pending_revelation_discard` slot — the flush is a no-op for it.
+    #[test]
+    fn plain_skill_test_leaves_pending_revelation_discard_untouched() {
+        use crate::state::ChaosToken;
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = perform_skill_test(&mut cx, inv, SkillKind::Intellect, 1);
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
+        let out = finish_skill_test(&mut cx, &[]);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            state.pending_revelation_discard.is_none(),
+            "plain test must not set or flush the revelation-discard slot"
+        );
+        assert!(state.encounter_discard.is_empty());
+    }
 }
