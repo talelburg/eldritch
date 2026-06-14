@@ -154,6 +154,12 @@ pub struct CardInPlay {
     /// Horror accumulated on this asset (for horror-soak / ally
     /// sanity). Distinct from the controlling investigator's horror.
     pub accumulated_horror: u8,
+    /// Clues sitting on this card instance (Cover Up 01007 enters the
+    /// threat area "with 3 clues on it"). Distinct from the investigator
+    /// and location clue pools; defaults to 0. Most cards never carry
+    /// clues, so absent on the wire → 0.
+    #[serde(default)]
+    pub clues: u8,
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
     /// is the ability index within the card's `abilities()`; value
     /// records the last round the ability fired and how many times.
@@ -214,6 +220,7 @@ impl CardInPlay {
             uses: BTreeMap::new(),
             accumulated_damage: 0,
             accumulated_horror: 0,
+            clues: 0,
             ability_usage: BTreeMap::new(),
         }
     }
@@ -266,5 +273,29 @@ impl CardInPlay {
             record.count = 0;
         }
         record.count = record.count.saturating_add(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CardCode, CardInPlay, CardInstanceId};
+
+    #[test]
+    fn enter_play_defaults_clues_to_zero() {
+        let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1));
+        assert_eq!(c.clues, 0);
+    }
+
+    #[test]
+    fn card_in_play_deserializes_when_clues_field_absent() {
+        // A state serialized before `clues` existed must still load (field
+        // defaults to 0), mirroring the `ability_usage` serde-default test.
+        let json = r#"{
+            "code": "_x", "instance_id": 1, "exhausted": false,
+            "uses": {}, "accumulated_damage": 0, "accumulated_horror": 0,
+            "ability_usage": {}
+        }"#;
+        let c: CardInPlay = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(c.clues, 0);
     }
 }
