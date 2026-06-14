@@ -1004,3 +1004,69 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
     // B must still be open — no second WindowClosed.
     assert_event_count!(resumed.events, 1, Event::WindowClosed { .. });
 }
+
+#[test]
+fn pick_index_fires_threat_area_reaction_and_closes_window() {
+    // ROLAND_REACTION is seated in the investigator's threat_area
+    // (instance id 7). The scan already finds it there; now verify
+    // the fire path also resolves it: PickIndex(0) discovers 1 clue,
+    // the window closes, and Done is returned.
+    install_mock_registry();
+    let inv_id = InvestigatorId(1);
+    let enemy_id = EnemyId(100);
+    let loc_id = LocationId(10);
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(loc_id);
+    inv.skills.combat = 3;
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(ROLAND_REACTION),
+        CardInstanceId(7),
+    ));
+    let mut enemy = test_enemy(100, "Mock Ghoul");
+    enemy.fight = 3;
+    enemy.max_health = 2;
+    enemy.damage = 1;
+    enemy.engaged_with = Some(inv_id);
+    let mut loc = test_location(10, "Mock Location");
+    loc.clues = 3;
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(inv_id)
+        .with_turn_order([inv_id])
+        .with_investigator(inv)
+        .with_enemy(enemy)
+        .with_location(loc)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "threat-area reaction must open a window, got {:?}",
+        paused.outcome,
+    );
+
+    let resumed = game_core::engine::apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickIndex(0),
+        }),
+    );
+
+    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert_event!(
+        resumed.events,
+        Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
+    );
+    assert_event!(
+        resumed.events,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
+        } if *e == enemy_id
+    );
+    assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
+    assert_eq!(resumed.state.locations[&loc_id].clues, 2);
+    assert!(resumed.state.top_reaction_window().is_none());
+}
