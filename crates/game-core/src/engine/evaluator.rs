@@ -89,6 +89,11 @@ pub struct EvalContext {
     /// skill-test driver runs an [`Effect::SkillTest`]'s `on_fail`. Read
     /// by [`Effect::ForEachPointFailed`]. `None` outside that window.
     pub failed_by: Option<u8>,
+    /// The clue count a before-timing discovery interrupt is replacing,
+    /// set only while resolving an `EventPattern::WouldDiscoverClues`
+    /// ability's effect (so the card-local "discard that many" Native
+    /// reads it). `None` outside that window. Mirrors `failed_by`.
+    pub clue_discovery_count: Option<u8>,
 }
 
 impl EvalContext {
@@ -101,6 +106,7 @@ impl EvalContext {
             controller,
             source: None,
             failed_by: None,
+            clue_discovery_count: None,
         }
     }
 
@@ -117,6 +123,7 @@ impl EvalContext {
             controller,
             source: Some(source),
             failed_by: None,
+            clue_discovery_count: None,
         }
     }
 }
@@ -1008,6 +1015,12 @@ mod tests {
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))
+    }
+
+    #[test]
+    fn eval_context_defaults_clue_discovery_count_to_none() {
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        assert_eq!(ctx.clue_discovery_count, None);
     }
 
     #[test]
