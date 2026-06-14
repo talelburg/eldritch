@@ -20,7 +20,11 @@ pub fn abilities() -> Vec<Ability> {
     vec![revelation(skill_test(
         SkillKind::Willpower,
         3,
-        for_each_point_failed(deal_horror(InvestigatorTarget::You, 1)),
+        None,
+        Some(for_each_point_failed(deal_horror(
+            InvestigatorTarget::You,
+            1,
+        ))),
     ))]
 }
 

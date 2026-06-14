@@ -30,7 +30,8 @@ pub fn abilities() -> Vec<Ability> {
     vec![revelation(skill_test(
         SkillKind::Willpower,
         4,
-        native(CRYPT_CHILL_FAIL),
+        None,
+        Some(native(CRYPT_CHILL_FAIL)),
     ))]
 }
 

@@ -975,31 +975,22 @@ pub fn restrict(restriction: Restriction) -> Effect {
 }
 
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against
-/// `difficulty`, running `on_fail` after the test resolves on failure
-/// (no success-side effect).
+/// `difficulty`. `on_success` runs after a passing draw, `on_fail` after a
+/// failing one (with the margin in the evaluator context's `failed_by`);
+/// either may be `None`. Most cards branch on exactly one side — failure
+/// (the one-shot Revelation treacheries) or success (Frozen in Fear 01164).
 #[must_use]
-pub fn skill_test(skill: crate::card_data::SkillKind, difficulty: u8, on_fail: Effect) -> Effect {
-    Effect::SkillTest {
-        skill,
-        difficulty,
-        on_success: None,
-        on_fail: Some(Box::new(on_fail)),
-    }
-}
-
-/// Build an [`Effect::SkillTest`] that runs `on_success` on a passing draw
-/// and nothing on failure (Frozen in Fear 01164's end-of-turn test).
-#[must_use]
-pub fn skill_test_with_success(
+pub fn skill_test(
     skill: crate::card_data::SkillKind,
     difficulty: u8,
-    on_success: Effect,
+    on_success: Option<Effect>,
+    on_fail: Option<Effect>,
 ) -> Effect {
     Effect::SkillTest {
         skill,
         difficulty,
-        on_success: Some(Box::new(on_success)),
-        on_fail: None,
+        on_success: on_success.map(Box::new),
+        on_fail: on_fail.map(Box::new),
     }
 }
 
@@ -1239,7 +1230,11 @@ mod tests {
         let effect = skill_test(
             SkillKind::Agility,
             3,
-            for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
+            None,
+            Some(for_each_point_failed(deal_damage(
+                InvestigatorTarget::You,
+                1,
+            ))),
         );
         let json = serde_json::to_string(&effect).expect("serialize");
         let back: Effect = serde_json::from_str(&json).expect("deserialize");

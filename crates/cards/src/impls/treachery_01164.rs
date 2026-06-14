@@ -20,8 +20,8 @@
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
-    constant, discard_self, on_event, put_into_threat_area, restrict, revelation,
-    skill_test_with_success, Ability, ActionClass, EventPattern, EventTiming, Restriction,
+    constant, discard_self, on_event, put_into_threat_area, restrict, revelation, skill_test,
+    Ability, ActionClass, EventPattern, EventTiming, Restriction,
 };
 
 /// `ArkhamDB` code for Frozen in Fear.
@@ -39,7 +39,7 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::EndOfTurn,
             EventTiming::After,
             // Test willpower(3): on success discard Frozen in Fear.
-            skill_test_with_success(SkillKind::Willpower, 3, discard_self()),
+            skill_test(SkillKind::Willpower, 3, Some(discard_self()), None),
         ),
     ]
 }
