@@ -73,6 +73,20 @@ pub(crate) enum ForcedTriggerPoint {
         /// The investigator whose turn ended.
         investigator: InvestigatorId,
     },
+    /// A location was successfully investigated. Scans the investigating
+    /// investigator's controlled card instances (threat area + in play)
+    /// for `EventPattern::AfterLocationInvestigated` forced abilities;
+    /// binds controller = that investigator. C4c (#235) extends the scan
+    /// to the investigated location's attachments for Obscuring Fog
+    /// (01168), the first real consumer.
+    AfterLocationInvestigated {
+        /// The investigator who investigated.
+        investigator: InvestigatorId,
+        /// The location that was investigated. Unused by the C4a scan
+        /// (which keys off the investigator); C4c reads it to scan the
+        /// location's attachment zone.
+        location: LocationId,
+    },
 }
 
 struct ForcedHit {
@@ -100,6 +114,7 @@ pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> E
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn collect_forced_hits(
     state: &crate::state::GameState,
     point: &ForcedTriggerPoint,
@@ -202,6 +217,21 @@ fn collect_forced_hits(
             for card in inv.controlled_card_instances() {
                 push_matching(reg, &card.code, *investigator, &mut hits, |p| {
                     matches!(p, EventPattern::EndOfTurn)
+                });
+            }
+        }
+        ForcedTriggerPoint::AfterLocationInvestigated {
+            investigator,
+            location: _location,
+        } => {
+            let Some(inv) = state.investigators.get(investigator) else {
+                return hits;
+            };
+            // C4a scans the investigator's controlled instances; C4c
+            // extends to `_location`'s attachment zone (Obscuring Fog).
+            for card in inv.controlled_card_instances() {
+                push_matching(reg, &card.code, *investigator, &mut hits, |p| {
+                    matches!(p, EventPattern::AfterLocationInvestigated)
                 });
             }
         }

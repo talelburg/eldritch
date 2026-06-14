@@ -503,6 +503,118 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
     assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
 }
 
+// ── AfterLocationInvestigated tests ───────────────────────────────────────────
+
+#[test]
+fn fire_forced_after_investigate_resolves_threat_area_ability() {
+    use game_core::state::{CardInPlay, CardInstanceId};
+    use game_core::test_support::fire_forced_after_location_investigated;
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode(AFTER_INVESTIGATE_CARD.into()),
+        CardInstanceId(1),
+    ));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_after_location_investigated(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        LocationId(10),
+    );
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_event!(
+        events,
+        Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+    );
+}
+
+#[test]
+fn fire_forced_after_investigate_no_op_without_threat_area_card() {
+    use game_core::test_support::fire_forced_after_location_investigated;
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_after_location_investigated(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        LocationId(10),
+    );
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert!(events.is_empty());
+}
+
+#[test]
+fn successful_investigate_fires_after_location_investigated_forced() {
+    // End-to-end: drive a successful Investigate (shroud 0, intellect 3,
+    // Numeric(0) token → always succeeds) and confirm the threat-area
+    // AfterLocationInvestigated forced effect fires.
+    use game_core::state::{CardInPlay, CardInstanceId, ChaosBag, ChaosToken, TokenModifiers};
+    use game_core::test_support::apply_no_commits;
+
+    install_mock_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.skills.intellect = 3;
+    inv.actions_remaining = 1;
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode(AFTER_INVESTIGATE_CARD.into()),
+        CardInstanceId(1),
+    ));
+    let mut loc = test_location(10, "Study");
+    loc.shroud = 0;
+    loc.clues = 1;
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator(inv)
+        .with_location(loc)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::Investigate {
+            investigator: InvestigatorId(1),
+        }),
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })),
+        "AfterLocationInvestigated forced effect must fire on a successful \
+         investigate; events = {:?}",
+        result.events
+    );
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
+}
+
 #[test]
 fn two_simultaneous_forced_triggers_reject_loudly() {
     install_mock_registry();

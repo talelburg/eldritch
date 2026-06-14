@@ -260,7 +260,8 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                     .expect("in_flight_skill_test must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
-            FinishContinuation::PostOnResolution { succeeded: _ } => {
+            FinishContinuation::PostOnResolution { succeeded } => {
+                fire_after_location_investigated(cx, investigator, succeeded);
                 discard_committed_cards(cx, investigator, &indices_u8);
                 cx.events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when
@@ -576,6 +577,49 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
         .is_some_and(|e| e.retaliate && !e.exhausted);
     if retaliates {
         super::combat::enemy_attack(cx, enemy, investigator);
+    }
+}
+
+/// Fire `ForcedTriggerPoint::AfterLocationInvestigated` if the
+/// just-resolved test was a *successful Investigate*. Runs at the
+/// `PostOnResolution` step (after on-resolution triggers and retaliate,
+/// "after applying all results"). No-op unless the test succeeded and
+/// its follow-up was `Investigate`.
+///
+/// In-scope consumers (Obscuring Fog 01168 discards itself) neither
+/// suspend nor produce 2+ simultaneous triggers, so a non-`Done`
+/// outcome is a contract violation, surfaced loudly — matching the
+/// `fire_on_skill_test_resolution` policy. A suspending consumer here
+/// is #212 reentrancy work.
+fn fire_after_location_investigated(cx: &mut Cx, investigator: InvestigatorId, succeeded: bool) {
+    if !succeeded {
+        return;
+    }
+    let follow_up = cx.state.in_flight_skill_test.as_ref().map(|t| t.follow_up);
+    if !matches!(follow_up, Some(SkillTestFollowUp::Investigate)) {
+        return;
+    }
+    let Some(location) = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .and_then(|i| i.current_location)
+    else {
+        return;
+    };
+    let outcome = super::forced_triggers::fire_forced_triggers(
+        cx,
+        &super::forced_triggers::ForcedTriggerPoint::AfterLocationInvestigated {
+            investigator,
+            location,
+        },
+    );
+    if !matches!(outcome, EngineOutcome::Done) {
+        unreachable!(
+            "AfterLocationInvestigated forced trigger returned non-Done ({outcome:?}); \
+             slice-1 content (Obscuring Fog discards, no suspension / 2+ simultaneous). \
+             A suspending consumer needs the #212 reentrancy work."
+        );
     }
 }
 
