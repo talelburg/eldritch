@@ -114,6 +114,7 @@ pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> E
     }
 }
 
+// dispatcher: one match arm per ForcedTriggerPoint.
 #[allow(clippy::too_many_lines)]
 fn collect_forced_hits(
     state: &crate::state::GameState,

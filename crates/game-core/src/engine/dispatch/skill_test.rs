@@ -588,9 +588,11 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
 ///
 /// In-scope consumers (Obscuring Fog 01168 discards itself) neither
 /// suspend nor produce 2+ simultaneous triggers, so a non-`Done`
-/// outcome is a contract violation, surfaced loudly — matching the
-/// `fire_on_skill_test_resolution` policy. A suspending consumer here
-/// is #212 reentrancy work.
+/// outcome is a contract violation, surfaced loudly. Unlike
+/// `fire_on_skill_test_resolution` (which only rejects on `Rejected`),
+/// there is no resume path for a suspending consumer mid-teardown, so
+/// any non-`Done` panics here. A suspending consumer is #212
+/// reentrancy work.
 fn fire_after_location_investigated(cx: &mut Cx, investigator: InvestigatorId, succeeded: bool) {
     if !succeeded {
         return;

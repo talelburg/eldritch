@@ -171,7 +171,7 @@ mod threat_area_tests {
     #[test]
     fn deserializes_when_threat_area_field_absent() {
         // A state serialized before `threat_area` existed must still
-        // parse (serde default), proving forward-compat.
+        // parse (serde default), proving backward-compat.
         let json = r#"{
             "id": 1, "name": "Test", "current_location": null,
             "skills": {"willpower":3,"intellect":3,"combat":3,"agility":3},
