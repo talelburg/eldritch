@@ -430,7 +430,7 @@ pub struct InFlightSkillTest {
     /// action tests and failure-only card tests.
     pub on_success: Option<card_dsl::dsl::Effect>,
     /// The firing card instance, threaded so the `on_success` / `on_fail`
-    /// eval-contexts can resolve [`Effect::DiscardSelf`] across the
+    /// eval-contexts can resolve [`Effect::DiscardSelf`](card_dsl::dsl::Effect::DiscardSelf) across the
     /// suspend/resume boundary. `None` for action tests and effects with
     /// no originating instance.
     pub source: Option<CardInstanceId>,

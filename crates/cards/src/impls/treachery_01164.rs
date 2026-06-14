@@ -21,7 +21,7 @@
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
     constant, discard_self, native, on_event, restrict, revelation, skill_test_with_success,
-    ActionClassSet, Ability, Effect, EventPattern, EventTiming, Restriction,
+    Ability, ActionClassSet, Effect, EventPattern, EventTiming, Restriction,
 };
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::CardCode;
@@ -83,7 +83,11 @@ mod tests {
         assert!(matches!(
             &abilities[1].effect,
             Effect::Restrict(Restriction::ExtraActionCost {
-                actions: ActionClassSet { move_: true, fight: true, evade: true },
+                actions: ActionClassSet {
+                    move_: true,
+                    fight: true,
+                    evade: true
+                },
                 first_each_round: true,
             })
         ));

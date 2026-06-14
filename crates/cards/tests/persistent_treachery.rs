@@ -62,7 +62,10 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     assert_eq!(loc.attachments.len(), 1, "Obscuring Fog attached");
     assert_eq!(loc.attachments[0].code.as_str(), "01168");
     assert!(
-        !result.state.encounter_discard.contains(&CardCode::new("01168")),
+        !result
+            .state
+            .encounter_discard
+            .contains(&CardCode::new("01168")),
         "a persistent treachery is not auto-discarded after its Revelation",
     );
 
@@ -102,7 +105,10 @@ fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
     let inv = &result.state.investigators[&InvestigatorId(1)];
     assert_eq!(inv.threat_area.len(), 1, "Dissonant Voices in threat area");
     assert_eq!(inv.threat_area[0].code.as_str(), "01165");
-    assert!(!result.state.encounter_discard.contains(&CardCode::new("01165")));
+    assert!(!result
+        .state
+        .encounter_discard
+        .contains(&CardCode::new("01165")));
 
     // Forced — at the end of the round, discard Dissonant Voices.
     let mut state = result.state;
@@ -110,7 +116,9 @@ fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
     let outcome = fire_forced_on_round_end(&mut state, &mut events);
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(
-        state.investigators[&InvestigatorId(1)].threat_area.is_empty(),
+        state.investigators[&InvestigatorId(1)]
+            .threat_area
+            .is_empty(),
         "Dissonant Voices discards at end of round",
     );
     assert!(state.encounter_discard.contains(&CardCode::new("01165")));
@@ -124,8 +132,10 @@ fn dissonant_voices_forbids_playing_an_asset() {
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(101));
     inv.hand = vec![CardCode::new("01059")];
-    inv.threat_area
-        .push(CardInPlay::enter_play(CardCode::new("01165"), CardInstanceId(0)));
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01165"),
+        CardInstanceId(0),
+    ));
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
@@ -158,11 +168,12 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     // RoundEnded forced ability. They must resolve together (deterministic
     // multi-resolve), not reject: the agenda places doom per ghoul in the
     // Hallway/Parlor, and Dissonant Voices discards itself.
-    let loc =
-        |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
+    let loc = |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
     let mut inv = test_investigator(1);
-    inv.threat_area
-        .push(CardInPlay::enter_play(CardCode::new("01165"), CardInstanceId(0)));
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01165"),
+        CardInstanceId(0),
+    ));
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
@@ -197,7 +208,9 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         state.agenda_doom,
     );
     assert!(
-        state.investigators[&InvestigatorId(1)].threat_area.is_empty(),
+        state.investigators[&InvestigatorId(1)]
+            .threat_area
+            .is_empty(),
         "Dissonant Voices also discarded in the same round-end resolution",
     );
 }
@@ -209,8 +222,10 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
     install_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(1));
-    inv.threat_area
-        .push(CardInPlay::enter_play(CardCode::new("01164"), CardInstanceId(0)));
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01164"),
+        CardInstanceId(0),
+    ));
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
@@ -231,7 +246,8 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
     );
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].actions_remaining, 1,
+        r.state.investigators[&InvestigatorId(1)].actions_remaining,
+        1,
         "first move/fight/evade each round costs +1 action",
     );
 
@@ -245,7 +261,8 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
     );
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].actions_remaining, 0,
+        r.state.investigators[&InvestigatorId(1)].actions_remaining,
+        0,
         "subsequent actions that round cost the normal 1",
     );
 }
@@ -254,8 +271,10 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
 /// in investigator 1's threat area and a single rigged chaos token.
 fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
     let mut inv1 = test_investigator(1);
-    inv1.threat_area
-        .push(CardInPlay::enter_play(CardCode::new("01164"), CardInstanceId(0)));
+    inv1.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01164"),
+        CardInstanceId(0),
+    ));
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv1)
@@ -280,7 +299,9 @@ fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
     let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(0)));
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert!(
-        r.state.investigators[&InvestigatorId(1)].threat_area.is_empty(),
+        r.state.investigators[&InvestigatorId(1)]
+            .threat_area
+            .is_empty(),
         "succeeded willpower(3) test discards Frozen in Fear",
     );
     assert!(r.state.encounter_discard.contains(&CardCode::new("01164")));
@@ -330,7 +351,10 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
         "limit 1 per location: the second copy does not attach",
     );
     assert!(
-        result.state.encounter_discard.contains(&CardCode::new("01168")),
+        result
+            .state
+            .encounter_discard
+            .contains(&CardCode::new("01168")),
         "the over-limit copy is discarded",
     );
 }

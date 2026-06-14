@@ -1800,8 +1800,10 @@ mod tests {
         use crate::state::Zone;
         use crate::test_support::test_location;
         let mut loc = test_location(3, "Study");
-        loc.attachments
-            .push(CardInPlay::enter_play(CardCode::new("01168"), CardInstanceId(9)));
+        loc.attachments.push(CardInPlay::enter_play(
+            CardCode::new("01168"),
+            CardInstanceId(9),
+        ));
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_location(loc)
@@ -1896,7 +1898,10 @@ mod tests {
         let (state, id) = state_with_cards_in_play(&["frozen-surcharge", "frozen-surcharge"]);
         let reg = fake_registry();
         let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Move);
-        assert_eq!(extra, 2, "two Frozen in Fear each surcharge the first action");
+        assert_eq!(
+            extra, 2,
+            "two Frozen in Fear each surcharge the first action"
+        );
         assert_eq!(to_mark, vec![CardInstanceId(0), CardInstanceId(1)]);
     }
 

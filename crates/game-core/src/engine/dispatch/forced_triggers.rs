@@ -228,9 +228,14 @@ fn collect_forced_hits(
             // `Effect::DiscardSelf` finds itself.
             for (inv_id, inv) in &state.investigators {
                 for card in inv.controlled_card_instances() {
-                    push_matching(reg, &card.code, *inv_id, Some(card.instance_id), &mut hits, |p| {
-                        matches!(p, EventPattern::RoundEnded)
-                    });
+                    push_matching(
+                        reg,
+                        &card.code,
+                        *inv_id,
+                        Some(card.instance_id),
+                        &mut hits,
+                        |p| matches!(p, EventPattern::RoundEnded),
+                    );
                 }
             }
         }
@@ -243,9 +248,14 @@ fn collect_forced_hits(
             // fine — abilities are static per code; C4c threads the
             // source instance when an effect needs to discard itself.
             for card in inv.controlled_card_instances() {
-                push_matching(reg, &card.code, *investigator, Some(card.instance_id), &mut hits, |p| {
-                    matches!(p, EventPattern::EndOfTurn)
-                });
+                push_matching(
+                    reg,
+                    &card.code,
+                    *investigator,
+                    Some(card.instance_id),
+                    &mut hits,
+                    |p| matches!(p, EventPattern::EndOfTurn),
+                );
             }
         }
         ForcedTriggerPoint::AfterLocationInvestigated {
@@ -261,15 +271,25 @@ fn collect_forced_hits(
             // source = the firing instance so `Effect::DiscardSelf` finds
             // itself.
             for card in inv.controlled_card_instances() {
-                push_matching(reg, &card.code, *investigator, Some(card.instance_id), &mut hits, |p| {
-                    matches!(p, EventPattern::AfterLocationInvestigated)
-                });
+                push_matching(
+                    reg,
+                    &card.code,
+                    *investigator,
+                    Some(card.instance_id),
+                    &mut hits,
+                    |p| matches!(p, EventPattern::AfterLocationInvestigated),
+                );
             }
             if let Some(loc) = state.locations.get(location) {
                 for att in &loc.attachments {
-                    push_matching(reg, &att.code, *investigator, Some(att.instance_id), &mut hits, |p| {
-                        matches!(p, EventPattern::AfterLocationInvestigated)
-                    });
+                    push_matching(
+                        reg,
+                        &att.code,
+                        *investigator,
+                        Some(att.instance_id),
+                        &mut hits,
+                        |p| matches!(p, EventPattern::AfterLocationInvestigated),
+                    );
                 }
             }
         }

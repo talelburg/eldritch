@@ -21,6 +21,10 @@ use super::super::evaluator::{
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use super::Cx;
 
+// Nine args: the skill-test parameters are genuinely independent axes
+// (skill, kind, difficulty, success/fail follow-ups, source). A params
+// struct would add indirection without grouping anything cohesive.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::engine) fn start_skill_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
