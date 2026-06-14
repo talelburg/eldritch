@@ -20,8 +20,13 @@ zone + shared scan source + `EndOfTurn`/`AfterLocationInvestigated`
 forced points), the test-treachery engine prereq
 ([#286](https://github.com/talelburg/eldritch/issues/286):
 `Effect::SkillTest` + `ForEachPointFailed` + suspendable-revelation
-discard), and C4b (the four one-shot Revelation treacheries —
-01162/01163/01166/01167). **Next: C4c → C5 → C7.**
+discard), C4b (the four one-shot Revelation treacheries —
+01162/01163/01166/01167), and C4c (the three persistent threat-area /
+attachment treacheries — Obscuring Fog 01168, Dissonant Voices 01165,
+Frozen in Fear 01164 — with the location attachment zone, inspectable-DSL
+constant restrictions, `Effect::DiscardSelf`, deterministic
+simultaneous-forced-trigger resolution, and end-turn resume plumbing).
+**Next: C5 → C7** (C6d also gates C7b).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -74,7 +79,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | ✅ PR #285 |
 | — | [#286](https://github.com/talelburg/eldritch/issues/286) | infra: `Effect::SkillTest` + `ForEachPointFailed` + failure-side follow-up + suspendable-revelation discard (prerequisite for C4b's test treacheries) | ✅ PR #287 |
 | C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | ✅ PR #288 |
-| C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area treacheries (×3) | — |
+| C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area / attachment treacheries (×3) | ✅ PR #289 |
 | C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | — |
 | C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog damage-from-enemy window | — |
 | C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | — |
@@ -141,6 +146,10 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **A card effect initiates a skill test via `Effect::SkillTest { skill, difficulty, on_fail }` with a margin-keyed `Effect::ForEachPointFailed` failure branch; a suspending Revelation discards via `GameState.pending_revelation_discard` (C4b prereq [#286](https://github.com/talelburg/eldritch/issues/286), PR #287).** `SkillTest` calls `start_skill_test` (always suspends at the commit window); `on_fail` (on `InFlightSkillTest.on_fail`, orthogonal to the success-side `follow_up`) runs on failure with the margin in `EvalContext::failed_by`. A test-initiating Revelation suspends, so `resolve_encounter_card` records the treachery in `pending_revelation_discard`, flushed at skill-test teardown (no-op for a plain Investigate — the seam C4c extends). **`Active` status = in-play, not turn ownership, so Mythos-phase treachery tests are legal.**
 
 - **Threat-area scan source (C4a, [#233](https://github.com/talelburg/eldritch/issues/233), PR #285) + C4c ([#235](https://github.com/talelburg/eldritch/issues/235)) extension points.** `Investigator::controlled_card_instances()` (chains `cards_in_play` + `threat_area`) is the single scan source for both reaction-window and forced instance scans; cards enter/leave the threat area via `dispatch::threat_area::{place_in_threat_area, discard_from_threat_area}`. New forced points `EndOfTurn` and `AfterLocationInvestigated` (skill-test `PostOnResolution`, successful Investigate) landed. **C4c must:** thread the *source instance* into the forced `EvalContext` (`resolve_one` binds controller only); extend `AfterLocationInvestigated` to also scan the investigated *location's* attachment zone (Obscuring Fog 01168 attaches to a location, not the threat area); and extend `pending_revelation_discard` (above) for persistent treacheries that stay in the threat area instead of discarding. Suspension at these forced points is unmodeled (#212 reentrancy).
+
+- **A persistent treachery is one with any non-Revelation ability; it owns its own disposition (C4c, [#235](https://github.com/talelburg/eldritch/issues/235), PR #289).** `resolve_encounter_card` auto-discards a treachery after its Revelation **only if every ability is `Trigger::Revelation`**; a card carrying a `Constant`/`OnEvent` ability places itself (threat area via `place_in_threat_area`, or location via `attach_to_location`) and discards itself later via the typed `Effect::DiscardSelf` (which finds the firing instance through `EvalContext::source`). No suppress-discard flag. **A new persistent treachery needs no routing change — give it an ongoing ability and a self-placement Revelation.** Constant restrictions extend the inspectable DSL (`Stat::Shroud`, `Restriction::{CannotPlay, ExtraActionCost}` under `Effect::Restrict`), read by `effective_shroud` / `play_is_prohibited` / `pending_action_surcharge` the way `constant_skill_modifier` already reads `Modify` — **not** via new registry query hooks. `ExtraActionCost`'s `first_each_round` stays a field (tracked per source instance in `Investigator.action_surcharge_spent_this_round`) until a second consumer needs the gate on a non-cost mechanism.
+
+- **Simultaneous forced triggers resolve in a fixed deterministic order, and a suspending forced effect at end-of-turn resumes via `pending_end_turn` (C4c, PR #289).** `fire_forced_triggers` now resolves *all* collected hits in collection order (board cards before threat-area/attachment instances; `BTreeMap` order) instead of rejecting on 2+ — this is the partial #213 stand-in (player-chosen ordering is still #213). It lets Dissonant Voices' `RoundEnded` discard coexist with agenda 01107's `RoundEnded` doom. A hit that *suspends* abandons later hits (#212 reentrancy); safe while no point has 2+ simultaneous suspending hits. `Effect::SkillTest` gained a success-side `on_success` (mirror of `on_fail`); a suspending `EndOfTurn` forced effect (Frozen in Fear's willpower test) strands `end_turn` before rotation, so `end_turn` records `pending_end_turn` and the skill-test commit-resume path re-enters `resume_end_turn` (rotation / phase-end) — mirroring `spawn_engage_pending`/`resume_spawn_engage`.
 
 ## Open questions
 
