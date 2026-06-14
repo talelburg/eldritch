@@ -37,6 +37,7 @@ mod phases;
 mod reaction_windows;
 pub(crate) mod reveal;
 mod skill_test;
+mod threat_area;
 
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///

@@ -315,6 +315,19 @@ pub enum Event {
         /// The card code that was played.
         code: CardCode,
     },
+    /// An encounter card entered an investigator's threat area
+    /// (persistent treachery / weakness). Mirror of the in-play entry
+    /// path for player cards; the discard mirror reuses
+    /// [`CardDiscarded`](Event::CardDiscarded) with
+    /// `from: Zone::ThreatArea`.
+    CardEnteredThreatArea {
+        /// The investigator whose threat area the card entered.
+        investigator: InvestigatorId,
+        /// The card code that entered.
+        code: CardCode,
+        /// The minted in-play instance id.
+        instance_id: CardInstanceId,
+    },
     /// A card was discarded — moved from `from` to the investigator's
     /// discard pile. Fires for played events after their on-play
     /// effects resolve; future card effects ("discard a card from
