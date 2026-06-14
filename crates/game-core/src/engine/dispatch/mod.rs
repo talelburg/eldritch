@@ -36,7 +36,8 @@ mod hunters;
 mod phases;
 mod reaction_windows;
 pub(crate) mod reveal;
-mod skill_test;
+// pub(super): engine::evaluator reaches start_skill_test for Effect::SkillTest.
+pub(super) mod skill_test;
 mod threat_area;
 
 /// Apply a [`PlayerAction`] to the state, pushing events.

@@ -85,6 +85,10 @@ pub struct EvalContext {
     /// originating from a specific in-play instance (events played
     /// from hand, scenario forced effects, …).
     pub source: Option<crate::state::CardInstanceId>,
+    /// The just-resolved skill test's failure margin, set only while the
+    /// skill-test driver runs an [`Effect::SkillTest`]'s `on_fail`. Read
+    /// by [`Effect::ForEachPointFailed`]. `None` outside that window.
+    pub failed_by: Option<u8>,
 }
 
 impl EvalContext {
@@ -96,6 +100,7 @@ impl EvalContext {
         Self {
             controller,
             source: None,
+            failed_by: None,
         }
     }
 
@@ -111,6 +116,7 @@ impl EvalContext {
         Self {
             controller,
             source: Some(source),
+            failed_by: None,
         }
     }
 }
@@ -169,6 +175,29 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             };
             f(cx, &eval_ctx)
         }
+        Effect::ForEachPointFailed(body) => {
+            let n = eval_ctx.failed_by.unwrap_or(0);
+            for _ in 0..n {
+                match apply_effect(cx, body, eval_ctx) {
+                    EngineOutcome::Done => {}
+                    other => return other,
+                }
+            }
+            EngineOutcome::Done
+        }
+        Effect::SkillTest {
+            skill,
+            difficulty,
+            on_fail,
+        } => crate::engine::dispatch::skill_test::start_skill_test(
+            cx,
+            eval_ctx.controller,
+            *skill,
+            crate::dsl::SkillTestKind::Plain,
+            i8::try_from(*difficulty).unwrap_or(i8::MAX),
+            crate::state::SkillTestFollowUp::None,
+            Some((**on_fail).clone()),
+        ),
     }
 }
 
@@ -751,15 +780,16 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state
 mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        constant, deal_damage, deal_horror, discover_clue, gain_resources, modify, on_play, seq,
-        Ability, Effect, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
+        constant, deal_damage, deal_horror, discover_clue, for_each_point_failed, gain_resources,
+        modify, on_play, seq, Ability, Effect, InvestigatorTarget, LocationTarget, ModifierScope,
+        SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, SkillKind,
     };
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
-    use crate::{assert_event, assert_no_event};
+    use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
         apply_effect, constant_skill_modifier, unconditional_constant_stat_modifier, EngineOutcome,
@@ -1830,6 +1860,52 @@ mod tests {
             events,
             Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
         );
+    }
+
+    #[test]
+    fn for_each_point_failed_scales_body_by_margin() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        // Margin 2 → run DealDamage{You,1} twice → 2 damage, 2 events.
+        let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
+        eval_ctx.failed_by = Some(2);
+        let outcome = apply_effect(
+            &mut cx,
+            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
+            eval_ctx,
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        assert_event_count!(events, 2, Event::DamageTaken { .. });
+    }
+
+    #[test]
+    fn for_each_point_failed_with_no_margin_is_a_noop() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        // failed_by None (no test in context) → zero iterations.
+        let outcome = apply_effect(
+            &mut cx,
+            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 0);
+        assert_no_event!(events, Event::DamageTaken { .. });
     }
 
     #[test]
