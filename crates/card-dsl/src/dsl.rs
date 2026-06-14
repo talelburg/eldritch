@@ -549,6 +549,16 @@ pub enum Effect {
     /// 01165) — the card names its own `CODE`. (Attaching to a *location*
     /// stays card-local because of per-card rules like Obscuring Fog's
     /// "Limit 1 per location".)
+    ///
+    /// The `code` is carried because at Revelation the card isn't in play
+    /// yet, so the evaluator context has no instance handle for "self"
+    /// (unlike [`DiscardSelf`](Self::DiscardSelf), which reads the
+    /// already-in-play `EvalContext.source`). TODO: once encounter cards
+    /// are minted as in-play instances *at reveal* (so the source instance
+    /// exists before the Revelation runs), this can drop the `code` and
+    /// place "self" uniformly with `DiscardSelf` — an encounter-resolution
+    /// change, not worth threading the code through a now-`Copy`
+    /// `EvalContext` on its own.
     PutIntoThreatArea {
         /// Printed `ArkhamDB` code of the card to place.
         code: String,
