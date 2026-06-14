@@ -111,3 +111,18 @@ pub fn fire_forced_on_enemy_defeat(
         &crate::engine::ForcedTriggerPoint::EnemyDefeated { code },
     )
 }
+
+/// Test helper: fire `ForcedTriggerPoint::EndOfTurn` for `investigator`,
+/// returning the `EngineOutcome`. See `fire_forced_on_enter`. Exercises
+/// the threat-area "at the end of your turn" forced path.
+pub fn fire_forced_at_end_of_turn(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    investigator: crate::state::InvestigatorId,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::EndOfTurn { investigator },
+    )
+}

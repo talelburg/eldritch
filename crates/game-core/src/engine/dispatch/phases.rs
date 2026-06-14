@@ -202,6 +202,27 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
         investigator: active_id,
     });
 
+    // Forced "at the end of your turn" abilities (threat-area cards
+    // such as Frozen in Fear 01164) fire for the investigator whose
+    // turn just ended, before the turn passes on. No real card
+    // consumes this in C4a; C4c (#235) is the first consumer.
+    //
+    // Suspension caveat: a forced effect that itself initiates a skill
+    // test would return AwaitingInput here, suspending end_turn before
+    // rotation — which end_turn has no resume plumbing for. No C4c
+    // consumer suspends at this point; a suspending one is #212
+    // reentrancy work. We propagate the outcome rather than swallow it
+    // so the gap is loud if it ever arises.
+    let end_of_turn = super::forced_triggers::fire_forced_triggers(
+        cx,
+        &super::forced_triggers::ForcedTriggerPoint::EndOfTurn {
+            investigator: active_id,
+        },
+    );
+    if !matches!(end_of_turn, EngineOutcome::Done) {
+        return end_of_turn;
+    }
+
     // 2.2.2 decision: "return to 2.2" for the next investigator, or
     // proceed to 2.3. next_active_investigator_after skips eliminated
     // investigators (Rules Reference p.10) — the same shared helper the
