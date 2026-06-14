@@ -11,15 +11,11 @@ C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
 C2 (01104 symbol-token effects + location victory points),
 C3a (Prey – Lowest remaining health + Retaliate keyword),
 C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
-C3c (agenda 01107 forced abilities), C3d (act-2 round-end window).
-
-> **Reverse-coverage gap closed; resume C4 → C7.**
-> [#280](https://github.com/talelburg/eldritch/issues/280) (act-2 reverse:
-> spawn the set-aside Ghoul Priest + reveal the Parlor) ✅ PR #282 and
-> [#281](https://github.com/talelburg/eldritch/issues/281) (agenda reverses
-> 01105/01106 + `AgendaAdvanced` forced point) ✅ PR #283 are done — the
-> act/agenda **reverse-coverage** gap (see the table below) that blocked the
-> real win/lose path is closed. Next: C4 → C7.
+C3c (agenda 01107 forced abilities), C3d (act-2 round-end window),
+the act-2 reverse ([#280](https://github.com/talelburg/eldritch/issues/280):
+spawn the set-aside Ghoul Priest + reveal the Parlor), and the agenda
+reverses ([#281](https://github.com/talelburg/eldritch/issues/281):
+01105/01106 + the `AgendaAdvanced` forced point). **Next: C4 → C7.**
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -82,28 +78,6 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards | — |
 | C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | — |
 | C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test | — |
-
-### Act/agenda reverse coverage
-
-Every act and agenda **reverse** (its `back_text` — what happens when it
-advances) must be implemented for a faithful slice; the Group C rows above
-covered some piecemeal (fronts + a couple of reverses), so this table is
-the explicit coverage check. Fronts (objectives/forced) are tracked in the
-breakdown rows; this is reverses only.
-
-| Card | Reverse | Status |
-|---|---|---|
-| Act 1 (01108) | board build | ✅ `act_01108.rs` (C1b) |
-| Act 2 (01109) | reveal Parlor, put Lita, spawn Ghoul Priest | ✅ `act_01109.rs` (PR #282); Lita → [#258](https://github.com/talelburg/eldritch/issues/258) |
-| Act 3 (01110) | R1/R2 resolution choice | ⚠️ R1 Won latch (C1b); R2 + choice → Phase 9 |
-| Agenda 1 (01105) | lead: each discards 1 random, or lead takes 2 horror | ⚠️ `agenda_01105.rs` (PR #283): deterministic 2-horror branch; interactive choice → [#212](https://github.com/talelburg/eldritch/issues/212) |
-| Agenda 2 (01106) | dig encounter deck until a [[Ghoul]], lead draws it | ✅ `agenda_01106.rs` (PR #283) |
-| Agenda 3 (01107) | (→R3) Lost | ✅ terminal Lost latch |
-
-Infra note: acts fire their reverse via `ForcedTriggerPoint::ActAdvanced`
-(from `advance_act`); agendas now have the **mirror** `AgendaAdvanced`
-forced point, fired from `advance_agenda` (added in [#281](https://github.com/talelburg/eldritch/issues/281),
-PR #283 — `advance_agenda` previously fired nothing).
 
 ## Future slices (after Slice 1)
 
