@@ -8,8 +8,8 @@ use std::sync::Once;
 
 use game_core::action::{EngineRecord, PlayerAction};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, Location, LocationId,
-    Phase,
+    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, EnemyId, InvestigatorId, Location,
+    LocationId, Phase,
 };
 use game_core::test_support::{
     drive, fire_forced_after_location_investigated, fire_forced_on_round_end, test_enemy,
@@ -200,6 +200,114 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         state.investigators[&InvestigatorId(1)].threat_area.is_empty(),
         "Dissonant Voices also discarded in the same round-end resolution",
     );
+}
+
+// ---- Frozen in Fear (01164) ----------------------------------------
+
+#[test]
+fn frozen_in_fear_surcharges_first_move_each_round_only() {
+    install_registry();
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(1));
+    inv.threat_area
+        .push(CardInPlay::enter_play(CardCode::new("01164"), CardInstanceId(0)));
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv)
+        .with_active_investigator(InvestigatorId(1))
+        .with_location(test_location(1, "A"))
+        .with_location(test_location(2, "B"))
+        .build();
+    state.connect(LocationId(1), LocationId(2));
+    assert_eq!(state.investigators[&InvestigatorId(1)].actions_remaining, 3);
+
+    // First move this round costs 2 (base 1 + surcharge 1): 3 → 1.
+    let r = apply(
+        state,
+        Action::Player(PlayerAction::Move {
+            investigator: InvestigatorId(1),
+            destination: LocationId(2),
+        }),
+    );
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].actions_remaining, 1,
+        "first move/fight/evade each round costs +1 action",
+    );
+
+    // Second move this round costs 1 (surcharge already spent): 1 → 0.
+    let r = apply(
+        r.state,
+        Action::Player(PlayerAction::Move {
+            investigator: InvestigatorId(1),
+            destination: LocationId(1),
+        }),
+    );
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].actions_remaining, 0,
+        "subsequent actions that round cost the normal 1",
+    );
+}
+
+/// Build a two-investigator Investigation-phase board with Frozen in Fear
+/// in investigator 1's threat area and a single rigged chaos token.
+fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
+    let mut inv1 = test_investigator(1);
+    inv1.threat_area
+        .push(CardInPlay::enter_play(CardCode::new("01164"), CardInstanceId(0)));
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv1)
+        .with_investigator(test_investigator(2))
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .build();
+    state.chaos_bag.tokens = vec![token];
+    state
+}
+
+fn end_turn_committing_nothing(state: game_core::GameState) -> game_core::ApplyResult {
+    let mut resolver = ScriptedResolver::new();
+    resolver.commit_cards(&[]);
+    drive(state, Action::Player(PlayerAction::EndTurn), resolver)
+}
+
+#[test]
+fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
+    install_registry();
+    // Willpower 3 + Numeric(0) = 3 vs difficulty 3 → success.
+    let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(0)));
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(
+        r.state.investigators[&InvestigatorId(1)].threat_area.is_empty(),
+        "succeeded willpower(3) test discards Frozen in Fear",
+    );
+    assert!(r.state.encounter_discard.contains(&CardCode::new("01164")));
+    // The suspending end-of-turn test did not strand the turn: rotation ran.
+    assert_eq!(
+        r.state.active_investigator,
+        Some(InvestigatorId(2)),
+        "end_turn resumed after the test and rotated to investigator 2",
+    );
+    assert!(r.state.pending_end_turn.is_none());
+}
+
+#[test]
+fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
+    install_registry();
+    // Willpower 3 + Numeric(-1) = 2 vs difficulty 3 → fail.
+    let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(-1)));
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].threat_area.len(),
+        1,
+        "failed test leaves Frozen in Fear in the threat area",
+    );
+    assert!(!r.state.encounter_discard.contains(&CardCode::new("01164")));
+    // Turn still progresses regardless of the test outcome.
+    assert_eq!(r.state.active_investigator, Some(InvestigatorId(2)));
+    assert!(r.state.pending_end_turn.is_none());
 }
 
 #[test]

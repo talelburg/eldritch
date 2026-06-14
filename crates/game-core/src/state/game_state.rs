@@ -215,6 +215,13 @@ pub struct GameState {
     pub hunter_move_pending: Option<HunterChoice>,
     /// Suspended engagement-on-spawn choice (#128). See [`SpawnEngagePending`].
     pub spawn_engage_pending: Option<SpawnEngagePending>,
+    /// Suspended end-of-turn continuation (C4c, #235): `Some(active)` while
+    /// `end_turn` is paused on a suspending `EndOfTurn` forced effect
+    /// (Frozen in Fear 01164's willpower test). The skill-test commit-resume
+    /// path re-enters `resume_end_turn` to run the stranded rotation /
+    /// phase-end once the test resolves. Defaults to `None`.
+    #[serde(default)]
+    pub pending_end_turn: Option<InvestigatorId>,
     /// Suspended upkeep hand-size discard (#111). See [`HandSizeDiscard`].
     pub hand_size_discard_pending: Option<HandSizeDiscard>,
     /// Suspended act round-end clue-spend window (#275). `Some` only while
