@@ -221,6 +221,16 @@ pub struct GameState {
     /// awaiting the group's Confirm/Skip at the end of the round. See
     /// [`ActRoundEndPending`].
     pub act_round_end_pending: Option<ActRoundEndPending>,
+    /// A treachery whose Revelation suspended (e.g. initiated a skill
+    /// test) and must be pushed to [`encounter_discard`](Self::encounter_discard)
+    /// once the suspending sub-resolution completes. Set by
+    /// `resolve_encounter_card` (in `engine::dispatch`) when its
+    /// Revelation loop yields `AwaitingInput`; flushed by the skill-test
+    /// driver's terminal teardown step. `None` for the common
+    /// Investigate/Fight/Evade test (no pending revelation).
+    /// TODO(#212): generalize beyond skill-test-suspended revelations
+    /// once `ChooseOne` can suspend mid-resolution.
+    pub pending_revelation_discard: Option<CardCode>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -398,6 +408,14 @@ pub struct InFlightSkillTest {
     pub tested_location: Option<LocationId>,
     /// Action-specific resolution to apply on success.
     pub follow_up: SkillTestFollowUp,
+    /// Effect to run **on failure** after the chaos token resolves,
+    /// with the failure margin available via
+    /// [`EvalContext::failed_by`](crate::engine::evaluator::EvalContext::failed_by).
+    /// Carried by treachery-Revelation tests (`Effect::SkillTest`);
+    /// `None` for action tests, which have only the success-side
+    /// [`follow_up`](Self::follow_up). Orthogonal to `follow_up` —
+    /// success and margin-keyed-failure are separate axes.
+    pub on_fail: Option<card_dsl::dsl::Effect>,
     /// Where the resolution driver should resume on the next call to
     /// `drive_skill_test`. Initialized to
     /// [`FinishContinuation::AwaitingCommit`] at

@@ -281,6 +281,7 @@ impl GameStateBuilder {
             spawn_engage_pending: None,
             hand_size_discard_pending: self.hand_size_discard_pending,
             act_round_end_pending: None,
+            pending_revelation_discard: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
             agenda_deck: Vec::new(),

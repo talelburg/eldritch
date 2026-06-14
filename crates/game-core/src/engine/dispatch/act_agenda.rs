@@ -42,6 +42,18 @@ pub(super) fn check_doom_threshold(cx: &mut Cx) {
     }
 }
 
+/// Place 1 doom on the current agenda and run the doom-threshold check
+/// (which may advance the agenda or set its resolution). The card-facing
+/// combination of `place_doom_on_agenda` + `check_doom_threshold`,
+/// exposed `pub` for card-local native effects (Ancient Evils 01166,
+/// "Place 1 doom on the current agenda. This effect can cause the current
+/// agenda to advance."). No-op on an empty agenda deck — both helpers
+/// guard.
+pub fn place_doom_on_current_agenda(cx: &mut Cx) {
+    place_doom_on_agenda(cx);
+    check_doom_threshold(cx);
+}
+
 /// Advance the agenda deck one step: emit [`Event::AgendaAdvanced`],
 /// reset doom (Rules Reference p.24: "remove all doom from play"), and
 /// move the cursor to the next agenda.
@@ -291,6 +303,32 @@ mod doom_agenda_tests {
             events: &mut events,
         });
         assert_eq!(state.agenda_doom, 2);
+    }
+
+    #[test]
+    fn place_doom_on_current_agenda_advances_at_threshold() {
+        use crate::state::{Agenda, CardCode};
+        let mut state = GameStateBuilder::new().build();
+        state.agenda_deck = vec![
+            Agenda {
+                code: CardCode("_agenda_1".into()),
+                doom_threshold: 1,
+                resolution: None,
+            },
+            Agenda {
+                code: CardCode("_agenda_2".into()),
+                doom_threshold: 3,
+                resolution: None,
+            },
+        ];
+        let mut events = Vec::new();
+        place_doom_on_current_agenda(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        // Doom reached threshold (1) → agenda advanced + doom reset.
+        assert_eq!(state.agenda_index, 1, "agenda advanced at threshold");
+        assert_eq!(state.agenda_doom, 0, "doom reset on advance");
     }
 
     #[test]
