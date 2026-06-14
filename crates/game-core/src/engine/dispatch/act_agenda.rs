@@ -44,7 +44,7 @@ pub(super) fn check_doom_threshold(cx: &mut Cx) {
 
 /// Place 1 doom on the current agenda and run the doom-threshold check
 /// (which may advance the agenda or set its resolution). The card-facing
-/// combination of [`place_doom_on_agenda`] + [`check_doom_threshold`],
+/// combination of `place_doom_on_agenda` + `check_doom_threshold`,
 /// exposed `pub` for card-local native effects (Ancient Evils 01166,
 /// "Place 1 doom on the current agenda. This effect can cause the current
 /// agenda to advance."). No-op on an empty agenda deck — both helpers

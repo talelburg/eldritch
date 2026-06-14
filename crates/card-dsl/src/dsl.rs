@@ -886,11 +886,7 @@ pub fn native(tag: impl Into<String>) -> Effect {
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against
 /// `difficulty`, running `on_fail` after the test resolves on failure.
 #[must_use]
-pub fn skill_test(
-    skill: crate::card_data::SkillKind,
-    difficulty: u8,
-    on_fail: Effect,
-) -> Effect {
+pub fn skill_test(skill: crate::card_data::SkillKind, difficulty: u8, on_fail: Effect) -> Effect {
     Effect::SkillTest {
         skill,
         difficulty,

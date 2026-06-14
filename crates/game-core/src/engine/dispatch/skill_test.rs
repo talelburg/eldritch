@@ -887,7 +887,10 @@ mod tests {
             SkillTestKind::Plain,
             2,
             SkillTestFollowUp::None,
-            Some(for_each_point_failed(deal_damage(InvestigatorTarget::You, 1))),
+            Some(for_each_point_failed(deal_damage(
+                InvestigatorTarget::You,
+                1,
+            ))),
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         // What resolve_encounter_card does on a suspended revelation:
@@ -896,7 +899,10 @@ mod tests {
         // Resume: commit no cards → AutoFail → fail by 2 → 2 damage.
         let out = finish_skill_test(&mut cx, &[]);
         assert_eq!(out, EngineOutcome::Done);
-        assert_eq!(state.investigators[&inv].damage, 2, "1 damage per point failed");
+        assert_eq!(
+            state.investigators[&inv].damage, 2,
+            "1 damage per point failed"
+        );
         assert!(
             state.encounter_discard.contains(&CardCode("01162".into())),
             "suspended treachery flushed to encounter_discard at teardown"
