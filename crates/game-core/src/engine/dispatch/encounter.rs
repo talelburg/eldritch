@@ -86,26 +86,6 @@ pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId)
     resolve_encounter_card(cx, investigator, code, metadata)
 }
 
-/// Shared post-draw resolution helper. Resolves the per-card 5-step
-/// sub-sequence's steps 3 (Revelation) and 4 (enemy spawn) for an
-/// already-drawn encounter card. Called by `encounter_card_revealed`
-/// (the `EngineRecord::EncounterCardRevealed` path) and by
-/// `mythos_draw_for` (Mythos 1.4 player-driven draws).
-///
-/// Body: emits [`Event::CardRevealed`], then dispatches on
-/// `metadata.card_type` — treachery → run Revelation abilities →
-/// push card to `encounter_discard`; enemy → run Revelation abilities →
-/// spawn it; any other type → return `Rejected`.
-///
-/// **Mid-resolution caveat:** [`Event::CardRevealed`] emits before
-/// Revelation runs (Before-timing reactions need that ordering,
-/// per #126's design decision). The apply loop's `events.clear()`
-/// on Rejected still wipes the event stream on rejection.
-///
-/// Public so card effects that "draw"/"discard until" cards from the
-/// encounter deck can resolve the drawn card faithfully — agenda 01106's
-/// reverse draws the dug-up `Ghoul` enemy through here. Requires an
-/// installed card registry (rejects otherwise).
 /// A treachery is **persistent** (stays in play after its Revelation,
 /// owning its own disposition) iff it has at least one ability whose
 /// trigger is not [`Trigger::Revelation`] — the ongoing `Constant`
@@ -139,6 +119,26 @@ mod persistence_tests {
     }
 }
 
+/// Shared post-draw resolution helper. Resolves the per-card 5-step
+/// sub-sequence's steps 3 (Revelation) and 4 (enemy spawn) for an
+/// already-drawn encounter card. Called by `encounter_card_revealed`
+/// (the `EngineRecord::EncounterCardRevealed` path) and by
+/// `mythos_draw_for` (Mythos 1.4 player-driven draws).
+///
+/// Body: emits [`Event::CardRevealed`], then dispatches on
+/// `metadata.card_type` — treachery → run Revelation abilities →
+/// push card to `encounter_discard`; enemy → run Revelation abilities →
+/// spawn it; any other type → return `Rejected`.
+///
+/// **Mid-resolution caveat:** [`Event::CardRevealed`] emits before
+/// Revelation runs (Before-timing reactions need that ordering,
+/// per #126's design decision). The apply loop's `events.clear()`
+/// on Rejected still wipes the event stream on rejection.
+///
+/// Public so card effects that "draw"/"discard until" cards from the
+/// encounter deck can resolve the drawn card faithfully — agenda 01106's
+/// reverse draws the dug-up `Ghoul` enemy through here. Requires an
+/// installed card registry (rejects otherwise).
 pub fn resolve_encounter_card(
     cx: &mut Cx,
     investigator: InvestigatorId,
