@@ -26,10 +26,7 @@ pub fn abilities() -> Vec<Ability> {
 /// Resolve this treachery's native-effect tag. Wired into the crate
 /// registry's `native_effect_for`.
 pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        PLACE_DOOM => Some(place_doom as NativeEffectFn),
-        _ => None,
-    }
+    (tag == PLACE_DOOM).then_some(place_doom as NativeEffectFn)
 }
 
 fn place_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {

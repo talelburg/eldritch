@@ -37,10 +37,7 @@ pub fn abilities() -> Vec<Ability> {
 /// Resolve this treachery's native-effect tag. Wired into the crate
 /// registry's `native_effect_for`.
 pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        CRYPT_CHILL_FAIL => Some(crypt_chill_fail as NativeEffectFn),
-        _ => None,
-    }
+    (tag == CRYPT_CHILL_FAIL).then_some(crypt_chill_fail as NativeEffectFn)
 }
 
 fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
@@ -58,24 +55,20 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
             Some(CardKind::Asset { .. })
         )
     });
-    match asset_pos {
-        Some(pos) => {
-            let code = inv.cards_in_play.remove(pos).code;
-            inv.discard.push(code.clone());
-            cx.events.push(Event::CardDiscarded {
-                investigator: controller,
-                code,
-                from: Zone::InPlay,
-            });
-            EngineOutcome::Done
-        }
-        None => {
-            // Cannot discard an asset → take 2 damage instead (defeat
-            // handled by the kernel helper).
-            take_damage(cx, controller, 2);
-            EngineOutcome::Done
-        }
+    if let Some(pos) = asset_pos {
+        let code = inv.cards_in_play.remove(pos).code;
+        inv.discard.push(code.clone());
+        cx.events.push(Event::CardDiscarded {
+            investigator: controller,
+            code,
+            from: Zone::InPlay,
+        });
+    } else {
+        // Cannot discard an asset → take 2 damage instead (defeat
+        // handled by the kernel helper).
+        take_damage(cx, controller, 2);
     }
+    EngineOutcome::Done
 }
 
 #[cfg(test)]
