@@ -18,6 +18,7 @@ mod outcome;
 pub(crate) mod pathfinding;
 
 pub use dispatch::act_agenda::place_doom_on_current_agenda;
+pub use dispatch::elimination::take_damage;
 pub use dispatch::encounter::{
     reshuffle_encounter_discard, resolve_encounter_card, spawn_set_aside_enemy,
 };

@@ -45,7 +45,7 @@ pub use card_registry::CardRegistry;
 pub use engine::{
     apply, location_id_by_code, place_doom_on_current_agenda, reshuffle_encounter_discard,
     resolve_encounter_card, reveal_location, shortest_first_steps, spawn_set_aside_enemy,
-    ApplyResult, Cx, EngineOutcome, EvalContext, InputRequest, ResumeToken,
+    take_damage, ApplyResult, Cx, EngineOutcome, EvalContext, InputRequest, ResumeToken,
 };
 pub use event::{Event, FailureReason};
 pub use rng::RngState;

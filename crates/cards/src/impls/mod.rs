@@ -64,6 +64,10 @@ pub mod holy_rosary;
 pub mod hyperawareness;
 pub mod magnifying_glass;
 pub mod roland_banks;
+pub mod treachery_01162;
+pub mod treachery_01163;
+pub mod treachery_01166;
+pub mod treachery_01167;
 pub mod working_a_hunch;
 
 /// Look up a card's hand-implemented abilities by code. Returns
@@ -84,6 +88,10 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         hyperawareness::CODE => Some(hyperawareness::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         roland_banks::CODE => Some(roland_banks::abilities()),
+        treachery_01162::CODE => Some(treachery_01162::abilities()),
+        treachery_01163::CODE => Some(treachery_01163::abilities()),
+        treachery_01166::CODE => Some(treachery_01166::abilities()),
+        treachery_01167::CODE => Some(treachery_01167::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
         _ => None,
     }
@@ -98,4 +106,6 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| act_01109::native_effect_for(tag))
         .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
+        .or_else(|| treachery_01166::native_effect_for(tag))
+        .or_else(|| treachery_01167::native_effect_for(tag))
 }

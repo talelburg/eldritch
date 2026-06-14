@@ -189,9 +189,13 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
 
 /// Apply `amount` damage to `investigator` via the numeric helper,
 /// then apply defeat (cause [`DefeatCause::Damage`]) if it was lethal.
-/// The single-source-damage twin of [`take_horror`] — the first such
-/// caller is [`Effect::DealDamage`]'s evaluator.
-pub(crate) fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
+/// The single-source-damage twin of `take_horror` — the first such
+/// caller is `Effect::DealDamage`'s evaluator.
+///
+/// Re-exported at `game_core::take_damage` so card-local native effects
+/// (#276) can deal damage without re-implementing the defeat check — the
+/// first such consumer is Crypt Chill's (01167) no-asset failure branch.
+pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     if super::combat::apply_damage_numeric(cx, investigator, amount) {
         apply_investigator_defeat(cx, investigator, DefeatCause::Damage);
     }
