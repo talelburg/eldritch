@@ -16,8 +16,7 @@ use super::Cx;
 /// No-op (returns `None`) if the investigator isn't in state — callers
 /// in dispatch have already validated the investigator exists, but the
 /// helper stays total so a misuse can't panic.
-#[cfg_attr(not(test), allow(dead_code))] // C4c (#235) is the first production caller
-pub(super) fn place_in_threat_area(
+pub fn place_in_threat_area(
     cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
@@ -50,8 +49,7 @@ pub(super) fn place_in_threat_area(
 /// **No limit enforcement** — "Limit 1 per location" is printed on
 /// specific cards (Obscuring Fog 01168), not a property of all
 /// attachments, so the limit lives in the card's Revelation, not here.
-#[cfg_attr(not(test), allow(dead_code))] // Obscuring Fog (01168, C4c) is the first production caller
-pub(super) fn attach_to_location(
+pub fn attach_to_location(
     cx: &mut Cx,
     location: LocationId,
     code: CardCode,

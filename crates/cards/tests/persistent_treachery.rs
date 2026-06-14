@@ -1,0 +1,114 @@
+//! Integration: The Gathering's three persistent treacheries (C4c, #235)
+//! resolved through the real `cards` registry — they stay in play, enforce
+//! their constant restriction, and discard at a forced timing point. Own
+//! process so it can install the process-global registry against the real
+//! corpus.
+
+use std::sync::Once;
+
+use game_core::action::EngineRecord;
+use game_core::state::{CardCode, InvestigatorId, LocationId};
+use game_core::test_support::{
+    drive, fire_forced_after_location_investigated, test_investigator, test_location,
+    GameStateBuilder, ScriptedResolver,
+};
+use game_core::{Action, EngineOutcome};
+
+static INSTALL: Once = Once::new();
+
+fn install_registry() {
+    INSTALL.call_once(|| {
+        let _ = game_core::card_registry::install(cards::REGISTRY);
+    });
+}
+
+/// Reveal the top encounter card for investigator 1, committing no cards
+/// at any skill-test commit window that opens.
+fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
+    let mut resolver = ScriptedResolver::new();
+    resolver.commit_cards(&[]);
+    drive(
+        state,
+        Action::Engine(EngineRecord::EncounterCardRevealed {
+            investigator: InvestigatorId(1),
+        }),
+        resolver,
+    )
+}
+
+/// One investigator at location 20 (printed shroud 2), with `treachery`
+/// on top of the encounter deck.
+fn board_with(treachery: &str) -> game_core::GameState {
+    let mut state = GameStateBuilder::new()
+        .with_investigator_at(test_investigator(1), LocationId(20))
+        .with_location(test_location(20, "Here"))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+    state.encounter_deck.push_back(CardCode::new(treachery));
+    state
+}
+
+#[test]
+fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
+    install_registry();
+
+    // Reveal: attaches to the investigator's location, not discarded.
+    let result = reveal_top(board_with("01168"));
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    let loc = &result.state.locations[&LocationId(20)];
+    assert_eq!(loc.attachments.len(), 1, "Obscuring Fog attached");
+    assert_eq!(loc.attachments[0].code.as_str(), "01168");
+    assert!(
+        !result.state.encounter_discard.contains(&CardCode::new("01168")),
+        "a persistent treachery is not auto-discarded after its Revelation",
+    );
+
+    // +2 shroud: printed 2 → effective 4.
+    assert_eq!(
+        game_core::effective_shroud(&cards::REGISTRY, loc),
+        4,
+        "attached Obscuring Fog grants +2 shroud (printed 2)",
+    );
+
+    // Forced — after the attached location is successfully investigated,
+    // discard Obscuring Fog.
+    let mut state = result.state;
+    let mut events = Vec::new();
+    let outcome = fire_forced_after_location_investigated(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        LocationId(20),
+    );
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert!(
+        state.locations[&LocationId(20)].attachments.is_empty(),
+        "Obscuring Fog discards after its location is investigated",
+    );
+    assert!(state.encounter_discard.contains(&CardCode::new("01168")));
+}
+
+#[test]
+fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
+    install_registry();
+
+    // First copy attaches.
+    let result = reveal_top(board_with("01168"));
+    let mut state = result.state;
+    assert_eq!(state.locations[&LocationId(20)].attachments.len(), 1);
+
+    // Second copy revealed at the same location: limit 1 → discarded, not
+    // attached.
+    state.encounter_deck.push_back(CardCode::new("01168"));
+    let result = reveal_top(state);
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_eq!(
+        result.state.locations[&LocationId(20)].attachments.len(),
+        1,
+        "limit 1 per location: the second copy does not attach",
+    );
+    assert!(
+        result.state.encounter_discard.contains(&CardCode::new("01168")),
+        "the over-limit copy is discarded",
+    );
+}
