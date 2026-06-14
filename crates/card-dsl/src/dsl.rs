@@ -510,6 +510,24 @@ pub enum Effect {
     /// (see issue #276). The `cards` crate maps the tag to a Rust fn; the
     /// evaluator rejects loudly on an unknown tag or absent registry.
     Native { tag: String },
+    /// Initiate a skill test as part of a card effect (treachery
+    /// Revelation, agenda forced effect, …). The evaluator maps `skill`
+    /// to the engine's `SkillKind` and runs the test against
+    /// `difficulty`, always suspending at the commit window. `on_fail`
+    /// runs after the test resolves **on failure**, with the failure
+    /// margin available via the evaluator context's `failed_by` (success
+    /// is a no-op for the cards in scope). See issue #286.
+    SkillTest {
+        skill: crate::card_data::SkillKind,
+        difficulty: u8,
+        on_fail: Box<Effect>,
+    },
+    /// Run `body` once per point the just-resolved skill test was failed
+    /// by ("for each point you fail by, …"). Reads the failure margin
+    /// from the evaluator context; a `0` margin (or no margin in context)
+    /// runs `body` zero times. Only meaningful inside an
+    /// [`Effect::SkillTest`]'s `on_fail`.
+    ForEachPointFailed(Box<Effect>),
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -865,6 +883,28 @@ pub fn native(tag: impl Into<String>) -> Effect {
     Effect::Native { tag: tag.into() }
 }
 
+/// Build an [`Effect::SkillTest`] initiating a `skill` test against
+/// `difficulty`, running `on_fail` after the test resolves on failure.
+#[must_use]
+pub fn skill_test(
+    skill: crate::card_data::SkillKind,
+    difficulty: u8,
+    on_fail: Effect,
+) -> Effect {
+    Effect::SkillTest {
+        skill,
+        difficulty,
+        on_fail: Box::new(on_fail),
+    }
+}
+
+/// Build an [`Effect::ForEachPointFailed`] running `body` once per point
+/// the just-resolved skill test was failed by.
+#[must_use]
+pub fn for_each_point_failed(body: Effect) -> Effect {
+    Effect::ForEachPointFailed(Box::new(body))
+}
+
 // ---- tests ----------------------------------------------------
 
 #[cfg(test)]
@@ -1083,6 +1123,22 @@ mod tests {
         let json = serde_json::to_string(&effect).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(effect, recovered);
+    }
+
+    /// `Effect::SkillTest` (treachery-Revelation test) with a margin-keyed
+    /// `Effect::ForEachPointFailed` failure branch round-trips through serde
+    /// — both new #286 variants in one tree.
+    #[test]
+    fn skill_test_and_for_each_point_failed_round_trip() {
+        use crate::card_data::SkillKind;
+        let effect = skill_test(
+            SkillKind::Agility,
+            3,
+            for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
+        );
+        let json = serde_json::to_string(&effect).expect("serialize");
+        let back: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(effect, back);
     }
 
     /// Roland-Banks-shaped reaction: "after you defeat an enemy,
