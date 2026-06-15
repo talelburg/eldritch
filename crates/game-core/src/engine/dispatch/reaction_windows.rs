@@ -1179,6 +1179,26 @@ mod trigger_matches_tests {
             ),
             "Before timing must never match (no Before reaction windows yet)"
         );
+        // The soak-self pattern must NOT match any other window kind — guards
+        // the match-arm ordering (the `=> true` arm is scoped to this kind;
+        // these pairings must fall through to the `false` catch-all). (C5b #237.)
+        for other_kind in [
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            WindowKind::AfterEnemyDefeated {
+                enemy,
+                by: Some(controller),
+            },
+        ] {
+            assert!(
+                !trigger_matches(
+                    other_kind,
+                    &EventPattern::EnemyAttackDamagedSelf,
+                    EventTiming::After,
+                    controller
+                ),
+                "{other_kind:?} must not match EnemyAttackDamagedSelf"
+            );
+        }
         // Instance-filter (only the keyed `asset` instance fires, not every
         // controlled card) is asserted in the EU5 Guard Dog integration test
         // (`crates/cards/tests/guard_dog_soak.rs`) which can install the real
