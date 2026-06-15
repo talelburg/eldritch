@@ -372,6 +372,15 @@ pub enum Cost {
     /// reject with a TODO. Test-side seam is
     /// `ChoiceResolver` (in `game_core::test_support`).
     DiscardCardFromHand,
+    /// Spend `count` tokens of the named [`UseKind`] from the source
+    /// asset's runtime uses-pool (".38 Special": "Spend 1 ammo").
+    /// Insufficient remaining of that kind rejects the activation.
+    SpendUses {
+        /// Which uses-kind to spend (Ammo, Charges, …).
+        kind: crate::card_data::UseKind,
+        /// How many to spend.
+        count: u8,
+    },
 }
 
 // ---- usage limits ----------------------------------------------

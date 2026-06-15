@@ -965,6 +965,7 @@ pub(super) fn check_activate_ability(
     };
     let source_code = inv.cards_in_play[in_play_pos].code.clone();
     let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
+    let source_uses = inv.cards_in_play[in_play_pos].uses.clone();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -1029,7 +1030,9 @@ pub(super) fn check_activate_ability(
     // before any mutation so an all-or-nothing reject leaves state
     // untouched.
     for cost in &costs {
-        if let Err(reason) = super::abilities::check_cost_payable(cost, inv, source_exhausted) {
+        if let Err(reason) =
+            super::abilities::check_cost_payable(cost, inv, source_exhausted, &source_uses)
+        {
             return Err(reason.into());
         }
     }
