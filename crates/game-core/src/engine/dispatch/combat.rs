@@ -16,6 +16,23 @@ use super::Cx;
 /// from `state.enemies`. `by` attributes the defeat for
 /// trigger-window consumers (e.g. Roland's reaction). Used by Fight
 /// today; will be reused by future damage-dealing card effects.
+/// Public entry point for card effects to deal damage to an enemy.
+///
+/// A thin wrapper over [`damage_enemy`] (which is crate-internal) so the
+/// `cards` crate can resolve `Effect::Native` retaliate effects — first
+/// consumer: Guard Dog 01021's "Deal 1 damage to the attacking enemy."
+/// Reusing `damage_enemy` means a card that defeats its target here runs
+/// the same defeat cascade (`EnemyDefeated`, victory display) as the Fight
+/// action — intended. (C5b #237.)
+pub fn deal_damage_to_enemy(
+    cx: &mut Cx,
+    enemy_id: EnemyId,
+    amount: u8,
+    by: Option<InvestigatorId>,
+) {
+    damage_enemy(cx, enemy_id, amount, by);
+}
+
 pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Option<InvestigatorId>) {
     let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
         unreachable!(
