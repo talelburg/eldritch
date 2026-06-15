@@ -19,7 +19,10 @@ them.** Deferred so far: C5d's Beat Cop + First Aid
 [#302](https://github.com/talelburg/eldritch/issues/302)); C5e's Evidence!
 / Dodge / Dynamite Blast
 ([#304](https://github.com/talelburg/eldritch/issues/304)–[#306](https://github.com/talelburg/eldritch/issues/306)).
-**Next: C6** (C6d gates C7b) **→ C7.**
+**C6 is complete** (C6a window, C6b Dr. Milan, C6c neutral cards, C6d
+encounter deck). **Next: C7** — C7a (registry swap + web `SCENARIO_ID`
+repoint) → C7b (the end-to-end Won/Lost integration test that closes
+Slice 1).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -81,7 +84,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | — | [#307](https://github.com/talelburg/eldritch/issues/307) | infra: `Trigger::OnCommit` firing + `Effect::BoostAttackDamage` / `InFlightSkillTest.bonus_attack_damage` (prerequisite for C5e's Vicious Blow) | ✅ PR #308 |
 | C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) — **only Vicious Blow 01025 was implementable; shipped (PR #309).** Engine prereq landed (PR #308); Evidence! ([#304](https://github.com/talelburg/eldritch/issues/304), reaction-event-play), Dodge ([#305](https://github.com/talelburg/eldritch/issues/305), attack-cancellation), Dynamite Blast ([#306](https://github.com/talelburg/eldritch/issues/306), location-choice = #212/#213) carved to follow-ups | ✅ PR #309 |
 | C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window | ✅ PR #318 |
-| C6b | [#242](https://github.com/talelburg/eldritch/issues/242) | Seeker deck cards | — |
+| C6b | [#242](https://github.com/talelburg/eldritch/issues/242) | Seeker deck cards — **only Dr. Milan 01033 implementable** (its window: C6a); Old Book of Lore ([#319](https://github.com/talelburg/eldritch/issues/319)), Research Librarian ([#320](https://github.com/talelburg/eldritch/issues/320)), Medical Texts ([#321](https://github.com/talelburg/eldritch/issues/321)), Mind over Matter ([#322](https://github.com/talelburg/eldritch/issues/322)), Barricade ([#323](https://github.com/talelburg/eldritch/issues/323)) carved to follow-ups | ✅ PR #324 |
 | — | [#310](https://github.com/talelburg/eldritch/issues/310) | infra: `Effect::DrawCards` primitive (prerequisite for C6c's draw-skills) | ✅ PR #314 |
 | — | [#311](https://github.com/talelburg/eldritch/issues/311) | infra: enforce "Max N committed per skill test" commit cap (prerequisite for C6c's skills) | ✅ PR #315 |
 | C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards — **Emergency Cache 01088 + 5 skills** shipped on prereqs #310/#311; Knife 01086 ([#312](https://github.com/talelburg/eldritch/issues/312), discard-self-asset cost) + Flashlight 01087 ([#313](https://github.com/talelburg/eldritch/issues/313), `Effect::Investigate` + shroud) carved to follow-ups | ✅ PR #316 |
