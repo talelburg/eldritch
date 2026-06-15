@@ -94,6 +94,17 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
             continue;
         };
         for card in inv.controlled_card_instances() {
+            // Self-binding: for `AfterEnemyAttackDamagedAsset` only the
+            // soaked asset instance may trigger `EnemyAttackDamagedSelf`.
+            // All other instances are skipped here — the pattern match in
+            // `trigger_matches` handles the pattern-kind pairing; this
+            // filter enforces the "self = the soaked asset" scoping. (C5b
+            // #237.) Other window kinds pass all instances through unchanged.
+            if let WindowKind::AfterEnemyAttackDamagedAsset { asset, .. } = kind {
+                if card.instance_id != asset {
+                    continue;
+                }
+            }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
             };
@@ -162,6 +173,16 @@ fn trigger_matches(
                 true
             }
         }
+        // `AfterEnemyAttackDamagedAsset` matches `EnemyAttackDamagedSelf`
+        // only. The soaked-asset self-binding is enforced by the instance
+        // filter in `scan_pending_triggers` (only the `asset` instance
+        // reaches `trigger_matches` for this window kind). Sole consumer:
+        // Guard Dog 01021's "deal 1 damage to the attacking enemy"
+        // reaction. (C5b #237.)
+        (
+            WindowKind::AfterEnemyAttackDamagedAsset { .. },
+            EventPattern::EnemyAttackDamagedSelf,
+        ) => true,
         // PlayerWindow steps open for timing reasons; no
         // Trigger::OnEvent pattern matches them — those windows gate
         // Fast actions, not after-event reactions. AfterEnemyDefeated
@@ -1064,7 +1085,7 @@ mod check_play_card_tests {
 #[cfg(test)]
 mod trigger_matches_tests {
     use super::*;
-    use crate::state::PhaseStep;
+    use crate::state::{EnemyId, PhaseStep};
 
     #[test]
     fn would_discover_clues_never_matches_a_player_window() {
@@ -1088,6 +1109,52 @@ mod trigger_matches_tests {
             EventTiming::After,
             InvestigatorId(1),
         ));
+    }
+
+    /// `soak_window_matches_only_self_instance` — direct `trigger_matches`
+    /// coverage for the `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf`
+    /// true arm added in Task 8 (C5b #237).
+    ///
+    /// The instance-level scoping (only the soaked `asset` instance fires, not
+    /// every controlled card) is enforced by the filter in `scan_pending_triggers`
+    /// one layer up; that filter is exercised end-to-end in the EU5 Guard Dog
+    /// integration test (`crates/cards/tests/guard_dog_soak.rs`), which installs
+    /// the real `cards::REGISTRY` in an isolated process. Testing it here would
+    /// require a global `card_registry::install`, which is `OnceLock`-guarded
+    /// and cannot be reset between tests. So this unit test asserts the
+    /// `trigger_matches` contract directly:
+    ///  - `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf` → `true`
+    ///  - `AfterEnemyAttackDamagedAsset` + any other pattern → `false`
+    #[test]
+    fn soak_window_matches_only_self_instance() {
+        let asset = CardInstanceId(7);
+        let enemy = EnemyId(1);
+        let controller = InvestigatorId(1);
+        let kind = WindowKind::AfterEnemyAttackDamagedAsset {
+            asset,
+            enemy,
+            controller,
+        };
+
+        // The soak-self pattern must match the soak window. (C5b #237.)
+        assert!(
+            trigger_matches(kind, &EventPattern::EnemyAttackDamagedSelf, EventTiming::After, controller),
+            "AfterEnemyAttackDamagedAsset must match EnemyAttackDamagedSelf"
+        );
+        // No other pattern matches this window kind.
+        assert!(
+            !trigger_matches(kind, &EventPattern::EnemyDefeated { by_controller: false, code: None }, EventTiming::After, controller),
+            "AfterEnemyAttackDamagedAsset must not match EnemyDefeated"
+        );
+        assert!(
+            !trigger_matches(kind, &EventPattern::EnemyAttackDamagedSelf, EventTiming::Before, controller),
+            "Before timing must never match (no Before reaction windows yet)"
+        );
+        // Instance-filter (only the keyed `asset` instance fires, not every
+        // controlled card) is asserted in the EU5 Guard Dog integration test
+        // (`crates/cards/tests/guard_dog_soak.rs`) which can install the real
+        // registry. The `scan_pending_triggers` `continue` on `instance_id !=
+        // asset` is the load-bearing line; grep it if this note becomes stale.
     }
 }
 
