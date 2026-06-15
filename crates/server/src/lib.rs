@@ -59,16 +59,15 @@ impl AppState {
 /// Install the process-global scenario + card registries the server
 /// needs to create and play games. Call once at startup.
 ///
-/// Phase 6 installs the **synthetic** fixtures (the toy scenario and
-/// its `_synth_*` cards) knowingly — the only playable content this
-/// phase. Idempotent: a second call is a no-op (the underlying
-/// `OnceLock`s reject re-installation).
-///
-/// TODO(phase-7): swap to the real `scenarios`/`cards` registries when
-/// The Gathering lands.
+/// Installs the real `scenarios::REGISTRY` (which includes The Gathering)
+/// and the real `cards::REGISTRY` (the corpus + hand-written abilities) —
+/// C7a's registry swap, now that real content is servable. The synthetic
+/// fixtures stay for per-process tests, which install their own registries.
+/// Idempotent: a second call is a no-op (the underlying `OnceLock`s reject
+/// re-installation).
 pub fn install_registries() {
     let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
-    let _ = game_core::card_registry::install(scenarios::test_fixtures::synth_cards::TEST_REGISTRY);
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Build the application router with all routes and shared state. The
