@@ -515,15 +515,25 @@ pub(super) fn play_card(
         super::PlayDestination::InPlay => {
             let instance_id = CardInstanceId(cx.state.next_card_instance_id);
             cx.state.next_card_instance_id = cx.state.next_card_instance_id.saturating_add(1);
+            // Seed the named-uses pool ("ammo") from the asset's printed
+            // `uses` before moving the code into the instance.
+            let initial_uses = crate::card_registry::current()
+                .and_then(|reg| (reg.metadata_for)(&code))
+                .and_then(|m| match &m.kind {
+                    crate::card_data::CardKind::Asset { uses, .. } => *uses,
+                    _ => None,
+                });
             let inv_mut = cx
                 .state
                 .investigators
                 .get_mut(&investigator)
                 .expect("checked");
             let card = inv_mut.hand.remove(idx);
-            inv_mut
-                .cards_in_play
-                .push(CardInPlay::enter_play(card, instance_id));
+            let mut in_play = CardInPlay::enter_play(card, instance_id);
+            if let Some(u) = initial_uses {
+                in_play.uses.insert(u.kind, u.count);
+            }
+            inv_mut.cards_in_play.push(in_play);
         }
         super::PlayDestination::Discard => {
             let inv_mut = cx

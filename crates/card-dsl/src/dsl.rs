@@ -372,6 +372,15 @@ pub enum Cost {
     /// reject with a TODO. Test-side seam is
     /// `ChoiceResolver` (in `game_core::test_support`).
     DiscardCardFromHand,
+    /// Spend `count` tokens of the named [`UseKind`](crate::card_data::UseKind)
+    /// from the source asset's runtime uses-pool (".38 Special": "Spend 1
+    /// ammo"). Insufficient remaining of that kind rejects the activation.
+    SpendUses {
+        /// Which uses-kind to spend (Ammo, Charges, …).
+        kind: crate::card_data::UseKind,
+        /// How many to spend.
+        count: u8,
+    },
 }
 
 // ---- usage limits ----------------------------------------------
@@ -587,6 +596,19 @@ pub enum Effect {
         /// Printed `ArkhamDB` code of the card to place.
         code: String,
     },
+    /// Initiate a Fight against the single enemy engaged with the
+    /// controller, applying `combat_modifier` (resolved at eval, e.g.
+    /// .38 Special's +1/+3) for this attack and dealing `1 + extra_damage`
+    /// on success. Auto-targets when exactly one enemy is engaged; the
+    /// activation check rejects ≠1 engaged *before* any cost is paid, so
+    /// the evaluator can assume a single target. Inspectable (not
+    /// `Native`) precisely so that pre-charge target check can see it.
+    Fight {
+        /// Combat modifier for this attack, resolved against state at eval.
+        combat_modifier: IntExpr,
+        /// Bonus damage beyond the base 1 (.38 Special: +1).
+        extra_damage: u8,
+    },
     /// A constant restriction the source card imposes while in play
     /// (under [`Trigger::Constant`]). **Inspected, not executed** — the
     /// engine reads it at the relevant decision point (`play_is_prohibited`
@@ -779,6 +801,41 @@ pub enum Condition {
     /// there's an in-flight test whose kind matches; rejects when
     /// no test is in flight.
     SkillTestKind(SkillTestKind),
+    /// Holds when the controller's current location has ≥1 clue.
+    /// ".38 Special": "if there are 1 or more clues on your location".
+    LocationHasClues,
+}
+
+/// An integer computed at effect-evaluation time. Lets a numeric field
+/// carry a condition-gated value without duplicating the surrounding
+/// effect — ".38 Special" reads its combat modifier as
+/// `IntExpr::cond(LocationHasClues, 3, 1)` rather than an
+/// [`Effect::If`] wrapping two near-identical `fight(…)` nodes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum IntExpr {
+    /// A literal value.
+    Lit(i8),
+    /// `then` if `when` holds at eval time, else `otherwise`.
+    Cond {
+        /// Predicate evaluated against current state.
+        when: Condition,
+        /// Value when the predicate holds.
+        then: i8,
+        /// Value when it does not.
+        otherwise: i8,
+    },
+}
+
+impl IntExpr {
+    /// Construct an [`IntExpr::Cond`].
+    #[must_use]
+    pub fn cond(when: Condition, then: i8, otherwise: i8) -> Self {
+        Self::Cond {
+            when,
+            then,
+            otherwise,
+        }
+    }
 }
 
 /// Result of a skill test, as a discrete value usable in conditions.
@@ -1000,6 +1057,16 @@ pub fn discard_self() -> Effect {
 #[must_use]
 pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
     Effect::PutIntoThreatArea { code: code.into() }
+}
+
+/// Build an [`Effect::Fight`] with the given combat modifier and bonus
+/// damage (.38 Special: `fight(IntExpr::cond(LocationHasClues, 3, 1), 1)`).
+#[must_use]
+pub fn fight(combat_modifier: IntExpr, extra_damage: u8) -> Effect {
+    Effect::Fight {
+        combat_modifier,
+        extra_damage,
+    }
 }
 
 /// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].

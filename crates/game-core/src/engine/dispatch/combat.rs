@@ -5,11 +5,32 @@ use std::collections::BTreeMap;
 use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    CardInstanceId, DefeatCause, EnemyAttackSource, EnemyId, InvestigatorId, PendingEnemyAttack,
-    Status, WindowKind,
+    CardInstanceId, DefeatCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId,
+    PendingEnemyAttack, Status, WindowKind,
 };
 
 use super::Cx;
+
+/// The single enemy currently engaged with `investigator`, or `None` if
+/// zero or 2+ are engaged. `Effect::Fight` auto-targets via this; the
+/// 2+ case is a deferred interactive choice (lands with the #212/#213
+/// interactive-choice cluster), so the activation check rejects it.
+pub(crate) fn single_engaged_enemy(
+    state: &GameState,
+    investigator: InvestigatorId,
+) -> Option<EnemyId> {
+    let mut engaged = state
+        .enemies
+        .iter()
+        .filter(|(_, e)| e.engaged_with == Some(investigator))
+        .map(|(id, _)| *id);
+    let first = engaged.next()?;
+    if engaged.next().is_some() {
+        None
+    } else {
+        Some(first)
+    }
+}
 
 /// Public entry point for card effects to deal damage to an enemy.
 ///
@@ -746,10 +767,41 @@ pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
 #[cfg(test)]
 mod combat_tests {
     use super::super::Cx;
+    use super::single_engaged_enemy;
     use crate::event::Event;
     use crate::state::{EnemyId, InvestigatorId};
     use crate::test_support::{test_enemy, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
+
+    #[test]
+    fn single_engaged_enemy_some_for_one_none_for_zero_or_two() {
+        let inv_id = InvestigatorId(1);
+        let mut e1 = test_enemy(100, "A");
+        e1.engaged_with = Some(inv_id);
+
+        // Exactly one engaged → Some.
+        let s1 = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_enemy(e1.clone())
+            .build();
+        assert_eq!(single_engaged_enemy(&s1, inv_id), Some(EnemyId(100)));
+
+        // Two engaged → None (deferred multi-target selection).
+        let mut e2 = test_enemy(101, "B");
+        e2.engaged_with = Some(inv_id);
+        let s2 = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_enemy(e1)
+            .with_enemy(e2)
+            .build();
+        assert_eq!(single_engaged_enemy(&s2, inv_id), None);
+
+        // Zero engaged → None.
+        let s0 = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        assert_eq!(single_engaged_enemy(&s0, inv_id), None);
+    }
 
     #[test]
     fn defeating_victory_enemy_places_it_in_the_victory_display() {

@@ -929,6 +929,15 @@ pub(super) fn check_play_card(
     })
 }
 
+/// True if `effect` initiates a Fight at its top level.
+///
+/// `TODO(#212/#213)`: recurse `Seq`/`If` once a card fights in only one
+/// branch — no Slice-1 card does (.38 Special's `IntExpr` branches both
+/// fight, so the Fight node is unconditionally top-level).
+fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
+    matches!(effect, crate::dsl::Effect::Fight { .. })
+}
+
 /// Pure-validation peer to [`activate_ability`]. Mirrors
 /// [`check_play_card`]: validation block lifted verbatim, no behavior
 /// change at the call site.
@@ -965,6 +974,7 @@ pub(super) fn check_activate_ability(
     };
     let source_code = inv.cards_in_play[in_play_pos].code.clone();
     let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
+    let source_uses = inv.cards_in_play[in_play_pos].uses.clone();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -1029,9 +1039,28 @@ pub(super) fn check_activate_ability(
     // before any mutation so an all-or-nothing reject leaves state
     // untouched.
     for cost in &costs {
-        if let Err(reason) = super::abilities::check_cost_payable(cost, inv, source_exhausted) {
+        if let Err(reason) =
+            super::abilities::check_cost_payable(cost, inv, source_exhausted, &source_uses)
+        {
             return Err(reason.into());
         }
+    }
+
+    // A Fight-initiating ability needs exactly one engaged enemy, validated
+    // here so the activation rejects at the check layer (and `Effect::Fight`
+    // can treat a missing target as an invariant violation). The apply-loop
+    // snapshot already guards state integrity on reject; this keeps
+    // `check_activate_ability` an honest playability oracle (it is reused by
+    // `any_fast_play_eligible`). 0 engaged → no target; 2+ → deferred
+    // multi-target selection (#212/#213 interactive-choice cluster).
+    if effect_initiates_fight(&effect)
+        && super::combat::single_engaged_enemy(state, investigator).is_none()
+    {
+        return Err(
+            "ActivateAbility: a Fight ability needs exactly one engaged enemy \
+             (0 = no target; 2+ multi-target selection deferred with #212/#213)"
+                .into(),
+        );
     }
 
     Ok(super::ActivateCheckResult {

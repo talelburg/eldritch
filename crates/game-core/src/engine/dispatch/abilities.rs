@@ -1,9 +1,11 @@
 //! Activated-ability dispatch handlers.
 
+use std::collections::BTreeMap;
+
 use crate::card_registry;
 use crate::dsl::{Cost, Trigger};
 use crate::event::Event;
-use crate::state::{CardCode, CardInstanceId, Investigator, InvestigatorId};
+use crate::state::{CardCode, CardInstanceId, Investigator, InvestigatorId, UseKind};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -148,6 +150,22 @@ fn pay_activation_costs(
                     code: source_code.clone(),
                 });
             }
+            Cost::SpendUses { kind, count } => {
+                let card = &mut cx
+                    .state
+                    .investigators
+                    .get_mut(&investigator)
+                    .expect("validated above")
+                    .cards_in_play[in_play_pos];
+                let remaining = card.uses.entry(*kind).or_insert(0);
+                *remaining = remaining.saturating_sub(*count);
+                cx.events.push(Event::UsesSpent {
+                    investigator,
+                    instance_id,
+                    kind: *kind,
+                    amount: *count,
+                });
+            }
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
             }
@@ -209,6 +227,7 @@ pub(super) fn check_cost_payable(
     cost: &Cost,
     inv: &Investigator,
     source_exhausted: bool,
+    source_uses: &BTreeMap<UseKind, u8>,
 ) -> Result<(), String> {
     match cost {
         Cost::Resources(n) => {
@@ -230,10 +249,43 @@ pub(super) fn check_cost_payable(
             }
             Ok(())
         }
+        Cost::SpendUses { kind, count } => {
+            let remaining = source_uses.get(kind).copied().unwrap_or(0);
+            if remaining < *count {
+                return Err(format!(
+                    "ActivateAbility: needs {count} {kind:?} use(s); source has {remaining}",
+                ));
+            }
+            Ok(())
+        }
         Cost::DiscardCardFromHand => Err(
             "TODO: Cost::DiscardCardFromHand requires AwaitingInput + ResolveInput \
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."
                 .to_string(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::fixtures::test_investigator;
+
+    #[test]
+    fn spend_uses_payable_only_with_enough_of_the_named_kind() {
+        let inv = test_investigator(1);
+        let ammo4: BTreeMap<UseKind, u8> = [(UseKind::Ammo, 4)].into_iter().collect();
+        let empty: BTreeMap<UseKind, u8> = BTreeMap::new();
+        let cost = Cost::SpendUses {
+            kind: UseKind::Ammo,
+            count: 1,
+        };
+        // Enough of the right kind → payable.
+        assert!(check_cost_payable(&cost, &inv, false, &ammo4).is_ok());
+        // No ammo at all → reject.
+        assert!(check_cost_payable(&cost, &inv, false, &empty).is_err());
+        // Wrong kind present, no ammo → reject.
+        let charges: BTreeMap<UseKind, u8> = [(UseKind::Charges, 4)].into_iter().collect();
+        assert!(check_cost_payable(&cost, &inv, false, &charges).is_err());
     }
 }

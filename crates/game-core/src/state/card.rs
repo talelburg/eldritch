@@ -90,29 +90,10 @@ pub enum Zone {
 #[serde(transparent)]
 pub struct CardInstanceId(pub u32);
 
-/// A named-uses kind for asset cards that track a finite resource.
-///
-/// Translation of the rulebook's typed-uses taxonomy. Cards declare
-/// what flavor of uses they have ("Uses (3 charges)", "Uses (1 ammo)")
-/// and effects spend them with primitives that take a [`UseKind`].
-///
-/// Phase-3 minimal set; cards using exotic uses (Time on some Dunwich
-/// cards, Resource on a few Mystic effects) add their variant when
-/// they land.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum UseKind {
-    /// Charges — most spell assets (Rite of Seeking, Shrivelling).
-    Charges,
-    /// Ammo — firearms (.38 Special, .45 Automatic).
-    Ammo,
-    /// Secrets — Seeker investigation aids (Encyclopedia, Old Book of
-    /// Lore in some cycles).
-    Secrets,
-    /// Supplies — Survivor tools (First Aid in some cycles, expedition
-    /// caches).
-    Supplies,
-}
+// `UseKind` is defined in `card-dsl` (the lowest layer) so the printed
+// metadata (`card_data::Uses`) and this runtime pool share one type;
+// re-exported here at its historical `game_core::state` path.
+pub use card_dsl::card_data::UseKind;
 
 /// State for a single copy of a card in play under an investigator's
 /// control.

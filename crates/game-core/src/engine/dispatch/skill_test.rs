@@ -35,6 +35,7 @@ pub(in crate::engine) fn start_skill_test(
     on_success: Option<card_dsl::dsl::Effect>,
     on_fail: Option<card_dsl::dsl::Effect>,
     source: Option<crate::state::CardInstanceId>,
+    test_modifier: i8,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
     // bag must be non-empty so we can draw; difficulty must be non-
@@ -92,6 +93,7 @@ pub(in crate::engine) fn start_skill_test(
         on_success,
         source,
         continuation: FinishContinuation::AwaitingCommit,
+        test_modifier,
     });
     cx.events.push(Event::SkillTestStarted {
         investigator,
@@ -416,9 +418,16 @@ fn sum_skill_value(
         constant_skill_modifier(state, reg, investigator, skill, kind)
     });
     let pending_mod = pending_skill_modifier(state, investigator, skill);
+    // One-shot modifier the initiating effect snapshotted (a weapon's
+    // "+N for this attack"); 0 for player-action tests.
+    let test_mod = state
+        .in_flight_skill_test
+        .as_ref()
+        .map_or(0, |t| t.test_modifier);
     base.saturating_add(constant_mod)
         .saturating_add(pending_mod)
         .saturating_add(icon_mod)
+        .saturating_add(test_mod)
 }
 
 /// Sum the skill-icon contribution from the cards at `indices` in
@@ -589,11 +598,20 @@ fn apply_skill_test_follow_up(
             }
             outcome
         }
-        SkillTestFollowUp::Fight { enemy } => {
+        SkillTestFollowUp::Fight {
+            enemy,
+            extra_damage,
+        } => {
             // Mid-test enemy disappearance isn't possible in Phase 3
             // (no commit-window effects mutate enemies), so
-            // damage_enemy's enemy-missing panic stays loud.
-            super::combat::damage_enemy(cx, enemy, 1, Some(investigator));
+            // damage_enemy's enemy-missing panic stays loud. A weapon's
+            // bonus damage (.38 Special's +1) rides on `extra_damage`.
+            super::combat::damage_enemy(
+                cx,
+                enemy,
+                1u8.saturating_add(extra_damage),
+                Some(investigator),
+            );
             EngineOutcome::Done
         }
         SkillTestFollowUp::Evade { enemy } => {
@@ -642,7 +660,7 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
         return;
     }
     let follow_up = cx.state.in_flight_skill_test.as_ref().map(|t| t.follow_up);
-    let Some(SkillTestFollowUp::Fight { enemy }) = follow_up else {
+    let Some(SkillTestFollowUp::Fight { enemy, .. }) = follow_up else {
         return;
     };
     let retaliates = cx
@@ -800,6 +818,7 @@ pub(super) fn perform_skill_test(
         None,
         None,
         None,
+        0, // bare PerformSkillTest: no effect modifier
     )
 }
 
@@ -941,6 +960,7 @@ mod tests {
                 1,
             ))),
             None,
+            0,
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         // What resolve_encounter_card does on a suspended revelation:
@@ -1018,6 +1038,7 @@ mod tests {
             Some(deal_horror(InvestigatorTarget::You, 1)),
             None,
             None,
+            0,
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);

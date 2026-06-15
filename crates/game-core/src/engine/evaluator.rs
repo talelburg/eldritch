@@ -52,8 +52,8 @@
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Condition, Effect, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
-    Trigger,
+    Condition, Effect, IntExpr, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind,
+    Stat, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -214,6 +214,7 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             on_success.as_ref().map(|b| (**b).clone()),
             on_fail.as_ref().map(|b| (**b).clone()),
             eval_ctx.source,
+            0, // a Revelation skill test takes its difficulty as printed
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::PutIntoThreatArea { code } => {
@@ -229,7 +230,64 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
                      never executed"
                 .into(),
         },
+        Effect::Fight {
+            combat_modifier,
+            extra_damage,
+        } => apply_fight(cx, &eval_ctx, combat_modifier, *extra_damage),
     }
+}
+
+/// Resolve [`Effect::Fight`]: snapshot the combat modifier, auto-target
+/// the single engaged enemy, and start a Combat skill test (reusing the
+/// suspend/resume commit-window path) whose Fight follow-up deals
+/// `1 + extra_damage`. The activation check has already guaranteed
+/// exactly one engaged enemy, so a missing target here is a state-shape
+/// violation rejected loudly rather than silently no-oped.
+fn apply_fight(
+    cx: &mut Cx,
+    eval_ctx: &EvalContext,
+    combat_modifier: &IntExpr,
+    extra_damage: u8,
+) -> EngineOutcome {
+    let modifier = match eval_int_expr(cx.state, eval_ctx.controller, combat_modifier) {
+        Ok(m) => m,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    let Some(enemy_id) =
+        crate::engine::dispatch::combat::single_engaged_enemy(cx.state, eval_ctx.controller)
+    else {
+        return EngineOutcome::Rejected {
+            reason: "Effect::Fight: expected exactly one engaged enemy (target check skipped?)"
+                .into(),
+        };
+    };
+    // `enemy_id` came from `single_engaged_enemy` over this same map, so
+    // it is present — a silent 0-difficulty default would mask corruption.
+    let fight_difficulty = cx
+        .state
+        .enemies
+        .get(&enemy_id)
+        .expect("single_engaged_enemy returned an id absent from state.enemies")
+        .fight;
+    crate::engine::dispatch::skill_test::start_skill_test(
+        cx,
+        eval_ctx.controller,
+        SkillKind::Combat,
+        SkillTestKind::Fight,
+        fight_difficulty,
+        crate::state::SkillTestFollowUp::Fight {
+            enemy: enemy_id,
+            extra_damage,
+        },
+        None,
+        None,
+        eval_ctx.source,
+        modifier,
+    )
 }
 
 /// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source` from
@@ -328,7 +386,7 @@ fn apply_if(
     then: &Effect,
     else_: Option<&Effect>,
 ) -> EngineOutcome {
-    let holds = match eval_condition(cx.state, condition) {
+    let holds = match eval_condition(cx.state, eval_ctx.controller, condition) {
         Ok(b) => b,
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -350,13 +408,26 @@ fn apply_if(
 /// Returns `Err` for conditions that aren't expressible yet (the
 /// state shape they'd query against doesn't exist) — the caller
 /// turns those into [`EngineOutcome::Rejected`].
-fn eval_condition(state: &GameState, condition: &Condition) -> Result<bool, String> {
+fn eval_condition(
+    state: &GameState,
+    controller: InvestigatorId,
+    condition: &Condition,
+) -> Result<bool, String> {
     match condition {
         Condition::SkillTestKind(kind) => {
             let t = state.in_flight_skill_test.as_ref().ok_or_else(|| {
                 "Condition::SkillTestKind but no skill test is in flight".to_owned()
             })?;
             Ok(t.kind == *kind)
+        }
+        Condition::LocationHasClues => {
+            let has = state
+                .investigators
+                .get(&controller)
+                .and_then(|inv| inv.current_location)
+                .and_then(|loc| state.locations.get(&loc))
+                .is_some_and(|l| l.clues > 0);
+            Ok(has)
         }
         Condition::SkillTest { outcome } => {
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
@@ -372,6 +443,30 @@ fn eval_condition(state: &GameState, condition: &Condition) -> Result<bool, Stri
                  or wait for an OnEvent-based reaction model to surface past-test outcome."
             ))
         }
+    }
+}
+
+/// Resolve an [`IntExpr`] against the current state for `controller`.
+///
+/// [`IntExpr::Cond`] evaluates its [`Condition`] (reusing
+/// [`eval_condition`]); an unexpressible condition propagates as `Err`,
+/// which the caller turns into [`EngineOutcome::Rejected`].
+fn eval_int_expr(
+    state: &GameState,
+    controller: InvestigatorId,
+    expr: &IntExpr,
+) -> Result<i8, String> {
+    match expr {
+        IntExpr::Lit(n) => Ok(*n),
+        IntExpr::Cond {
+            when,
+            then,
+            otherwise,
+        } => Ok(if eval_condition(state, controller, when)? {
+            *then
+        } else {
+            *otherwise
+        }),
     }
 }
 
@@ -1113,13 +1208,39 @@ mod tests {
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
-        apply_effect, constant_skill_modifier, effective_shroud,
+        apply_effect, constant_skill_modifier, effective_shroud, eval_condition,
         unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
     };
+    use crate::dsl::Condition;
     use crate::engine::Cx;
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))
+    }
+
+    #[test]
+    fn location_has_clues_condition_tracks_clue_count() {
+        let inv_id = InvestigatorId(1);
+        let loc_id = LocationId(1);
+        let with_clues = |clue_count: u8| {
+            let mut inv = test_investigator(1);
+            inv.current_location = Some(loc_id);
+            let mut loc = test_location(1, "Study");
+            loc.clues = clue_count;
+            GameStateBuilder::new()
+                .with_investigator(inv)
+                .with_location(loc)
+                .build()
+        };
+        // Condition tracks clue presence at the controller's location.
+        assert_eq!(
+            eval_condition(&with_clues(1), inv_id, &Condition::LocationHasClues),
+            Ok(true)
+        );
+        assert_eq!(
+            eval_condition(&with_clues(0), inv_id, &Condition::LocationHasClues),
+            Ok(false)
+        );
     }
 
     #[test]
@@ -1393,6 +1514,7 @@ mod tests {
             on_success: None,
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
         });
         let mut events = Vec::new();
 
@@ -1466,6 +1588,7 @@ mod tests {
             on_success: None,
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
         });
         state
     }
@@ -1630,6 +1753,7 @@ mod tests {
             on_success: None,
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
         });
         let mut events = Vec::new();
 

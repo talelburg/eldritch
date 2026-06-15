@@ -267,6 +267,47 @@ pub enum HealthValue {
     PerInvestigator(u8),
 }
 
+/// Limited-use tokens an asset enters play with ("Uses (4 ammo)").
+/// Spending them is a [`Cost::SpendUses`](crate::dsl::Cost::SpendUses);
+/// depletion blocks the ability that pays in them. Pipeline-parsed from
+/// card text. The engine's runtime uses-pool is seeded from this on
+/// enter-play.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Uses {
+    /// What the tokens are called on the card.
+    pub kind: UseKind,
+    /// How many the asset enters play with.
+    pub count: u8,
+}
+
+/// A named-uses kind for asset cards that track a finite resource.
+///
+/// Translation of the rulebook's typed-uses taxonomy. Cards declare
+/// what flavor of uses they have ("Uses (3 charges)", "Uses (1 ammo)")
+/// and effects spend them with a [`Cost::SpendUses`](crate::dsl::Cost::SpendUses).
+///
+/// Lives here in `card-dsl` (the lowest layer) so both the printed
+/// metadata ([`Uses`]) and the engine's runtime pool key off one type;
+/// `game_core::state` re-exports it at the historical path.
+///
+/// Phase-3 minimal set; cards using exotic uses (Time on some Dunwich
+/// cards, Resource on a few Mystic effects) add their variant when
+/// they land.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum UseKind {
+    /// Charges — most spell assets (Rite of Seeking, Shrivelling).
+    Charges,
+    /// Ammo — firearms (.38 Special, .45 Automatic).
+    Ammo,
+    /// Secrets — Seeker investigation aids (Encyclopedia, Old Book of
+    /// Lore in some cycles).
+    Secrets,
+    /// Supplies — Survivor tools (First Aid in some cycles, expedition
+    /// caches).
+    Supplies,
+}
+
 /// Per-card-type data. The discriminant mirrors [`CardType`] — read it
 /// via [`CardMetadata::card_type`]. Player variants carry a [`Class`];
 /// encounter variants do not (encounter cards have no player class).
@@ -308,6 +349,9 @@ pub enum CardKind {
         is_fast: bool,
         /// Maximum copies per deck.
         deck_limit: u8,
+        /// Limited-use tokens granted on enter-play ("Uses (N ammo)"),
+        /// or `None`. Pipeline-parsed from card text.
+        uses: Option<Uses>,
     },
     /// Event — played from hand, then discarded.
     Event {
@@ -524,12 +568,24 @@ mod is_fast_tests {
                 skill_icons: SkillIcons::default(),
                 is_fast: true,
                 deck_limit: 2,
+                uses: None,
             },
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
         assert!(matches!(back.kind, CardKind::Asset { is_fast: true, .. }));
+    }
+
+    #[test]
+    fn asset_uses_round_trips() {
+        let uses = Some(Uses {
+            kind: UseKind::Ammo,
+            count: 4,
+        });
+        let json = serde_json::to_string(&uses).expect("serialize");
+        let back: Option<Uses> = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, uses);
     }
 
     #[test]

@@ -120,6 +120,7 @@ mod tests {
                 skill_icons: SkillIcons::default(),
                 is_fast: false,
                 deck_limit: 2,
+                uses: None,
             },
         }
     }

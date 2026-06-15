@@ -35,8 +35,11 @@ enemy-attack damage/horror soak mechanic — soak-first `assign_attack` →
 simultaneous `place_assignment` → asset defeat-on-overflow → the
 `AfterEnemyAttackDamagedAsset` reaction window — plus Guard Dog 01021's
 retaliate and the resumable enemy-phase attack loop;
-[PR #292](https://github.com/talelburg/eldritch/pull/292)).
-**Next: C5c → C7** (C6d also gates C7b).
+[PR #292](https://github.com/talelburg/eldritch/pull/292)), and the C5c
+weapon-support prereq ([#295](https://github.com/talelburg/eldritch/issues/295):
+ammo/uses + inspectable `Effect::Fight` — `Cost::SpendUses` + `IntExpr`
+modifier + bonus damage; [PR #297](https://github.com/talelburg/eldritch/pull/297)).
+**Next: C5c content → C7** (C6d also gates C7b).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -92,6 +95,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area / attachment treacheries (×3) | ✅ PR #289 |
 | C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | ✅ PR #291 |
 | C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog reaction + enemy-attack soak mechanic | ✅ PR #292 |
+| — | [#295](https://github.com/talelburg/eldritch/issues/295) | infra: weapon support — ammo/uses (`Cost::SpendUses`) + inspectable `Effect::Fight` (`IntExpr` modifier + bonus damage) (prerequisite for C5c's .38 Special) | ✅ PR #297 |
 | C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | — |
 | C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets (×6) | — |
 | C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) | — |
@@ -168,6 +172,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **Enemy-attack damage/horror soak is `assign → place → defeat → window`; assignment is soak-first deterministic, with interactive distribution deferred to a reframed #44 (C5b, [#237](https://github.com/talelburg/eldritch/issues/237), PR #292).** `enemy_attack` builds soakers (controlled assets with `CardKind::Asset` remaining `health`/`sanity` capacity), `assign_attack` fills them by `CardInstanceId` order before the investigator (symmetric for damage/horror), `place_assignment` places simultaneously (RR p.7) then defeats overflowed assets (`accumulated_* >= printed stat` → discard), and returns surviving damaged assets. The window-queuing lives in the **caller** (`drive_attack_loop`), not `enemy_attack`, so the enemy phase opens reaction windows while attacks of opportunity don't (see next entry). **#44's remaining scope is now just the interactive `{target → points}` distribution** (replacing the soak-first `assign_attack` body, `TODO(#44)`); soak-first is the only deterministic default that makes a soak reaction observable. A new soak reaction adds an `EnemyAttackDamagedSelf` ability (bare; self-bound to the soaked instance via `scan_pending_triggers`) — **no routing change**; the attacking enemy reaches the effect via `EvalContext.attacking_enemy`. Guard Dog's retaliate is `Effect::Native` (first card to damage a specific enemy from a reaction; public entry `deal_damage_to_enemy`).
 
 - **The enemy-phase attack loop suspends/resumes around a soak reaction window via `pending_enemy_attack`; attacks of opportunity soak but do NOT yet open the window (C5b, PR #292).** `drive_attack_loop` parks the remaining attackers and returns `AwaitingInput` when an attack opens a soak window; `resume_enemy_attack` (from the `AfterEnemyAttackDamagedAsset` window-close continuation) re-enters at the next attacker, advancing the enemy-phase cursor exactly once via the extracted `after_enemy_phase_attacks`. **AoO is the deferred gap:** full AoO reactions need a new mechanism to suspend/resume the *triggering action* (Move's relocation, Investigate's already-suspending skill test), so `fire_attacks_of_opportunity` deliberately drops the soak-window survivors (window-safe; Guard Dog soaks AoO damage but doesn't retaliate). The fast-follow ([#293](https://github.com/talelburg/eldritch/issues/293)) routes `fire_attacks_of_opportunity` through `drive_attack_loop` (`EnemyAttackSource::AttackOfOpportunity` is the reserved-but-unconstructed variant) + action suspension. Multi-soak-window-per-attack resume ([#294](https://github.com/talelburg/eldritch/issues/294)) is `debug_assert`-guarded (unreachable in Slice 1: only Guard Dog reacts, two copies need two illegal Ally slots; coordinates with #213).
+
+- **A weapon needs no engine work — it's `Cost::SpendUses` + `Effect::Fight` data, with ammo from the corpus (C5c prereq [#295](https://github.com/talelburg/eldritch/issues/295), PR #297).** `Uses (N <kind>)` is pipeline-parsed into `CardKind::Asset.uses`; the kind enum (`UseKind`) lives in `card-dsl` so the printed metadata and the engine's `CardInPlay.uses` runtime pool share one type. A firearm's ability is `activated(cost, vec![Cost::SpendUses { kind, count }], fight(IntExpr::cond(LocationHasClues, hi, lo), extra_damage))` — the inspectable `Effect::Fight` auto-targets the single engaged enemy, snapshots its modifier onto `InFlightSkillTest.test_modifier`, and reuses the skill-test suspend/resume path; the Fight follow-up deals `1 + extra_damage`. **`Effect::Fight` is typed, not `Native`,** so `check_activate_ability` can reject a fire with ≠1 engaged enemy before charging (multi-target selection deferred to the #212/#213 cluster; `effect_initiates_fight` is top-level-only, `TODO(#212/#213)` for a `Seq`/`If`-nested Fight). Conditional numeric values use `IntExpr { Lit, Cond }` over the general `Condition` (e.g. `LocationHasClues`) rather than duplicating the effect in an `Effect::If`. **A future weapon (breadth slices) lands via corpus + this data — no new engine primitives.** Instance-id-mint / put-into-play helper consolidation surfaced here is deferred to [#296](https://github.com/talelburg/eldritch/issues/296).
 
 ## Open questions
 

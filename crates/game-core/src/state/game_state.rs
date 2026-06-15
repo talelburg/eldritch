@@ -474,6 +474,13 @@ pub struct InFlightSkillTest {
     /// invariant "outcome is known iff the test is past the commit
     /// window" is structural.
     pub continuation: FinishContinuation,
+    /// A flat modifier applied to the test total, snapshotted by the
+    /// effect that initiated the test (`Effect::Fight`'s combat
+    /// modifier). `0` for player-action tests, which take their
+    /// modifiers from cards in play. Distinct from constant/pending
+    /// modifiers — this is the one-shot "+N for this attack" a weapon
+    /// grants.
+    pub test_modifier: i8,
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -588,6 +595,8 @@ pub enum SkillTestFollowUp {
     Fight {
         /// The enemy the Fight action targeted.
         enemy: EnemyId,
+        /// Bonus damage beyond the base 1 (weapons). `0` for a basic Fight.
+        extra_damage: u8,
     },
     /// On success, disengage the named enemy from the investigator and
     /// exhaust it. Used by [`Evade`](crate::action::PlayerAction::Evade).

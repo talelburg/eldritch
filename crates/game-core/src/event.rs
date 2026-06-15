@@ -18,7 +18,7 @@ use card_dsl::card_data::CardType;
 use crate::scenario::Resolution;
 use crate::state::{
     CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenResolution, WindowKind, Zone,
+    SkillKind, TokenResolution, UseKind, WindowKind, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -136,6 +136,18 @@ pub enum Event {
         /// Who paid resources.
         investigator: InvestigatorId,
         /// Amount paid.
+        amount: u8,
+    },
+    /// Tokens were spent from a source asset's runtime uses-pool to pay a
+    /// `Cost::SpendUses` (".38 Special": "Spend 1 ammo").
+    UsesSpent {
+        /// Investigator who activated the ability.
+        investigator: InvestigatorId,
+        /// The source asset instance whose uses were spent.
+        instance_id: CardInstanceId,
+        /// Which uses-kind was spent.
+        kind: UseKind,
+        /// How many were spent.
         amount: u8,
     },
     /// A skill test was declared and resolution has begun.

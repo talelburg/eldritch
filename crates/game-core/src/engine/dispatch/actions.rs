@@ -139,6 +139,7 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
         None,
         None,
         None,
+        0, // no weapon/effect modifier on a base Investigate
     )
 }
 
@@ -481,10 +482,14 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         SkillKind::Combat,
         SkillTestKind::Fight,
         fight_difficulty,
-        SkillTestFollowUp::Fight { enemy: enemy_id },
+        SkillTestFollowUp::Fight {
+            enemy: enemy_id,
+            extra_damage: 0,
+        },
         None,
         None,
         None,
+        0, // base Fight: no weapon modifier
     )
 }
 
@@ -523,5 +528,6 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         None,
         None,
         None,
+        0, // no weapon/effect modifier on a base Evade
     )
 }
