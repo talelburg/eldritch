@@ -471,6 +471,13 @@ pub struct InFlightSkillTest {
     /// modifiers — this is the one-shot "+N for this attack" a weapon
     /// grants.
     pub test_modifier: i8,
+    /// Bonus damage added to this attack, accumulated at commit time by
+    /// [`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage)
+    /// (Vicious Blow 01025). Read **only** by the `Fight` follow-up, which
+    /// deals `1 + extra_damage + bonus_attack_damage` on success — so it
+    /// is inert for non-Fight tests. `0` for every test that no
+    /// commit-time attack buff touches (regression-safe).
+    pub bonus_attack_damage: u8,
 }
 
 /// Where the skill-test resolution driver should resume on the next

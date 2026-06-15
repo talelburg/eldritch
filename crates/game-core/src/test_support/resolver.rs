@@ -473,6 +473,7 @@ mod tests {
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
             test_modifier: 0,
+            bonus_attack_damage: 0,
         });
         state
     }

@@ -94,6 +94,7 @@ pub(in crate::engine) fn start_skill_test(
         source,
         continuation: FinishContinuation::AwaitingCommit,
         test_modifier,
+        bonus_attack_damage: 0,
     });
     cx.events.push(Event::SkillTestStarted {
         investigator,
@@ -187,6 +188,11 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         .expect("in_flight_skill_test was Some immediately above")
         .committed_by_active
         .clone_from(&indices_u8);
+
+    // Fire committed cards' OnCommit effects (Vicious Blow's attack buff)
+    // before the test resolves — the commit step precedes resolution, and
+    // a Fight follow-up's damage reads the accumulator they populate.
+    fire_on_commit(cx, investigator, &indices_u8);
 
     let (succeeded, failed_by) =
         resolve_chaos_token_and_emit(cx, investigator, skill, difficulty, skill_value);
@@ -605,11 +611,20 @@ fn apply_skill_test_follow_up(
             // Mid-test enemy disappearance isn't possible in Phase 3
             // (no commit-window effects mutate enemies), so
             // damage_enemy's enemy-missing panic stays loud. A weapon's
-            // bonus damage (.38 Special's +1) rides on `extra_damage`.
+            // bonus damage (.38 Special's +1) rides on `extra_damage`; a
+            // committed skill's bonus (Vicious Blow's +1) accumulates on
+            // the in-flight record at commit time (#307). The in-flight
+            // test is still present here — it's torn down only at the end
+            // of resolution — so the accumulator is readable.
+            let bonus = cx
+                .state
+                .in_flight_skill_test
+                .as_ref()
+                .map_or(0, |t| t.bonus_attack_damage);
             super::combat::damage_enemy(
                 cx,
                 enemy,
-                1u8.saturating_add(extra_damage),
+                1u8.saturating_add(extra_damage).saturating_add(bonus),
                 Some(investigator),
             );
             EngineOutcome::Done
@@ -798,6 +813,62 @@ fn fire_on_skill_test_resolution(
     }
 }
 
+/// Iterate the active investigator's committed cards and fire each
+/// [`Trigger::OnCommit`] ability's effect.
+///
+/// Called inside `finish_skill_test` after the commit indices are
+/// validated and **before** the chaos token resolves — committing a card
+/// happens before the test is resolved (Rules Reference: the commit step
+/// precedes skill-test resolution). The in-scope consumer
+/// ([`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage),
+/// Vicious Blow 01025) accumulates onto the in-flight record so the Fight
+/// follow-up reads it; it never suspends.
+///
+/// **Rejections panic.** As with [`fire_on_skill_test_resolution`], an
+/// `OnCommit` effect that returns non-`Done` is a card-impl bug — there is
+/// no resume path mid-commit, so surface it loudly. A suspending commit
+/// effect is #212 reentrancy work. No-op without an installed registry
+/// (engine-only tests that don't touch card data never commit real cards).
+fn fire_on_commit(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
+    let Some(reg) = card_registry::current() else {
+        return;
+    };
+    // Snapshot the committed hand codes before re-borrowing state mutably
+    // during apply_effect calls. The cards are still in hand at commit.
+    let codes: Vec<CardCode> = {
+        let inv = cx
+            .state
+            .investigators
+            .get(&investigator)
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "fire_on_commit: investigator {investigator:?} vanished while test was in \
+                     flight; this is a state-corruption invariant violation"
+                )
+            });
+        indices_u8
+            .iter()
+            .map(|&i| inv.hand[usize::from(i)].clone())
+            .collect()
+    };
+
+    for code in &codes {
+        let Some(abilities) = (reg.abilities_for)(code) else {
+            continue;
+        };
+        for ability in abilities {
+            if !matches!(ability.trigger, Trigger::OnCommit) {
+                continue;
+            }
+            let eval_ctx = EvalContext::for_controller(investigator);
+            let result = apply_effect(cx, &ability.effect, eval_ctx);
+            if let EngineOutcome::Rejected { reason } = result {
+                unreachable!("OnCommit: effect for card {code:?} rejected unexpectedly: {reason}");
+            }
+        }
+    }
+}
+
 /// Public dispatch wrapper for [`PlayerAction::PerformSkillTest`].
 ///
 /// Opens the commit window with no action-specific follow-up. The
@@ -871,6 +942,63 @@ mod tests {
     use crate::event::Event;
     use crate::scenario::{SymbolOutcome, TokenEffect};
     use crate::test_support::{test_investigator, GameStateBuilder};
+
+    /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
+    /// reading the commit-time accumulator off the in-flight record
+    /// (Vicious Blow 01025). With `extra_damage: 1` (a weapon bonus) and
+    /// `bonus_attack_damage: 2`, the attack deals `1 + 1 + 2 = 4`.
+    #[test]
+    fn fight_follow_up_adds_bonus_attack_damage() {
+        use crate::state::EnemyId;
+        use crate::test_support::test_enemy;
+
+        let inv = InvestigatorId(1);
+        let mut enemy = test_enemy(7, "Goon");
+        enemy.max_health = 10; // avoid clamping so the dealt damage is observable
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        state.in_flight_skill_test = Some(InFlightSkillTest {
+            investigator: inv,
+            skill: SkillKind::Combat,
+            kind: SkillTestKind::Fight,
+            difficulty: 2,
+            committed_by_active: Vec::new(),
+            tested_location: None,
+            follow_up: SkillTestFollowUp::Fight {
+                enemy: EnemyId(7),
+                extra_damage: 1,
+            },
+            on_fail: None,
+            on_success: None,
+            source: None,
+            continuation: FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
+            bonus_attack_damage: 2,
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        let out = apply_skill_test_follow_up(
+            &mut cx,
+            inv,
+            SkillTestFollowUp::Fight {
+                enemy: EnemyId(7),
+                extra_damage: 1,
+            },
+        );
+
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(7)].damage,
+            4,
+            "1 base + 1 extra_damage + 2 bonus_attack_damage"
+        );
+    }
 
     #[test]
     fn apply_symbol_outcome_runs_immediate_always_and_on_fail_only_on_failure() {
