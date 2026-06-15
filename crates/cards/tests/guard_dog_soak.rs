@@ -208,9 +208,9 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
     // Guard Dog left play (discarded), so no soak window suspended the loop;
     // the enemy phase cascaded onward.
     assert!(
-        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. })
-            || state.pending_enemy_attack.is_none(),
-        "no soak window should park the loop when Guard Dog is defeated"
+        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "no soak window should park the loop when Guard Dog is defeated: {:?}",
+        result.outcome
     );
     assert!(
         !state.investigators[&inv_id]
@@ -283,8 +283,12 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
         "Guard Dog discard emitted: {:?}",
         result.events
     );
-    // Defeated by this attack → no retaliation (survivor filter).
-    assert_eq!(state.enemies.get(&enemy_id).map(|e| e.damage), Some(0));
+    // Defeated by this attack → no retaliation (survivor filter). The
+    // attacker (max_health 3, attack 2) is never defeated, so index directly.
+    assert_eq!(
+        state.enemies[&enemy_id].damage, 0,
+        "attacker took no retaliation"
+    );
 }
 
 // ---------------------------------------------------------------------

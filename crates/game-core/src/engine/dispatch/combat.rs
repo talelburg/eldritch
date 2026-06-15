@@ -11,11 +11,6 @@ use crate::state::{
 
 use super::Cx;
 
-/// Apply `amount` damage to an enemy. If the new damage reaches or
-/// exceeds `max_health`, emit `EnemyDefeated` and remove the enemy
-/// from `state.enemies`. `by` attributes the defeat for
-/// trigger-window consumers (e.g. Roland's reaction). Used by Fight
-/// today; will be reused by future damage-dealing card effects.
 /// Public entry point for card effects to deal damage to an enemy.
 ///
 /// A thin wrapper over `damage_enemy` (which is crate-internal) so the
@@ -33,6 +28,11 @@ pub fn deal_damage_to_enemy(
     damage_enemy(cx, enemy_id, amount, by);
 }
 
+/// Apply `amount` damage to an enemy. If the new damage reaches or
+/// exceeds `max_health`, emit `EnemyDefeated` and remove the enemy
+/// from `state.enemies`. `by` attributes the defeat for
+/// trigger-window consumers (e.g. Roland's reaction). Used by Fight
+/// today and by card effects via [`deal_damage_to_enemy`].
 pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Option<InvestigatorId>) {
     let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
         unreachable!(
