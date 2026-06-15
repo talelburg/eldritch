@@ -83,7 +83,7 @@ pub(super) fn shuffle_player_deck(cx: &mut Cx, investigator: InvestigatorId) {
 /// Emits a single [`Event::CardsDrawn`] with the actually-drawn
 /// count, even if that's zero. A zero-count draw is informative for
 /// consumers tracking the attempt.
-pub(super) fn draw_cards(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
+pub(in crate::engine) fn draw_cards(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
     let inv = cx
         .state
         .investigators

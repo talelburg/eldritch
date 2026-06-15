@@ -244,7 +244,37 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             extra_damage,
         } => apply_fight(cx, &eval_ctx, combat_modifier, *extra_damage),
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
+        Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
     }
+}
+
+/// Resolve [`Effect::DrawCards`]: draw `count` cards for the resolved
+/// target investigator via the engine's `draw_cards` helper. `count == 0`
+/// is a clean no-op (no target resolution, no event).
+fn draw_cards_effect(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    target: InvestigatorTarget,
+    count: u8,
+) -> EngineOutcome {
+    if count == 0 {
+        return EngineOutcome::Done;
+    }
+    let target_id = match resolve_investigator_target(cx.state, eval_ctx, target) {
+        Ok(id) => id,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    if !cx.state.investigators.contains_key(&target_id) {
+        return EngineOutcome::Rejected {
+            reason: format!("DrawCards: investigator {target_id:?} is not in the state").into(),
+        };
+    }
+    crate::engine::dispatch::cards::draw_cards(cx, target_id, count);
+    EngineOutcome::Done
 }
 
 /// Add `amount` to the in-flight skill test's `bonus_attack_damage`
@@ -1217,7 +1247,7 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state
 mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        boost_attack_damage, constant, deal_damage, deal_horror, discover_clue,
+        boost_attack_damage, constant, deal_damage, deal_horror, discover_clue, draw_cards,
         for_each_point_failed, gain_resources, modify, on_play, seq, Ability, Effect,
         InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
     };
@@ -1611,6 +1641,49 @@ mod tests {
             2,
             "two BoostAttackDamage(1) applications should stack to 2"
         );
+    }
+
+    /// `Effect::DrawCards` moves `count` cards deck→hand for the resolved
+    /// target and emits `CardsDrawn`; `count == 0` is a no-op.
+    #[test]
+    fn draw_cards_effect_draws_for_target() {
+        let mut inv = test_investigator(1);
+        inv.deck = vec![
+            CardCode::new("d1"),
+            CardCode::new("d2"),
+            CardCode::new("d3"),
+        ];
+        inv.hand = Vec::new();
+        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &draw_cards(InvestigatorTarget::You, 2),
+            ctx(1),
+        );
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        let inv_after = &state.investigators[&InvestigatorId(1)];
+        assert_eq!(inv_after.hand.len(), 2, "two cards moved into hand");
+        assert_eq!(inv_after.deck.len(), 1, "two cards left the deck");
+        assert_event!(events, Event::CardsDrawn { count: 2, .. });
+
+        // count == 0 → clean no-op (no further draw, no event).
+        let mut events0 = Vec::new();
+        apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events0,
+            },
+            &draw_cards(InvestigatorTarget::You, 0),
+            ctx(1),
+        );
+        assert_eq!(state.investigators[&InvestigatorId(1)].hand.len(), 2);
+        assert!(events0.is_empty());
     }
 
     #[test]
