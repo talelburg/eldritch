@@ -425,7 +425,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// while attacks of opportunity ([`fire_attacks_of_opportunity`])
 /// deliberately drop the list — they soak but don't yet open soak
 /// windows, because that needs mid-action suspension of the triggering
-/// action (deferred fast-follow). Keeping the queueing at the call site
+/// action (deferred fast-follow, `TODO(#293)`). Keeping the queueing at the call site
 /// is what lets the two callers diverge without `enemy_attack` stranding
 /// an undriven window (C5b #237).
 ///
@@ -520,7 +520,8 @@ pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: Investigato
         // a documented faithfulness gap. Driving the soak window here would
         // require suspending the *triggering* action (Move / Investigate)
         // and resuming its primary effect after the window closes, a new
-        // mid-action suspension mechanism deferred to a fast-follow. Dropping
+        // mid-action suspension mechanism deferred to a fast-follow
+        // (`TODO(#293)`). Dropping
         // the survivors is exactly what prevents an undriven window stranded
         // on `open_windows` (the bug this seam fixes; C5b #237).
         let _ = enemy_attack(cx, enemy_id, investigator);
@@ -667,12 +668,13 @@ fn drive_attack_loop(
             // resume on `pending_enemy_attack == None`. Unreachable in scope
             // (only Guard Dog 01021 reacts, and two copies need two illegal
             // Ally slots), so guard loudly rather than handle the multi-window
-            // drain — that belongs with simultaneous-trigger ordering (#213).
+            // drain. TODO(#294): drain all same-attack soak windows before
+            // resuming (coordinates with simultaneous-trigger ordering #213).
             debug_assert_eq!(
                 cx.state.open_windows.len(),
                 1,
                 "drive_attack_loop suspended on {} open windows; multi-soak-\
-                 window-per-attack resume is unhandled (see #213)",
+                 window-per-attack resume is unhandled (TODO(#294))",
                 cx.state.open_windows.len(),
             );
             cx.state.pending_enemy_attack = Some(PendingEnemyAttack {
@@ -703,9 +705,9 @@ fn drive_attack_loop(
 ///   attacks of opportunity ([`fire_attacks_of_opportunity`]) soak damage
 ///   but do not open soak reaction windows, so they never suspend and
 ///   never park a `PendingEnemyAttack` with this source. The variant (and
-///   this arm) are reserved for the deferred fast-follow that suspends the
-///   triggering action; kept as a defensive, well-defined placeholder so
-///   the source-keyed dispatch stays total (C5b #237).
+///   this arm) are reserved for the deferred fast-follow (`TODO(#293)`) that
+///   suspends the triggering action; kept as a defensive, well-defined
+///   placeholder so the source-keyed dispatch stays total (C5b #237).
 ///
 /// Called from
 /// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s
