@@ -211,7 +211,7 @@ pub enum Event {
     /// the on-spawn engagement uniformly with mid-game engagements.
     EnemySpawned {
         /// The newly-spawned enemy's stable id (freshly minted from
-        /// [`GameState::next_enemy_id`](crate::state::GameState::next_enemy_id)).
+        /// [`GameState::enemy_ids`](crate::state::GameState::enemy_ids)).
         enemy: EnemyId,
         /// Printed code of the spawned enemy.
         code: CardCode,

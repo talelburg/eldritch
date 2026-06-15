@@ -8,6 +8,7 @@
 pub mod builder;
 pub mod card;
 pub mod chaos_bag;
+pub mod counter;
 pub mod enemy;
 pub mod game_state;
 pub mod investigator;
@@ -18,6 +19,9 @@ pub use builder::GameStateBuilder;
 pub use card::{AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, UseKind, Zone};
 pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
+pub use counter::Counter;
+// `define_id!` is used by the id submodules; kept crate-internal.
+pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
     Act, ActRoundEndPending, Agenda, ClueInterruptPending, EnemyAttackSource, FastActorScope,

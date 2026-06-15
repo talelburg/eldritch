@@ -82,7 +82,7 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
     );
     assert!(state
         .enemies
-        .contains_key(&EnemyId(state.next_enemy_id - 1)));
+        .contains_key(&EnemyId(state.enemy_ids.peek() - 1)));
     // The Ghoul left both deck and discard (it was drawn into play).
     assert!(!state.encounter_deck.contains(&CardCode::new("01160")));
     assert!(!state.encounter_discard.contains(&CardCode::new("01160")));

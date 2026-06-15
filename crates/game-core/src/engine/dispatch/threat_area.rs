@@ -4,10 +4,36 @@
 //! persist here (and the Revelation routing that places them) is C4c
 //! (#235).
 
+use crate::card_data::CardKind;
 use crate::event::Event;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Zone};
 
 use super::Cx;
+
+/// Mint a fresh in-play instance of `code`: allocate its id, build the
+/// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's
+/// printed `uses` if any. Does **not** place it in a zone — the caller
+/// pushes it into `cards_in_play` / `threat_area` / a location's
+/// attachments and emits the zone-specific event.
+///
+/// The single construction point shared by `place_in_threat_area`,
+/// `attach_to_location`, and `play_card`'s in-play branch ([#296]).
+///
+/// [#296]: https://github.com/talelburg/eldritch/issues/296
+pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode) -> CardInPlay {
+    let instance_id = cx.state.card_instance_ids.mint();
+    let uses = crate::card_registry::current()
+        .and_then(|reg| (reg.metadata_for)(&code))
+        .and_then(|m| match &m.kind {
+            CardKind::Asset { uses, .. } => *uses,
+            _ => None,
+        });
+    let mut card = CardInPlay::enter_play(code, instance_id);
+    if let Some(u) = uses {
+        card.uses.insert(u.kind, u.count);
+    }
+    card
+}
 
 /// Place `code` into `investigator`'s threat area as a fresh in-play
 /// instance, minting an instance id from the per-state counter, and
@@ -24,15 +50,14 @@ pub fn place_in_threat_area(
     if !cx.state.investigators.contains_key(&investigator) {
         return None;
     }
-    let instance_id = CardInstanceId(cx.state.next_card_instance_id);
-    cx.state.next_card_instance_id = cx.state.next_card_instance_id.saturating_add(1);
+    let card = new_in_play_instance(cx, code.clone());
+    let instance_id = card.instance_id;
     let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
         .expect("existence checked above");
-    inv.threat_area
-        .push(CardInPlay::enter_play(code.clone(), instance_id));
+    inv.threat_area.push(card);
     cx.events.push(Event::CardEnteredThreatArea {
         investigator,
         code,
@@ -57,15 +82,14 @@ pub fn attach_to_location(
     if !cx.state.locations.contains_key(&location) {
         return None;
     }
-    let instance_id = CardInstanceId(cx.state.next_card_instance_id);
-    cx.state.next_card_instance_id = cx.state.next_card_instance_id.saturating_add(1);
+    let card = new_in_play_instance(cx, code.clone());
+    let instance_id = card.instance_id;
     let loc = cx
         .state
         .locations
         .get_mut(&location)
         .expect("existence checked above");
-    loc.attachments
-        .push(CardInPlay::enter_play(code.clone(), instance_id));
+    loc.attachments.push(card);
     cx.events.push(Event::CardAttachedToLocation {
         location,
         code,

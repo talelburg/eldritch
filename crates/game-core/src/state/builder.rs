@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Enemy, EnemyId, FastActorScope, GameState, HandSizeDiscard, Investigator,
+    ChaosBag, Counter, Enemy, EnemyId, FastActorScope, GameState, HandSizeDiscard, Investigator,
     InvestigatorId, Location, LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
 };
 
@@ -268,9 +268,9 @@ impl GameStateBuilder {
             turn_order: self.turn_order,
             rng: self.rng,
             mulligan_pending: self.mulligan_pending,
-            next_card_instance_id: 0,
-            next_enemy_id: 0,
-            next_location_id: 0,
+            card_instance_ids: Counter::new(),
+            enemy_ids: Counter::new(),
+            location_ids: Counter::new(),
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
             open_windows: self.open_windows,
