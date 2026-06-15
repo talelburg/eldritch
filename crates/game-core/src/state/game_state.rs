@@ -977,6 +977,23 @@ pub struct PendingSkillModifier {
 }
 
 impl GameState {
+    /// Mint the next [`CardInstanceId`] and advance the counter. The one
+    /// place card-instance ids are allocated — call this instead of
+    /// hand-rolling the read-then-increment.
+    pub fn mint_card_instance_id(&mut self) -> CardInstanceId {
+        let id = CardInstanceId(self.next_card_instance_id);
+        self.next_card_instance_id = self.next_card_instance_id.saturating_add(1);
+        id
+    }
+
+    /// Mint the next [`EnemyId`] and advance the counter. The one place
+    /// enemy ids are allocated.
+    pub fn mint_enemy_id(&mut self) -> EnemyId {
+        let id = EnemyId(self.next_enemy_id);
+        self.next_enemy_id = self.next_enemy_id.saturating_add(1);
+        id
+    }
+
     /// The topmost open window that has unresolved reaction triggers,
     /// if any. Used by the dispatcher's "is reaction work pending?"
     /// guards. Pure Fast-gating windows (empty `pending_triggers`)
@@ -1245,6 +1262,19 @@ mod next_enemy_id_tests {
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.next_enemy_id, 42);
+    }
+
+    #[test]
+    fn mint_helpers_allocate_monotonically_and_advance_their_counters() {
+        let mut state = GameStateBuilder::new().build();
+        assert_eq!(state.mint_card_instance_id(), CardInstanceId(0));
+        assert_eq!(state.mint_card_instance_id(), CardInstanceId(1));
+        assert_eq!(state.next_card_instance_id, 2);
+        // The enemy counter is independent of the card-instance counter.
+        assert_eq!(state.mint_enemy_id(), EnemyId(0));
+        assert_eq!(state.mint_enemy_id(), EnemyId(1));
+        assert_eq!(state.next_enemy_id, 2);
+        assert_eq!(state.next_card_instance_id, 2, "card counter untouched");
     }
 }
 

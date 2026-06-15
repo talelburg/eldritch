@@ -5,7 +5,7 @@ use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Phase, Status, Zone};
+use crate::state::{CardCode, InvestigatorId, Phase, Status, Zone};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -513,27 +513,23 @@ pub(super) fn play_card(
     }
     match destination {
         super::PlayDestination::InPlay => {
-            let instance_id = CardInstanceId(cx.state.next_card_instance_id);
-            cx.state.next_card_instance_id = cx.state.next_card_instance_id.saturating_add(1);
-            // Seed the named-uses pool ("ammo") from the asset's printed
-            // `uses` before moving the code into the instance.
-            let initial_uses = crate::card_registry::current()
-                .and_then(|reg| (reg.metadata_for)(&code))
-                .and_then(|m| match &m.kind {
-                    crate::card_data::CardKind::Asset { uses, .. } => *uses,
-                    _ => None,
-                });
-            let inv_mut = cx
+            // Remove the card from hand, then mint + seed its in-play
+            // instance via the shared constructor (mints the id, seeds the
+            // asset uses-pool) and push it into the play area.
+            let played = cx
                 .state
                 .investigators
                 .get_mut(&investigator)
-                .expect("checked");
-            let card = inv_mut.hand.remove(idx);
-            let mut in_play = CardInPlay::enter_play(card, instance_id);
-            if let Some(u) = initial_uses {
-                in_play.uses.insert(u.kind, u.count);
-            }
-            inv_mut.cards_in_play.push(in_play);
+                .expect("checked")
+                .hand
+                .remove(idx);
+            let in_play = super::threat_area::new_in_play_instance(cx, played);
+            cx.state
+                .investigators
+                .get_mut(&investigator)
+                .expect("checked")
+                .cards_in_play
+                .push(in_play);
         }
         super::PlayDestination::Discard => {
             let inv_mut = cx

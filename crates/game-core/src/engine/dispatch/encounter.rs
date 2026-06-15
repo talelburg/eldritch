@@ -5,8 +5,7 @@ use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Enemy, EnemyId, InvestigatorId, LocationId, Phase, PhaseStep, SpawnEngagePending,
-    WindowKind,
+    CardCode, Enemy, InvestigatorId, LocationId, Phase, PhaseStep, SpawnEngagePending, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -406,8 +405,7 @@ pub(super) fn spawn_enemy_at(
     //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
     //    `engage_enemy_with` so the `EnemyEngaged` event always pairs with
     //    the mutation.
-    let enemy_id = EnemyId(cx.state.next_enemy_id);
-    cx.state.next_enemy_id = cx.state.next_enemy_id.saturating_add(1);
+    let enemy_id = cx.state.mint_enemy_id();
 
     let enemy = Enemy {
         id: enemy_id,
