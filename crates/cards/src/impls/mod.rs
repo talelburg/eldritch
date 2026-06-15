@@ -64,7 +64,9 @@ pub mod guard_dog;
 pub mod holy_rosary;
 pub mod hyperawareness;
 pub mod magnifying_glass;
+pub mod roland_38_special;
 pub mod roland_banks;
+pub mod treachery_01007;
 pub mod treachery_01162;
 pub mod treachery_01163;
 pub mod treachery_01164;
@@ -92,7 +94,9 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
+        roland_38_special::CODE => Some(roland_38_special::abilities()),
         roland_banks::CODE => Some(roland_banks::abilities()),
+        treachery_01007::CODE => Some(treachery_01007::abilities()),
         treachery_01162::CODE => Some(treachery_01162::abilities()),
         treachery_01163::CODE => Some(treachery_01163::abilities()),
         treachery_01164::CODE => Some(treachery_01164::abilities()),
@@ -115,6 +119,7 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
         .or_else(|| guard_dog::native_effect_for(tag))
+        .or_else(|| treachery_01007::native_effect_for(tag))
         .or_else(|| treachery_01166::native_effect_for(tag))
         .or_else(|| treachery_01167::native_effect_for(tag))
         .or_else(|| treachery_01168::native_effect_for(tag))

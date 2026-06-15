@@ -4,42 +4,10 @@
 
 🛠️ **Slice 1 in progress** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216)).
 Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
-(the Gathering content) is decomposed into sub-slices C1–C7
-([#227](https://github.com/talelburg/eldritch/issues/227)–[#245](https://github.com/talelburg/eldritch/issues/245),
-kickoff [#246](https://github.com/talelburg/eldritch/issues/246)). Shipped:
-C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
-C2 (01104 symbol-token effects + location victory points),
-C3a (Prey – Lowest remaining health + Retaliate keyword),
-C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
-C3c (agenda 01107 forced abilities), C3d (act-2 round-end window),
-the act-2 reverse ([#280](https://github.com/talelburg/eldritch/issues/280):
-spawn the set-aside Ghoul Priest + reveal the Parlor), the agenda
-reverses ([#281](https://github.com/talelburg/eldritch/issues/281):
-01105/01106 + the `AgendaAdvanced` forced point), C4a (threat-area
-zone + shared scan source + `EndOfTurn`/`AfterLocationInvestigated`
-forced points), the test-treachery engine prereq
-([#286](https://github.com/talelburg/eldritch/issues/286):
-`Effect::SkillTest` + `ForEachPointFailed` + suspendable-revelation
-discard), C4b (the four one-shot Revelation treacheries —
-01162/01163/01166/01167), and C4c (the three persistent threat-area /
-attachment treacheries — Obscuring Fog 01168, Dissonant Voices 01165,
-Frozen in Fear 01164 — with the location attachment zone, inspectable-DSL
-constant restrictions, `Effect::DiscardSelf`, deterministic
-simultaneous-forced-trigger resolution, and end-turn resume plumbing), and
-C5a ([#236](https://github.com/talelburg/eldritch/issues/236): Cover Up's
-before-timing clue-discovery replacement interrupt at the `discover_clue`
-chokepoint — `clue_interrupt_pending` suspension + pre-advanced skill-test
-resume — plus `ForcedTriggerPoint::GameEnd` and `Event::TraumaSuffered`),
-and C5b ([#237](https://github.com/talelburg/eldritch/issues/237): the
-enemy-attack damage/horror soak mechanic — soak-first `assign_attack` →
-simultaneous `place_assignment` → asset defeat-on-overflow → the
-`AfterEnemyAttackDamagedAsset` reaction window — plus Guard Dog 01021's
-retaliate and the resumable enemy-phase attack loop;
-[PR #292](https://github.com/talelburg/eldritch/pull/292)), and the C5c
-weapon-support prereq ([#295](https://github.com/talelburg/eldritch/issues/295):
-ammo/uses + inspectable `Effect::Fight` — `Cost::SpendUses` + `IntExpr`
-modifier + bonus damage; [PR #297](https://github.com/talelburg/eldritch/pull/297)).
-**Next: C5c content → C7** (C6d also gates C7b).
+(the Gathering content, decomposed into C1–C7, kickoff
+[#246](https://github.com/talelburg/eldritch/issues/246)) is done through
+**C5c** — see the Group C breakdown table below for per-sub-slice state.
+**Next: C5d → C7** (C6d also gates C7b).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -96,7 +64,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | ✅ PR #291 |
 | C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog reaction + enemy-attack soak mechanic | ✅ PR #292 |
 | — | [#295](https://github.com/talelburg/eldritch/issues/295) | infra: weapon support — ammo/uses (`Cost::SpendUses`) + inspectable `Effect::Fight` (`IntExpr` modifier + bonus damage) (prerequisite for C5c's .38 Special) | ✅ PR #297 |
-| C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | — |
+| C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | ✅ PR #298 |
 | C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets (×6) | — |
 | C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) | — |
 | C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window | — |
