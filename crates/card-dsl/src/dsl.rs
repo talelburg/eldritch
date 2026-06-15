@@ -788,6 +788,41 @@ pub enum Condition {
     /// there's an in-flight test whose kind matches; rejects when
     /// no test is in flight.
     SkillTestKind(SkillTestKind),
+    /// Holds when the controller's current location has ≥1 clue.
+    /// ".38 Special": "if there are 1 or more clues on your location".
+    LocationHasClues,
+}
+
+/// An integer computed at effect-evaluation time. Lets a numeric field
+/// carry a condition-gated value without duplicating the surrounding
+/// effect — ".38 Special" reads its combat modifier as
+/// `IntExpr::cond(LocationHasClues, 3, 1)` rather than an
+/// [`Effect::If`] wrapping two near-identical `fight(…)` nodes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum IntExpr {
+    /// A literal value.
+    Lit(i8),
+    /// `then` if `when` holds at eval time, else `otherwise`.
+    Cond {
+        /// Predicate evaluated against current state.
+        when: Condition,
+        /// Value when the predicate holds.
+        then: i8,
+        /// Value when it does not.
+        otherwise: i8,
+    },
+}
+
+impl IntExpr {
+    /// Construct an [`IntExpr::Cond`].
+    #[must_use]
+    pub fn cond(when: Condition, then: i8, otherwise: i8) -> Self {
+        Self::Cond {
+            when,
+            then,
+            otherwise,
+        }
+    }
 }
 
 /// Result of a skill test, as a discrete value usable in conditions.
