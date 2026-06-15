@@ -595,6 +595,9 @@ pub enum Effect {
     PutIntoThreatArea {
         /// Printed `ArkhamDB` code of the card to place.
         code: String,
+        /// Clues to seed on the placed instance ("with 3 clues on it",
+        /// Cover Up 01007). `0` for cards that enter clue-less.
+        clues: u8,
     },
     /// Initiate a Fight against the single enemy engaged with the
     /// controller, applying `combat_modifier` (resolved at eval, e.g.
@@ -1053,10 +1056,24 @@ pub fn discard_self() -> Effect {
     Effect::DiscardSelf
 }
 
-/// Build an [`Effect::PutIntoThreatArea`] for the card with printed `code`.
+/// Build an [`Effect::PutIntoThreatArea`] that enters clue-less.
 #[must_use]
 pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
-    Effect::PutIntoThreatArea { code: code.into() }
+    Effect::PutIntoThreatArea {
+        code: code.into(),
+        clues: 0,
+    }
+}
+
+/// Build an [`Effect::PutIntoThreatArea`] seeding `clues` on the placed
+/// instance (Cover Up 01007: "Put Cover Up into play in your threat area,
+/// with 3 clues on it").
+#[must_use]
+pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Effect {
+    Effect::PutIntoThreatArea {
+        code: code.into(),
+        clues,
+    }
 }
 
 /// Build an [`Effect::Fight`] with the given combat modifier and bonus

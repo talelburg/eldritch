@@ -45,7 +45,9 @@ mod tests {
         assert_eq!(abilities.len(), 4);
 
         assert_eq!(abilities[0].trigger, Trigger::Revelation);
-        assert!(matches!(&abilities[0].effect, Effect::PutIntoThreatArea { code } if code == CODE));
+        assert!(
+            matches!(&abilities[0].effect, Effect::PutIntoThreatArea { code, clues: 0 } if code == CODE)
+        );
 
         assert_eq!(abilities[1].trigger, Trigger::Constant);
         assert!(matches!(

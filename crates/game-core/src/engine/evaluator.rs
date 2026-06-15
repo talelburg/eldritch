@@ -217,12 +217,24 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             0, // a Revelation skill test takes its difficulty as printed
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
-        Effect::PutIntoThreatArea { code } => {
-            crate::engine::dispatch::threat_area::place_in_threat_area(
+        Effect::PutIntoThreatArea { code, clues } => {
+            let inst = crate::engine::dispatch::threat_area::place_in_threat_area(
                 cx,
                 eval_ctx.controller,
                 crate::state::CardCode::new(code.clone()),
             );
+            if *clues > 0 {
+                if let Some(id) = inst {
+                    if let Some(card) = cx
+                        .state
+                        .investigators
+                        .get_mut(&eval_ctx.controller)
+                        .and_then(|inv| inv.threat_area.iter_mut().find(|c| c.instance_id == id))
+                    {
+                        card.clues = *clues;
+                    }
+                }
+            }
             EngineOutcome::Done
         }
         Effect::Restrict(_) => EngineOutcome::Rejected {
@@ -2126,6 +2138,32 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
+        use crate::dsl::put_into_threat_area_with_clues;
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = apply_effect(
+            &mut cx,
+            &put_into_threat_area_with_clues("01007", 3),
+            EvalContext::for_controller(id),
+        );
+        assert!(matches!(outcome, EngineOutcome::Done));
+        let placed = state.investigators[&id]
+            .threat_area
+            .iter()
+            .find(|c| c.code.as_str() == "01007")
+            .expect("Cover Up placed in threat area");
+        assert_eq!(placed.clues, 3, "Cover Up enters with 3 clues");
     }
 
     #[test]
