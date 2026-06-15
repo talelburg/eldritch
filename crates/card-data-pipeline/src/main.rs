@@ -628,6 +628,9 @@ fn parse_uses(text: &str) -> Option<(u8, &'static str)> {
     let count: u8 = num.trim().parse().ok()?;
     let variant = match kind.trim().to_ascii_lowercase().as_str() {
         "ammo" => "Ammo",
+        "charges" => "Charges",
+        "secrets" => "Secrets",
+        "supplies" => "Supplies",
         other => {
             eprintln!("warning: unmodeled Uses kind {other:?}; emitting uses: None");
             return None;
@@ -777,9 +780,13 @@ mod tests {
             parse_uses("Uses (4 ammo).\n[action] Spend 1 ammo: Fight."),
             Some((4u8, "Ammo"))
         );
+        // All modeled UseKind variants map (not just ammo).
+        assert_eq!(parse_uses("Uses (5 charges)."), Some((5u8, "Charges")));
+        assert_eq!(parse_uses("Uses (3 secrets)."), Some((3u8, "Secrets")));
+        assert_eq!(parse_uses("Uses (3 supplies)."), Some((3u8, "Supplies")));
         assert_eq!(parse_uses("Some other card text."), None);
-        // Unmodeled kind → None (with a build warning).
-        assert_eq!(parse_uses("Uses (3 supplies)."), None);
+        // Genuinely unmodeled kind → None (with a build warning).
+        assert_eq!(parse_uses("Uses (4 time)."), None);
     }
 
     #[test]

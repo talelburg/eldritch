@@ -265,7 +265,14 @@ fn apply_fight(
                 .into(),
         };
     };
-    let fight_difficulty = cx.state.enemies.get(&enemy_id).map_or(0, |e| e.fight);
+    // `enemy_id` came from `single_engaged_enemy` over this same map, so
+    // it is present — a silent 0-difficulty default would mask corruption.
+    let fight_difficulty = cx
+        .state
+        .enemies
+        .get(&enemy_id)
+        .expect("single_engaged_enemy returned an id absent from state.enemies")
+        .fight;
     crate::engine::dispatch::skill_test::start_skill_test(
         cx,
         eval_ctx.controller,

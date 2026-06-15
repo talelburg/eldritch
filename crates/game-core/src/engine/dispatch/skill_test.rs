@@ -606,7 +606,12 @@ fn apply_skill_test_follow_up(
             // (no commit-window effects mutate enemies), so
             // damage_enemy's enemy-missing panic stays loud. A weapon's
             // bonus damage (.38 Special's +1) rides on `extra_damage`.
-            super::combat::damage_enemy(cx, enemy, 1 + extra_damage, Some(investigator));
+            super::combat::damage_enemy(
+                cx,
+                enemy,
+                1u8.saturating_add(extra_damage),
+                Some(investigator),
+            );
             EngineOutcome::Done
         }
         SkillTestFollowUp::Evade { enemy } => {
