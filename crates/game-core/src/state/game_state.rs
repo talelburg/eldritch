@@ -976,22 +976,28 @@ pub struct PendingSkillModifier {
     pub source: Option<CardInstanceId>,
 }
 
+/// Read a monotonic `u32` id counter, advance it (saturating), and wrap
+/// the pre-increment value in its newtype. The single read-then-increment
+/// point shared by every `GameState::mint_*_id`; the newtype constructor
+/// (`CardInstanceId` / `EnemyId` / `LocationId`) is the per-type bridge.
+fn mint_id<T>(counter: &mut u32, wrap: impl FnOnce(u32) -> T) -> T {
+    let id = wrap(*counter);
+    *counter = counter.saturating_add(1);
+    id
+}
+
 impl GameState {
     /// Mint the next [`CardInstanceId`] and advance the counter. The one
     /// place card-instance ids are allocated — call this instead of
     /// hand-rolling the read-then-increment.
     pub fn mint_card_instance_id(&mut self) -> CardInstanceId {
-        let id = CardInstanceId(self.next_card_instance_id);
-        self.next_card_instance_id = self.next_card_instance_id.saturating_add(1);
-        id
+        mint_id(&mut self.next_card_instance_id, CardInstanceId)
     }
 
     /// Mint the next [`EnemyId`] and advance the counter. The one place
     /// enemy ids are allocated.
     pub fn mint_enemy_id(&mut self) -> EnemyId {
-        let id = EnemyId(self.next_enemy_id);
-        self.next_enemy_id = self.next_enemy_id.saturating_add(1);
-        id
+        mint_id(&mut self.next_enemy_id, EnemyId)
     }
 
     /// The topmost open window that has unresolved reaction triggers,
@@ -1043,9 +1049,7 @@ impl GameState {
     /// Mint a fresh, deterministic [`LocationId`] (sequential from
     /// `next_location_id`).
     fn mint_location_id(&mut self) -> LocationId {
-        let id = LocationId(self.next_location_id);
-        self.next_location_id = self.next_location_id.saturating_add(1);
-        id
+        mint_id(&mut self.next_location_id, LocationId)
     }
 
     /// Build a [`Location`] from its card `metadata`, minting a fresh id.
@@ -1265,16 +1269,18 @@ mod next_enemy_id_tests {
     }
 
     #[test]
-    fn mint_helpers_allocate_monotonically_and_advance_their_counters() {
+    fn mint_helpers_allocate_monotonically_from_independent_counters() {
         let mut state = GameStateBuilder::new().build();
         assert_eq!(state.mint_card_instance_id(), CardInstanceId(0));
         assert_eq!(state.mint_card_instance_id(), CardInstanceId(1));
-        assert_eq!(state.next_card_instance_id, 2);
-        // The enemy counter is independent of the card-instance counter.
+        // Each id type draws from its own counter — minting one doesn't
+        // disturb the others (all three delegate to the same `mint_id`).
         assert_eq!(state.mint_enemy_id(), EnemyId(0));
+        assert_eq!(state.mint_location_id(), LocationId(0));
         assert_eq!(state.mint_enemy_id(), EnemyId(1));
+        assert_eq!(state.next_card_instance_id, 2);
         assert_eq!(state.next_enemy_id, 2);
-        assert_eq!(state.next_card_instance_id, 2, "card counter untouched");
+        assert_eq!(state.next_location_id, 1);
     }
 }
 
