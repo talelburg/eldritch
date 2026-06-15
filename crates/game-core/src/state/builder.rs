@@ -283,6 +283,7 @@ impl GameStateBuilder {
             hand_size_discard_pending: self.hand_size_discard_pending,
             act_round_end_pending: None,
             clue_interrupt_pending: None,
+            pending_enemy_attack: None,
             pending_revelation_discard: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
