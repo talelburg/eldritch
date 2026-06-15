@@ -177,6 +177,12 @@ Full strict gauntlet (`fmt`, `clippy --all-targets --all-features -D warnings`,
 - General before-timing reaction windows, resumable-evaluator reentrancy for
   nested discovery, and player-chosen simultaneous-trigger ordering — **#212 /
   #213**.
+- **Generic ability eligibility (RR p.2 "potential to change the game state").**
+  The engine doesn't model this anywhere. The seam's `card.clues > 0` gate is a
+  single-consumer stand-in for it (without it, an emptied Cover Up — which stays
+  in the threat area until game end — would prompt a never-useful interrupt on
+  every discovery). When a second `WouldDiscoverClues` card lands, lift it into a
+  card-provided per-ability "has potential" predicate — **#212**.
 
 ## Dependencies
 

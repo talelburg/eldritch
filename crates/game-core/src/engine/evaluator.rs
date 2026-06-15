@@ -521,11 +521,22 @@ fn discover_clue(
 
     // Before-timing clue-discovery interrupt (Cover Up 01007, C5a #236).
     // Offer the controller a chance to replace this discovery iff they
-    // control a card with a `WouldDiscoverClues` reaction, that card holds
-    // >= 1 clue (RR p.2 — the reaction needs game-state potential), and the
-    // discovery is at the controller's own location ("at your location").
-    // No registry (unit context) or no eligible card → fall through to the
-    // normal discovery below.
+    // control a card with a `WouldDiscoverClues` reaction at the
+    // controller's own location ("at your location"). No registry (unit
+    // context) or no eligible card → fall through to the normal discovery.
+    //
+    // The `card.clues > 0` gate below is NOT generic to the trigger point:
+    // it is a single-consumer stand-in for the eligibility rule "a
+    // triggered ability can only be initiated if its effect has the
+    // potential to change the game state" (RR p.2), which the engine does
+    // not yet model generically (no reaction window checks potential). For
+    // Cover Up specifically, an emptied card sits in the threat area until
+    // game end, so without this gate the engine would prompt a never-useful
+    // interrupt on every discovery for the rest of the game.
+    // TODO(#212): when a second `WouldDiscoverClues` card lands (one whose
+    // potential isn't "holds clues to discard"), lift this into a
+    // card-provided per-ability "has potential" predicate rather than a
+    // hardcoded clue check here.
     if let Some(reg) = crate::card_registry::current() {
         let at_your_location = cx
             .state
@@ -543,6 +554,7 @@ fn discover_clue(
                 .get(&eval_ctx.controller)
                 .and_then(|inv| {
                     inv.controlled_card_instances().find_map(|card| {
+                        // Single-consumer eligibility stand-in (see above).
                         if card.clues == 0 {
                             return None;
                         }
