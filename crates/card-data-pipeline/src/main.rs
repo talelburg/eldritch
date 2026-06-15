@@ -419,7 +419,7 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     out.push_str(
         "use card_dsl::card_data::{\n    \
          CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,\n    \
-         SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, Uses, UsesKind,\n};\n\n\
+         SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, UseKind, Uses,\n};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",
@@ -588,7 +588,7 @@ fn opt_u8(v: Option<u8>) -> String {
 fn uses_lit(uses: Option<(u8, &'static str)>) -> String {
     match uses {
         Some((count, variant)) => {
-            format!("Some(Uses {{ kind: UsesKind::{variant}, count: {count} }})")
+            format!("Some(Uses {{ kind: UseKind::{variant}, count: {count} }})")
         }
         None => "None".into(),
     }

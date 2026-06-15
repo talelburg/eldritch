@@ -8,7 +8,7 @@
 
 use card_dsl::card_data::{
     CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,
-    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, Uses, UsesKind,
+    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, UseKind, Uses,
 };
 
 /// Every card from the pinned snapshot, sorted by code.
@@ -69,7 +69,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Roland Banks deck only.\nUses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack (if there are 1 or more clues on your location, you get +3 [combat], instead). This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: Some(Uses { kind: UsesKind::Ammo, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: Some(Uses { kind: UseKind::Ammo, count: 4 }) },
         },
         CardMetadata {
             code: "01007".to_owned(),
@@ -149,7 +149,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4 }) },
         },
         CardMetadata {
             code: "01017".to_owned(),
@@ -253,7 +253,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (2 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] for this attack. Instead of its standard damage, this attack deals 1 damage for each point you succeed by (to a minimum of 1, to a maximum of 5). If you fail and would damage another investigator, this attack deals 1 damage for each point you fail by (to a minimum of 1, to a maximum of 5).".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 2 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 2 }) },
         },
         CardMetadata {
             code: "01030".to_owned(),
@@ -397,7 +397,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +2 [combat] for this attack. If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3 }) },
         },
         CardMetadata {
             code: "01048".to_owned(),
@@ -3229,7 +3229,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] and deal +2 damage for this attack. Cannot be used to attack enemies engaged with you.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3 }) },
         },
         CardMetadata {
             code: "02227".to_owned(),
@@ -3813,7 +3813,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +5 [combat] for this attack. This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3 }) },
         },
         CardMetadata {
             code: "02302".to_owned(),
@@ -3837,7 +3837,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You may spend any number of additional actions when you perform this attack. You get +2 [combat] for this attack for each action being spent (including this ability's [action] cost). This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4 }) },
         },
         CardMetadata {
             code: "02305".to_owned(),

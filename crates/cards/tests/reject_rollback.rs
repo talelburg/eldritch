@@ -56,6 +56,7 @@ fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
             skill_icons: SkillIcons::default(),
             is_fast: false,
             deck_limit: 2,
+            uses: None,
         },
     }))
 }

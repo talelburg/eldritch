@@ -270,23 +270,42 @@ pub enum HealthValue {
 /// Limited-use tokens an asset enters play with ("Uses (4 ammo)").
 /// Spending them is a [`Cost::SpendUses`](crate::dsl::Cost::SpendUses);
 /// depletion blocks the ability that pays in them. Pipeline-parsed from
-/// card text.
+/// card text. The engine's runtime uses-pool is seeded from this on
+/// enter-play.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Uses {
     /// What the tokens are called on the card.
-    pub kind: UsesKind,
+    pub kind: UseKind,
     /// How many the asset enters play with.
     pub count: u8,
 }
 
-/// The named token type an asset's `Uses (N <kind>)` grants. Only the
-/// kinds Slice-1 cards print are modeled; others land as their cards do
-/// (the pipeline warns and emits `None` for an unmodeled kind rather than
-/// silently approximating).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum UsesKind {
-    /// "Uses (N ammo)" — firearms.
+/// A named-uses kind for asset cards that track a finite resource.
+///
+/// Translation of the rulebook's typed-uses taxonomy. Cards declare
+/// what flavor of uses they have ("Uses (3 charges)", "Uses (1 ammo)")
+/// and effects spend them with a [`Cost::SpendUses`](crate::dsl::Cost::SpendUses).
+///
+/// Lives here in `card-dsl` (the lowest layer) so both the printed
+/// metadata ([`Uses`]) and the engine's runtime pool key off one type;
+/// `game_core::state` re-exports it at the historical path.
+///
+/// Phase-3 minimal set; cards using exotic uses (Time on some Dunwich
+/// cards, Resource on a few Mystic effects) add their variant when
+/// they land.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum UseKind {
+    /// Charges — most spell assets (Rite of Seeking, Shrivelling).
+    Charges,
+    /// Ammo — firearms (.38 Special, .45 Automatic).
     Ammo,
+    /// Secrets — Seeker investigation aids (Encyclopedia, Old Book of
+    /// Lore in some cycles).
+    Secrets,
+    /// Supplies — Survivor tools (First Aid in some cycles, expedition
+    /// caches).
+    Supplies,
 }
 
 /// Per-card-type data. The discriminant mirrors [`CardType`] — read it
@@ -561,7 +580,7 @@ mod is_fast_tests {
     #[test]
     fn asset_uses_round_trips() {
         let uses = Some(Uses {
-            kind: UsesKind::Ammo,
+            kind: UseKind::Ammo,
             count: 4,
         });
         let json = serde_json::to_string(&uses).expect("serialize");
