@@ -182,6 +182,13 @@ fn trigger_matches(
         (WindowKind::AfterEnemyAttackDamagedAsset { .. }, EventPattern::EnemyAttackDamagedSelf) => {
             true
         }
+        // `AfterSuccessfulInvestigate` matches `SuccessfullyInvestigated`,
+        // scoped to the controller's own investigation ("after **you**
+        // investigate" — Dr. Milan 01033). (C6a #241.)
+        (
+            WindowKind::AfterSuccessfulInvestigate { investigator },
+            EventPattern::SuccessfullyInvestigated,
+        ) => investigator == controller,
         // PlayerWindow steps open for timing reasons; no
         // Trigger::OnEvent pattern matches them — those windows gate
         // Fast actions, not after-event reactions. AfterEnemyDefeated
@@ -206,10 +213,14 @@ fn trigger_matches(
         // WouldDiscoverClues is matched only by the `discover_clue`
         // interrupt seam, and GameEnd only by `ForcedTriggerPoint::GameEnd`
         // — both seam/forced-only, never player windows (C5a #236).
+        // `AfterSuccessfulInvestigate` matches only `SuccessfullyInvestigated`
+        // (handled above); `AfterLocationInvestigated` is the forced twin,
+        // never matched by a reaction window.
         (
             WindowKind::PlayerWindow(_)
             | WindowKind::AfterEnemyDefeated { .. }
-            | WindowKind::AfterEnemyAttackDamagedAsset { .. },
+            | WindowKind::AfterEnemyAttackDamagedAsset { .. }
+            | WindowKind::AfterSuccessfulInvestigate { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
@@ -222,7 +233,8 @@ fn trigger_matches(
             | EventPattern::AfterLocationInvestigated
             | EventPattern::WouldDiscoverClues
             | EventPattern::GameEnd
-            | EventPattern::EnemyAttackDamagedSelf,
+            | EventPattern::EnemyAttackDamagedSelf
+            | EventPattern::SuccessfullyInvestigated,
         ) => false,
     }
 }
@@ -714,8 +726,12 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
             // re-open (Rules Reference p.24 2.2.1) is deferred to #146.
             PhaseStep::InvestigatorTurnBegins => EngineOutcome::Done,
         },
-        // AfterEnemyDefeated: no continuation work.
-        WindowKind::AfterEnemyDefeated { .. } => EngineOutcome::Done,
+        // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
+        // work. The skill-test driver (which queued the window mid-resolution)
+        // resumes via `close_reaction_window_at`'s in-flight re-entry.
+        WindowKind::AfterEnemyDefeated { .. } | WindowKind::AfterSuccessfulInvestigate { .. } => {
+            EngineOutcome::Done
+        }
         // AfterEnemyAttackDamagedAsset: re-enter the enemy-attack loop the
         // soak window suspended (C5b #237). `resume_enemy_attack` drains
         // the parked remaining attackers and, for the enemy phase, runs

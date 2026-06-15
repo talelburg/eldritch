@@ -632,6 +632,21 @@ fn apply_skill_test_follow_up(
                      validation: {reason}"
                 );
             }
+            // This follow-up runs only on a successful Investigate, so the
+            // success gate of "after you successfully investigate" is
+            // intrinsic. Open the reaction window for those reactions (Dr.
+            // Milan 01033) once the discovery completed — `queue_reaction_window`
+            // no-ops when no matching reaction is in play, so a plain
+            // Investigate is unchanged. A suspended discovery (Cover Up's
+            // before-interrupt, AwaitingInput) resumes through PostFollowUp;
+            // queuing the window across that boundary is out of Slice-1 scope
+            // (Dr. Milan + Cover Up don't co-occur) — `TODO(#212)`.
+            if matches!(outcome, EngineOutcome::Done) {
+                super::reaction_windows::queue_reaction_window(
+                    cx,
+                    crate::state::WindowKind::AfterSuccessfulInvestigate { investigator },
+                );
+            }
             outcome
         }
         SkillTestFollowUp::Fight {
