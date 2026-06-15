@@ -144,18 +144,20 @@ fn mythos_phase_resolves_single_treachery() {
 #[test]
 fn mythos_phase_surge_chains_into_next_card() {
     install_test_registry();
-    let mut base = synthetic::setup();
-    // Deck: surge treachery on top, plain treachery below.
+    let base = synthetic::setup();
+
+    let mut state = setup_at_mythos_draw(base);
+    assert_eq!(state.phase, Phase::Mythos);
+
+    // Seed the controlled draw order *after* StartScenario's shuffle:
+    // surge treachery on top, plain treachery below.
     synthetic::with_encounter_deck(
-        &mut base,
+        &mut state,
         vec![
             CardCode(SYNTH_SURGE_TREACHERY_CODE.into()),
             CardCode(SYNTH_TREACHERY_CODE.into()),
         ],
     );
-
-    let state = setup_at_mythos_draw(base);
-    assert_eq!(state.phase, Phase::Mythos);
 
     let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
 
@@ -249,19 +251,10 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     base.investigators.insert(InvestigatorId(2), inv2);
     base.turn_order.push(InvestigatorId(2));
 
-    // inv1 draws the enemy; inv2 draws a plain treachery afterward.
-    synthetic::with_encounter_deck(
-        &mut base,
-        vec![
-            CardCode(SYNTH_ENEMY_CODE.into()),
-            CardCode(SYNTH_TREACHERY_CODE.into()),
-        ],
-    );
-
     // Drive both investigators through setup into Mythos (mirrors
     // `mythos_phase_multi_investigator_player_order`; `setup_at_mythos_draw`
     // only mulligans inv1 and so can't seat a second investigator).
-    let (state, _) = drive(
+    let (mut state, _) = drive(
         base,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
@@ -279,6 +272,16 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     );
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+
+    // Seed the controlled draw order *after* StartScenario's shuffle:
+    // inv1 draws the enemy; inv2 draws a plain treachery afterward.
+    synthetic::with_encounter_deck(
+        &mut state,
+        vec![
+            CardCode(SYNTH_ENEMY_CODE.into()),
+            CardCode(SYNTH_TREACHERY_CODE.into()),
+        ],
+    );
 
     // Draw → spawn tie → suspend.
     let suspended = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
@@ -456,21 +459,11 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     base.investigators.insert(InvestigatorId(2), inv2);
     base.turn_order.push(InvestigatorId(2));
 
-    // Deck: surge on top, then two plain treacheries.
-    synthetic::with_encounter_deck(
-        &mut base,
-        vec![
-            CardCode(SYNTH_SURGE_TREACHERY_CODE.into()),
-            CardCode(SYNTH_TREACHERY_CODE.into()),
-            CardCode(SYNTH_TREACHERY_CODE.into()),
-        ],
-    );
-
     let inv1 = InvestigatorId(1);
     let inv2 = InvestigatorId(2);
 
     // StartScenario + mulligan both investigators + both EndTurns.
-    let (state, _) = drive(
+    let (mut state, _) = drive(
         base,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
@@ -491,6 +484,17 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
 
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(state.mythos_draw_pending, Some(inv1), "inv1 draws first");
+
+    // Seed the controlled draw order *after* StartScenario's shuffle:
+    // surge on top, then two plain treacheries.
+    synthetic::with_encounter_deck(
+        &mut state,
+        vec![
+            CardCode(SYNTH_SURGE_TREACHERY_CODE.into()),
+            CardCode(SYNTH_TREACHERY_CODE.into()),
+            CardCode(SYNTH_TREACHERY_CODE.into()),
+        ],
+    );
 
     // inv1 draws: surge chain pulls TWO cards (surge + plain treachery).
     let result1 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));

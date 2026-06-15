@@ -42,6 +42,50 @@ fn act_clue_threshold(code: &str) -> u8 {
     }
 }
 
+/// The encounter-deck card codes for The Gathering, grouped by the six
+/// encounter sets the campaign guide gathers (Night of the Zealot guide
+/// p.2: "The Gathering, Rats, Ghouls, Striking Fear, Ancient Evils, and
+/// Chilling Cold"). Listed by distinct code; each is pushed at its printed
+/// corpus quantity. The set membership comes from the guide because the
+/// corpus does not carry `encounter_code`.
+///
+/// **Set-aside cards are absent by construction:** the Ghoul Priest
+/// (`01116`) and Lita Chantler (`01117`) are set aside, and the scenario's
+/// structural cards (reference `01104`, acts, agendas, locations) are not
+/// encounter cards — none appear here.
+const ENCOUNTER_DECK_CODES: &[&str] = &[
+    // The Gathering (own set) — encounter enemies only (Ghoul Priest +
+    // Lita are set aside).
+    "01118", // Flesh-Eater
+    "01119", // Icy Ghoul
+    // Rats
+    "01159", // Swarm of Rats
+    // Ghouls
+    "01160", // Ghoul Minion
+    "01161", // Ravenous Ghoul
+    "01162", // Grasping Hands
+    // Striking Fear
+    "01163", // Rotting Remains
+    "01164", // Frozen in Fear
+    "01165", // Dissonant Voices
+    // Ancient Evils
+    "01166", // Ancient Evils
+    // Chilling Cold
+    "01167", // Crypt Chill
+    "01168", // Obscuring Fog
+];
+
+/// Read an encounter card's printed quantity (how many copies the
+/// encounter deck holds) from the corpus. Encounter cards are enemies or
+/// treacheries; anything else here is a coding error in
+/// [`ENCOUNTER_DECK_CODES`].
+fn encounter_quantity(code: &str) -> u8 {
+    match cards::by_code(code).expect("encounter card in corpus").kind {
+        CardKind::Enemy { quantity, .. } | CardKind::Treachery { quantity, .. } => quantity,
+        ref k => panic!("{code} is not an encounter card (enemy/treachery): {k:?}"),
+    }
+}
+
 /// String id used to look this module up in [`crate::REGISTRY`].
 pub const ID: &str = "the-gathering";
 
@@ -205,6 +249,17 @@ pub fn setup() -> GameState {
             }),
         },
     ];
+
+    // Encounter deck: each gathered set's enemy/treachery cards at their
+    // printed quantity, in deterministic construction order. `StartScenario`
+    // shuffles it with the scenario-start RNG (Rules Reference: the
+    // encounter deck is shuffled at setup), so this seeding order isn't
+    // load-bearing for play — only for replay determinism before the shuffle.
+    for &code in ENCOUNTER_DECK_CODES {
+        for _ in 0..encounter_quantity(code) {
+            state.encounter_deck.push_back(CardCode(code.into()));
+        }
+    }
 
     state
 }
@@ -375,5 +430,55 @@ mod tests {
         tokens.sort_by_key(|t| format!("{t:?}"));
         expected.sort_by_key(|t| format!("{t:?}"));
         assert_eq!(tokens, expected, "Standard NotZ bag is 16 tokens");
+    }
+
+    /// The encounter deck is the six gathered sets' enemy/treachery cards
+    /// at their printed quantities, minus the set-aside Ghoul Priest and
+    /// Lita. Sets (campaign guide p.2): The Gathering, Rats, Ghouls,
+    /// Striking Fear, Ancient Evils, Chilling Cold.
+    #[test]
+    fn setup_assembles_encounter_deck_from_the_six_sets() {
+        let state = setup();
+        let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for code in &state.encounter_deck {
+            *counts.entry(code.as_str()).or_default() += 1;
+        }
+        let expected = [
+            ("01118", 1usize),
+            ("01119", 1), // The Gathering enemies (Flesh-Eater, Icy Ghoul)
+            ("01159", 3), // Rats
+            ("01160", 3),
+            ("01161", 1),
+            ("01162", 3), // Ghouls
+            ("01163", 3),
+            ("01164", 2),
+            ("01165", 2), // Striking Fear
+            ("01166", 3), // Ancient Evils
+            ("01167", 2),
+            ("01168", 2), // Chilling Cold
+        ];
+        let mut total = 0;
+        for (code, qty) in expected {
+            assert_eq!(
+                counts.get(code).copied().unwrap_or(0),
+                qty,
+                "count of {code}"
+            );
+            total += qty;
+        }
+        assert_eq!(
+            state.encounter_deck.len(),
+            total,
+            "no extra encounter cards"
+        );
+        // Set-aside cards are NOT shuffled into the encounter deck.
+        assert!(
+            !state.encounter_deck.contains(&CardCode("01116".into())),
+            "Ghoul Priest (01116) is set aside",
+        );
+        assert!(
+            !state.encounter_deck.contains(&CardCode("01117".into())),
+            "Lita Chantler (01117) is set aside",
+        );
     }
 }

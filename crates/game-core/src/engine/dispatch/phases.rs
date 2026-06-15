@@ -146,6 +146,13 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         super::cards::draw_cards(cx, inv_id, super::cards::INITIAL_HAND_SIZE);
     }
 
+    // Shuffle the shared encounter deck with the same scenario-start RNG
+    // (Rules Reference p.21: the encounter deck is shuffled during setup).
+    // `setup()` seeds it in deterministic construction order; this is the
+    // single randomizing step. A <2-card deck (the synthetic test fixture)
+    // shuffles to a no-op (no event).
+    super::encounter::shuffle_encounter_deck(cx);
+
     // Seed the mulligan cursor to the first Active investigator in
     // player order. Each investigator submits a single
     // `PlayerAction::Mulligan` in turn; the cursor advances after each
@@ -3448,6 +3455,37 @@ mod start_scenario_tests {
     // fake. Either way it rejects; the registry-backed happy and
     // unknown-code paths are pinned deterministically by the
     // `crates/cards` integration test, which installs `cards::REGISTRY`.
+    /// `StartScenario` shuffles the shared encounter deck (like the player
+    /// decks) with the scenario-start RNG: the deck's multiset is preserved
+    /// and `EncounterDeckShuffled` fires.
+    #[test]
+    fn start_scenario_shuffles_the_encounter_deck() {
+        use crate::state::CardCode;
+        let id = crate::state::InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .build();
+        let codes = ["e1", "e2", "e3", "e4", "e5"];
+        state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        crate::assert_event!(result.events, crate::event::Event::EncounterDeckShuffled);
+        let mut after: Vec<&str> = result
+            .state
+            .encounter_deck
+            .iter()
+            .map(CardCode::as_str)
+            .collect();
+        after.sort_unstable();
+        assert_eq!(after, codes, "shuffle preserves the deck's contents");
+    }
+
     #[test]
     fn start_scenario_rejects_unresolvable_roster_entry() {
         let state = GameStateBuilder::new().build();
