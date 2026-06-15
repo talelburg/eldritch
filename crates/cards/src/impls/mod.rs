@@ -30,6 +30,14 @@
 //! - Hyperawareness (01034) — two `Trigger::Activated { action_cost: 0 }`
 //!   abilities with `Cost::Resources(1)` and `ThisSkillTest`-scoped
 //!   `Modify`.
+//! - .45 Automatic (01016) — `Trigger::Activated { action_cost: 1 }`,
+//!   `Cost::SpendUses(Ammo)` + `Effect::Fight` (flat +1 combat, +1 damage).
+//! - Physical Training (01017) — two `Trigger::Activated { action_cost: 0 }`
+//!   abilities (`Cost::Resources(1)`, `ThisSkillTest` `Modify`), willpower
+//!   / combat (the Hyperawareness shape).
+//! - Machete (01020) — bare `Trigger::Activated { action_cost: 1 }` +
+//!   `Effect::Fight` (flat +1 combat, +1 damage; conditional-damage caveat
+//!   in the impl, TODO(#300)).
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `DealHorror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
@@ -58,12 +66,15 @@ pub mod agenda_01105;
 pub mod agenda_01106;
 pub mod agenda_01107;
 pub mod attic;
+pub mod automatic_45;
 pub mod cellar;
 pub mod deduction;
 pub mod guard_dog;
 pub mod holy_rosary;
 pub mod hyperawareness;
+pub mod machete;
 pub mod magnifying_glass;
+pub mod physical_training;
 pub mod roland_38_special;
 pub mod roland_banks;
 pub mod treachery_01007;
@@ -88,12 +99,15 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         agenda_01106::CODE => Some(agenda_01106::abilities()),
         agenda_01107::CODE => Some(agenda_01107::abilities()),
         attic::CODE => Some(attic::abilities()),
+        automatic_45::CODE => Some(automatic_45::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
         guard_dog::CODE => Some(guard_dog::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
+        machete::CODE => Some(machete::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
+        physical_training::CODE => Some(physical_training::abilities()),
         roland_38_special::CODE => Some(roland_38_special::abilities()),
         roland_banks::CODE => Some(roland_banks::abilities()),
         treachery_01007::CODE => Some(treachery_01007::abilities()),

@@ -140,18 +140,25 @@ mod tests {
         // Phase-3 #38: Hyperawareness (01034).
         // Phase-3 #39: Deduction (01039).
         // Phase-3 #55: Roland Banks (01001).
+        // Phase-7 C5d #239: .45 Automatic (01016), Physical Training
+        // (01017), Machete (01020).
         assert!(is_playable("01037"));
         assert!(is_playable("01059"));
         assert!(is_playable("01030"));
         assert!(is_playable("01034"));
         assert!(is_playable("01039"));
         assert!(is_playable("01001"));
+        assert!(is_playable("01016"));
+        assert!(is_playable("01017"));
+        assert!(is_playable("01020"));
     }
 
     #[test]
     fn unimplemented_cards_are_not_playable() {
-        // Phase-3 doesn't touch most of the corpus.
-        assert!(!is_playable("01017")); // Physical Training
+        // Most of the corpus is still unimplemented. Fire Axe (02032)
+        // is far-future Dunwich content (Phase 10), so it stays a
+        // stable unimplemented canary as Core assets land.
+        assert!(!is_playable("02032")); // Fire Axe (Dunwich, Phase 10)
         assert!(!is_playable("99999")); // unknown code
     }
 

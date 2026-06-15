@@ -30,11 +30,12 @@ const HOLY_ROSARY: &str = "01059";
 /// at your location."
 const WORKING_A_HUNCH: &str = "01037";
 
-/// Physical Training (01017) — Guardian Talent asset, in the corpus
-/// but unimplemented. Not on the Phase-3 roadmap (waits for later
-/// cycles' broader asset coverage). Used as the "unimplemented but
-/// known" rejection case.
-const UNIMPLEMENTED_ASSET: &str = "01017";
+/// Fire Axe (02032) — a Dunwich Legacy Survivor weapon asset, in the
+/// corpus but unimplemented. Chosen as the "unimplemented but known"
+/// rejection canary precisely because it's far-future content (the
+/// Dunwich cycle is Phase 10), so it stays unimplemented long after
+/// the Core Set assets land and won't churn this test.
+const UNIMPLEMENTED_ASSET: &str = "02032";
 
 /// Magnifying Glass (01030) — Seeker Hand-slot, deck-limit 2. Two
 /// copies in play simultaneously is rules-valid (one Hand slot each,
