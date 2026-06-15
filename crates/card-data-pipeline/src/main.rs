@@ -242,6 +242,9 @@ struct NormalizedCard {
     /// Limited-use tokens parsed from a `Uses (N <kind>)` clause, as
     /// `(count, UsesKind-variant-name)`. `None` when absent or unmodeled.
     uses: Option<(u8, &'static str)>,
+    /// "Max N committed per skill test" cap, parsed from text. `None` when
+    /// uncapped. Skill-only in scope.
+    commit_limit: Option<u8>,
     // Encounter-card stats. `clues` is a location's starting clues AND an
     // act's advance threshold (same JSON field); consumer interprets by kind.
     shroud: Option<u8>,
@@ -292,6 +295,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
     let prey = raw.text.as_deref().map_or(PreyParse::None, parse_prey);
     let spawn_name = raw.text.as_deref().and_then(parse_spawn_name);
     let uses = raw.text.as_deref().and_then(parse_uses);
+    let commit_limit = raw.text.as_deref().and_then(parse_commit_limit);
 
     Ok(NormalizedCard {
         code: raw.code,
@@ -315,6 +319,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         pack_code: raw.pack_code,
         is_fast,
         uses,
+        commit_limit,
         shroud: raw.shroud,
         clues: raw.clues,
         clues_fixed: raw.clues_fixed.unwrap_or(false),
@@ -508,11 +513,13 @@ fn render_kind(c: &NormalizedCard) -> String {
             c.deck_limit,
         ),
         "Skill" => format!(
-            "CardKind::Skill {{ class: Class::{}, xp: {}, skill_icons: {}, deck_limit: {} }}",
+            "CardKind::Skill {{ class: Class::{}, xp: {}, skill_icons: {}, deck_limit: {}, \
+             commit_limit: {} }}",
             c.class,
             opt_u8(c.xp),
             icons,
             c.deck_limit,
+            opt_u8(c.commit_limit),
         ),
         "Enemy" => format!(
             "CardKind::Enemy {{ fight: {}, evade: {}, damage: {}, horror: {}, \
@@ -639,6 +646,17 @@ fn parse_uses(text: &str) -> Option<(u8, &'static str)> {
     Some((count, variant))
 }
 
+/// Parse a printed `Max N committed per skill test` clause into the cap
+/// `N`. Returns `None` when absent (the card is uncapped). The phrase is
+/// fixed across the cards that carry it, so a literal scan suffices.
+fn parse_commit_limit(text: &str) -> Option<u8> {
+    let plain = strip_html_bold(text);
+    let start = plain.find("Max ")? + "Max ".len();
+    let inner = &plain[start..];
+    let end = inner.find(" committed per skill test")?;
+    inner[..end].trim().parse().ok()
+}
+
 /// Parsed Prey line. `None` = no printed prey (emit `Prey::Default`);
 /// `Unrecognized` = a "Prey - …" form we don't model yet (emit
 /// `Prey::Default` + warn, matching `surge`/`peril`'s default-stub).
@@ -753,8 +771,8 @@ const GENERATED_HEADER: &str = "\
 mod tests {
     use super::{
         clue_value_lit, emit_card, has_keyword, health_value_opt_lit, map_card_type, map_class,
-        normalize, parse_prey, parse_slots, parse_spawn_name, parse_traits, parse_uses, prey_lit,
-        process_raw, strip_html_bold, NormalizedCard, PreyParse, RawCard,
+        normalize, parse_commit_limit, parse_prey, parse_slots, parse_spawn_name, parse_traits,
+        parse_uses, prey_lit, process_raw, strip_html_bold, NormalizedCard, PreyParse, RawCard,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -787,6 +805,22 @@ mod tests {
         assert_eq!(parse_uses("Some other card text."), None);
         // Genuinely unmodeled kind → None (with a build warning).
         assert_eq!(parse_uses("Uses (4 time)."), None);
+    }
+
+    #[test]
+    fn parse_commit_limit_reads_max_committed_clause() {
+        assert_eq!(
+            parse_commit_limit(
+                "Max 1 committed per skill test.\nIf this test is successful, draw 1 card."
+            ),
+            Some(1u8),
+        );
+        assert_eq!(
+            parse_commit_limit("Max 2 committed per skill test."),
+            Some(2u8)
+        );
+        // No clause → None (uncapped).
+        assert_eq!(parse_commit_limit("Practiced. 1 [intellect] icon."), None);
     }
 
     #[test]
@@ -923,6 +957,7 @@ mod tests {
             pack_code: "core".into(),
             is_fast: false,
             uses: None,
+            commit_limit: None,
             shroud: None,
             clues: None,
             clues_fixed: false,

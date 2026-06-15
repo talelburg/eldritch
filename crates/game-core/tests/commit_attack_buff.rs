@@ -43,6 +43,7 @@ fn skill_metadata() -> CardMetadata {
                 ..SkillIcons::default()
             },
             deck_limit: 2,
+            commit_limit: None,
         },
     }
 }

@@ -5,7 +5,7 @@
 //! the resolution driver ([`drive_skill_test`]), and all supporting
 //! helpers.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::card_registry;
 use crate::dsl::{discover_clue, LocationTarget, SkillTestKind, Trigger};
@@ -393,6 +393,36 @@ fn validate_commit_indices(
                 .expect("bounds check above guarantees i < hand_len <= u8::MAX (see #111)"),
         );
     }
+
+    // Enforce per-card "Max N committed per skill test" caps (#311). The
+    // limit is printed metadata (`CardKind::Skill.commit_limit`); a card
+    // with no cap, or no registry entry, is unconstrained. No-op without an
+    // installed registry — engine-only tests that don't touch card data
+    // never commit real cards, mirroring `sum_skill_value`.
+    if let Some(reg) = card_registry::current() {
+        let mut counts: BTreeMap<&CardCode, u8> = BTreeMap::new();
+        for &i in &indices_u8 {
+            *counts.entry(&inv.hand[usize::from(i)]).or_insert(0) += 1;
+        }
+        for (code, count) in counts {
+            let cap = (reg.metadata_for)(code).and_then(|m| match m.kind {
+                crate::card_data::CardKind::Skill { commit_limit, .. } => commit_limit,
+                _ => None,
+            });
+            if let Some(limit) = cap {
+                if count > limit {
+                    return Err(EngineOutcome::Rejected {
+                        reason: format!(
+                            "CommitCards: {code} allows at most {limit} committed per skill \
+                             test, but {count} were committed"
+                        )
+                        .into(),
+                    });
+                }
+            }
+        }
+    }
+
     Ok(indices_u8)
 }
 
