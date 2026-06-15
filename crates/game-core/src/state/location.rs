@@ -6,9 +6,10 @@ use card_dsl::card_data::ClueValue;
 
 use super::card::{CardCode, CardInPlay};
 
-/// Stable identifier for a location within a scenario.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct LocationId(pub u32);
+crate::state::define_id! {
+    /// Stable identifier for a location within a scenario.
+    pub struct LocationId;
+}
 
 /// A location in the current scenario.
 ///

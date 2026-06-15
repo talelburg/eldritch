@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 use super::{card::CardCode, investigator::InvestigatorId, location::LocationId};
 use crate::card_data::Prey;
 
-/// Stable identifier for an enemy within a scenario.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct EnemyId(pub u32);
+crate::state::define_id! {
+    /// Stable identifier for an enemy within a scenario.
+    pub struct EnemyId;
+}
 
 /// An enemy in play during a scenario.
 ///

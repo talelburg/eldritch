@@ -78,17 +78,16 @@ pub enum Zone {
     LocationAttachment,
 }
 
-/// Unique identifier for a specific copy of a card in play.
-///
-/// Assigned by the engine when a card enters play (via the per-state
-/// [`next_card_instance_id`](crate::state::GameState::next_card_instance_id)
-/// counter). Lets card effects target a specific copy when an
-/// investigator has multiple of the same card in play (e.g. two
-/// copies of Magnifying Glass — exhausting one shouldn't exhaust the
-/// other).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct CardInstanceId(pub u32);
+crate::state::define_id! {
+    /// Unique identifier for a specific copy of a card in play.
+    ///
+    /// Minted by the engine when a card enters play (via the per-state
+    /// `card_instance_ids` [`Counter`](crate::state::Counter)). Lets card
+    /// effects target a specific copy when an investigator has multiple of
+    /// the same card in play (e.g. two copies of Magnifying Glass —
+    /// exhausting one shouldn't exhaust the other).
+    pub struct CardInstanceId;
+}
 
 // `UseKind` is defined in `card-dsl` (the lowest layer) so the printed
 // metadata (`card_data::Uses`) and this runtime pool share one type;

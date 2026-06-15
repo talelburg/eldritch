@@ -405,7 +405,7 @@ pub(super) fn spawn_enemy_at(
     //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
     //    `engage_enemy_with` so the `EnemyEngaged` event always pairs with
     //    the mutation.
-    let enemy_id = cx.state.mint_enemy_id();
+    let enemy_id = cx.state.enemy_ids.mint();
 
     let enemy = Enemy {
         id: enemy_id,

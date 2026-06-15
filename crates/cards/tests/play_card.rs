@@ -127,7 +127,7 @@ fn asset_enters_play_with_instance_id_from_state_counter() {
     use game_core::state::CardInstanceId;
 
     let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
-    assert_eq!(state.next_card_instance_id, 0, "counter starts at 0");
+    assert_eq!(state.card_instance_ids.peek(), 0, "counter starts at 0");
 
     let result = apply(
         state,
@@ -146,7 +146,8 @@ fn asset_enters_play_with_instance_id_from_state_counter() {
         "first asset gets id 0",
     );
     assert_eq!(
-        result.state.next_card_instance_id, 1,
+        result.state.card_instance_ids.peek(),
+        1,
         "counter advances after assigning",
     );
 }
@@ -183,7 +184,8 @@ fn two_copies_of_magnifying_glass_get_distinct_instance_ids() {
     assert_eq!(in_play[0].instance_id, CardInstanceId(0));
     assert_eq!(in_play[1].instance_id, CardInstanceId(1));
     assert_eq!(
-        after_second.state.next_card_instance_id, 2,
+        after_second.state.card_instance_ids.peek(),
+        2,
         "counter advances once per play",
     );
 }

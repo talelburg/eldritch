@@ -75,7 +75,7 @@ pub struct Investigator {
     /// per-instance state (exhaust, named-uses, accumulated horror /
     /// damage on the asset itself). Instance ids are assigned by the
     /// engine from
-    /// [`GameState::next_card_instance_id`](crate::state::GameState::next_card_instance_id)
+    /// [`GameState::card_instance_ids`](crate::state::GameState::card_instance_ids)
     /// at enter-play time so duplicate codes are still individually
     /// addressable.
     pub cards_in_play: Vec<CardInPlay>,

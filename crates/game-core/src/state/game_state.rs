@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     card::{CardCode, CardInstanceId},
     chaos_bag::{ChaosBag, TokenModifiers},
+    counter::Counter,
     enemy::{Enemy, EnemyId},
     investigator::{Investigator, InvestigatorId},
     location::{Location, LocationId},
@@ -101,27 +102,16 @@ pub struct GameState {
     ///   setup ends and the Investigation phase begins. While `Some`,
     ///   the engine rejects every non-Mulligan player action.
     pub mulligan_pending: Option<InvestigatorId>,
-    /// Monotonic counter for assigning [`CardInstanceId`]s when cards
-    /// enter play. Starts at 0 and increments after each assignment;
-    /// guarantees uniqueness within a scenario and deterministic ids
-    /// across replays.
-    pub next_card_instance_id: u32,
-    /// Monotonic counter for assigning [`EnemyId`]s when enemies
-    /// enter play via the encounter deck (see
-    /// `crate::engine::dispatch::spawn_enemy`). Starts at 0 and
-    /// increments after each assignment; guarantees uniqueness within
-    /// a scenario and deterministic ids across replays.
-    ///
-    /// Distinct from [`next_card_instance_id`](Self::next_card_instance_id)
-    /// because [`EnemyId`] and [`CardInstanceId`] are distinct types —
-    /// enemies aren't tracked in the `CardInPlay` registry.
-    pub next_enemy_id: u32,
-    /// Monotonic counter for assigning [`LocationId`]s when scenarios
-    /// build their board via `add_location` / `add_set_aside_location`
-    /// (added in a later task). Starts at 0 and increments after each
-    /// assignment; guarantees uniqueness within a scenario and
-    /// deterministic ids across replays.
-    pub next_location_id: u32,
+    /// Allocator for [`CardInstanceId`]s, minted when cards enter play.
+    /// Deterministic across replays; serializes as a bare `u32`.
+    pub card_instance_ids: Counter<CardInstanceId>,
+    /// Allocator for [`EnemyId`]s, minted when enemies enter play via the
+    /// encounter deck (see `crate::engine::dispatch::spawn_enemy`).
+    /// Independent of [`card_instance_ids`](Self::card_instance_ids) — the
+    /// phantom-typed [`Counter`] mints only `EnemyId`s.
+    pub enemy_ids: Counter<EnemyId>,
+    /// Allocator for [`LocationId`]s, minted as scenarios build their board.
+    pub location_ids: Counter<LocationId>,
     /// In-flight skill modifiers contributed by activated / triggered
     /// abilities with [`ModifierScope::ThisSkillTest`] scope.
     /// Accumulates between activation and skill-test resolution; the
@@ -976,30 +966,7 @@ pub struct PendingSkillModifier {
     pub source: Option<CardInstanceId>,
 }
 
-/// Read a monotonic `u32` id counter, advance it (saturating), and wrap
-/// the pre-increment value in its newtype. The single read-then-increment
-/// point shared by every `GameState::mint_*_id`; the newtype constructor
-/// (`CardInstanceId` / `EnemyId` / `LocationId`) is the per-type bridge.
-fn mint_id<T>(counter: &mut u32, wrap: impl FnOnce(u32) -> T) -> T {
-    let id = wrap(*counter);
-    *counter = counter.saturating_add(1);
-    id
-}
-
 impl GameState {
-    /// Mint the next [`CardInstanceId`] and advance the counter. The one
-    /// place card-instance ids are allocated — call this instead of
-    /// hand-rolling the read-then-increment.
-    pub fn mint_card_instance_id(&mut self) -> CardInstanceId {
-        mint_id(&mut self.next_card_instance_id, CardInstanceId)
-    }
-
-    /// Mint the next [`EnemyId`] and advance the counter. The one place
-    /// enemy ids are allocated.
-    pub fn mint_enemy_id(&mut self) -> EnemyId {
-        mint_id(&mut self.next_enemy_id, EnemyId)
-    }
-
     /// The topmost open window that has unresolved reaction triggers,
     /// if any. Used by the dispatcher's "is reaction work pending?"
     /// guards. Pure Fast-gating windows (empty `pending_triggers`)
@@ -1046,12 +1013,6 @@ impl GameState {
             .rposition(|w| !w.pending_triggers.is_empty())
     }
 
-    /// Mint a fresh, deterministic [`LocationId`] (sequential from
-    /// `next_location_id`).
-    fn mint_location_id(&mut self) -> LocationId {
-        mint_id(&mut self.next_location_id, LocationId)
-    }
-
     /// Build a [`Location`] from its card `metadata`, minting a fresh id.
     /// Panics if `metadata` is not a `Location` card (a build-time
     /// invariant — scenarios hand their own location cards).
@@ -1067,7 +1028,7 @@ impl GameState {
                 metadata.code
             ),
         };
-        let id = self.mint_location_id();
+        let id = self.location_ids.mint();
         Location {
             id,
             code: CardCode::new(metadata.code.clone()),
@@ -1218,22 +1179,23 @@ mod fast_actor_scope_tests {
 }
 
 #[cfg(test)]
-mod next_location_id_tests {
+mod location_id_counter_tests {
     use crate::test_support::GameStateBuilder;
 
     #[test]
-    fn game_state_starts_next_location_id_at_zero() {
+    fn game_state_starts_location_ids_at_zero() {
         let state = GameStateBuilder::new().build();
-        assert_eq!(state.next_location_id, 0);
+        assert_eq!(state.location_ids.peek(), 0);
     }
 
     #[test]
-    fn next_location_id_round_trips_through_serde() {
+    fn location_ids_round_trip_through_serde() {
+        use crate::state::Counter;
         let mut state = GameStateBuilder::new().build();
-        state.next_location_id = 7;
+        state.location_ids = Counter::at(7);
         let json = serde_json::to_string(&state).expect("serialize");
         let back: crate::state::GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.next_location_id, 7);
+        assert_eq!(back.location_ids.peek(), 7);
     }
 }
 
@@ -1249,38 +1211,38 @@ mod clue_interrupt_pending_tests {
 }
 
 #[cfg(test)]
-mod next_enemy_id_tests {
+mod id_counter_tests {
     use super::*;
     use crate::test_support::GameStateBuilder;
 
     #[test]
-    fn game_state_has_next_enemy_id_counter_starting_at_zero() {
+    fn game_state_starts_enemy_ids_at_zero() {
         let state = GameStateBuilder::new().build();
-        assert_eq!(state.next_enemy_id, 0);
+        assert_eq!(state.enemy_ids.peek(), 0);
     }
 
     #[test]
-    fn next_enemy_id_round_trips_through_serde() {
+    fn enemy_ids_round_trip_through_serde() {
         let mut state = GameStateBuilder::new().build();
-        state.next_enemy_id = 42;
+        state.enemy_ids = Counter::at(42);
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.next_enemy_id, 42);
+        assert_eq!(back.enemy_ids.peek(), 42);
     }
 
     #[test]
-    fn mint_helpers_allocate_monotonically_from_independent_counters() {
+    fn each_id_counter_mints_independently() {
         let mut state = GameStateBuilder::new().build();
-        assert_eq!(state.mint_card_instance_id(), CardInstanceId(0));
-        assert_eq!(state.mint_card_instance_id(), CardInstanceId(1));
+        assert_eq!(state.card_instance_ids.mint(), CardInstanceId(0));
+        assert_eq!(state.card_instance_ids.mint(), CardInstanceId(1));
         // Each id type draws from its own counter — minting one doesn't
-        // disturb the others (all three delegate to the same `mint_id`).
-        assert_eq!(state.mint_enemy_id(), EnemyId(0));
-        assert_eq!(state.mint_location_id(), LocationId(0));
-        assert_eq!(state.mint_enemy_id(), EnemyId(1));
-        assert_eq!(state.next_card_instance_id, 2);
-        assert_eq!(state.next_enemy_id, 2);
-        assert_eq!(state.next_location_id, 1);
+        // disturb the others.
+        assert_eq!(state.enemy_ids.mint(), EnemyId(0));
+        assert_eq!(state.location_ids.mint(), LocationId(0));
+        assert_eq!(state.enemy_ids.mint(), EnemyId(1));
+        assert_eq!(state.card_instance_ids.peek(), 2);
+        assert_eq!(state.enemy_ids.peek(), 2);
+        assert_eq!(state.location_ids.peek(), 1);
     }
 }
 
@@ -1474,7 +1436,7 @@ mod add_location_tests {
             crate::card_data::ClueValue::PerInvestigator(2)
         );
         assert!(study.connections.is_empty());
-        assert_eq!(state.next_location_id, 2, "counter advanced twice");
+        assert_eq!(state.location_ids.peek(), 2, "counter advanced twice");
     }
 
     #[test]

@@ -21,7 +21,7 @@ use super::Cx;
 ///
 /// [#296]: https://github.com/talelburg/eldritch/issues/296
 pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode) -> CardInPlay {
-    let instance_id = cx.state.mint_card_instance_id();
+    let instance_id = cx.state.card_instance_ids.mint();
     let uses = crate::card_registry::current()
         .and_then(|reg| (reg.metadata_for)(&code))
         .and_then(|m| match &m.kind {
