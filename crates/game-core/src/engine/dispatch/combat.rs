@@ -18,7 +18,7 @@ use super::Cx;
 /// today; will be reused by future damage-dealing card effects.
 /// Public entry point for card effects to deal damage to an enemy.
 ///
-/// A thin wrapper over [`damage_enemy`] (which is crate-internal) so the
+/// A thin wrapper over `damage_enemy` (which is crate-internal) so the
 /// `cards` crate can resolve `Effect::Native` retaliate effects — first
 /// consumer: Guard Dog 01021's "Deal 1 damage to the attacking enemy."
 /// Reusing `damage_enemy` means a card that defeats its target here runs
