@@ -179,10 +179,9 @@ fn trigger_matches(
         // reaches `trigger_matches` for this window kind). Sole consumer:
         // Guard Dog 01021's "deal 1 damage to the attacking enemy"
         // reaction. (C5b #237.)
-        (
-            WindowKind::AfterEnemyAttackDamagedAsset { .. },
-            EventPattern::EnemyAttackDamagedSelf,
-        ) => true,
+        (WindowKind::AfterEnemyAttackDamagedAsset { .. }, EventPattern::EnemyAttackDamagedSelf) => {
+            true
+        }
         // PlayerWindow steps open for timing reasons; no
         // Trigger::OnEvent pattern matches them — those windows gate
         // Fast actions, not after-event reactions. AfterEnemyDefeated
@@ -1150,16 +1149,34 @@ mod trigger_matches_tests {
 
         // The soak-self pattern must match the soak window. (C5b #237.)
         assert!(
-            trigger_matches(kind, &EventPattern::EnemyAttackDamagedSelf, EventTiming::After, controller),
+            trigger_matches(
+                kind,
+                &EventPattern::EnemyAttackDamagedSelf,
+                EventTiming::After,
+                controller
+            ),
             "AfterEnemyAttackDamagedAsset must match EnemyAttackDamagedSelf"
         );
         // No other pattern matches this window kind.
         assert!(
-            !trigger_matches(kind, &EventPattern::EnemyDefeated { by_controller: false, code: None }, EventTiming::After, controller),
+            !trigger_matches(
+                kind,
+                &EventPattern::EnemyDefeated {
+                    by_controller: false,
+                    code: None
+                },
+                EventTiming::After,
+                controller
+            ),
             "AfterEnemyAttackDamagedAsset must not match EnemyDefeated"
         );
         assert!(
-            !trigger_matches(kind, &EventPattern::EnemyAttackDamagedSelf, EventTiming::Before, controller),
+            !trigger_matches(
+                kind,
+                &EventPattern::EnemyAttackDamagedSelf,
+                EventTiming::Before,
+                controller
+            ),
             "Before timing must never match (no Before reaction windows yet)"
         );
         // Instance-filter (only the keyed `asset` instance fires, not every
