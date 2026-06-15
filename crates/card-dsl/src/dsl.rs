@@ -612,6 +612,16 @@ pub enum Effect {
         /// Bonus damage beyond the base 1 (.38 Special: +1).
         extra_damage: u8,
     },
+    /// Draw `count` cards for the resolved target investigator —
+    /// "draw 1 card" (Guts 01089, Perception 01090, Overpower 01091,
+    /// Manual Dexterity 01092). `count == 0` is a no-op. Deck-out (drawing
+    /// from an empty deck) follows the engine's existing `draw_cards`
+    /// behavior; the elimination consequence is out of this primitive's
+    /// scope.
+    DrawCards {
+        target: InvestigatorTarget,
+        count: u8,
+    },
     /// Add `N` to the in-flight skill test's bonus attack damage —
     /// Vicious Blow 01025's "that attack deals +1 damage." Accumulated at
     /// commit time (under [`Trigger::OnCommit`]) onto the in-flight
@@ -994,6 +1004,12 @@ pub fn boost_attack_damage(amount: u8) -> Effect {
     Effect::BoostAttackDamage(amount)
 }
 
+/// Build an [`Effect::DrawCards`] drawing `count` cards for `target`.
+#[must_use]
+pub fn draw_cards(target: InvestigatorTarget, count: u8) -> Effect {
+    Effect::DrawCards { target, count }
+}
+
 /// Build an [`Effect::Modify`].
 #[must_use]
 pub fn modify(stat: Stat, delta: i8, scope: ModifierScope) -> Effect {
@@ -1361,6 +1377,23 @@ mod tests {
     fn boost_attack_damage_round_trips_through_serde_json() {
         let effect = boost_attack_damage(1);
         assert_eq!(effect, Effect::BoostAttackDamage(1));
+        let json = serde_json::to_string(&effect).expect("serialize");
+        let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(effect, recovered);
+    }
+
+    /// `Effect::DrawCards` (Guts/Perception/… "draw 1 card") round-trips
+    /// through serde, and the builder constructs the variant.
+    #[test]
+    fn draw_cards_round_trips_through_serde_json() {
+        let effect = draw_cards(InvestigatorTarget::You, 1);
+        assert_eq!(
+            effect,
+            Effect::DrawCards {
+                target: InvestigatorTarget::You,
+                count: 1,
+            },
+        );
         let json = serde_json::to_string(&effect).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(effect, recovered);
