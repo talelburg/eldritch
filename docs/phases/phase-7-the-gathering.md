@@ -4,46 +4,9 @@
 
 🛠️ **Slice 1 in progress** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216)).
 Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
-(the Gathering content) is decomposed into sub-slices C1–C7
-([#227](https://github.com/talelburg/eldritch/issues/227)–[#245](https://github.com/talelburg/eldritch/issues/245),
-kickoff [#246](https://github.com/talelburg/eldritch/issues/246)). Shipped:
-C1a (board skeleton), C1b (Act-1 board build + Act-3 forced advance-on-defeat),
-C2 (01104 symbol-token effects + location victory points),
-C3a (Prey – Lowest remaining health + Retaliate keyword),
-C3b (the six encounter enemies + pipeline keyword/spawn/health parsing),
-C3c (agenda 01107 forced abilities), C3d (act-2 round-end window),
-the act-2 reverse ([#280](https://github.com/talelburg/eldritch/issues/280):
-spawn the set-aside Ghoul Priest + reveal the Parlor), the agenda
-reverses ([#281](https://github.com/talelburg/eldritch/issues/281):
-01105/01106 + the `AgendaAdvanced` forced point), C4a (threat-area
-zone + shared scan source + `EndOfTurn`/`AfterLocationInvestigated`
-forced points), the test-treachery engine prereq
-([#286](https://github.com/talelburg/eldritch/issues/286):
-`Effect::SkillTest` + `ForEachPointFailed` + suspendable-revelation
-discard), C4b (the four one-shot Revelation treacheries —
-01162/01163/01166/01167), and C4c (the three persistent threat-area /
-attachment treacheries — Obscuring Fog 01168, Dissonant Voices 01165,
-Frozen in Fear 01164 — with the location attachment zone, inspectable-DSL
-constant restrictions, `Effect::DiscardSelf`, deterministic
-simultaneous-forced-trigger resolution, and end-turn resume plumbing), and
-C5a ([#236](https://github.com/talelburg/eldritch/issues/236): Cover Up's
-before-timing clue-discovery replacement interrupt at the `discover_clue`
-chokepoint — `clue_interrupt_pending` suspension + pre-advanced skill-test
-resume — plus `ForcedTriggerPoint::GameEnd` and `Event::TraumaSuffered`),
-and C5b ([#237](https://github.com/talelburg/eldritch/issues/237): the
-enemy-attack damage/horror soak mechanic — soak-first `assign_attack` →
-simultaneous `place_assignment` → asset defeat-on-overflow → the
-`AfterEnemyAttackDamagedAsset` reaction window — plus Guard Dog 01021's
-retaliate and the resumable enemy-phase attack loop;
-[PR #292](https://github.com/talelburg/eldritch/pull/292)), and the C5c
-weapon-support prereq ([#295](https://github.com/talelburg/eldritch/issues/295):
-ammo/uses + inspectable `Effect::Fight` — `Cost::SpendUses` + `IntExpr`
-modifier + bonus damage; [PR #297](https://github.com/talelburg/eldritch/pull/297)),
-and C5c ([#238](https://github.com/talelburg/eldritch/issues/238): Roland's
-.38 Special 01006 — clue-conditional weapon-fight — and Cover Up 01007 —
-3-clue threat-area Revelation + interrupt + game-end mental trauma — plus
-the `PutIntoThreatArea { clues }` extension;
-[PR #298](https://github.com/talelburg/eldritch/pull/298)).
+(the Gathering content, decomposed into C1–C7, kickoff
+[#246](https://github.com/talelburg/eldritch/issues/246)) is done through
+**C5c** — see the Group C breakdown table below for per-sub-slice state.
 **Next: C5d → C7** (C6d also gates C7b).
 
 Design specs:
