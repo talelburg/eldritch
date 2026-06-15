@@ -243,7 +243,19 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             combat_modifier,
             extra_damage,
         } => apply_fight(cx, &eval_ctx, combat_modifier, *extra_damage),
+        Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
     }
+}
+
+/// Add `amount` to the in-flight skill test's `bonus_attack_damage`
+/// accumulator (Vicious Blow 01025). A no-op when there is no in-flight
+/// test. The Fight follow-up is the only reader, so this is inert for
+/// non-attack tests.
+fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
+    if let Some(test) = cx.state.in_flight_skill_test.as_mut() {
+        test.bonus_attack_damage = test.bonus_attack_damage.saturating_add(amount);
+    }
+    EngineOutcome::Done
 }
 
 /// Resolve [`Effect::Fight`]: snapshot the combat modifier, auto-target
@@ -1205,9 +1217,9 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state
 mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        constant, deal_damage, deal_horror, discover_clue, for_each_point_failed, gain_resources,
-        modify, on_play, seq, Ability, Effect, InvestigatorTarget, LocationTarget, ModifierScope,
-        SkillTestKind, Stat,
+        boost_attack_damage, constant, deal_damage, deal_horror, discover_clue,
+        for_each_point_failed, gain_resources, modify, on_play, seq, Ability, Effect,
+        InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
@@ -1524,6 +1536,7 @@ mod tests {
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
             test_modifier: 0,
+            bonus_attack_damage: 0,
         });
         let mut events = Vec::new();
 
@@ -1540,6 +1553,64 @@ mod tests {
         assert_eq!(state.locations[&tested].clues, 1);
         assert_eq!(state.locations[&elsewhere].clues, 0);
         assert_eq!(state.investigators[&InvestigatorId(1)].clues, 1);
+    }
+
+    /// `Effect::BoostAttackDamage` accumulates onto the in-flight test's
+    /// `bonus_attack_damage`; repeated applications stack. A no-op with no
+    /// in-flight test.
+    #[test]
+    fn boost_attack_damage_accumulates_on_in_flight_test() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+
+        // No in-flight test: a clean no-op (no panic, nothing to mutate).
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &boost_attack_damage(1),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+
+        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Combat,
+            kind: SkillTestKind::Fight,
+            difficulty: 3,
+            committed_by_active: Vec::new(),
+            tested_location: None,
+            follow_up: crate::state::SkillTestFollowUp::None,
+            on_fail: None,
+            on_success: None,
+            source: None,
+            continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
+            bonus_attack_damage: 0,
+        });
+
+        for _ in 0..2 {
+            apply_effect(
+                &mut Cx {
+                    state: &mut state,
+                    events: &mut events,
+                },
+                &boost_attack_damage(1),
+                ctx(1),
+            );
+        }
+        assert_eq!(
+            state
+                .in_flight_skill_test
+                .as_ref()
+                .unwrap()
+                .bonus_attack_damage,
+            2,
+            "two BoostAttackDamage(1) applications should stack to 2"
+        );
     }
 
     #[test]
@@ -1598,6 +1669,7 @@ mod tests {
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
             test_modifier: 0,
+            bonus_attack_damage: 0,
         });
         state
     }
@@ -1763,6 +1835,7 @@ mod tests {
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
             test_modifier: 0,
+            bonus_attack_damage: 0,
         });
         let mut events = Vec::new();
 
