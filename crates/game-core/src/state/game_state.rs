@@ -747,6 +747,17 @@ pub enum WindowKind {
         /// The investigator who controls the soaked asset.
         controller: InvestigatorId,
     },
+    /// Fires after an investigator successfully investigated. Pairs with
+    /// [`EventPattern::SuccessfullyInvestigated`](crate::dsl::EventPattern::SuccessfullyInvestigated)
+    /// with [`EventTiming::After`](crate::dsl::EventTiming::After). Queued
+    /// from the Investigate skill-test follow-up (success-only by
+    /// construction). `investigator` is who investigated; a reaction only
+    /// fires for its own controller's investigation ("after **you**
+    /// investigate" — Dr. Milan Christopher 01033). (C6a #241.)
+    AfterSuccessfulInvestigate {
+        /// The investigator who successfully investigated.
+        investigator: InvestigatorId,
+    },
 }
 
 /// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits

@@ -47,6 +47,10 @@ const BYSTANDER_REACTION: &str = "MOCK-OE-BYSTANDER";
 /// ability gets its own pending-trigger entry.
 const TWO_REACTIONS: &str = "MOCK-OE-TWO";
 
+/// Mock: optional reaction "after you successfully investigate, gain 1
+/// resource" — the Dr. Milan Christopher 01033 shape (C6a #241).
+const MILAN_REACTION: &str = "MOCK-OE-MILAN";
+
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
@@ -87,6 +91,11 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 gain_resources(InvestigatorTarget::You, 1),
             ),
         ]),
+        MILAN_REACTION => Some(vec![on_event(
+            EventPattern::SuccessfullyInvestigated,
+            EventTiming::After,
+            gain_resources(InvestigatorTarget::You, 1),
+        )]),
         _ => None,
     }
 }
@@ -1069,4 +1078,115 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
     assert_eq!(resumed.state.locations[&loc_id].clues, 2);
     assert!(resumed.state.top_reaction_window().is_none());
+}
+
+// ------------------------------------------------------------------
+// After-successful-investigate reaction window (Dr. Milan, C6a #241)
+// ------------------------------------------------------------------
+
+/// Build an investigator at a 1-clue location (shroud 2), intellect 3, with
+/// `in_play_cards` in play, a `Numeric(0)` bag (so intellect 3 ≥ shroud 2 →
+/// the Investigate succeeds and discovers the clue).
+fn investigate_to_success_scenario(
+    in_play_cards: &[(&str, u32)],
+) -> (InvestigatorId, LocationId, game_core::GameState) {
+    install_mock_registry();
+    let id = InvestigatorId(1);
+    let loc = LocationId(10);
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(loc);
+    inv.skills.intellect = 3;
+    for (code, instance) in in_play_cards {
+        inv.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new(*code),
+            CardInstanceId(*instance),
+        ));
+    }
+    let mut loc_meta = test_location(10, "Study");
+    loc_meta.clues = 1;
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(id)
+        .with_turn_order([id])
+        .with_investigator(inv)
+        .with_location(loc_meta)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+    (id, loc, state)
+}
+
+fn commit_nothing() -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::CommitCards { indices: vec![] },
+    })
+}
+
+/// A successful Investigate opens the after-investigate window for the
+/// in-play reaction (Dr. Milan), which the controller fires to gain a
+/// resource; the skill test then resumes to completion.
+#[test]
+fn after_successful_investigate_fires_in_play_reaction() {
+    let (id, loc, state) = investigate_to_success_scenario(&[(MILAN_REACTION, 1)]);
+    let resources_before = state.investigators[&id].resources;
+
+    let paused_commit = game_core::engine::apply(
+        state,
+        Action::Player(PlayerAction::Investigate { investigator: id }),
+    );
+    assert!(matches!(
+        paused_commit.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
+
+    // Commit nothing → test succeeds → clue discovered → after-investigate
+    // window opens → suspends.
+    let paused_reaction = game_core::engine::apply(paused_commit.state, commit_nothing());
+    assert!(
+        matches!(paused_reaction.outcome, EngineOutcome::AwaitingInput { .. }),
+        "after-investigate reaction window must suspend, got {:?}",
+        paused_reaction.outcome,
+    );
+
+    // Fire the reaction → gain 1 resource → resume the test → Done.
+    let resumed = game_core::engine::apply(
+        paused_reaction.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickIndex(0),
+        }),
+    );
+    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert_eq!(
+        resumed.state.investigators[&id].resources,
+        resources_before + 1,
+        "Dr. Milan reaction gained a resource",
+    );
+    assert_eq!(
+        resumed.state.locations[&loc].clues, 0,
+        "clue was discovered"
+    );
+    assert!(resumed.state.top_reaction_window().is_none());
+}
+
+/// With no after-investigate reaction in play, a successful Investigate
+/// opens no window — it completes in the single commit apply (regression:
+/// `queue_reaction_window` is a no-op when nothing reacts).
+#[test]
+fn after_successful_investigate_no_window_without_reaction() {
+    let (id, loc, state) = investigate_to_success_scenario(&[]);
+
+    let paused_commit = game_core::engine::apply(
+        state,
+        Action::Player(PlayerAction::Investigate { investigator: id }),
+    );
+    let resolved = game_core::engine::apply(paused_commit.state, commit_nothing());
+
+    assert_eq!(
+        resolved.outcome,
+        EngineOutcome::Done,
+        "no reaction → no window → resolves in one apply",
+    );
+    assert_eq!(resolved.state.investigators[&id].clues, 1);
+    assert_eq!(resolved.state.locations[&loc].clues, 0);
+    assert_no_event!(resolved.events, Event::WindowOpened { .. });
 }

@@ -307,6 +307,22 @@ pub enum EventPattern {
     /// 01007's "Forced - When the game ends, if there are any clues on
     /// Cover Up: You suffer 1 mental trauma." (C5a #236.)
     GameEnd,
+    /// You successfully investigated — the **player-reaction** timing of
+    /// "`[reaction]` After you successfully investigate" (Dr. Milan
+    /// Christopher 01033: gain 1 resource). Bare: the engine binds *you* =
+    /// the investigating investigator from the window context.
+    ///
+    /// Distinct from [`AfterLocationInvestigated`](Self::AfterLocationInvestigated),
+    /// the **forced** twin of the same Arkham timing (Obscuring Fog 01168).
+    /// They are separate patterns only because this codebase has no
+    /// `Trigger::Forced`: the engine routes by pattern, firing
+    /// `AfterLocationInvestigated` through the forced auto-fire path and
+    /// `SuccessfullyInvestigated` through a player reaction window
+    /// (`WindowKind::AfterSuccessfulInvestigate`). Unifying forced +
+    /// reaction at one window is the #212/#213 trigger-dispatch work; until
+    /// then the split pattern keeps a forced ability from auto-firing a
+    /// reaction (and vice versa).
+    SuccessfullyInvestigated,
     /// An enemy attack dealt damage to the asset this ability is printed
     /// on (the soaked ally). Bare — the engine binds *self* = the soaked
     /// asset instance from the firing window context, the way
@@ -1618,6 +1634,14 @@ mod tests {
     #[test]
     fn enemy_attack_damaged_self_round_trips() {
         let p = EventPattern::EnemyAttackDamagedSelf;
+        let json = serde_json::to_string(&p).expect("serialize");
+        let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(p, back);
+    }
+
+    #[test]
+    fn successfully_investigated_round_trips() {
+        let p = EventPattern::SuccessfullyInvestigated;
         let json = serde_json::to_string(&p).expect("serialize");
         let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(p, back);
