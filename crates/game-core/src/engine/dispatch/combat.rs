@@ -1,5 +1,7 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
+use std::collections::BTreeMap;
+
 use crate::event::Event;
 use crate::state::{CardInstanceId, DefeatCause, EnemyId, InvestigatorId, Status, WindowKind};
 
@@ -87,9 +89,9 @@ pub(super) struct Assignment {
     /// Horror absorbed by the investigator.
     pub investigator_horror: u8,
     /// instance → damage soaked onto that asset.
-    pub asset_damage: std::collections::BTreeMap<CardInstanceId, u8>,
+    pub asset_damage: BTreeMap<CardInstanceId, u8>,
     /// instance → horror soaked onto that asset.
-    pub asset_horror: std::collections::BTreeMap<CardInstanceId, u8>,
+    pub asset_horror: BTreeMap<CardInstanceId, u8>,
 }
 
 /// One eligible soaker for [`assign_attack`] (C5b #237).
@@ -98,6 +100,7 @@ pub(super) struct Assignment {
 /// damage / horror capacity — printed stat (registry metadata) minus
 /// already-`accumulated_*`. The caller ([`build_soakers`]) derives these
 /// so [`assign_attack`] stays a pure function with no registry coupling.
+#[derive(Debug)]
 pub(super) struct Soaker {
     /// The asset instance that may soak.
     pub instance: CardInstanceId,
@@ -126,22 +129,26 @@ pub(super) struct Soaker {
 /// `{target → points}` distribution, feeding the identical placement
 /// path.
 pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) -> Assignment {
-    let mut a = Assignment::default();
-    for s in soakers {
-        let d = damage.min(s.remaining_health);
-        if d > 0 {
-            a.asset_damage.insert(s.instance, d);
-            damage -= d;
+    let mut assignment = Assignment::default();
+    for soaker in soakers {
+        let soaked_damage = damage.min(soaker.remaining_health);
+        if soaked_damage > 0 {
+            assignment
+                .asset_damage
+                .insert(soaker.instance, soaked_damage);
+            damage -= soaked_damage;
         }
-        let h = horror.min(s.remaining_sanity);
-        if h > 0 {
-            a.asset_horror.insert(s.instance, h);
-            horror -= h;
+        let soaked_horror = horror.min(soaker.remaining_sanity);
+        if soaked_horror > 0 {
+            assignment
+                .asset_horror
+                .insert(soaker.instance, soaked_horror);
+            horror -= soaked_horror;
         }
     }
-    a.investigator_damage = damage;
-    a.investigator_horror = horror;
-    a
+    assignment.investigator_damage = damage;
+    assignment.investigator_horror = horror;
+    assignment
 }
 
 /// Mutable handle to the controlled in-play instance `inst`, or `None`
@@ -238,23 +245,23 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 pub(super) fn place_assignment(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    a: &Assignment,
+    assignment: &Assignment,
 ) -> Vec<CardInstanceId> {
     // 1. Accumulate on assets (simultaneous placement).
-    for (inst, dmg) in &a.asset_damage {
+    for (inst, dmg) in &assignment.asset_damage {
         if let Some(card) = find_controlled_mut(cx.state, investigator, *inst) {
             card.accumulated_damage = card.accumulated_damage.saturating_add(*dmg);
         }
     }
-    for (inst, hor) in &a.asset_horror {
+    for (inst, hor) in &assignment.asset_horror {
         if let Some(card) = find_controlled_mut(cx.state, investigator, *inst) {
             card.accumulated_horror = card.accumulated_horror.saturating_add(*hor);
         }
     }
 
     // 2. Place the investigator's share (both before any defeat check).
-    let dmg_lethal = apply_damage_numeric(cx, investigator, a.investigator_damage);
-    let hor_lethal = apply_horror_numeric(cx, investigator, a.investigator_horror);
+    let dmg_lethal = apply_damage_numeric(cx, investigator, assignment.investigator_damage);
+    let hor_lethal = apply_horror_numeric(cx, investigator, assignment.investigator_horror);
     if dmg_lethal || hor_lethal {
         let cause = if dmg_lethal {
             DefeatCause::Damage
@@ -273,7 +280,8 @@ pub(super) fn place_assignment(
             .get(&investigator)
             .is_some_and(|inv| inv.cards_in_play.iter().any(|c| c.instance_id == *inst))
     };
-    a.asset_damage
+    assignment
+        .asset_damage
         .keys()
         .copied()
         .filter(still_in_play)
@@ -708,6 +716,10 @@ mod combat_tests {
         let assignment = super::assign_attack(&soakers, 2, 0);
         assert_eq!(assignment.asset_damage.get(&inst), Some(&1));
         assert_eq!(assignment.investigator_damage, 1);
+        // Horror side trivially zero (attack deals no horror) — asserted so
+        // the test is a complete contract, not a damage-only partial.
+        assert_eq!(assignment.investigator_horror, 0);
+        assert!(assignment.asset_horror.is_empty());
     }
 
     #[test]
