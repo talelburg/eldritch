@@ -19,7 +19,7 @@ pub use builder::GameStateBuilder;
 pub use card::{AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, UseKind, Zone};
 pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
-pub use counter::{Counter, FromRawId};
+pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};

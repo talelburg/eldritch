@@ -4,20 +4,12 @@
 //! mints, so the "which counter mints which id" invariant is structural:
 //! a `Counter<EnemyId>` mints only `EnemyId`s, and minting from the wrong
 //! counter won't type-check. The `define_id!` macro (crate-internal)
-//! defines a `u32`-wrapping id newtype together with the [`FromRawId`]
-//! impl `Counter` needs, so a new id type is one macro call.
+//! defines a `u32`-wrapping id newtype together with the `From<u32>` impl
+//! `Counter` mints through, so a new id type is one macro call.
 
 use std::marker::PhantomData;
 
 use serde::{Deserialize, Serialize};
-
-/// Construct an id newtype from a raw counter value — the per-type bridge
-/// [`Counter::mint`] uses. Implemented for each id type by the
-/// `define_id!` macro; rarely called directly (the ids are already
-/// `pub`-constructible tuple structs).
-pub trait FromRawId {
-    fn from_raw(raw: u32) -> Self;
-}
 
 /// A monotonic id allocator that mints exactly one id type.
 ///
@@ -59,10 +51,10 @@ impl<T> Counter<T> {
     }
 }
 
-impl<T: FromRawId> Counter<T> {
+impl<T: From<u32>> Counter<T> {
     /// Mint the next id and advance the counter (saturating).
     pub fn mint(&mut self) -> T {
-        let id = T::from_raw(self.next);
+        let id = T::from(self.next);
         self.next = self.next.saturating_add(1);
         id
     }
@@ -86,8 +78,8 @@ impl<T> PartialEq for Counter<T> {
 impl<T> Eq for Counter<T> {}
 
 /// Define a scenario-scoped id newtype: a `u32`-wrapping tuple struct with
-/// the standard id derives, plus its `FromRawId` impl so a [`Counter`] can
-/// mint it. The single definition point for the engine's allocated ids
+/// the standard id derives, plus the `From<u32>` impl a [`Counter`] mints
+/// through. The single definition point for the engine's allocated ids
 /// (`CardInstanceId`, `EnemyId`, `LocationId`, …).
 ///
 /// ```ignore
@@ -105,8 +97,8 @@ macro_rules! define_id {
         )]
         $vis struct $Name(pub u32);
 
-        impl $crate::state::FromRawId for $Name {
-            fn from_raw(raw: u32) -> Self {
+        impl ::core::convert::From<u32> for $Name {
+            fn from(raw: u32) -> Self {
                 Self(raw)
             }
         }
