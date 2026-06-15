@@ -144,6 +144,142 @@ pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) 
     a
 }
 
+/// Mutable handle to the controlled in-play instance `inst`, or `None`
+/// if the investigator doesn't control it (C5b #237).
+fn find_controlled_mut(
+    state: &mut crate::state::GameState,
+    investigator: InvestigatorId,
+    inst: CardInstanceId,
+) -> Option<&mut crate::state::CardInPlay> {
+    state
+        .investigators
+        .get_mut(&investigator)?
+        .cards_in_play
+        .iter_mut()
+        .find(|c| c.instance_id == inst)
+}
+
+/// Discard every controlled asset whose accumulated damage/horror has
+/// reached its printed health/sanity (C5b #237).
+///
+/// Reads printed health/sanity from the card registry; an asset whose
+/// metadata can't be resolved (no registry installed, or a non-asset
+/// kind) is never defeated here. For each defeated asset: remove it from
+/// `cards_in_play` and emit [`Event::CardDiscarded`] with
+/// `from: Zone::InPlay` (matching the discard event shape used elsewhere
+/// — see `dispatch/cards.rs`).
+fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
+    let Some(reg) = crate::card_registry::current() else {
+        return;
+    };
+    let Some(inv) = cx.state.investigators.get(&investigator) else {
+        return;
+    };
+    // Collect the instances to defeat first (immutable scan), then mutate —
+    // avoids holding a borrow across the discard mutation.
+    let defeated: Vec<(CardInstanceId, crate::state::CardCode)> = inv
+        .cards_in_play
+        .iter()
+        .filter_map(|card| {
+            let meta = (reg.metadata_for)(&card.code)?;
+            let crate::card_data::CardKind::Asset { health, sanity, .. } = meta.kind else {
+                return None;
+            };
+            let dmg_defeated = health.is_some_and(|h| card.accumulated_damage >= h);
+            let hor_defeated = sanity.is_some_and(|s| card.accumulated_horror >= s);
+            (dmg_defeated || hor_defeated).then(|| (card.instance_id, card.code.clone()))
+        })
+        .collect();
+
+    for (inst, code) in defeated {
+        let inv = cx
+            .state
+            .investigators
+            .get_mut(&investigator)
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "defeat_overflowed_assets: investigator {investigator:?} vanished; \
+                     state-corruption invariant violation"
+                )
+            });
+        // RR: a defeated asset goes to its owner's discard pile.
+        if let Some(pos) = inv.cards_in_play.iter().position(|c| c.instance_id == inst) {
+            inv.cards_in_play.remove(pos);
+            inv.discard.push(code.clone());
+            cx.events.push(Event::CardDiscarded {
+                investigator,
+                code,
+                from: crate::state::Zone::InPlay,
+            });
+        }
+    }
+}
+
+/// Place a computed [`Assignment`] simultaneously, then defeat overflowed
+/// assets (RR p.7; C5b #237).
+///
+/// Steps, in order:
+/// 1. Accumulate the soaked damage/horror onto each asset's
+///    `accumulated_*` fields.
+/// 2. Place the investigator's share via the numeric helpers (which emit
+///    [`Event::DamageTaken`] / [`Event::HorrorTaken`] and report
+///    lethality), then apply investigator defeat if either crossed — so
+///    both stats land before any defeat check, per RR p.7.
+/// 3. Defeat overflowed assets (`accumulated >= printed stat` →
+///    discard).
+///
+/// Returns the damaged assets that **survive** step 3 — i.e. instances
+/// still in `cards_in_play` after defeat resolution. This is the chosen
+/// reading of the soak reaction's timing: an asset defeated by the same
+/// attack that damaged it has left play before the reaction would
+/// resolve, so it does **not** get a reaction window (Guard Dog 01021
+/// does not retaliate on the attack that kills it). Only survivors are
+/// returned for the [`WindowKind::AfterEnemyAttackDamagedAsset`] queue.
+pub(super) fn place_assignment(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    a: &Assignment,
+) -> Vec<CardInstanceId> {
+    // 1. Accumulate on assets (simultaneous placement).
+    for (inst, dmg) in &a.asset_damage {
+        if let Some(card) = find_controlled_mut(cx.state, investigator, *inst) {
+            card.accumulated_damage = card.accumulated_damage.saturating_add(*dmg);
+        }
+    }
+    for (inst, hor) in &a.asset_horror {
+        if let Some(card) = find_controlled_mut(cx.state, investigator, *inst) {
+            card.accumulated_horror = card.accumulated_horror.saturating_add(*hor);
+        }
+    }
+
+    // 2. Place the investigator's share (both before any defeat check).
+    let dmg_lethal = apply_damage_numeric(cx, investigator, a.investigator_damage);
+    let hor_lethal = apply_horror_numeric(cx, investigator, a.investigator_horror);
+    if dmg_lethal || hor_lethal {
+        let cause = if dmg_lethal {
+            DefeatCause::Damage
+        } else {
+            DefeatCause::Horror
+        };
+        super::elimination::apply_investigator_defeat(cx, investigator, cause);
+    }
+
+    // 3. Defeat overflowed assets, then return only the surviving damaged
+    //    assets (see fn doc for the defeated-soaker timing reading).
+    defeat_overflowed_assets(cx, investigator);
+    let still_in_play = |inst: &CardInstanceId| {
+        cx.state
+            .investigators
+            .get(&investigator)
+            .is_some_and(|inv| inv.cards_in_play.iter().any(|c| c.instance_id == *inst))
+    };
+    a.asset_damage
+        .keys()
+        .copied()
+        .filter(still_in_play)
+        .collect()
+}
+
 /// Add `amount` to the investigator's `damage` and emit
 /// [`Event::DamageTaken`]. Returns `true` iff the new total reaches
 /// `max_health` (i.e. the investigator now qualifies for defeat under
@@ -391,7 +527,7 @@ mod combat_tests {
     use super::super::Cx;
     use crate::event::Event;
     use crate::state::{EnemyId, InvestigatorId};
-    use crate::test_support::{test_enemy, GameStateBuilder};
+    use crate::test_support::{test_enemy, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
     #[test]
@@ -482,6 +618,59 @@ mod combat_tests {
         let assignment = super::assign_attack(&soakers, 2, 0);
         assert_eq!(assignment.asset_damage.get(&inst), Some(&1));
         assert_eq!(assignment.investigator_damage, 1);
+    }
+
+    #[test]
+    fn place_assignment_accumulates_on_asset_and_returns_damaged_list() {
+        // Pre-construct an Assignment placing 1 damage + 1 horror on an
+        // in-play asset and 1 damage on the investigator. No registry is
+        // installed, so the asset is NOT defeated (printed health/sanity
+        // unreadable) — accumulation + the returned damaged-survivors list
+        // are what's verified here. Defeat-on-overflow needs registry
+        // metadata and is covered by the EU5 integration test.
+        use crate::state::{CardCode, CardInPlay, CardInstanceId};
+        use std::collections::BTreeMap;
+
+        let id = InvestigatorId(1);
+        let inst = CardInstanceId(7);
+        let mut inv = test_investigator(1);
+        inv.max_health = 10;
+        inv.max_sanity = 10;
+        inv.cards_in_play = vec![CardInPlay::enter_play(CardCode::new("01021"), inst)];
+
+        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        let mut asset_damage = BTreeMap::new();
+        asset_damage.insert(inst, 1u8);
+        let mut asset_horror = BTreeMap::new();
+        asset_horror.insert(inst, 1u8);
+        let assignment = super::Assignment {
+            investigator_damage: 1,
+            investigator_horror: 0,
+            asset_damage,
+            asset_horror,
+        };
+
+        let survivors = super::place_assignment(&mut cx, id, &assignment);
+
+        let card = &state.investigators[&id].cards_in_play[0];
+        assert_eq!(card.accumulated_damage, 1, "asset soaked 1 damage");
+        assert_eq!(card.accumulated_horror, 1, "asset soaked 1 horror");
+        assert_eq!(
+            state.investigators[&id].damage, 1,
+            "investigator took overflow damage"
+        );
+        assert_eq!(
+            survivors,
+            vec![inst],
+            "the surviving damaged asset is returned for the soak window"
+        );
+        assert_event!(events, Event::DamageTaken { investigator, amount: 1 } if *investigator == id);
     }
 
     #[test]
