@@ -25,8 +25,12 @@ discard), C4b (the four one-shot Revelation treacheries —
 attachment treacheries — Obscuring Fog 01168, Dissonant Voices 01165,
 Frozen in Fear 01164 — with the location attachment zone, inspectable-DSL
 constant restrictions, `Effect::DiscardSelf`, deterministic
-simultaneous-forced-trigger resolution, and end-turn resume plumbing).
-**Next: C5 → C7** (C6d also gates C7b).
+simultaneous-forced-trigger resolution, and end-turn resume plumbing), and
+C5a ([#236](https://github.com/talelburg/eldritch/issues/236): Cover Up's
+before-timing clue-discovery replacement interrupt at the `discover_clue`
+chokepoint — `clue_interrupt_pending` suspension + pre-advanced skill-test
+resume — plus `ForcedTriggerPoint::GameEnd` and `Event::TraumaSuffered`).
+**Next: C5b → C7** (C6d also gates C7b).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -80,7 +84,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | — | [#286](https://github.com/talelburg/eldritch/issues/286) | infra: `Effect::SkillTest` + `ForEachPointFailed` + failure-side follow-up + suspendable-revelation discard (prerequisite for C4b's test treacheries) | ✅ PR #287 |
 | C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | ✅ PR #288 |
 | C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area / attachment treacheries (×3) | ✅ PR #289 |
-| C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | — |
+| C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | ✅ PR #291 |
 | C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog damage-from-enemy window | — |
 | C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | — |
 | C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets (×6) | — |
@@ -150,6 +154,10 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **A persistent treachery is one with any non-Revelation ability; it owns its own disposition (C4c, [#235](https://github.com/talelburg/eldritch/issues/235), PR #289).** `resolve_encounter_card` auto-discards a treachery after its Revelation **only if every ability is `Trigger::Revelation`**; a card carrying a `Constant`/`OnEvent` ability places itself (threat area via `place_in_threat_area`, or location via `attach_to_location`) and discards itself later via the typed `Effect::DiscardSelf` (which finds the firing instance through `EvalContext::source`). No suppress-discard flag. **A new persistent treachery needs no routing change — give it an ongoing ability and a self-placement Revelation.** Constant restrictions extend the inspectable DSL (`Stat::Shroud`, `Restriction::{CannotPlay, ExtraActionCost}` under `Effect::Restrict`), read by `effective_shroud` / `play_is_prohibited` / `pending_action_surcharge` the way `constant_skill_modifier` already reads `Modify` — **not** via new registry query hooks. `ExtraActionCost`'s `first_each_round` stays a field (tracked per source instance in `Investigator.action_surcharge_spent_this_round`) until a second consumer needs the gate on a non-cost mechanism.
 
 - **Simultaneous forced triggers resolve in a fixed deterministic order, and a suspending forced effect at end-of-turn resumes via `pending_end_turn` (C4c, PR #289).** `fire_forced_triggers` now resolves *all* collected hits in collection order (board cards before threat-area/attachment instances; `BTreeMap` order) instead of rejecting on 2+ — this is the partial #213 stand-in (player-chosen ordering is still #213). It lets Dissonant Voices' `RoundEnded` discard coexist with agenda 01107's `RoundEnded` doom. A hit that *suspends* abandons later hits (#212 reentrancy); safe while no point has 2+ simultaneous suspending hits. `Effect::SkillTest` gained a success-side `on_success` (mirror of `on_fail`); a suspending `EndOfTurn` forced effect (Frozen in Fear's willpower test) strands `end_turn` before rotation, so `end_turn` records `pending_end_turn` and the skill-test commit-resume path re-enters `resume_end_turn` (rotation / phase-end) — mirroring `spawn_engage_pending`/`resume_spawn_engage`.
+
+- **Before-timing clue-discovery interrupt is a card-local seam at the `discover_clue` chokepoint, not a general before-timing reaction-window subsystem (C5a, [#236](https://github.com/talelburg/eldritch/issues/236), PR #291).** When the controller holds a `WouldDiscoverClues` (`EventTiming::Before`) reaction, `discover_clue` suspends with a yes/no `AwaitingInput` (`GameState.clue_interrupt_pending`); `resume_clue_interrupt` (routed before the skill-test path in `resolve_input`) runs the card-local `Effect::Native` replacement on `Confirm` (count threaded via `EvalContext.clue_discovery_count`) or the deferred discovery on `Skip`. Reentrancy: `finish_skill_test` **pre-advances** its continuation to `PostFollowUp` before the Investigate follow-up, so a suspending discovery resumes through `in_flight_skill_test` without re-running the follow-up — **bounded to terminal-position discovery** (the base Investigate follow-up, the only Slice-1 clue source; nested-in-`Seq` is #212). **A future before-timing interrupt reuses this seam.** The seam's `card.clues > 0` eligibility gate is a **single-consumer stand-in for RR p.2's "ability must have potential to change the game state"** — the engine models this nowhere; lift it into a card-provided per-ability predicate when a 2nd `WouldDiscoverClues` card lands (`TODO(#212)`). Bespoke effects (discard-from-self, suffer-trauma) stay `Effect::Native`, integration-tested via `synth_cards::TEST_REGISTRY`.
+
+- **`ForcedTriggerPoint::GameEnd` fires once from `fire_scenario_resolution` on the resolution latch; game-end trauma is `Event::TraumaSuffered`-only (C5a, PR #291).** It scans every investigator's `controlled_card_instances()` for `EventPattern::GameEnd` forced abilities, before the scenario-module `apply_resolution` hook (so it runs even with no module). Trauma persistence (campaign log, max-stat reduction) is **Phase 9** — C5a emits the event and mutates no state.
 
 ## Open questions
 
