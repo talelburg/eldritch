@@ -221,7 +221,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("If this skill test is successful during an attack, that attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "01026".to_owned(),
@@ -333,7 +333,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("If this skill test is successful while investigating a location, discover 1 additional clue at that location.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "01040".to_owned(),
@@ -445,7 +445,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Commit only to a skill test you are performing.\nIf you succeed by 3 or more, return Opportunist to your hand after this test instead of discarding it.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "01054".to_owned(),
@@ -557,7 +557,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("If this skill test is successful, heal 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "01068".to_owned(),
@@ -669,7 +669,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("If this skill test is successful during an evasion attempt, the evading investigator may immediately disengage from each other enemy engaged with him or her, and may move to a connecting location.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "01082".to_owned(),
@@ -733,7 +733,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
             code: "01090".to_owned(),
@@ -741,7 +741,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
             code: "01091".to_owned(),
@@ -749,7 +749,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
             code: "01092".to_owned(),
@@ -757,7 +757,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
             code: "01093".to_owned(),
@@ -765,7 +765,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Max 1 committed per skill test.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
             code: "01094".to_owned(),
@@ -1669,7 +1669,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Max 1 committed per skill test.\nDouble the difficulty of this skill test. If this skill test is successful, resolve the effects of the successful test twice.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
             code: "02027".to_owned(),
@@ -2637,7 +2637,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned(), "Expert".to_owned()],
             text: Some("If this skill test is successful while investigating a location, discover 1 additional clue at that location (2 additional clues instead if it succeeds by 2 or more).".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Skill { class: Class::Seeker, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Seeker, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02151".to_owned(),
@@ -2949,7 +2949,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Before revealing chaos tokens for this test, choose one of the following symbols: ([skull], [cultist], [tablet], or [elder_thing]). Ignore the effects of the chosen symbol during this test (including its modifier).".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02191".to_owned(),
@@ -2965,7 +2965,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Commit only to a skill test you are performing, and only if the difficulty of that test is at least 2 higher than your base skill value.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02193".to_owned(),
@@ -3237,7 +3237,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Commit to a skill test only if there is a clue at your location.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02228".to_owned(),
@@ -3253,7 +3253,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("If this skill test is successful by 2 or more, after it resolves, you may immediately take an action as if it were your turn (this action does not count toward the number of actions you can take each turn).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02230".to_owned(),
@@ -3269,7 +3269,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Developed".to_owned()],
             text: Some("Commit only to a skill test you are performing.\nIf you succeed by 2 or more, return Opportunist to your hand after this test instead of discarding it.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Skill { class: Class::Rogue, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Rogue, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02232".to_owned(),
@@ -3301,7 +3301,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Developed".to_owned()],
             text: Some("If this test is successful during an evasion attempt, the evading investigator may immediately evade each other enemy engaged with him or her, and may move to a connecting location.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02237".to_owned(),
@@ -3493,7 +3493,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("While Leadership is committed to a skill test being performed by another investigator, Leadership gains [willpower] [wild].".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02261".to_owned(),
@@ -3557,7 +3557,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Developed".to_owned()],
             text: Some("If this skill test is successful, heal 1 horror (2 horror instead if it succeeds by 2 or more).".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Skill { class: Class::Mystic, xp: Some(2), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Mystic, xp: Some(2), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02269".to_owned(),
@@ -3581,7 +3581,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Fortune".to_owned()],
             text: Some("Commit only to a skill test you are performing.\nAfter revealing chaos tokens for this test, you may choose to exile Stroke of Luck. If you do, this test is automatically successful (unless a [auto_fail] token was revealed).".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02272".to_owned(),
@@ -3797,7 +3797,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned(), "Expert".to_owned()],
             text: Some("If this skill test is successful during an attack, that attack deals +1 damage (+2 damage instead if it succeeds by 2 or more).".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Skill { class: Class::Guardian, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2 },
+            kind: CardKind::Skill { class: Class::Guardian, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
             code: "02300".to_owned(),

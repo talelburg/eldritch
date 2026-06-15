@@ -378,6 +378,9 @@ pub enum CardKind {
         skill_icons: SkillIcons,
         /// Maximum copies per deck.
         deck_limit: u8,
+        /// "Max N committed per skill test" cap (Guts/Perception/… are `1`);
+        /// `None` when uncapped. Enforced at the commit window.
+        commit_limit: Option<u8>,
     },
     /// Enemy — an encounter (or weakness) creature.
     Enemy {
@@ -628,6 +631,7 @@ mod is_fast_tests {
                 xp: None,
                 skill_icons: SkillIcons::default(),
                 deck_limit: 2,
+                commit_limit: None,
             },
         };
         assert_eq!(m.card_type(), CardType::Skill);
