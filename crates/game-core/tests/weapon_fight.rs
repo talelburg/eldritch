@@ -185,3 +185,46 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
         2
     );
 }
+
+#[test]
+fn weapon_fight_rejects_when_no_enemy_engaged() {
+    // 0 engaged → illegal (no target); reject before charging anything.
+    let (state, id, weapon) = board_with_weapon(0);
+    let actions_before = state.investigators[&id].actions_remaining;
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id: weapon,
+            ability_index: 0,
+        }),
+    );
+    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    // Nothing charged: ammo still 4, actions unchanged.
+    assert_eq!(ammo_remaining(&result.state, id, weapon), 4);
+    assert_eq!(
+        result.state.investigators[&id].actions_remaining,
+        actions_before
+    );
+}
+
+#[test]
+fn weapon_fight_rejects_when_two_enemies_engaged() {
+    // 2+ engaged → deferred multi-target selection; reject, nothing charged.
+    let (state, id, weapon) = board_with_weapon(2);
+    let actions_before = state.investigators[&id].actions_remaining;
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id: weapon,
+            ability_index: 0,
+        }),
+    );
+    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    assert_eq!(ammo_remaining(&result.state, id, weapon), 4);
+    assert_eq!(
+        result.state.investigators[&id].actions_remaining,
+        actions_before
+    );
+}
