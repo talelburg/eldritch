@@ -267,6 +267,28 @@ pub enum HealthValue {
     PerInvestigator(u8),
 }
 
+/// Limited-use tokens an asset enters play with ("Uses (4 ammo)").
+/// Spending them is a [`Cost::SpendUses`](crate::dsl::Cost::SpendUses);
+/// depletion blocks the ability that pays in them. Pipeline-parsed from
+/// card text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Uses {
+    /// What the tokens are called on the card.
+    pub kind: UsesKind,
+    /// How many the asset enters play with.
+    pub count: u8,
+}
+
+/// The named token type an asset's `Uses (N <kind>)` grants. Only the
+/// kinds Slice-1 cards print are modeled; others land as their cards do
+/// (the pipeline warns and emits `None` for an unmodeled kind rather than
+/// silently approximating).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum UsesKind {
+    /// "Uses (N ammo)" — firearms.
+    Ammo,
+}
+
 /// Per-card-type data. The discriminant mirrors [`CardType`] — read it
 /// via [`CardMetadata::card_type`]. Player variants carry a [`Class`];
 /// encounter variants do not (encounter cards have no player class).
@@ -308,6 +330,9 @@ pub enum CardKind {
         is_fast: bool,
         /// Maximum copies per deck.
         deck_limit: u8,
+        /// Limited-use tokens granted on enter-play ("Uses (N ammo)"),
+        /// or `None`. Pipeline-parsed from card text.
+        uses: Option<Uses>,
     },
     /// Event — played from hand, then discarded.
     Event {
@@ -524,12 +549,24 @@ mod is_fast_tests {
                 skill_icons: SkillIcons::default(),
                 is_fast: true,
                 deck_limit: 2,
+                uses: None,
             },
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
         assert!(matches!(back.kind, CardKind::Asset { is_fast: true, .. }));
+    }
+
+    #[test]
+    fn asset_uses_round_trips() {
+        let uses = Some(Uses {
+            kind: UsesKind::Ammo,
+            count: 4,
+        });
+        let json = serde_json::to_string(&uses).expect("serialize");
+        let back: Option<Uses> = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, uses);
     }
 
     #[test]
