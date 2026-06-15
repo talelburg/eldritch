@@ -686,9 +686,12 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
             // re-open (Rules Reference p.24 2.2.1) is deferred to #146.
             PhaseStep::InvestigatorTurnBegins => EngineOutcome::Done,
         },
-        WindowKind::AfterEnemyDefeated { .. } => EngineOutcome::Done,
-        // Temporary stub: replaced in Task 10 with `resume_enemy_attack`.
-        WindowKind::AfterEnemyAttackDamagedAsset { .. } => EngineOutcome::Done,
+        // AfterEnemyDefeated: no continuation work.
+        // AfterEnemyAttackDamagedAsset: temporary stub; replaced in Task 10
+        // with `resume_enemy_attack(cx)` to re-enter the suspended attack loop.
+        WindowKind::AfterEnemyDefeated { .. } | WindowKind::AfterEnemyAttackDamagedAsset { .. } => {
+            EngineOutcome::Done
+        }
     }
 }
 

@@ -315,7 +315,7 @@ pub enum EventPattern {
     /// `WindowKind::AfterEnemyAttackDamagedAsset` in the reaction
     /// pipeline; `trigger_matches` binds the attacking enemy into the
     /// `EvalContext`. First (and only) consumer: Guard Dog 01021's
-    /// "[reaction] When an enemy attack deals damage to Guard Dog: Deal 1
+    /// "\[reaction\] When an enemy attack deals damage to Guard Dog: Deal 1
     /// damage to the attacking enemy." (C5b #237.)
     EnemyAttackDamagedSelf,
 }
