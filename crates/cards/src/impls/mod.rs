@@ -69,11 +69,16 @@ pub mod attic;
 pub mod automatic_45;
 pub mod cellar;
 pub mod deduction;
+pub mod emergency_cache;
 pub mod guard_dog;
+pub mod guts;
 pub mod holy_rosary;
 pub mod hyperawareness;
 pub mod machete;
 pub mod magnifying_glass;
+pub mod manual_dexterity;
+pub mod overpower;
+pub mod perception;
 pub mod physical_training;
 pub mod roland_38_special;
 pub mod roland_banks;
@@ -85,6 +90,7 @@ pub mod treachery_01165;
 pub mod treachery_01166;
 pub mod treachery_01167;
 pub mod treachery_01168;
+pub mod unexpected_courage;
 pub mod vicious_blow;
 pub mod working_a_hunch;
 
@@ -103,11 +109,16 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         automatic_45::CODE => Some(automatic_45::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
+        emergency_cache::CODE => Some(emergency_cache::abilities()),
         guard_dog::CODE => Some(guard_dog::abilities()),
+        guts::CODE => Some(guts::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
         machete::CODE => Some(machete::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
+        manual_dexterity::CODE => Some(manual_dexterity::abilities()),
+        overpower::CODE => Some(overpower::abilities()),
+        perception::CODE => Some(perception::abilities()),
         physical_training::CODE => Some(physical_training::abilities()),
         roland_38_special::CODE => Some(roland_38_special::abilities()),
         roland_banks::CODE => Some(roland_banks::abilities()),
@@ -119,6 +130,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         treachery_01166::CODE => Some(treachery_01166::abilities()),
         treachery_01167::CODE => Some(treachery_01167::abilities()),
         treachery_01168::CODE => Some(treachery_01168::abilities()),
+        unexpected_courage::CODE => Some(unexpected_courage::abilities()),
         vicious_blow::CODE => Some(vicious_blow::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
         _ => None,
