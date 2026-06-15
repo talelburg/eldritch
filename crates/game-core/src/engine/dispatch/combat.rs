@@ -2,8 +2,12 @@
 
 use std::collections::BTreeMap;
 
+use crate::engine::EngineOutcome;
 use crate::event::Event;
-use crate::state::{CardInstanceId, DefeatCause, EnemyId, InvestigatorId, Status, WindowKind};
+use crate::state::{
+    CardInstanceId, DefeatCause, EnemyAttackSource, EnemyId, InvestigatorId, PendingEnemyAttack,
+    Status, WindowKind,
+};
 
 use super::Cx;
 
@@ -530,15 +534,17 @@ pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: Investigato
 ///    "the attack defeated the target," so an attack that lands and
 ///    defeats its target still exhausts the attacker.
 ///
-/// **Atomicity invariant:** the snapshot + loop run as a block
-/// within `run_window_continuation`'s `BeforeInvestigatorAttacked`
-/// arm — no Fast plays or reactions interpose mid-loop. The first
-/// PR that adds a reaction `EventPattern` matching events emitted
-/// inside this loop ([`Event::DamageTaken`] / [`Event::HorrorTaken`] /
-/// [`Event::EnemyExhausted`] / [`Event::EnemyDefeated`]-from-attack)
-/// must persist the remaining-attackers list on `GameState`
-/// (analogous to [`GameState::enemy_attack_pending`]) so
-/// resume-after-pause re-enters the right iteration point.
+/// **Suspend/resume invariant (C5b #237):** the snapshot + loop run as
+/// a block within `run_window_continuation`'s
+/// `BeforeInvestigatorAttacked` arm. An attack whose damage soaks onto
+/// an asset opens an [`WindowKind::AfterEnemyAttackDamagedAsset`]
+/// reaction window mid-loop; when that happens [`drive_attack_loop`]
+/// parks the remaining attackers on
+/// [`GameState::pending_enemy_attack`](crate::state::GameState::pending_enemy_attack)
+/// and returns [`EngineOutcome::AwaitingInput`], and
+/// [`resume_enemy_attack`] re-enters at the next attacker once the
+/// window closes. With no soakers no window opens, the loop never
+/// suspends, and the enemy phase behaves exactly as before.
 ///
 /// **Attack order:** deterministic by [`EnemyId`]. Rules Reference
 /// p.25 prescribes "the order of the attacked investigator's
@@ -546,7 +552,10 @@ pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: Investigato
 /// `TODO(#143)`: player-pick attack order, unmilestoned, covers both
 /// this site and [`fire_attacks_of_opportunity`] (which has the same
 /// TODO).
-pub(super) fn resolve_attacks_for_investigator(cx: &mut Cx, investigator: InvestigatorId) {
+pub(super) fn resolve_attacks_for_investigator(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
     // Snapshot ready engaged attackers in deterministic EnemyId order.
     // BTreeMap iteration is already key-sorted.
     let attackers: Vec<EnemyId> = cx
@@ -556,9 +565,64 @@ pub(super) fn resolve_attacks_for_investigator(cx: &mut Cx, investigator: Invest
         .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
         .map(|(id, _)| *id)
         .collect();
+    drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::EnemyPhase)
+}
 
-    for enemy_id in attackers {
-        // Early-break on defeat. See fn doc.
+/// Resolve a list of attackers one at a time, suspending if an attack
+/// opens a reaction window (C5b #237). Shared by the enemy phase
+/// ([`resolve_attacks_for_investigator`]) and — once Task 13 wires it —
+/// attacks of opportunity, distinguished by `source` so
+/// [`resume_enemy_attack`] returns to the right driver.
+///
+/// For each attacker, in order:
+///
+/// 1. Early-break if `investigator` is no longer [`Status::Active`]
+///    (defeated by an earlier attack in the same loop). Remaining
+///    attackers do not attack and do not exhaust, per Rules
+///    Reference p.10 Elimination step 3 ("All enemies engaged with
+///    that player are placed at the location ... unengaged") and p.25
+///    ("Each ready, engaged enemy makes an attack" — a disengaged
+///    enemy is not "engaged").
+///
+///    `apply_investigator_defeat` (#144) clears `engaged_with` on every
+///    enemy engaged with a defeated investigator, so a disengaged enemy
+///    genuinely is no longer "engaged" by the next iteration. The
+///    early-break here is therefore redundant with that flow — kept as
+///    the simpler, local form so the loop body stays self-evidently
+///    correct without cross-referencing the elimination flow.
+///
+/// 2. Call [`enemy_attack`] (places damage + horror simultaneously per
+///    p.7, fires [`super::elimination::apply_investigator_defeat`] if
+///    either crosses, and queues a soak window per damaged asset).
+///
+/// 3. Exhaust the attacker: set `enemy.exhausted = true`, emit
+///    [`Event::EnemyExhausted`]. Per Rules Reference p.25, exhaustion
+///    happens "Upon completion of dealing the attack (and all abilities
+///    triggered by the attack)" — no carve-out for "the attack defeated
+///    the target," so an attack that lands and defeats its target still
+///    exhausts the attacker. Done here *before* the suspend check
+///    (preserving the pre-C5b ordering); the deferred-exhaust-until-
+///    after-reactions RR nuance is out of scope.
+///
+/// 4. If the attack left an open reaction window
+///    ([`enemy_attack`] queued one for a soaked asset), park the
+///    remaining attackers on
+///    [`GameState::pending_enemy_attack`](crate::state::GameState::pending_enemy_attack)
+///    and return [`EngineOutcome::AwaitingInput`] for the queued window.
+///    [`resume_enemy_attack`] re-enters here when the window closes.
+///
+/// Returns [`EngineOutcome::Done`] when the list is exhausted with no
+/// suspension.
+fn drive_attack_loop(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    mut attackers: Vec<EnemyId>,
+    source: EnemyAttackSource,
+) -> EngineOutcome {
+    while !attackers.is_empty() {
+        let enemy_id = attackers.remove(0);
+
+        // Early-break on defeat. See fn doc step 1.
         let active = cx
             .state
             .investigators
@@ -568,19 +632,77 @@ pub(super) fn resolve_attacks_for_investigator(cx: &mut Cx, investigator: Invest
             break;
         }
 
-        // Damage + horror placement (simultaneous per p.7) + defeat.
+        // Damage + horror placement (simultaneous per p.7) + defeat;
+        // queues a soak window per damaged asset (C5b #237).
         enemy_attack(cx, enemy_id, investigator);
 
-        // Exhaust the attacker post-resolution.
+        // Exhaust the attacker post-resolution (pre-suspend, see step 3).
         let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
             unreachable!(
-                "resolve_attacks_for_investigator: snapshotted enemy \
-                 {enemy_id:?} is gone from state.enemies; this is a \
-                 state-corruption invariant violation"
+                "drive_attack_loop: snapshotted enemy {enemy_id:?} is \
+                 gone from state.enemies; this is a state-corruption \
+                 invariant violation"
             )
         });
         enemy.exhausted = true;
         cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
+
+        // If the attack opened a soak reaction window, suspend: park the
+        // rest and surface the queued window (see fn doc step 4).
+        if !cx.state.open_windows.is_empty() {
+            cx.state.pending_enemy_attack = Some(PendingEnemyAttack {
+                investigator,
+                remaining_attackers: attackers,
+                source,
+            });
+            return super::reaction_windows::open_queued_reaction_window(cx);
+        }
+    }
+    EngineOutcome::Done
+}
+
+/// Re-enter a suspended enemy-attack loop after its soak reaction window
+/// closed (C5b #237). Mirror of the other pending-resume drivers
+/// (`resume_end_turn` / spawn-engage). Takes the parked
+/// [`PendingEnemyAttack`] and re-enters [`drive_attack_loop`] at the
+/// next attacker.
+///
+/// If the loop suspends again (a later attacker also soaks), that
+/// [`EngineOutcome::AwaitingInput`] is returned as-is. If it completes,
+/// the post-loop step runs by `source`:
+///
+/// - For [`EnemyAttackSource::EnemyPhase`], advance the enemy-phase
+///   cursor and open the next window via [`after_enemy_phase_attacks`].
+/// - For [`EnemyAttackSource::AttackOfOpportunity`], return
+///   [`EngineOutcome::Done`] (the `AoO` call-site wiring is Task 13;
+///   this arm exists so resume from an `AoO` soak is well-defined).
+///
+/// Called from
+/// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s
+/// [`WindowKind::AfterEnemyAttackDamagedAsset`] arm on window close.
+pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
+    let pending = cx.state.pending_enemy_attack.take().unwrap_or_else(|| {
+        unreachable!(
+            "resume_enemy_attack: no pending_enemy_attack parked; the \
+             AfterEnemyAttackDamagedAsset continuation only fires after \
+             drive_attack_loop parked one — state-corruption invariant \
+             violation"
+        )
+    });
+    let outcome = drive_attack_loop(
+        cx,
+        pending.investigator,
+        pending.remaining_attackers,
+        pending.source,
+    );
+    if !matches!(outcome, EngineOutcome::Done) {
+        return outcome; // suspended again on a later attacker
+    }
+    match pending.source {
+        EnemyAttackSource::EnemyPhase => {
+            super::reaction_windows::after_enemy_phase_attacks(cx, pending.investigator)
+        }
+        EnemyAttackSource::AttackOfOpportunity => EngineOutcome::Done,
     }
 }
 
@@ -773,6 +895,79 @@ mod combat_tests {
             "the surviving damaged asset is returned for the soak window"
         );
         assert_event!(events, Event::DamageTaken { investigator, amount: 1 } if *investigator == id);
+    }
+
+    #[test]
+    fn resume_enemy_attack_drains_remaining_attackers_and_advances_cursor() {
+        // EU5 deferral: firing Guard Dog's reaction end-to-end across two
+        // attackers needs the real `cards` registry (so `trigger_matches`
+        // finds the ability and a soak window genuinely opens mid-loop) —
+        // that is the EU5 integration test. This lib-level check exercises
+        // the resume half directly: park a `pending_enemy_attack` with two
+        // remaining attackers (as `drive_attack_loop` would on suspend) plus
+        // an already-open soak window, then call `resume_enemy_attack` and
+        // assert it drains both attackers (exhausting each) and advances the
+        // enemy-phase cursor past the (sole) investigator to `None`.
+        use crate::state::{EnemyAttackSource, InvestigatorId, PendingEnemyAttack};
+
+        let inv_id = InvestigatorId(1);
+        let second = EnemyId(2);
+        let third = EnemyId(3);
+
+        let mut e2 = test_enemy(2, "Second Attacker");
+        e2.engaged_with = Some(inv_id);
+        let mut e3 = test_enemy(3, "Third Attacker");
+        e3.engaged_with = Some(inv_id);
+
+        // The real resume path runs AFTER `close_reaction_window_at` popped
+        // the soak window the loop suspended on, so `open_windows` is empty
+        // when `resume_enemy_attack` re-enters `drive_attack_loop`.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([inv_id])
+            .with_enemy(e2)
+            .with_enemy(e3)
+            .build();
+        // The enemy phase set the cursor to this investigator before opening
+        // the BeforeInvestigatorAttacked window; resume must advance it.
+        state.enemy_attack_pending = Some(inv_id);
+        state.pending_enemy_attack = Some(PendingEnemyAttack {
+            investigator: inv_id,
+            remaining_attackers: vec![second, third],
+            source: EnemyAttackSource::EnemyPhase,
+        });
+
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = super::resume_enemy_attack(&mut cx);
+
+        // Both parked attackers resolved and exhausted; the parked slot is
+        // cleared (taken). No registry → no new soak window, no re-suspend.
+        assert!(
+            state.pending_enemy_attack.is_none(),
+            "resume consumed the parked attack"
+        );
+        assert!(
+            state.enemies[&second].exhausted,
+            "second attacker exhausted"
+        );
+        assert!(state.enemies[&third].exhausted, "third attacker exhausted");
+        assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == second);
+        assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == third);
+        // Loop finished → `after_enemy_phase_attacks` advanced the cursor
+        // past the only investigator to None and opened the all-attacked
+        // window (auto-skips inline with no registry).
+        assert!(
+            state.enemy_attack_pending.is_none(),
+            "cursor advanced past the sole investigator to None"
+        );
+        // Outcome is whatever the all-investigators-attacked continuation
+        // returns (Done when it auto-skips and cascades). The contract this
+        // test pins is the drain + cursor advance, not the cascade tail.
+        let _ = outcome;
     }
 
     #[test]

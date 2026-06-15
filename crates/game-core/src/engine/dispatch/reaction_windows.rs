@@ -653,27 +653,23 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                     )
                 });
 
-                super::combat::resolve_attacks_for_investigator(cx, investigator);
+                let outcome = super::combat::resolve_attacks_for_investigator(cx, investigator);
 
-                // Advance the cursor: next Active investigator AFTER
-                // `investigator` in turn_order. The shared helper uses
-                // turn_order (not the filtered-Active list) as the index
-                // basis, so `investigator` itself can have been defeated
-                // mid-loop and we still find the right successor.
-                cx.state.enemy_attack_pending =
-                    super::cursor::next_active_investigator_after(cx.state, investigator);
-
-                if cx.state.enemy_attack_pending.is_some() {
-                    open_fast_window(
-                        cx,
-                        WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
-                    )
-                } else {
-                    open_fast_window(
-                        cx,
-                        WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
-                    )
+                // The attack loop suspended on a mid-loop soak reaction
+                // window (C5b #237): surface it immediately, WITHOUT
+                // advancing the cursor. The cursor advances later, once
+                // the loop truly finishes, via `resume_enemy_attack` →
+                // `after_enemy_phase_attacks` on window close.
+                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                    return outcome;
                 }
+                debug_assert!(
+                    matches!(outcome, EngineOutcome::Done),
+                    "resolve_attacks_for_investigator returned unexpected \
+                     {outcome:?} (expected Done or AwaitingInput)",
+                );
+
+                after_enemy_phase_attacks(cx, investigator)
             }
             PhaseStep::AfterAllInvestigatorsAttacked => {
                 if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
@@ -719,11 +715,48 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
             PhaseStep::InvestigatorTurnBegins => EngineOutcome::Done,
         },
         // AfterEnemyDefeated: no continuation work.
-        // AfterEnemyAttackDamagedAsset: temporary stub; replaced in Task 10
-        // with `resume_enemy_attack(cx)` to re-enter the suspended attack loop.
-        WindowKind::AfterEnemyDefeated { .. } | WindowKind::AfterEnemyAttackDamagedAsset { .. } => {
-            EngineOutcome::Done
-        }
+        WindowKind::AfterEnemyDefeated { .. } => EngineOutcome::Done,
+        // AfterEnemyAttackDamagedAsset: re-enter the enemy-attack loop the
+        // soak window suspended (C5b #237). `resume_enemy_attack` drains
+        // the parked remaining attackers and, for the enemy phase, runs
+        // `after_enemy_phase_attacks` once the loop finishes.
+        WindowKind::AfterEnemyAttackDamagedAsset { .. } => super::combat::resume_enemy_attack(cx),
+    }
+}
+
+/// Advance the enemy-phase cursor past `investigator` and open the next
+/// window (C5b #237).
+///
+/// Extracted from the [`PhaseStep::BeforeInvestigatorAttacked`]
+/// continuation so it runs from BOTH that arm (after the attack loop
+/// completes without suspending) AND
+/// [`super::combat::resume_enemy_attack`] (after a suspended loop
+/// resumes and finishes). Advances
+/// [`GameState::enemy_attack_pending`](crate::state::GameState::enemy_attack_pending)
+/// to the next Active investigator AFTER `investigator` via
+/// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
+/// — the helper indexes off `turn_order` (not the filtered-Active
+/// list), so `investigator` itself can have been defeated mid-loop and
+/// the right successor is still found. Then opens
+/// [`PhaseStep::BeforeInvestigatorAttacked`] again if the cursor
+/// advanced to `Some`, otherwise [`PhaseStep::AfterAllInvestigatorsAttacked`].
+pub(super) fn after_enemy_phase_attacks(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    cx.state.enemy_attack_pending =
+        super::cursor::next_active_investigator_after(cx.state, investigator);
+
+    if cx.state.enemy_attack_pending.is_some() {
+        open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+        )
+    } else {
+        open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
+        )
     }
 }
 
