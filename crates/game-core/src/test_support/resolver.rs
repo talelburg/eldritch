@@ -472,6 +472,7 @@ mod tests {
             on_success: None,
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
         });
         state
     }

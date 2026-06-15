@@ -214,6 +214,7 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
             on_success.as_ref().map(|b| (**b).clone()),
             on_fail.as_ref().map(|b| (**b).clone()),
             eval_ctx.source,
+            0, // a Revelation skill test takes its difficulty as printed
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::PutIntoThreatArea { code } => {
@@ -1432,6 +1433,7 @@ mod tests {
             on_success: None,
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
         });
         let mut events = Vec::new();
 
@@ -1505,6 +1507,7 @@ mod tests {
             on_success: None,
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
         });
         state
     }
@@ -1669,6 +1672,7 @@ mod tests {
             on_success: None,
             source: None,
             continuation: crate::state::FinishContinuation::AwaitingCommit,
+            test_modifier: 0,
         });
         let mut events = Vec::new();
 
