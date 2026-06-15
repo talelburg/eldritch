@@ -596,6 +596,19 @@ pub enum Effect {
         /// Printed `ArkhamDB` code of the card to place.
         code: String,
     },
+    /// Initiate a Fight against the single enemy engaged with the
+    /// controller, applying `combat_modifier` (resolved at eval, e.g.
+    /// .38 Special's +1/+3) for this attack and dealing `1 + extra_damage`
+    /// on success. Auto-targets when exactly one enemy is engaged; the
+    /// activation check rejects ≠1 engaged *before* any cost is paid, so
+    /// the evaluator can assume a single target. Inspectable (not
+    /// `Native`) precisely so that pre-charge target check can see it.
+    Fight {
+        /// Combat modifier for this attack, resolved against state at eval.
+        combat_modifier: IntExpr,
+        /// Bonus damage beyond the base 1 (.38 Special: +1).
+        extra_damage: u8,
+    },
     /// A constant restriction the source card imposes while in play
     /// (under [`Trigger::Constant`]). **Inspected, not executed** — the
     /// engine reads it at the relevant decision point (`play_is_prohibited`
@@ -1044,6 +1057,16 @@ pub fn discard_self() -> Effect {
 #[must_use]
 pub fn put_into_threat_area(code: impl Into<String>) -> Effect {
     Effect::PutIntoThreatArea { code: code.into() }
+}
+
+/// Build an [`Effect::Fight`] with the given combat modifier and bonus
+/// damage (.38 Special: `fight(IntExpr::cond(LocationHasClues, 3, 1), 1)`).
+#[must_use]
+pub fn fight(combat_modifier: IntExpr, extra_damage: u8) -> Effect {
+    Effect::Fight {
+        combat_modifier,
+        extra_damage,
+    }
 }
 
 /// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].

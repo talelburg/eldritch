@@ -52,8 +52,8 @@
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Condition, Effect, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
-    Trigger,
+    Condition, Effect, IntExpr, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind,
+    Stat, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -230,7 +230,57 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
                      never executed"
                 .into(),
         },
+        Effect::Fight {
+            combat_modifier,
+            extra_damage,
+        } => apply_fight(cx, &eval_ctx, combat_modifier, *extra_damage),
     }
+}
+
+/// Resolve [`Effect::Fight`]: snapshot the combat modifier, auto-target
+/// the single engaged enemy, and start a Combat skill test (reusing the
+/// suspend/resume commit-window path) whose Fight follow-up deals
+/// `1 + extra_damage`. The activation check has already guaranteed
+/// exactly one engaged enemy, so a missing target here is a state-shape
+/// violation rejected loudly rather than silently no-oped.
+fn apply_fight(
+    cx: &mut Cx,
+    eval_ctx: &EvalContext,
+    combat_modifier: &IntExpr,
+    extra_damage: u8,
+) -> EngineOutcome {
+    let modifier = match eval_int_expr(cx.state, eval_ctx.controller, combat_modifier) {
+        Ok(m) => m,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    let Some(enemy_id) =
+        crate::engine::dispatch::combat::single_engaged_enemy(cx.state, eval_ctx.controller)
+    else {
+        return EngineOutcome::Rejected {
+            reason: "Effect::Fight: expected exactly one engaged enemy (target check skipped?)"
+                .into(),
+        };
+    };
+    let fight_difficulty = cx.state.enemies.get(&enemy_id).map_or(0, |e| e.fight);
+    crate::engine::dispatch::skill_test::start_skill_test(
+        cx,
+        eval_ctx.controller,
+        SkillKind::Combat,
+        SkillTestKind::Fight,
+        fight_difficulty,
+        crate::state::SkillTestFollowUp::Fight {
+            enemy: enemy_id,
+            extra_damage,
+        },
+        None,
+        None,
+        eval_ctx.source,
+        modifier,
+    )
 }
 
 /// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source` from
@@ -386,6 +436,30 @@ fn eval_condition(
                  or wait for an OnEvent-based reaction model to surface past-test outcome."
             ))
         }
+    }
+}
+
+/// Resolve an [`IntExpr`] against the current state for `controller`.
+///
+/// [`IntExpr::Cond`] evaluates its [`Condition`] (reusing
+/// [`eval_condition`]); an unexpressible condition propagates as `Err`,
+/// which the caller turns into [`EngineOutcome::Rejected`].
+fn eval_int_expr(
+    state: &GameState,
+    controller: InvestigatorId,
+    expr: &IntExpr,
+) -> Result<i8, String> {
+    match expr {
+        IntExpr::Lit(n) => Ok(*n),
+        IntExpr::Cond {
+            when,
+            then,
+            otherwise,
+        } => Ok(if eval_condition(state, controller, when)? {
+            *then
+        } else {
+            *otherwise
+        }),
     }
 }
 
