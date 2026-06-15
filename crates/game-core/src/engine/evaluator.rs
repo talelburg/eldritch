@@ -94,6 +94,11 @@ pub struct EvalContext {
     /// ability's effect (so the card-local "discard that many" Native
     /// reads it). `None` outside that window. Mirrors `failed_by`.
     pub clue_discovery_count: Option<u8>,
+    /// The attacking enemy bound while resolving an
+    /// `EnemyAttackDamagedSelf` reaction, so the card-local
+    /// `Effect::Native` retaliate can name it. `None` outside that
+    /// window. Mirrors `failed_by` / `clue_discovery_count`. (C5b #237.)
+    pub attacking_enemy: Option<crate::state::EnemyId>,
 }
 
 impl EvalContext {
@@ -107,6 +112,7 @@ impl EvalContext {
             source: None,
             failed_by: None,
             clue_discovery_count: None,
+            attacking_enemy: None,
         }
     }
 
@@ -124,6 +130,7 @@ impl EvalContext {
             source: Some(source),
             failed_by: None,
             clue_discovery_count: None,
+            attacking_enemy: None,
         }
     }
 }
