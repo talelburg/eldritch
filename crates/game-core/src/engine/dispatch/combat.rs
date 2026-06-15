@@ -1,7 +1,7 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
 use crate::event::Event;
-use crate::state::{DefeatCause, EnemyId, InvestigatorId, Status, WindowKind};
+use crate::state::{CardInstanceId, DefeatCause, EnemyId, InvestigatorId, Status, WindowKind};
 
 use super::Cx;
 
@@ -72,6 +72,76 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
             "EnemyDefeated forced did not resolve to Done: {forced:?} (2+ needs #213)"
         );
     }
+}
+
+/// A computed damage/horror distribution for one enemy attack (C5b #237).
+///
+/// The product of [`assign_attack`]: how much of the attack's damage and
+/// horror lands on the defending investigator versus each soak-bearing
+/// asset. Placed simultaneously by [`place_assignment`], per Rules
+/// Reference page 7's "Apply Damage/Horror" clause.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct Assignment {
+    /// Damage absorbed by the investigator.
+    pub investigator_damage: u8,
+    /// Horror absorbed by the investigator.
+    pub investigator_horror: u8,
+    /// instance → damage soaked onto that asset.
+    pub asset_damage: std::collections::BTreeMap<CardInstanceId, u8>,
+    /// instance → horror soaked onto that asset.
+    pub asset_horror: std::collections::BTreeMap<CardInstanceId, u8>,
+}
+
+/// One eligible soaker for [`assign_attack`] (C5b #237).
+///
+/// `remaining_health` / `remaining_sanity` are the asset's *remaining*
+/// damage / horror capacity — printed stat (registry metadata) minus
+/// already-`accumulated_*`. The caller ([`build_soakers`]) derives these
+/// so [`assign_attack`] stays a pure function with no registry coupling.
+pub(super) struct Soaker {
+    /// The asset instance that may soak.
+    pub instance: CardInstanceId,
+    /// Remaining damage capacity (printed health − accumulated damage).
+    pub remaining_health: u8,
+    /// Remaining horror capacity (printed sanity − accumulated horror).
+    pub remaining_sanity: u8,
+}
+
+/// Deterministic soak-first assignment of an enemy attack's damage and
+/// horror (C5b #237).
+///
+/// Fills `soakers` (already ordered by the caller, by `CardInstanceId`
+/// to match the codebase's other simultaneous loops) up to each one's
+/// remaining capacity, then the investigator absorbs the remainder.
+/// Damage and horror are assigned **independently** — an asset with
+/// only health soaks damage, an asset with only sanity soaks horror.
+///
+/// Soak-first is the deterministic stand-in for the interactive
+/// distribution choice the rules grant the defending investigator: it
+/// is the only default that makes a soak reaction (Guard Dog 01021)
+/// observable — investigator-first would render the reaction dead code.
+///
+/// TODO(#44): interactive distribution — replace this body with a parked
+/// window surfacing eligible soakers and accepting a player-chosen
+/// `{target → points}` distribution, feeding the identical placement
+/// path.
+pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) -> Assignment {
+    let mut a = Assignment::default();
+    for s in soakers {
+        let d = damage.min(s.remaining_health);
+        if d > 0 {
+            a.asset_damage.insert(s.instance, d);
+            damage -= d;
+        }
+        let h = horror.min(s.remaining_sanity);
+        if h > 0 {
+            a.asset_horror.insert(s.instance, h);
+            horror -= h;
+        }
+    }
+    a.investigator_damage = damage;
+    a.investigator_horror = horror;
+    a
 }
 
 /// Add `amount` to the investigator's `damage` and emit
@@ -380,5 +450,64 @@ mod combat_tests {
         };
         super::damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
         assert!(!state.enemies.contains_key(&eid), "defeated enemy removed");
+    }
+
+    #[test]
+    fn assign_attack_fills_soaker_before_investigator() {
+        // 1 ally with remaining health 3, attack deals 2 damage / 0 horror →
+        // all 2 damage soaks onto the ally, none on the investigator.
+        let inst = crate::state::CardInstanceId(7);
+        let soakers = [super::Soaker {
+            instance: inst,
+            remaining_health: 3,
+            remaining_sanity: 1,
+        }];
+        let assignment = super::assign_attack(&soakers, 2, 0);
+        assert_eq!(assignment.investigator_damage, 0);
+        assert_eq!(assignment.investigator_horror, 0);
+        assert_eq!(assignment.asset_damage.get(&inst), Some(&2));
+        assert!(assignment.asset_horror.is_empty());
+    }
+
+    #[test]
+    fn assign_attack_overflows_to_investigator_past_capacity() {
+        // Ally with remaining health 1, attack deals 2 damage → 1 soaks onto
+        // the ally, 1 overflows onto the investigator.
+        let inst = crate::state::CardInstanceId(7);
+        let soakers = [super::Soaker {
+            instance: inst,
+            remaining_health: 1,
+            remaining_sanity: 0,
+        }];
+        let assignment = super::assign_attack(&soakers, 2, 0);
+        assert_eq!(assignment.asset_damage.get(&inst), Some(&1));
+        assert_eq!(assignment.investigator_damage, 1);
+    }
+
+    #[test]
+    fn assign_attack_soaks_damage_and_horror_independently() {
+        // Two soakers: A has only health, B has only sanity. Attack 1/1 →
+        // damage to A, horror to B, nothing to the investigator.
+        let a = crate::state::CardInstanceId(1);
+        let b = crate::state::CardInstanceId(2);
+        let soakers = [
+            super::Soaker {
+                instance: a,
+                remaining_health: 2,
+                remaining_sanity: 0,
+            },
+            super::Soaker {
+                instance: b,
+                remaining_health: 0,
+                remaining_sanity: 2,
+            },
+        ];
+        let assignment = super::assign_attack(&soakers, 1, 1);
+        assert_eq!(assignment.asset_damage.get(&a), Some(&1));
+        assert!(assignment.asset_damage.get(&b).is_none());
+        assert_eq!(assignment.asset_horror.get(&b), Some(&1));
+        assert!(assignment.asset_horror.get(&a).is_none());
+        assert_eq!(assignment.investigator_damage, 0);
+        assert_eq!(assignment.investigator_horror, 0);
     }
 }
