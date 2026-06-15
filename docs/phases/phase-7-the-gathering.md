@@ -38,8 +38,13 @@ retaliate and the resumable enemy-phase attack loop;
 [PR #292](https://github.com/talelburg/eldritch/pull/292)), and the C5c
 weapon-support prereq ([#295](https://github.com/talelburg/eldritch/issues/295):
 ammo/uses + inspectable `Effect::Fight` — `Cost::SpendUses` + `IntExpr`
-modifier + bonus damage; [PR #297](https://github.com/talelburg/eldritch/pull/297)).
-**Next: C5c content → C7** (C6d also gates C7b).
+modifier + bonus damage; [PR #297](https://github.com/talelburg/eldritch/pull/297)),
+and C5c ([#238](https://github.com/talelburg/eldritch/issues/238): Roland's
+.38 Special 01006 — clue-conditional weapon-fight — and Cover Up 01007 —
+3-clue threat-area Revelation + interrupt + game-end mental trauma — plus
+the `PutIntoThreatArea { clues }` extension;
+[PR #298](https://github.com/talelburg/eldritch/pull/298)).
+**Next: C5d → C7** (C6d also gates C7b).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -96,7 +101,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | ✅ PR #291 |
 | C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog reaction + enemy-attack soak mechanic | ✅ PR #292 |
 | — | [#295](https://github.com/talelburg/eldritch/issues/295) | infra: weapon support — ammo/uses (`Cost::SpendUses`) + inspectable `Effect::Fight` (`IntExpr` modifier + bonus damage) (prerequisite for C5c's .38 Special) | ✅ PR #297 |
-| C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | — |
+| C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | ✅ PR #298 |
 | C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets (×6) | — |
 | C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) | — |
 | C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window | — |
