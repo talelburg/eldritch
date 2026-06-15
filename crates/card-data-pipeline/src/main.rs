@@ -239,6 +239,9 @@ struct NormalizedCard {
     quantity: u8,
     pack_code: String,
     is_fast: bool,
+    /// Limited-use tokens parsed from a `Uses (N <kind>)` clause, as
+    /// `(count, UsesKind-variant-name)`. `None` when absent or unmodeled.
+    uses: Option<(u8, &'static str)>,
     // Encounter-card stats. `clues` is a location's starting clues AND an
     // act's advance threshold (same JSON field); consumer interprets by kind.
     shroud: Option<u8>,
@@ -288,6 +291,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         .is_some_and(|t| has_keyword(t, "Retaliate"));
     let prey = raw.text.as_deref().map_or(PreyParse::None, parse_prey);
     let spawn_name = raw.text.as_deref().and_then(parse_spawn_name);
+    let uses = raw.text.as_deref().and_then(parse_uses);
 
     Ok(NormalizedCard {
         code: raw.code,
@@ -310,6 +314,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         quantity: raw.quantity.unwrap_or(1),
         pack_code: raw.pack_code,
         is_fast,
+        uses,
         shroud: raw.shroud,
         clues: raw.clues,
         clues_fixed: raw.clues_fixed.unwrap_or(false),
@@ -414,7 +419,7 @@ fn render(all: &BTreeMap<String, NormalizedCard>) -> String {
     out.push_str(
         "use card_dsl::card_data::{\n    \
          CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,\n    \
-         SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation,\n};\n\n\
+         SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, Uses, UsesKind,\n};\n\n\
          /// Every card from the pinned snapshot, sorted by code.\n\
          #[must_use]\n\
          pub fn all_cards() -> Vec<CardMetadata> {\n    vec![\n",
@@ -480,7 +485,7 @@ fn render_kind(c: &NormalizedCard) -> String {
         ),
         "Asset" => format!(
             "CardKind::Asset {{ class: Class::{}, cost: {}, xp: {}, slots: {}, \
-             health: {}, sanity: {}, skill_icons: {}, is_fast: {}, deck_limit: {} }}",
+             health: {}, sanity: {}, skill_icons: {}, is_fast: {}, deck_limit: {}, uses: {} }}",
             c.class,
             opt_i8(c.cost),
             opt_u8(c.xp),
@@ -490,6 +495,7 @@ fn render_kind(c: &NormalizedCard) -> String {
             icons,
             c.is_fast,
             c.deck_limit,
+            uses_lit(c.uses),
         ),
         "Event" => format!(
             "CardKind::Event {{ class: Class::{}, cost: {}, xp: {}, \
@@ -578,6 +584,16 @@ fn opt_u8(v: Option<u8>) -> String {
     }
 }
 
+/// Emit the `Option<Uses>` literal for an asset's parsed `uses`.
+fn uses_lit(uses: Option<(u8, &'static str)>) -> String {
+    match uses {
+        Some((count, variant)) => {
+            format!("Some(Uses {{ kind: UsesKind::{variant}, count: {count} }})")
+        }
+        None => "None".into(),
+    }
+}
+
 /// Emit the `ClueValue` literal for a location's clues.
 fn clue_value_lit(clues: u8, fixed: bool) -> String {
     if fixed {
@@ -596,6 +612,28 @@ fn strip_html_bold(s: &str) -> String {
 /// (e.g. `"Hunter."`). Bold tags are stripped first.
 fn has_keyword(text: &str, keyword: &str) -> bool {
     strip_html_bold(text).contains(&format!("{keyword}."))
+}
+
+/// Parse a printed `Uses (N <kind>)` clause into `(count, variant)`, where
+/// `variant` is the `UsesKind` Rust variant name for code emission. Returns
+/// `None` when absent; warns + returns `None` for an unmodeled kind rather
+/// than silently approximating.
+fn parse_uses(text: &str) -> Option<(u8, &'static str)> {
+    let plain = strip_html_bold(text);
+    let start = plain.find("Uses (")? + "Uses (".len();
+    let inner = &plain[start..];
+    let end = inner.find(')')?;
+    let body = inner[..end].trim(); // e.g. "4 ammo"
+    let (num, kind) = body.split_once(' ')?;
+    let count: u8 = num.trim().parse().ok()?;
+    let variant = match kind.trim().to_ascii_lowercase().as_str() {
+        "ammo" => "Ammo",
+        other => {
+            eprintln!("warning: unmodeled Uses kind {other:?}; emitting uses: None");
+            return None;
+        }
+    };
+    Some((count, variant))
 }
 
 /// Parsed Prey line. `None` = no printed prey (emit `Prey::Default`);
@@ -712,8 +750,8 @@ const GENERATED_HEADER: &str = "\
 mod tests {
     use super::{
         clue_value_lit, emit_card, has_keyword, health_value_opt_lit, map_card_type, map_class,
-        normalize, parse_prey, parse_slots, parse_spawn_name, parse_traits, prey_lit, process_raw,
-        strip_html_bold, NormalizedCard, PreyParse, RawCard,
+        normalize, parse_prey, parse_slots, parse_spawn_name, parse_traits, parse_uses, prey_lit,
+        process_raw, strip_html_bold, NormalizedCard, PreyParse, RawCard,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -731,6 +769,17 @@ mod tests {
         assert!(has_keyword("Hunter. Retaliate.", "Hunter"));
         assert!(has_keyword("Hunter. Retaliate.", "Retaliate"));
         assert!(!has_keyword("<b>Spawn</b> - Attic.", "Hunter"));
+    }
+
+    #[test]
+    fn parse_uses_reads_ammo_count() {
+        assert_eq!(
+            parse_uses("Uses (4 ammo).\n[action] Spend 1 ammo: Fight."),
+            Some((4u8, "Ammo"))
+        );
+        assert_eq!(parse_uses("Some other card text."), None);
+        // Unmodeled kind → None (with a build warning).
+        assert_eq!(parse_uses("Uses (3 supplies)."), None);
     }
 
     #[test]
@@ -866,6 +915,7 @@ mod tests {
             quantity: 1,
             pack_code: "core".into(),
             is_fast: false,
+            uses: None,
             shroud: None,
             clues: None,
             clues_fixed: false,

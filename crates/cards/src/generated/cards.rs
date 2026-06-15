@@ -8,7 +8,7 @@
 
 use card_dsl::card_data::{
     CardKind, CardMetadata, Class, ClueValue, HealthValue, Prey, PreyDirection, PreyMeasure,
-    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation,
+    SkillIcons, SkillKind, Skills, Slot, Spawn, SpawnLocation, Uses, UsesKind,
 };
 
 /// Every card from the pinned snapshot, sorted by code.
@@ -69,7 +69,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Roland Banks deck only.\nUses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack (if there are 1 or more clues on your location, you get +3 [combat], instead). This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: Some(Uses { kind: UsesKind::Ammo, count: 4 }) },
         },
         CardMetadata {
             code: "01007".to_owned(),
@@ -85,7 +85,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Daisy Walker deck only.\nYou have 2 additional hand slots, which can only be used to hold [[Tome]] assets.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "01009".to_owned(),
@@ -93,7 +93,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("<b>Revelation</b> - Put The Necronomicon into play in your threat area, with 3 horror on it. It cannot leave play while it has 1 or more horror on it.\nTreat each [elder_sign] you reveal on a chaos token as a [auto_fail].\n[action]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if The Necronomicon has no horror on it, discard it.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "01010".to_owned(),
@@ -117,7 +117,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Agnes Baker deck only.\n[reaction] After you play a [[Spell]] card: Draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "01013".to_owned(),
@@ -133,7 +133,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Wendy Adams deck only.\nYou may play the topmost event in your discard pile as if it were in your hand.\n<b>Forced</b> - After you play an event or discard an event from play: Place it on the bottom of your deck instead of in your discard pile.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "01015".to_owned(),
@@ -149,7 +149,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 4 }) },
         },
         CardMetadata {
             code: "01017".to_owned(),
@@ -157,7 +157,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +1 [combat] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01018".to_owned(),
@@ -165,7 +165,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Police".to_owned()],
             text: Some("You get +1 [combat].\n[fast] Discard Beat Cop: Deal 1 damage to an enemy at your location.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01019".to_owned(),
@@ -173,7 +173,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned(), "Science".to_owned()],
             text: Some("Uses (3 supplies). If First Aid has no supplies, discard it.\n[action] Spend 1 supply: Heal 1 damage or horror from an investigator at your location.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01020".to_owned(),
@@ -181,7 +181,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack. If the attacked enemy is the only enemy engaged with you, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01021".to_owned(),
@@ -189,7 +189,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Creature".to_owned()],
             text: Some("[reaction] When an enemy attack deals damage to Guard Dog: Deal 1 damage to the attacking enemy.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01022".to_owned(),
@@ -237,7 +237,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("You get +1 [willpower].\n[fast] While an investigator at your location is taking his or her turn, discard Police Badge: That investigator may take 2 additional actions this turn.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01028".to_owned(),
@@ -245,7 +245,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Police".to_owned()],
             text: Some("You get +1 [combat].\n[fast] Exhaust Beat Cop and deal 1 damage to it: Deal 1 damage to an enemy at your location.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(2), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(2), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01029".to_owned(),
@@ -253,7 +253,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (2 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] for this attack. Instead of its standard damage, this attack deals 1 damage for each point you succeed by (to a minimum of 1, to a maximum of 5). If you fail and would damage another investigator, this attack deals 1 damage for each point you fail by (to a minimum of 1, to a maximum of 5).".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 2 }) },
         },
         CardMetadata {
             code: "01030".to_owned(),
@@ -261,7 +261,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned()],
             text: Some("Fast.\nYou get +1 [intellect] while investigating.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01031".to_owned(),
@@ -269,7 +269,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("[action] Exhaust Old Book of Lore: Choose an investigator at your location. That investigator searches the top 3 cards of his or her deck for a card, draws it, and shuffles the remaining cards into his or her deck.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01032".to_owned(),
@@ -277,7 +277,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] After Research Librarian enters play: Search your deck for a [[Tome]] asset and add it to your hand. Shuffle your deck.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01033".to_owned(),
@@ -285,7 +285,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [intellect].\n[reaction] After you successfully investigate: Gain 1 resource.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01034".to_owned(),
@@ -293,7 +293,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [intellect] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01035".to_owned(),
@@ -301,7 +301,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("[action] Choose an investigator at your location and test [intellect] (2). If you succeed, heal 1 damage from that investigator. If you fail, deal 1 damage to that investigator.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01036".to_owned(),
@@ -341,7 +341,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned()],
             text: Some("Fast.\nYou get +1 [intellect] while investigating.\n[fast] If there are no clues on your location: Return Magnifying Glass to your hand.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(0), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(0), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01041".to_owned(),
@@ -349,7 +349,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("[reaction] When a non-[[Elite]] enemy spawns at your location, discard Disc of Itzamna: Discard that enemy.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01042".to_owned(),
@@ -357,7 +357,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("[action] Exhaust Encyclopedia: Choose an investigator at your location. That investigator gets +2 to a skill of your choice until the end of the phase.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01043".to_owned(),
@@ -373,7 +373,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned(), "Illicit".to_owned()],
             text: Some("Fast.\n[action]: <b>Fight.</b> If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01045".to_owned(),
@@ -381,7 +381,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned(), "Illicit".to_owned()],
             text: Some("[action] Exhaust Burglary: <b>Investigate.</b> If you succeed, instead of discovering clues, gain 3 resources.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01046".to_owned(),
@@ -389,7 +389,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned(), "Illicit".to_owned()],
             text: Some("[reaction] After you evade an enemy, exhaust Pickpocketing: Draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01047".to_owned(),
@@ -397,7 +397,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +2 [combat] for this attack. If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 3 }) },
         },
         CardMetadata {
             code: "01048".to_owned(),
@@ -405,7 +405,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You may take an additional action during your turn.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(6), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(6), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01049".to_owned(),
@@ -413,7 +413,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [combat] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01050".to_owned(),
@@ -453,7 +453,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You may take an additional action during your turn.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01055".to_owned(),
@@ -461,7 +461,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You get +1 [agility].\n[action] Exhaust Cat Burglar: Disengage from each enemy engaged with you and move to a connecting location. This action does not provoke attacks of opportunity.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01056".to_owned(),
@@ -485,7 +485,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Uses (4 secrets). If Forbidden Knowledge has no secrets, discard it.\n[fast] Exhaust Forbidden Knowledge and take 1 horror: Move 1 secret from Forbidden Knowledge to your resource pool, as a resource.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(0), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(0), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01059".to_owned(),
@@ -493,7 +493,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Charm".to_owned()],
             text: Some("You get +1 [willpower].".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01060".to_owned(),
@@ -501,7 +501,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat] and deals +1 damage. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01061".to_owned(),
@@ -509,7 +509,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Exhaust Scrying and spend 1 charge: Look at the top 3 cards of any investigator's deck or the encounter deck. Return them to the top of that deck in any order.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01062".to_owned(),
@@ -517,7 +517,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +1 [intellect] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01063".to_owned(),
@@ -525,7 +525,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Sorcerer".to_owned()],
             text: Some("<b>Forced</b> - After Arcane Initiate enters play: Place 1 doom on it.\n[fast] Exhaust Arcane Initiate: Search the top 3 cards of your deck for a [[Spell]] card and draw it. Shuffle your deck.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01064".to_owned(),
@@ -581,7 +581,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("You have 1 additional arcane slot.\n[action] Exhaust Book of Shadows: Add 1 charge to a [[Spell]] asset you control.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(3), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(3), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01071".to_owned(),
@@ -589,7 +589,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Uses (4 charges). If Grotesque Statue has no charges, discard it.\n[reaction] When you would reveal a chaos token, spend 1 charge: Reveal 2 chaos tokens instead of 1. Choose 1 of those tokens to resolve, and ignore the other.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(4), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(4), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01072".to_owned(),
@@ -597,7 +597,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Armor".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(0), xp: Some(0), slots: vec![Slot::Body], health: Some(2), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(0), xp: Some(0), slots: vec![Slot::Body], health: Some(2), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01073".to_owned(),
@@ -605,7 +605,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[reaction] After you successfully investigate by 2 or more, exhaust Scavenging: Choose an [[Item]] card in your discard pile and add it to your hand.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01074".to_owned(),
@@ -613,7 +613,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +2 [combat] for this attack. This attack deals +1 damage. If a [skull] or [auto_fail] symbol is revealed during this attack, discard Baseball Bat after the attack resolves.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01075".to_owned(),
@@ -621,7 +621,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Charm".to_owned()],
             text: Some("[reaction] After you fail a skill test, exhaust Rabbit's Foot: Draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01076".to_owned(),
@@ -629,7 +629,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Creature".to_owned()],
             text: Some("[fast] Discard Stray Cat: Automatically evade a non-[[Elite]] enemy at your location.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01077".to_owned(),
@@ -637,7 +637,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01078".to_owned(),
@@ -677,7 +677,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("[reaction] When an enemy attacks you, exhaust Aquinnah and deal 1 horror to her: Deal that enemy's damage to another enemy at your location, instead. (You still take horror dealt by the attack.)".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01083".to_owned(),
@@ -709,7 +709,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack.\n[action] Discard Knife: <b>Fight.</b> You get +2 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01087".to_owned(),
@@ -717,7 +717,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned()],
             text: Some("Uses (3 supplies).\n[action] Spend 1 supply: <b>Investigate.</b> Your location gets -2 shroud for this investigation.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01088".to_owned(),
@@ -773,7 +773,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Armor".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Body], health: Some(4), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Body], health: Some(4), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01095".to_owned(),
@@ -781,7 +781,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "01096".to_owned(),
@@ -949,7 +949,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("While you control Lita Chantler, she gains:\n\"Each investigator at your location gets +1 [combat].\n[reaction] When an investigator at your location successfully attacks a [[Monster]] enemy: That investigator deals +1 damage.\"".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "01118".to_owned(),
@@ -1509,7 +1509,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Charm".to_owned()],
             text: Some("Zoey Samaras deck only.\n[reaction] After an enemy becomes engaged with you, exhaust Zoey's Cross and spend 1 resource: Deal 1 damage to that enemy.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02007".to_owned(),
@@ -1541,7 +1541,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Jenny Barnes deck only. Uses (X ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +2 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(-2), xp: None, slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(-2), xp: None, slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02011".to_owned(),
@@ -1557,7 +1557,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Instrument".to_owned(), "Relic".to_owned()],
             text: Some("Jim Culver deck only.\n[reaction] When a [skull] token is revealed during a skill test, exhaust Jim's Trumpet: Heal 1 horror from an investigator at your location or a connecting location.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02013".to_owned(),
@@ -1573,7 +1573,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Creature".to_owned()],
             text: Some("\"Ashcan\" Pete deck only.\n[action] Exhaust Duke: <b>Fight.</b> You attack with a base [combat] skill of 4. This attack deals +1 damage.\n[action] Exhaust Duke: <b>Investigate.</b> You investigate with a base [intellect] skill of 4. You may move to a connecting location immediately before investigating with this effect.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02015".to_owned(),
@@ -1589,7 +1589,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack. If you perform this attack against an enemy engaged with another investigator and you fail, you deal no damage.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02017".to_owned(),
@@ -1621,7 +1621,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned(), "Science".to_owned()],
             text: Some("Your maximum hand size is increased by 2.\n[reaction] After Laboratory Assistant enters play: Draw 2 cards.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02021".to_owned(),
@@ -1629,7 +1629,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("[action] Test [intellect] (4). If you succeed, discard Strange Solution and draw 2 cards. Record in your Campaign Log that \"you have identified the solution.\"".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02022".to_owned(),
@@ -1653,7 +1653,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (4 supplies).\n[action] Spend 1 supply: Choose an investigator at your location to heal 1 horror. Then, that investigator tests [willpower] (2). If the test succeeds, he or she heals 1 additional horror. If the test fails, he or she discards 1 card at random from his or her hand.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02025".to_owned(),
@@ -1677,7 +1677,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You get +1 [combat].\n<b>Forced</b> - At the end of the upkeep phase: You must either pay 1 resource or discard Hired Muscle.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02028".to_owned(),
@@ -1685,7 +1685,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: <b>Investigate.</b> Investigate using [willpower] instead of [intellect]. If you succeed, discover 1 additional clue at this location. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this test, after this test resolves lose all remaining actions and immediately end your turn.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02029".to_owned(),
@@ -1693,7 +1693,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("[reaction] After a [skull], [cultist], [tablet], or [elder_thing] symbol is revealed during a test you are performing: You get +1 skill value for this test.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02030".to_owned(),
@@ -1701,7 +1701,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: Heal 1 horror from an investigator at your location.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02031".to_owned(),
@@ -1717,7 +1717,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> If you have no resources in your resource pool, this attack deals +1 damage.\n[fast] During an attack using Fire Axe, spend 1 resource: You get +2 [combat] for this skill test. (Limit three times per attack.)".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02033".to_owned(),
@@ -1725,7 +1725,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [agility].\n[reaction] After your turn ends: Heal 1 horror from Peter Sylvestre.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02034".to_owned(),
@@ -1741,7 +1741,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [agility] and +1 [willpower].\n[reaction] After your turn ends: Heal 1 horror from Peter Sylvestre.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(2), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(2), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02036".to_owned(),
@@ -1749,7 +1749,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack. If you succeed, you may spend 1 additional action to deal +1 damage for this attack.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02037".to_owned(),
@@ -1781,7 +1781,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] After you draw a non-weakness card, discard that card and exhaust Dr. Henry Armitage: Gain 3 resources.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02042".to_owned(),
@@ -1925,7 +1925,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("[action]: <b>Fight.</b> This attack uses [intellect] instead of [combat]. If used to attack The Experiment, this attack deals +6 damage. If you succeed, remove Alchemical Concoction from the game.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02060".to_owned(),
@@ -1933,7 +1933,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("<b>Revelation</b> - Put \"Jazz\" Mulligan into play at your location.\nWhile \"Jazz\" Mulligan is not controlled by a player, he gains: \"[action]: <b>Parley.</b> Test [intellect] (3). If successful, take control of \"Jazz\" Mulligan.\"\nWhile you control \"Jazz\" Mulligan, you ignore the text on each unrevealed [[Miskatonic]] location.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02061".to_owned(),
@@ -1941,7 +1941,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [intellect].\n[reaction] After you discover the last remaining clue in your location, exhaust Professor Warren Rice: Draw 1 card.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02063".to_owned(),
@@ -2077,7 +2077,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned()],
             text: Some("<b>Forced</b> - At the start of the enemy phase, if no investigator controls Peter Clover: Deal 1 damage to him.\n[fast] Exhaust Peter Clover: Automatically evade a [[Criminal]] enemy in your location.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02080".to_owned(),
@@ -2085,7 +2085,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [combat].\n[reaction] After you defeat an enemy, exhaust Dr. Francis Morgan: Draw 1 card.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(4), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(4), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02081".to_owned(),
@@ -2293,7 +2293,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("You get +1 [willpower].\nBrother Xavier may be assigned damage and/or horror dealt to other investigators at your location.\n[reaction] When Brother Xavier is defeated: Deal 2 damage to an enemy at your location.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02107".to_owned(),
@@ -2309,7 +2309,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] During your turn, if you are not engaged with any enemies, exhaust Pathfinder: Move to a connecting location.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02109".to_owned(),
@@ -2325,7 +2325,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nIn between each game of a campaign, you may swap up to two level 0 cards out of your deck in exchange for an equal number of level 0 cards. (You must still follow all deckbuilding rules for your investigator).".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02111".to_owned(),
@@ -2341,7 +2341,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Song".to_owned()],
             text: Some("Uses (5 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +1 [willpower] for this attack. If a [skull] symbol is revealed during this attack, this attack deals +2 damage.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(2), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(2), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02113".to_owned(),
@@ -2357,7 +2357,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack.\n[action] Exile Fire Extinguisher: <b>Evade.</b> You get +3 [agility] for this test. If you are successful, evade each other enemy engaged with you, as well.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02115".to_owned(),
@@ -2373,7 +2373,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Uses (3 supplies).\n[fast] Spend 1 supply, exhaust Smoking Pipe, and take 1 damage: Heal 1 horror.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02117".to_owned(),
@@ -2381,7 +2381,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Uses (3 supplies).\n[fast] Spend 1 supply, exhaust Painkillers, and take 1 horror: Heal 1 damage.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02119".to_owned(),
@@ -2541,7 +2541,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +2 [intellect] while investigating [[Miskatonic]] locations.\n<b>Forced</b> - When Harold Walsted leaves play: Remove him from the game and add 1 [tablet] token to the chaos bag for the remainder of the campaign.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02139".to_owned(),
@@ -2549,7 +2549,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("While you control Adam Lynch, treat the \"[action] [action]\" ability on the Security Office as if it were an \"[action]\" ability.\n<b>Forced</b> - When Adam Lynch leaves play: Remove him from the game and add 1 [tablet] token to the chaos bag for the remainder of the campaign.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02140".to_owned(),
@@ -2557,7 +2557,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("You get +1 [intellect].\n[action]: Gain 2 resources.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02141".to_owned(),
@@ -2613,7 +2613,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("You have 1 additional hand slot, which can only be used to hold a [[Weapon]] asset.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02148".to_owned(),
@@ -2629,7 +2629,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] After Art Student enters play: Discover 1 clue at your location.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02150".to_owned(),
@@ -2653,7 +2653,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned(), "Illicit".to_owned()],
             text: Some("Fast.\n[action] <b>Fight.</b> You get +2 [combat] for this attack. If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02153".to_owned(),
@@ -2669,7 +2669,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend one charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +2 [willpower] and deal +1 damage for this attack. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 1 horror. ".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02155".to_owned(),
@@ -2677,7 +2677,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("You get +2 [intellect] while investigating if you have no clues.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02156".to_owned(),
@@ -2693,7 +2693,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nYou have 1 additional accessory slot.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02158".to_owned(),
@@ -2701,7 +2701,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nYou have 1 additional ally slot.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02160".to_owned(),
@@ -2861,7 +2861,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Bystander".to_owned()],
             text: Some("Surge.\n<b>Revelation</b> - Put Helpless Passenger into play at the location to your left (or at your location if you cannot).\n[action] <b>Parley.</b> Take control of Helpless Passenger.\n<b>Forced</b> - If Helpless Passenger leaves play: Each investigator takes 1 horror.".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02180".to_owned(),
@@ -2909,7 +2909,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\n[fast] Spend 2 resources: You get +1 [intellect] until the end of the phase.\n[fast] Spend 2 resources: You get +1 [combat] until the end of the phase.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02186".to_owned(),
@@ -2925,7 +2925,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nWhile you have 5 or more cards in your hand, Higher Education gains:\n\"[fast] Spend 1 resource: You get +2 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +2 [intellect] for this skill test.\"".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02188".to_owned(),
@@ -2933,7 +2933,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Limit 1 per investigator.\n[reaction] When your turn begins, if there are no other investigators at your location: Gain 1 resource.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02189".to_owned(),
@@ -2941,7 +2941,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\n[fast] Spend 2 resources: You get +3 [intellect] for this skill test.\n[fast] Spend 2 resources: You get +3 [agility] for this skill test.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02190".to_owned(),
@@ -2957,7 +2957,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Pact".to_owned()],
             text: Some("Permanent.\n[fast] Add 1 doom to Blood Pact: You get +3 [willpower] for this skill test. (Limit once per test.)\n[fast] Add 1 doom to Blood Pact: You get +3 [combat] for this skill test. (Limit once per test.)".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02192".to_owned(),
@@ -2973,7 +2973,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\n[fast] Spend 1 resource: You get +1 [combat] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02194".to_owned(),
@@ -3141,7 +3141,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Key".to_owned()],
             text: Some("<b>Revelation</b> - Take control of Key to the Chamber.\n[fast] If The Hidden Chamber is connected to your location: Attach Key to the Chamber to The Hidden Chamber.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02216".to_owned(),
@@ -3157,7 +3157,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Dunwich".to_owned()],
             text: Some("You get +1 [willpower].\n[reaction] After you succeed at a [willpower] test on a treachery card, exhaust Zebulon Whateley: Draw 1 card.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02218".to_owned(),
@@ -3165,7 +3165,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Dunwich".to_owned()],
             text: Some("You get +1 [agility].\n[reaction] After you evade an enemy, exhaust Earl Sawyer: Draw 1 card.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02219".to_owned(),
@@ -3173,7 +3173,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Powder of Ibn Ghazi enters play with X clues on it, where X is the number of characters who \"survived the Dunwich Legacy\" in your Campaign Log.\n[fast]: Move 1 clue from Powder of Ibn Ghazi to an exhausted Brood of Yog-Sothoth at your location.".to_owned()),
             pack_code: "bota".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02220".to_owned(),
@@ -3229,7 +3229,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] and deal +2 damage for this attack. Cannot be used to attack enemies engaged with you.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 3 }) },
         },
         CardMetadata {
             code: "02227".to_owned(),
@@ -3261,7 +3261,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Exceptional.\n[reaction] When you reveal a non-[auto_fail] chaos token, spend 2 resources: Ignore that chaos token and reveal another one to resolve. If that token has a [auto_fail] symbol, remove Lucky Dice from the game (cannot be ignored/canceled).".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02231".to_owned(),
@@ -3277,7 +3277,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Sorcerer".to_owned()],
             text: Some("You get +1 [intellect].\n[fast] Exhaust Alyssa Graham: Look at the top card of either the encounter deck or any player deck. You may then add 1 doom to Alyssa Graham to place the looked-at card on the bottom of its deck.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02233".to_owned(),
@@ -3285,7 +3285,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: <b>Investigate.</b> Investigate using [willpower] instead of [intellect]. You get +2 [willpower] for this test. If successful, you discover 2 additional clues at this location. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this test, after this test resolves lose all remaining actions and immediately end your turn.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(5), xp: Some(4), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(5), xp: Some(4), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02234".to_owned(),
@@ -3293,7 +3293,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Condition".to_owned()],
             text: Some("Limit 1 per investigator.\nDuring the upkeep phase, you may choose to not gain resources.\nWhile you have no resources in your resource pool, you get +1 [willpower], +1 [intellect], +1 [combat], and +1 [agility].".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02235".to_owned(),
@@ -3445,7 +3445,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("[action] <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +2 [willpower] for this attack for each clue on the attacked enemy. Use this ability only on an [[Abomination]] enemy.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None },
         },
         CardMetadata {
             code: "02255".to_owned(),
@@ -3509,7 +3509,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (4 supplies).\n[action] Spend 1 supply: Heal 2 damage from an investigator at your location.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02263".to_owned(),
@@ -3517,7 +3517,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (3 supplies).\n[action] Spend 1 supply: <b>Fight.</b> Attack with a base [combat] skill of 6. This attack deals +2 damage.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02264".to_owned(),
@@ -3525,7 +3525,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (4 supplies).\n[action] Spend 1 supply: <b>Evade.</b> Evade with a base [agility] skill of 6.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02265".to_owned(),
@@ -3533,7 +3533,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("[fast] Spend 1 resource: Choose an [[Item]] asset from your hand and play it (paying its cost).".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02266".to_owned(),
@@ -3565,7 +3565,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("[reaction] After a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during a skill test at your location, exhaust Jewel of Aureolus: Draw 1 card or gain 2 resources.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02270".to_owned(),
@@ -3589,7 +3589,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Clothing".to_owned()],
             text: Some("Reduce the difficulty of skill tests you perform during 'parley' actions by 2.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02273".to_owned(),
@@ -3813,7 +3813,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +5 [combat] for this attack. This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 3 }) },
         },
         CardMetadata {
             code: "02302".to_owned(),
@@ -3821,7 +3821,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] When you draw an encounter card from the encounter deck, exhaust Dr. William T. Maleson and place 1 of your clues on your location: Cancel the drawing of that card and shuffle it back into the encounter deck. Then, draw a new card from the top of the encounter deck.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02303".to_owned(),
@@ -3837,7 +3837,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You may spend any number of additional actions when you perform this attack. You get +2 [combat] for this attack for each action being spent (including this ability's [action] cost). This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UsesKind::Ammo, count: 4 }) },
         },
         CardMetadata {
             code: "02305".to_owned(),
@@ -3845,7 +3845,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Exceptional.\n[reaction] When a phase begins, remove The Gold Pocket Watch from the game: Skip this phase.\n[reaction] After a phase ends, remove The Gold Pocket Watch from the game: Repeat that phase.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(4), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1 },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(4), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None },
         },
         CardMetadata {
             code: "02306".to_owned(),
@@ -3853,7 +3853,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +3 [willpower] and deal +2 damage for this attack. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 2 horror.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(5), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(5), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02307".to_owned(),
@@ -3869,7 +3869,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("[reaction] When an enemy attacks you, exhaust Aquinnah and deal 1 horror to her: Deal that enemy's damage to any enemy at your location, instead. (You still take horror dealt by the attack.)".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(4), xp: Some(3), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(4), xp: Some(3), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02309".to_owned(),
@@ -3877,7 +3877,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[reaction] After a skill test is failed, if a skill card you own is committed to that test, exhaust Try and Try Again: Return that skill card to your hand.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02310".to_owned(),
@@ -3885,7 +3885,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Conspirator".to_owned()],
             text: Some("Fast.\n[reaction] After The Red-Gloved Man enters play: Choose two of your skills. While The Red-Gloved Man is in play, raise the base value of each of those skills to 6.\n<b>Forced</b> - At the end of the mythos phase: Discard The Red-Gloved Man.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(5), slots: vec![Slot::Ally], health: Some(4), sanity: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2 },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(5), slots: vec![Slot::Ally], health: Some(4), sanity: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, uses: None },
         },
         CardMetadata {
             code: "02312".to_owned(),
