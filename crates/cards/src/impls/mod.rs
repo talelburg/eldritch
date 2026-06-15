@@ -69,6 +69,7 @@ pub mod attic;
 pub mod automatic_45;
 pub mod cellar;
 pub mod deduction;
+pub mod dr_milan_christopher;
 pub mod emergency_cache;
 pub mod guard_dog;
 pub mod guts;
@@ -109,6 +110,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         automatic_45::CODE => Some(automatic_45::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
+        dr_milan_christopher::CODE => Some(dr_milan_christopher::abilities()),
         emergency_cache::CODE => Some(emergency_cache::abilities()),
         guard_dog::CODE => Some(guard_dog::abilities()),
         guts::CODE => Some(guts::abilities()),
