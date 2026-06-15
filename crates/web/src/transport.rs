@@ -17,9 +17,9 @@ use crate::url::current_ws_url;
 
 /// localStorage key holding the active game id across reloads.
 const GAME_ID_KEY: &str = "eldritch_game_id";
-/// The only playable scenario this phase (D5: synthetic registries).
-// TODO(phase-7): swap to a real scenario id when The Gathering lands.
-const SCENARIO_ID: &str = "synthetic";
+/// The scenario the client requests on `POST /games` — The Gathering, now
+/// that the server installs the real `cards`/`scenarios` registries (C7a).
+const SCENARIO_ID: &str = "the-gathering";
 /// Fixed reconnect backoff. Plenty for a solo v0; not exponential.
 const RECONNECT_MS: u32 = 1000;
 
