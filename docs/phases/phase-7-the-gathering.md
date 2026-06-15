@@ -89,7 +89,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | — | [#311](https://github.com/talelburg/eldritch/issues/311) | infra: enforce "Max N committed per skill test" commit cap (prerequisite for C6c's skills) | ✅ PR #315 |
 | C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards — **Emergency Cache 01088 + 5 skills** shipped on prereqs #310/#311; Knife 01086 ([#312](https://github.com/talelburg/eldritch/issues/312), discard-self-asset cost) + Flashlight 01087 ([#313](https://github.com/talelburg/eldritch/issues/313), `Effect::Investigate` + shroud) carved to follow-ups | ✅ PR #316 |
 | C6d | [#284](https://github.com/talelburg/eldritch/issues/284) | encounter-deck assembly in `setup()` (quantity-aware, excludes set-aside) — gates C7b; makes Mythos draws + 01106's dig operate live | ✅ PR #317 |
-| C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | — |
+| C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | ✅ PR #325 |
 | C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test (needs C6d) | — |
 
 ## Future slices (after Slice 1)
