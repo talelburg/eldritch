@@ -515,12 +515,11 @@ fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() 
     // with no stranded window.
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
+    let inv_id = InvestigatorId(1);
     let from = LocationId(101);
     let dest = LocationId(102);
 
     install_real_registry();
-    let inv_id = InvestigatorId(1);
 
     let mut study = test_location(101, "Study");
     study.connections = vec![dest];
@@ -533,7 +532,7 @@ fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() 
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
     // all of it.
-    let attacker = engaged_attacker(7, inv, from, 2, 3);
+    let attacker = engaged_attacker(7, inv_id, from, 2, 3);
 
     let state = game_core::test_support::GameStateBuilder::new()
         .with_phase(Phase::Investigation)
