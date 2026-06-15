@@ -384,7 +384,19 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // effects (`discover_clue`, `gain_resources`) don't read this,
     // but the first source-attributing reaction effect will, and the
     // information is already on the trigger record.
-    let eval_ctx = EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    let mut eval_ctx =
+        EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    // For `AfterEnemyAttackDamagedAsset` windows, bind the attacking
+    // enemy into the context so Guard Dog's native retaliate
+    // (`Effect::Native("01021:retaliate")`) can name the attacker via
+    // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
+    // `clue_discovery_count`. `None` for all other window kinds. (C5b
+    // #237.)
+    if let WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. } =
+        cx.state.open_windows[window_idx].kind
+    {
+        eval_ctx.attacking_enemy = Some(enemy);
+    }
     let usage_limit = ability.usage_limit;
     let result = apply_effect(cx, &ability.effect, eval_ctx);
     if let EngineOutcome::Rejected { reason } = result {
