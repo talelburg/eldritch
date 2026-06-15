@@ -223,17 +223,14 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
                 eval_ctx.controller,
                 crate::state::CardCode::new(code.clone()),
             );
-            if *clues > 0 {
-                if let Some(id) = inst {
-                    if let Some(card) = cx
-                        .state
-                        .investigators
-                        .get_mut(&eval_ctx.controller)
-                        .and_then(|inv| inv.threat_area.iter_mut().find(|c| c.instance_id == id))
-                    {
-                        card.clues = *clues;
-                    }
-                }
+            let placed = inst.and_then(|id| {
+                cx.state
+                    .investigators
+                    .get_mut(&eval_ctx.controller)
+                    .and_then(|inv| inv.threat_area.iter_mut().find(|c| c.instance_id == id))
+            });
+            if let Some(card) = placed {
+                card.clues = *clues;
             }
             EngineOutcome::Done
         }
