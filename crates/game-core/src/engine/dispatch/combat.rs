@@ -399,16 +399,70 @@ pub(super) fn enemy_attack(cx: &mut Cx, enemy_id: EnemyId, investigator: Investi
     let damage = enemy.attack_damage;
     let horror = enemy.attack_horror;
 
-    let damage_lethal = apply_damage_numeric(cx, investigator, damage);
-    let horror_lethal = apply_horror_numeric(cx, investigator, horror);
-    if damage_lethal || horror_lethal {
-        let cause = if damage_lethal {
-            DefeatCause::Damage
-        } else {
-            DefeatCause::Horror
-        };
-        super::elimination::apply_investigator_defeat(cx, investigator, cause);
+    // Soak-first assignment → simultaneous placement → defeat check
+    // (RR p.7; C5b #237). `build_soakers` returns empty when no registry
+    // is installed or the investigator controls no soak-bearing assets,
+    // so the assignment drops all damage/horror on the investigator —
+    // behavior-identical to the pre-soak direct-apply path.
+    let soakers = build_soakers(cx.state, investigator);
+    let assignment = assign_attack(&soakers, damage, horror);
+    let damaged_survivors = place_assignment(cx, investigator, &assignment);
+
+    // Queue a soak reaction window per surviving damaged asset. The
+    // window only opens if a matching reaction is pending
+    // (`queue_reaction_window` no-ops on an empty trigger scan), so this
+    // is inert until Guard Dog's `EnemyAttackDamagedSelf` ability + the
+    // `trigger_matches` arm land (Tasks 8–11).
+    for asset in damaged_survivors {
+        super::reaction_windows::queue_reaction_window(
+            cx,
+            WindowKind::AfterEnemyAttackDamagedAsset {
+                asset,
+                enemy: enemy_id,
+                controller: investigator,
+            },
+        );
     }
+}
+
+/// Build the eligible soakers for an enemy attack against `investigator`
+/// (C5b #237).
+///
+/// Iterates the investigator's `cards_in_play` in order (already
+/// `CardInstanceId`-ordered, since instances are pushed in mint order),
+/// reads printed health/sanity from the card registry, and emits one
+/// [`Soaker`] per controlled asset with any remaining soak capacity
+/// (printed stat − accumulated). An asset with `health: None` can't soak
+/// damage; `sanity: None` can't soak horror. Assets with both capacities
+/// exhausted (or non-asset cards) are skipped. Returns empty when no
+/// registry is installed, so attacks resolve as before in registry-free
+/// tests.
+fn build_soakers(state: &crate::state::GameState, investigator: InvestigatorId) -> Vec<Soaker> {
+    let Some(reg) = crate::card_registry::current() else {
+        return Vec::new();
+    };
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Vec::new();
+    };
+    inv.cards_in_play
+        .iter()
+        .filter_map(|card| {
+            let meta = (reg.metadata_for)(&card.code)?;
+            let crate::card_data::CardKind::Asset { health, sanity, .. } = meta.kind else {
+                return None;
+            };
+            let remaining_health = health.unwrap_or(0).saturating_sub(card.accumulated_damage);
+            let remaining_sanity = sanity.unwrap_or(0).saturating_sub(card.accumulated_horror);
+            if remaining_health == 0 && remaining_sanity == 0 {
+                return None;
+            }
+            Some(Soaker {
+                instance: card.instance_id,
+                remaining_health,
+                remaining_sanity,
+            })
+        })
+        .collect()
 }
 
 /// Fire attacks of opportunity from every ready enemy engaged with
@@ -589,6 +643,42 @@ mod combat_tests {
     }
 
     #[test]
+    fn enemy_attack_with_no_soakers_matches_old_behavior() {
+        // Regression guard for the assign/place/window rewrite: an attack
+        // of 2 damage / 1 horror against an investigator controlling no
+        // soak-bearing assets must land entirely on the investigator, just
+        // as the pre-rewrite direct apply_damage/horror_numeric path did.
+        let id = InvestigatorId(1);
+        let eid = EnemyId(1);
+        let mut inv = test_investigator(1);
+        inv.max_health = 10;
+        inv.max_sanity = 10;
+
+        let mut enemy = test_enemy(1, "Ghoul");
+        enemy.attack_damage = 2;
+        enemy.attack_horror = 1;
+
+        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        state.enemies.insert(eid, enemy);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        super::enemy_attack(&mut cx, eid, id);
+
+        assert_eq!(state.investigators[&id].damage, 2, "all damage on inv");
+        assert_eq!(state.investigators[&id].horror, 1, "all horror on inv");
+        assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == id);
+        assert_event!(events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
+        assert!(
+            state.open_windows.is_empty(),
+            "no soak window without soakers"
+        );
+    }
+
+    #[test]
     fn assign_attack_fills_soaker_before_investigator() {
         // 1 ally with remaining health 3, attack deals 2 damage / 0 horror →
         // all 2 damage soaks onto the ally, none on the investigator.
@@ -693,9 +783,9 @@ mod combat_tests {
         ];
         let assignment = super::assign_attack(&soakers, 1, 1);
         assert_eq!(assignment.asset_damage.get(&a), Some(&1));
-        assert!(assignment.asset_damage.get(&b).is_none());
+        assert!(!assignment.asset_damage.contains_key(&b));
         assert_eq!(assignment.asset_horror.get(&b), Some(&1));
-        assert!(assignment.asset_horror.get(&a).is_none());
+        assert!(!assignment.asset_horror.contains_key(&a));
         assert_eq!(assignment.investigator_damage, 0);
         assert_eq!(assignment.investigator_horror, 0);
     }
