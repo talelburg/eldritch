@@ -417,8 +417,24 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// the corresponding [`Status`] variant) when trauma lands; out of
 /// scope for `#83`.
 ///
+/// Returns the **damaged surviving soaker assets** (the
+/// [`place_assignment`] survivor list) so the caller can queue one
+/// [`WindowKind::AfterEnemyAttackDamagedAsset`] reaction window per
+/// survivor. This function does **not** queue the windows itself: the
+/// enemy phase ([`drive_attack_loop`]) drives them (suspending the loop),
+/// while attacks of opportunity ([`fire_attacks_of_opportunity`])
+/// deliberately drop the list — they soak but don't yet open soak
+/// windows, because that needs mid-action suspension of the triggering
+/// action (deferred fast-follow). Keeping the queueing at the call site
+/// is what lets the two callers diverge without `enemy_attack` stranding
+/// an undriven window (C5b #237).
+///
 /// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
-pub(super) fn enemy_attack(cx: &mut Cx, enemy_id: EnemyId, investigator: InvestigatorId) {
+pub(super) fn enemy_attack(
+    cx: &mut Cx,
+    enemy_id: EnemyId,
+    investigator: InvestigatorId,
+) -> Vec<CardInstanceId> {
     let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
         unreachable!(
             "enemy_attack: enemy {enemy_id:?} is not in state.enemies; \
@@ -435,23 +451,7 @@ pub(super) fn enemy_attack(cx: &mut Cx, enemy_id: EnemyId, investigator: Investi
     // behavior-identical to the pre-soak direct-apply path.
     let soakers = build_soakers(cx.state, investigator);
     let assignment = assign_attack(&soakers, damage, horror);
-    let damaged_survivors = place_assignment(cx, investigator, &assignment);
-
-    // Queue a soak reaction window per surviving damaged asset. The
-    // window only opens if a matching reaction is pending
-    // (`queue_reaction_window` no-ops on an empty trigger scan), so this
-    // is inert until Guard Dog's `EnemyAttackDamagedSelf` ability + the
-    // `trigger_matches` arm land (Tasks 8–11).
-    for asset in damaged_survivors {
-        super::reaction_windows::queue_reaction_window(
-            cx,
-            WindowKind::AfterEnemyAttackDamagedAsset {
-                asset,
-                enemy: enemy_id,
-                controller: investigator,
-            },
-        );
-    }
+    place_assignment(cx, investigator, &assignment)
 }
 
 /// Build the eligible soakers for an enemy attack against `investigator`
@@ -513,7 +513,17 @@ pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: Investigato
         .map(|(id, _)| *id)
         .collect();
     for enemy_id in attackers {
-        enemy_attack(cx, enemy_id, investigator);
+        // AoO soaks damage onto assets (the `enemy_attack` placement runs
+        // fully) but does NOT open soak reaction windows: the returned
+        // damaged-survivor list is deliberately dropped. Guard Dog 01021
+        // therefore does not retaliate against attacks of opportunity yet —
+        // a documented faithfulness gap. Driving the soak window here would
+        // require suspending the *triggering* action (Move / Investigate)
+        // and resuming its primary effect after the window closes, a new
+        // mid-action suspension mechanism deferred to a fast-follow. Dropping
+        // the survivors is exactly what prevents an undriven window stranded
+        // on `open_windows` (the bug this seam fixes; C5b #237).
+        let _ = enemy_attack(cx, enemy_id, investigator);
     }
 }
 
@@ -571,7 +581,9 @@ pub(super) fn resolve_attacks_for_investigator(
 ///
 /// 2. Call [`enemy_attack`] (places damage + horror simultaneously per
 ///    p.7, fires [`super::elimination::apply_investigator_defeat`] if
-///    either crosses, and queues a soak window per damaged asset).
+///    either crosses) and queue a soak window per damaged surviving asset
+///    it returns. The queueing lives here, not in `enemy_attack`, so the
+///    `AoO` caller can drop the survivors without stranding a window.
 ///
 /// 3. Exhaust the attacker: set `enemy.exhausted = true`, emit
 ///    [`Event::EnemyExhausted`]. Per Rules Reference p.25, exhaustion
@@ -611,8 +623,28 @@ fn drive_attack_loop(
         }
 
         // Damage + horror placement (simultaneous per p.7) + defeat;
-        // queues a soak window per damaged asset (C5b #237).
-        enemy_attack(cx, enemy_id, investigator);
+        // returns the damaged surviving soaker assets (C5b #237).
+        let damaged_survivors = enemy_attack(cx, enemy_id, investigator);
+
+        // Queue a soak reaction window per surviving damaged asset, BEFORE
+        // the attacker-exhaust step below — preserving the historical event
+        // order in which the window's `WindowOpened` event precedes
+        // `EnemyExhausted`. The window only opens if a matching reaction is
+        // pending (`queue_reaction_window` no-ops on an empty trigger scan),
+        // so this is inert unless a soaker has an `EnemyAttackDamagedSelf`
+        // reaction (Guard Dog 01021). The enemy phase queues these here —
+        // not inside `enemy_attack` — so attacks of opportunity (which share
+        // `enemy_attack`) don't strand an undriven window (C5b #237).
+        for asset in damaged_survivors {
+            super::reaction_windows::queue_reaction_window(
+                cx,
+                WindowKind::AfterEnemyAttackDamagedAsset {
+                    asset,
+                    enemy: enemy_id,
+                    controller: investigator,
+                },
+            );
+        }
 
         // Exhaust the attacker post-resolution (pre-suspend, see step 3).
         let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
@@ -667,8 +699,13 @@ fn drive_attack_loop(
 /// - For [`EnemyAttackSource::EnemyPhase`], advance the enemy-phase
 ///   cursor and open the next window via [`after_enemy_phase_attacks`].
 /// - For [`EnemyAttackSource::AttackOfOpportunity`], return
-///   [`EngineOutcome::Done`] (the `AoO` call-site wiring is Task 13;
-///   this arm exists so resume from an `AoO` soak is well-defined).
+///   [`EngineOutcome::Done`]. This arm is **currently unreachable**:
+///   attacks of opportunity ([`fire_attacks_of_opportunity`]) soak damage
+///   but do not open soak reaction windows, so they never suspend and
+///   never park a `PendingEnemyAttack` with this source. The variant (and
+///   this arm) are reserved for the deferred fast-follow that suspends the
+///   triggering action; kept as a defensive, well-defined placeholder so
+///   the source-keyed dispatch stays total (C5b #237).
 ///
 /// Called from
 /// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s

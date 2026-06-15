@@ -496,3 +496,116 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         "no soak windows left open once both attacks resolve"
     );
 }
+
+// ---------------------------------------------------------------------
+// Case 5 — attack of opportunity soaks onto Guard Dog but strands no
+// reaction window (regression guard for the AoO seam; C5b #237)
+// ---------------------------------------------------------------------
+
+#[test]
+fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() {
+    // An investigator controlling Guard Dog, engaged by a ready enemy,
+    // takes a Move action. The Move fires an attack of opportunity BEFORE
+    // resolving, and the AoO's damage soaks onto Guard Dog. The bug this
+    // guards: `enemy_attack` used to queue an `AfterEnemyAttackDamagedAsset`
+    // reaction window unconditionally, so the AoO would leave an undriven
+    // window on `open_windows` after `fire_attacks_of_opportunity` returns.
+    // AoO now drops the soak-survivor list (Guard Dog does not retaliate
+    // against AoO yet — deferred fast-follow), so the move resolves cleanly
+    // with no stranded window.
+    let dog = CardInstanceId(1);
+    let enemy_id = EnemyId(7);
+    let inv = InvestigatorId(1);
+    let from = LocationId(101);
+    let dest = LocationId(102);
+
+    install_real_registry();
+    let inv_id = InvestigatorId(1);
+
+    let mut study = test_location(101, "Study");
+    study.connections = vec![dest];
+    let mut hallway = test_location(102, "Hallway");
+    hallway.connections = vec![from];
+
+    let mut investigator = test_investigator(1);
+    investigator.current_location = Some(from);
+    investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
+
+    // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
+    // all of it.
+    let attacker = engaged_attacker(7, inv, from, 2, 3);
+
+    let state = game_core::test_support::GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_location(study)
+        .with_location(hallway)
+        .with_investigator(investigator)
+        .with_active_investigator(inv_id)
+        .with_turn_order([inv_id])
+        .with_enemy(attacker)
+        .build();
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::Move {
+            investigator: inv_id,
+            destination: dest,
+        }),
+    );
+    let state = result.state;
+
+    // The AoO soaked its damage onto Guard Dog.
+    assert_eq!(
+        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        2,
+        "AoO damage soaked onto Guard Dog"
+    );
+    assert_eq!(
+        state.investigators[&inv_id].damage, 0,
+        "investigator took no AoO damage (fully soaked)"
+    );
+
+    // The bug guard: no stranded soak window, and the outcome is NOT a
+    // dangling AwaitingInput on a soak window — AoO does not open one.
+    assert!(
+        state.open_windows.is_empty(),
+        "no reaction window stranded by the AoO: {:?}",
+        state.open_windows
+    );
+    assert!(
+        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "AoO must not suspend on a soak window: {:?}",
+        result.outcome
+    );
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::WindowOpened { kind }
+            if matches!(kind, game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
+        "no soak window opened for the AoO: {:?}",
+        result.events
+    );
+
+    // The move resolved: the engaged enemy is NOT exhausted (AoO does not
+    // exhaust the attacker), the investigator and the engaged enemy both
+    // moved to the destination, and no retaliation hit the attacker.
+    assert!(
+        !state.enemies[&enemy_id].exhausted,
+        "an attack of opportunity does not exhaust the attacker"
+    );
+    assert_eq!(
+        state.investigators[&inv_id].current_location,
+        Some(dest),
+        "investigator moved to the destination"
+    );
+    assert_eq!(
+        state.enemies[&enemy_id].current_location,
+        Some(dest),
+        "engaged enemy moved with the investigator"
+    );
+    assert_eq!(
+        state.enemies[&enemy_id].damage, 0,
+        "Guard Dog does not retaliate against an attack of opportunity (yet)"
+    );
+}
