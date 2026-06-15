@@ -292,6 +292,21 @@ pub enum EventPattern {
     /// C4c (#235) extends it to the investigated location's attachment
     /// zone for Obscuring Fog (01168), the first consumer.
     AfterLocationInvestigated,
+    /// An investigator is about to discover one or more clues. Matched
+    /// **only** by the clue-discovery interrupt seam in `discover_clue`
+    /// (paired with [`EventTiming::Before`]), never by the general
+    /// reaction-window pipeline — `trigger_matches` returns `false` for
+    /// it, like the forced-only patterns above. First consumer: Cover Up
+    /// 01007's "`[reaction]` When you would discover 1 or more clues at your
+    /// location: Discard that many clues from Cover Up instead." (C5a #236.)
+    WouldDiscoverClues,
+    /// The game ended (a scenario resolution latched). Fired forced via
+    /// `ForcedTriggerPoint::GameEnd` from `fire_scenario_resolution`,
+    /// scanning every investigator's controlled card instances; binds
+    /// controller = each instance's controller. First consumer: Cover Up
+    /// 01007's "Forced - When the game ends, if there are any clues on
+    /// Cover Up: You suffer 1 mental trauma." (C5a #236.)
+    GameEnd,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -1434,6 +1449,15 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: EventPattern = serde_json::from_str(&json).unwrap();
         assert_eq!(p, back);
+    }
+
+    #[test]
+    fn would_discover_clues_and_game_end_round_trip() {
+        for p in [EventPattern::WouldDiscoverClues, EventPattern::GameEnd] {
+            let json = serde_json::to_string(&p).expect("serialize");
+            let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(p, back);
+        }
     }
 
     #[test]

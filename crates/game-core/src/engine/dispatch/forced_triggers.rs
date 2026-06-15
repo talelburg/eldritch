@@ -87,6 +87,12 @@ pub(crate) enum ForcedTriggerPoint {
         /// location's attachment zone.
         location: LocationId,
     },
+    /// The game ended (a scenario resolution latched). Scans every
+    /// investigator's controlled card instances (threat area + in play)
+    /// for `EventPattern::GameEnd` forced abilities; binds controller =
+    /// each instance's controller. First consumer: Cover Up 01007's
+    /// game-end mental-trauma forced (C5a #236).
+    GameEnd,
 }
 
 struct ForcedHit {
@@ -292,6 +298,24 @@ fn collect_forced_hits(
                         Some(att.instance_id),
                         &mut hits,
                         |p| matches!(p, EventPattern::AfterLocationInvestigated),
+                    );
+                }
+            }
+        }
+        ForcedTriggerPoint::GameEnd => {
+            // Scan every investigator's controlled instances; bind
+            // controller = each card's controller, source = the instance.
+            // `state.investigators` is a BTreeMap, so iteration order is
+            // deterministic — consistent with the fixed-order contract.
+            for (inv_id, inv) in &state.investigators {
+                for card in inv.controlled_card_instances() {
+                    push_matching(
+                        reg,
+                        &card.code,
+                        *inv_id,
+                        Some(card.instance_id),
+                        &mut hits,
+                        |p| matches!(p, EventPattern::GameEnd),
                     );
                 }
             }

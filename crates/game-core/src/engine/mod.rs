@@ -222,6 +222,12 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
         }
     }
 
+    // Fire game-end Forced abilities (Cover Up 01007's mental trauma, C5a
+    // #236). Non-interactive in scope; a suspending GameEnd hit is #212
+    // reentrancy work. Runs even when no scenario module is registered, so
+    // it precedes the module lookup below.
+    let _ = fire_forced_triggers(cx, &ForcedTriggerPoint::GameEnd);
+
     let Some(id) = cx.state.scenario_id.as_ref() else {
         return;
     };
@@ -4259,6 +4265,23 @@ mod tests {
         );
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(result.events, Event::ScenarioResolved { .. });
+    }
+
+    #[test]
+    fn game_end_forced_point_is_noop_without_matching_cards() {
+        // The GameEnd forced point (C5a #236) fires at resolution but is a
+        // no-op with no controlled cards carrying a GameEnd ability: the
+        // resolution still fires, and no TraumaSuffered is emitted.
+        let state = terminal_act_state(Some("unknown"));
+        let result = super::apply_with_scenario_registry(
+            state,
+            Action::Player(PlayerAction::AdvanceAct {
+                investigator: InvestigatorId(1),
+            }),
+            None,
+        );
+        assert_event!(result.events, Event::ScenarioResolved { .. });
+        assert_no_event!(result.events, Event::TraumaSuffered { .. });
     }
 
     #[test]

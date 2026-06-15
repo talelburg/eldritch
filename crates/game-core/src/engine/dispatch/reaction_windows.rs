@@ -183,6 +183,9 @@ fn trigger_matches(
         // windows.
         // EndOfTurn and AfterLocationInvestigated are likewise forced-only
         // (`ForcedTriggerPoint::EndOfTurn` / `AfterLocationInvestigated`).
+        // WouldDiscoverClues is matched only by the `discover_clue`
+        // interrupt seam, and GameEnd only by `ForcedTriggerPoint::GameEnd`
+        // — both seam/forced-only, never player windows (C5a #236).
         (
             WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
             EventPattern::EnemyDefeated { .. }
@@ -194,7 +197,9 @@ fn trigger_matches(
             | EventPattern::AgendaAdvanced
             | EventPattern::RoundEnded
             | EventPattern::EndOfTurn
-            | EventPattern::AfterLocationInvestigated,
+            | EventPattern::AfterLocationInvestigated
+            | EventPattern::WouldDiscoverClues
+            | EventPattern::GameEnd,
         ) => false,
     }
 }
@@ -1045,6 +1050,36 @@ mod check_play_card_tests {
             err.contains("not in state"),
             "error should say not in state, got: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod trigger_matches_tests {
+    use super::*;
+    use crate::state::PhaseStep;
+
+    #[test]
+    fn would_discover_clues_never_matches_a_player_window() {
+        // The before-timing clue-discovery interrupt (Cover Up 01007) is
+        // matched only by the `discover_clue` seam, never a player reaction
+        // window — even with After timing. (C5a #236.)
+        assert!(!trigger_matches(
+            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+            &EventPattern::WouldDiscoverClues,
+            EventTiming::After,
+            InvestigatorId(1),
+        ));
+    }
+
+    #[test]
+    fn game_end_never_matches_a_player_window() {
+        // GameEnd is forced-only (`ForcedTriggerPoint::GameEnd`).
+        assert!(!trigger_matches(
+            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+            &EventPattern::GameEnd,
+            EventTiming::After,
+            InvestigatorId(1),
+        ));
     }
 }
 

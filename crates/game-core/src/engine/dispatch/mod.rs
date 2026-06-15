@@ -18,6 +18,7 @@ use super::Cx;
 mod abilities;
 pub(crate) mod act_agenda;
 mod actions;
+mod clue_interrupt;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
 pub(super) mod cards;
@@ -84,6 +85,20 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
                      to fire a pending trigger, or InputResponse::Skip to close \
                      the window (rejected if forced triggers remain) before any \
                      other action"
+                .into(),
+        };
+    }
+
+    // A pending clue-discovery interrupt (C5a #236) blocks every action but
+    // `ResolveInput`. It coexists with an in-flight skill test (it suspends
+    // mid-follow-up), so it must precede the skill-test guard.
+    if cx.state.clue_interrupt_pending.is_some()
+        && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason: "a clue-discovery interrupt is pending; submit a PlayerAction::ResolveInput \
+                     with InputResponse::Confirm (replace) or Skip (discover normally) before \
+                     any other action"
                 .into(),
         };
     }
@@ -372,6 +387,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // reaction-window check like hand-size discard.
     if cx.state.act_round_end_pending.is_some() {
         return phases::resume_act_round_end_advance(cx, response);
+    }
+
+    // Before-timing clue-discovery interrupt (C5a #236): arises mid-skill-
+    // test (during the Investigate follow-up), so route it before the
+    // reaction-window and skill-test resume paths.
+    if cx.state.clue_interrupt_pending.is_some() {
+        return clue_interrupt::resume_clue_interrupt(cx, response);
     }
 
     if cx.state.top_reaction_window().is_some() {

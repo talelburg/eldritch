@@ -89,6 +89,11 @@ pub struct EvalContext {
     /// skill-test driver runs an [`Effect::SkillTest`]'s `on_fail`. Read
     /// by [`Effect::ForEachPointFailed`]. `None` outside that window.
     pub failed_by: Option<u8>,
+    /// The clue count a before-timing discovery interrupt is replacing,
+    /// set only while resolving an `EventPattern::WouldDiscoverClues`
+    /// ability's effect (so the card-local "discard that many" Native
+    /// reads it). `None` outside that window. Mirrors `failed_by`.
+    pub clue_discovery_count: Option<u8>,
 }
 
 impl EvalContext {
@@ -101,6 +106,7 @@ impl EvalContext {
             controller,
             source: None,
             failed_by: None,
+            clue_discovery_count: None,
         }
     }
 
@@ -117,6 +123,7 @@ impl EvalContext {
             controller,
             source: Some(source),
             failed_by: None,
+            clue_discovery_count: None,
         }
     }
 }
@@ -501,10 +508,6 @@ fn discover_clue(
         // discovered"). Don't reject; just do nothing.
         return EngineOutcome::Done;
     }
-    // Cap the discovery at the location's actual clue count — a card
-    // can't pull more clues than exist.
-    let actually_taken = count.min(location.clues);
-    let new_location_count = location.clues - actually_taken;
 
     if !cx.state.investigators.contains_key(&eval_ctx.controller) {
         return EngineOutcome::Rejected {
@@ -516,8 +519,112 @@ fn discover_clue(
         };
     }
 
-    // Commit the mutations. From here both writes succeed
-    // unconditionally.
+    // Before-timing clue-discovery interrupt (Cover Up 01007, C5a #236).
+    // Offer the controller a chance to replace this discovery iff they
+    // control a card with a `WouldDiscoverClues` reaction at the
+    // controller's own location ("at your location"). No registry (unit
+    // context) or no eligible card → fall through to the normal discovery.
+    //
+    // The `card.clues > 0` gate below is NOT generic to the trigger point:
+    // it is a single-consumer stand-in for the eligibility rule "a
+    // triggered ability can only be initiated if its effect has the
+    // potential to change the game state" (RR p.2), which the engine does
+    // not yet model generically (no reaction window checks potential). For
+    // Cover Up specifically, an emptied card sits in the threat area until
+    // game end, so without this gate the engine would prompt a never-useful
+    // interrupt on every discovery for the rest of the game.
+    // TODO(#212): when a second `WouldDiscoverClues` card lands (one whose
+    // potential isn't "holds clues to discard"), lift this into a
+    // card-provided per-ability "has potential" predicate rather than a
+    // hardcoded clue check here.
+    if let Some(reg) = crate::card_registry::current() {
+        let at_your_location = cx
+            .state
+            .investigators
+            .get(&eval_ctx.controller)
+            .and_then(|i| i.current_location)
+            == Some(location_id);
+        if at_your_location {
+            // Read-only scan first (collect the hit), then set the pending
+            // state — keeps the immutable borrow of the investigator
+            // disjoint from the later mutable write.
+            let hit = cx
+                .state
+                .investigators
+                .get(&eval_ctx.controller)
+                .and_then(|inv| {
+                    inv.controlled_card_instances().find_map(|card| {
+                        // Single-consumer eligibility stand-in (see above).
+                        if card.clues == 0 {
+                            return None;
+                        }
+                        let abilities = (reg.abilities_for)(&card.code)?;
+                        let idx = abilities.iter().position(|a| {
+                            matches!(
+                                &a.trigger,
+                                crate::dsl::Trigger::OnEvent {
+                                    pattern: crate::dsl::EventPattern::WouldDiscoverClues,
+                                    timing: crate::dsl::EventTiming::Before,
+                                }
+                            )
+                        })?;
+                        Some((card.instance_id, idx))
+                    })
+                });
+            if let Some((source, ability_index)) = hit {
+                // TODO(#212): `count` is the *requested* count, not the
+                // capped/actually-discoverable one. Per the card, "discard
+                // that many" means the number you would actually discover
+                // (`min(count, location.clues)`). They coincide in Slice 1
+                // (Investigate is count=1 and the empty-location early-return
+                // above guarantees >= 1 clue present), so this is latent
+                // until a multi-count or sub-availability discovery is
+                // reachable.
+                cx.state.clue_interrupt_pending = Some(crate::state::ClueInterruptPending {
+                    controller: eval_ctx.controller,
+                    location: location_id,
+                    count,
+                    source,
+                    ability_index,
+                });
+                return EngineOutcome::AwaitingInput {
+                    request: crate::engine::outcome::InputRequest {
+                        prompt: "You would discover clue(s). Use the interrupt to discard that \
+                                 many from the source card instead? Confirm = replace, \
+                                 Skip = discover normally."
+                            .to_owned(),
+                    },
+                    resume_token: crate::engine::outcome::ResumeToken(0),
+                };
+            }
+        }
+    }
+
+    perform_discovery(cx, location_id, count, eval_ctx.controller);
+    EngineOutcome::Done
+}
+
+/// Move `count` clues (capped at availability) from `location_id` to
+/// `controller`, emitting `CluePlaced` + `LocationCluesChanged`. The
+/// committed mutation half of [`discover_clue`], factored out so the
+/// clue-discovery interrupt's `Skip` resume can perform the deferred
+/// discovery (C5a #236). Caller guarantees both ids exist and the
+/// location has clues.
+pub(crate) fn perform_discovery(
+    cx: &mut Cx,
+    location_id: crate::state::LocationId,
+    count: u8,
+    controller: crate::state::InvestigatorId,
+) {
+    let location = cx
+        .state
+        .locations
+        .get(&location_id)
+        .expect("location exists");
+    // Cap the discovery at the location's actual clue count — a card
+    // can't pull more clues than exist.
+    let actually_taken = count.min(location.clues);
+    let new_location_count = location.clues - actually_taken;
     cx.state
         .locations
         .get_mut(&location_id)
@@ -526,19 +633,17 @@ fn discover_clue(
     let investigator = cx
         .state
         .investigators
-        .get_mut(&eval_ctx.controller)
+        .get_mut(&controller)
         .expect("checked above");
     investigator.clues = investigator.clues.saturating_add(actually_taken);
-
     cx.events.push(Event::CluePlaced {
-        investigator: eval_ctx.controller,
+        investigator: controller,
         count: actually_taken,
     });
     cx.events.push(Event::LocationCluesChanged {
         location: location_id,
         new_count: new_location_count,
     });
-    EngineOutcome::Done
 }
 
 fn deal_damage_effect(
@@ -1011,6 +1116,12 @@ mod tests {
     }
 
     #[test]
+    fn eval_context_defaults_clue_discovery_count_to_none() {
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        assert_eq!(ctx.clue_discovery_count, None);
+    }
+
+    #[test]
     fn gain_resources_increments_target_wallet_and_emits_event() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
@@ -1119,6 +1230,39 @@ mod tests {
             events,
             Event::LocationCluesChanged { location, new_count: 2 } if *location == loc_id
         );
+    }
+
+    #[test]
+    fn discover_clue_without_registry_discovers_normally() {
+        // No registry installed (game-core unit context) → the interrupt
+        // scan finds nothing → discovery proceeds exactly as before.
+        // Regression guard for the seam's "fall through" path (C5a #236).
+        let inv_id = InvestigatorId(1);
+        let loc_id = LocationId(10);
+        let mut investigator = test_investigator(1);
+        investigator.current_location = Some(loc_id);
+        let mut location = test_location(10, "Study");
+        location.clues = 3;
+
+        let mut state = GameStateBuilder::new()
+            .with_investigator(investigator)
+            .with_location(location)
+            .build();
+        let mut events = Vec::new();
+
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &discover_clue(LocationTarget::YourLocation, 1),
+            ctx(1),
+        );
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.clue_interrupt_pending.is_none());
+        assert_eq!(state.locations[&loc_id].clues, 2);
+        assert_eq!(state.investigators[&inv_id].clues, 1);
     }
 
     #[test]
