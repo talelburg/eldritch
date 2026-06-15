@@ -60,6 +60,7 @@ pub mod agenda_01107;
 pub mod attic;
 pub mod cellar;
 pub mod deduction;
+pub mod guard_dog;
 pub mod holy_rosary;
 pub mod hyperawareness;
 pub mod magnifying_glass;
@@ -87,6 +88,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         attic::CODE => Some(attic::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
+        guard_dog::CODE => Some(guard_dog::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
@@ -112,6 +114,7 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| act_01109::native_effect_for(tag))
         .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
+        .or_else(|| guard_dog::native_effect_for(tag))
         .or_else(|| treachery_01166::native_effect_for(tag))
         .or_else(|| treachery_01167::native_effect_for(tag))
         .or_else(|| treachery_01168::native_effect_for(tag))

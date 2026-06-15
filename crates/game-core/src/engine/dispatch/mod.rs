@@ -22,7 +22,9 @@ mod clue_interrupt;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
 pub(super) mod cards;
-mod combat;
+// pub(crate): engine/mod.rs re-exports `deal_damage_to_enemy` for the
+// `cards` crate (Guard Dog 01021's retaliate native, C5b #237).
+pub(crate) mod combat;
 mod cursor;
 // pub(super): evaluator reaches take_damage/take_horror via the full path
 // crate::engine::dispatch::elimination (a sibling of dispatch).

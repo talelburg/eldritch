@@ -29,8 +29,14 @@ simultaneous-forced-trigger resolution, and end-turn resume plumbing), and
 C5a ([#236](https://github.com/talelburg/eldritch/issues/236): Cover Up's
 before-timing clue-discovery replacement interrupt at the `discover_clue`
 chokepoint — `clue_interrupt_pending` suspension + pre-advanced skill-test
-resume — plus `ForcedTriggerPoint::GameEnd` and `Event::TraumaSuffered`).
-**Next: C5b → C7** (C6d also gates C7b).
+resume — plus `ForcedTriggerPoint::GameEnd` and `Event::TraumaSuffered`),
+and C5b ([#237](https://github.com/talelburg/eldritch/issues/237): the
+enemy-attack damage/horror soak mechanic — soak-first `assign_attack` →
+simultaneous `place_assignment` → asset defeat-on-overflow → the
+`AfterEnemyAttackDamagedAsset` reaction window — plus Guard Dog 01021's
+retaliate and the resumable enemy-phase attack loop;
+[PR #292](https://github.com/talelburg/eldritch/pull/292)).
+**Next: C5c → C7** (C6d also gates C7b).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -85,7 +91,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | ✅ PR #288 |
 | C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area / attachment treacheries (×3) | ✅ PR #289 |
 | C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | ✅ PR #291 |
-| C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog damage-from-enemy window | — |
+| C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog reaction + enemy-attack soak mechanic | ✅ PR #292 |
 | C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | — |
 | C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets (×6) | — |
 | C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) | — |
@@ -158,6 +164,10 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **Before-timing clue-discovery interrupt is a card-local seam at the `discover_clue` chokepoint, not a general before-timing reaction-window subsystem (C5a, [#236](https://github.com/talelburg/eldritch/issues/236), PR #291).** When the controller holds a `WouldDiscoverClues` (`EventTiming::Before`) reaction, `discover_clue` suspends with a yes/no `AwaitingInput` (`GameState.clue_interrupt_pending`); `resume_clue_interrupt` (routed before the skill-test path in `resolve_input`) runs the card-local `Effect::Native` replacement on `Confirm` (count threaded via `EvalContext.clue_discovery_count`) or the deferred discovery on `Skip`. Reentrancy: `finish_skill_test` **pre-advances** its continuation to `PostFollowUp` before the Investigate follow-up, so a suspending discovery resumes through `in_flight_skill_test` without re-running the follow-up — **bounded to terminal-position discovery** (the base Investigate follow-up, the only Slice-1 clue source; nested-in-`Seq` is #212). **A future before-timing interrupt reuses this seam.** The seam's `card.clues > 0` eligibility gate is a **single-consumer stand-in for RR p.2's "ability must have potential to change the game state"** — the engine models this nowhere; lift it into a card-provided per-ability predicate when a 2nd `WouldDiscoverClues` card lands (`TODO(#212)`). Bespoke effects (discard-from-self, suffer-trauma) stay `Effect::Native`, integration-tested via `synth_cards::TEST_REGISTRY`.
 
 - **`ForcedTriggerPoint::GameEnd` fires once from `fire_scenario_resolution` on the resolution latch; game-end trauma is `Event::TraumaSuffered`-only (C5a, PR #291).** It scans every investigator's `controlled_card_instances()` for `EventPattern::GameEnd` forced abilities, before the scenario-module `apply_resolution` hook (so it runs even with no module). Trauma persistence (campaign log, max-stat reduction) is **Phase 9** — C5a emits the event and mutates no state.
+
+- **Enemy-attack damage/horror soak is `assign → place → defeat → window`; assignment is soak-first deterministic, with interactive distribution deferred to a reframed #44 (C5b, [#237](https://github.com/talelburg/eldritch/issues/237), PR #292).** `enemy_attack` builds soakers (controlled assets with `CardKind::Asset` remaining `health`/`sanity` capacity), `assign_attack` fills them by `CardInstanceId` order before the investigator (symmetric for damage/horror), `place_assignment` places simultaneously (RR p.7) then defeats overflowed assets (`accumulated_* >= printed stat` → discard), and returns surviving damaged assets. The window-queuing lives in the **caller** (`drive_attack_loop`), not `enemy_attack`, so the enemy phase opens reaction windows while attacks of opportunity don't (see next entry). **#44's remaining scope is now just the interactive `{target → points}` distribution** (replacing the soak-first `assign_attack` body, `TODO(#44)`); soak-first is the only deterministic default that makes a soak reaction observable. A new soak reaction adds an `EnemyAttackDamagedSelf` ability (bare; self-bound to the soaked instance via `scan_pending_triggers`) — **no routing change**; the attacking enemy reaches the effect via `EvalContext.attacking_enemy`. Guard Dog's retaliate is `Effect::Native` (first card to damage a specific enemy from a reaction; public entry `deal_damage_to_enemy`).
+
+- **The enemy-phase attack loop suspends/resumes around a soak reaction window via `pending_enemy_attack`; attacks of opportunity soak but do NOT yet open the window (C5b, PR #292).** `drive_attack_loop` parks the remaining attackers and returns `AwaitingInput` when an attack opens a soak window; `resume_enemy_attack` (from the `AfterEnemyAttackDamagedAsset` window-close continuation) re-enters at the next attacker, advancing the enemy-phase cursor exactly once via the extracted `after_enemy_phase_attacks`. **AoO is the deferred gap:** full AoO reactions need a new mechanism to suspend/resume the *triggering action* (Move's relocation, Investigate's already-suspending skill test), so `fire_attacks_of_opportunity` deliberately drops the soak-window survivors (window-safe; Guard Dog soaks AoO damage but doesn't retaliate). The fast-follow ([#293](https://github.com/talelburg/eldritch/issues/293)) routes `fire_attacks_of_opportunity` through `drive_attack_loop` (`EnemyAttackSource::AttackOfOpportunity` is the reserved-but-unconstructed variant) + action suspension. Multi-soak-window-per-attack resume ([#294](https://github.com/talelburg/eldritch/issues/294)) is `debug_assert`-guarded (unreachable in Slice 1: only Guard Dog reacts, two copies need two illegal Ally slots; coordinates with #213).
 
 ## Open questions
 

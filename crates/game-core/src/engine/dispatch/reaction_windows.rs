@@ -94,6 +94,17 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
             continue;
         };
         for card in inv.controlled_card_instances() {
+            // Self-binding: for `AfterEnemyAttackDamagedAsset` only the
+            // soaked asset instance may trigger `EnemyAttackDamagedSelf`.
+            // All other instances are skipped here — the pattern match in
+            // `trigger_matches` handles the pattern-kind pairing; this
+            // filter enforces the "self = the soaked asset" scoping. (C5b
+            // #237.) Other window kinds pass all instances through unchanged.
+            if let WindowKind::AfterEnemyAttackDamagedAsset { asset, .. } = kind {
+                if card.instance_id != asset {
+                    continue;
+                }
+            }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
             };
@@ -162,6 +173,15 @@ fn trigger_matches(
                 true
             }
         }
+        // `AfterEnemyAttackDamagedAsset` matches `EnemyAttackDamagedSelf`
+        // only. The soaked-asset self-binding is enforced by the instance
+        // filter in `scan_pending_triggers` (only the `asset` instance
+        // reaches `trigger_matches` for this window kind). Sole consumer:
+        // Guard Dog 01021's "deal 1 damage to the attacking enemy"
+        // reaction. (C5b #237.)
+        (WindowKind::AfterEnemyAttackDamagedAsset { .. }, EventPattern::EnemyAttackDamagedSelf) => {
+            true
+        }
         // PlayerWindow steps open for timing reasons; no
         // Trigger::OnEvent pattern matches them — those windows gate
         // Fast actions, not after-event reactions. AfterEnemyDefeated
@@ -187,7 +207,9 @@ fn trigger_matches(
         // interrupt seam, and GameEnd only by `ForcedTriggerPoint::GameEnd`
         // — both seam/forced-only, never player windows (C5a #236).
         (
-            WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
+            WindowKind::PlayerWindow(_)
+            | WindowKind::AfterEnemyDefeated { .. }
+            | WindowKind::AfterEnemyAttackDamagedAsset { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
@@ -199,7 +221,8 @@ fn trigger_matches(
             | EventPattern::EndOfTurn
             | EventPattern::AfterLocationInvestigated
             | EventPattern::WouldDiscoverClues
-            | EventPattern::GameEnd,
+            | EventPattern::GameEnd
+            | EventPattern::EnemyAttackDamagedSelf,
         ) => false,
     }
 }
@@ -360,7 +383,19 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // effects (`discover_clue`, `gain_resources`) don't read this,
     // but the first source-attributing reaction effect will, and the
     // information is already on the trigger record.
-    let eval_ctx = EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    let mut eval_ctx =
+        EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    // For `AfterEnemyAttackDamagedAsset` windows, bind the attacking
+    // enemy into the context so Guard Dog's native retaliate
+    // (`Effect::Native("01021:retaliate")`) can name the attacker via
+    // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
+    // `clue_discovery_count`. `None` for all other window kinds. (C5b
+    // #237.)
+    if let WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. } =
+        cx.state.open_windows[window_idx].kind
+    {
+        eval_ctx.attacking_enemy = Some(enemy);
+    }
     let usage_limit = ability.usage_limit;
     let result = apply_effect(cx, &ability.effect, eval_ctx);
     if let EngineOutcome::Rejected { reason } = result {
@@ -618,27 +653,23 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                     )
                 });
 
-                super::combat::resolve_attacks_for_investigator(cx, investigator);
+                let outcome = super::combat::resolve_attacks_for_investigator(cx, investigator);
 
-                // Advance the cursor: next Active investigator AFTER
-                // `investigator` in turn_order. The shared helper uses
-                // turn_order (not the filtered-Active list) as the index
-                // basis, so `investigator` itself can have been defeated
-                // mid-loop and we still find the right successor.
-                cx.state.enemy_attack_pending =
-                    super::cursor::next_active_investigator_after(cx.state, investigator);
-
-                if cx.state.enemy_attack_pending.is_some() {
-                    open_fast_window(
-                        cx,
-                        WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
-                    )
-                } else {
-                    open_fast_window(
-                        cx,
-                        WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
-                    )
+                // The attack loop suspended on a mid-loop soak reaction
+                // window (C5b #237): surface it immediately, WITHOUT
+                // advancing the cursor. The cursor advances later, once
+                // the loop truly finishes, via `resume_enemy_attack` →
+                // `after_enemy_phase_attacks` on window close.
+                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                    return outcome;
                 }
+                debug_assert!(
+                    matches!(outcome, EngineOutcome::Done),
+                    "resolve_attacks_for_investigator returned unexpected \
+                     {outcome:?} (expected Done or AwaitingInput)",
+                );
+
+                after_enemy_phase_attacks(cx, investigator)
             }
             PhaseStep::AfterAllInvestigatorsAttacked => {
                 if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
@@ -683,7 +714,49 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
             // re-open (Rules Reference p.24 2.2.1) is deferred to #146.
             PhaseStep::InvestigatorTurnBegins => EngineOutcome::Done,
         },
+        // AfterEnemyDefeated: no continuation work.
         WindowKind::AfterEnemyDefeated { .. } => EngineOutcome::Done,
+        // AfterEnemyAttackDamagedAsset: re-enter the enemy-attack loop the
+        // soak window suspended (C5b #237). `resume_enemy_attack` drains
+        // the parked remaining attackers and, for the enemy phase, runs
+        // `after_enemy_phase_attacks` once the loop finishes.
+        WindowKind::AfterEnemyAttackDamagedAsset { .. } => super::combat::resume_enemy_attack(cx),
+    }
+}
+
+/// Advance the enemy-phase cursor past `investigator` and open the next
+/// window (C5b #237).
+///
+/// Extracted from the [`PhaseStep::BeforeInvestigatorAttacked`]
+/// continuation so it runs from BOTH that arm (after the attack loop
+/// completes without suspending) AND
+/// [`super::combat::resume_enemy_attack`] (after a suspended loop
+/// resumes and finishes). Advances
+/// [`GameState::enemy_attack_pending`](crate::state::GameState::enemy_attack_pending)
+/// to the next Active investigator AFTER `investigator` via
+/// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
+/// — the helper indexes off `turn_order` (not the filtered-Active
+/// list), so `investigator` itself can have been defeated mid-loop and
+/// the right successor is still found. Then opens
+/// [`PhaseStep::BeforeInvestigatorAttacked`] again if the cursor
+/// advanced to `Some`, otherwise [`PhaseStep::AfterAllInvestigatorsAttacked`].
+pub(super) fn after_enemy_phase_attacks(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    cx.state.enemy_attack_pending =
+        super::cursor::next_active_investigator_after(cx.state, investigator);
+
+    if cx.state.enemy_attack_pending.is_some() {
+        open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+        )
+    } else {
+        open_fast_window(
+            cx,
+            WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
+        )
     }
 }
 
@@ -1056,7 +1129,7 @@ mod check_play_card_tests {
 #[cfg(test)]
 mod trigger_matches_tests {
     use super::*;
-    use crate::state::PhaseStep;
+    use crate::state::{EnemyId, PhaseStep};
 
     #[test]
     fn would_discover_clues_never_matches_a_player_window() {
@@ -1080,6 +1153,90 @@ mod trigger_matches_tests {
             EventTiming::After,
             InvestigatorId(1),
         ));
+    }
+
+    /// `soak_window_matches_only_self_instance` — direct `trigger_matches`
+    /// coverage for the `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf`
+    /// true arm added in Task 8 (C5b #237).
+    ///
+    /// The instance-level scoping (only the soaked `asset` instance fires, not
+    /// every controlled card) is enforced by the filter in `scan_pending_triggers`
+    /// one layer up; that filter is exercised end-to-end in the EU5 Guard Dog
+    /// integration test (`crates/cards/tests/guard_dog_soak.rs`), which installs
+    /// the real `cards::REGISTRY` in an isolated process. Testing it here would
+    /// require a global `card_registry::install`, which is `OnceLock`-guarded
+    /// and cannot be reset between tests. So this unit test asserts the
+    /// `trigger_matches` contract directly:
+    ///  - `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf` → `true`
+    ///  - `AfterEnemyAttackDamagedAsset` + any other pattern → `false`
+    #[test]
+    fn soak_window_matches_only_self_instance() {
+        let asset = CardInstanceId(7);
+        let enemy = EnemyId(1);
+        let controller = InvestigatorId(1);
+        let kind = WindowKind::AfterEnemyAttackDamagedAsset {
+            asset,
+            enemy,
+            controller,
+        };
+
+        // The soak-self pattern must match the soak window. (C5b #237.)
+        assert!(
+            trigger_matches(
+                kind,
+                &EventPattern::EnemyAttackDamagedSelf,
+                EventTiming::After,
+                controller
+            ),
+            "AfterEnemyAttackDamagedAsset must match EnemyAttackDamagedSelf"
+        );
+        // No other pattern matches this window kind.
+        assert!(
+            !trigger_matches(
+                kind,
+                &EventPattern::EnemyDefeated {
+                    by_controller: false,
+                    code: None
+                },
+                EventTiming::After,
+                controller
+            ),
+            "AfterEnemyAttackDamagedAsset must not match EnemyDefeated"
+        );
+        assert!(
+            !trigger_matches(
+                kind,
+                &EventPattern::EnemyAttackDamagedSelf,
+                EventTiming::Before,
+                controller
+            ),
+            "Before timing must never match (no Before reaction windows yet)"
+        );
+        // The soak-self pattern must NOT match any other window kind — guards
+        // the match-arm ordering (the `=> true` arm is scoped to this kind;
+        // these pairings must fall through to the `false` catch-all). (C5b #237.)
+        for other_kind in [
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            WindowKind::AfterEnemyDefeated {
+                enemy,
+                by: Some(controller),
+            },
+        ] {
+            assert!(
+                !trigger_matches(
+                    other_kind,
+                    &EventPattern::EnemyAttackDamagedSelf,
+                    EventTiming::After,
+                    controller
+                ),
+                "{other_kind:?} must not match EnemyAttackDamagedSelf"
+            );
+        }
+        // Instance-filter (only the keyed `asset` instance fires, not every
+        // controlled card) is asserted in the EU5 Guard Dog integration test
+        // (`crates/cards/tests/guard_dog_soak.rs`) which can install the real
+        // registry. The `scan_pending_triggers` `continue` on `instance_id !=
+        // asset` is the load-bearing line; grep it if this note becomes stale.
     }
 }
 

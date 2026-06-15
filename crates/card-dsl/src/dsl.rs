@@ -307,6 +307,17 @@ pub enum EventPattern {
     /// 01007's "Forced - When the game ends, if there are any clues on
     /// Cover Up: You suffer 1 mental trauma." (C5a #236.)
     GameEnd,
+    /// An enemy attack dealt damage to the asset this ability is printed
+    /// on (the soaked ally). Bare — the engine binds *self* = the soaked
+    /// asset instance from the firing window context, the way
+    /// [`EnteredLocation`](Self::EnteredLocation) / [`EndOfTurn`](Self::EndOfTurn)
+    /// bind theirs. Matched **only** by
+    /// `WindowKind::AfterEnemyAttackDamagedAsset` in the reaction
+    /// pipeline; `trigger_matches` binds the attacking enemy into the
+    /// `EvalContext`. First (and only) consumer: Guard Dog 01021's
+    /// "\[reaction\] When an enemy attack deals damage to Guard Dog: Deal 1
+    /// damage to the attacking enemy." (C5b #237.)
+    EnemyAttackDamagedSelf,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -1458,6 +1469,14 @@ mod tests {
             let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(p, back);
         }
+    }
+
+    #[test]
+    fn enemy_attack_damaged_self_round_trips() {
+        let p = EventPattern::EnemyAttackDamagedSelf;
+        let json = serde_json::to_string(&p).expect("serialize");
+        let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(p, back);
     }
 
     #[test]

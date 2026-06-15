@@ -231,6 +231,10 @@ pub struct GameState {
     /// Suspended clue-discovery interrupt (C5a, #236). See [`ClueInterruptPending`].
     #[serde(default)]
     pub clue_interrupt_pending: Option<ClueInterruptPending>,
+    /// `Some` while an enemy-attack loop is suspended on a soak reaction
+    /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
+    #[serde(default)]
+    pub pending_enemy_attack: Option<PendingEnemyAttack>,
     /// A treachery whose Revelation suspended (e.g. initiated a skill
     /// test) and must be pushed to [`encounter_discard`](Self::encounter_discard)
     /// once the suspending sub-resolution completes. Set by
@@ -362,6 +366,30 @@ pub struct ActRoundEndPending {
     pub contributor_location: LocationId,
     /// Clues to spend to advance (the act's `clue_threshold`).
     pub threshold: u8,
+}
+
+/// Which driver to resume after a mid-attack reaction window closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EnemyAttackSource {
+    /// Enemy-phase step 3.3 (`resolve_attacks_for_investigator`).
+    EnemyPhase,
+    /// Attack of opportunity (`fire_attacks_of_opportunity`).
+    AttackOfOpportunity,
+}
+
+/// A parked enemy-attack loop, suspended because an attack's damage
+/// soaked onto an asset and opened an `AfterEnemyAttackDamagedAsset`
+/// reaction window. Resumed by `resume_enemy_attack` once the window
+/// closes — the same suspend/resume shape as [`GameState::pending_end_turn`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingEnemyAttack {
+    /// The investigator whose engaged enemies are attacking.
+    pub investigator: InvestigatorId,
+    /// Attackers not yet resolved (the current attacker already
+    /// resolved before the window opened), in resolution order.
+    pub remaining_attackers: Vec<EnemyId>,
+    /// Which loop to re-enter.
+    pub source: EnemyAttackSource,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -699,6 +727,20 @@ pub enum WindowKind {
     /// per-step continuation when they close), they are not after-event
     /// reaction windows. The specific timing point is the [`PhaseStep`].
     PlayerWindow(PhaseStep),
+    /// An enemy attack placed damage on a controlled asset (soak). Opens
+    /// after placement so the soaked asset's `EnemyAttackDamagedSelf`
+    /// reaction (Guard Dog 01021) can fire. `asset` is the soaked
+    /// instance, `enemy` the attacker (threaded into the reaction's
+    /// `EvalContext.attacking_enemy`), `controller` the asset's owner.
+    /// (C5b #237.)
+    AfterEnemyAttackDamagedAsset {
+        /// The card instance that absorbed the damage.
+        asset: CardInstanceId,
+        /// The enemy whose attack caused the damage.
+        enemy: EnemyId,
+        /// The investigator who controls the soaked asset.
+        controller: InvestigatorId,
+    },
 }
 
 /// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits
