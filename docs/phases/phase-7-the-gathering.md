@@ -6,8 +6,12 @@
 Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
 (the Gathering content, decomposed into C1–C7, kickoff
 [#246](https://github.com/talelburg/eldritch/issues/246)) is done through
-**C5c** — see the Group C breakdown table below for per-sub-slice state.
-**Next: C5d → C7** (C6d also gates C7b).
+**C5c**, with **C5d partially shipped** (the three engine-free Guardian
+assets; PR #303) — see the Group C breakdown table below for per-sub-slice
+state. **Next: finish C5d (Beat Cop + First Aid, blocked on
+[#301](https://github.com/talelburg/eldritch/issues/301) /
+[#302](https://github.com/talelburg/eldritch/issues/302)) → C7** (C6d
+also gates C7b).
 
 Design specs:
 [Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
@@ -65,7 +69,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog reaction + enemy-attack soak mechanic | ✅ PR #292 |
 | — | [#295](https://github.com/talelburg/eldritch/issues/295) | infra: weapon support — ammo/uses (`Cost::SpendUses`) + inspectable `Effect::Fight` (`IntExpr` modifier + bonus damage) (prerequisite for C5c's .38 Special) | ✅ PR #297 |
 | C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | ✅ PR #298 |
-| C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets (×6) | — |
+| C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets — **3 engine-free shipped** (.45 Automatic, Physical Training, Machete); Beat Cop + First Aid deferred to [#301](https://github.com/talelburg/eldritch/issues/301) / [#302](https://github.com/talelburg/eldritch/issues/302); Guard Dog already in C5b | 🛠️ PR #303 (partial; #239 open) |
 | C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) | — |
 | C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window | — |
 | C6b | [#242](https://github.com/talelburg/eldritch/issues/242) | Seeker deck cards | — |
@@ -142,6 +146,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **The enemy-phase attack loop suspends/resumes around a soak reaction window via `pending_enemy_attack`; attacks of opportunity soak but do NOT yet open the window (C5b, PR #292).** `drive_attack_loop` parks the remaining attackers and returns `AwaitingInput` when an attack opens a soak window; `resume_enemy_attack` (from the `AfterEnemyAttackDamagedAsset` window-close continuation) re-enters at the next attacker, advancing the enemy-phase cursor exactly once via the extracted `after_enemy_phase_attacks`. **AoO is the deferred gap:** full AoO reactions need a new mechanism to suspend/resume the *triggering action* (Move's relocation, Investigate's already-suspending skill test), so `fire_attacks_of_opportunity` deliberately drops the soak-window survivors (window-safe; Guard Dog soaks AoO damage but doesn't retaliate). The fast-follow ([#293](https://github.com/talelburg/eldritch/issues/293)) routes `fire_attacks_of_opportunity` through `drive_attack_loop` (`EnemyAttackSource::AttackOfOpportunity` is the reserved-but-unconstructed variant) + action suspension. Multi-soak-window-per-attack resume ([#294](https://github.com/talelburg/eldritch/issues/294)) is `debug_assert`-guarded (unreachable in Slice 1: only Guard Dog reacts, two copies need two illegal Ally slots; coordinates with #213).
 
 - **A weapon needs no engine work — it's `Cost::SpendUses` + `Effect::Fight` data, with ammo from the corpus (C5c prereq [#295](https://github.com/talelburg/eldritch/issues/295), PR #297).** `Uses (N <kind>)` is pipeline-parsed into `CardKind::Asset.uses`; the kind enum (`UseKind`) lives in `card-dsl` so the printed metadata and the engine's `CardInPlay.uses` runtime pool share one type. A firearm's ability is `activated(cost, vec![Cost::SpendUses { kind, count }], fight(IntExpr::cond(LocationHasClues, hi, lo), extra_damage))` — the inspectable `Effect::Fight` auto-targets the single engaged enemy, snapshots its modifier onto `InFlightSkillTest.test_modifier`, and reuses the skill-test suspend/resume path; the Fight follow-up deals `1 + extra_damage`. **`Effect::Fight` is typed, not `Native`,** so `check_activate_ability` can reject a fire with ≠1 engaged enemy before charging (multi-target selection deferred to the #212/#213 cluster; `effect_initiates_fight` is top-level-only, `TODO(#212/#213)` for a `Seq`/`If`-nested Fight). Conditional numeric values use `IntExpr { Lit, Cond }` over the general `Condition` (e.g. `LocationHasClues`) rather than duplicating the effect in an `Effect::If`. **A future weapon (breadth slices) lands via corpus + this data — no new engine primitives.** Instance-id-mint / put-into-play helper consolidation surfaced here is deferred to [#296](https://github.com/talelburg/eldritch/issues/296).
+
+- **C5d ships only the engine-free Guardian assets; Beat Cop + First Aid are split to engine follow-ups (C5d, PR #303).** .45 Automatic (01016), Physical Training (01017), and Machete (01020) are pure corpus + existing-primitive data (`Effect::Fight` / `Cost::SpendUses` / `ThisSkillTest` `Modify`). The other two need new primitives, so they're carved out the way #276/#286/#295 carved earlier C prereqs: Beat Cop's fast ability wants choose-target "deal damage to an enemy at your location" + a discard-self cost ([#301](https://github.com/talelburg/eldritch/issues/301)); First Aid wants `Effect::Heal` + uses-depletion auto-discard ([#302](https://github.com/talelburg/eldritch/issues/302)). #239 stays open tracking that content; Guard Dog (01021) already shipped in C5b. **Machete's "+1 damage if the attacked enemy is the only enemy engaged with you" is encoded as unconditional `extra_damage: 1`** — exact while Fight is single-target (`Effect::Fight` auto-targets the lone engaged enemy and rejects ≠1 before cost), with [#300](https://github.com/talelburg/eldritch/issues/300) revisiting when multi-target Fight lands.
 
 ## Open questions
 
