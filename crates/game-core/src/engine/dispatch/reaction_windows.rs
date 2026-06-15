@@ -187,7 +187,9 @@ fn trigger_matches(
         // interrupt seam, and GameEnd only by `ForcedTriggerPoint::GameEnd`
         // — both seam/forced-only, never player windows (C5a #236).
         (
-            WindowKind::PlayerWindow(_) | WindowKind::AfterEnemyDefeated { .. },
+            WindowKind::PlayerWindow(_)
+            | WindowKind::AfterEnemyDefeated { .. }
+            | WindowKind::AfterEnemyAttackDamagedAsset { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
@@ -199,7 +201,8 @@ fn trigger_matches(
             | EventPattern::EndOfTurn
             | EventPattern::AfterLocationInvestigated
             | EventPattern::WouldDiscoverClues
-            | EventPattern::GameEnd,
+            | EventPattern::GameEnd
+            | EventPattern::EnemyAttackDamagedSelf,
         ) => false,
     }
 }
@@ -684,6 +687,8 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
             PhaseStep::InvestigatorTurnBegins => EngineOutcome::Done,
         },
         WindowKind::AfterEnemyDefeated { .. } => EngineOutcome::Done,
+        // Temporary stub: replaced in Task 10 with `resume_enemy_attack`.
+        WindowKind::AfterEnemyAttackDamagedAsset { .. } => EngineOutcome::Done,
     }
 }
 

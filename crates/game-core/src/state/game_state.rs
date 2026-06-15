@@ -699,6 +699,20 @@ pub enum WindowKind {
     /// per-step continuation when they close), they are not after-event
     /// reaction windows. The specific timing point is the [`PhaseStep`].
     PlayerWindow(PhaseStep),
+    /// An enemy attack placed damage on a controlled asset (soak). Opens
+    /// after placement so the soaked asset's `EnemyAttackDamagedSelf`
+    /// reaction (Guard Dog 01021) can fire. `asset` is the soaked
+    /// instance, `enemy` the attacker (threaded into the reaction's
+    /// `EvalContext.attacking_enemy`), `controller` the asset's owner.
+    /// (C5b #237.)
+    AfterEnemyAttackDamagedAsset {
+        /// The card instance that absorbed the damage.
+        asset: CardInstanceId,
+        /// The enemy whose attack caused the damage.
+        enemy: EnemyId,
+        /// The investigator who controls the soaked asset.
+        controller: InvestigatorId,
+    },
 }
 
 /// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits
