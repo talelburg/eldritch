@@ -85,6 +85,7 @@ pub mod treachery_01165;
 pub mod treachery_01166;
 pub mod treachery_01167;
 pub mod treachery_01168;
+pub mod vicious_blow;
 pub mod working_a_hunch;
 
 /// Look up a card's hand-implemented abilities by code. Returns
@@ -118,6 +119,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         treachery_01166::CODE => Some(treachery_01166::abilities()),
         treachery_01167::CODE => Some(treachery_01167::abilities()),
         treachery_01168::CODE => Some(treachery_01168::abilities()),
+        vicious_blow::CODE => Some(vicious_blow::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
         _ => None,
     }
