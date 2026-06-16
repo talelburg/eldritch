@@ -274,6 +274,7 @@ impl GameStateBuilder {
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
             open_windows: self.open_windows,
+            continuations: Vec::new(),
             scenario_id: self.scenario_id,
             mythos_draw_pending: None,
             enemy_attack_pending: None,

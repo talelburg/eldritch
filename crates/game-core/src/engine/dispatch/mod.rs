@@ -324,6 +324,20 @@ pub(super) struct ActivateCheckResult {
     pub source_exhausted: bool,
 }
 
+/// Resume the top frame of the continuation stack (umbrella §1 / Axis-B).
+///
+/// The single resume entry point that `resolve_input` routes to before the
+/// legacy `pending_*` ladder. [`Continuation`](crate::state::Continuation)
+/// is uninhabited until Task 3, so the stack is statically always empty
+/// and this is unreachable today; Tasks 3–5 add the per-frame resume arms.
+fn resume_continuation(cx: &mut Cx, _response: &InputResponse) -> EngineOutcome {
+    match cx.state.continuations.last() {
+        // No frame variants yet — uninhabited match (Tasks 3–5).
+        Some(frame) => match *frame {},
+        None => unreachable!("resume_continuation: router only calls this with a non-empty stack"),
+    }
+}
+
 /// Dispatch a [`PlayerAction::ResolveInput`].
 ///
 /// Routes to the right resume handler based on which suspension is
@@ -350,6 +364,14 @@ pub(super) struct ActivateCheckResult {
 /// index. This covers the `MythosAfterDraws` window after all Fast
 /// plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    // Single resume router (umbrella §1 / Axis-B): the continuation stack
+    // takes priority over the legacy `pending_*` ladder below. Empty until
+    // Task 3 begins pushing frames (`Continuation` is uninhabited today),
+    // so this currently always falls through.
+    if !cx.state.continuations.is_empty() {
+        return resume_continuation(cx, response);
+    }
+
     // Hunter movement, spawn engagement, and hand-size discard are three
     // mutually exclusive suspension modes (different phases). Route to the
     // right resume handler before the reaction-window and skill-test checks.

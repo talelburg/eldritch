@@ -155,6 +155,12 @@ pub struct GameState {
     /// the same apply) is now structural — push twice, drive resumes
     /// in reverse open order.
     pub open_windows: Vec<OpenWindow>,
+    /// The single suspend/resume stack (umbrella §1 / Axis-B): the top
+    /// frame is resumed by `resolve_input`, taking priority over the
+    /// legacy `pending_*` modes. Empty until Task 3 begins pushing
+    /// frames; `#[serde(default)]` so pre-field states still load.
+    #[serde(default)]
+    pub continuations: Vec<Continuation>,
     /// Identifier of the scenario this state belongs to, if any.
     ///
     /// `None` for tests and fixtures that don't care about scenario
@@ -381,6 +387,19 @@ pub struct PendingEnemyAttack {
     /// Which loop to re-enter.
     pub source: EnemyAttackSource,
 }
+
+/// A frame on the [`GameState::continuations`] suspend/resume stack
+/// (umbrella §1 / Axis-B): a typed resume point, not a closure, so it
+/// serializes for replay/persistence like every other state field.
+///
+/// Uninhabited for now — Task 2 lands the field + the single resume
+/// router with the stack always empty; Task 3 adds the first real variant
+/// (`Resolution`, the shared forced/reaction loop), Task 4 adds
+/// `SkillTest`, and Axis A adds `Choice`. Because the enum has no
+/// variants yet, the stack is statically always empty and the router's
+/// resume branch is unreachable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Continuation {}
 
 /// A skill test paused mid-resolution at the commit window.
 ///
@@ -1225,6 +1244,27 @@ mod clue_interrupt_pending_tests {
     fn clue_interrupt_pending_defaults_none_and_absent_field_loads() {
         let s = GameStateBuilder::new().build();
         assert!(s.clue_interrupt_pending.is_none());
+    }
+}
+
+#[cfg(test)]
+mod continuation_stack_tests {
+    use super::*;
+    use crate::test_support::GameStateBuilder;
+
+    #[test]
+    fn continuations_default_empty_and_absent_field_loads() {
+        let s = GameStateBuilder::new().build();
+        assert!(s.continuations.is_empty());
+
+        // A pre-field serialized state (no `continuations` key) still loads,
+        // defaulting to an empty stack (`#[serde(default)]`).
+        let mut v = serde_json::to_value(&s).expect("serialize");
+        v.as_object_mut()
+            .expect("state serializes to a JSON object")
+            .remove("continuations");
+        let back: GameState = serde_json::from_value(v).expect("deserialize without the field");
+        assert!(back.continuations.is_empty());
     }
 }
 
