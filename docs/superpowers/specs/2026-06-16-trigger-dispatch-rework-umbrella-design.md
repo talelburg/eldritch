@@ -366,3 +366,11 @@ Axis-E work** that can proceed independently of this effort.
 - Research Librarian's "find a [[Tome]]" when 2+ Tomes are in deck — does the
   deck-search primitive own the selection, or does it route through Axis A? Decide
   in the deck-search prereq spec.
+- **What `Event` is *for* (future, not blocking).** The server ships full state to
+  the client, so the replay/reconstruction rationale for the event log is weaker
+  than originally planned — `Event` is mostly a *log*. That should eventually
+  drive what has the right to be an `Event` vs. a dispatch-only `TimingEvent` vs.
+  pure internal state. Revisit when the Event taxonomy is reworked; Axis B keeps
+  the two separate (consolidating `ForcedTriggerPoint`+`WindowKind` into
+  `TimingEvent`, 4 enums → 3) precisely so this can be decided later without
+  re-coupling dispatch to the log.
