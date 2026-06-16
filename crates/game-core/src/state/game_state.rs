@@ -154,11 +154,13 @@ pub struct GameState {
     /// Multi-window queueing (one effect that queues two windows in
     /// the same apply) is now structural — push twice, drive resumes
     /// in reverse open order.
-    pub open_windows: Vec<OpenWindow>,
     /// The single suspend/resume stack (umbrella §1 / Axis-B): the top
     /// frame is resumed by `resolve_input`, taking priority over the
-    /// legacy `pending_*` modes. Empty until Task 3 begins pushing
-    /// frames; `#[serde(default)]` so pre-field states still load.
+    /// legacy `pending_*` modes. Open reaction/fast windows live here as
+    /// [`Continuation::Resolution`] frames (the former `open_windows` Vec,
+    /// absorbed into the one stack). `#[serde(default)]` so pre-field
+    /// states still load. Inspect windows via [`Self::open_windows`] /
+    /// [`Self::top_reaction_window`] / [`Self::top_window`].
     #[serde(default)]
     pub continuations: Vec<Continuation>,
     /// Identifier of the scenario this state belongs to, if any.
@@ -392,14 +394,37 @@ pub struct PendingEnemyAttack {
 /// (umbrella §1 / Axis-B): a typed resume point, not a closure, so it
 /// serializes for replay/persistence like every other state field.
 ///
-/// Uninhabited for now — Task 2 lands the field + the single resume
-/// router with the stack always empty; Task 3 adds the first real variant
-/// (`Resolution`, the shared forced/reaction loop), Task 4 adds
-/// `SkillTest`, and Axis A adds `Choice`. Because the enum has no
-/// variants yet, the stack is statically always empty and the router's
-/// resume branch is unreachable.
+/// Task 3 adds the first variant (`Resolution`, an open reaction/fast
+/// window — see [`OpenWindow`]); Task 4 adds `SkillTest`, and Axis A adds
+/// `Choice`. The reaction window is just "paused, the player may act here,
+/// resume on act/pass," so it is a continuation frame: this absorbs the
+/// former `open_windows` Vec into the one stack (umbrella §1 — no separate
+/// window structure to keep in sync).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Continuation {}
+pub enum Continuation {
+    /// An open reaction / fast / framework window. The player may fire a
+    /// pending trigger or play a Fast card, or pass. Payload is the former
+    /// `open_windows` entry. (Task 5 parameterizes this into the shared
+    /// forced+reaction resolution loop.)
+    Resolution(OpenWindow),
+}
+
+impl Continuation {
+    /// The window payload if this frame is a [`Continuation::Resolution`].
+    #[must_use]
+    pub fn as_window(&self) -> Option<&OpenWindow> {
+        match self {
+            Continuation::Resolution(w) => Some(w),
+        }
+    }
+
+    /// Mutable counterpart to [`Self::as_window`].
+    pub fn as_window_mut(&mut self) -> Option<&mut OpenWindow> {
+        match self {
+            Continuation::Resolution(w) => Some(w),
+        }
+    }
+}
 
 /// A skill test paused mid-resolution at the commit window.
 ///
@@ -1010,8 +1035,7 @@ impl GameState {
     /// are skipped — they don't block dispatch.
     #[must_use]
     pub fn top_reaction_window(&self) -> Option<&OpenWindow> {
-        self.open_windows
-            .iter()
+        self.windows()
             .rev()
             .find(|w| !w.pending_triggers.is_empty())
     }
@@ -1020,10 +1044,37 @@ impl GameState {
     /// applies: windows with empty `pending_triggers` are skipped —
     /// phase-gate-only windows are not exposed as reaction-work.
     pub fn top_reaction_window_mut(&mut self) -> Option<&mut OpenWindow> {
-        self.open_windows
+        self.continuations
             .iter_mut()
             .rev()
+            .filter_map(Continuation::as_window_mut)
             .find(|w| !w.pending_triggers.is_empty())
+    }
+
+    /// Iterator over the open windows on the continuation stack, in stack
+    /// order (bottom to top). The windows are `Continuation::Resolution`
+    /// frames; non-window frames (Task 4+) are skipped.
+    fn windows(&self) -> impl DoubleEndedIterator<Item = &OpenWindow> {
+        self.continuations
+            .iter()
+            .filter_map(Continuation::as_window)
+    }
+
+    /// The open windows as a `Vec` of references, in stack order. Read
+    /// accessor for callers (and tests) that inspect the window stack the
+    /// way they used to read the former `open_windows` field.
+    #[must_use]
+    pub fn open_windows(&self) -> Vec<&OpenWindow> {
+        self.windows().collect()
+    }
+
+    /// The topmost open window regardless of pending triggers (the former
+    /// `open_windows.last()`), e.g. for the Fast-play `permissive_window`
+    /// timing gate. Distinct from [`Self::top_reaction_window`], which
+    /// skips empty-`pending_triggers` (pure-Fast) windows.
+    #[must_use]
+    pub fn top_window(&self) -> Option<&OpenWindow> {
+        self.windows().next_back()
     }
 
     /// Index into [`Self::open_windows`] of the topmost window with
@@ -1045,9 +1096,10 @@ impl GameState {
     /// window, by construction, has no forced triggers to guard against.
     #[must_use]
     pub fn top_reaction_window_index(&self) -> Option<usize> {
-        self.open_windows
-            .iter()
-            .rposition(|w| !w.pending_triggers.is_empty())
+        self.continuations.iter().rposition(|c| {
+            c.as_window()
+                .is_some_and(|w| !w.pending_triggers.is_empty())
+        })
     }
 
     /// Build a [`Location`] from its card `metadata`, minting a fresh id.
@@ -1265,6 +1317,29 @@ mod continuation_stack_tests {
             .remove("continuations");
         let back: GameState = serde_json::from_value(v).expect("deserialize without the field");
         assert!(back.continuations.is_empty());
+    }
+
+    #[test]
+    fn open_window_lives_on_the_continuation_stack_as_a_resolution_frame() {
+        // Axis-B T3: a window is a `Continuation::Resolution` frame on the
+        // one stack — there is no separate `open_windows` Vec.
+        let state = GameStateBuilder::new()
+            .with_open_window(
+                WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+                FastActorScope::Any,
+            )
+            .build();
+        assert_eq!(state.continuations.len(), 1);
+        assert!(matches!(
+            state.continuations[0],
+            Continuation::Resolution(_)
+        ));
+        // The read accessor surfaces it as the former `open_windows` view.
+        assert_eq!(state.open_windows().len(), 1);
+        assert_eq!(
+            state.open_windows()[0].kind,
+            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+        );
     }
 }
 

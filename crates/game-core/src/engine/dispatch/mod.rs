@@ -330,11 +330,24 @@ pub(super) struct ActivateCheckResult {
 /// legacy `pending_*` ladder. [`Continuation`](crate::state::Continuation)
 /// is uninhabited until Task 3, so the stack is statically always empty
 /// and this is unreachable today; Tasks 3–5 add the per-frame resume arms.
-fn resume_continuation(cx: &mut Cx, _response: &InputResponse) -> EngineOutcome {
-    match cx.state.continuations.last() {
-        // No frame variants yet — uninhabited match (Tasks 3–5).
-        Some(frame) => match *frame {},
-        None => unreachable!("resume_continuation: router only calls this with a non-empty stack"),
+fn resume_continuation(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    // Task 3: the only frame is `Resolution` (an open window). If it has
+    // pending reaction triggers, drive the reaction window; otherwise it is
+    // a pure-Fast window (empty `pending_triggers`) that `Skip` closes.
+    if cx.state.top_reaction_window().is_some() {
+        return reaction_windows::resume_reaction_window(cx, response);
+    }
+    // Pure-Fast window (Option B): no pending triggers; only `Skip` is valid.
+    if matches!(response, InputResponse::Skip) {
+        let idx = cx.state.continuations.len() - 1;
+        return reaction_windows::close_reaction_window_at(cx, idx);
+    }
+    EngineOutcome::Rejected {
+        reason: format!(
+            "ResolveInput: a Fast-play window is open (no pending triggers); \
+             submit InputResponse::Skip to close it, got {response:?}",
+        )
+        .into(),
     }
 }
 
@@ -420,27 +433,9 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         return clue_interrupt::resume_clue_interrupt(cx, response);
     }
 
-    if cx.state.top_reaction_window().is_some() {
-        return reaction_windows::resume_reaction_window(cx, response);
-    }
-
-    // Pure-Fast window path (Option B): no reaction-driven window is
-    // pending, but a window (e.g. MythosAfterDraws) may still be on the
-    // stack with empty pending_triggers. Skip is the only valid response
-    // here — PickIndex / CommitCards reject below.
-    if !cx.state.open_windows.is_empty() {
-        if matches!(response, InputResponse::Skip) {
-            let idx = cx.state.open_windows.len() - 1;
-            return reaction_windows::close_reaction_window_at(cx, idx);
-        }
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "ResolveInput: a Fast-play window is open (no pending triggers); \
-                 submit InputResponse::Skip to close it, got {response:?}",
-            )
-            .into(),
-        };
-    }
+    // Open windows (reaction + pure-Fast) are `Continuation::Resolution`
+    // frames, handled by the continuation router at the top of this function
+    // (umbrella §1 / Axis-B T3) — so no window check is needed here.
 
     if cx.state.in_flight_skill_test.is_none() {
         return EngineOutcome::Rejected {

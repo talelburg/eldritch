@@ -966,17 +966,22 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
     );
     // Confirm the stack before the injection: one reaction window with
     // one pending trigger.
-    assert_eq!(paused.state.open_windows.len(), 1);
-    assert!(!paused.state.open_windows[0].pending_triggers.is_empty());
+    assert_eq!(paused.state.open_windows().len(), 1);
+    assert!(!paused.state.open_windows()[0].pending_triggers.is_empty());
 
     // Inject an empty player-window gate on top to create the
     // [R (pending), B (empty)] shape.
-    paused.state.open_windows.push(OpenWindow::new_empty(
-        WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
-        FastActorScope::Any,
-    ));
+    paused
+        .state
+        .continuations
+        .push(game_core::state::Continuation::Resolution(
+            OpenWindow::new_empty(
+                WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+                FastActorScope::Any,
+            ),
+        ));
     assert_eq!(
-        paused.state.open_windows.len(),
+        paused.state.open_windows().len(),
         2,
         "stack is [R, B] after injection"
     );
@@ -992,14 +997,14 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
 
     // The player-window gate (B) must still be on the stack.
     assert_eq!(
-        resumed.state.open_windows.len(),
+        resumed.state.open_windows().len(),
         1,
         "after closing R the stack must contain exactly one window (B), \
          got {:?}",
-        resumed.state.open_windows,
+        resumed.state.open_windows(),
     );
     assert_eq!(
-        resumed.state.open_windows[0].kind,
+        resumed.state.open_windows()[0].kind,
         WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
         "the surviving window must be the player-window gate, not the reaction window",
     );

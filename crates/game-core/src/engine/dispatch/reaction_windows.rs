@@ -17,8 +17,8 @@ use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInstanceId, FastActorScope, FinishContinuation, GameState, InvestigatorId,
-    OpenWindow, PendingTrigger, Phase, PhaseStep, Status, WindowKind,
+    CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, GameState,
+    InvestigatorId, OpenWindow, PendingTrigger, Phase, PhaseStep, Status, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -55,11 +55,13 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
     // Reaction windows admit any investigator's Fast actions
     // (Rules Reference: Fast may be played at any player window).
     // Multi-window nesting is now structural — push twice is valid.
-    cx.state.open_windows.push(OpenWindow {
-        kind,
-        pending_triggers,
-        fast_actors: FastActorScope::Any,
-    });
+    cx.state
+        .continuations
+        .push(Continuation::Resolution(OpenWindow {
+            kind,
+            pending_triggers,
+            fast_actors: FastActorScope::Any,
+        }));
 }
 
 /// Scan every investigator's `cards_in_play` for
@@ -313,6 +315,9 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
 /// Fire the pending trigger at index `i` in the open reaction window.
 /// Rejects out-of-bounds; the window stays open so the client can
 /// retry with a corrected index.
+// Mostly invariant-violation `unreachable!` arms + the Resolution-frame
+// unwrapping (Axis-B T3); over the line limit but cohesive.
+#[allow(clippy::too_many_lines)]
 fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Capture the index of the reaction window we're driving up-front
     // so the close path removes the same entry (not the absolute top of
@@ -324,7 +329,9 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: caller checked is_some");
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
-        let window = &cx.state.open_windows[window_idx];
+        let window = cx.state.continuations[window_idx]
+            .as_window()
+            .expect("fire_pending_trigger: top_reaction_window_index points at a Resolution frame");
         let idx = match usize::try_from(i) {
             Ok(idx) if idx < window.pending_triggers.len() => idx,
             _ => {
@@ -406,8 +413,11 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
     // `clue_discovery_count`. `None` for all other window kinds. (C5b
     // #237.)
-    if let WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. } =
-        cx.state.open_windows[window_idx].kind
+    if let WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. } = cx.state.continuations
+        [window_idx]
+        .as_window()
+        .expect("fire_pending_trigger: window_idx is a Resolution frame")
+        .kind
     {
         eval_ctx.attacking_enemy = Some(enemy);
     }
@@ -426,7 +436,9 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Drop the fired entry now that resolution succeeded. The window
     // we drove sits at `window_idx` — apply_effect does not push or
     // pop `open_windows` entries, so the index remains valid.
-    let window = &mut cx.state.open_windows[window_idx];
+    let window = cx.state.continuations[window_idx]
+        .as_window_mut()
+        .expect("fire_pending_trigger: window_idx is a Resolution frame");
     window.pending_triggers.remove(pending_idx);
 
     // If more triggers remain pending, re-emit AwaitingInput so the
@@ -514,9 +526,10 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     {
         let window = cx
             .state
-            .open_windows
+            .continuations
             .get(idx)
-            .expect("close_reaction_window_at: caller-supplied index must be in bounds");
+            .and_then(Continuation::as_window)
+            .expect("close_reaction_window_at: caller-supplied index must be a Resolution frame");
         if let Some(forced) = window.pending_triggers.iter().find(|t| t.forced) {
             return EngineOutcome::Rejected {
                 reason: format!(
@@ -531,8 +544,13 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
             };
         }
     }
-    let window = cx.state.open_windows.remove(idx);
-    let kind = window.kind;
+    let kind = cx
+        .state
+        .continuations
+        .remove(idx)
+        .as_window()
+        .map(|w| w.kind)
+        .expect("close_reaction_window_at: removed frame must be a Resolution window");
     cx.events.push(Event::WindowClosed { kind });
 
     // Run any kind-specific continuation (e.g. MythosAfterDraws →
@@ -816,16 +834,17 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
     let pending_triggers = scan_pending_triggers(cx.state, kind);
-    cx.state.open_windows.push(OpenWindow {
-        kind,
-        pending_triggers,
-        fast_actors: FastActorScope::Any,
-    });
+    cx.state
+        .continuations
+        .push(Continuation::Resolution(OpenWindow {
+            kind,
+            pending_triggers,
+            fast_actors: FastActorScope::Any,
+        }));
 
     let has_pending = !cx
         .state
-        .open_windows
-        .last()
+        .top_window()
         .expect("just pushed; cannot be empty")
         .pending_triggers
         .is_empty();
@@ -834,8 +853,8 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     if !has_pending && !has_fast_eligible {
         // Auto-skip: nothing to do. Pop the window we just pushed,
         // emit WindowClosed, and run the continuation inline, so the
-        // net effect on state.open_windows is the same as before the fix.
-        let _ = cx.state.open_windows.pop();
+        // net effect on the continuation stack is the same as before.
+        let _ = cx.state.continuations.pop();
         cx.events.push(Event::WindowClosed { kind });
         return run_window_continuation(cx, kind);
     }
@@ -902,8 +921,7 @@ pub(super) fn check_play_card(
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
     let owner_is_active = state.active_investigator == Some(investigator);
     let permissive_window = state
-        .open_windows
-        .last()
+        .top_window()
         .is_some_and(|w| w.fast_actors.permits(investigator));
     // Non-asset/non-event card types are filtered out by
     // `resolve_play_target` above, so `card_type` here is always one of
@@ -1017,8 +1035,7 @@ pub(super) fn check_activate_ability(
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
     let in_permissive_window = state
-        .open_windows
-        .last()
+        .top_window()
         .is_some_and(|w| w.fast_actors.permits(investigator));
     if action_cost > 0 {
         // Action-cost ability: requires Investigation phase + active investigator.
@@ -1363,7 +1380,7 @@ mod open_fast_window_tests {
         );
 
         assert!(
-            state.open_windows.is_empty(),
+            state.open_windows().is_empty(),
             "auto-skip must not leave the window on the stack"
         );
         assert!(

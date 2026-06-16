@@ -31,8 +31,9 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Counter, Enemy, EnemyId, FastActorScope, GameState, HandSizeDiscard, Investigator,
-    InvestigatorId, Location, LocationId, OpenWindow, Phase, TokenModifiers, WindowKind,
+    ChaosBag, Continuation, Counter, Enemy, EnemyId, FastActorScope, GameState, HandSizeDiscard,
+    Investigator, InvestigatorId, Location, LocationId, OpenWindow, Phase, TokenModifiers,
+    WindowKind,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -273,8 +274,13 @@ impl GameStateBuilder {
             location_ids: Counter::new(),
             pending_skill_modifiers: Vec::new(),
             in_flight_skill_test: None,
-            open_windows: self.open_windows,
-            continuations: Vec::new(),
+            // Builder-staged windows become `Resolution` frames on the one
+            // continuation stack (Axis-B T3).
+            continuations: self
+                .open_windows
+                .into_iter()
+                .map(Continuation::Resolution)
+                .collect(),
             scenario_id: self.scenario_id,
             mythos_draw_pending: None,
             enemy_attack_pending: None,
@@ -331,9 +337,9 @@ mod with_open_window_tests {
                 FastActorScope::Any,
             )
             .build();
-        assert_eq!(state.open_windows.len(), 1);
-        assert_eq!(state.open_windows[0].fast_actors, FastActorScope::Any);
-        assert!(state.open_windows[0].pending_triggers.is_empty());
+        assert_eq!(state.open_windows().len(), 1);
+        assert_eq!(state.open_windows()[0].fast_actors, FastActorScope::Any);
+        assert!(state.open_windows()[0].pending_triggers.is_empty());
     }
 
     #[test]
@@ -349,9 +355,9 @@ mod with_open_window_tests {
                 FastActorScope::ActiveInvestigator(InvestigatorId(1)),
             )
             .build();
-        assert_eq!(state.open_windows.len(), 2);
+        assert_eq!(state.open_windows().len(), 2);
         assert!(matches!(
-            state.open_windows[1].kind,
+            state.open_windows()[1].kind,
             WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)
         ));
     }
