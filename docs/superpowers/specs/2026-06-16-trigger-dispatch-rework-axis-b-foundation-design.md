@@ -199,12 +199,13 @@ Existing content exercises every new path — no new cards needed:
   list, with a `TODO` for merge-in if such a card lands.
 - Skill-test nesting (one in flight today; `in_flight_skill_test` stays a
   singleton — `TODO` to move into the frame if nesting ever arrives).
-- **Exact multiplayer reaction-phase ordering.** Phase 2 runs per investigator in
-  player order; whether priority *returns to the lead after any action* (the
-  common LCG priority-reset) vs. strict one-pass-per-investigator is a Phase-8
-  question to verify against Appendix II. Solo (Slice 1) collapses both to one
-  run, and the `decider` parameter localizes the choice — so no restructure is
-  needed to settle it later.
+- **Multiplayer reaction-phase ordering.** Verified against the RR (Appendix II +
+  full-text search): Arkham has **no priority-reset** mechanic — the only window
+  ordering rule is "In Player Order" (lead first, then clockwise), so phase 2 is
+  one pass per investigator, each resolving their eligible reactions/Fasts. That
+  model is rules-complete; the only deferral is that *multiplayer* player-order is
+  unexercised until Phase 8 (Slice 1 is solo → one run). The `decider` parameter
+  already localizes it.
 
 ## Risks
 
