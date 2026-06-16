@@ -117,12 +117,26 @@ when picked up.
 - **Deferred optional Gathering content** (off the win/lose path, so cut
   from Slice 1): Lita Chantler's parley/take-control and the Parlor
   (`01115`) **Resign** action.
-- **Engine north-star (cross-slice, may be its own slice).** `emit_event`
+- **Engine north-star — trigger-dispatch rework (cross-slice; kickoff
+  [#327](https://github.com/talelburg/eldritch/issues/327)).** `emit_event`
   dispatch unification (`#212`) + iterative simultaneous-trigger ordering
-  (`#213`, RR p.17 — player picks order even in solo) + the trigger
-  index (`#117`); plus the optional click-to-resolve UX for *lone* forced
-  effects. Slice 1's `fire_forced_triggers` is a forward-compatible
-  subset; this work replaces its single-trigger-only limitation.
+  (`#213`) + the trigger index (`#117`), unblocking the deferred-card
+  choice/reaction cluster. Designed in
+  [umbrella](../superpowers/specs/2026-06-16-trigger-dispatch-rework-umbrella-design.md)
+  + [Axis-B foundation](../superpowers/specs/2026-06-16-trigger-dispatch-rework-axis-b-foundation-design.md)
+  specs ([Axis-B plan](../superpowers/plans/2026-06-16-trigger-dispatch-axis-b-foundation.md)).
+  Five axes: **B** trigger-dispatch spine (one continuation stack +
+  two-phase forced-then-reaction `emit_event` + #117 index; tasks
+  [#328](https://github.com/talelburg/eldritch/issues/328)–[#333](https://github.com/talelburg/eldritch/issues/333),
+  closes #212/#213/#117/#294), **A** interactive choice
+  ([#334](https://github.com/talelburg/eldritch/issues/334)), **C**
+  reaction-event-play ([#335](https://github.com/talelburg/eldritch/issues/335)),
+  **D** cancellation/replacement ([#336](https://github.com/talelburg/eldritch/issues/336)),
+  **E** orthogonal card prereqs (#301/#302/#306/#312/#313/#319/#320/#322/#323).
+  Slice 1's `fire_forced_triggers` is a forward-compatible subset Axis B
+  replaces. **Note:** #213's "one mixed pool" framing was corrected to
+  RR-accurate two-phase (forced-all-before-reaction, RR p.2; issue text
+  amended).
 
 Campaign sequencing beyond The Gathering (The Midnight Masks, The
 Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
