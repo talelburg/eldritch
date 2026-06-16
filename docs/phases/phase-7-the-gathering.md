@@ -2,7 +2,12 @@
 
 ## Status
 
-🛠️ **Slice 1 in progress** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216)).
+✅ **Slice 1 complete** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216), gate [#245](https://github.com/talelburg/eldritch/issues/245)/PR #326).
+Solo Roland plays The Gathering end-to-end to genuine Won + Lost
+resolutions against the real registries; all Group C content reachable on
+today's engine shipped, with the rest carved to tracked follow-ups (the
+#212/#213 choice cluster + the per-card prereqs). Slice 2+ (investigator
+breadth) is the next arc — see "Future slices" below.
 Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
 (the Gathering content, decomposed into C1–C7, kickoff
 [#246](https://github.com/talelburg/eldritch/issues/246)) is done through
@@ -90,7 +95,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards — **Emergency Cache 01088 + 5 skills** shipped on prereqs #310/#311; Knife 01086 ([#312](https://github.com/talelburg/eldritch/issues/312), discard-self-asset cost) + Flashlight 01087 ([#313](https://github.com/talelburg/eldritch/issues/313), `Effect::Investigate` + shroud) carved to follow-ups | ✅ PR #316 |
 | C6d | [#284](https://github.com/talelburg/eldritch/issues/284) | encounter-deck assembly in `setup()` (quantity-aware, excludes set-aside) — gates C7b; makes Mythos draws + 01106's dig operate live | ✅ PR #317 |
 | C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | ✅ PR #325 |
-| C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test (needs C6d) | — |
+| C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test (needs C6d) | ✅ PR #326 |
 
 ## Future slices (after Slice 1)
 
@@ -170,6 +175,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **"After you successfully investigate" is a reaction window (`AfterSuccessfulInvestigate`) distinct from the forced `AfterLocationInvestigated`, because the engine has no `Trigger::Forced` (C6a, [#241](https://github.com/talelburg/eldritch/issues/241), PR #318).** Dr. Milan 01033's `[reaction]` needs a player "may" window; the Investigate follow-up (success-only) queues `WindowKind::AfterSuccessfulInvestigate { investigator }`, which suspends/resumes through the existing reaction pipeline (`queue_reaction_window` → `close_reaction_window_at` re-enters the skill-test driver). It pairs with a **new** `EventPattern::SuccessfullyInvestigated` rather than reusing `AfterLocationInvestigated` (Obscuring Fog's forced twin): with no `Trigger::Forced`, the engine routes forced-vs-reaction **by pattern** — the forced one auto-fires via `fire_after_location_investigated`, the reaction one opens a window — so sharing a pattern would auto-fire a reaction (it scans the investigator's controlled instances). Unifying forced + reaction at one ordered window is #212/#213. Window is controller-scoped ("after *you* investigate"); a Cover-Up-suspended discovery doesn't queue it (`TODO(#212)`, out of Slice-1 scope). The Dr. Milan *card* ships in C6b (#242).
 
 - **The Gathering's encounter deck is six sets, assembled in `setup()` and shuffled at `StartScenario` (C6d, [#284](https://github.com/talelburg/eldritch/issues/284), PR #317).** Per the vendored campaign guide (`data/campaign-guides/…notz…pdf` p.2) the gathered sets are **The Gathering, Rats, Ghouls, Striking Fear, Ancient Evils, Chilling Cold** — six, not four (Ancient Evils + Chilling Cold *are* in scenario I; verify against the guide, not memory). `setup()` seeds `encounter_deck` from `the_gathering::ENCOUNTER_DECK_CODES` (a guide-sourced code list — the corpus carries no `encounter_code`) × `CardKind::{Enemy,Treachery}.quantity` = 26 cards, excluding the set-aside Ghoul Priest (01116) / Lita (01117) and all structural cards by construction. **The shuffle lives in `start_scenario`** (alongside the player-deck shuffle, same scenario-start RNG), so `setup()`'s construction order isn't load-bearing and the deck is replayable — C7b can drive a real Mythos cadence. Tests that need a controlled draw order must seed `encounter_deck` *after* `StartScenario` (post-shuffle).
+
+- **Slice 1 closes with a hybrid end-to-end Won/Lost test that drives the real act progression and seeds only off-resolution preconditions (C7b, [#245](https://github.com/talelburg/eldritch/issues/245), PR #326).** `crates/scenarios/tests/the_gathering_resolutions.rs` seats solo Roland via `setup()` + `StartScenario`, then: **Won** drives act 1 (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window + `Confirm`) for real — act 2's reverse spawns the *real* Ghoul Priest — and fights that spawned enemy → `act_01110`'s forced advance → `Resolution::Won { R1 }`; **Lost** seeds Roland one-from-death + an engaged enemy and drives an Enemy-phase attack → `check_all_defeated` → `Resolution::Lost`. Both assert the genuine `state.resolution` latch + `Event::ScenarioResolved`. **Seeds are deliberately off the resolution path:** a controlled `Numeric(0)` chaos bag (the Standard bag's `AutoFail` makes determinism impossible), a minimal roster deck, seeded clues (clue-acquisition is unit-tested elsewhere; the Cellar's shroud 4 also exceeds Roland's intellect 3), the spawned Priest's health (solo Roland can't out-damage a 5-health Retaliate Hunter dealing 2 horror/attack without going insane), and one benign seeded Mythos draw (Ancient Evils, 1 doom). The earlier instinct to seed *past* act 2 was dropped in review — it duplicated `act_advancement.rs` and skipped the act-2 machinery the capstone exists to exercise.
 
 ## Open questions
 
