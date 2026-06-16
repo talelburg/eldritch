@@ -347,7 +347,10 @@ fn push_matching(
         return;
     };
     for (idx, ability) in abilities.iter().enumerate() {
-        if let Trigger::OnEvent { pattern, timing } = &ability.trigger {
+        if let Trigger::OnEvent {
+            pattern, timing, ..
+        } = &ability.trigger
+        {
             // Only `After` timing is handled in this slice; no in-scope
             // Forced card uses `Before` ("when X would Y") timing.
             // Revisit when such a card lands.

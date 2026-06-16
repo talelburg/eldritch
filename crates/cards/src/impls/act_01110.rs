@@ -17,7 +17,7 @@
 //! Won/R1 latch. The Ghoul Priest enemy + its spawn land in C3 (#231);
 //! this objective is unit-tested here and proven end-to-end in C7b (#245).
 
-use card_dsl::dsl::{advance_current_act, on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{advance_current_act, forced_on_event, Ability, EventPattern, EventTiming};
 
 /// `ArkhamDB` code for Act 3, "What Have You Done?".
 pub const CODE: &str = "01110";
@@ -25,7 +25,7 @@ pub const CODE: &str = "01110";
 /// 01110's Forced objective: advance when the Ghoul Priest is defeated.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![forced_on_event(
         EventPattern::EnemyDefeated {
             by_controller: false,
             code: Some("01116".to_owned()),
@@ -51,6 +51,7 @@ mod tests {
                     code: Some("01116".into()),
                 },
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(matches!(abilities[0].effect, Effect::AdvanceCurrentAct));

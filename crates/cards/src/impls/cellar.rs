@@ -10,7 +10,7 @@
 //! Clues / Victory are location state set by `setup()`.
 
 use card_dsl::dsl::{
-    deal_damage, on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
+    deal_damage, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
 };
 
 /// `ArkhamDB` code for the Cellar.
@@ -19,7 +19,7 @@ pub const CODE: &str = "01114";
 /// The Cellar's Forced "after you enter: take 1 damage".
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![forced_on_event(
         EventPattern::EnteredLocation,
         EventTiming::After,
         deal_damage(InvestigatorTarget::You, 1),
@@ -39,6 +39,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EnteredLocation,
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(matches!(

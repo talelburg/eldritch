@@ -20,7 +20,7 @@
 //! deferred until a map with ties lands). Engagement-on-arrival is not
 //! modeled for the forced move (the card text is positional only).
 
-use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming, Phase};
+use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming, Phase};
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{EnemyId, LocationId};
 use game_core::{location_id_by_code, shortest_first_steps, Cx, EngineOutcome, EvalContext, Event};
@@ -39,14 +39,14 @@ const HALLWAY: &str = "01112";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        on_event(
+        forced_on_event(
             EventPattern::PhaseEnded {
                 phase: Phase::Enemy,
             },
             EventTiming::After,
             native(MOVE_GHOULS),
         ),
-        on_event(
+        forced_on_event(
             EventPattern::RoundEnded,
             EventTiming::After,
             native(ROUND_END_DOOM),
@@ -179,7 +179,8 @@ mod tests {
                 pattern: EventPattern::PhaseEnded {
                     phase: Phase::Enemy
                 },
-                timing: EventTiming::After
+                timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == MOVE_GHOULS));
@@ -187,7 +188,8 @@ mod tests {
             abilities[1].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::RoundEnded,
-                timing: EventTiming::After
+                timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(matches!(&abilities[1].effect, Effect::Native { tag } if tag == ROUND_END_DOOM));

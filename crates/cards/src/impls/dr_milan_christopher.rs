@@ -21,7 +21,7 @@
 //! mechanically weaker than printed until the soak primitive lands.
 
 use card_dsl::dsl::{
-    constant, gain_resources, modify, on_event, Ability, EventPattern, EventTiming,
+    constant, gain_resources, modify, reaction_on_event, Ability, EventPattern, EventTiming,
     InvestigatorTarget, ModifierScope, Stat,
 };
 
@@ -34,7 +34,7 @@ pub const CODE: &str = "01033";
 pub fn abilities() -> Vec<Ability> {
     vec![
         constant(modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
-        on_event(
+        reaction_on_event(
             EventPattern::SuccessfullyInvestigated,
             EventTiming::After,
             gain_resources(InvestigatorTarget::You, 1),
@@ -68,6 +68,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::SuccessfullyInvestigated,
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Reaction,
             },
         );
         assert_eq!(

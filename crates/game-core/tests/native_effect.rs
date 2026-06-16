@@ -5,7 +5,7 @@
 
 use std::sync::OnceLock;
 
-use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};
@@ -22,7 +22,7 @@ fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     if code.as_str() == AGENDA {
         // Forced at end of enemy phase -> a native effect tagged "test:set-doom".
-        Some(vec![on_event(
+        Some(vec![forced_on_event(
             EventPattern::PhaseEnded {
                 phase: card_dsl::dsl::Phase::Enemy,
             },
@@ -30,7 +30,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             native("test:set-doom"),
         )])
     } else if code.as_str() == AGENDA_BAD {
-        Some(vec![on_event(
+        Some(vec![forced_on_event(
             EventPattern::PhaseEnded {
                 phase: card_dsl::dsl::Phase::Enemy,
             },

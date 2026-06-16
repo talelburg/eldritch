@@ -17,8 +17,8 @@
 //! synthetic Cover-Up fixture C5a proved (`scenarios::test_fixtures::synth_cards`).
 
 use card_dsl::dsl::{
-    native, on_event, put_into_threat_area_with_clues, revelation, Ability, EventPattern,
-    EventTiming,
+    forced_on_event, native, put_into_threat_area_with_clues, reaction_on_event, revelation,
+    Ability, EventPattern, EventTiming,
 };
 use game_core::card_registry::NativeEffectFn;
 use game_core::event::TraumaKind;
@@ -36,12 +36,12 @@ const TRAUMA_TAG: &str = "01007:trauma";
 pub fn abilities() -> Vec<Ability> {
     vec![
         revelation(put_into_threat_area_with_clues(CODE, 3)),
-        on_event(
+        reaction_on_event(
             EventPattern::WouldDiscoverClues,
             EventTiming::Before,
             native(DISCARD_TAG),
         ),
-        on_event(
+        forced_on_event(
             EventPattern::GameEnd,
             EventTiming::After,
             native(TRAUMA_TAG),
@@ -132,6 +132,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::WouldDiscoverClues,
                 timing: EventTiming::Before,
+                ..
             }
         ));
         assert!(matches!(

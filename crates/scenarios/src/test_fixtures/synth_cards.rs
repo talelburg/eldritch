@@ -20,8 +20,8 @@ use game_core::card_data::{
 };
 use game_core::card_registry::{CardRegistry, NativeEffectFn};
 use game_core::dsl::{
-    gain_resources, native, on_event, on_play, revelation, Ability, EventPattern, EventTiming,
-    InvestigatorTarget,
+    forced_on_event, gain_resources, native, on_play, reaction_on_event, revelation, Ability,
+    EventPattern, EventTiming, InvestigatorTarget,
 };
 use game_core::engine::{Cx, EngineOutcome, EvalContext};
 use game_core::event::{Event, TraumaKind};
@@ -288,12 +288,12 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         }
         SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(InvestigatorTarget::You, 1))]),
         SYNTH_COVER_UP_CODE => Some(vec![
-            on_event(
+            reaction_on_event(
                 EventPattern::WouldDiscoverClues,
                 EventTiming::Before,
                 native(SYNTH_COVER_UP_DISCARD_TAG),
             ),
-            on_event(
+            forced_on_event(
                 EventPattern::GameEnd,
                 EventTiming::After,
                 native(SYNTH_COVER_UP_TRAUMA_TAG),
@@ -372,6 +372,7 @@ mod tests {
             game_core::dsl::Trigger::OnEvent {
                 pattern: game_core::dsl::EventPattern::WouldDiscoverClues,
                 timing: game_core::dsl::EventTiming::Before,
+                ..
             }
         ));
         assert!(matches!(

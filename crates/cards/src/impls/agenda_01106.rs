@@ -31,7 +31,7 @@
 //! forced-advance path until #212/#213, consistent with Slice 1.
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::{
     reshuffle_encounter_discard, resolve_encounter_card, Cx, EngineOutcome, EvalContext,
@@ -45,7 +45,7 @@ const REVERSE: &str = "01106:reverse";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![forced_on_event(
         EventPattern::AgendaAdvanced,
         EventTiming::After,
         native(REVERSE),
@@ -96,6 +96,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::AgendaAdvanced,
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(
