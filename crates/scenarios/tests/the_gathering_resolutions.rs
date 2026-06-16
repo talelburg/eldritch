@@ -75,6 +75,29 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
     assert!(state.resolution.is_none(), "no resolution latched at setup");
 }
 
+/// Drive one Investigate action through its commit window (committing
+/// nothing), asserting it resolves to `Done` (Roland has no after-investigate
+/// reaction in play, so no window opens). Returns the post-commit state.
+fn investigate_once(state: GameState) -> GameState {
+    let paused = apply(
+        state,
+        Action::Player(PlayerAction::Investigate { investigator: INV }),
+    );
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "Investigate should pause at the commit window, got {:?}",
+        paused.outcome,
+    );
+    let resolved = apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::CommitCards { indices: vec![] },
+        }),
+    );
+    assert_eq!(resolved.outcome, EngineOutcome::Done);
+    resolved.state
+}
+
 /// Lost via the real all-investigators-defeated latch: Roland is seeded one
 /// hit from death with an engaged Ghoul Minion, then a real Enemy-phase
 /// attack defeats him and `check_all_defeated` latches `Resolution::Lost`.
@@ -112,6 +135,89 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
     assert!(
         matches!(result.state.resolution, Some(Resolution::Lost { .. })),
         "expected a Lost resolution, got {:?}",
+        result.state.resolution,
+    );
+}
+
+/// Won via the real defeat→advance→win latch. Drive act 1 for real
+/// (investigate the Study twice → AdvanceAct), then take the documented
+/// act-2 fallback (the Hallway has 0 clues, so its round-end clue-spend has
+/// no local source): seed the act deck to the terminal act and place the
+/// Ghoul Priest one hit from death, then drive the defeating Fight. The win
+/// itself — `act_01110`'s forced advance on the Priest's defeat — is real.
+#[test]
+fn defeating_the_ghoul_priest_latches_won() {
+    use game_core::state::EnemyId;
+    use game_core::test_support::test_enemy;
+
+    // --- Act 1, driven for real: 2 clues from the Study, then AdvanceAct.
+    let mut state = seated_roland();
+    state = investigate_once(state); // Study clues 2 → 1
+    state = investigate_once(state); // Study clues 1 → 0; Roland holds 2
+    assert_eq!(
+        state.investigators[&INV].clues, 2,
+        "two successful investigates of the Study"
+    );
+    let advanced = apply(
+        state,
+        Action::Player(PlayerAction::AdvanceAct { investigator: INV }),
+    );
+    assert_eq!(advanced.outcome, EngineOutcome::Done);
+    let mut state = advanced.state;
+    let loc = state.investigators[&INV]
+        .current_location
+        .expect("relocated by the act-1 reverse"); // the Hallway
+
+    // --- Act-2 fallback (seeded): make the terminal act (01110) current and
+    // place the Ghoul Priest one hit from death, engaged with Roland. The
+    // act-2 round-end clue-spend + spawn is unit-tested in C3d / act_01109.
+    state.act_index = state.act_deck.len() - 1; // terminal act 01110
+    let priest_id = EnemyId(901);
+    let mut priest = test_enemy(901, "Ghoul Priest");
+    priest.code = CardCode::new("01116");
+    priest.fight = 4;
+    priest.max_health = 5; // solo health
+    priest.damage = 4; // one hit from death
+    priest.current_location = Some(loc);
+    priest.engaged_with = Some(INV);
+    priest.retaliate = true; // moot on a successful Fight
+    state.enemies.insert(priest_id, priest);
+    // Seed the action economy: act 1 consumed Roland's turn; restore an
+    // action so the defeating Fight can be taken this turn (test economy,
+    // not the resolution).
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("Roland seated")
+        .actions_remaining = 3;
+
+    // --- Drive the defeating Fight: combat 4 + Numeric(0) ≥ fight 4 →
+    // success → deal 1 → damage 5 ≥ health 5 → defeated → act 3 advances →
+    // Resolution::Won { R1 }.
+    let paused = apply(
+        state,
+        Action::Player(PlayerAction::Fight {
+            investigator: INV,
+            enemy: priest_id,
+        }),
+    );
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "Fight should pause at the commit window, got {:?}",
+        paused.outcome,
+    );
+    let result = apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::CommitCards { indices: vec![] },
+        }),
+    );
+
+    assert_event!(result.events, Event::EnemyDefeated { .. });
+    assert_event!(result.events, Event::ScenarioResolved { .. });
+    assert!(
+        matches!(result.state.resolution, Some(Resolution::Won { .. })),
+        "expected a Won resolution, got {:?}",
         result.state.resolution,
     );
 }
