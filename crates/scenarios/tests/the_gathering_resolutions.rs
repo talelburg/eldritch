@@ -12,8 +12,10 @@ use std::sync::Once;
 
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
+use game_core::event::Event;
+use game_core::scenario::Resolution;
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId};
-use game_core::{Action, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, PlayerAction};
 
 const ROLAND: &str = "01001";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -71,4 +73,45 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
         "Roland seated as investigator 1"
     );
     assert!(state.resolution.is_none(), "no resolution latched at setup");
+}
+
+/// Lost via the real all-investigators-defeated latch: Roland is seeded one
+/// hit from death with an engaged Ghoul Minion, then a real Enemy-phase
+/// attack defeats him and `check_all_defeated` latches `Resolution::Lost`.
+#[test]
+fn enemy_attack_defeats_roland_and_latches_lost() {
+    use game_core::state::EnemyId;
+    use game_core::test_support::test_enemy;
+
+    let mut state = seated_roland();
+
+    // Seed: Roland one hit from death (health 9 → damage 8).
+    {
+        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
+        roland.damage = roland.max_health - 1;
+    }
+    let loc = state.investigators[&INV]
+        .current_location
+        .expect("Roland is at a location");
+
+    // Seed: a Ghoul Minion engaged with Roland (the `test_enemy` fixture
+    // defaults to attack_damage 1 ≥ his 1 remaining health → lethal).
+    let enemy_id = EnemyId(900);
+    let mut minion = test_enemy(900, "Ghoul Minion");
+    minion.code = CardCode::new("01160");
+    minion.current_location = Some(loc);
+    minion.engaged_with = Some(INV);
+    state.enemies.insert(enemy_id, minion);
+
+    // Drive: end Roland's turn → tick into the Enemy phase → the engaged
+    // enemy attacks → Roland defeated → all-defeated → Resolution::Lost.
+    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+
+    assert_event!(result.events, Event::AllInvestigatorsDefeated);
+    assert_event!(result.events, Event::ScenarioResolved { .. });
+    assert!(
+        matches!(result.state.resolution, Some(Resolution::Lost { .. })),
+        "expected a Lost resolution, got {:?}",
+        result.state.resolution,
+    );
 }
