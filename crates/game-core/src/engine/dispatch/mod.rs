@@ -22,6 +22,9 @@ mod clue_interrupt;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
 pub(super) mod cards;
+// pub(super): the unified trigger-dispatch chokepoint (Axis-B T5a); engine/mod.rs
+// re-exports emit_event + TimingEvent via pub(crate) for the GameEnd site.
+pub(super) mod emit;
 // pub(crate): engine/mod.rs re-exports `deal_damage_to_enemy` for the
 // `cards` crate (Guard Dog 01021's retaliate native, C5b #237).
 pub(crate) mod combat;

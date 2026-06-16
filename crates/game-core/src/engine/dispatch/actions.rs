@@ -296,9 +296,9 @@ pub(super) fn move_action(
     // forced triggers, #213), `apply`'s structural rollback restores the
     // pre-move state — the partial mutation above is safe (same reliance on
     // the apply-loop snapshot that `play_card` documents).
-    super::forced_triggers::fire_forced_triggers(
+    super::emit::emit_event(
         cx,
-        &super::forced_triggers::ForcedTriggerPoint::EnteredLocation {
+        &super::emit::TimingEvent::EnteredLocation {
             investigator,
             location: destination,
         },

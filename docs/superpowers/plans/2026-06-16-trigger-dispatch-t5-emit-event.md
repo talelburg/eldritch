@@ -72,24 +72,31 @@ preserving event order. (T5b revisits forced *resolution* order, not the queue.)
   - `fn forced_controller(&self, state) -> binding` — port the per-variant controller/source/scan binding from `collect_forced_hits` (lead investigator for board cards; the entering/ending investigator; each instance's controller for GameEnd; etc.).
   - `fn reaction_window(&self) -> Option<WindowKind>` — `Some` only for `EnemyDefeated`, `SuccessfullyInvestigated`, `EnemyAttackDamagedSelf`; `None` otherwise.
 
-- [ ] **Step 2: Port `collect_forced_hits` / `resolve_one`** from `forced_triggers.rs`
-  into `emit.rs`, keyed off `TimingEvent` instead of `ForcedTriggerPoint`. The
-  body is the same per-variant scan (board cards → threat-area/attachment
-  instances, `BTreeMap` order); the resolution is the same fixed-deterministic
-  loop (`fire_forced` today) — **no semantic change in T5a**. Delete
-  `ForcedTriggerPoint` and `forced_triggers.rs`.
+- [ ] **Step 2: `TimingEvent` is a thin facade (no porting in T5a).** Add two
+  mapping methods rather than moving the forced scan:
+  - `fn forced_point(&self) -> Option<ForcedTriggerPoint>` — reconstruct the
+    existing `ForcedTriggerPoint` with the same binding (1:1 field copy;
+    `SuccessfullyInvestigated → AfterLocationInvestigated { investigator, location }`;
+    `EnemyAttackDamagedSelf → None`).
+  - `fn reaction_window(&self) -> Option<WindowKind>` — `Some` only for the three
+    reaction-capable points.
+  `forced_triggers.rs` (ForcedTriggerPoint + `fire_forced_triggers` +
+  `collect_forced_hits`) **stays unchanged** — T5b (which rewrites the forced
+  loop) absorbs/deletes it. This keeps T5a's diff to the chokepoint + call sites.
 
-- [ ] **Step 3: Implement `emit_event`**:
+- [ ] **Step 3: Implement `emit_event`** — delegate to the existing helpers:
   ```
   fn emit_event(cx, te: TimingEvent) -> EngineOutcome {
       // phase 2 first to preserve WindowOpened-before-forced event order
       if let Some(wk) = te.reaction_window() { queue_reaction_window(cx, wk); }
-      // phase 1: forced, fixed-order (the ported fire_forced logic)
-      run_forced(cx, &te)   // returns Done / AwaitingInput / Rejected as fire_forced did
+      // phase 1: forced, fixed-order (today's fire_forced_triggers, unchanged)
+      match te.forced_point() {
+          Some(fp) => fire_forced_triggers(cx, &fp),
+          None => EngineOutcome::Done,
+      }
   }
   ```
-  (T5b reorders/replaces phase-1's internals; T5a keeps `run_forced` == today's
-  `fire_forced_triggers`.)
+  (T5b replaces phase-1's internals with the iterative loop.)
 
 - [ ] **Step 4: Migrate the 10 call sites** per the table — each `fire_forced` /
   `queue_reaction` (or the dual pair) becomes one `emit_event(cx, TimingEvent::Z { … })`.
