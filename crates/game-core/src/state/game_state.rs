@@ -729,7 +729,7 @@ pub struct OpenWindow {
     /// `ability_index`. Empty `pending_triggers` is permitted —
     /// windows opened for phase/timing reasons (not reaction-driven)
     /// may have no triggers but still gate Fast actions.
-    pub pending_triggers: Vec<PendingTrigger>,
+    pub pending_triggers: Vec<ResolutionCandidate>,
     /// Which investigators may submit Fast `PlayCard` /
     /// `ActivateAbility` actions while this window is the top of
     /// the stack.
@@ -975,38 +975,30 @@ pub struct HandSizeDiscard {
 }
 
 /// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// ability waiting to fire inside an `OpenWindow`.
+/// ability waiting to resolve in a [`Continuation::Resolution`] frame.
 ///
-/// Resolved by [`InputResponse::PickIndex`](crate::action::InputResponse::PickIndex)
-/// — the index addresses into `OpenWindow::pending_triggers`. After firing,
-/// the entry is removed; the window stays open while any entries remain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// The **unified candidate** for both the forced run and a reaction window
+/// (Axis-B T5b): abilities resolve by `code` (registry lookup), so the same
+/// shape serves in-play instances *and* scenario board cards (act / agenda)
+/// that have no instance. Whether a candidate is mandatory vs. optional is a
+/// property of the *frame* (`can_skip`), not the candidate — forced and
+/// reaction are separate resolution runs.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct PendingTrigger {
-    /// The investigator whose card in play carries this trigger. The
-    /// trigger's effect resolves with this investigator as the
-    /// controller.
+pub struct ResolutionCandidate {
+    /// Printed code of the card whose ability fires. Abilities are looked
+    /// up by code, so this resolves both in-play instances and board cards.
+    pub code: CardCode,
+    /// The investigator the effect resolves under (controller).
     pub controller: InvestigatorId,
-    /// Which in-play instance is the source. Plumbed onto the trigger
-    /// record so identical card codes across investigators (or across
-    /// copies for the same investigator) resolve unambiguously.
-    pub instance_id: CardInstanceId,
     /// Zero-based index into the card's
-    /// [`abilities`](crate::dsl::Ability) vec. Cards may carry
-    /// multiple `Trigger::OnEvent` abilities; this names which one
-    /// fires.
+    /// [`abilities`](crate::dsl::Ability) vec — which ability fires.
     pub ability_index: u8,
-    /// Whether the player may skip this trigger when closing the
-    /// window. `false` (optional) for `[reaction]` abilities; `true`
-    /// (forced) for "Forced — when …" abilities.
-    ///
-    /// **Phase-3 scope**: the DSL surface has no forced primitive yet
-    /// (no in-scope card carries forced text), so the engine always
-    /// constructs `forced: false`. The field exists so the resolution
-    /// loop already understands the distinction — when the first
-    /// forced card lands, only the DSL→engine translation and the
-    /// scanner need to start setting this `true`.
-    pub forced: bool,
+    /// The firing card instance, when there is one (in-play asset,
+    /// threat-area, attachment, reaction trigger) — used for
+    /// `Effect::DiscardSelf`, usage-limit bumping, and the soak
+    /// self-binding. `None` for scenario board cards (act / agenda).
+    pub source: Option<CardInstanceId>,
 }
 
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to

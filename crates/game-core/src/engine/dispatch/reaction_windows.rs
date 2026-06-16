@@ -18,7 +18,7 @@ use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
     CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, GameState,
-    InvestigatorId, OpenWindow, PendingTrigger, Phase, PhaseStep, Status, WindowKind,
+    InvestigatorId, OpenWindow, Phase, PhaseStep, ResolutionCandidate, Status, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -71,7 +71,7 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
 ///
 /// Returns an empty vec when the registry isn't installed (tests that
 /// don't touch card data) or no cards match.
-fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrigger> {
+fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -90,7 +90,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
         }
     }
 
-    let mut pending: Vec<PendingTrigger> = Vec::new();
+    let mut pending: Vec<ResolutionCandidate> = Vec::new();
     for id in order {
         let Some(inv) = state.investigators.get(&id) else {
             continue;
@@ -128,13 +128,13 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
                 if card.is_usage_exhausted(ability_index, ability.usage_limit, state.round) {
                     continue;
                 }
-                // Phase-3 scope: every queued trigger is optional.
-                // The DSL has no forced primitive yet (#52 doc).
-                pending.push(PendingTrigger {
+                // Reaction candidates always have a source instance (an
+                // in-play / threat-area card); abilities resolve by `code`.
+                pending.push(ResolutionCandidate {
+                    code: card.code.clone(),
                     controller: id,
-                    instance_id: card.instance_id,
                     ability_index,
-                    forced: false,
+                    source: Some(card.instance_id),
                 });
             }
         }
@@ -345,7 +345,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
                 };
             }
         };
-        (window.pending_triggers[idx], idx)
+        (window.pending_triggers[idx].clone(), idx)
     };
 
     // Look up the ability fresh from the registry. The card may have
@@ -357,30 +357,9 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
              missing; the OnceLock contract guarantees once-set-stays-set"
         );
     };
-    let inv = cx
-        .state
-        .investigators
-        .get(&trigger.controller)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "fire_pending_trigger: controller {ctl:?} vanished while reaction window \
-                 was open; this is a state-corruption invariant violation",
-                ctl = trigger.controller,
-            )
-        });
-    let card = inv
-        .controlled_card_instances()
-        .find(|c| c.instance_id == trigger.instance_id)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "fire_pending_trigger: instance {inst:?} vanished from controller {ctl:?}'s \
-                 cards_in_play / threat area while reaction window was open; \
-                 state-corruption invariant violation",
-                inst = trigger.instance_id,
-                ctl = trigger.controller,
-            )
-        });
-    let code = card.code.clone();
+    // Abilities resolve by code (works for in-play instances and scenario
+    // board cards alike); `source` is the firing instance, when any.
+    let code = trigger.code.clone();
     let abilities = (reg.abilities_for)(&code).unwrap_or_else(|| {
         unreachable!(
             "fire_pending_trigger: registry lost abilities for card {code:?} between \
@@ -399,14 +378,14 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         })
         .clone();
 
-    // Thread the source instance into the EvalContext so effects that
-    // push `PendingSkillModifier`s (or any other source-attributed
-    // state) can attribute them to the firing card. Phase-3 reaction
-    // effects (`discover_clue`, `gain_resources`) don't read this,
-    // but the first source-attributing reaction effect will, and the
-    // information is already on the trigger record.
-    let mut eval_ctx =
-        EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    // Thread the source instance (if any) into the EvalContext so effects
+    // that self-reference (`DiscardSelf`) or push source-attributed state
+    // resolve against the firing card. Board-card candidates (act / agenda)
+    // have no source.
+    let mut eval_ctx = match trigger.source {
+        Some(src) => EvalContext::for_controller_with_source(trigger.controller, src),
+        None => EvalContext::for_controller(trigger.controller),
+    };
     // For `AfterEnemyAttackDamagedAsset` windows, bind the attacking
     // enemy into the context so Guard Dog's native retaliate
     // (`Effect::Native("01021:retaliate")`) can name the attacker via
@@ -474,8 +453,16 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// resolution. When cancellation lands, the bump call must move
 /// before the effect resolves (or fork into both paths) so canceled
 /// fires still count.
-fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
+fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
     let current_round = state.round;
+    // Only usage-limited abilities reach here, and those are on in-play
+    // instances (reactions) — so `source` is always `Some`.
+    let instance_id = trigger.source.unwrap_or_else(|| {
+        unreachable!(
+            "bump_usage_counter: a usage-limited candidate must have a source instance \
+             (board cards carry no usage limits); candidate {trigger:?}"
+        )
+    });
     let inv = state
         .investigators
         .get_mut(&trigger.controller)
@@ -490,13 +477,12 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
         .cards_in_play
         .iter_mut()
         .chain(inv.threat_area.iter_mut())
-        .find(|c| c.instance_id == trigger.instance_id)
+        .find(|c| c.instance_id == instance_id)
         .unwrap_or_else(|| {
             unreachable!(
-                "bump_usage_counter: instance {inst:?} vanished from controller {ctl:?}'s \
+                "bump_usage_counter: instance {instance_id:?} vanished from controller {ctl:?}'s \
                  cards_in_play / threat area while reaction window was open; \
                  state-corruption invariant violation",
-                inst = trigger.instance_id,
                 ctl = trigger.controller,
             )
         });
@@ -521,29 +507,9 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
 /// entry. Callers compute the index via
 /// [`GameState::top_reaction_window_index`].
 pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome {
-    // Borrow the window at `idx` to check for forced triggers remaining
-    // before removing — Rejected must leave state untouched.
-    {
-        let window = cx
-            .state
-            .continuations
-            .get(idx)
-            .and_then(Continuation::as_window)
-            .expect("close_reaction_window_at: caller-supplied index must be a Resolution frame");
-        if let Some(forced) = window.pending_triggers.iter().find(|t| t.forced) {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "ResolveInput::Skip: cannot close reaction window while forced trigger \
-                     (controller {ctl:?}, instance {inst:?}, ability {ab}) remains pending; \
-                     fire it first",
-                    ctl = forced.controller,
-                    inst = forced.instance_id,
-                    ab = forced.ability_index,
-                )
-                .into(),
-            };
-        }
-    }
+    // Reaction windows are all-optional, so `Skip` always closes them. The
+    // "forced abilities are mandatory" rule lives in the forced resolution
+    // run (its frame has `can_skip = false` — Axis-B T5b), not here.
     let kind = cx
         .state
         .continuations

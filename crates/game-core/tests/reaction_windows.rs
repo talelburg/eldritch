@@ -255,9 +255,8 @@ fn matching_reaction_opens_window_and_suspends() {
     );
     assert_eq!(window.pending_triggers.len(), 1);
     assert_eq!(window.pending_triggers[0].controller, inv_id);
-    assert_eq!(window.pending_triggers[0].instance_id, CardInstanceId(1));
+    assert_eq!(window.pending_triggers[0].source, Some(CardInstanceId(1)));
     assert_eq!(window.pending_triggers[0].ability_index, 0);
-    assert!(!window.pending_triggers[0].forced);
 }
 
 #[test]
@@ -825,12 +824,12 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         window.pending_triggers[0].controller, active,
         "active investigator's trigger must come first",
     );
-    assert_eq!(window.pending_triggers[0].instance_id, CardInstanceId(1));
+    assert_eq!(window.pending_triggers[0].source, Some(CardInstanceId(1)));
     assert_eq!(
         window.pending_triggers[1].controller, other,
         "non-active investigator's trigger comes after, in turn order",
     );
-    assert_eq!(window.pending_triggers[1].instance_id, CardInstanceId(2));
+    assert_eq!(window.pending_triggers[1].source, Some(CardInstanceId(2)));
 }
 
 #[test]
@@ -942,7 +941,7 @@ fn reaction_trigger_in_threat_area_opens_window() {
         .expect("threat-area reaction must populate the window");
     assert_eq!(window.pending_triggers.len(), 1);
     assert_eq!(window.pending_triggers[0].controller, inv_id);
-    assert_eq!(window.pending_triggers[0].instance_id, CardInstanceId(7));
+    assert_eq!(window.pending_triggers[0].source, Some(CardInstanceId(7)));
 }
 
 #[test]
