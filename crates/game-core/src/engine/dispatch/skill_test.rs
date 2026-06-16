@@ -96,6 +96,12 @@ pub(in crate::engine) fn start_skill_test(
         test_modifier,
         bonus_attack_damage: 0,
     });
+    // Resume-handle on the one stack (Axis-B T4): the test parks at its
+    // commit window. Resolution (reaction/fast) frames push *above* this
+    // when a window opens mid-test; popped when the test fully resolves.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::SkillTest);
     cx.events.push(Event::SkillTestStarted {
         investigator,
         skill,
@@ -348,6 +354,25 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                     cx.state.encounter_discard.push(code);
                 }
                 cx.state.in_flight_skill_test = None;
+                // Remove this test's SkillTest resume-handle (Axis-B T4).
+                // Usually it is the top frame, but a player-window gate can
+                // legitimately sit above it (#69/#70/#71), so remove the
+                // (unique — no nesting today) SkillTest frame by position
+                // rather than popping the top.
+                let frame = cx
+                    .state
+                    .continuations
+                    .iter()
+                    .rposition(|c| matches!(c, crate::state::Continuation::SkillTest));
+                match frame {
+                    Some(pos) => {
+                        cx.state.continuations.remove(pos);
+                    }
+                    None => debug_assert!(
+                        false,
+                        "skill-test teardown: no SkillTest frame on the continuation stack",
+                    ),
+                }
                 return EngineOutcome::Done;
             }
         }

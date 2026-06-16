@@ -324,20 +324,15 @@ pub(super) struct ActivateCheckResult {
     pub source_exhausted: bool,
 }
 
-/// Resume the top frame of the continuation stack (umbrella §1 / Axis-B).
-///
-/// The single resume entry point that `resolve_input` routes to before the
-/// legacy `pending_*` ladder. [`Continuation`](crate::state::Continuation)
-/// is uninhabited until Task 3, so the stack is statically always empty
-/// and this is unreachable today; Tasks 3–5 add the per-frame resume arms.
-fn resume_continuation(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    // Task 3: the only frame is `Resolution` (an open window). If it has
-    // pending reaction triggers, drive the reaction window; otherwise it is
-    // a pure-Fast window (empty `pending_triggers`) that `Skip` closes.
+/// Resume the open window at the top of the stack: drive its reaction
+/// triggers if any are pending, else close the pure-Fast window on `Skip`.
+fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    // If the window has pending reaction triggers, drive the reaction
+    // window; otherwise it is a pure-Fast window (empty `pending_triggers`)
+    // that `Skip` closes.
     if cx.state.top_reaction_window().is_some() {
         return reaction_windows::resume_reaction_window(cx, response);
     }
-    // Pure-Fast window (Option B): no pending triggers; only `Skip` is valid.
     if matches!(response, InputResponse::Skip) {
         let idx = cx.state.continuations.len() - 1;
         return reaction_windows::close_reaction_window_at(cx, idx);
@@ -348,6 +343,34 @@ fn resume_continuation(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
              submit InputResponse::Skip to close it, got {response:?}",
         )
         .into(),
+    }
+}
+
+/// Resume a skill test parked at its commit window: the active investigator
+/// submits their commit list via [`InputResponse::CommitCards`].
+fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    match response {
+        InputResponse::CommitCards { indices } => {
+            let outcome = skill_test::finish_skill_test(cx, indices);
+            // If the resolved test was a suspending `EndOfTurn` forced
+            // effect (Frozen in Fear 01164), `end_turn` was stranded before
+            // rotation; resume it now that the test is fully done (C4c,
+            // #235). Only on `Done` — an `AwaitingInput` mid-teardown leaves
+            // `pending_end_turn` set for the next resume.
+            if matches!(outcome, EngineOutcome::Done) {
+                if let Some(active_id) = cx.state.pending_end_turn.take() {
+                    return phases::resume_end_turn(cx, active_id);
+                }
+            }
+            outcome
+        }
+        other => EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: skill-test commit window expects InputResponse::CommitCards, \
+                 got {other:?}",
+            )
+            .into(),
+        },
     }
 }
 
@@ -377,12 +400,18 @@ fn resume_continuation(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 /// index. This covers the `MythosAfterDraws` window after all Fast
 /// plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    // Single resume router (umbrella §1 / Axis-B): the continuation stack
-    // takes priority over the legacy `pending_*` ladder below. Empty until
-    // Task 3 begins pushing frames (`Continuation` is uninhabited today),
-    // so this currently always falls through.
-    if !cx.state.continuations.is_empty() {
-        return resume_continuation(cx, response);
+    // Continuation router (umbrella §1 / Axis-B), split by frame priority:
+    //
+    // - An open **window** (`Resolution`) nests above everything — a reaction
+    //   window mid-skill-test, a Fast window — so it resumes FIRST.
+    // - The **skill-test commit** frame (`SkillTest`) is the *outermost* test
+    //   suspension, so it resumes LAST (below), after the legacy mid-test modes
+    //   (e.g. `clue_interrupt`, which is an *inner* suspension of the test).
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::Resolution(_))
+    ) {
+        return resume_window(cx, response);
     }
 
     // Hunter movement, spawn engagement, and hand-size discard are three
@@ -437,32 +466,17 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // frames, handled by the continuation router at the top of this function
     // (umbrella §1 / Axis-B T3) — so no window check is needed here.
 
-    if cx.state.in_flight_skill_test.is_none() {
-        return EngineOutcome::Rejected {
-            reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
-        };
+    // The skill-test commit window (`Continuation::SkillTest` frame) resumes
+    // here — *after* the legacy mid-test modes above (clue_interrupt et al.),
+    // which are inner suspensions of an in-flight test (Axis-B T4).
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::SkillTest)
+    ) {
+        return resume_skill_test_commit(cx, response);
     }
-    match response {
-        InputResponse::CommitCards { indices } => {
-            let outcome = skill_test::finish_skill_test(cx, indices);
-            // If the resolved test was a suspending `EndOfTurn` forced
-            // effect (Frozen in Fear 01164), `end_turn` was stranded before
-            // rotation; resume it now that the test is fully done (C4c,
-            // #235). Only on `Done` — an `AwaitingInput` mid-teardown leaves
-            // `pending_end_turn` set for the next resume.
-            if matches!(outcome, EngineOutcome::Done) {
-                if let Some(active_id) = cx.state.pending_end_turn.take() {
-                    return phases::resume_end_turn(cx, active_id);
-                }
-            }
-            outcome
-        }
-        other => EngineOutcome::Rejected {
-            reason: format!(
-                "ResolveInput: skill-test commit window expects InputResponse::CommitCards, \
-                 got {other:?}",
-            )
-            .into(),
-        },
+
+    EngineOutcome::Rejected {
+        reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
     }
 }
