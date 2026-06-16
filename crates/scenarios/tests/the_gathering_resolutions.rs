@@ -75,29 +75,6 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
     assert!(state.resolution.is_none(), "no resolution latched at setup");
 }
 
-/// Drive one Investigate action through its commit window (committing
-/// nothing), asserting it resolves to `Done` (Roland has no after-investigate
-/// reaction in play, so no window opens). Returns the post-commit state.
-fn investigate_once(state: GameState) -> GameState {
-    let paused = apply(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: INV }),
-    );
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
-        "Investigate should pause at the commit window, got {:?}",
-        paused.outcome,
-    );
-    let resolved = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![] },
-        }),
-    );
-    assert_eq!(resolved.outcome, EngineOutcome::Done);
-    resolved.state
-}
-
 /// Lost via the real all-investigators-defeated latch: Roland is seeded one
 /// hit from death with an engaged Ghoul Minion, then a real Enemy-phase
 /// attack defeats him and `check_all_defeated` latches `Resolution::Lost`.
@@ -139,60 +116,98 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
     );
 }
 
-/// Won via the real defeat→advance→win latch. Drive act 1 for real
-/// (investigate the Study twice → `AdvanceAct`), then take the documented
-/// act-2 fallback (the Hallway has 0 clues, so its round-end clue-spend has
-/// no local source): seed the act deck to the terminal act and place the
-/// Ghoul Priest one hit from death, then drive the defeating Fight. The win
-/// itself — `act_01110`'s forced advance on the Priest's defeat — is real.
+/// Won via the real progression + defeat→advance→win latch. Drives act 1
+/// (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window) for real —
+/// act 2's reverse spawns the **real** Ghoul Priest — then fights that
+/// spawned Priest to trigger `act_01110`'s forced advance on the terminal
+/// act → `Resolution::Won { R1 }`.
+///
+/// Two seeds, both off the resolution path: clues (acquiring them via
+/// Attic/Cellar investigation is unit-tested elsewhere — the focus here is
+/// the act-advancement chain), and the spawned Priest's health (solo Roland
+/// has no weapon and 5 sanity, so he cannot out-damage a 5-health Retaliate
+/// Hunter dealing 2 horror/attack without going insane first — the kill is
+/// the one necessary shortcut). The encounter deck is emptied so round-2's
+/// Mythos draw doesn't inject random interference.
 #[test]
-fn defeating_the_ghoul_priest_latches_won() {
-    use game_core::state::EnemyId;
-    use game_core::test_support::test_enemy;
-
-    // --- Act 1, driven for real: 2 clues from the Study, then AdvanceAct.
+fn act_progression_and_ghoul_priest_defeat_latches_won() {
     let mut state = seated_roland();
-    state = investigate_once(state); // Study clues 2 → 1
-    state = investigate_once(state); // Study clues 1 → 0; Roland holds 2
-    assert_eq!(
-        state.investigators[&INV].clues, 2,
-        "two successful investigates of the Study"
-    );
+    {
+        // Seed: clues for both thresholds (act 1 = 2, act 2 = 3).
+        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
+        roland.clues = 5;
+    }
+    // Seed: round-2's Mythos draws exactly one benign card — Ancient Evils
+    // (01166), whose Revelation only places 1 doom (the agenda threshold is
+    // 3, so it can't advance to a loss). This keeps the Mythos deterministic
+    // and harmless rather than drawing a random damaging/spawning card.
+    state.encounter_deck.clear();
+    state.encounter_deck.push_back(CardCode::new("01166"));
+
+    // --- Act 1 (real): spend clues to advance → the reverse builds the board
+    // and relocates Roland to the Hallway (the act-2 contributor location).
     let advanced = apply(
         state,
         Action::Player(PlayerAction::AdvanceAct { investigator: INV }),
     );
     assert_eq!(advanced.outcome, EngineOutcome::Done);
-    let mut state = advanced.state;
-    let loc = state.investigators[&INV]
-        .current_location
-        .expect("relocated by the act-1 reverse"); // the Hallway
+    assert_eq!(advanced.state.act_index, 1, "act 1 advanced to act 2");
 
-    // --- Act-2 fallback (seeded): make the terminal act (01110) current and
-    // place the Ghoul Priest one hit from death, engaged with Roland. The
-    // act-2 round-end clue-spend + spawn is unit-tested in C3d / act_01109.
-    state.act_index = state.act_deck.len() - 1; // terminal act 01110
-    let priest_id = EnemyId(901);
-    let mut priest = test_enemy(901, "Ghoul Priest");
-    priest.code = CardCode::new("01116");
-    priest.fight = 4;
-    priest.max_health = 5; // solo health
-    priest.damage = 4; // one hit from death
-    priest.current_location = Some(loc);
-    priest.engaged_with = Some(INV);
-    priest.retaliate = true; // moot on a successful Fight
-    state.enemies.insert(priest_id, priest);
-    // Seed the action economy: act 1 consumed Roland's turn; restore an
-    // action so the defeating Fight can be taken this turn (test economy,
-    // not the resolution).
+    // --- Act 2 (real): end the round → the C3d round-end clue-spend window
+    // opens (Roland holds 3 clues in the Hallway) → Confirm spends them →
+    // act 2 advances and its reverse spawns the real Ghoul Priest (01116).
+    let round_end = apply(advanced.state, Action::Player(PlayerAction::EndTurn));
+    assert!(
+        matches!(round_end.outcome, EngineOutcome::AwaitingInput { .. }),
+        "EndTurn should open the act-2 round-end window, got {:?}",
+        round_end.outcome,
+    );
+    assert!(round_end.state.act_round_end_pending.is_some());
+    let after_confirm = apply(
+        round_end.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
+    assert!(
+        !matches!(after_confirm.outcome, EngineOutcome::Rejected { .. }),
+        "round-end Confirm rejected: {:?}",
+        after_confirm.outcome,
+    );
+    assert_eq!(
+        after_confirm.state.act_index, 2,
+        "act 2 advanced to the terminal act 3 (01110)"
+    );
+
+    // Round 2 begins in the Mythos phase; draw the seeded Ancient Evils
+    // (1 doom) to advance into Investigation, where Roland can take the Fight.
+    let mythos = apply(
+        after_confirm.state,
+        Action::Player(PlayerAction::DrawEncounterCard),
+    );
+    assert_eq!(mythos.outcome, EngineOutcome::Done);
+    let mut state = mythos.state;
+
+    // --- Seed only the spawned Priest's health + engagement (see doc above).
+    let priest_id = {
+        let priest = state
+            .enemies
+            .values_mut()
+            .find(|e| e.code.as_str() == "01116")
+            .expect("act 2's reverse spawned the real Ghoul Priest");
+        priest.damage = priest.max_health - 1; // one hit from death
+        priest.engaged_with = Some(INV);
+        priest.id
+    };
+    // Ensure Roland is mid-Investigation with an action for the Fight.
     state
         .investigators
         .get_mut(&INV)
         .expect("Roland seated")
         .actions_remaining = 3;
 
-    // --- Drive the defeating Fight: combat 4 + Numeric(0) ≥ fight 4 →
-    // success → deal 1 → damage 5 ≥ health 5 → defeated → act 3 advances →
+    // --- Drive the defeating Fight against the real spawned Priest: combat 4
+    // + Numeric(0) ≥ fight 4 → success → deal 1 → defeated → act 3 advances →
     // Resolution::Won { R1 }.
     let paused = apply(
         state,
