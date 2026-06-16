@@ -6,7 +6,7 @@ use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
     CardInstanceId, DefeatCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId,
-    PendingEnemyAttack, Status, WindowKind,
+    PendingEnemyAttack, Status,
 };
 
 use super::Cx;
@@ -86,28 +86,18 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
                 victory,
             });
         }
-        // Queue the post-defeat reaction window. Emits
-        // `Event::WindowOpened` immediately (inside queue_reaction_window);
-        // the skill-test driver then suspends at the next step boundary
-        // (between `apply_skill_test_follow_up` and
-        // `fire_on_skill_test_resolution`) returning AwaitingInput so the
-        // player can fire their reaction triggers; see `drive_skill_test`.
-        super::reaction_windows::queue_reaction_window(
+        // Enemy defeated: dispatch the timing point through the unified
+        // chokepoint (Axis-B T5a). `emit_event` queues the after-defeat
+        // reaction window (Roland 01001 — `Event::WindowOpened` emitted now;
+        // the skill-test driver suspends at its next step boundary so the
+        // player can react) and then fires the forced act objectives (Act 3's
+        // advance-on-Ghoul-Priest-defeat). `()`/debug_assert guards the
+        // 2+-trigger forced case (#213).
+        let forced = super::emit::emit_event(
             cx,
-            WindowKind::AfterEnemyDefeated {
+            &super::emit::TimingEvent::EnemyDefeated {
                 enemy: enemy_id,
                 by,
-            },
-        );
-        // Forced act objectives keyed to this defeat (Act 3's "If the
-        // Ghoul Priest is Defeated, advance."). `()` return can't
-        // propagate a 2+-trigger reject; debug_assert guards it (mirror of
-        // upkeep_phase_end / advance_act). Ordering vs. the
-        // AfterEnemyDefeated reaction window is fixed-deterministic for
-        // now; #212/#213 revisit.
-        let forced = super::forced_triggers::fire_forced_triggers(
-            cx,
-            &super::forced_triggers::ForcedTriggerPoint::EnemyDefeated {
                 code: defeated_code,
             },
         );
@@ -658,9 +648,11 @@ fn drive_attack_loop(
         // not inside `enemy_attack` — so attacks of opportunity (which share
         // `enemy_attack`) don't strand an undriven window (C5b #237).
         for asset in damaged_survivors {
-            super::reaction_windows::queue_reaction_window(
+            // Reaction-only timing point (no forced phase) — emit_event just
+            // queues the soak window (Axis-B T5a).
+            let _ = super::emit::emit_event(
                 cx,
-                WindowKind::AfterEnemyAttackDamagedAsset {
+                &super::emit::TimingEvent::EnemyAttackDamagedSelf {
                     asset,
                     enemy: enemy_id,
                     controller: investigator,

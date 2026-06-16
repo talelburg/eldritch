@@ -74,9 +74,9 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
     // The Gathering's reverses (01105 lead discard/horror, 01106
     // dig-until-Ghoul) resolve here. `()` return can't propagate a
     // 2+-trigger reject; `debug_assert!` guards it (mirror of `advance_act`).
-    let forced = super::forced_triggers::fire_forced_triggers(
+    let forced = super::emit::emit_event(
         cx,
-        &super::forced_triggers::ForcedTriggerPoint::AgendaAdvanced { code: leaving_code },
+        &super::emit::TimingEvent::AgendaAdvanced { code: leaving_code },
     );
     debug_assert!(
         matches!(forced, EngineOutcome::Done),
@@ -242,9 +242,9 @@ pub(crate) fn advance_act(cx: &mut Cx) {
     // Reference p.3: flip the card, follow the reverse, then the next
     // card becomes current. `()` return can't propagate a 2+-trigger
     // reject; `debug_assert!` guards it (mirror of `upkeep_phase_end`).
-    let forced = super::forced_triggers::fire_forced_triggers(
+    let forced = super::emit::emit_event(
         cx,
-        &super::forced_triggers::ForcedTriggerPoint::ActAdvanced { code: leaving_code },
+        &super::emit::TimingEvent::ActAdvanced { code: leaving_code },
     );
     debug_assert!(
         matches!(forced, EngineOutcome::Done),

@@ -226,9 +226,9 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // resolves (C4c, #235 — mirrors `spawn_engage_pending`). A single
     // suspending hit is handled; 2+ simultaneous suspends are #212/#213
     // reentrancy work. A `Rejected` propagates as-is.
-    let end_of_turn = super::forced_triggers::fire_forced_triggers(
+    let end_of_turn = super::emit::emit_event(
         cx,
-        &super::forced_triggers::ForcedTriggerPoint::EndOfTurn {
+        &super::emit::TimingEvent::EndOfTurn {
             investigator: active_id,
         },
     );
@@ -552,9 +552,9 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // Fire forced act/agenda abilities keyed to `PhaseEnded { Enemy }`.
     // Single-trigger path: 0 → Done (no-op); 1 → resolves immediately;
     // 2+ → rejects loudly (#213 adds the ordering loop).
-    let forced = super::forced_triggers::fire_forced_triggers(
+    let forced = super::emit::emit_event(
         cx,
-        &super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
+        &super::emit::TimingEvent::PhaseEnded {
             phase: Phase::Enemy,
         },
     );
@@ -644,9 +644,9 @@ fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     // the forced path here; `debug_assert!` guards it for now. #212's
     // `emit_event` restructure will centralise forced-trigger dispatch and
     // remove this limitation.
-    let forced = super::forced_triggers::fire_forced_triggers(
+    let forced = super::emit::emit_event(
         cx,
-        &super::forced_triggers::ForcedTriggerPoint::PhaseEnded {
+        &super::emit::TimingEvent::PhaseEnded {
             phase: Phase::Upkeep,
         },
     );
@@ -658,10 +658,7 @@ fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     // "Upkeep phase ends. Round ends." (RR p.24) — fire round-end Forced
     // effects (agenda 01107's doom) after the upkeep-phase-end ones. Both
     // resolve to Done in-slice (doom just increments a counter).
-    let round_end = super::forced_triggers::fire_forced_triggers(
-        cx,
-        &super::forced_triggers::ForcedTriggerPoint::RoundEnded,
-    );
+    let round_end = super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded);
     debug_assert!(
         matches!(round_end, EngineOutcome::Done),
         "upkeep_phase_end RoundEnded forced did not resolve to Done: {round_end:?} \

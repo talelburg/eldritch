@@ -36,6 +36,9 @@ pub use pathfinding::shortest_first_steps;
 // `move_action` (EnteredLocation) and `enemy_phase_end`/`upkeep_phase_end`
 // (PhaseEnded).
 pub(crate) use dispatch::forced_triggers::{fire_forced_triggers, ForcedTriggerPoint};
+// The unified trigger-dispatch chokepoint (Axis-B T5a): the GameEnd site below
+// and `fire_scenario_resolution` route through it.
+pub(crate) use dispatch::emit::{emit_event, TimingEvent};
 
 use crate::action::Action;
 use crate::event::Event;
@@ -227,7 +230,7 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     // #236). Non-interactive in scope; a suspending GameEnd hit is #212
     // reentrancy work. Runs even when no scenario module is registered, so
     // it precedes the module lookup below.
-    let _ = fire_forced_triggers(cx, &ForcedTriggerPoint::GameEnd);
+    let _ = emit_event(cx, &TimingEvent::GameEnd);
 
     let Some(id) = cx.state.scenario_id.as_ref() else {
         return;
