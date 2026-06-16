@@ -87,9 +87,19 @@ machinery (offered set, `PickSingle`/`OptionId`, usage limits) with
 
 ### `emit_event` two-phase dispatch
 
-`emit_event(cx, event)` is the chokepoint for events that have a matching
-`EventPattern`. It pushes the event, then per (Before/After) timing runs the
-shared resolution loop twice — phase 1 (forced), then phase 2 (reaction):
+`emit_event(cx, te: TimingEvent)` is the dispatch chokepoint. **`TimingEvent` is
+the unified dispatch key** — the merge of today's `ForcedTriggerPoint` + the
+event-driven `WindowKind` variants (both already carry the binding context:
+controller / source / attacking enemy / location / code). It maps to an
+`EventPattern` discriminant and pushes the corresponding logged `Event` where one
+exists (e.g. `TimingEvent::EnemyDefeated` → `Event::EnemyDefeated`). This is
+necessary because the three enums are *not* 1:1: several `EventPattern`s are
+pure timing points with no logged `Event` (`RoundEnded`, `EndOfTurn`, `GameEnd`,
+`AfterLocationInvestigated`, `SuccessfullyInvestigated`, `WouldDiscoverClues`,
+`EnemyAttackDamagedSelf`), and the logged `Event` frequently lacks the binding
+dispatch needs — which is exactly why `ForcedTriggerPoint`/`WindowKind` exist
+today. `emit_event` then, per (Before/After) timing, runs the shared resolution
+loop twice — phase 1 (forced), then phase 2 (reaction):
 
 1. **Phase 1 — forced.** Collect `kind: Forced` `OnEvent` hits. 0 → skip. 1 →
    resolve. 2+ → push a `Resolution` frame (`can_skip=false`, `decider=lead`) and
@@ -145,15 +155,16 @@ at enter/leave-play, not smeared across per-timing-point scan arms.
 4. **Skill-test frame (pure refactor):** the driver resumes via a
    `Continuation::SkillTest` frame; `in_flight_skill_test` stays as data.
    Behavior identical.
-5. **`emit_event` + the forced run + two-phase driving:** introduce `emit_event`;
+5. **`TimingEvent` + `emit_event` + the forced run + two-phase driving:** define
+   `TimingEvent` by merging `ForcedTriggerPoint` + the event-driven `WindowKind`
+   variants (each carrying its binding); map each to its `EventPattern`
+   discriminant + its logged `Event` (where one exists). Introduce `emit_event`;
    add the forced run of the shared loop (`can_skip=false`, `decider=lead`) and
-   have `emit_event` drive phase 1 → phase 2; replace the explicit
-   `fire_forced_triggers` / event-driven `queue_reaction_window` call sites with
-   `emit_event`. **Binding-context audit:** every migrated `Event`
-   variant must carry what its old `ForcedTriggerPoint` / `WindowKind` carried;
-   enrich the few that don't. Collapse `ForcedTriggerPoint` + the event-driven
-   `WindowKind` variants into the event-keyed dispatch (framework `PlayerWindow`
-   steps survive). Closes #212/#213; dissolves #294 + the 2+-reject.
+   have `emit_event` drive phase 1 → phase 2. Replace the explicit
+   `fire_forced_triggers` / event-driven `queue_reaction_window` call sites (combat
+   ×2, skill_test ×2, act_agenda ×2, phases ×4, actions ×1, mod ×1) with
+   `emit_event`. The framework `PlayerWindow(PhaseStep)` `open_fast_window` sites
+   survive (no `EventPattern`). Closes #212/#213; dissolves #294 + the 2+-reject.
 6. **#117 index (final):** swap the full-scan for the index behind the scan
    interface; enter/leave-play maintenance + install seed + the defensive
    "index survives a card leaving play mid-window" test. Closes #117.
