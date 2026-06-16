@@ -616,6 +616,120 @@ fn successful_investigate_fires_after_location_investigated_forced() {
 }
 
 #[test]
+fn two_simultaneous_forced_triggers_present_a_choice() {
+    // Axis-B T5b (#213): 2+ forced abilities at the same timing point let the
+    // lead investigator choose the order — dispatch suspends with
+    // `AwaitingInput` instead of auto-resolving both in a fixed order. Driven
+    // through `apply` (Move into a location with two forced on-enter abilities,
+    // a terminal emit site) so the suspension round-trips.
+    install_mock_registry();
+
+    let mut from = test_location(10, "Hallway");
+    from.connections = vec![LocationId(11)];
+    let mut double = test_location(11, "Double-Forced Room");
+    double.code = CardCode(DOUBLE_FORCED.into());
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 3;
+
+    let state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(from)
+        .with_location(double)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::Move {
+            investigator: InvestigatorId(1),
+            destination: LocationId(11),
+        }),
+    );
+
+    assert!(
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "2+ simultaneous forced triggers must present the lead a choice; got {:?}",
+        result.outcome,
+    );
+    assert_eq!(
+        result.state.investigators[&InvestigatorId(1)].horror,
+        0,
+        "no forced effect resolves until the lead orders them",
+    );
+}
+
+#[test]
+fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
+    // Resume the choice: pick each forced trigger in turn; both resolve, the
+    // move completes (terminal site → Done), total 2 horror.
+    use game_core::action::InputResponse;
+
+    install_mock_registry();
+
+    let mut from = test_location(10, "Hallway");
+    from.connections = vec![LocationId(11)];
+    let mut double = test_location(11, "Double-Forced Room");
+    double.code = CardCode(DOUBLE_FORCED.into());
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 3;
+
+    let state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(from)
+        .with_location(double)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+
+    let paused = apply(
+        state,
+        Action::Player(PlayerAction::Move {
+            investigator: InvestigatorId(1),
+            destination: LocationId(11),
+        }),
+    );
+    assert!(matches!(
+        paused.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
+
+    // Pick the first forced trigger.
+    let after_first = apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickIndex(0),
+        }),
+    );
+    // One forced resolved; the second is still pending (another choice or
+    // its resolution), so the move isn't done yet.
+    assert_eq!(
+        after_first.state.investigators[&InvestigatorId(1)].horror,
+        1
+    );
+    assert!(matches!(
+        after_first.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
+
+    // Pick the remaining forced trigger.
+    let done = apply(
+        after_first.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickIndex(0),
+        }),
+    );
+    assert_eq!(done.outcome, EngineOutcome::Done);
+    assert_eq!(done.state.investigators[&InvestigatorId(1)].horror, 2);
+}
+
+#[test]
 fn two_simultaneous_forced_triggers_resolve_in_order() {
     install_mock_registry();
 

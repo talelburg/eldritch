@@ -810,6 +810,15 @@ pub enum WindowKind {
         /// The investigator who successfully investigated.
         investigator: InvestigatorId,
     },
+    /// The forced-resolution run of `emit_event`'s two-phase dispatch
+    /// (Axis-B T5b / #213): when 2+ forced abilities resolve at one timing
+    /// point, the lead investigator orders them. Unlike reaction windows
+    /// this **cannot be skipped** (forced are mandatory) and admits no Fast
+    /// plays (`fast_actors` is an empty set). Its `pending_triggers` are the
+    /// remaining forced candidates, drained one at a time in lead-chosen
+    /// order. Closing it returns control to the emitting site (a terminal
+    /// site finishes; non-terminal sites resume via `run_window_continuation`).
+    ForcedResolution,
 }
 
 /// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits

@@ -64,6 +64,29 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
         }));
 }
 
+/// Open the forced-resolution run (Axis-B T5b / #213): push a
+/// [`WindowKind::ForcedResolution`] frame holding the 2+ simultaneous forced
+/// `candidates`, and present the lead investigator's order choice. Forced
+/// resolution is mandatory (no skip) and admits no Fast plays (empty
+/// `fast_actors`). The caller ([`super::emit::emit_event`]) returns the
+/// resulting `AwaitingInput`.
+pub(super) fn open_forced_resolution(
+    cx: &mut Cx,
+    candidates: Vec<ResolutionCandidate>,
+) -> EngineOutcome {
+    cx.events.push(Event::WindowOpened {
+        kind: WindowKind::ForcedResolution,
+    });
+    cx.state
+        .continuations
+        .push(Continuation::Resolution(OpenWindow {
+            kind: WindowKind::ForcedResolution,
+            pending_triggers: candidates,
+            fast_actors: FastActorScope::Specific(std::collections::BTreeSet::new()),
+        }));
+    open_queued_reaction_window(cx)
+}
+
 /// Scan every investigator's `cards_in_play` for
 /// `Trigger::OnEvent` abilities matching `kind`, building a pending-
 /// trigger list in active-investigator-first / turn-order resolution
@@ -221,11 +244,15 @@ fn trigger_matches(
         // `AfterSuccessfulInvestigate` matches only `SuccessfullyInvestigated`
         // (handled above); `AfterLocationInvestigated` is the forced twin,
         // never matched by a reaction window.
+        // `ForcedResolution` is the forced-run frame; it is never scanned by
+        // the reaction-window scan (its candidates are collected by the forced
+        // collector), so no pattern matches it.
         (
             WindowKind::PlayerWindow(_)
             | WindowKind::AfterEnemyDefeated { .. }
             | WindowKind::AfterEnemyAttackDamagedAsset { .. }
-            | WindowKind::AfterSuccessfulInvestigate { .. },
+            | WindowKind::AfterSuccessfulInvestigate { .. }
+            | WindowKind::ForcedResolution,
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
@@ -300,6 +327,18 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
                 .state
                 .top_reaction_window_index()
                 .expect("resume_reaction_window: caller checked is_some");
+            // Forced abilities are mandatory — the forced-resolution run
+            // cannot be skipped (RR p.2 / #213). The lead must pick one.
+            if matches!(
+                cx.state.continuations[idx].as_window().map(|w| &w.kind),
+                Some(WindowKind::ForcedResolution)
+            ) {
+                return EngineOutcome::Rejected {
+                    reason: "ResolveInput::Skip: forced abilities are mandatory; submit \
+                             InputResponse::PickIndex to resolve one (the lead orders them)"
+                        .into(),
+                };
+            }
             close_reaction_window_at(cx, idx)
         }
         other => EngineOutcome::Rejected {
@@ -724,6 +763,11 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
         // the parked remaining attackers and, for the enemy phase, runs
         // `after_enemy_phase_attacks` once the loop finishes.
         WindowKind::AfterEnemyAttackDamagedAsset { .. } => super::combat::resume_enemy_attack(cx),
+        // ForcedResolution: the forced run drained. Terminal emit sites (e.g.
+        // `move_action`'s `EnteredLocation`) finish here with `Done`; B3 adds
+        // the resume-continuations for non-terminal sites (RoundEnded → upkeep
+        // tail, etc.).
+        WindowKind::ForcedResolution => EngineOutcome::Done,
     }
 }
 

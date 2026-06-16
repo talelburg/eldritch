@@ -95,7 +95,7 @@ pub(crate) enum ForcedTriggerPoint {
     GameEnd,
 }
 
-struct ForcedHit {
+pub(super) struct ForcedHit {
     code: CardCode,
     ability_index: usize,
     controller: InvestigatorId,
@@ -104,6 +104,20 @@ struct ForcedHit {
     /// (so `Effect::DiscardSelf` can find itself). `None` for board-card
     /// hits (act / agenda).
     source: Option<CardInstanceId>,
+}
+
+impl ForcedHit {
+    /// Convert to the unified [`ResolutionCandidate`] for the `emit_event`
+    /// forced-resolution loop (Axis-B T5b).
+    pub(super) fn into_candidate(self) -> crate::state::ResolutionCandidate {
+        crate::state::ResolutionCandidate {
+            code: self.code,
+            controller: self.controller,
+            ability_index: u8::try_from(self.ability_index)
+                .expect("ability_index fits u8 — abilities vecs are tiny"),
+            source: self.source,
+        }
+    }
 }
 
 /// Fire Forced abilities matching `point`, resolving each hit in a fixed
@@ -139,7 +153,7 @@ pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> E
 
 // dispatcher: one match arm per ForcedTriggerPoint.
 #[allow(clippy::too_many_lines)]
-fn collect_forced_hits(
+pub(super) fn collect_forced_hits(
     state: &crate::state::GameState,
     point: &ForcedTriggerPoint,
 ) -> Vec<ForcedHit> {
