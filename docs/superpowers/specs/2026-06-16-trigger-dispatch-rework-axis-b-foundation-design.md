@@ -97,20 +97,10 @@ shared resolution loop twice — phase 1 (forced), then phase 2 (reaction):
    whose effect suspends (Frozen in Fear's test; later a choice) parks on the
    stack and resumes the loop — **this dissolves #294 and the abandon-on-suspend
    caveat.**
-2. **Phase 2 — reaction.** Run the same loop (`can_skip=true`, `decider=player-order`)
-   over `kind: Reaction` abilities + Fast plays; skip = pass.
-
-**`Event` vs `EventPattern` (why two enums).** `Event` (game-core) is the ground
-*fact* — concrete ids (`EnemyDefeated { enemy, by, code }`), for the log/replay/
-client + as the binding source threaded into `EvalContext`. `EventPattern`
-(card-dsl) is the listener's *filter* — a predicate relative to the listener
-(`{ by_controller: bool, code: Option<String> }`; `by_controller` and the
-`Option` wildcard are meaningless on a concrete fact). The match is
-`same_discriminant && predicate(pattern, event, listener)`. They can't merge:
-the relative/wildcard qualifiers can't live on a fact, and — decisively —
-`card-dsl` is below `game-core`, so `EventPattern` cannot reference engine ids
-(`EnemyId`/`InvestigatorId`/`LocationId`). The only shared part is the
-discriminant case-list, which is exactly the `TriggerKind` key #117 indexes by.
+2. **Phase 2 — reaction.** One loop run **per investigator in player order**
+   (lead first, then clockwise — RR "In Player Order"); each run's candidates are
+   *that* investigator's eligible `kind: Reaction` abilities + Fast plays,
+   `can_skip=true`, that investigator decides. In solo (Slice 1) this is one run.
 
 The `EnemyDefeated` anchor: the defeat site calls `emit_event(cx,
 Event::EnemyDefeated { by, code, .. })` once; phase 1 runs the forced act-3
@@ -209,6 +199,12 @@ Existing content exercises every new path — no new cards needed:
   list, with a `TODO` for merge-in if such a card lands.
 - Skill-test nesting (one in flight today; `in_flight_skill_test` stays a
   singleton — `TODO` to move into the frame if nesting ever arrives).
+- **Exact multiplayer reaction-phase ordering.** Phase 2 runs per investigator in
+  player order; whether priority *returns to the lead after any action* (the
+  common LCG priority-reset) vs. strict one-pass-per-investigator is a Phase-8
+  question to verify against Appendix II. Solo (Slice 1) collapses both to one
+  run, and the `decider` parameter localizes the choice — so no restructure is
+  needed to settle it later.
 
 ## Risks
 
