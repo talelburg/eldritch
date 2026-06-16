@@ -22,9 +22,7 @@ use crate::state::{
 };
 
 use super::super::outcome::EngineOutcome;
-use super::forced_triggers::{
-    collect_forced_hits, fire_forced_triggers, ForcedHit, ForcedTriggerPoint,
-};
+use super::forced_triggers::{collect_forced_hits, fire_forced_triggers, ForcedTriggerPoint};
 use super::Cx;
 
 /// A game/framework timing point at which forced and/or reaction triggers
@@ -159,9 +157,8 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     // Forced phase. When 2+ forced abilities resolve at this timing point,
     // the lead investigator orders them (#213): open the forced-resolution
     // run and suspend for the choice. 0 or 1 resolve synchronously, as before.
-    let hits = collect_forced_hits(cx.state, &point);
-    if hits.len() >= 2 {
-        let candidates = hits.into_iter().map(ForcedHit::into_candidate).collect();
+    let candidates = collect_forced_hits(cx.state, &point);
+    if candidates.len() >= 2 {
         super::reaction_windows::open_forced_resolution(cx, candidates)
     } else {
         fire_forced_triggers(cx, &point)

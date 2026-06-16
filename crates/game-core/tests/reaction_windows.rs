@@ -24,7 +24,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    InvestigatorId, LocationId, OpenWindow, Phase, PhaseStep, TokenModifiers, WindowKind,
+    InvestigatorId, LocationId, Phase, PhaseStep, ResolutionFrame, TokenModifiers, WindowKind,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -247,11 +247,11 @@ fn matching_reaction_opens_window_and_suspends() {
         .top_reaction_window()
         .expect("reaction window must be populated while suspended");
     assert_eq!(
-        window.kind,
-        WindowKind::AfterEnemyDefeated {
+        window.kind(),
+        Some(WindowKind::AfterEnemyDefeated {
             enemy: enemy_id,
             by: Some(inv_id),
-        },
+        }),
     );
     assert_eq!(window.pending_triggers.len(), 1);
     assert_eq!(window.pending_triggers[0].controller, inv_id);
@@ -974,7 +974,7 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
         .state
         .continuations
         .push(game_core::state::Continuation::Resolution(
-            OpenWindow::new_empty(
+            ResolutionFrame::new_empty(
                 WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::Any,
             ),
@@ -1003,8 +1003,8 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
         resumed.state.open_windows(),
     );
     assert_eq!(
-        resumed.state.open_windows()[0].kind,
-        WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+        resumed.state.open_windows()[0].kind(),
+        Some(WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)),
         "the surviving window must be the player-window gate, not the reaction window",
     );
     // R must have emitted WindowClosed.

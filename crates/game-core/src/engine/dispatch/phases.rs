@@ -2335,7 +2335,8 @@ mod enemy_phase_tests {
     use crate::engine::dispatch::resolve_input;
     use crate::engine::{apply, EngineOutcome};
     use crate::state::{
-        EnemyId, FastActorScope, InvestigatorId, LocationId, OpenWindow, Phase, Status, WindowKind,
+        EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, ResolutionFrame, Status,
+        WindowKind,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
@@ -2999,7 +3000,7 @@ mod enemy_phase_tests {
         // open AfterAllInvestigatorsAttacked → auto-skip continuation
         // → enemy_phase_end → cascade Upkeep → Mythos.
         //
-        // The synthetic OpenWindow push fakes the pause point because
+        // The synthetic ResolutionFrame push fakes the pause point because
         // a real Fast-eligibility setup would require either a card-
         // registry install (heavyweight integration test) or a Fast
         // event card in hand with resources — neither tractable in
@@ -3020,10 +3021,12 @@ mod enemy_phase_tests {
         state.enemy_attack_pending = Some(inv_id);
         state
             .continuations
-            .push(crate::state::Continuation::Resolution(OpenWindow {
-                kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+            .push(crate::state::Continuation::Resolution(ResolutionFrame {
                 pending_triggers: Vec::new(),
-                fast_actors: FastActorScope::Any,
+                window: Some(crate::state::WindowBinding {
+                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+                    fast_actors: FastActorScope::Any,
+                }),
             }));
 
         let result = apply(

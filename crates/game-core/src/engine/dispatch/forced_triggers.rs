@@ -7,7 +7,9 @@
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
-use crate::state::{CardCode, CardInstanceId, InvestigatorId, LocationId, Phase};
+use crate::state::{
+    CardCode, CardInstanceId, InvestigatorId, LocationId, Phase, ResolutionCandidate,
+};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -95,31 +97,6 @@ pub(crate) enum ForcedTriggerPoint {
     GameEnd,
 }
 
-pub(super) struct ForcedHit {
-    code: CardCode,
-    ability_index: usize,
-    controller: InvestigatorId,
-    /// The firing card instance, when the hit came from scanning an
-    /// investigator's controlled instances or a location's attachments
-    /// (so `Effect::DiscardSelf` can find itself). `None` for board-card
-    /// hits (act / agenda).
-    source: Option<CardInstanceId>,
-}
-
-impl ForcedHit {
-    /// Convert to the unified [`ResolutionCandidate`] for the `emit_event`
-    /// forced-resolution loop (Axis-B T5b).
-    pub(super) fn into_candidate(self) -> crate::state::ResolutionCandidate {
-        crate::state::ResolutionCandidate {
-            code: self.code,
-            controller: self.controller,
-            ability_index: u8::try_from(self.ability_index)
-                .expect("ability_index fits u8 — abilities vecs are tiny"),
-            source: self.source,
-        }
-    }
-}
-
 /// Fire Forced abilities matching `point`, resolving each hit in a fixed
 /// deterministic order.
 ///
@@ -156,7 +133,7 @@ pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> E
 pub(super) fn collect_forced_hits(
     state: &crate::state::GameState,
     point: &ForcedTriggerPoint,
-) -> Vec<ForcedHit> {
+) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -354,7 +331,7 @@ fn push_matching(
     code: &CardCode,
     controller: InvestigatorId,
     source: Option<CardInstanceId>,
-    out: &mut Vec<ForcedHit>,
+    out: &mut Vec<ResolutionCandidate>,
     want: impl Fn(&EventPattern) -> bool,
 ) {
     let Some(abilities) = (reg.abilities_for)(code) else {
@@ -369,10 +346,11 @@ fn push_matching(
             // Forced card uses `Before` ("when X would Y") timing.
             // Revisit when such a card lands.
             if *timing == EventTiming::After && want(pattern) {
-                out.push(ForcedHit {
+                out.push(ResolutionCandidate {
                     code: code.clone(),
-                    ability_index: idx,
                     controller,
+                    ability_index: u8::try_from(idx)
+                        .expect("ability_index fits u8 — abilities vecs are tiny"),
                     source,
                 });
             }
@@ -380,7 +358,7 @@ fn push_matching(
     }
 }
 
-fn resolve_one(cx: &mut Cx, hit: &ForcedHit) -> EngineOutcome {
+fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     let Some(reg) = card_registry::current() else {
         return EngineOutcome::Rejected {
             reason: "fire_forced_triggers: registry vanished between collect and resolve".into(),
@@ -395,7 +373,7 @@ fn resolve_one(cx: &mut Cx, hit: &ForcedHit) -> EngineOutcome {
             .into(),
         };
     };
-    let effect = abilities[hit.ability_index].effect.clone();
+    let effect = abilities[usize::from(hit.ability_index)].effect.clone();
     let ctx = match hit.source {
         Some(src) => EvalContext::for_controller_with_source(hit.controller, src),
         None => EvalContext::for_controller(hit.controller),
