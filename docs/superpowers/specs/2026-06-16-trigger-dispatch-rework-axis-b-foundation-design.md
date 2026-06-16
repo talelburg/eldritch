@@ -40,16 +40,16 @@ fields per the umbrella's incremental boundary).
 
 ```rust
 enum Continuation {
-    /// A reaction / fast / framework window is open; the player may act.
-    /// Absorbs `open_windows`-the-Vec: payload is the former `OpenWindow`
-    /// (kind, pending_triggers, fast_actors).
-    Window(OpenWindow),
-    /// The #213 forced-ordering loop for one (event, timing). Resolve one
-    /// forced hit (lead-investigator-chosen when 2+), remove it, repeat.
-    ForcedOrdering {
+    /// One iterative trigger-resolution loop — used for BOTH the forced phase
+    /// and the reaction window (see "One loop, two phases" below). Absorbs
+    /// `open_windows`-the-Vec; the former `OpenWindow` (kind, pending, fast_actors)
+    /// plus the loop parameters live in the frame.
+    Resolution {
+        candidates: Vec<Candidate>,   // forced abilities | reaction abilities + fast plays
+        can_skip: bool,               // forced: false; reaction: true
+        decider: Decider,             // lead (forced) | player-order (reaction)
         binding: EventBinding,        // controller / source / attacking enemy / location, from the event
         timing: EventTiming,
-        remaining: Vec<ForcedHit>,
     },
     /// The skill-test driver is mid-resolution; data is in the singleton
     /// `in_flight_skill_test` field (read by many call sites; no nesting today).
@@ -58,25 +58,59 @@ enum Continuation {
 }
 ```
 
-Window data moves *into* the `Window` frame — **no marker-pointing-at-a-separate-Vec**
+Window data moves *into* the frame — **no marker-pointing-at-a-separate-Vec**
 (that dual-bookkeeping is the trap). `in_flight_skill_test` stays a singleton
 field referenced by the `SkillTest` frame (widely read; only one in flight). The
 orthogonal phase `pending_*` modes (mulligan, hand-size discard, hunter-move,
 act-round-end, enemy-attack-loop, end-turn) are untouched.
 
+#### One loop, two phases
+
+The forced phase and the reaction window are **the same iterative loop** —
+collect candidates → present (with skip iff `can_skip`) → decider picks one →
+resolve (or skip → end) → re-collect → repeat until empty. Today
+`fire_forced_triggers` and `resume_reaction_window` are two separate
+implementations of that one loop; this collapses them. The two phases are two
+*parameterized runs*:
+
+| | forced phase | reaction phase |
+|---|---|---|
+| `can_skip` | false (mandatory) | true (pass) |
+| `candidates` | `Forced` `OnEvent` abilities | `Reaction` abilities **+ Fast plays from hand** (Axis C) |
+| `decider` | lead investigator (RR p.17) | player order (RR p.2; = the one player in solo) |
+
+The rules *vocabulary* stays distinct (a forced resolution and a reaction window
+are different concepts; prompts/logs say which), but via the parameters — not two
+code paths. The simpler forced path thereby adopts the reaction window's existing
+machinery (offered set, `PickSingle`/`OptionId`, usage limits) with
+`can_skip=false`, instead of maintaining its own.
+
 ### `emit_event` two-phase dispatch
 
 `emit_event(cx, event)` is the chokepoint for events that have a matching
-`EventPattern`. It pushes the event, then per (Before/After) timing:
+`EventPattern`. It pushes the event, then per (Before/After) timing runs the
+shared resolution loop twice — phase 1 (forced), then phase 2 (reaction):
 
-1. **Phase 1 — forced.** Collect forced hits (the `kind: Forced` `OnEvent`
-   abilities). 0 → skip. 1 → resolve. 2+ → push a `ForcedOrdering` frame and
-   present the lead-investigator choice (iterative: resolve one, remove, re-present
-   the rest — RR p.2/p.17). Mandatory, no skip. A hit whose effect suspends
-   (Frozen in Fear's test; later a choice) parks on the stack and resumes the
-   loop — **this is what dissolves #294 and the abandon-on-suspend caveat.**
-2. **Phase 2 — reaction.** Open the reaction window (push a `Window` frame);
-   optional reactions + Fast plays resolve in player order, skip = pass.
+1. **Phase 1 — forced.** Collect `kind: Forced` `OnEvent` hits. 0 → skip. 1 →
+   resolve. 2+ → push a `Resolution` frame (`can_skip=false`, `decider=lead`) and
+   run the loop (resolve one, remove, re-present the rest — RR p.2/p.17). A hit
+   whose effect suspends (Frozen in Fear's test; later a choice) parks on the
+   stack and resumes the loop — **this dissolves #294 and the abandon-on-suspend
+   caveat.**
+2. **Phase 2 — reaction.** Run the same loop (`can_skip=true`, `decider=player-order`)
+   over `kind: Reaction` abilities + Fast plays; skip = pass.
+
+**`Event` vs `EventPattern` (why two enums).** `Event` (game-core) is the ground
+*fact* — concrete ids (`EnemyDefeated { enemy, by, code }`), for the log/replay/
+client + as the binding source threaded into `EvalContext`. `EventPattern`
+(card-dsl) is the listener's *filter* — a predicate relative to the listener
+(`{ by_controller: bool, code: Option<String> }`; `by_controller` and the
+`Option` wildcard are meaningless on a concrete fact). The match is
+`same_discriminant && predicate(pattern, event, listener)`. They can't merge:
+the relative/wildcard qualifiers can't live on a fact, and — decisively —
+`card-dsl` is below `game-core`, so `EventPattern` cannot reference engine ids
+(`EnemyId`/`InvestigatorId`/`LocationId`). The only shared part is the
+discriminant case-list, which is exactly the `TriggerKind` key #117 indexes by.
 
 The `EnemyDefeated` anchor: the defeat site calls `emit_event(cx,
 Event::EnemyDefeated { by, code, .. })` once; phase 1 runs the forced act-3
@@ -111,19 +145,21 @@ at enter/leave-play, not smeared across per-timing-point scan arms.
    `GameState` (serde, absent-field-loads test) + the single resume router at the
    top of `resolve_input` (empty stack → falls through to legacy). No frames
    pushed yet.
-3. **Window unification (pure refactor):** `open_windows` → `Continuation::Window`
-   frames. Rewire `top_reaction_window(_index)`, `close_reaction_window_at`,
-   `resume_reaction_window`, `open_fast_window`, the `apply_player_action`
-   reject-guard, and `check_play_card`'s `permissive_window` to operate on the
-   topmost `Window` frame. Behavior identical; all existing window/skill-test/
-   reaction tests stay green.
+3. **Window unification (pure refactor):** `open_windows` → `Continuation::Resolution`
+   frames (the reaction run: `can_skip=true`). Rewire `top_reaction_window(_index)`,
+   `close_reaction_window_at`, `resume_reaction_window`, `open_fast_window`, the
+   `apply_player_action` reject-guard, and `check_play_card`'s `permissive_window`
+   to operate on the topmost `Resolution` frame. Behavior identical; all existing
+   window/skill-test/reaction tests stay green. (This also lands the shared loop
+   that task 5's forced run reuses.)
 4. **Skill-test frame (pure refactor):** the driver resumes via a
    `Continuation::SkillTest` frame; `in_flight_skill_test` stays as data.
    Behavior identical.
-5. **`emit_event` + two-phase + #213 forced-ordering loop:** introduce
-   `emit_event`; build the `ForcedOrdering` frame + iterative loop; replace the
-   explicit `fire_forced_triggers` / event-driven `queue_reaction_window` call
-   sites with `emit_event`. **Binding-context audit:** every migrated `Event`
+5. **`emit_event` + the forced run + two-phase driving:** introduce `emit_event`;
+   add the forced run of the shared loop (`can_skip=false`, `decider=lead`) and
+   have `emit_event` drive phase 1 → phase 2; replace the explicit
+   `fire_forced_triggers` / event-driven `queue_reaction_window` call sites with
+   `emit_event`. **Binding-context audit:** every migrated `Event`
    variant must carry what its old `ForcedTriggerPoint` / `WindowKind` carried;
    enrich the few that don't. Collapse `ForcedTriggerPoint` + the event-driven
    `WindowKind` variants into the event-keyed dispatch (framework `PlayerWindow`

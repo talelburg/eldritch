@@ -141,8 +141,9 @@ by the `SkillTest` frame — not a competing stack (only ever one test in flight
 no nesting today) but payload that lives beside the stack because it's read by
 many call sites (`drive_skill_test`, the `unreachable!` guards). If skill tests
 ever nest, that data moves into the frame too. Net: one stack
-(`Window` + `ForcedOrdering` + `Choice` frames, plus a `SkillTest` frame-ref),
-zero sync bookkeeping. The truly-orthogonal phase `pending_*` modes above are
+(a shared `Resolution` frame serving both the forced and reaction runs — see the
+Axis-B spec's "One loop, two phases" — plus `Choice` frames and a `SkillTest`
+frame-ref), zero sync bookkeeping. The truly-orthogonal phase `pending_*` modes above are
 singletons in disjoint phases, migrated only in the later cleanup pass.
 
 Rejected alternatives:
