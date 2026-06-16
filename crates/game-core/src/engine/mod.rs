@@ -3929,6 +3929,47 @@ mod tests {
     }
 
     #[test]
+    fn skill_test_pushes_and_pops_a_continuation_frame() {
+        // Axis-B T4: the commit window is a `Continuation::SkillTest` frame
+        // on the one stack, pushed when the test parks and popped when it
+        // fully resolves.
+        let id = InvestigatorId(1);
+        let state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(bag_only_zero())
+            .build();
+        let paused = apply(
+            state,
+            Action::Player(PlayerAction::PerformSkillTest {
+                investigator: id,
+                skill: SkillKind::Intellect,
+                difficulty: 3,
+            }),
+        );
+        assert!(matches!(
+            paused.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
+        assert_eq!(
+            paused.state.continuations,
+            vec![crate::state::Continuation::SkillTest],
+            "parking at the commit window pushes exactly one SkillTest frame",
+        );
+
+        let resumed = apply(
+            paused.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::CommitCards { indices: vec![] },
+            }),
+        );
+        assert_eq!(resumed.outcome, EngineOutcome::Done);
+        assert!(
+            resumed.state.continuations.is_empty(),
+            "resolving the test pops the SkillTest frame",
+        );
+    }
+
+    #[test]
     fn commit_window_discards_committed_cards_into_discard_pile() {
         // Two cards in hand; commit both. After resolution, both are
         // in the discard pile, neither in hand, and CardDiscarded

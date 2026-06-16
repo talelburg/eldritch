@@ -407,6 +407,12 @@ pub enum Continuation {
     /// `open_windows` entry. (Task 5 parameterizes this into the shared
     /// forced+reaction resolution loop.)
     Resolution(OpenWindow),
+    /// A skill test is mid-resolution. A resume-handle only — the test's
+    /// data lives in the singleton [`GameState::in_flight_skill_test`]
+    /// field (read by many call sites; no nesting today), so this frame
+    /// carries no payload. Pushed when the test starts (parking at its
+    /// commit window) and popped when it fully resolves (Axis-B T4).
+    SkillTest,
 }
 
 impl Continuation {
@@ -415,6 +421,7 @@ impl Continuation {
     pub fn as_window(&self) -> Option<&OpenWindow> {
         match self {
             Continuation::Resolution(w) => Some(w),
+            Continuation::SkillTest => None,
         }
     }
 
@@ -422,6 +429,7 @@ impl Continuation {
     pub fn as_window_mut(&mut self) -> Option<&mut OpenWindow> {
         match self {
             Continuation::Resolution(w) => Some(w),
+            Continuation::SkillTest => None,
         }
     }
 }
