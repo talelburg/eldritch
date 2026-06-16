@@ -33,8 +33,8 @@
 //! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 
 use card_dsl::dsl::{
-    discover_clue, on_event, Ability, EventPattern, EventTiming, LocationTarget, UsageLimit,
-    UsagePeriod,
+    discover_clue, reaction_on_event, Ability, EventPattern, EventTiming, LocationTarget,
+    UsageLimit, UsagePeriod,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
@@ -45,7 +45,7 @@ pub const CODE: &str = "01001";
 /// is tracked separately (#118).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![reaction_on_event(
         EventPattern::EnemyDefeated {
             by_controller: true,
             code: None,
@@ -77,6 +77,7 @@ mod tests {
                     code: None,
                 },
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Reaction,
             },
         );
         assert!(matches!(

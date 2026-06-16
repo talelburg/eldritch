@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    discover_clue, gain_resources, on_event, Ability, EventPattern, EventTiming,
+    discover_clue, gain_resources, reaction_on_event, Ability, EventPattern, EventTiming,
     InvestigatorTarget, LocationTarget,
 };
 use game_core::engine::EngineOutcome;
@@ -57,7 +57,7 @@ fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
-        ROLAND_REACTION => Some(vec![on_event(
+        ROLAND_REACTION => Some(vec![reaction_on_event(
             EventPattern::EnemyDefeated {
                 by_controller: true,
                 code: None,
@@ -65,7 +65,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             EventTiming::After,
             discover_clue(LocationTarget::YourLocation, 1),
         )]),
-        BYSTANDER_REACTION => Some(vec![on_event(
+        BYSTANDER_REACTION => Some(vec![reaction_on_event(
             EventPattern::EnemyDefeated {
                 by_controller: false,
                 code: None,
@@ -74,7 +74,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             gain_resources(InvestigatorTarget::You, 1),
         )]),
         TWO_REACTIONS => Some(vec![
-            on_event(
+            reaction_on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,
                     code: None,
@@ -82,7 +82,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 EventTiming::After,
                 discover_clue(LocationTarget::YourLocation, 1),
             ),
-            on_event(
+            reaction_on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,
                     code: None,
@@ -91,7 +91,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 gain_resources(InvestigatorTarget::You, 1),
             ),
         ]),
-        MILAN_REACTION => Some(vec![on_event(
+        MILAN_REACTION => Some(vec![reaction_on_event(
             EventPattern::SuccessfullyInvestigated,
             EventTiming::After,
             gain_resources(InvestigatorTarget::You, 1),

@@ -17,7 +17,7 @@
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{
-    constant, discard_self, on_event, put_into_threat_area, restrict, revelation, Ability,
+    constant, discard_self, forced_on_event, put_into_threat_area, restrict, revelation, Ability,
     EventPattern, EventTiming, Restriction,
 };
 
@@ -30,7 +30,7 @@ pub fn abilities() -> Vec<Ability> {
         revelation(put_into_threat_area(CODE)),
         constant(restrict(Restriction::CannotPlay(CardType::Asset))),
         constant(restrict(Restriction::CannotPlay(CardType::Event))),
-        on_event(EventPattern::RoundEnded, EventTiming::After, discard_self()),
+        forced_on_event(EventPattern::RoundEnded, EventTiming::After, discard_self()),
     ]
 }
 
@@ -64,6 +64,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::RoundEnded,
                 timing: EventTiming::After,
+                ..
             }
         ));
         assert!(matches!(&abilities[3].effect, Effect::DiscardSelf));

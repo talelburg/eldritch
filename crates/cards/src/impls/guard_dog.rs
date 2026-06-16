@@ -19,7 +19,7 @@
 //! instance), and reads the attacker from `EvalContext.attacking_enemy`,
 //! which the soak window binds. (C5b #237.)
 
-use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::{deal_damage_to_enemy, Cx, EngineOutcome, EvalContext};
 
@@ -30,7 +30,7 @@ const RETALIATE: &str = "01021:retaliate";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![reaction_on_event(
         EventPattern::EnemyAttackDamagedSelf,
         EventTiming::After,
         native(RETALIATE),
@@ -95,6 +95,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EnemyAttackDamagedSelf,
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Reaction,
             }
         );
         assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == RETALIATE));

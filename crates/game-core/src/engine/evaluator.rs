@@ -718,6 +718,7 @@ fn discover_clue(
                                 crate::dsl::Trigger::OnEvent {
                                     pattern: crate::dsl::EventPattern::WouldDiscoverClues,
                                     timing: crate::dsl::EventTiming::Before,
+                                    ..
                                 }
                             )
                         })?;

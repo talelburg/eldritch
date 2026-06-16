@@ -3,7 +3,7 @@
 
 use std::sync::OnceLock;
 
-use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::state::{Agenda, CardCode, InvestigatorId};
@@ -18,7 +18,7 @@ fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     (code.as_str() == AGENDA).then(|| {
-        vec![on_event(
+        vec![forced_on_event(
             EventPattern::RoundEnded,
             EventTiming::After,
             native("test:set-doom"),

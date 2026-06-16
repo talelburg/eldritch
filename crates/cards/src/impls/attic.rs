@@ -12,7 +12,7 @@
 //! Forced horror lives here.
 
 use card_dsl::dsl::{
-    deal_horror, on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
+    deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
 };
 
 /// `ArkhamDB` code for the Attic.
@@ -21,7 +21,7 @@ pub const CODE: &str = "01113";
 /// The Attic's Forced "after you enter: take 1 horror".
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![forced_on_event(
         EventPattern::EnteredLocation,
         EventTiming::After,
         deal_horror(InvestigatorTarget::You, 1),
@@ -41,6 +41,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EnteredLocation,
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(matches!(

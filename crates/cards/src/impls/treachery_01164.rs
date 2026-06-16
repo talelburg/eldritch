@@ -20,8 +20,8 @@
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
-    constant, discard_self, on_event, put_into_threat_area, restrict, revelation, skill_test,
-    Ability, ActionClass, EventPattern, EventTiming, Restriction,
+    constant, discard_self, forced_on_event, put_into_threat_area, restrict, revelation,
+    skill_test, Ability, ActionClass, EventPattern, EventTiming, Restriction,
 };
 
 /// `ArkhamDB` code for Frozen in Fear.
@@ -35,7 +35,7 @@ pub fn abilities() -> Vec<Ability> {
             actions: vec![ActionClass::Move, ActionClass::Fight, ActionClass::Evade],
             first_each_round: true,
         })),
-        on_event(
+        forced_on_event(
             EventPattern::EndOfTurn,
             EventTiming::After,
             // Test willpower(3): on success discard Frozen in Fear.
@@ -78,6 +78,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EndOfTurn,
                 timing: EventTiming::After,
+                ..
             }
         ));
         let Effect::SkillTest {

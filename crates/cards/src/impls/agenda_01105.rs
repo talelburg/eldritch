@@ -34,7 +34,7 @@
 //! [#212]: https://github.com/talelburg/eldritch/issues/212
 
 use card_dsl::dsl::{
-    deal_horror, on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
+    deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
 };
 
 /// `ArkhamDB` code for Agenda 1, "What's Going On?!".
@@ -44,7 +44,7 @@ pub const CODE: &str = "01105";
 /// 2-horror-to-the-lead branch; see the module docs / TODO #212).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![forced_on_event(
         EventPattern::AgendaAdvanced,
         EventTiming::After,
         // `You` binds to the controller, which `AgendaAdvanced` sets to the
@@ -66,6 +66,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::AgendaAdvanced,
                 timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert_eq!(

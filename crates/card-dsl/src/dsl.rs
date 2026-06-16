@@ -176,7 +176,33 @@ pub enum Trigger {
         /// Whether the trigger fires before or after the matching
         /// event finalizes.
         timing: EventTiming,
+        /// Whether this is a mandatory **forced** ability or an optional
+        /// player **reaction**. Determines which phase of the two-phase
+        /// `emit_event` dispatch it participates in — Rules Reference p.2:
+        /// "all forced abilities … must resolve before any `[reaction]`
+        /// abilities … may be initiated." Replaces the earlier
+        /// route-by-`EventPattern` heuristic (which forced twin patterns
+        /// for one game moment, e.g. `AfterLocationInvestigated` forced
+        /// vs `SuccessfullyInvestigated` reaction).
+        kind: TriggerKind,
     },
+}
+
+/// Whether an [`Trigger::OnEvent`] ability resolves mandatorily (forced)
+/// or is an optional player reaction.
+///
+/// Forced abilities all resolve before any reaction abilities at the same
+/// timing point (Rules Reference p.2), and the engine's `emit_event`
+/// dispatch keys its two phases off this distinction rather than guessing
+/// from the [`EventPattern`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TriggerKind {
+    /// Mandatory; resolves automatically (the player only orders
+    /// simultaneous ones). Phase 1 of `emit_event`.
+    Forced,
+    /// Optional; the controller may use it in the reaction window.
+    /// Phase 2 of `emit_event`.
+    Reaction,
 }
 
 /// Which engine event(s) an [`Trigger::OnEvent`] ability listens for.
@@ -946,13 +972,36 @@ pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability
 /// and timing. Costs are empty — reactive triggers fire from the
 /// engine's reaction-window plumbing, not via player activation.
 #[must_use]
-pub fn on_event(pattern: EventPattern, timing: EventTiming, effect: Effect) -> Ability {
+pub fn on_event(
+    pattern: EventPattern,
+    timing: EventTiming,
+    kind: TriggerKind,
+    effect: Effect,
+) -> Ability {
     Ability {
-        trigger: Trigger::OnEvent { pattern, timing },
+        trigger: Trigger::OnEvent {
+            pattern,
+            timing,
+            kind,
+        },
         costs: Vec::new(),
         effect,
         usage_limit: None,
     }
+}
+
+/// Construct a mandatory **forced** [`Trigger::OnEvent`] ability
+/// (`TriggerKind::Forced`). Convenience wrapper over [`on_event`].
+#[must_use]
+pub fn forced_on_event(pattern: EventPattern, timing: EventTiming, effect: Effect) -> Ability {
+    on_event(pattern, timing, TriggerKind::Forced, effect)
+}
+
+/// Construct an optional player **reaction** [`Trigger::OnEvent`] ability
+/// (`TriggerKind::Reaction`). Convenience wrapper over [`on_event`].
+#[must_use]
+pub fn reaction_on_event(pattern: EventPattern, timing: EventTiming, effect: Effect) -> Ability {
+    on_event(pattern, timing, TriggerKind::Reaction, effect)
 }
 
 /// Construct a [`Trigger::Revelation`]-driven [`Ability`] wrapping
@@ -1448,6 +1497,7 @@ mod tests {
                 code: None,
             },
             EventTiming::After,
+            TriggerKind::Reaction,
             discover_clue(LocationTarget::YourLocation, 1),
         );
         assert_eq!(
@@ -1458,6 +1508,7 @@ mod tests {
                     code: None,
                 },
                 timing: EventTiming::After,
+                kind: TriggerKind::Reaction,
             },
         );
         assert!(matches!(
@@ -1484,6 +1535,7 @@ mod tests {
                 code: None,
             },
             timing: EventTiming::After,
+            kind: TriggerKind::Reaction,
         };
         let after_controller = Trigger::OnEvent {
             pattern: EventPattern::EnemyDefeated {
@@ -1491,6 +1543,7 @@ mod tests {
                 code: None,
             },
             timing: EventTiming::After,
+            kind: TriggerKind::Reaction,
         };
         let before_controller = Trigger::OnEvent {
             pattern: EventPattern::EnemyDefeated {
@@ -1498,6 +1551,7 @@ mod tests {
                 code: None,
             },
             timing: EventTiming::Before,
+            kind: TriggerKind::Reaction,
         };
         assert_ne!(after_any, Trigger::Constant);
         assert_ne!(after_any, Trigger::OnPlay);
@@ -1522,12 +1576,43 @@ mod tests {
                     code: None,
                 },
                 timing,
+                TriggerKind::Reaction,
                 discover_clue(LocationTarget::YourLocation, 1),
             );
             let json = serde_json::to_string(&original).expect("serialize");
             let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(original, recovered);
         }
+    }
+
+    /// `Trigger::OnEvent` carries an explicit `TriggerKind` (forced vs
+    /// reaction), and it round-trips through serde. The kind retires the
+    /// old route-by-pattern dispatch (umbrella §2, Axis-B T1).
+    #[test]
+    fn on_event_carries_trigger_kind() {
+        let t = Trigger::OnEvent {
+            pattern: EventPattern::EnemyDefeated {
+                by_controller: true,
+                code: None,
+            },
+            timing: EventTiming::After,
+            kind: TriggerKind::Reaction,
+        };
+        let json = serde_json::to_string(&t).expect("serialize");
+        let back: Trigger = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(t, back);
+        // Forced and Reaction are distinct.
+        assert_ne!(
+            t,
+            Trigger::OnEvent {
+                pattern: EventPattern::EnemyDefeated {
+                    by_controller: true,
+                    code: None,
+                },
+                timing: EventTiming::After,
+                kind: TriggerKind::Forced,
+            },
+        );
     }
 
     /// The `revelation` builder produces the new Trigger variant with

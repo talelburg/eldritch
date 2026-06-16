@@ -19,7 +19,7 @@ use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::Phase as DslPhase;
 use game_core::dsl::{
-    deal_horror, on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
+    deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -64,13 +64,13 @@ fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     if code.as_str() == HORROR_ATTIC {
-        Some(vec![on_event(
+        Some(vec![forced_on_event(
             EventPattern::EnteredLocation,
             EventTiming::After,
             deal_horror(InvestigatorTarget::You, 1),
         )])
     } else if code.as_str() == DOOM_AGENDA || code.as_str() == DOOM_ACT {
-        Some(vec![on_event(
+        Some(vec![forced_on_event(
             EventPattern::PhaseEnded {
                 phase: DslPhase::Enemy,
             },
@@ -81,25 +81,25 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         // Two distinct forced `EnteredLocation` abilities at the same timing
         // point — exercises ordered multi-resolution (both fire in order).
         Some(vec![
-            on_event(
+            forced_on_event(
                 EventPattern::EnteredLocation,
                 EventTiming::After,
                 deal_horror(InvestigatorTarget::You, 1),
             ),
-            on_event(
+            forced_on_event(
                 EventPattern::EnteredLocation,
                 EventTiming::After,
                 deal_horror(InvestigatorTarget::You, 1),
             ),
         ])
     } else if code.as_str() == END_OF_TURN_CARD {
-        Some(vec![on_event(
+        Some(vec![forced_on_event(
             EventPattern::EndOfTurn,
             EventTiming::After,
             deal_horror(InvestigatorTarget::You, 1),
         )])
     } else if code.as_str() == AFTER_INVESTIGATE_CARD {
-        Some(vec![on_event(
+        Some(vec![forced_on_event(
             EventPattern::AfterLocationInvestigated,
             EventTiming::After,
             deal_horror(InvestigatorTarget::You, 1),

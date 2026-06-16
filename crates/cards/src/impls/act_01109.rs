@@ -36,7 +36,7 @@
 //! single-trigger forced-advance path until #213/#212; consistent with
 //! the rest of Slice 1's solo-first scope.
 
-use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::{
     location_id_by_code, reveal_location, spawn_set_aside_enemy, Cx, EngineOutcome, EvalContext,
@@ -56,7 +56,7 @@ const PARLOR: &str = "01115";
 /// 01109's Forced on-advance reverse: reveal the Parlor + spawn the Priest.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![forced_on_event(
         EventPattern::ActAdvanced,
         EventTiming::After,
         native(REVERSE),
@@ -102,7 +102,8 @@ mod tests {
             abilities[0].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::ActAdvanced,
-                timing: EventTiming::After
+                timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(

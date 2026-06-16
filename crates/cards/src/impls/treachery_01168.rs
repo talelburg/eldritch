@@ -18,7 +18,7 @@
 //! which finds this attachment by the firing instance.
 
 use card_dsl::dsl::{
-    constant, discard_self, modify, native, on_event, revelation, Ability, EventPattern,
+    constant, discard_self, forced_on_event, modify, native, revelation, Ability, EventPattern,
     EventTiming, ModifierScope, Stat,
 };
 use game_core::card_registry::NativeEffectFn;
@@ -35,7 +35,7 @@ pub fn abilities() -> Vec<Ability> {
     vec![
         revelation(native(LIMIT1_ATTACH)),
         constant(modify(Stat::Shroud, 2, ModifierScope::WhileInPlay)),
-        on_event(
+        forced_on_event(
             EventPattern::AfterLocationInvestigated,
             EventTiming::After,
             discard_self(),
@@ -113,6 +113,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::AfterLocationInvestigated,
                 timing: EventTiming::After,
+                ..
             }
         ));
         assert!(matches!(&abilities[2].effect, Effect::DiscardSelf));

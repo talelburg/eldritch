@@ -21,7 +21,7 @@
 //! lives card-locally as a [`card_dsl::dsl::Effect::Native`] handler
 //! (the `board_build` fn) rather than as shared `Effect` variants (#276).
 
-use card_dsl::dsl::{native, on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::{location_id_by_code, reveal_location, Cx, EngineOutcome, EvalContext, Event};
 
@@ -34,7 +34,7 @@ const BOARD_BUILD: &str = "01108:board-build";
 /// 01108's Forced on-advance reverse: build the Act-1 board.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_event(
+    vec![forced_on_event(
         EventPattern::ActAdvanced,
         EventTiming::After,
         native(BOARD_BUILD),
@@ -106,7 +106,8 @@ mod tests {
             abilities[0].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::ActAdvanced,
-                timing: EventTiming::After
+                timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
         assert!(
