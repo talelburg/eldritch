@@ -121,21 +121,29 @@ to reflect two-phase.
 A single `Vec<Continuation>` on `GameState` is the one suspend/resume mechanism.
 The migration is **incremental**, not big-bang:
 
-- **On the stack now:** trigger-dispatch frames (the #213 ordering loop),
-  `ChooseOne` / target-selection choice frames, and the skill-test +
-  reaction-window *resumptions* that interleave with them.
+- **On the stack now:** the #213 forced-ordering loop, `ChooseOne` /
+  target-selection choice frames (Axis A), and **the reaction/fast windows** —
+  `open_windows`-the-Vec is *absorbed into the one stack* as `Continuation::Window`
+  frames (a window is just "paused, the player may act here, resume on
+  act/pass"). This covers both reaction windows and the framework
+  `PlayerWindow(PhaseStep)` windows. The skill-test driver also resumes through
+  the stack (a `Continuation::SkillTest` frame).
 - **Stay on their `pending_*` fields (cleanup later, tracked follow-up):**
   mulligan, hand-size discard, hunter-move, act-round-end, enemy-attack-loop,
   end-turn. These never nest under trigger dispatch (different phases), so they
   don't need to be on the stack yet.
 
-**Key reframing that makes this clean:** a `Continuation` is a **resume-handle**
-— a typed frame (tag + minimal payload naming which resume fn to call), *not* a
-relocation of every feature's working state. A frame can say "resume the
-skill-test driver" while `in_flight_skill_test` stays where it is as that
-feature's storage. So we migrate *control flow* (one router in `resolve_input`,
-the suspend/resume discipline) now; deleting `pending_*` fields is optional later
-cleanup, not a prerequisite.
+**One stack, no dual-bookkeeping.** The trap to avoid is a `Continuation` *marker*
+that points at a still-separate `open_windows` Vec — two structures kept in sync
+is the worst option. So windows' data moves *into* their frames. The one
+exception is `in_flight_skill_test`, which stays a **singleton field** referenced
+by the `SkillTest` frame — not a competing stack (only ever one test in flight;
+no nesting today) but payload that lives beside the stack because it's read by
+many call sites (`drive_skill_test`, the `unreachable!` guards). If skill tests
+ever nest, that data moves into the frame too. Net: one stack
+(`Window` + `ForcedOrdering` + `Choice` frames, plus a `SkillTest` frame-ref),
+zero sync bookkeeping. The truly-orthogonal phase `pending_*` modes above are
+singletons in disjoint phases, migrated only in the later cleanup pass.
 
 Rejected alternatives:
 
@@ -182,10 +190,20 @@ effect is itself a choice; depth 4).
      plays (Axis C) resolve in player order, repeatedly, skip = pass. Today's
      `queue_reaction_window`, generalized.
 
-3. **Backing store = the #117 event-keyed index** (`TriggerKind → Vec<entry>`,
-   maintained at `CardInPlay` enter/leave-play, seeded at registry install),
-   replacing the full board walk in both phases. #117's defensive test
-   (index survives a card leaving play mid-window) carries over.
+3. **Backing store: scan behind an index-shaped interface; the #117 index is the
+   final Axis-B task.** `emit_event` calls one scan function; it is implemented
+   with the existing full board walk first (correctness, obviously so), then the
+   **#117 event-keyed index** (`TriggerKind → Vec<entry>`, maintained at
+   `CardInPlay` enter/leave-play, seeded at registry install) is swapped in
+   behind that interface as the **last task of Axis B**. The index is not just
+   perf — it is the more *maintainable* end-state: trigger-discovery knowledge is
+   registered once at enter/leave-play instead of smeared across per-timing-point
+   scan arms (each of which re-walks zones; C4a bolted on threat_area, C4c bolted
+   on location attachments), so a new zone or timing point needs no scan-code
+   edit. Landing it as its own final task isolates the index's new invariant
+   (every zone transition must update it, or it desyncs) from the dispatch
+   restructure. #117's defensive test (index survives a card leaving play
+   mid-window) carries over.
 
 4. **forced-vs-optional becomes an explicit per-ability property** on the DSL
    trigger: `Trigger::OnEvent { pattern, timing, kind: TriggerKind::{Forced,
