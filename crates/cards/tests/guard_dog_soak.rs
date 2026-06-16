@@ -351,7 +351,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     // Exactly one pending soak window, keyed to Guard Dog's instance — not
     // the Vest's (a controlled soaker with no `EnemyAttackDamagedSelf`).
     let soak_windows: Vec<_> = state
-        .open_windows
+        .open_windows()
         .iter()
         .filter_map(|w| match w.kind {
             game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { asset, .. } => Some(asset),
@@ -492,7 +492,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         "no parked attack after both attackers fully resolve"
     );
     assert!(
-        state.open_windows.is_empty(),
+        state.open_windows().is_empty(),
         "no soak windows left open once both attacks resolve"
     );
 }
@@ -567,9 +567,9 @@ fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() 
     // The bug guard: no stranded soak window, and the outcome is NOT a
     // dangling AwaitingInput on a soak window — AoO does not open one.
     assert!(
-        state.open_windows.is_empty(),
+        state.open_windows().is_empty(),
         "no reaction window stranded by the AoO: {:?}",
-        state.open_windows
+        state.open_windows()
     );
     assert!(
         !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),

@@ -1787,7 +1787,7 @@ mod upkeep_phase_tests {
         );
         assert_eq!(state.phase, Phase::Mythos, "cascade lands in Mythos");
         assert!(
-            state.open_windows.is_empty(),
+            state.open_windows().is_empty(),
             "UpkeepBegins must not persist on the stack"
         );
     }
@@ -3021,11 +3021,13 @@ mod enemy_phase_tests {
         state.turn_order = vec![inv_id];
         state.active_investigator = None;
         state.enemy_attack_pending = Some(inv_id);
-        state.open_windows.push(OpenWindow {
-            kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
-            pending_triggers: Vec::new(),
-            fast_actors: FastActorScope::Any,
-        });
+        state
+            .continuations
+            .push(crate::state::Continuation::Resolution(OpenWindow {
+                kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+                pending_triggers: Vec::new(),
+                fast_actors: FastActorScope::Any,
+            }));
 
         let result = apply(
             state,

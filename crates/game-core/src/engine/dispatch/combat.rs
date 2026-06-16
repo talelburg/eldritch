@@ -681,7 +681,7 @@ fn drive_attack_loop(
 
         // If the attack opened a soak reaction window, suspend: park the
         // rest and surface the queued window (see fn doc step 4).
-        if !cx.state.open_windows.is_empty() {
+        if !cx.state.open_windows().is_empty() {
             // Single-soak-window-per-attack invariant: `pending_enemy_attack`
             // holds one parked loop, so resume (which `take()`s it) assumes
             // exactly one soak window per suspension. One attack queues one
@@ -692,11 +692,11 @@ fn drive_attack_loop(
             // drain. TODO(#294): drain all same-attack soak windows before
             // resuming (coordinates with simultaneous-trigger ordering #213).
             debug_assert_eq!(
-                cx.state.open_windows.len(),
+                cx.state.open_windows().len(),
                 1,
                 "drive_attack_loop suspended on {} open windows; multi-soak-\
                  window-per-attack resume is unhandled (TODO(#294))",
-                cx.state.open_windows.len(),
+                cx.state.open_windows().len(),
             );
             cx.state.pending_enemy_attack = Some(PendingEnemyAttack {
                 investigator,
@@ -892,7 +892,7 @@ mod combat_tests {
         assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == id);
         assert_event!(events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
         assert!(
-            state.open_windows.is_empty(),
+            state.open_windows().is_empty(),
             "no soak window without soakers"
         );
     }

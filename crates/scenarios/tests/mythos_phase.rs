@@ -645,17 +645,17 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
 
     // The window must remain on the stack — it was NOT auto-skipped.
     assert!(
-        !result.state.open_windows.is_empty(),
+        !result.state.open_windows().is_empty(),
         "MythosAfterDraws window must stay on stack when Fast event is in hand; \
          pre-fix this would have been empty (window auto-skipped)"
     );
     assert!(
         matches!(
-            result.state.open_windows.last(),
+            result.state.open_windows().last(),
             Some(w) if w.kind == WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
         ),
         "top open window must be MythosAfterDraws; got {:?}",
-        result.state.open_windows.last()
+        result.state.open_windows().last()
     );
 
     // Phase must still be Mythos — the window continuation (mythos_phase_end)
@@ -714,7 +714,7 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     let draw_result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
     assert_eq!(draw_result.outcome, EngineOutcome::Done);
     assert!(
-        !draw_result.state.open_windows.is_empty(),
+        !draw_result.state.open_windows().is_empty(),
         "window must be open before Skip test"
     );
 
@@ -739,7 +739,7 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     // that defect is still fixed — only the old "open_windows empty" shape
     // changes now that investigation_phase opens its own window.)
     assert_eq!(
-        skip_result.state.open_windows.len(),
+        skip_result.state.open_windows().len(),
         1,
         "InvestigationBegins window must be open (Fast card is eligible); \
          MythosAfterDraws must be gone"
@@ -747,11 +747,11 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     assert!(
         skip_result
             .state
-            .open_windows
+            .open_windows()
             .last()
             .is_some_and(|w| w.kind == WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)),
         "top window must be InvestigationBegins; got {:?}",
-        skip_result.state.open_windows.last()
+        skip_result.state.open_windows().last()
     );
 
     // mythos_phase_end ran: phase transitioned to Investigation.
