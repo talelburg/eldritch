@@ -278,10 +278,10 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         .state
         .top_reaction_window()
         .expect("open_queued_reaction_window: caller checked is_some");
-    let skip_hint = if window.window.is_some() {
-        ", or InputResponse::Skip to close"
-    } else {
+    let skip_hint = if window.is_forced() {
         " (forced — cannot skip; the lead orders them)"
+    } else {
+        ", or InputResponse::Skip to close"
     };
     EngineOutcome::AwaitingInput {
         request: InputRequest {
@@ -327,8 +327,8 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
             // Forced abilities are mandatory — the forced run (`window: None`)
             // cannot be skipped (RR p.2 / #213). The lead must pick one.
             if cx.state.continuations[idx]
-                .as_window()
-                .is_some_and(|f| f.window.is_none())
+                .as_resolution()
+                .is_some_and(ResolutionFrame::is_forced)
             {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput::Skip: forced abilities are mandatory; submit \
@@ -366,7 +366,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
         let window = cx.state.continuations[window_idx]
-            .as_window()
+            .as_resolution()
             .expect("fire_pending_trigger: top_reaction_window_index points at a Resolution frame");
         let idx = match usize::try_from(i) {
             Ok(idx) if idx < window.pending_triggers.len() => idx,
@@ -430,9 +430,8 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // #237.)
     if let Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) = cx.state.continuations
         [window_idx]
-        .as_window()
-        .and_then(|f| f.window.as_ref())
-        .map(|w| w.kind)
+        .as_resolution()
+        .and_then(ResolutionFrame::kind)
     {
         eval_ctx.attacking_enemy = Some(enemy);
     }
@@ -452,7 +451,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // we drove sits at `window_idx` — apply_effect does not push or
     // pop `open_windows` entries, so the index remains valid.
     let window = cx.state.continuations[window_idx]
-        .as_window_mut()
+        .as_resolution_mut()
         .expect("fire_pending_trigger: window_idx is a Resolution frame");
     window.pending_triggers.remove(pending_idx);
 
@@ -462,10 +461,10 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     if window.pending_triggers.is_empty() {
         return close_reaction_window_at(cx, window_idx);
     }
-    let skip_hint = if window.window.is_some() {
-        ", or InputResponse::Skip to close"
-    } else {
+    let skip_hint = if window.is_forced() {
         " (forced — cannot skip)"
+    } else {
+        ", or InputResponse::Skip to close"
     };
     let pending_len = window.pending_triggers.len();
     EngineOutcome::AwaitingInput {
@@ -548,14 +547,12 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
 pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome {
     // Reaction windows are all-optional, so `Skip` always closes them. The
     // "forced abilities are mandatory" rule lives in the forced resolution
-    // run (its frame has `can_skip = false` — Axis-B T5b), not here.
+    // run (its frame is `window: None` — Axis-B T5b), not here.
     let removed = cx.state.continuations.remove(idx);
     let window_kind = removed
-        .as_window()
+        .as_resolution()
         .expect("close_reaction_window_at: removed frame must be a Resolution frame")
-        .window
-        .as_ref()
-        .map(|w| w.kind);
+        .kind();
 
     // A window (`Some`) emits `WindowClosed` and runs its kind-specific
     // continuation (e.g. MythosAfterDraws → mythos_phase_end). The forced
@@ -930,11 +927,9 @@ pub(super) fn check_play_card(
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
     let owner_is_active = state.active_investigator == Some(investigator);
-    let permissive_window = state.top_window().is_some_and(|w| {
-        w.window
-            .as_ref()
-            .is_some_and(|b| b.fast_actors.permits(investigator))
-    });
+    let permissive_window = state
+        .top_window()
+        .is_some_and(|w| w.fast_actors().is_some_and(|fa| fa.permits(investigator)));
     // Non-asset/non-event card types are filtered out by
     // `resolve_play_target` above, so `card_type` here is always one of
     // `Asset` or `Event`. The non-Fast arm collapses both into the
@@ -1046,11 +1041,9 @@ pub(super) fn check_activate_ability(
     // Fast abilities (action_cost == 0) may be used at any player window.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
-    let in_permissive_window = state.top_window().is_some_and(|w| {
-        w.window
-            .as_ref()
-            .is_some_and(|b| b.fast_actors.permits(investigator))
-    });
+    let in_permissive_window = state
+        .top_window()
+        .is_some_and(|w| w.fast_actors().is_some_and(|fa| fa.permits(investigator)));
     if action_cost > 0 {
         // Action-cost ability: requires Investigation phase + active investigator.
         if !active_during_investigation {

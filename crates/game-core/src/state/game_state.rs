@@ -418,15 +418,15 @@ pub enum Continuation {
 impl Continuation {
     /// The window payload if this frame is a [`Continuation::Resolution`].
     #[must_use]
-    pub fn as_window(&self) -> Option<&ResolutionFrame> {
+    pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
             Continuation::SkillTest => None,
         }
     }
 
-    /// Mutable counterpart to [`Self::as_window`].
-    pub fn as_window_mut(&mut self) -> Option<&mut ResolutionFrame> {
+    /// Mutable counterpart to [`Self::as_resolution`].
+    pub fn as_resolution_mut(&mut self) -> Option<&mut ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
             Continuation::SkillTest => None,
@@ -774,6 +774,13 @@ impl ResolutionFrame {
     pub fn fast_actors(&self) -> Option<&FastActorScope> {
         self.window.as_ref().map(|w| &w.fast_actors)
     }
+
+    /// Whether this is the forced-resolution run (mandatory, no window).
+    /// The complement of being a reaction / fast / framework window.
+    #[must_use]
+    pub fn is_forced(&self) -> bool {
+        self.window.is_none()
+    }
 }
 
 /// Discriminant of an open `ResolutionFrame`.
@@ -1069,7 +1076,7 @@ impl GameState {
         self.continuations
             .iter_mut()
             .rev()
-            .filter_map(Continuation::as_window_mut)
+            .filter_map(Continuation::as_resolution_mut)
             .find(|w| !w.pending_triggers.is_empty())
     }
 
@@ -1079,7 +1086,7 @@ impl GameState {
     fn windows(&self) -> impl DoubleEndedIterator<Item = &ResolutionFrame> {
         self.continuations
             .iter()
-            .filter_map(Continuation::as_window)
+            .filter_map(Continuation::as_resolution)
     }
 
     /// The open windows as a `Vec` of references, in stack order. Read
@@ -1119,7 +1126,7 @@ impl GameState {
     #[must_use]
     pub fn top_reaction_window_index(&self) -> Option<usize> {
         self.continuations.iter().rposition(|c| {
-            c.as_window()
+            c.as_resolution()
                 .is_some_and(|w| !w.pending_triggers.is_empty())
         })
     }
