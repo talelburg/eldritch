@@ -30,7 +30,7 @@ fn install() {
 
 /// The Gathering set up + solo Roland seated and past the mulligan, ready
 /// to act in the Investigation phase. Determinism stand-in: the random
-/// Standard bag (which contains AutoFail) is replaced with a single-token
+/// Standard bag (which contains `AutoFail`) is replaced with a single-token
 /// `Numeric(0)` bag so skill tests resolve predictably.
 fn seated_roland() -> GameState {
     install();
@@ -140,7 +140,7 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
 }
 
 /// Won via the real defeat→advance→win latch. Drive act 1 for real
-/// (investigate the Study twice → AdvanceAct), then take the documented
+/// (investigate the Study twice → `AdvanceAct`), then take the documented
 /// act-2 fallback (the Hallway has 0 clues, so its round-end clue-spend has
 /// no local source): seed the act deck to the terminal act and place the
 /// Ghoul Priest one hit from death, then drive the defeating Fight. The win
