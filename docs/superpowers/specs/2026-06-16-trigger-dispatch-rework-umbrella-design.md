@@ -200,9 +200,16 @@ effect is itself a choice; depth 4).
    reentrancy caveat both dissolve out of this.**
 
 6. **Before-timing dispatch** (fire around the event, before its impact) is part
-   of the `emit_event` *signature* (it carries timing), but the Before-*firing*
-   wiring lands with its first consumer (Axis D) — no speculative code. After-
-   timing is today's path.
+   of the `emit_event` *signature* (it carries timing). Before-timing is **not
+   speculative — it already exists**: Cover Up 01007's `[reaction] When you would
+   discover 1 or more clues … discard that many from Cover Up instead`
+   (`EventPattern::WouldDiscoverClues`, `EventTiming::Before`) is a Before-timing
+   *replacement* reaction, currently implemented as a card-local seam at the
+   `discover_clue` chokepoint (`clue_interrupt_pending`; C5a explicitly scoped it
+   as "not a general before-timing subsystem … a future before-timing interrupt
+   reuses this seam"). The general Before-*firing* wiring through `emit_event`
+   lands with Axis D, which **absorbs the `clue_interrupt` seam** as its second
+   consumer (see §4 D). After-timing is today's path.
 
 ## §3 — the choice / input contract (shared)
 
@@ -267,12 +274,20 @@ effect is itself a choice; depth 4).
   player window") conflates reaction windows with player windows; Axis C tightens
   it to the pattern-matched predicate rather than inheriting the blanket.
 
-- **Axis D (cancellation)** — §2's **Before-timing dispatch** plus a
-  **cancel/replacement signal**: a fired Before-reaction returns a "cancel"
-  result the emitting site honors (skips the impact). The umbrella's only
-  obligation is that `emit_event`'s Before-phase can carry a cancel result back
-  to the call site; where the cancel window opens and how the parked attack is
-  discarded is the Axis-D spec.
+- **Axis D (cancellation / replacement)** — §2's **Before-timing dispatch** plus
+  a **cancel/replacement signal**: a fired Before-reaction returns a result the
+  emitting site honors (skips or replaces the impact). **Cancel is the degenerate
+  case of replacement** ("replace with nothing"), so Cover Up 01007 ("discover
+  clues → discard from Cover Up *instead*") and Dodge 01023 ("an enemy attacks →
+  *cancel* that attack") are the same family. Axis D generalizes both and **folds
+  in Cover Up's card-local `clue_interrupt` seam** (an existing consumer that
+  validates the general design — not a greenfield subsystem). The umbrella's only
+  obligation is that `emit_event`'s Before-phase can carry a cancel/replacement
+  result back to the call site; where the window opens, how the parked attack is
+  discarded, and the seam migration are the Axis-D spec. **Worked dependency:** the
+  `WouldDiscoverClues` interrupt + `discover_clue` reentrancy that C5a built
+  bounded to "terminal-position discovery" is the concrete thing Axis D
+  generalizes; revisit that bound here.
 
 ## §5 — decomposition, sequencing, card readiness
 
