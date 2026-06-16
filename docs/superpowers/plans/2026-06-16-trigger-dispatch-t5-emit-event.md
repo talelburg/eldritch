@@ -111,15 +111,18 @@ preserving event order. (T5b revisits forced *resolution* order, not the queue.)
   assert the engine surfaces a choice (lead investigator orders the two) rather
   than resolving in fixed order. (Integration test with the real registry.)
 
-- [ ] **Step 2: The forced run as a parameterized resolution loop.** Per the
-  Axis-B spec "One loop, two phases": the forced phase reuses the shared
-  iterative loop with `can_skip=false`, `decider=Lead`, candidates = the
-  collected forced hits. Resolve one (lead-chosen when 2+) → re-collect → repeat.
-  Carry loop state in a `Continuation` frame so a forced hit whose effect
-  suspends (Frozen in Fear's `EndOfTurn` test) parks and resumes the remaining
-  hits — **reentrancy**. Decide here: extend the `Resolution` frame with the loop
-  params, vs. a dedicated `ForcedOrdering` frame (record the choice in the spec's
-  Decisions).
+- [ ] **Step 2: The forced run as the *shared* parameterized resolution loop.**
+  Per the already-settled "One loop, two phases" decision (umbrella §1 + Axis-B
+  spec — we explicitly rejected a separate `ForcedOrdering` frame when
+  consolidating forced + reaction ordering): the forced phase is the **same
+  `Continuation::Resolution` loop** as the reaction window, run with
+  `can_skip=false`, `decider=Lead`, candidates = the collected forced hits.
+  So T5b's work is to **generalize the existing `Resolution` frame** (today it
+  wraps an `OpenWindow` — the reaction run) to carry the loop params
+  (`can_skip` / `decider` / candidate source), then drive a forced run through
+  it. Resolve one (lead-chosen when 2+) → re-collect → repeat; a forced hit whose
+  effect suspends (Frozen in Fear's `EndOfTurn` test) parks the frame and resumes
+  the remaining hits — **reentrancy**. No new frame variant.
 
 - [ ] **Step 3: Reentrancy test** — Frozen in Fear `EndOfTurn` forced effect
   suspends on its willpower test; after the test resolves, dispatch continues /
