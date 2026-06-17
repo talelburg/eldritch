@@ -17,7 +17,9 @@
 //! discards the asset automatically when the last supply is spent.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated, choose_one, heal, Ability, Cost, HarmKind, InvestigatorTarget};
+use card_dsl::dsl::{
+    activated, choose_one, heal_damage, heal_horror, Ability, Cost, InvestigatorTarget,
+};
 
 /// `ArkhamDB` code for First Aid (original-Core printing).
 pub const CODE: &str = "01019";
@@ -32,16 +34,8 @@ pub fn abilities() -> Vec<Ability> {
             count: 1,
         }],
         choose_one([
-            heal(
-                HarmKind::Damage,
-                InvestigatorTarget::chosen_at_your_location(),
-                1,
-            ),
-            heal(
-                HarmKind::Horror,
-                InvestigatorTarget::chosen_at_your_location(),
-                1,
-            ),
+            heal_damage(InvestigatorTarget::chosen_at_your_location(), 1),
+            heal_horror(InvestigatorTarget::chosen_at_your_location(), 1),
         ]),
     )]
 }
@@ -70,12 +64,12 @@ mod tests {
         let expected_target = InvestigatorTarget::chosen_at_your_location();
         assert_eq!(
             branches[0],
-            heal(HarmKind::Damage, expected_target, 1),
+            heal_damage(expected_target, 1),
             "branch 0 heals 1 damage from an investigator at your location",
         );
         assert_eq!(
             branches[1],
-            heal(HarmKind::Horror, expected_target, 1),
+            heal_horror(expected_target, 1),
             "branch 1 heals 1 horror from an investigator at your location",
         );
     }

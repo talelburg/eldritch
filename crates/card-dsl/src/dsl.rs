@@ -1179,6 +1179,28 @@ pub fn heal(kind: HarmKind, target: InvestigatorTarget, count: u8) -> Effect {
     }
 }
 
+/// Build an [`Effect::Heal`] healing `count` damage from `target` (the
+/// healing analogue of [`deal_damage`]).
+#[must_use]
+pub fn heal_damage(target: InvestigatorTarget, count: u8) -> Effect {
+    Effect::Heal {
+        kind: HarmKind::Damage,
+        target,
+        count,
+    }
+}
+
+/// Build an [`Effect::Heal`] healing `count` horror from `target` (the
+/// healing analogue of [`deal_horror`]).
+#[must_use]
+pub fn heal_horror(target: InvestigatorTarget, count: u8) -> Effect {
+    Effect::Heal {
+        kind: HarmKind::Horror,
+        target,
+        count,
+    }
+}
+
 /// Build an [`Effect::Deal`] dealing `amount` horror to `target`.
 #[must_use]
 pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
