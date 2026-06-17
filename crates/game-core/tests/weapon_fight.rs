@@ -45,6 +45,7 @@ fn weapon_metadata() -> CardMetadata {
             uses: Some(Uses {
                 kind: UseKind::Ammo,
                 count: 4,
+                discard_when_empty: false,
             }),
         },
     }

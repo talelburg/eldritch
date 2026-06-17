@@ -4,7 +4,7 @@
 
 use std::sync::OnceLock;
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot};
+use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use game_core::dsl::{
     activated, deal_damage_to_enemy, gain_resources, Ability, Cost, EnemyTarget, InvestigatorTarget,
 };
@@ -21,6 +21,22 @@ use game_core::{assert_event, Action, PlayerAction};
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
 const COMBO: &str = "CMBO1";
+const KIT: &str = "KIT01"; // Uses (1 supply), discard_when_empty: true
+const KIT_NODISC: &str = "KIT02"; // Uses (1 supply), discard_when_empty: false
+
+/// A 1-supply asset with the given depletion-discard flag, and a
+/// `[fast] Spend 1 supply: gain 1 resource` ability.
+fn kit_metadata(code: &str, name: &str, discard_when_empty: bool) -> CardMetadata {
+    let mut m = asset_metadata(code, name, "[fast] Spend 1 supply: gain 1 resource.");
+    if let CardKind::Asset { uses, .. } = &mut m.kind {
+        *uses = Some(Uses {
+            kind: UseKind::Supplies,
+            count: 1,
+            discard_when_empty,
+        });
+    }
+    m
+}
 
 fn asset_metadata(code: &str, name: &str, text: &str) -> CardMetadata {
     CardMetadata {
@@ -65,11 +81,23 @@ fn combo_static() -> &'static CardMetadata {
     M.get_or_init(|| asset_metadata(COMBO, "Mock Combo", "[fast] Exhaust, Discard: gain 1."))
 }
 
+fn kit_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(|| kit_metadata(KIT, "Mock Kit", true))
+}
+
+fn kit_nodisc_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(|| kit_metadata(KIT_NODISC, "Mock Kit (stays)", false))
+}
+
 fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     match code.as_str() {
         TRINKET => Some(trinket_static()),
         COP => Some(cop_static()),
         COMBO => Some(combo_static()),
+        KIT => Some(kit_static()),
+        KIT_NODISC => Some(kit_nodisc_static()),
         _ => None,
     }
 }
@@ -92,6 +120,16 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         COMBO => Some(vec![activated(
             0,
             vec![Cost::DiscardSelf, Cost::Exhaust],
+            gain_resources(InvestigatorTarget::You, 1),
+        )]),
+        // [fast] Spend 1 supply: gain 1 resource (both kits share the ability;
+        // they differ only in the metadata discard_when_empty flag).
+        KIT | KIT_NODISC => Some(vec![activated(
+            0,
+            vec![Cost::SpendUses {
+                kind: UseKind::Supplies,
+                count: 1,
+            }],
             gain_resources(InvestigatorTarget::You, 1),
         )]),
         _ => None,
@@ -235,4 +273,62 @@ fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
         "source discarded",
     );
     assert_eq!(result.state.enemies[&EnemyId(100)].damage, 1);
+}
+
+/// Build a board with a 1-supply `code` asset in play (instance 0, seeded pool).
+fn board_with_kit(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+    install_mock_registry();
+    let id = InvestigatorId(1);
+    let inst = CardInstanceId(0);
+    let mut inv = test_investigator(1);
+    let mut kit = CardInPlay::enter_play(CardCode::new(code), inst);
+    kit.uses.insert(UseKind::Supplies, 1);
+    inv.cards_in_play.push(kit);
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(id)
+        .with_investigator(inv)
+        .build();
+    (state, id, inst)
+}
+
+#[test]
+fn spending_last_use_discards_a_discard_when_empty_asset() {
+    let (state, id, inst) = board_with_kit(KIT);
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id: inst,
+            ability_index: 0,
+        }),
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(
+        result.state.investigators[&id].cards_in_play.is_empty(),
+        "depleted discard_when_empty asset discarded",
+    );
+    assert_eq!(
+        result.state.investigators[&id].discard,
+        vec![CardCode::new(KIT)]
+    );
+}
+
+#[test]
+fn spending_last_use_keeps_a_non_discarding_asset_in_play() {
+    let (state, id, inst) = board_with_kit(KIT_NODISC);
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id: inst,
+            ability_index: 0,
+        }),
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_eq!(
+        result.state.investigators[&id].cards_in_play.len(),
+        1,
+        "non-discarding asset stays at 0 uses",
+    );
 }

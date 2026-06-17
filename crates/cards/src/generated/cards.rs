@@ -69,7 +69,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Roland Banks deck only.\nUses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack (if there are 1 or more clues on your location, you get +3 [combat], instead). This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: Some(Uses { kind: UseKind::Ammo, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "01007".to_owned(),
@@ -149,7 +149,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "01017".to_owned(),
@@ -173,7 +173,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned(), "Science".to_owned()],
             text: Some("Uses (3 supplies). If First Aid has no supplies, discard it.\n[action] Spend 1 supply: Heal 1 damage or horror from an investigator at your location.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: true }) },
         },
         CardMetadata {
             code: "01020".to_owned(),
@@ -253,7 +253,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (2 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] for this attack. Instead of its standard damage, this attack deals 1 damage for each point you succeed by (to a minimum of 1, to a maximum of 5). If you fail and would damage another investigator, this attack deals 1 damage for each point you fail by (to a minimum of 1, to a maximum of 5).".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 2 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 2, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "01030".to_owned(),
@@ -397,7 +397,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +2 [combat] for this attack. If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "01048".to_owned(),
@@ -485,7 +485,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Uses (4 secrets). If Forbidden Knowledge has no secrets, discard it.\n[fast] Exhaust Forbidden Knowledge and take 1 horror: Move 1 secret from Forbidden Knowledge to your resource pool, as a resource.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(0), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Secrets, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(0), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Secrets, count: 4, discard_when_empty: true }) },
         },
         CardMetadata {
             code: "01059".to_owned(),
@@ -501,7 +501,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat] and deals +1 damage. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "01061".to_owned(),
@@ -509,7 +509,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Exhaust Scrying and spend 1 charge: Look at the top 3 cards of any investigator's deck or the encounter deck. Return them to the top of that deck in any order.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "01062".to_owned(),
@@ -589,7 +589,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Uses (4 charges). If Grotesque Statue has no charges, discard it.\n[reaction] When you would reveal a chaos token, spend 1 charge: Reveal 2 chaos tokens instead of 1. Choose 1 of those tokens to resolve, and ignore the other.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(4), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(4), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: true }) },
         },
         CardMetadata {
             code: "01072".to_owned(),
@@ -717,7 +717,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned()],
             text: Some("Uses (3 supplies).\n[action] Spend 1 supply: <b>Investigate.</b> Your location gets -2 shroud for this investigation.".to_owned()),
             pack_code: "core".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "01088".to_owned(),
@@ -1653,7 +1653,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (4 supplies).\n[action] Spend 1 supply: Choose an investigator at your location to heal 1 horror. Then, that investigator tests [willpower] (2). If the test succeeds, he or she heals 1 additional horror. If the test fails, he or she discards 1 card at random from his or her hand.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02025".to_owned(),
@@ -1685,7 +1685,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: <b>Investigate.</b> Investigate using [willpower] instead of [intellect]. If you succeed, discover 1 additional clue at this location. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this test, after this test resolves lose all remaining actions and immediately end your turn.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02029".to_owned(),
@@ -1701,7 +1701,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: Heal 1 horror from an investigator at your location.".to_owned()),
             pack_code: "dwl".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02031".to_owned(),
@@ -2341,7 +2341,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Song".to_owned()],
             text: Some("Uses (5 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +1 [willpower] for this attack. If a [skull] symbol is revealed during this attack, this attack deals +2 damage.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(2), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 5 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(2), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 5, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02113".to_owned(),
@@ -2373,7 +2373,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Uses (3 supplies).\n[fast] Spend 1 supply, exhaust Smoking Pipe, and take 1 damage: Heal 1 horror.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02117".to_owned(),
@@ -2381,7 +2381,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Uses (3 supplies).\n[fast] Spend 1 supply, exhaust Painkillers, and take 1 horror: Heal 1 damage.".to_owned()),
             pack_code: "tmm".to_owned(),
-            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02119".to_owned(),
@@ -2669,7 +2669,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend one charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +2 [willpower] and deal +1 damage for this attack. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 1 horror. ".to_owned()),
             pack_code: "tece".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02155".to_owned(),
@@ -3229,7 +3229,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] and deal +2 damage for this attack. Cannot be used to attack enemies engaged with you.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02227".to_owned(),
@@ -3285,7 +3285,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: <b>Investigate.</b> Investigate using [willpower] instead of [intellect]. You get +2 [willpower] for this test. If successful, you discover 2 additional clues at this location. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this test, after this test resolves lose all remaining actions and immediately end your turn.".to_owned()),
             pack_code: "uau".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(5), xp: Some(4), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(5), xp: Some(4), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02234".to_owned(),
@@ -3509,7 +3509,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (4 supplies).\n[action] Spend 1 supply: Heal 2 damage from an investigator at your location.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02263".to_owned(),
@@ -3517,7 +3517,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (3 supplies).\n[action] Spend 1 supply: <b>Fight.</b> Attack with a base [combat] skill of 6. This attack deals +2 damage.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02264".to_owned(),
@@ -3525,7 +3525,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (4 supplies).\n[action] Spend 1 supply: <b>Evade.</b> Evade with a base [agility] skill of 6.".to_owned()),
             pack_code: "wda".to_owned(),
-            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02265".to_owned(),
@@ -3813,7 +3813,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +5 [combat] for this attack. This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3 }) },
+            kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02302".to_owned(),
@@ -3837,7 +3837,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You may spend any number of additional actions when you perform this attack. You get +2 [combat] for this attack for each action being spent (including this ability's [action] cost). This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02305".to_owned(),
@@ -3853,7 +3853,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +3 [willpower] and deal +2 damage for this attack. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 2 horror.".to_owned()),
             pack_code: "litas".to_owned(),
-            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(5), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4 }) },
+            kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(5), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }) },
         },
         CardMetadata {
             code: "02307".to_owned(),

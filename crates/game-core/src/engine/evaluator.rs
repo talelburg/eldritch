@@ -58,8 +58,8 @@
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Condition, Effect, EnemyTarget, IntExpr, InvestigatorTarget, LocationTarget, ModifierScope,
-    SkillTestKind, Stat, Trigger,
+    Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
+    ModifierScope, SkillTestKind, Stat, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -279,6 +279,11 @@ fn apply_effect_inner(
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
         }
+        Effect::Heal {
+            kind,
+            target,
+            count,
+        } => heal_effect(cx, eval_ctx, *kind, *target, *count),
         Effect::Seq(effects) => apply_seq(cx, effects, eval_ctx, cursor),
         Effect::Modify { stat, delta, scope } => modify(cx, eval_ctx, *stat, *delta, *scope),
         Effect::If {
@@ -957,6 +962,48 @@ fn deal_damage_to_enemy_effect(
     EngineOutcome::Done
 }
 
+/// Resolve [`Effect::Heal`]: ground the chosen investigator and reduce its
+/// `damage`/`horror` by `count`, saturating at 0. Emits [`Event::Healed`] only
+/// when something was healed. `count == 0` (or nothing to heal) is a no-op.
+fn heal_effect(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    kind: HarmKind,
+    target: InvestigatorTarget,
+    count: u8,
+) -> EngineOutcome {
+    if count == 0 {
+        return EngineOutcome::Done;
+    }
+    let id = match resolve_investigator_target(cx.state, eval_ctx, target) {
+        Ok(i) => i,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    let Some(inv) = cx.state.investigators.get_mut(&id) else {
+        return EngineOutcome::Rejected {
+            reason: format!("Heal: investigator {id:?} is not in the state").into(),
+        };
+    };
+    let current = match kind {
+        HarmKind::Damage => &mut inv.damage,
+        HarmKind::Horror => &mut inv.horror,
+    };
+    let healed = (*current).min(count);
+    *current -= healed;
+    if healed > 0 {
+        cx.events.push(Event::Healed {
+            investigator: id,
+            kind,
+            amount: healed,
+        });
+    }
+    EngineOutcome::Done
+}
+
 fn deal_horror_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
@@ -1139,6 +1186,7 @@ fn ground_chosen_targets(
         Effect::GainResources { target, .. }
         | Effect::DealDamage { target, .. }
         | Effect::DealHorror { target, .. }
+        | Effect::Heal { target, .. }
         | Effect::DrawCards { target, .. } => Some(target),
         _ => None,
     };
@@ -1729,9 +1777,9 @@ mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
         boost_attack_damage, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_clue, draw_cards, for_each_point_failed, gain_resources, modify, on_play, seq,
-        Ability, Choose, Effect, EnemyTarget, InvestigatorTarget, LocationSet, LocationTarget,
-        ModifierScope, SkillTestKind, Stat,
+        discover_clue, draw_cards, for_each_point_failed, gain_resources, heal, modify, on_play,
+        seq, Ability, Choose, Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet,
+        LocationTarget, ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
@@ -3084,6 +3132,126 @@ mod tests {
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
         assert!(state.continuations.is_empty());
+    }
+
+    #[test]
+    fn heal_reduces_horror_saturating_and_emits_event() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .horror = 1;
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            // heal 2 from a 1-horror investigator → saturates to 0, amount 1.
+            &heal(HarmKind::Horror, InvestigatorTarget::You, 2),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+        assert_event!(
+            events,
+            Event::Healed {
+                investigator: InvestigatorId(1),
+                kind: HarmKind::Horror,
+                amount: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn heal_target_chosen_at_your_location_auto_binds() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(test_location(1, "A"))
+            .with_location(test_location(2, "B"))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .current_location = Some(LocationId(2));
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .damage = 2;
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &heal(
+                HarmKind::Damage,
+                InvestigatorTarget::chosen_at_your_location(),
+                1,
+            ),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].damage,
+            1,
+            "sole co-located target healed"
+        );
+        assert!(state.continuations.is_empty());
+    }
+
+    #[test]
+    fn heal_target_chosen_suspends_when_two_are_co_located() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(test_location(1, "A"))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &heal(
+                HarmKind::Damage,
+                InvestigatorTarget::chosen_at_your_location(),
+                1,
+            ),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        match state.continuations.last() {
+            Some(crate::state::Continuation::Choice(frame)) => {
+                assert_eq!(
+                    frame.offered.len(),
+                    2,
+                    "two co-located heal targets offered"
+                );
+            }
+            other => panic!("expected a Choice frame, got {other:?}"),
+        }
     }
 
     // ---- constant-modifier query tests --------------------------

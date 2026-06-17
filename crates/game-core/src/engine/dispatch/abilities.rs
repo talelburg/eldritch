@@ -159,47 +159,76 @@ fn pay_activation_costs(
                     .cards_in_play[in_play_pos];
                 let remaining = card.uses.entry(*kind).or_insert(0);
                 *remaining = remaining.saturating_sub(*count);
+                let depleted = *remaining == 0;
                 cx.events.push(Event::UsesSpent {
                     investigator,
                     instance_id,
                     kind: *kind,
                     amount: *count,
                 });
+                // Uses-depletion auto-discard (First Aid 01019). TODO(#353):
+                // rules-precise timing is post-ability-resolution, and
+                // effect-depletion cards (Forbidden Knowledge 01058, Grotesque
+                // Statue 01071) need the check relocated there. For First Aid
+                // (depletes via this cost) the SpendUses arm is observationally
+                // correct.
+                //
+                // HAZARD (TODO(#353)): like `Cost::DiscardSelf`, this removes the
+                // source mid-payment, invalidating the cached `in_play_pos` —
+                // any *later* source-referencing cost in this `costs` loop would
+                // index a shifted `cards_in_play`. Safe in scope: no in-scope
+                // `discard_when_empty` card pairs `SpendUses` with a later such
+                // cost, and `reject_incompatible_costs` doesn't yet know about
+                // depletion. The #353 relocation to post-resolution dissolves it;
+                // until then a new depleting card must keep `SpendUses` last.
+                let discards_when_empty = card_registry::current()
+                    .and_then(|r| (r.metadata_for)(source_code))
+                    .and_then(|m| match m.kind {
+                        crate::card_data::CardKind::Asset { uses, .. } => uses,
+                        _ => None,
+                    })
+                    .is_some_and(|u| u.discard_when_empty && u.kind == *kind);
+                if depleted && discards_when_empty {
+                    discard_card_from_play(cx, investigator, instance_id);
+                }
             }
-            Cost::DiscardSelf => {
-                let inv_mut = cx
-                    .state
-                    .investigators
-                    .get_mut(&investigator)
-                    .expect("validated above");
-                // Look up by instance_id (robust if an earlier cost shifted positions).
-                // `check_activate_ability` located the source in `cards_in_play`, and
-                // the DiscardSelf-combo guard rejects any co-payable cost that could
-                // have removed it, so the source is always present here — a miss is a
-                // state-corruption invariant violation, not a free ability.
-                let pos = inv_mut
-                    .cards_in_play
-                    .iter()
-                    .position(|c| c.instance_id == instance_id)
-                    .unwrap_or_else(|| {
-                        unreachable!(
-                            "Cost::DiscardSelf: source {instance_id:?} was located by \
-                             check_activate_ability but vanished before payment"
-                        )
-                    });
-                let card = inv_mut.cards_in_play.remove(pos);
-                inv_mut.discard.push(card.code.clone());
-                cx.events.push(Event::CardDiscarded {
-                    investigator,
-                    code: card.code,
-                    from: crate::state::Zone::InPlay,
-                });
-            }
+            Cost::DiscardSelf => discard_card_from_play(cx, investigator, instance_id),
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
             }
         }
     }
+}
+
+/// Discard `instance_id` from `investigator`'s `cards_in_play` to their discard
+/// pile, emitting [`Event::CardDiscarded`] `{ from: InPlay }`. Shared by
+/// [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf) payment and
+/// uses-depletion auto-discard. A missing instance is a state-corruption
+/// invariant violation (callers locate it first).
+pub(super) fn discard_card_from_play(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+) {
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("discard_card_from_play: investigator present");
+    let pos = inv
+        .cards_in_play
+        .iter()
+        .position(|c| c.instance_id == instance_id)
+        .unwrap_or_else(|| {
+            unreachable!("discard_card_from_play: instance {instance_id:?} not in cards_in_play")
+        });
+    let card = inv.cards_in_play.remove(pos);
+    inv.discard.push(card.code.clone());
+    cx.events.push(Event::CardDiscarded {
+        investigator,
+        code: card.code,
+        from: crate::state::Zone::InPlay,
+    });
 }
 
 /// Resolve the activated ability at `(code, ability_index)` from the
