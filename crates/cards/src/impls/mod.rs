@@ -77,6 +77,7 @@ pub mod guard_dog;
 pub mod guts;
 pub mod holy_rosary;
 pub mod hyperawareness;
+pub mod knife;
 pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
@@ -120,6 +121,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         guts::CODE => Some(guts::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
+        knife::CODE => Some(knife::abilities()),
         machete::CODE => Some(machete::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         manual_dexterity::CODE => Some(manual_dexterity::abilities()),
