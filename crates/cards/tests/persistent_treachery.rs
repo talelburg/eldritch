@@ -332,6 +332,66 @@ fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
 }
 
 #[test]
+fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
+    // #213 reentrancy: two Frozen in Fear copies on one investigator fire two
+    // simultaneous `EndOfTurn` forced abilities, each a *suspending* willpower
+    // test. The lead orders them; firing the first suspends on its commit
+    // window, and once it resolves the forced run resumes the second sibling —
+    // rather than abandoning it. After both resolve, the end-of-turn tail runs
+    // (rotation to the next investigator).
+    install_registry();
+
+    let mut inv1 = test_investigator(1);
+    inv1.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01164"),
+        CardInstanceId(0),
+    ));
+    inv1.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01164"),
+        CardInstanceId(1),
+    ));
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv1)
+        .with_investigator(test_investigator(2))
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        .build();
+    // Two Numeric(0) draws → willpower 3 vs difficulty 3 → both succeed.
+    state.chaos_bag.tokens = vec![ChaosToken::Numeric(0), ChaosToken::Numeric(0)];
+
+    // Order the first forced, commit nothing to its test; order the second,
+    // commit nothing to its test.
+    let mut resolver = ScriptedResolver::new();
+    resolver.pick(0).commit_cards(&[]).pick(0).commit_cards(&[]);
+    let r = drive(state, Action::Player(PlayerAction::EndTurn), resolver);
+
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(
+        r.state.investigators[&InvestigatorId(1)]
+            .threat_area
+            .is_empty(),
+        "both succeeded willpower tests discard both Frozen in Fear copies",
+    );
+    assert_eq!(
+        r.state
+            .encounter_discard
+            .iter()
+            .filter(|c| **c == CardCode::new("01164"))
+            .count(),
+        2,
+        "both copies land in the encounter discard",
+    );
+    // Neither sibling was abandoned, and the end-of-turn tail still ran:
+    assert_eq!(
+        r.state.active_investigator,
+        Some(InvestigatorId(2)),
+        "end_turn resumed after both tests and rotated to investigator 2",
+    );
+    assert!(r.state.pending_end_turn.is_none());
+}
+
+#[test]
 fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
     install_registry();
 

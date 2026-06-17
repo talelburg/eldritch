@@ -355,12 +355,26 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     match response {
         InputResponse::CommitCards { indices } => {
             let outcome = skill_test::finish_skill_test(cx, indices);
-            // If the resolved test was a suspending `EndOfTurn` forced
-            // effect (Frozen in Fear 01164), `end_turn` was stranded before
-            // rotation; resume it now that the test is fully done (C4c,
-            // #235). Only on `Done` — an `AwaitingInput` mid-teardown leaves
-            // `pending_end_turn` set for the next resume.
             if matches!(outcome, EngineOutcome::Done) {
+                // The resolved test was a sibling fired by a forced run (2+
+                // simultaneous `EndOfTurn` forced — two Frozen in Fear copies,
+                // #213). The run's frame is now back on top; re-enter it to
+                // fire the remaining siblings, or close it (running its
+                // continuation, e.g. end-of-turn rotation). Checked before
+                // `pending_end_turn`: a forced run owns its own post-run
+                // continuation and never sets `pending_end_turn`.
+                if matches!(
+                    cx.state.continuations.last(),
+                    Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
+                ) {
+                    let idx = cx.state.continuations.len() - 1;
+                    return reaction_windows::advance_resolution(cx, idx);
+                }
+                // Otherwise: a single suspending `EndOfTurn` forced effect
+                // (one Frozen in Fear) stranded `end_turn` before rotation;
+                // resume it now that the test is fully done (C4c, #235). An
+                // `AwaitingInput` mid-teardown leaves `pending_end_turn` set
+                // for the next resume.
                 if let Some(active_id) = cx.state.pending_end_turn.take() {
                     return phases::resume_end_turn(cx, active_id);
                 }

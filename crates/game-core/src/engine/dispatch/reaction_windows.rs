@@ -439,28 +439,54 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         eval_ctx.attacking_enemy = Some(enemy);
     }
     let usage_limit = ability.usage_limit;
+
+    // Drop the fired entry *before* resolving its effect: if the effect
+    // suspends (a forced ability that initiates a skill test — Frozen in
+    // Fear 01164), the entry must already be consumed so the resume drives
+    // the *remaining* siblings, not this one again. `apply_effect` does not
+    // push/pop continuations, so `window_idx` stays valid across it.
+    {
+        let window = cx.state.continuations[window_idx]
+            .as_resolution_mut()
+            .expect("fire_pending_trigger: window_idx is a Resolution frame");
+        window.pending_triggers.remove(pending_idx);
+    }
+
     let result = apply_effect(cx, &ability.effect, eval_ctx);
-    if let EngineOutcome::Rejected { reason } = result {
-        // Card-impl bugs surface loudly — same policy as
-        // `fire_on_skill_test_resolution`.
-        unreachable!("OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}");
+    match result {
+        EngineOutcome::Rejected { reason } => {
+            // Card-impl bugs surface loudly — same policy as
+            // `fire_on_skill_test_resolution`.
+            unreachable!(
+                "OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}"
+            );
+        }
+        // The effect suspended (it started a skill test, pushing a `SkillTest`
+        // frame above this run's frame). Park: the run's frame stays with its
+        // remaining siblings, and `advance_resolution` re-enters it once the
+        // nested test resolves (Axis-B T5b reentrancy). In-scope suspending
+        // forced effects (Frozen in Fear) carry no usage limit, so skipping
+        // the bump here is correct for the current pool.
+        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
+        EngineOutcome::Done => {
+            if usage_limit.is_some() {
+                bump_usage_counter(cx.state, &trigger);
+            }
+            advance_resolution(cx, window_idx)
+        }
     }
+}
 
-    if usage_limit.is_some() {
-        bump_usage_counter(cx.state, &trigger);
-    }
-
-    // Drop the fired entry now that resolution succeeded. The window
-    // we drove sits at `window_idx` — apply_effect does not push or
-    // pop `open_windows` entries, so the index remains valid.
+/// Advance a resolution run after one of its candidates resolved: close it
+/// (running its continuation) when none remain, else re-emit the pick prompt.
+///
+/// Shared by [`fire_pending_trigger`]'s synchronous tail and the skill-test
+/// commit-resume path ([`super::resume_skill_test_commit`]) — the latter
+/// re-enters a forced run parked beneath a sibling's now-resolved skill test.
+pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcome {
     let window = cx.state.continuations[window_idx]
-        .as_resolution_mut()
-        .expect("fire_pending_trigger: window_idx is a Resolution frame");
-    window.pending_triggers.remove(pending_idx);
-
-    // If more triggers remain pending, re-emit AwaitingInput so the
-    // player can pick the next one. Otherwise the window closes
-    // automatically.
+        .as_resolution()
+        .expect("advance_resolution: window_idx is a Resolution frame");
     if window.pending_triggers.is_empty() {
         return close_reaction_window_at(cx, window_idx);
     }
@@ -789,6 +815,11 @@ fn resume_forced_continuation(cx: &mut Cx, continuation: ForcedContinuation) -> 
         // "Upkeep phase ends. Round ends." — run the upkeep step's tail
         // (act round-end advance window, then Upkeep→Mythos).
         ForcedContinuation::UpkeepAfterRoundEnded => super::phases::upkeep_after_round_ended(cx),
+        // End of turn — run the end-of-turn tail (rotate to the next active
+        // investigator, or end the Investigation phase).
+        ForcedContinuation::EndOfTurnAfterForced { investigator } => {
+            super::phases::resume_end_turn(cx, investigator)
+        }
     }
 }
 

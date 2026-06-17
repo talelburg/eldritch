@@ -220,12 +220,18 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // before the turn passes on.
     //
     // A forced effect that initiates a skill test suspends here
-    // (`AwaitingInput`), stranding `end_turn` before rotation. Record the
-    // active investigator in `pending_end_turn` so the skill-test
-    // commit-resume path re-enters [`resume_end_turn`] once the test
-    // resolves (C4c, #235 — mirrors `spawn_engage_pending`). A single
-    // suspending hit is handled; 2+ simultaneous suspends are #212/#213
-    // reentrancy work. A `Rejected` propagates as-is.
+    // (`AwaitingInput`), stranding `end_turn` before rotation. Two cases:
+    //
+    // - **2+ simultaneous** `EndOfTurn` forced (two Frozen in Fear copies)
+    //   open a forced run (#213) that carries its own
+    //   `ForcedContinuation::EndOfTurnAfterForced` — it resumes rotation on
+    //   close, so `end_turn` must *not* also set `pending_end_turn`.
+    // - **a single** suspending hit has no run frame; record the active
+    //   investigator in `pending_end_turn` so the skill-test commit-resume
+    //   path re-enters [`resume_end_turn`] once the test resolves (C4c, #235
+    //   — mirrors `spawn_engage_pending`).
+    //
+    // A `Rejected` propagates as-is.
     let end_of_turn = super::emit::emit_event(
         cx,
         &super::emit::TimingEvent::EndOfTurn {
@@ -235,7 +241,13 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     match end_of_turn {
         EngineOutcome::Done => resume_end_turn(cx, active_id),
         EngineOutcome::AwaitingInput { .. } => {
-            cx.state.pending_end_turn = Some(active_id);
+            let forced_run_open = matches!(
+                cx.state.continuations.last(),
+                Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
+            );
+            if !forced_run_open {
+                cx.state.pending_end_turn = Some(active_id);
+            }
             end_of_turn
         }
         EngineOutcome::Rejected { .. } => end_of_turn,

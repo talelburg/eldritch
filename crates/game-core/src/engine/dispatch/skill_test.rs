@@ -293,8 +293,21 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 /// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
 pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
     loop {
-        if cx.state.top_reaction_window().is_some() {
-            return super::reaction_windows::open_queued_reaction_window(cx);
+        // Suspend only for a reaction window opened *during* this test — one
+        // pushed *above* this test's `SkillTest` frame. A Resolution frame
+        // *below* it is a forced run that fired this test as one of its
+        // candidates (#213 reentrancy: two Frozen in Fear copies); it must
+        // not be mistaken for a mid-test window — it resumes only once this
+        // test fully tears down (via `resume_skill_test_commit`).
+        let skill_test_pos = cx
+            .state
+            .continuations
+            .iter()
+            .rposition(|c| matches!(c, crate::state::Continuation::SkillTest));
+        if let Some(win_idx) = cx.state.top_reaction_window_index() {
+            if skill_test_pos.is_none_or(|st| win_idx > st) {
+                return super::reaction_windows::open_queued_reaction_window(cx);
+            }
         }
 
         let (continuation, investigator, indices_u8) = {

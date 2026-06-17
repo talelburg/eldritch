@@ -156,6 +156,14 @@ impl TimingEvent {
             // forced abilities resolve, the upkeep step opens the act
             // round-end advance window and steps the phase.
             TimingEvent::RoundEnded => Some(ForcedContinuation::UpkeepAfterRoundEnded),
+            // End of turn (RR p.24 2.2.2): after the turn-ending investigator's
+            // forced abilities resolve, rotate to the next active investigator
+            // or end the Investigation phase.
+            TimingEvent::EndOfTurn { investigator } => {
+                Some(ForcedContinuation::EndOfTurnAfterForced {
+                    investigator: *investigator,
+                })
+            }
             // Non-terminal sites with no wired resume continuation. None can
             // produce 2+ forced in the current card pool; if one ever does,
             // emit_event's 2+ branch fires its loud guard rather than
@@ -164,7 +172,6 @@ impl TimingEvent {
             | TimingEvent::ActAdvanced { .. }
             | TimingEvent::AgendaAdvanced { .. }
             | TimingEvent::EnemyDefeated { .. }
-            | TimingEvent::EndOfTurn { .. }
             | TimingEvent::GameEnd
             | TimingEvent::EnemyAttackDamagedSelf { .. } => None,
         }
