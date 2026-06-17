@@ -1045,7 +1045,9 @@ fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
 /// - **`DealDamageToEnemy`:** needs ≥1 enemy in the chosen scope (e.g. "at your
 ///   location"). ≥1 proceeds — 2+ suspends via the `Choose` resolver — so only
 ///   the empty case rejects here; this is why the effect is typed, not `Native`
-///   (Beat Cop can't pay its discard-self cost for no legal target).
+///   (Beat Cop can't pay its discard-self cost for no legal target). `amount` is
+///   not consulted (a degenerate `amount: 0` ability — none in scope — would
+///   still require a target here even though its handler is a no-op).
 fn check_effect_target_available(
     state: &GameState,
     investigator: InvestigatorId,

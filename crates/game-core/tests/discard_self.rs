@@ -20,6 +20,7 @@ use game_core::{assert_event, Action, PlayerAction};
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
+const COMBO: &str = "CMBO1";
 
 fn asset_metadata(code: &str, name: &str, text: &str) -> CardMetadata {
     CardMetadata {
@@ -59,10 +60,16 @@ fn cop_static() -> &'static CardMetadata {
     })
 }
 
+fn combo_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(|| asset_metadata(COMBO, "Mock Combo", "[fast] Exhaust, Discard: gain 1."))
+}
+
 fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     match code.as_str() {
         TRINKET => Some(trinket_static()),
         COP => Some(cop_static()),
+        COMBO => Some(combo_static()),
         _ => None,
     }
 }
@@ -80,6 +87,12 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             0,
             vec![Cost::DiscardSelf],
             deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+        )]),
+        // Illegal: DiscardSelf cannot combine with another source cost (Exhaust).
+        COMBO => Some(vec![activated(
+            0,
+            vec![Cost::DiscardSelf, Cost::Exhaust],
+            gain_resources(InvestigatorTarget::You, 1),
         )]),
         _ => None,
     }
@@ -172,6 +185,36 @@ fn discard_self_deal_damage_rejects_with_no_enemy_and_keeps_source_in_play() {
         result.state.investigators[&id].cards_in_play.len(),
         1,
         "rejected before paying ⇒ source NOT discarded",
+    );
+}
+
+#[test]
+fn discard_self_combined_with_exhaust_rejects_before_paying() {
+    install_mock_registry();
+    let id = InvestigatorId(1);
+    let inst = CardInstanceId(0);
+    let mut inv = test_investigator(1);
+    inv.cards_in_play
+        .push(CardInPlay::enter_play(CardCode::new(COMBO), inst));
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(id)
+        .with_investigator(inv)
+        .build();
+
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id: inst,
+            ability_index: 0,
+        }),
+    );
+    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    assert_eq!(
+        result.state.investigators[&id].cards_in_play.len(),
+        1,
+        "rejected combo ⇒ source untouched",
     );
 }
 
