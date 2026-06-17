@@ -126,15 +126,17 @@ when picked up.
   + [Axis-B foundation](../superpowers/specs/2026-06-16-trigger-dispatch-rework-axis-b-foundation-design.md)
   specs ([Axis-B plan](../superpowers/plans/2026-06-16-trigger-dispatch-axis-b-foundation.md)).
   Five axes: **B** trigger-dispatch spine (one continuation stack +
-  two-phase forced-then-reaction `emit_event` + #117 index; tasks
-  [#328](https://github.com/talelburg/eldritch/issues/328)–[#333](https://github.com/talelburg/eldritch/issues/333)).
-  **T1–T5 shipped** (#328–#332): the `emit_event` chokepoint + `TimingEvent`
-  closed #212; the iterative lead-ordered forced run + reentrancy + the
-  forced-before-reaction investigate collapse closed #213 (T5b, PR #343).
-  **T6** (#333 / #117 event-keyed index) is the remaining Axis-B task.
-  #294 was re-examined and **kept open** (its multi-soak-window state is
-  unconstructible in scope — see Decisions), not closed by Axis B. **A**
-  interactive choice
+  two-phase forced-then-reaction `emit_event`; tasks
+  [#328](https://github.com/talelburg/eldritch/issues/328)–[#332](https://github.com/talelburg/eldritch/issues/332)).
+  **Substantive work done** — T1–T5 (#328–#332) shipped: the `emit_event`
+  chokepoint + `TimingEvent` closed #212; the iterative lead-ordered forced
+  run + reentrancy + the forced-before-reaction investigate collapse closed
+  #213 (T5b, PR #343). The #117 **event-keyed trigger index is deferred** to
+  Phase 4+ (zero perf return at Slice-1 board sizes vs. real index-invariant
+  carrying cost; tracked in #117, plan recorded there) — its Axis-B task
+  wrapper #333 was closed as redundant. #294 was re-examined and **kept open**
+  (its multi-soak-window state is unconstructible in scope — see Decisions),
+  not closed by Axis B. **A** interactive choice
   ([#334](https://github.com/talelburg/eldritch/issues/334)), **C**
   reaction-event-play ([#335](https://github.com/talelburg/eldritch/issues/335)),
   **D** cancellation/replacement ([#336](https://github.com/talelburg/eldritch/issues/336)),
