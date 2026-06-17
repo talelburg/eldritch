@@ -1101,39 +1101,39 @@ fn ground_chosen_targets(
         | Effect::DrawCards { target, .. } => Some(target),
         _ => None,
     };
-    if matches!(inv_target, Some(InvestigatorTarget::Chosen(_)))
-        && eval_ctx.chosen_investigator.is_none()
-    {
-        return ground_investigator_choice(cx, eval_ctx, cursor);
+    if let Some(InvestigatorTarget::Chosen(choose)) = inv_target {
+        if eval_ctx.chosen_investigator.is_none() {
+            return ground_investigator_choice(cx, eval_ctx, cursor, choose.scope);
+        }
     }
 
-    if matches!(
-        effect,
-        Effect::DiscoverClue {
-            from: LocationTarget::Chosen(_),
-            ..
-        }
-    ) && eval_ctx.chosen_location.is_none()
+    if let Effect::DiscoverClue {
+        from: LocationTarget::Chosen(choose),
+        ..
+    } = effect
     {
-        return ground_location_choice(cx, eval_ctx, cursor);
+        if eval_ctx.chosen_location.is_none() {
+            return ground_location_choice(cx, eval_ctx, cursor, choose.scope);
+        }
     }
 
     Ok(eval_ctx)
 }
 
-/// Ground an `InvestigatorTarget::chosen_anywhere()`: candidates are all
-/// investigators (sorted `BTreeMap` order, so the `OptionId` index replays
-/// deterministically). Binds `chosen_investigator`, or suspends.
+/// Ground an `InvestigatorTarget::Chosen` against its [`EntityScope`]:
+/// candidates are the matching investigators in sorted `BTreeMap` order (so the
+/// `OptionId` index replays deterministically). Binds `chosen_investigator`, or
+/// suspends.
 fn ground_investigator_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     cursor: &mut DecisionCursor<'_>,
+    scope: crate::dsl::EntityScope,
 ) -> Result<EvalContext, EngineOutcome> {
     use crate::engine::dispatch::choice::{
         resolve_choice_count, suspend_for_choice, ChoiceResolution,
     };
-    let candidates: Vec<crate::state::InvestigatorId> =
-        cx.state.investigators.keys().copied().collect();
+    let candidates = investigator_candidates(cx.state, eval_ctx.controller, scope);
     let bind = |id| {
         let mut ctx = eval_ctx;
         ctx.chosen_investigator = Some(id);
@@ -1141,7 +1141,7 @@ fn ground_investigator_choice(
     };
     match resolve_choice_count(candidates.len()) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
-            reason: "Chosen: no investigator to choose".into(),
+            reason: "Chosen investigator: no candidate in scope".into(),
         }),
         ChoiceResolution::Auto(i) => bind(candidates[i]),
         ChoiceResolution::Suspend => {
@@ -1162,17 +1162,19 @@ fn ground_investigator_choice(
     }
 }
 
-/// Ground a `LocationTarget::chosen_anywhere()`: candidates are all locations
-/// (sorted `BTreeMap` order). Binds `chosen_location`, or suspends.
+/// Ground a `LocationTarget::Chosen` against its [`LocationSet`]: candidates are
+/// the matching locations in sorted `BTreeMap` order. Binds `chosen_location`,
+/// or suspends.
 fn ground_location_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     cursor: &mut DecisionCursor<'_>,
+    set: crate::dsl::LocationSet,
 ) -> Result<EvalContext, EngineOutcome> {
     use crate::engine::dispatch::choice::{
         resolve_choice_count, suspend_for_choice, ChoiceResolution,
     };
-    let candidates: Vec<crate::state::LocationId> = cx.state.locations.keys().copied().collect();
+    let candidates = location_candidates(cx.state, eval_ctx.controller, set);
     let bind = |id| {
         let mut ctx = eval_ctx;
         ctx.chosen_location = Some(id);
@@ -1180,7 +1182,7 @@ fn ground_location_choice(
     };
     match resolve_choice_count(candidates.len()) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
-            reason: "Chosen: no location to choose".into(),
+            reason: "Chosen location: no candidate in scope".into(),
         }),
         ChoiceResolution::Auto(i) => bind(candidates[i]),
         ChoiceResolution::Suspend => {
@@ -1198,6 +1200,54 @@ fn ground_location_choice(
                 ))
             }
         }
+    }
+}
+
+/// Investigators matching an [`EntityScope`](crate::dsl::EntityScope), in
+/// `BTreeMap` (id) order so the `OptionId` index replays deterministically.
+fn investigator_candidates(
+    state: &GameState,
+    controller: crate::state::InvestigatorId,
+    scope: crate::dsl::EntityScope,
+) -> Vec<crate::state::InvestigatorId> {
+    use crate::dsl::{EntityScope, LocationSet};
+    let EntityScope::At(set) = scope;
+    match set {
+        LocationSet::Anywhere => state.investigators.keys().copied().collect(),
+        LocationSet::Here => match state
+            .investigators
+            .get(&controller)
+            .and_then(|i| i.current_location)
+        {
+            Some(here) => state
+                .investigators
+                .iter()
+                .filter(|(_, inv)| inv.current_location == Some(here))
+                .map(|(id, _)| *id)
+                .collect(),
+            // controller is between locations ⇒ no "your location"
+            None => Vec::new(),
+        },
+    }
+}
+
+/// Locations matching a [`LocationSet`](crate::dsl::LocationSet), in `BTreeMap`
+/// (id) order.
+fn location_candidates(
+    state: &GameState,
+    controller: crate::state::InvestigatorId,
+    set: crate::dsl::LocationSet,
+) -> Vec<crate::state::LocationId> {
+    use crate::dsl::LocationSet;
+    match set {
+        LocationSet::Anywhere => state.locations.keys().copied().collect(),
+        // the singleton your-location, or empty when between locations
+        LocationSet::Here => state
+            .investigators
+            .get(&controller)
+            .and_then(|i| i.current_location)
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -2676,6 +2726,107 @@ mod tests {
             }
             other => panic!("expected a Choice frame, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn chosen_at_your_location_auto_binds_the_sole_co_located_investigator() {
+        // Investigator 1 (controller) and 2 are in play; only 1 is at the
+        // controller's location. `At(Here)` must offer only investigator 1 and
+        // auto-bind it (1 candidate ⇒ no suspend) — `Anywhere` would see 2 and
+        // suspend.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(test_location(1, "A"))
+            .with_location(test_location(2, "B"))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .current_location = Some(LocationId(2));
+        let before1 = state.investigators[&InvestigatorId(1)].resources;
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &gain_resources(InvestigatorTarget::chosen_at_your_location(), 2),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].resources,
+            before1 + 2
+        );
+        assert!(
+            state.continuations.is_empty(),
+            "single co-located candidate auto-binds"
+        );
+    }
+
+    #[test]
+    fn chosen_at_your_location_suspends_when_two_are_co_located() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(test_location(1, "A"))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &gain_resources(InvestigatorTarget::chosen_at_your_location(), 1),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        match state.continuations.last() {
+            Some(crate::state::Continuation::Choice(frame)) => {
+                assert_eq!(
+                    frame.offered.len(),
+                    2,
+                    "two co-located investigators offered"
+                );
+            }
+            other => panic!("expected a Choice frame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn chosen_at_your_location_rejects_when_controller_between_locations() {
+        // test_investigator defaults to current_location = None.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &gain_resources(InvestigatorTarget::chosen_at_your_location(), 1),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert!(state.continuations.is_empty());
     }
 
     // ---- constant-modifier query tests --------------------------

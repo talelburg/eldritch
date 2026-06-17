@@ -853,6 +853,14 @@ impl InvestigatorTarget {
             scope: EntityScope::At(LocationSet::Anywhere),
         })
     }
+
+    /// "Choose an investigator at your location."
+    #[must_use]
+    pub fn chosen_at_your_location() -> Self {
+        InvestigatorTarget::Chosen(Choose {
+            scope: EntityScope::At(LocationSet::Here),
+        })
+    }
 }
 
 /// Set-of-investigators target spec for [`Effect::ForEach`].
