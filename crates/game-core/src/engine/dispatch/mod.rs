@@ -18,6 +18,9 @@ use super::Cx;
 mod abilities;
 pub(crate) mod act_agenda;
 mod actions;
+// pub(crate): engine/mod.rs re-exports the choice helpers for the `cards`
+// crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
+pub(crate) mod choice;
 mod clue_interrupt;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
@@ -429,6 +432,16 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(crate::state::Continuation::Resolution(_))
     ) {
         return resume_window(cx, response);
+    }
+
+    // A `Continuation::Choice` (Axis A) nests above whatever it suspended
+    // within (a Forced run, a skill test), so it resumes before the legacy
+    // mid-test modes below.
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::Choice(_))
+    ) {
+        return choice::resume_choice(cx, response);
     }
 
     // Hunter movement, spawn engagement, and hand-size discard are three

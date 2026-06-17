@@ -107,6 +107,44 @@ pub(in crate::engine) fn draw_cards(cx: &mut Cx, investigator: InvestigatorId, c
     });
 }
 
+/// Discard one card chosen at random from `investigator`'s hand, emitting
+/// [`Event::CardDiscarded`] (`from: Zone::Hand`) and returning the discarded
+/// code. A no-op returning `None` if the hand is empty.
+///
+/// The random index is drawn through the engine RNG ([`RngState`](crate::rng::RngState)),
+/// so it replays deterministically from `(seed, draws)` — no `EngineRecord` is
+/// needed (see `EngineRecord`'s doc-comment). Exposed `pub` (re-exported at the
+/// crate root) so card-local natives can drive "discard at random from hand"
+/// without reaching into the crate-private RNG (agenda 01105's random-discard
+/// branch, Axis A #334).
+pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Option<CardCode> {
+    let inv = cx.state.investigators.get_mut(&investigator)?;
+    if inv.hand.is_empty() {
+        return None;
+    }
+    let idx = cx.state.rng.next_index(
+        cx.state
+            .investigators
+            .get(&investigator)
+            .expect("present")
+            .hand
+            .len(),
+    );
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("present");
+    let card = inv.hand.remove(idx);
+    inv.discard.push(card.clone());
+    cx.events.push(Event::CardDiscarded {
+        investigator,
+        code: card.clone(),
+        from: Zone::Hand,
+    });
+    Some(card)
+}
+
 /// Grant `amount` resources to `investigator`: saturating-add to the
 /// wallet and emit [`Event::ResourcesGained`]. The resource-grant core
 /// shared by the DSL `gain_resources` (called after target resolution)

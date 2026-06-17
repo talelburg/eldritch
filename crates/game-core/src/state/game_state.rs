@@ -413,6 +413,36 @@ pub enum Continuation {
     /// carries no payload. Pushed when the test starts (parking at its
     /// commit window) and popped when it fully resolves (Axis-B T4).
     SkillTest,
+    /// A controller choice is mid-resolution (Axis A): the effect tree is
+    /// re-run from the top on each resume, replaying `decisions` to reach
+    /// the next un-ground choice. See [`ChoiceFrame`].
+    Choice(ChoiceFrame),
+}
+
+/// A controller choice paused mid-resolution (umbrella §3, Axis A).
+///
+/// The frame stores the picks made so far (`decisions`), the option ids
+/// offered at the *current* suspend (`offered`, so resume validates
+/// membership), the root [`Effect`](card_dsl::dsl::Effect) being resolved,
+/// and the [`EvalContext`](crate::engine::EvalContext) ingredients to rebuild
+/// on resume (`controller` + `source`) — mirroring how [`InFlightSkillTest`]
+/// stores `investigator` + `source` rather than a non-serializable
+/// `EvalContext` (see the Axis-A spec §2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ChoiceFrame {
+    /// Picks recorded so far, in choice-encounter (pre-order) order.
+    pub decisions: Vec<crate::engine::OptionId>,
+    /// Option ids offered at the current suspend; resume rejects an id not
+    /// in this set.
+    pub offered: Vec<crate::engine::OptionId>,
+    /// Root effect being (re-)resolved. A native leaf is just one node.
+    pub effect: card_dsl::dsl::Effect,
+    /// [`EvalContext`](crate::engine::EvalContext)`.controller` ingredient.
+    pub controller: InvestigatorId,
+    /// [`EvalContext`](crate::engine::EvalContext)`.source` ingredient
+    /// (`None` for scenario / forced effects with no originating instance).
+    pub source: Option<CardInstanceId>,
 }
 
 impl Continuation {
@@ -421,7 +451,7 @@ impl Continuation {
     pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest => None,
+            Continuation::SkillTest | Continuation::Choice(_) => None,
         }
     }
 
@@ -429,7 +459,7 @@ impl Continuation {
     pub fn as_resolution_mut(&mut self) -> Option<&mut ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest => None,
+            Continuation::SkillTest | Continuation::Choice(_) => None,
         }
     }
 }

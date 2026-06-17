@@ -51,7 +51,7 @@
 //! - Trapped (01108) — Act 1; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance board build.
 //! - The Barrier (01109) — Act 2; `Trigger::OnEvent` (`ActAdvanced`, `After`) on-advance reverse: reveal the Parlor + spawn the set-aside Ghoul Priest.
 //! - What Have You Done? (01110) — Act 3; `Trigger::OnEvent` (`EnemyDefeated` 01116, `After`) -> `AdvanceCurrentAct`.
-//! - What's Going On?! (01105) — Agenda 1; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: lead takes 2 horror (deferred branch, TODO #212).
+//! - What's Going On?! (01105) — Agenda 1; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: lead's interactive `ChooseOne` (each investigator discards 1 random card, or lead takes 2 horror) — Axis A #334.
 //! - Rise of the Ghouls (01106) — Agenda 2; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: dig the encounter deck until a Ghoul, lead draws it.
 //!
 //! The remaining Phase-3 card (Study #56) blocks on the
@@ -146,6 +146,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
 pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
     act_01108::native_effect_for(tag)
         .or_else(|| act_01109::native_effect_for(tag))
+        .or_else(|| agenda_01105::native_effect_for(tag))
         .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
         .or_else(|| guard_dog::native_effect_for(tag))
