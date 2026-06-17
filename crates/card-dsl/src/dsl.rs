@@ -558,6 +558,15 @@ pub enum Effect {
     /// `Native`) so the activation pre-cost check can verify ≥1 candidate
     /// before any cost is paid. `amount == 0` is a no-op.
     DealDamageToEnemy { target: EnemyTarget, amount: u8 },
+    /// Heal `count` of `kind` (damage or horror) from the resolved target
+    /// investigator — the inverse of `DealDamage`/`DealHorror` (no defeat
+    /// interaction). Heals at most the current amount (saturating at 0).
+    /// `count == 0`, or a target with nothing to heal, is a no-op.
+    Heal {
+        kind: HarmKind,
+        target: InvestigatorTarget,
+        count: u8,
+    },
     /// Adjust a stat by `delta` for the duration described by `scope`.
     /// Most scopes are passive contributions to engine queries
     /// rather than mutations of the investigator's stored fields.
@@ -693,6 +702,17 @@ pub enum Effect {
 }
 
 // ---- stats and modifier scopes --------------------------------
+
+/// Which health track a heal or harm acts on — physical (`Damage`, on health)
+/// or mental (`Horror`, on sanity). Shared by [`Effect::Heal`]; the
+/// `DealDamage`/`DealHorror` consolidation (#354) adopts it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HarmKind {
+    /// Physical damage (reduces remaining health).
+    Damage,
+    /// Horror (reduces remaining sanity).
+    Horror,
+}
 
 /// A statistic that an [`Effect::Modify`] can adjust.
 ///
@@ -1150,6 +1170,16 @@ pub fn deal_damage(target: InvestigatorTarget, amount: u8) -> Effect {
     Effect::DealDamage { target, amount }
 }
 
+/// Build an [`Effect::Heal`].
+#[must_use]
+pub fn heal(kind: HarmKind, target: InvestigatorTarget, count: u8) -> Effect {
+    Effect::Heal {
+        kind,
+        target,
+        count,
+    }
+}
+
 /// Build an [`Effect::DealHorror`] against `target` for `amount`.
 #[must_use]
 pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
@@ -1570,6 +1600,25 @@ mod tests {
         let c = Cost::DiscardSelf;
         let json = serde_json::to_string(&c).unwrap();
         assert_eq!(serde_json::from_str::<Cost>(&json).unwrap(), c);
+    }
+
+    #[test]
+    fn heal_serde_round_trips() {
+        let e = heal(
+            HarmKind::Horror,
+            InvestigatorTarget::chosen_at_your_location(),
+            1,
+        );
+        assert_eq!(
+            e,
+            Effect::Heal {
+                kind: HarmKind::Horror,
+                target: InvestigatorTarget::chosen_at_your_location(),
+                count: 1,
+            }
+        );
+        let json = serde_json::to_string(&e).unwrap();
+        assert_eq!(serde_json::from_str::<Effect>(&json).unwrap(), e);
     }
 
     #[test]

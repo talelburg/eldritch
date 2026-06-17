@@ -388,6 +388,17 @@ pub enum Event {
         /// Where the card came from before landing in discard.
         from: Zone,
     },
+    /// `amount` of `kind` (damage or horror) was healed from `investigator`
+    /// (First Aid 01019, Medical Texts 01035). The inverse of the damage/horror
+    /// events; emitted only when something was actually healed.
+    Healed {
+        /// The investigator healed.
+        investigator: InvestigatorId,
+        /// Which track was healed.
+        kind: crate::dsl::HarmKind,
+        /// How much was actually healed (≤ the amount requested).
+        amount: u8,
+    },
     /// An in-play card was exhausted (turned 90°). Fires as part of
     /// activation cost payment when a card's
     /// [`Cost::Exhaust`](crate::dsl::Cost::Exhaust) resolves, and
