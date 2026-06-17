@@ -72,7 +72,7 @@ fn random_discard_each(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, HarmKind, Trigger};
 
     #[test]
     fn abilities_are_one_forced_on_advance_choose_one() {
@@ -97,7 +97,8 @@ mod tests {
         assert!(
             matches!(
                 &branches[1],
-                Effect::DealHorror {
+                Effect::Deal {
+                    kind: HarmKind::Horror,
                     target: card_dsl::dsl::InvestigatorTarget::You,
                     amount: 2
                 }

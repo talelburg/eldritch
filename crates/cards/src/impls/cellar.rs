@@ -28,7 +28,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, InvestigatorTarget, Trigger};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, HarmKind, InvestigatorTarget, Trigger};
 
     #[test]
     fn abilities_are_one_forced_enter_damage() {
@@ -44,7 +44,8 @@ mod tests {
         );
         assert!(matches!(
             abilities[0].effect,
-            Effect::DealDamage {
+            Effect::Deal {
+                kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
                 amount: 1,
             }

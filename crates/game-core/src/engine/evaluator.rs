@@ -274,8 +274,11 @@ fn apply_effect_inner(
     match effect {
         Effect::GainResources { target, amount } => gain_resources(cx, eval_ctx, *target, *amount),
         Effect::DiscoverClue { from, count } => discover_clue(cx, eval_ctx, *from, *count),
-        Effect::DealDamage { target, amount } => deal_damage_effect(cx, eval_ctx, *target, *amount),
-        Effect::DealHorror { target, amount } => deal_horror_effect(cx, eval_ctx, *target, *amount),
+        Effect::Deal {
+            kind,
+            target,
+            amount,
+        } => deal_effect(cx, eval_ctx, *kind, *target, *amount),
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
         }
@@ -906,9 +909,13 @@ pub(crate) fn perform_discovery(
     });
 }
 
-fn deal_damage_effect(
+/// Resolve [`Effect::Deal`]: ground the target investigator and apply `amount`
+/// of `kind` (damage or horror) via the elimination helpers (which run the
+/// matching defeat check). `amount == 0` is a no-op.
+fn deal_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
+    kind: HarmKind,
     target: InvestigatorTarget,
     amount: u8,
 ) -> EngineOutcome {
@@ -925,10 +932,17 @@ fn deal_damage_effect(
     };
     if !cx.state.investigators.contains_key(&target_id) {
         return EngineOutcome::Rejected {
-            reason: format!("DealDamage: investigator {target_id:?} is not in the state").into(),
+            reason: format!("Deal: investigator {target_id:?} is not in the state").into(),
         };
     }
-    crate::engine::dispatch::elimination::take_damage(cx, target_id, amount);
+    match kind {
+        HarmKind::Damage => {
+            crate::engine::dispatch::elimination::take_damage(cx, target_id, amount);
+        }
+        HarmKind::Horror => {
+            crate::engine::dispatch::elimination::take_horror(cx, target_id, amount);
+        }
+    }
     EngineOutcome::Done
 }
 
@@ -1001,32 +1015,6 @@ fn heal_effect(
             amount: healed,
         });
     }
-    EngineOutcome::Done
-}
-
-fn deal_horror_effect(
-    cx: &mut Cx,
-    eval_ctx: EvalContext,
-    target: InvestigatorTarget,
-    amount: u8,
-) -> EngineOutcome {
-    if amount == 0 {
-        return EngineOutcome::Done;
-    }
-    let target_id = match resolve_investigator_target(cx.state, eval_ctx, target) {
-        Ok(id) => id,
-        Err(reason) => {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            }
-        }
-    };
-    if !cx.state.investigators.contains_key(&target_id) {
-        return EngineOutcome::Rejected {
-            reason: format!("DealHorror: investigator {target_id:?} is not in the state").into(),
-        };
-    }
-    crate::engine::dispatch::elimination::take_horror(cx, target_id, amount);
     EngineOutcome::Done
 }
 
@@ -1184,8 +1172,7 @@ fn ground_chosen_targets(
 ) -> Result<EvalContext, EngineOutcome> {
     let inv_target = match effect {
         Effect::GainResources { target, .. }
-        | Effect::DealDamage { target, .. }
-        | Effect::DealHorror { target, .. }
+        | Effect::Deal { target, .. }
         | Effect::Heal { target, .. }
         | Effect::DrawCards { target, .. } => Some(target),
         _ => None,
@@ -3888,7 +3875,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        // Margin 2 → run DealDamage{You,1} twice → 2 damage, 2 events.
+        // Margin 2 → run Deal{Damage,You,1} twice → 2 damage, 2 events.
         let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
         eval_ctx.failed_by = Some(2);
         let outcome = apply_effect(
@@ -3950,7 +3937,7 @@ mod tests {
     #[test]
     fn deal_damage_at_max_health_defeats_investigator() {
         // Build an investigator with a known low max_health (3), then
-        // apply exactly 3 damage via Effect::DealDamage and assert the
+        // apply exactly 3 damage via Effect::Deal and assert the
         // investigator is Killed and InvestigatorDefeated is emitted.
         use crate::state::Status;
         let id = InvestigatorId(1);
