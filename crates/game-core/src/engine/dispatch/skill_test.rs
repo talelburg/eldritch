@@ -803,7 +803,7 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
 /// [`LocationTarget::TestedLocation`] resolves cleanly.
 ///
 /// **Rejections panic.** Card-impl bugs (e.g. an `OnSkillTestResolution`
-/// effect that uses `LocationTarget::ChosenByController` without
+/// effect that uses `LocationTarget::Chosen` without
 /// `AwaitingInput` plumbing landing) are state-corruption invariant
 /// violations once a card's been imported through the deck gate;
 /// surface them loudly in tests rather than silently dropping the

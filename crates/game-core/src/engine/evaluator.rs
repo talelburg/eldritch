@@ -37,12 +37,12 @@
 //!   [`InvestigatorTargetSet`](crate::dsl::InvestigatorTargetSet)
 //!   resolver ("at controller location", "all investigators")
 //!   relies on per-target context that's not yet wired through.
-//! - [`Effect::ChooseOne`] and the `*::ChosenByController` targets resolve
+//! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
 //!   interactively via the Axis-A choice machinery (`apply_choose_one` /
 //!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+
 //!   with a [`Continuation::Choice`](crate::state::Continuation::Choice) frame,
 //!   re-running the effect on resume to replay the recorded picks in pre-order
-//!   (single-pass suspend-and-replay; see the Axis-A spec). `ChosenByController`
+//!   (single-pass suspend-and-replay; see the Axis-A spec). `Chosen`
 //!   offers all investigators / locations; the restricted "at your location"
 //!   forms the real cards want are a deferred card-level filter (#334).
 //!
@@ -104,12 +104,12 @@ pub struct EvalContext {
     /// window. Mirrors `failed_by` / `clue_discovery_count`. (C5b #237.)
     pub attacking_enemy: Option<crate::state::EnemyId>,
     /// The investigator a controller picked for an
-    /// `InvestigatorTarget::ChosenByController`, bound by the evaluator's
+    /// `InvestigatorTarget::chosen_anywhere()`, bound by the evaluator's
     /// target-grounding pass before the handler resolves the target. `None`
     /// outside a grounded-choice evaluation. Mirrors `failed_by` (Axis A #334).
     pub chosen_investigator: Option<crate::state::InvestigatorId>,
     /// The location a controller picked for a
-    /// `LocationTarget::ChosenByController`. The location counterpart of
+    /// `LocationTarget::chosen_anywhere()`. The location counterpart of
     /// `chosen_investigator`.
     pub chosen_location: Option<crate::state::LocationId>,
     /// The option a controller picked for a native leaf that suspended for a
@@ -173,7 +173,7 @@ impl EvalContext {
 /// gluing implemented + stubbed effects together still blocks on
 /// the stubs.
 /// A replay cursor over a [`ChoiceFrame`](crate::state::ChoiceFrame)'s
-/// recorded picks (Axis A). Choice nodes (`ChooseOne`, `*::ChosenByController`)
+/// recorded picks (Axis A). Choice nodes (`ChooseOne`, `*::Chosen`)
 /// consume picks in pre-order; the first node with no recorded pick triggers a
 /// suspend.
 ///
@@ -257,7 +257,7 @@ fn apply_effect_inner(
     eval_ctx: EvalContext,
     cursor: &mut DecisionCursor<'_>,
 ) -> EngineOutcome {
-    // Ground any `ChosenByController` target this node carries before running
+    // Ground any `Chosen` target this node carries before running
     // it: enumerate candidates and apply the resolve convention (auto 0/1,
     // suspend on 2+), binding the choice into the eval-context the handler
     // reads. A no-op for effects with no such target.
@@ -1075,15 +1075,15 @@ fn branch_label(effect: &Effect) -> String {
     format!("{effect:?}")
 }
 
-/// Ground any `ChosenByController` target carried by `effect` before its
+/// Ground any `Chosen` target carried by `effect` before its
 /// handler runs (Axis A): enumerate candidates, apply the resolve convention
 /// (auto 0/1, suspend on 2+, replay from `cursor`), and bind the choice into
 /// the returned [`EvalContext`] (`chosen_investigator` / `chosen_location`)
 /// that the handler's target resolver reads. A no-op (returns `eval_ctx`
-/// unchanged) for effects with no `ChosenByController` target, or when the
+/// unchanged) for effects with no `Chosen` target, or when the
 /// choice is already bound (re-entry within the same evaluation).
 ///
-/// **Candidate scope:** the bare `ChosenByController` offers *all*
+/// **Candidate scope:** the bare `Chosen` offers *all*
 /// investigators / locations. The restricted forms the real cards want
 /// ("an investigator at your location", "your or a connecting location") are a
 /// card-level filter deferred to the Axis-E cards that need them (Dynamite
@@ -1101,7 +1101,7 @@ fn ground_chosen_targets(
         | Effect::DrawCards { target, .. } => Some(target),
         _ => None,
     };
-    if matches!(inv_target, Some(InvestigatorTarget::ChosenByController))
+    if matches!(inv_target, Some(InvestigatorTarget::Chosen(_)))
         && eval_ctx.chosen_investigator.is_none()
     {
         return ground_investigator_choice(cx, eval_ctx, cursor);
@@ -1110,7 +1110,7 @@ fn ground_chosen_targets(
     if matches!(
         effect,
         Effect::DiscoverClue {
-            from: LocationTarget::ChosenByController,
+            from: LocationTarget::Chosen(_),
             ..
         }
     ) && eval_ctx.chosen_location.is_none()
@@ -1121,7 +1121,7 @@ fn ground_chosen_targets(
     Ok(eval_ctx)
 }
 
-/// Ground an `InvestigatorTarget::ChosenByController`: candidates are all
+/// Ground an `InvestigatorTarget::chosen_anywhere()`: candidates are all
 /// investigators (sorted `BTreeMap` order, so the `OptionId` index replays
 /// deterministically). Binds `chosen_investigator`, or suspends.
 fn ground_investigator_choice(
@@ -1141,7 +1141,7 @@ fn ground_investigator_choice(
     };
     match resolve_choice_count(candidates.len()) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
-            reason: "ChosenByController: no investigator to choose".into(),
+            reason: "Chosen: no investigator to choose".into(),
         }),
         ChoiceResolution::Auto(i) => bind(candidates[i]),
         ChoiceResolution::Suspend => {
@@ -1162,7 +1162,7 @@ fn ground_investigator_choice(
     }
 }
 
-/// Ground a `LocationTarget::ChosenByController`: candidates are all locations
+/// Ground a `LocationTarget::chosen_anywhere()`: candidates are all locations
 /// (sorted `BTreeMap` order). Binds `chosen_location`, or suspends.
 fn ground_location_choice(
     cx: &mut Cx,
@@ -1180,7 +1180,7 @@ fn ground_location_choice(
     };
     match resolve_choice_count(candidates.len()) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
-            reason: "ChosenByController: no location to choose".into(),
+            reason: "Chosen: no location to choose".into(),
         }),
         ChoiceResolution::Auto(i) => bind(candidates[i]),
         ChoiceResolution::Suspend => {
@@ -1222,8 +1222,8 @@ fn resolve_investigator_target(
         InvestigatorTarget::Active => state
             .active_investigator
             .ok_or("InvestigatorTarget::Active but no active investigator (outside Investigation)"),
-        InvestigatorTarget::ChosenByController => ctx.chosen_investigator.ok_or(
-            "InvestigatorTarget::ChosenByController resolved before target-grounding bound it \
+        InvestigatorTarget::Chosen(_) => ctx.chosen_investigator.ok_or(
+            "InvestigatorTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
     }
@@ -1240,8 +1240,8 @@ fn resolve_location_target(
             .get(&ctx.controller)
             .and_then(|i| i.current_location)
             .ok_or("LocationTarget::YourLocation but the controller is between locations"),
-        LocationTarget::ChosenByController => ctx.chosen_location.ok_or(
-            "LocationTarget::ChosenByController resolved before target-grounding bound it \
+        LocationTarget::Chosen(_) => ctx.chosen_location.ok_or(
+            "LocationTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
         LocationTarget::TestedLocation => state
@@ -2499,7 +2499,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::ChosenByController, 2),
+            &gain_resources(InvestigatorTarget::chosen_anywhere(), 2),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -2522,7 +2522,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::ChosenByController, 5),
+            &gain_resources(InvestigatorTarget::chosen_anywhere(), 5),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -2539,7 +2539,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::ChosenByController, 5),
+            &gain_resources(InvestigatorTarget::chosen_anywhere(), 5),
             ctx(1),
             vec![crate::engine::OptionId(1)],
         );
@@ -2554,7 +2554,7 @@ mod tests {
     #[test]
     fn choose_one_then_chosen_target_replays_both_picks() {
         // Multi-decision replay (the First Aid shape): a ChooseOne branch
-        // pick *and* a ChosenByController target pick, in one effect.
+        // pick *and* a Chosen target pick, in one effect.
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
@@ -2562,8 +2562,8 @@ mod tests {
         let before1 = state.investigators[&InvestigatorId(1)].resources;
         let before2 = state.investigators[&InvestigatorId(2)].resources;
         let effect = Effect::ChooseOne(vec![
-            gain_resources(InvestigatorTarget::ChosenByController, 1),
-            gain_resources(InvestigatorTarget::ChosenByController, 9),
+            gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
+            gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
         ]);
         let mut events = Vec::new();
 
@@ -2601,8 +2601,8 @@ mod tests {
             .build();
         let before2 = state.investigators[&InvestigatorId(2)].resources;
         let effect = Effect::ChooseOne(vec![
-            gain_resources(InvestigatorTarget::ChosenByController, 1),
-            gain_resources(InvestigatorTarget::ChosenByController, 9),
+            gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
+            gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
         ]);
         let mut events = Vec::new();
 
@@ -2666,7 +2666,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::ChosenByController, 1),
+            &discover_clue(LocationTarget::chosen_anywhere(), 1),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
