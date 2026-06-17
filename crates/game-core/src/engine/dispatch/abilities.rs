@@ -166,6 +166,27 @@ fn pay_activation_costs(
                     amount: *count,
                 });
             }
+            Cost::DiscardSelf => {
+                let inv_mut = cx
+                    .state
+                    .investigators
+                    .get_mut(&investigator)
+                    .expect("validated above");
+                // Look up by instance_id (robust if an earlier cost shifted positions).
+                if let Some(pos) = inv_mut
+                    .cards_in_play
+                    .iter()
+                    .position(|c| c.instance_id == instance_id)
+                {
+                    let card = inv_mut.cards_in_play.remove(pos);
+                    inv_mut.discard.push(card.code.clone());
+                    cx.events.push(Event::CardDiscarded {
+                        investigator,
+                        code: card.code,
+                        from: crate::state::Zone::InPlay,
+                    });
+                }
+            }
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
             }
@@ -258,6 +279,9 @@ pub(super) fn check_cost_payable(
             }
             Ok(())
         }
+        // Source is in play by the activation precondition (check_activate_ability
+        // located it in cards_in_play), so it is always payable.
+        Cost::DiscardSelf => Ok(()),
         Cost::DiscardCardFromHand => Err(
             "TODO: Cost::DiscardCardFromHand requires AwaitingInput + ResolveInput \
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."

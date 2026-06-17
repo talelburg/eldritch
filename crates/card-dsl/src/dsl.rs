@@ -423,6 +423,12 @@ pub enum Cost {
         /// How many to spend.
         count: u8,
     },
+    /// Discard the source asset *in play* to pay for its own ability
+    /// (Beat Cop 01018, Knife 01086). Distinct from
+    /// [`Effect::DiscardSelf`], which removes a treachery from a threat
+    /// area / location. Must be the only source-referencing cost on an
+    /// ability (it removes the source); paid last.
+    DiscardSelf,
 }
 
 // ---- usage limits ----------------------------------------------
@@ -1527,6 +1533,13 @@ mod tests {
         }
         let json = serde_json::to_string(&loc).unwrap();
         assert_eq!(serde_json::from_str::<LocationTarget>(&json).unwrap(), loc);
+    }
+
+    #[test]
+    fn discard_self_cost_serde_round_trips() {
+        let c = Cost::DiscardSelf;
+        let json = serde_json::to_string(&c).unwrap();
+        assert_eq!(serde_json::from_str::<Cost>(&json).unwrap(), c);
     }
 
     /// `Effect::DrawCards` (Guts/Perception/… "draw 1 card") round-trips

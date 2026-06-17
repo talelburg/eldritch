@@ -1035,6 +1035,26 @@ fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
     matches!(effect, crate::dsl::Effect::Fight { .. })
 }
 
+/// Reject an ability mixing [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf)
+/// with another source-referencing cost: `DiscardSelf` removes the source, so it
+/// must be the sole such cost (Beat Cop / Knife list only it). `TODO(#301)` lift
+/// if a card ever needs the combo.
+fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'static, str>> {
+    use crate::dsl::Cost;
+    if costs.iter().any(|c| matches!(c, Cost::DiscardSelf))
+        && costs
+            .iter()
+            .any(|c| matches!(c, Cost::Exhaust | Cost::SpendUses { .. }))
+    {
+        return Err(
+            "ActivateAbility: Cost::DiscardSelf cannot combine with Exhaust/SpendUses on the \
+             same ability (it removes the source); TODO(#301) lift if a card needs the combo"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 /// Pure-validation peer to [`activate_ability`]. Mirrors
 /// [`check_play_card`]: validation block lifted verbatim, no behavior
 /// change at the call site.
@@ -1141,6 +1161,8 @@ pub(super) fn check_activate_ability(
             return Err(reason.into());
         }
     }
+
+    reject_incompatible_costs(&costs)?;
 
     // A Fight-initiating ability needs exactly one engaged enemy, validated
     // here so the activation rejects at the check layer (and `Effect::Fight`
