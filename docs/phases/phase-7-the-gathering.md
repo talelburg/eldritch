@@ -158,8 +158,12 @@ when picked up.
   sub-slice). The orthogonal #354 (`DealDamage`/`DealHorror` → `Effect::Deal`
   consolidation) also shipped (PR #356). PR-5 (#312 — Knife 01086, two
   `[action]` Fight abilities on existing primitives + `Cost::DiscardSelf`)
-  shipped: **✅ PR #358**. Remaining cluster PRs: #321 (Medical Texts,
-  on #302), #313 (Flashlight), #306 (Dynamite).
+  shipped: **✅ PR #358**. PR-6 (#321 — Medical Texts 01035, the first
+  `Effect::SkillTest` from an activated ability, branching heal/deal on a
+  chosen co-located investigator; `heal_damage`/`heal_horror` DSL builders
+  added) shipped: **✅ PR #360** (its choose-before-test ordering is exact
+  in solo, deferred to #359 for multiplayer — mirrors Machete's #300).
+  Remaining cluster PRs: #313 (Flashlight), #306 (Dynamite).
   Slice 1's `fire_forced_triggers` is a forward-compatible subset Axis B
   replaces. **Note:** #213's "one mixed pool" framing was corrected to
   RR-accurate two-phase (forced-all-before-reaction, RR p.2; issue text

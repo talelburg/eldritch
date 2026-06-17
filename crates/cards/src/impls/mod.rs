@@ -81,6 +81,7 @@ pub mod knife;
 pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
+pub mod medical_texts;
 pub mod overpower;
 pub mod perception;
 pub mod physical_training;
@@ -125,6 +126,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         machete::CODE => Some(machete::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         manual_dexterity::CODE => Some(manual_dexterity::abilities()),
+        medical_texts::CODE => Some(medical_texts::abilities()),
         overpower::CODE => Some(overpower::abilities()),
         perception::CODE => Some(perception::abilities()),
         physical_training::CODE => Some(physical_training::abilities()),
