@@ -112,6 +112,11 @@ pub struct EvalContext {
     /// `LocationTarget::ChosenByController`. The location counterpart of
     /// `chosen_investigator`.
     pub chosen_location: Option<crate::state::LocationId>,
+    /// The option a controller picked for a native leaf that suspended for a
+    /// choice (Crypt Chill 01167). The native re-enumerates its candidates and
+    /// indexes by this id — the general native-pick primitive, mirroring
+    /// `clue_discovery_count`. `None` outside that re-invocation (Axis A #334).
+    pub chosen_option: Option<crate::engine::OptionId>,
 }
 
 impl EvalContext {
@@ -128,6 +133,7 @@ impl EvalContext {
             attacking_enemy: None,
             chosen_investigator: None,
             chosen_location: None,
+            chosen_option: None,
         }
     }
 
@@ -148,6 +154,7 @@ impl EvalContext {
             attacking_enemy: None,
             chosen_investigator: None,
             chosen_location: None,
+            chosen_option: None,
         }
     }
 }
@@ -209,6 +216,13 @@ impl<'a> DecisionCursor<'a> {
     fn root(&self) -> Effect {
         self.root.clone()
     }
+
+    /// Whether any pick has been consumed so far in this evaluation — used by
+    /// the native-standalone guard to detect a native suspending within a
+    /// larger choice context.
+    fn has_consumed(&self) -> bool {
+        self.next > 0
+    }
 }
 
 /// Re-run an effect tree replaying a record of choices already made (Axis A):
@@ -266,19 +280,7 @@ fn apply_effect_inner(
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(branches) => apply_choose_one(cx, branches, eval_ctx, cursor),
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
-        Effect::Native { tag } => {
-            let Some(reg) = crate::card_registry::current() else {
-                return EngineOutcome::Rejected {
-                    reason: format!("Native effect {tag:?}: no card registry installed").into(),
-                };
-            };
-            let Some(f) = (reg.native_effect_for)(tag) else {
-                return EngineOutcome::Rejected {
-                    reason: format!("Native effect {tag:?}: no handler registered").into(),
-                };
-            };
-            f(cx, &eval_ctx)
-        }
+        Effect::Native { tag } => apply_native(cx, tag, eval_ctx, cursor),
         Effect::ForEachPointFailed(body) => {
             let n = eval_ctx.failed_by.unwrap_or(0);
             for _ in 0..n {
@@ -940,6 +942,44 @@ fn deal_horror_effect(
     }
     crate::engine::dispatch::elimination::take_horror(cx, target_id, amount);
     EngineOutcome::Done
+}
+
+/// Resolve an [`Effect::Native`] leaf: dispatch to the registered card-local
+/// handler, threading any [`chosen_option`](EvalContext::chosen_option) the
+/// cursor carries (so a native that suspended for a choice receives its pick
+/// on re-invocation — Crypt Chill 01167, Axis A).
+///
+/// **Native-standalone guard:** a native may suspend for a choice only as the
+/// whole effect (no DSL picks preceding it). If a native suspends after the
+/// cursor already consumed picks, native↔DSL-choice interleaving is in play —
+/// out of Axis-A scope; `debug_assert` flags it loudly (unreachable for the
+/// in-scope cards: Crypt Chill is standalone, 01105's native is deterministic).
+fn apply_native(
+    cx: &mut Cx,
+    tag: &str,
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> EngineOutcome {
+    let Some(reg) = crate::card_registry::current() else {
+        return EngineOutcome::Rejected {
+            reason: format!("Native effect {tag:?}: no card registry installed").into(),
+        };
+    };
+    let Some(f) = (reg.native_effect_for)(tag) else {
+        return EngineOutcome::Rejected {
+            reason: format!("Native effect {tag:?}: no handler registered").into(),
+        };
+    };
+    let consumed_before = cursor.has_consumed();
+    let mut eval_ctx = eval_ctx;
+    eval_ctx.chosen_option = cursor.take();
+    let outcome = f(cx, &eval_ctx);
+    debug_assert!(
+        !(matches!(outcome, EngineOutcome::AwaitingInput { .. }) && consumed_before),
+        "native-standalone guard (Axis A #334): native {tag:?} suspended for a choice within a \
+         larger choice context (prior picks consumed); native↔DSL-choice interleaving is deferred",
+    );
+    outcome
 }
 
 /// Resolve [`Effect::AdvanceCurrentAct`]: latch a resolution if the current

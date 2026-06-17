@@ -255,9 +255,17 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         let mut ctx = card_ctx(investigator);
         ctx.failed_by = Some(failed_by);
         let outcome = apply_effect(cx, effect, ctx);
+        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+            // on_fail suspended on a controller choice (Crypt Chill 01167's
+            // "choose an asset to discard", Axis A #334). The continuation is
+            // already `PostFollowUp` (pre-advanced above), so resuming the
+            // choice re-enters `drive_skill_test` at teardown — `on_fail`
+            // does not re-run. Mirrors the follow-up-suspend path above.
+            return outcome;
+        }
         debug_assert!(
             matches!(outcome, EngineOutcome::Done),
-            "revelation on_fail must resolve to Done in C4b scope: {outcome:?}"
+            "revelation on_fail must resolve to Done or AwaitingInput: {outcome:?}"
         );
     }
 

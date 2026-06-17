@@ -130,6 +130,67 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
 }
 
 #[test]
+fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
+    install_registry();
+    // Two controlled assets ⇒ the fail branch suspends for the controller's
+    // choice (Axis A #334). AutoFail forces the failure.
+    let mut state = board_with("01167", ChaosToken::AutoFail);
+    {
+        let in_play = &mut state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .cards_in_play;
+        // Two real corpus assets: Holy Rosary 01059, Magnifying Glass 01030.
+        in_play.push(CardInPlay::enter_play(
+            CardCode::new("01059"),
+            CardInstanceId(1),
+        ));
+        in_play.push(CardInPlay::enter_play(
+            CardCode::new("01030"),
+            CardInstanceId(2),
+        ));
+    }
+
+    // Commit nothing at the test window, then pick option 1 (the second
+    // asset, Magnifying Glass) at the discard choice.
+    let mut resolver = ScriptedResolver::new();
+    resolver
+        .commit_cards(&[])
+        .pick_single(game_core::OptionId(1));
+    let result = drive(
+        state,
+        Action::Engine(EngineRecord::EncounterCardRevealed {
+            investigator: InvestigatorId(1),
+        }),
+        resolver,
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    let inv = &result.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.damage, 0, "an asset was discarded → no damage fallback");
+    // The chosen asset (Magnifying Glass) is gone; the other stays in play.
+    assert!(
+        inv.discard.contains(&CardCode::new("01030")),
+        "the chosen asset (option 1) was discarded",
+    );
+    assert_eq!(
+        inv.cards_in_play.len(),
+        1,
+        "only the unchosen asset remains in play",
+    );
+    assert_eq!(
+        inv.cards_in_play[0].code,
+        CardCode::new("01059"),
+        "the unchosen Holy Rosary stays",
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "choice frame consumed"
+    );
+}
+
+#[test]
 fn ancient_evils_places_doom_on_the_current_agenda_then_discards() {
     install_registry();
     // No skill test — Numeric token is unused by this revelation.

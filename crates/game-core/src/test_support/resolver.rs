@@ -118,6 +118,11 @@ impl ScriptedResolver {
         self.push(InputResponse::PickIndex(index))
     }
 
+    /// Respond with [`InputResponse::PickSingle`] (the Axis-A choice contract).
+    pub fn pick_single(&mut self, id: crate::engine::OptionId) -> &mut Self {
+        self.push(InputResponse::PickSingle(id))
+    }
+
     /// Respond with [`InputResponse::PickInvestigator`].
     pub fn pick_investigator(&mut self, id: InvestigatorId) -> &mut Self {
         self.push(InputResponse::PickInvestigator(id))

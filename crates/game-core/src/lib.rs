@@ -46,8 +46,8 @@ pub use engine::{
     apply, attach_to_location, deal_damage_to_enemy, discard_random_from_hand, effective_shroud,
     location_id_by_code, place_doom_on_current_agenda, place_in_threat_area,
     reshuffle_encounter_discard, resolve_encounter_card, reveal_location, shortest_first_steps,
-    spawn_set_aside_enemy, take_damage, ApplyResult, ChoiceOption, Cx, EngineOutcome, EvalContext,
-    InputRequest, OptionId, ResumeToken,
+    spawn_set_aside_enemy, suspend_for_native_choice, take_damage, ApplyResult, ChoiceOption, Cx,
+    EngineOutcome, EvalContext, InputRequest, OptionId, ResumeToken,
 };
 pub use event::{Event, FailureReason, TraumaKind};
 pub use rng::RngState;

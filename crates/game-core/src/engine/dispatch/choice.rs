@@ -71,6 +71,29 @@ pub(crate) fn suspend_for_choice(
     }
 }
 
+/// Suspend a card-local native leaf for a controller pick (Axis A): the frame
+/// records the native effect itself as its root, so resume re-invokes the
+/// native with the pick threaded via [`EvalContext::chosen_option`]. `decisions`
+/// is empty — a native pick must be standalone (the native-standalone guard in
+/// the evaluator enforces this). The native re-enumerates its candidates and
+/// indexes by the picked [`OptionId`].
+pub fn suspend_for_native_choice(
+    cx: &mut Cx,
+    prompt: impl Into<String>,
+    labels: Vec<String>,
+    tag: &str,
+    ctx: &EvalContext,
+) -> EngineOutcome {
+    suspend_for_choice(
+        cx,
+        prompt,
+        labels,
+        Vec::new(),
+        card_dsl::dsl::native(tag),
+        *ctx,
+    )
+}
+
 /// Resume a [`Continuation::Choice`]: validate the pick is in the offered
 /// set, append it to `decisions`, pop the frame, rebuild the
 /// [`EvalContext`] from the stored ingredients, and re-run the effect from
@@ -101,7 +124,17 @@ pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(src) => EvalContext::for_controller_with_source(frame.controller, src),
         None => EvalContext::for_controller(frame.controller),
     };
-    apply_effect_with_decisions(cx, &frame.effect, eval_ctx, decisions)
+    let outcome = apply_effect_with_decisions(cx, &frame.effect, eval_ctx, decisions);
+
+    // If the choice completed an effect that was suspended *inside* a skill
+    // test (Crypt Chill 01167's on_fail discard), re-enter the driver to run
+    // the test's teardown — its continuation is parked at `PostFollowUp`.
+    // Mirrors `resume_clue_interrupt`. A still-suspended outcome (a further
+    // nested choice) returns as-is.
+    if matches!(outcome, EngineOutcome::Done) && cx.state.in_flight_skill_test.is_some() {
+        return super::skill_test::drive_skill_test(cx);
+    }
+    outcome
 }
 
 #[cfg(test)]

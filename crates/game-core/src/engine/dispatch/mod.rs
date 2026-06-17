@@ -18,9 +18,9 @@ use super::Cx;
 mod abilities;
 pub(crate) mod act_agenda;
 mod actions;
-// pub(crate): engine/mod.rs re-exports the choice helpers for the `cards`
-// crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
-pub(crate) mod choice;
+// pub(super): engine/mod.rs re-exports `suspend_for_native_choice` (pub) for
+// the `cards` crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
+pub(super) mod choice;
 mod clue_interrupt;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
