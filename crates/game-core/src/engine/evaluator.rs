@@ -37,10 +37,14 @@
 //!   [`InvestigatorTargetSet`](crate::dsl::InvestigatorTargetSet)
 //!   resolver ("at controller location", "all investigators")
 //!   relies on per-target context that's not yet wired through.
-//! - [`Effect::ChooseOne`] needs an `AwaitingInput` round-trip with
-//!   [`ResolveInput`](crate::PlayerAction::ResolveInput); resume
-//!   plumbing lands with the [`ChoiceResolver`](https://github.com/talelburg/eldritch/issues/19)
-//!   alongside skill-test resolution (#49).
+//! - [`Effect::ChooseOne`] and the `*::ChosenByController` targets resolve
+//!   interactively via the Axis-A choice machinery (`apply_choose_one` /
+//!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+
+//!   with a [`Continuation::Choice`](crate::state::Continuation::Choice) frame,
+//!   re-running the effect on resume to replay the recorded picks in pre-order
+//!   (single-pass suspend-and-replay; see the Axis-A spec). `ChosenByController`
+//!   offers all investigators / locations; the restricted "at your location"
+//!   forms the real cards want are a deferred card-level filter (#334).
 //!
 //! # State-mutation contract
 //!
@@ -99,6 +103,20 @@ pub struct EvalContext {
     /// `Effect::Native` retaliate can name it. `None` outside that
     /// window. Mirrors `failed_by` / `clue_discovery_count`. (C5b #237.)
     pub attacking_enemy: Option<crate::state::EnemyId>,
+    /// The investigator a controller picked for an
+    /// `InvestigatorTarget::ChosenByController`, bound by the evaluator's
+    /// target-grounding pass before the handler resolves the target. `None`
+    /// outside a grounded-choice evaluation. Mirrors `failed_by` (Axis A #334).
+    pub chosen_investigator: Option<crate::state::InvestigatorId>,
+    /// The location a controller picked for a
+    /// `LocationTarget::ChosenByController`. The location counterpart of
+    /// `chosen_investigator`.
+    pub chosen_location: Option<crate::state::LocationId>,
+    /// The option a controller picked for a native leaf that suspended for a
+    /// choice (Crypt Chill 01167). The native re-enumerates its candidates and
+    /// indexes by this id — the general native-pick primitive, mirroring
+    /// `clue_discovery_count`. `None` outside that re-invocation (Axis A #334).
+    pub chosen_option: Option<crate::engine::OptionId>,
 }
 
 impl EvalContext {
@@ -113,6 +131,9 @@ impl EvalContext {
             failed_by: None,
             clue_discovery_count: None,
             attacking_enemy: None,
+            chosen_investigator: None,
+            chosen_location: None,
+            chosen_option: None,
         }
     }
 
@@ -131,6 +152,9 @@ impl EvalContext {
             failed_by: None,
             clue_discovery_count: None,
             attacking_enemy: None,
+            chosen_investigator: None,
+            chosen_location: None,
+            chosen_option: None,
         }
     }
 }
@@ -148,51 +172,119 @@ impl EvalContext {
 /// authors expect the whole sequence or nothing — but it means
 /// gluing implemented + stubbed effects together still blocks on
 /// the stubs.
+/// A replay cursor over a [`ChoiceFrame`](crate::state::ChoiceFrame)'s
+/// recorded picks (Axis A). Choice nodes (`ChooseOne`, `*::ChosenByController`)
+/// consume picks in pre-order; the first node with no recorded pick triggers a
+/// suspend.
+///
+/// Carries `root` — the *top-level* effect being resolved — so a suspend deep
+/// in the tree (e.g. a target choice inside a `ChooseOne` branch) records the
+/// whole tree on its frame, and resume re-runs from the top to replay every
+/// earlier pick. The current sub-node is never enough.
+pub(crate) struct DecisionCursor<'a> {
+    decisions: Vec<crate::engine::OptionId>,
+    next: usize,
+    root: &'a Effect,
+}
+
+impl<'a> DecisionCursor<'a> {
+    fn new(decisions: Vec<crate::engine::OptionId>, root: &'a Effect) -> Self {
+        Self {
+            decisions,
+            next: 0,
+            root,
+        }
+    }
+
+    /// The pick recorded for the choice now being evaluated, if any;
+    /// advances the cursor past it.
+    fn take(&mut self) -> Option<crate::engine::OptionId> {
+        let v = self.decisions.get(self.next).copied();
+        if v.is_some() {
+            self.next += 1;
+        }
+        v
+    }
+
+    /// The picks already consumed before the current position — what a fresh
+    /// suspend records on its frame so the next resume replays them.
+    fn recorded_so_far(&self) -> Vec<crate::engine::OptionId> {
+        self.decisions[..self.next].to_vec()
+    }
+
+    /// The top-level effect to record on a suspend frame (resume re-runs it).
+    fn root(&self) -> Effect {
+        self.root.clone()
+    }
+
+    /// Whether any pick has been consumed so far in this evaluation — used by
+    /// the native-standalone guard to detect a native suspending within a
+    /// larger choice context.
+    fn has_consumed(&self) -> bool {
+        self.next > 0
+    }
+}
+
+/// Re-run an effect tree replaying a record of choices already made (Axis A):
+/// each choice node consumes the next recorded pick; the first un-ground
+/// choice suspends. Entry point for [`resume_choice`](crate::engine::dispatch::choice::resume_choice).
+pub(crate) fn apply_effect_with_decisions(
+    cx: &mut Cx,
+    effect: &Effect,
+    eval_ctx: EvalContext,
+    decisions: Vec<crate::engine::OptionId>,
+) -> EngineOutcome {
+    apply_effect_inner(
+        cx,
+        effect,
+        eval_ctx,
+        &mut DecisionCursor::new(decisions, effect),
+    )
+}
+
 pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
+    apply_effect_inner(
+        cx,
+        effect,
+        eval_ctx,
+        &mut DecisionCursor::new(Vec::new(), effect),
+    )
+}
+
+fn apply_effect_inner(
+    cx: &mut Cx,
+    effect: &Effect,
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> EngineOutcome {
+    // Ground any `ChosenByController` target this node carries before running
+    // it: enumerate candidates and apply the resolve convention (auto 0/1,
+    // suspend on 2+), binding the choice into the eval-context the handler
+    // reads. A no-op for effects with no such target.
+    let eval_ctx = match ground_chosen_targets(cx, effect, eval_ctx, cursor) {
+        Ok(ctx) => ctx,
+        Err(outcome) => return outcome,
+    };
     match effect {
         Effect::GainResources { target, amount } => gain_resources(cx, eval_ctx, *target, *amount),
         Effect::DiscoverClue { from, count } => discover_clue(cx, eval_ctx, *from, *count),
         Effect::DealDamage { target, amount } => deal_damage_effect(cx, eval_ctx, *target, *amount),
         Effect::DealHorror { target, amount } => deal_horror_effect(cx, eval_ctx, *target, *amount),
-        Effect::Seq(effects) => apply_seq(cx, effects, eval_ctx),
+        Effect::Seq(effects) => apply_seq(cx, effects, eval_ctx, cursor),
         Effect::Modify { stat, delta, scope } => modify(cx, eval_ctx, *stat, *delta, *scope),
         Effect::If {
             condition,
             then,
             else_,
-        } => apply_if(cx, eval_ctx, condition, then, else_.as_deref()),
+        } => apply_if(cx, eval_ctx, condition, then, else_.as_deref(), cursor),
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
-        Effect::ChooseOne(_) => awaiting_input_stub("ChooseOne"),
-        Effect::AdvanceCurrentAct => {
-            use crate::engine::dispatch::act_agenda::{advance_act, request_resolution};
-            if cx.state.act_deck.is_empty() {
-                return EngineOutcome::Rejected {
-                    reason: "AdvanceCurrentAct: no act deck is modeled".into(),
-                };
-            }
-            match cx.state.act_deck[cx.state.act_index].resolution.clone() {
-                Some(resolution) => request_resolution(cx.state, resolution),
-                None => advance_act(cx),
-            }
-            EngineOutcome::Done
-        }
-        Effect::Native { tag } => {
-            let Some(reg) = crate::card_registry::current() else {
-                return EngineOutcome::Rejected {
-                    reason: format!("Native effect {tag:?}: no card registry installed").into(),
-                };
-            };
-            let Some(f) = (reg.native_effect_for)(tag) else {
-                return EngineOutcome::Rejected {
-                    reason: format!("Native effect {tag:?}: no handler registered").into(),
-                };
-            };
-            f(cx, &eval_ctx)
-        }
+        Effect::ChooseOne(branches) => apply_choose_one(cx, branches, eval_ctx, cursor),
+        Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
+        Effect::Native { tag } => apply_native(cx, tag, eval_ctx, cursor),
         Effect::ForEachPointFailed(body) => {
             let n = eval_ctx.failed_by.unwrap_or(0);
             for _ in 0..n {
-                match apply_effect(cx, body, eval_ctx) {
+                match apply_effect_inner(cx, body, eval_ctx, cursor) {
                     EngineOutcome::Done => {}
                     other => return other,
                 }
@@ -436,6 +528,7 @@ fn apply_if(
     condition: &Condition,
     then: &Effect,
     else_: Option<&Effect>,
+    cursor: &mut DecisionCursor<'_>,
 ) -> EngineOutcome {
     let holds = match eval_condition(cx.state, eval_ctx.controller, condition) {
         Ok(b) => b,
@@ -446,9 +539,9 @@ fn apply_if(
         }
     };
     if holds {
-        apply_effect(cx, then, eval_ctx)
+        apply_effect_inner(cx, then, eval_ctx, cursor)
     } else if let Some(else_branch) = else_ {
-        apply_effect(cx, else_branch, eval_ctx)
+        apply_effect_inner(cx, else_branch, eval_ctx, cursor)
     } else {
         EngineOutcome::Done
     }
@@ -742,12 +835,11 @@ fn discover_clue(
                     ability_index,
                 });
                 return EngineOutcome::AwaitingInput {
-                    request: crate::engine::outcome::InputRequest {
-                        prompt: "You would discover clue(s). Use the interrupt to discard that \
-                                 many from the source card instead? Confirm = replace, \
-                                 Skip = discover normally."
-                            .to_owned(),
-                    },
+                    request: crate::engine::outcome::InputRequest::prompt(
+                        "You would discover clue(s). Use the interrupt to discard that \
+                         many from the source card instead? Confirm = replace, \
+                         Skip = discover normally.",
+                    ),
                     resume_token: crate::engine::outcome::ResumeToken(0),
                 };
             }
@@ -852,26 +944,261 @@ fn deal_horror_effect(
     EngineOutcome::Done
 }
 
-fn apply_seq(cx: &mut Cx, effects: &[Effect], eval_ctx: EvalContext) -> EngineOutcome {
+/// Resolve an [`Effect::Native`] leaf: dispatch to the registered card-local
+/// handler, threading any [`chosen_option`](EvalContext::chosen_option) the
+/// cursor carries (so a native that suspended for a choice receives its pick
+/// on re-invocation — Crypt Chill 01167, Axis A).
+///
+/// **Native-standalone guard:** a native may suspend for a choice only as the
+/// whole effect (no DSL picks preceding it). If a native suspends after the
+/// cursor already consumed picks, native↔DSL-choice interleaving is in play —
+/// out of Axis-A scope; `debug_assert` flags it loudly (unreachable for the
+/// in-scope cards: Crypt Chill is standalone, 01105's native is deterministic).
+fn apply_native(
+    cx: &mut Cx,
+    tag: &str,
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> EngineOutcome {
+    let Some(reg) = crate::card_registry::current() else {
+        return EngineOutcome::Rejected {
+            reason: format!("Native effect {tag:?}: no card registry installed").into(),
+        };
+    };
+    let Some(f) = (reg.native_effect_for)(tag) else {
+        return EngineOutcome::Rejected {
+            reason: format!("Native effect {tag:?}: no handler registered").into(),
+        };
+    };
+    let consumed_before = cursor.has_consumed();
+    let mut eval_ctx = eval_ctx;
+    eval_ctx.chosen_option = cursor.take();
+    let outcome = f(cx, &eval_ctx);
+    debug_assert!(
+        !(matches!(outcome, EngineOutcome::AwaitingInput { .. }) && consumed_before),
+        "native-standalone guard (Axis A #334): native {tag:?} suspended for a choice within a \
+         larger choice context (prior picks consumed); native↔DSL-choice interleaving is deferred",
+    );
+    outcome
+}
+
+/// Resolve [`Effect::AdvanceCurrentAct`]: latch a resolution if the current
+/// act carries one, else advance the act deck.
+fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
+    use crate::engine::dispatch::act_agenda::{advance_act, request_resolution};
+    if cx.state.act_deck.is_empty() {
+        return EngineOutcome::Rejected {
+            reason: "AdvanceCurrentAct: no act deck is modeled".into(),
+        };
+    }
+    match cx.state.act_deck[cx.state.act_index].resolution.clone() {
+        Some(resolution) => request_resolution(cx.state, resolution),
+        None => advance_act(cx),
+    }
+    EngineOutcome::Done
+}
+
+fn apply_seq(
+    cx: &mut Cx,
+    effects: &[Effect],
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> EngineOutcome {
     // Stop at the first non-Done outcome. A Rejected mid-Seq leaves
     // earlier effects committed *within this apply*, but the `apply`
     // boundary rolls the whole call back to its pre-dispatch snapshot on
     // Rejected (see engine/mod.rs::apply "Handler contract"), so the
-    // partial mutation never escapes. The AwaitingInput-resume note below
-    // still stands.
+    // partial mutation never escapes.
     //
-    // **AwaitingInput resume:** when ChooseOne et al. land and start
-    // returning AwaitingInput mid-Seq, this loop will need to track
-    // a resume token + remaining-effects continuation. Today
-    // AwaitingInput is unreachable here (no implemented variant
-    // produces it), so the simple early-return is correct for v0.
-    for effect in effects {
-        let outcome = apply_effect(cx, effect, eval_ctx);
-        if !matches!(outcome, EngineOutcome::Done) {
-            return outcome;
+    // **Axis-A Seq guard (#346):** single-pass suspend-and-replay re-runs the
+    // effect from the top on resume, which would double-apply any mutation
+    // that ran *before* a suspending choice. No card in scope has a choice
+    // after an earlier Seq step, so reject that case loudly rather than
+    // double-mutate; the general fix is the two-pass split (#346).
+    for (i, effect) in effects.iter().enumerate() {
+        let outcome = apply_effect_inner(cx, effect, eval_ctx, cursor);
+        match outcome {
+            EngineOutcome::Done => {}
+            EngineOutcome::AwaitingInput { .. } if i > 0 => {
+                return EngineOutcome::Rejected {
+                    reason: "a choice after an earlier Seq step is not yet supported \
+                             (Axis-A single-pass replay; the two-pass split is deferred, #346)"
+                        .into(),
+                };
+            }
+            other => return other,
         }
     }
     EngineOutcome::Done
+}
+
+/// Resolve [`Effect::ChooseOne`] (Axis A): apply the uniform resolve
+/// convention to the branch list, replaying a recorded pick from `cursor` or
+/// suspending with a [`Continuation::Choice`](crate::state::Continuation::Choice)
+/// frame carrying the *root* `effect` so resume re-runs the whole tree.
+fn apply_choose_one(
+    cx: &mut Cx,
+    branches: &[Effect],
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> EngineOutcome {
+    use crate::engine::dispatch::choice::{
+        resolve_choice_count, suspend_for_choice, ChoiceResolution,
+    };
+    match resolve_choice_count(branches.len()) {
+        ChoiceResolution::Empty => EngineOutcome::Rejected {
+            reason: "Effect::ChooseOne with no branches".into(),
+        },
+        ChoiceResolution::Auto(i) => apply_effect_inner(cx, &branches[i], eval_ctx, cursor),
+        ChoiceResolution::Suspend => {
+            if let Some(crate::engine::OptionId(i)) = cursor.take() {
+                apply_effect_inner(cx, &branches[i as usize], eval_ctx, cursor)
+            } else {
+                let labels = branches.iter().map(branch_label).collect();
+                suspend_for_choice(
+                    cx,
+                    "Choose one",
+                    labels,
+                    cursor.recorded_so_far(),
+                    cursor.root(),
+                    eval_ctx,
+                )
+            }
+        }
+    }
+}
+
+/// A render label for one [`Effect::ChooseOne`] branch. The `Debug` form is
+/// adequate for v0 host rendering; refine only when a card needs prettier
+/// text.
+fn branch_label(effect: &Effect) -> String {
+    format!("{effect:?}")
+}
+
+/// Ground any `ChosenByController` target carried by `effect` before its
+/// handler runs (Axis A): enumerate candidates, apply the resolve convention
+/// (auto 0/1, suspend on 2+, replay from `cursor`), and bind the choice into
+/// the returned [`EvalContext`] (`chosen_investigator` / `chosen_location`)
+/// that the handler's target resolver reads. A no-op (returns `eval_ctx`
+/// unchanged) for effects with no `ChosenByController` target, or when the
+/// choice is already bound (re-entry within the same evaluation).
+///
+/// **Candidate scope:** the bare `ChosenByController` offers *all*
+/// investigators / locations. The restricted forms the real cards want
+/// ("an investigator at your location", "your or a connecting location") are a
+/// card-level filter deferred to the Axis-E cards that need them (Dynamite
+/// Blast, Medical Texts, …); no shipped card uses these targets yet.
+fn ground_chosen_targets(
+    cx: &mut Cx,
+    effect: &Effect,
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> Result<EvalContext, EngineOutcome> {
+    let inv_target = match effect {
+        Effect::GainResources { target, .. }
+        | Effect::DealDamage { target, .. }
+        | Effect::DealHorror { target, .. }
+        | Effect::DrawCards { target, .. } => Some(target),
+        _ => None,
+    };
+    if matches!(inv_target, Some(InvestigatorTarget::ChosenByController))
+        && eval_ctx.chosen_investigator.is_none()
+    {
+        return ground_investigator_choice(cx, eval_ctx, cursor);
+    }
+
+    if matches!(
+        effect,
+        Effect::DiscoverClue {
+            from: LocationTarget::ChosenByController,
+            ..
+        }
+    ) && eval_ctx.chosen_location.is_none()
+    {
+        return ground_location_choice(cx, eval_ctx, cursor);
+    }
+
+    Ok(eval_ctx)
+}
+
+/// Ground an `InvestigatorTarget::ChosenByController`: candidates are all
+/// investigators (sorted `BTreeMap` order, so the `OptionId` index replays
+/// deterministically). Binds `chosen_investigator`, or suspends.
+fn ground_investigator_choice(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> Result<EvalContext, EngineOutcome> {
+    use crate::engine::dispatch::choice::{
+        resolve_choice_count, suspend_for_choice, ChoiceResolution,
+    };
+    let candidates: Vec<crate::state::InvestigatorId> =
+        cx.state.investigators.keys().copied().collect();
+    let bind = |id| {
+        let mut ctx = eval_ctx;
+        ctx.chosen_investigator = Some(id);
+        Ok(ctx)
+    };
+    match resolve_choice_count(candidates.len()) {
+        ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
+            reason: "ChosenByController: no investigator to choose".into(),
+        }),
+        ChoiceResolution::Auto(i) => bind(candidates[i]),
+        ChoiceResolution::Suspend => {
+            if let Some(crate::engine::OptionId(i)) = cursor.take() {
+                bind(candidates[i as usize])
+            } else {
+                let labels = candidates.iter().map(|id| format!("{id:?}")).collect();
+                Err(suspend_for_choice(
+                    cx,
+                    "Choose an investigator",
+                    labels,
+                    cursor.recorded_so_far(),
+                    cursor.root(),
+                    eval_ctx,
+                ))
+            }
+        }
+    }
+}
+
+/// Ground a `LocationTarget::ChosenByController`: candidates are all locations
+/// (sorted `BTreeMap` order). Binds `chosen_location`, or suspends.
+fn ground_location_choice(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+) -> Result<EvalContext, EngineOutcome> {
+    use crate::engine::dispatch::choice::{
+        resolve_choice_count, suspend_for_choice, ChoiceResolution,
+    };
+    let candidates: Vec<crate::state::LocationId> = cx.state.locations.keys().copied().collect();
+    let bind = |id| {
+        let mut ctx = eval_ctx;
+        ctx.chosen_location = Some(id);
+        Ok(ctx)
+    };
+    match resolve_choice_count(candidates.len()) {
+        ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
+            reason: "ChosenByController: no location to choose".into(),
+        }),
+        ChoiceResolution::Auto(i) => bind(candidates[i]),
+        ChoiceResolution::Suspend => {
+            if let Some(crate::engine::OptionId(i)) = cursor.take() {
+                bind(candidates[i as usize])
+            } else {
+                let labels = candidates.iter().map(|id| format!("{id:?}")).collect();
+                Err(suspend_for_choice(
+                    cx,
+                    "Choose a location",
+                    labels,
+                    cursor.recorded_so_far(),
+                    cursor.root(),
+                    eval_ctx,
+                ))
+            }
+        }
+    }
 }
 
 // ---- target resolution ----------------------------------------
@@ -895,12 +1222,10 @@ fn resolve_investigator_target(
         InvestigatorTarget::Active => state
             .active_investigator
             .ok_or("InvestigatorTarget::Active but no active investigator (outside Investigation)"),
-        InvestigatorTarget::ChosenByController => {
-            // Same shape as ChooseOne — needs AwaitingInput + a
-            // ResolveInput round-trip carrying the chosen id. No
-            // engine consumer landed yet.
-            Err("InvestigatorTarget::ChosenByController requires AwaitingInput plumbing")
-        }
+        InvestigatorTarget::ChosenByController => ctx.chosen_investigator.ok_or(
+            "InvestigatorTarget::ChosenByController resolved before target-grounding bound it \
+             (ground_chosen_targets should run first)",
+        ),
     }
 }
 
@@ -915,9 +1240,10 @@ fn resolve_location_target(
             .get(&ctx.controller)
             .and_then(|i| i.current_location)
             .ok_or("LocationTarget::YourLocation but the controller is between locations"),
-        LocationTarget::ChosenByController => {
-            Err("LocationTarget::ChosenByController requires AwaitingInput plumbing")
-        }
+        LocationTarget::ChosenByController => ctx.chosen_location.ok_or(
+            "LocationTarget::ChosenByController resolved before target-grounding bound it \
+             (ground_chosen_targets should run first)",
+        ),
         LocationTarget::TestedLocation => state
             .in_flight_skill_test
             .as_ref()
@@ -2082,25 +2408,273 @@ mod tests {
     }
 
     #[test]
-    fn choose_one_is_rejected_with_todo_message() {
-        let mut state = GameStateBuilder::new().build();
+    fn choose_one_single_branch_auto_resolves() {
+        // 1 legal option ⇒ auto-bind, no input round-trip.
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let before = state.investigators[&id].resources;
         let mut events = Vec::new();
         let outcome = apply_effect(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            &Effect::ChooseOne(vec![gain_resources(InvestigatorTarget::You, 1)]),
+            &Effect::ChooseOne(vec![gain_resources(InvestigatorTarget::You, 2)]),
             ctx(1),
         );
-        match outcome {
-            EngineOutcome::Rejected { reason } => {
-                assert!(
-                    reason.contains("ChooseOne"),
-                    "reason should mention ChooseOne: {reason:?}"
-                );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].resources, before + 2);
+        assert!(state.continuations.is_empty(), "no choice frame for auto");
+    }
+
+    #[test]
+    fn choose_one_two_branches_suspends_with_a_choice_frame() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &Effect::ChooseOne(vec![
+                gain_resources(InvestigatorTarget::You, 1),
+                gain_resources(InvestigatorTarget::You, 3),
+            ]),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        // Suspended before any mutation; a Choice frame holds two options.
+        assert_eq!(state.investigators[&id].resources, before);
+        match state.continuations.last() {
+            Some(crate::state::Continuation::Choice(frame)) => {
+                assert_eq!(frame.offered.len(), 2);
+                assert!(frame.decisions.is_empty());
             }
-            _ => panic!("expected Rejected"),
+            other => panic!("expected a Choice frame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn choose_one_replays_the_recorded_pick() {
+        // Re-running with decision = branch 1 runs the +3 branch.
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+        let outcome = super::apply_effect_with_decisions(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &Effect::ChooseOne(vec![
+                gain_resources(InvestigatorTarget::You, 1),
+                gain_resources(InvestigatorTarget::You, 3),
+            ]),
+            ctx(1),
+            vec![crate::engine::OptionId(1)],
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].resources, before + 3);
+    }
+
+    #[test]
+    fn chosen_investigator_single_candidate_auto_binds() {
+        // 1 investigator ⇒ auto-bind, no input.
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &gain_resources(InvestigatorTarget::ChosenByController, 2),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].resources, before + 2);
+        assert!(state.continuations.is_empty());
+    }
+
+    #[test]
+    fn chosen_investigator_two_candidates_suspends_then_binds_the_pick() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .build();
+        let before1 = state.investigators[&InvestigatorId(1)].resources;
+        let before2 = state.investigators[&InvestigatorId(2)].resources;
+        let mut events = Vec::new();
+        // Two candidates ⇒ suspend.
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &gain_resources(InvestigatorTarget::ChosenByController, 5),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].resources,
+            before1,
+            "suspend mutates nothing",
+        );
+
+        // Replay with pick = option 1 → the second investigator (BTreeMap
+        // sorted order) gains.
+        let outcome = super::apply_effect_with_decisions(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &gain_resources(InvestigatorTarget::ChosenByController, 5),
+            ctx(1),
+            vec![crate::engine::OptionId(1)],
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&InvestigatorId(2)].resources,
+            before2 + 5
+        );
+        assert_eq!(state.investigators[&InvestigatorId(1)].resources, before1);
+    }
+
+    #[test]
+    fn choose_one_then_chosen_target_replays_both_picks() {
+        // Multi-decision replay (the First Aid shape): a ChooseOne branch
+        // pick *and* a ChosenByController target pick, in one effect.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .build();
+        let before1 = state.investigators[&InvestigatorId(1)].resources;
+        let before2 = state.investigators[&InvestigatorId(2)].resources;
+        let effect = Effect::ChooseOne(vec![
+            gain_resources(InvestigatorTarget::ChosenByController, 1),
+            gain_resources(InvestigatorTarget::ChosenByController, 9),
+        ]);
+        let mut events = Vec::new();
+
+        // decisions = [branch 1 (the +9 branch), target 1 (investigator 2)].
+        let outcome = super::apply_effect_with_decisions(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+            vec![crate::engine::OptionId(1), crate::engine::OptionId(1)],
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&InvestigatorId(2)].resources,
+            before2 + 9
+        );
+        assert_eq!(state.investigators[&InvestigatorId(1)].resources, before1);
+    }
+
+    #[test]
+    fn two_choices_resume_one_round_trip_at_a_time() {
+        // The real client flow: branch choice suspends, resume picks it and
+        // suspends *again* on the target choice (the second frame must carry
+        // the first pick forward), resume completes. Drives `resume_choice`
+        // directly — the same path `apply(ResolveInput)` routes to.
+        use crate::action::InputResponse;
+        use crate::engine::dispatch::choice::resume_choice;
+        use crate::engine::OptionId;
+
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .build();
+        let before2 = state.investigators[&InvestigatorId(2)].resources;
+        let effect = Effect::ChooseOne(vec![
+            gain_resources(InvestigatorTarget::ChosenByController, 1),
+            gain_resources(InvestigatorTarget::ChosenByController, 9),
+        ]);
+        let mut events = Vec::new();
+
+        // First suspend: the branch choice.
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+
+        // Resume the branch pick (the +9 branch) → suspends again on the
+        // target choice; the new frame carries the first pick.
+        let outcome = resume_choice(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::PickSingle(OptionId(1)),
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "second suspend on the target choice: {outcome:?}",
+        );
+        match state.continuations.last() {
+            Some(crate::state::Continuation::Choice(frame)) => {
+                assert_eq!(frame.decisions, vec![OptionId(1)], "first pick recorded");
+            }
+            other => panic!("expected a Choice frame, got {other:?}"),
+        }
+
+        // Resume the target pick (investigator 2) → completes.
+        let outcome = resume_choice(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::PickSingle(OptionId(1)),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&InvestigatorId(2)].resources,
+            before2 + 9
+        );
+        assert!(state.continuations.is_empty());
+    }
+
+    #[test]
+    fn chosen_location_two_candidates_suspends() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(test_location(1, "A"))
+            .with_location(test_location(2, "B"))
+            .build();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &discover_clue(LocationTarget::ChosenByController, 1),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        match state.continuations.last() {
+            Some(crate::state::Continuation::Choice(frame)) => {
+                assert_eq!(frame.offered.len(), 2, "two locations offered");
+            }
+            other => panic!("expected a Choice frame, got {other:?}"),
         }
     }
 

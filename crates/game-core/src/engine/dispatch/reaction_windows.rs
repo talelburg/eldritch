@@ -287,13 +287,11 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         ", or InputResponse::Skip to close"
     };
     EngineOutcome::AwaitingInput {
-        request: InputRequest {
-            prompt: format!(
-                "Resolution window: {} candidate(s) pending. \
-                 Submit InputResponse::PickIndex to resolve one{skip_hint}.",
-                window.pending_triggers.len(),
-            ),
-        },
+        request: InputRequest::prompt(format!(
+            "Resolution window: {} candidate(s) pending. \
+             Submit InputResponse::PickIndex to resolve one{skip_hint}.",
+            window.pending_triggers.len(),
+        )),
         // No multi-window state to disambiguate — routing keys off
         // the top of `state.open_windows`. Conventional 0 like the
         // commit-window's resume token.
@@ -497,12 +495,10 @@ pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcom
     };
     let pending_len = window.pending_triggers.len();
     EngineOutcome::AwaitingInput {
-        request: InputRequest {
-            prompt: format!(
-                "Resolution window: {pending_len} candidate(s) pending. \
-                 Submit InputResponse::PickIndex to resolve one{skip_hint}.",
-            ),
-        },
+        request: InputRequest::prompt(format!(
+            "Resolution window: {pending_len} candidate(s) pending. \
+             Submit InputResponse::PickIndex to resolve one{skip_hint}.",
+        )),
         resume_token: ResumeToken(0),
     }
 }

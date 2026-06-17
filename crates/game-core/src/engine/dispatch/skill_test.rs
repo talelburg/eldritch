@@ -109,12 +109,10 @@ pub(in crate::engine) fn start_skill_test(
     });
 
     EngineOutcome::AwaitingInput {
-        request: InputRequest {
-            prompt: format!(
-                "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
-                 (difficulty {difficulty}). Empty indices commits no cards.",
-            ),
-        },
+        request: InputRequest::prompt(format!(
+            "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
+             (difficulty {difficulty}). Empty indices commits no cards.",
+        )),
         // Routing keys off `state.in_flight_skill_test`, not the
         // token, so any opaque value is fine here. ResumeToken(0) is
         // the conventional "no extra context needed" choice for the
@@ -257,9 +255,17 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         let mut ctx = card_ctx(investigator);
         ctx.failed_by = Some(failed_by);
         let outcome = apply_effect(cx, effect, ctx);
+        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+            // on_fail suspended on a controller choice (Crypt Chill 01167's
+            // "choose an asset to discard", Axis A #334). The continuation is
+            // already `PostFollowUp` (pre-advanced above), so resuming the
+            // choice re-enters `drive_skill_test` at teardown — `on_fail`
+            // does not re-run. Mirrors the follow-up-suspend path above.
+            return outcome;
+        }
         debug_assert!(
             matches!(outcome, EngineOutcome::Done),
-            "revelation on_fail must resolve to Done in C4b scope: {outcome:?}"
+            "revelation on_fail must resolve to Done or AwaitingInput: {outcome:?}"
         );
     }
 

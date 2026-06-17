@@ -700,7 +700,7 @@ pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
         );
         cx.state.act_round_end_pending = Some(pending);
         return EngineOutcome::AwaitingInput {
-            request: InputRequest { prompt },
+            request: InputRequest::prompt(prompt),
             resume_token: ResumeToken(0),
         };
     }
@@ -844,13 +844,11 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
     let next = remaining[0];
     cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
     EngineOutcome::AwaitingInput {
-        request: InputRequest {
-            prompt: format!(
-                "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
-                 submit InputResponse::DiscardCards with the hand indices to discard down to \
-                 {HAND_SIZE_LIMIT}.",
-            ),
-        },
+        request: InputRequest::prompt(format!(
+            "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
+             submit InputResponse::DiscardCards with the hand indices to discard down to \
+             {HAND_SIZE_LIMIT}.",
+        )),
         resume_token: ResumeToken(0),
     }
 }

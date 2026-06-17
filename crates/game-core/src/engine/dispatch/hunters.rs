@@ -347,7 +347,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
     };
     cx.state.hunter_move_pending = Some(choice);
     EngineOutcome::AwaitingInput {
-        request: InputRequest { prompt },
+        request: InputRequest::prompt(prompt),
         resume_token: ResumeToken(0),
     }
 }

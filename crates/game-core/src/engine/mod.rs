@@ -18,6 +18,8 @@ mod outcome;
 pub(crate) mod pathfinding;
 
 pub use dispatch::act_agenda::place_doom_on_current_agenda;
+pub use dispatch::cards::discard_random_from_hand;
+pub use dispatch::choice::{resolve_choice_count, suspend_for_native_choice, ChoiceResolution};
 pub use dispatch::combat::deal_damage_to_enemy;
 pub use dispatch::elimination::take_damage;
 pub use dispatch::encounter::{
@@ -26,7 +28,7 @@ pub use dispatch::encounter::{
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
 pub use evaluator::{effective_shroud, location_id_by_code, EvalContext};
-pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
+pub use outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 pub use pathfinding::shortest_first_steps;
 
 // Crate-internal re-exports for `test_support::fire_forced_on_enter`.

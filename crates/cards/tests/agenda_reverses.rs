@@ -13,7 +13,7 @@ use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId};
 use game_core::test_support::{
     fire_forced_on_agenda_advance, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::EngineOutcome;
+use game_core::{apply, Action, EngineOutcome, InputResponse, OptionId, PlayerAction};
 
 static INSTALL: Once = Once::new();
 
@@ -23,10 +23,11 @@ fn install_registry() {
     });
 }
 
-/// 01105's deferred reverse: the lead investigator takes 2 horror (the
-/// real card is a lead choice — TODO #212; see `impls::agenda_01105`).
+/// 01105's reverse is the lead's interactive `ChooseOne` (Axis A #334): it
+/// suspends with a two-option prompt, and picking branch 1 (the printed
+/// "lead takes 2 horror") resolves through `apply` + `ResolveInput`.
 #[test]
-fn agenda_01105_reverse_deals_two_horror_to_the_lead() {
+fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     install_registry();
     let lead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
@@ -35,12 +36,72 @@ fn agenda_01105_reverse_deals_two_horror_to_the_lead() {
         .build();
     assert_eq!(state.investigators[&lead].horror, 0);
 
+    // Firing the reverse suspends on the lead's choice (Choice frame pushed).
     let mut events = Vec::new();
     let outcome = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
-    assert_eq!(outcome, EngineOutcome::Done);
+    assert!(
+        matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+        "01105's reverse is a lead choice, not a deterministic effect: {outcome:?}",
+    );
+
+    // Pick branch 1 (option id 1): the lead takes 2 horror.
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(1)),
+        }),
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
-        state.investigators[&lead].horror, 2,
-        "01105's reverse deals 2 horror to the lead investigator",
+        result.state.investigators[&lead].horror, 2,
+        "branch 1 deals 2 horror to the lead investigator",
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "the choice frame is consumed",
+    );
+}
+
+/// Picking branch 0 (each investigator discards 1 random card from hand)
+/// moves one card from the lead's seeded hand into their discard.
+#[test]
+fn agenda_01105_reverse_choice_random_discard_each() {
+    install_registry();
+    let lead = InvestigatorId(1);
+    let mut state = GameStateBuilder::new()
+        .with_investigator(test_investigator(1))
+        .with_turn_order([lead])
+        .build();
+    // Seed a single known card into the lead's hand so the random discard is
+    // deterministic (only one card to pick).
+    state
+        .investigators
+        .get_mut(&lead)
+        .expect("lead present")
+        .hand
+        .push(CardCode::new("01088")); // Emergency Cache (any hand-legal card)
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    let lead_inv = &result.state.investigators[&lead];
+    assert!(lead_inv.hand.is_empty(), "the one hand card was discarded");
+    assert_eq!(
+        lead_inv.discard,
+        vec![CardCode::new("01088")],
+        "the discarded card landed in the discard pile",
+    );
+    assert_eq!(
+        result.state.investigators[&lead].horror, 0,
+        "no horror branch"
     );
 }
 

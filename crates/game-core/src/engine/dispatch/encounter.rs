@@ -468,12 +468,10 @@ pub(super) fn spawn_enemy_at(
                 chain_count: 0,
             });
             EngineOutcome::AwaitingInput {
-                request: InputRequest {
-                    prompt: format!(
-                        "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
-                         engage among {tied:?} (submit InputResponse::PickInvestigator)"
-                    ),
-                },
+                request: InputRequest::prompt(format!(
+                    "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
+                     engage among {tied:?} (submit InputResponse::PickInvestigator)"
+                )),
                 resume_token: ResumeToken(0),
             }
         }

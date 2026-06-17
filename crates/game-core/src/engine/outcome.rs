@@ -41,15 +41,61 @@ pub enum EngineOutcome {
     },
 }
 
+/// Stable id for one offered option, scoped to a single
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) prompt: the index into
+/// the request's [`options`](InputRequest::options) (and the matching
+/// `ChoiceFrame` offered set). A `u32` newtype for a
+/// host-pointer-width-independent wire format; resume validates membership
+/// rather than trusting it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct OptionId(pub u32);
+
+/// One selectable option in a structured choice prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChoiceOption {
+    /// The id the host echoes back via
+    /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
+    pub id: OptionId,
+    /// Human-readable label for the host to render.
+    pub label: String,
+}
+
 /// A prompt the engine emits when it needs player input.
 ///
-/// Phase-1 minimal shape; later phases will add structured options,
-/// target lists, filters, etc.
+/// Carries free-form [`prompt`](Self::prompt) text plus, for the
+/// single-selection choice contract (Axis A), a structured
+/// [`options`](Self::options) list. Legacy prompt-only callers (the
+/// reaction-window `PickIndex` path, commit windows) leave `options` empty
+/// via [`InputRequest::prompt`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InputRequest {
     /// Human-readable text describing what the player must choose.
     pub prompt: String,
+    /// Structured options for a single-selection choice. Empty for the
+    /// legacy free-form prompts that have not migrated to the structured
+    /// contract.
+    pub options: Vec<ChoiceOption>,
+}
+
+impl InputRequest {
+    /// A legacy prompt-only request (no structured options).
+    #[must_use]
+    pub fn prompt(text: impl Into<String>) -> Self {
+        Self {
+            prompt: text.into(),
+            options: Vec::new(),
+        }
+    }
+
+    /// A structured single-selection choice request.
+    #[must_use]
+    pub fn choice(text: impl Into<String>, options: Vec<ChoiceOption>) -> Self {
+        Self {
+            prompt: text.into(),
+            options,
+        }
+    }
 }
 
 /// Opaque continuation token returned alongside [`AwaitingInput`].
@@ -62,3 +108,36 @@ pub struct InputRequest {
 /// [`AwaitingInput`]: EngineOutcome::AwaitingInput
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ResumeToken(pub(crate) u64);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn choice_input_request_round_trips() {
+        let req = InputRequest::choice(
+            "Choose one",
+            vec![
+                ChoiceOption {
+                    id: OptionId(0),
+                    label: "Take 2 horror".into(),
+                },
+                ChoiceOption {
+                    id: OptionId(1),
+                    label: "Each discards 1".into(),
+                },
+            ],
+        );
+        let json = serde_json::to_string(&req).expect("serialize");
+        let back: InputRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, req);
+        assert_eq!(back.options.len(), 2);
+        assert_eq!(back.options[1].id, OptionId(1));
+    }
+
+    #[test]
+    fn prompt_only_request_has_no_options() {
+        let req = InputRequest::prompt("Submit PickIndex");
+        assert!(req.options.is_empty());
+    }
+}
