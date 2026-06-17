@@ -67,10 +67,12 @@ pub mod agenda_01106;
 pub mod agenda_01107;
 pub mod attic;
 pub mod automatic_45;
+pub mod beat_cop;
 pub mod cellar;
 pub mod deduction;
 pub mod dr_milan_christopher;
 pub mod emergency_cache;
+pub mod first_aid;
 pub mod guard_dog;
 pub mod guts;
 pub mod holy_rosary;
@@ -108,10 +110,12 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         agenda_01107::CODE => Some(agenda_01107::abilities()),
         attic::CODE => Some(attic::abilities()),
         automatic_45::CODE => Some(automatic_45::abilities()),
+        beat_cop::CODE => Some(beat_cop::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
         dr_milan_christopher::CODE => Some(dr_milan_christopher::abilities()),
         emergency_cache::CODE => Some(emergency_cache::abilities()),
+        first_aid::CODE => Some(first_aid::abilities()),
         guard_dog::CODE => Some(guard_dog::abilities()),
         guts::CODE => Some(guts::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),

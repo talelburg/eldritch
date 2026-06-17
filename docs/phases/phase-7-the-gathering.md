@@ -85,7 +85,7 @@ root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
 | C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog reaction + enemy-attack soak mechanic | ✅ PR #292 |
 | — | [#295](https://github.com/talelburg/eldritch/issues/295) | infra: weapon support — ammo/uses (`Cost::SpendUses`) + inspectable `Effect::Fight` (`IntExpr` modifier + bonus damage) (prerequisite for C5c's .38 Special) | ✅ PR #297 |
 | C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | ✅ PR #298 |
-| C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets — **3 engine-free shipped** (.45 Automatic, Physical Training, Machete); Beat Cop + First Aid deferred to [#301](https://github.com/talelburg/eldritch/issues/301) / [#302](https://github.com/talelburg/eldritch/issues/302); Guard Dog already in C5b | 🛠️ PR #303 (partial; #239 open) |
+| C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets — .45 Automatic, Physical Training, Machete (PR #303); Guard Dog (C5b); **Beat Cop + First Aid** (PR #357, on the #301/#302 prereqs) | ✅ PR #303 + #357 |
 | — | [#307](https://github.com/talelburg/eldritch/issues/307) | infra: `Trigger::OnCommit` firing + `Effect::BoostAttackDamage` / `InFlightSkillTest.bonus_attack_damage` (prerequisite for C5e's Vicious Blow) | ✅ PR #308 |
 | C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) — **only Vicious Blow 01025 was implementable; shipped (PR #309).** Engine prereq landed (PR #308); Evidence! ([#304](https://github.com/talelburg/eldritch/issues/304), reaction-event-play), Dodge ([#305](https://github.com/talelburg/eldritch/issues/305), attack-cancellation), Dynamite Blast ([#306](https://github.com/talelburg/eldritch/issues/306), location-choice = #212/#213) carved to follow-ups | ✅ PR #309 |
 | C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window | ✅ PR #318 |
@@ -153,7 +153,11 @@ when picked up.
   PR-2 (#301 — `Cost::DiscardSelf` + the enemy variety + `Effect::DealDamageToEnemy`,
   Beat Cop's engine prereqs) shipped: **✅ PR #352**.
   PR-3 (#302 — `Effect::Heal` + uses-depletion auto-discard, First Aid's engine
-  prereqs) shipped: **✅ PR #355**.
+  prereqs) shipped: **✅ PR #355**. PR-4 (#239 — the Beat Cop + First Aid
+  *cards*) shipped: **✅ PR #357**, **closing C5d** (the last open Group-C
+  sub-slice). The orthogonal #354 (`DealDamage`/`DealHorror` → `Effect::Deal`
+  consolidation) also shipped (PR #356). Remaining cluster PRs: #312 (Knife,
+  on #301), #321 (Medical Texts, on #302), #313 (Flashlight), #306 (Dynamite).
   Slice 1's `fire_forced_triggers` is a forward-compatible subset Axis B
   replaces. **Note:** #213's "one mixed pool" framing was corrected to
   RR-accurate two-phase (forced-all-before-reaction, RR p.2; issue text
