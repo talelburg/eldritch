@@ -25,10 +25,10 @@ pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
     Act, ActRoundEndPending, Agenda, ClueInterruptPending, Continuation, EnemyAttackSource,
-    FastActorScope, FinishContinuation, GameState, HandSizeDiscard, HunterChoice,
-    InFlightSkillTest, PendingEnemyAttack, PendingSkillModifier, PhaseStep, ResolutionCandidate,
-    ResolutionFrame, RoundEndAdvance, SkillTestFollowUp, SpawnEngagePending, WindowBinding,
-    WindowKind,
+    FastActorScope, FinishContinuation, ForcedContinuation, GameState, HandSizeDiscard,
+    HunterChoice, InFlightSkillTest, PendingEnemyAttack, PendingSkillModifier, PhaseStep,
+    ResolutionCandidate, ResolutionFrame, ResolutionKind, RoundEndAdvance, SkillTestFollowUp,
+    SpawnEngagePending, WindowBinding, WindowKind,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};

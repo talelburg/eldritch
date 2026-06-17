@@ -18,7 +18,8 @@
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
 use crate::state::{
-    CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, WindowKind,
+    CardCode, CardInstanceId, EnemyId, ForcedContinuation, InvestigatorId, LocationId, Phase,
+    WindowKind,
 };
 
 use super::super::outcome::EngineOutcome;
@@ -129,6 +130,45 @@ impl TimingEvent {
             _ => None,
         }
     }
+
+    /// How a *forced run* opened at this timing point resumes the framework
+    /// flow on close (#213). Read only when 2+ simultaneous forced abilities
+    /// fire and the lead must order them — see [`emit_event`].
+    ///
+    /// - `Some(ForcedContinuation::Terminal)` — the emit site is genuinely
+    ///   terminal: nothing in the framework runs after the forced abilities,
+    ///   so the run closes to `Done`.
+    /// - `Some(ForcedContinuation::…)` — the site has framework work after
+    ///   the emit; the named variant resumes exactly that tail.
+    /// - `None` — the site *has* a tail but its resume continuation is **not
+    ///   wired**. Safe today because no such site can produce 2+ forced in
+    ///   the current card pool; `emit_event` turns a 2+ hit here into a loud
+    ///   `unreachable!` rather than silently dropping the tail.
+    ///
+    /// The match is exhaustive over [`TimingEvent`] (and over [`Phase`] for
+    /// `PhaseEnded`) so adding a variant forces a deliberate decision here.
+    fn forced_continuation(&self) -> Option<ForcedContinuation> {
+        match self {
+            // A move completes once "when you enter" forced abilities
+            // resolve — nothing in the framework follows.
+            TimingEvent::EnteredLocation { .. } => Some(ForcedContinuation::Terminal),
+            // "Upkeep phase ends. Round ends." (RR p.24): after the round-end
+            // forced abilities resolve, the upkeep step opens the act
+            // round-end advance window and steps the phase.
+            TimingEvent::RoundEnded => Some(ForcedContinuation::UpkeepAfterRoundEnded),
+            // Non-terminal sites with no wired resume continuation. None can
+            // produce 2+ forced in the current card pool; if one ever does,
+            // emit_event's 2+ branch fires its loud guard rather than
+            // dropping the tail. Add a ForcedContinuation variant + arm then.
+            TimingEvent::PhaseEnded { .. }
+            | TimingEvent::ActAdvanced { .. }
+            | TimingEvent::AgendaAdvanced { .. }
+            | TimingEvent::EnemyDefeated { .. }
+            | TimingEvent::EndOfTurn { .. }
+            | TimingEvent::GameEnd
+            | TimingEvent::EnemyAttackDamagedSelf { .. } => None,
+        }
+    }
 }
 
 /// Dispatch a timing event: queue its reaction window (phase 2), then fire
@@ -159,7 +199,18 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     // run and suspend for the choice. 0 or 1 resolve synchronously, as before.
     let candidates = collect_forced_hits(cx.state, &point);
     if candidates.len() >= 2 {
-        super::reaction_windows::open_forced_resolution(cx, candidates)
+        // 2+ simultaneous forced: the lead orders them (#213). Resume the
+        // framework flow this site suspended via its forced continuation; a
+        // non-terminal site with no wired continuation is a loud bug, not a
+        // silent dropped tail.
+        let continuation = event.forced_continuation().unwrap_or_else(|| {
+            unreachable!(
+                "emit_event: 2+ simultaneous forced abilities at {event:?}, but its \
+                 resume continuation isn't wired (#213) — add a ForcedContinuation \
+                 variant + a TimingEvent::forced_continuation arm",
+            )
+        });
+        super::reaction_windows::open_forced_resolution(cx, candidates, continuation)
     } else {
         fire_forced_triggers(cx, &point)
     }

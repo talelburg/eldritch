@@ -650,20 +650,35 @@ fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
             phase: Phase::Upkeep,
         },
     );
+    // No slice-1 card keys to "end of the upkeep phase", so this resolves
+    // synchronously. A 2+/suspending hit is caught structurally by
+    // `emit_event` (its forced run is unwired for this site) rather than here.
     debug_assert!(
         matches!(forced, EngineOutcome::Done),
-        "upkeep_phase_end forced trigger did not resolve to Done: {forced:?} \
-         (2+ simultaneous forced at round end needs #213)"
+        "upkeep_phase_end PhaseEnded(Upkeep) forced did not resolve to Done: {forced:?}"
     );
     // "Upkeep phase ends. Round ends." (RR p.24) — fire round-end Forced
-    // effects (agenda 01107's doom) after the upkeep-phase-end ones. Both
-    // resolve to Done in-slice (doom just increments a counter).
-    let round_end = super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded);
-    debug_assert!(
-        matches!(round_end, EngineOutcome::Done),
-        "upkeep_phase_end RoundEnded forced did not resolve to Done: {round_end:?} \
-         (2+ simultaneous forced at round end needs #213)"
-    );
+    // effects (agenda 01107's doom, Dissonant Voices 01165's discard). When
+    // 2+ fire simultaneously the lead orders them and the forced run suspends
+    // (#213); its `UpkeepAfterRoundEnded` continuation resumes the tail below
+    // on close. 0 or 1 resolve synchronously here.
+    match super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded) {
+        EngineOutcome::Done => upkeep_after_round_ended(cx),
+        // The forced run suspended for the lead's ordering choice; the tail
+        // resumes via UpkeepAfterRoundEnded when the run closes.
+        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
+        rejected @ EngineOutcome::Rejected { .. } => rejected,
+    }
+}
+
+/// The upkeep step's tail after the round-end forced abilities resolve:
+/// the act round-end advance window, then the Upkeep→Mythos transition.
+///
+/// Reached two ways: inline from [`upkeep_phase_end`] when the round-end
+/// forced abilities resolve synchronously (0 or 1), and from the forced
+/// run's [`ForcedContinuation::UpkeepAfterRoundEnded`] close when 2+ forced
+/// abilities suspended for the lead's ordering choice (#213).
+pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
     // Act objective: a round-end "may spend clues to advance" window
     // (01109). Opens only when the current act carries it AND the
     // contributor-location investigators can afford the threshold — the
@@ -3023,7 +3038,7 @@ mod enemy_phase_tests {
             .continuations
             .push(crate::state::Continuation::Resolution(ResolutionFrame {
                 pending_triggers: Vec::new(),
-                window: Some(crate::state::WindowBinding {
+                kind: crate::state::ResolutionKind::Window(crate::state::WindowBinding {
                     kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
                     fast_actors: FastActorScope::Any,
                 }),

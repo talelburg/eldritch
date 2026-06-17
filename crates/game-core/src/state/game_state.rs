@@ -723,12 +723,51 @@ pub struct ResolutionFrame {
     /// lead orders. Empty is permitted — framework windows opened for
     /// phase/timing reasons gate Fast actions with no pending candidates.
     pub pending_triggers: Vec<ResolutionCandidate>,
-    /// The window this run is, if any. `Some` for a reaction / fast /
-    /// framework window (carrying its kind + Fast-action scope); `None`
-    /// for the **forced run** (Axis-B T5b / #213) — which is mandatory
-    /// (cannot be skipped), admits no Fast plays, and returns to its
-    /// emit site on close rather than running a window continuation.
-    pub window: Option<WindowBinding>,
+    /// What this resolution run *is*: either a reaction / fast / framework
+    /// [`Window`](ResolutionKind::Window) (carrying its kind + Fast-action
+    /// scope), or the mandatory **forced run**
+    /// ([`Forced`](ResolutionKind::Forced), Axis-B T5b / #213) — which
+    /// cannot be skipped, admits no Fast plays, and on close resumes the
+    /// framework flow it suspended via its [`ForcedContinuation`].
+    pub kind: ResolutionKind,
+}
+
+/// What a [`ResolutionFrame`] is resolving: a reaction/fast/framework
+/// window, or the mandatory forced run.
+///
+/// The two arms differ in close behavior. A [`Window`](Self::Window) runs
+/// its per-kind window continuation (or simply pops, for after-event
+/// reaction windows). The [`Forced`](Self::Forced) run instead resumes the
+/// framework flow that opened it — see [`ForcedContinuation`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResolutionKind {
+    /// A reaction / fast / framework window: skippable, admits Fast plays
+    /// from its [`fast_actors`](WindowBinding::fast_actors) scope, and runs
+    /// a per-kind continuation on close.
+    Window(WindowBinding),
+    /// The forced run (#213): mandatory, no Fast plays, and on close
+    /// resumes the framework flow named by the [`ForcedContinuation`].
+    Forced(ForcedContinuation),
+}
+
+/// How a [`Forced`](ResolutionKind::Forced) run resumes the framework flow
+/// it suspended when 2+ simultaneous forced abilities forced a lead-ordered
+/// choice (#213).
+///
+/// Most emit sites are *terminal*: nothing in the framework runs after the
+/// forced abilities resolve, so the run closes to [`Terminal`](Self::Terminal)
+/// and control returns to the caller. Sites with framework work *after* the
+/// emit (e.g. the upkeep step continues after `RoundEnded`) carry a dedicated
+/// variant naming that tail, so the suspended flow is resumed exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum ForcedContinuation {
+    /// No framework work follows the forced run; closing returns control to
+    /// the emit site's caller.
+    Terminal,
+    /// Resume the upkeep step's tail after `RoundEnded`'s forced abilities
+    /// resolve: open the act round-end advance window, then step the phase.
+    UpkeepAfterRoundEnded,
 }
 
 /// The window-specific part of a [`ResolutionFrame`]: which kind of window
@@ -757,29 +796,45 @@ impl ResolutionFrame {
     pub fn new_empty(kind: WindowKind, fast_actors: FastActorScope) -> Self {
         Self {
             pending_triggers: Vec::new(),
-            window: Some(WindowBinding { kind, fast_actors }),
+            kind: ResolutionKind::Window(WindowBinding { kind, fast_actors }),
         }
     }
 
     /// The [`WindowKind`] if this frame is a window; `None` for the forced
-    /// run. Convenience over `frame.window.as_ref().map(|w| w.kind)`.
+    /// run.
     #[must_use]
     pub fn kind(&self) -> Option<WindowKind> {
-        self.window.as_ref().map(|w| w.kind)
+        match &self.kind {
+            ResolutionKind::Window(w) => Some(w.kind),
+            ResolutionKind::Forced(_) => None,
+        }
     }
 
     /// The Fast-action scope if this frame is a window; `None` for the
     /// forced run (no Fast plays).
     #[must_use]
     pub fn fast_actors(&self) -> Option<&FastActorScope> {
-        self.window.as_ref().map(|w| &w.fast_actors)
+        match &self.kind {
+            ResolutionKind::Window(w) => Some(&w.fast_actors),
+            ResolutionKind::Forced(_) => None,
+        }
+    }
+
+    /// The [`ForcedContinuation`] if this is the forced run; `None` for a
+    /// window. Read on close to resume the suspended framework flow.
+    #[must_use]
+    pub fn forced_continuation(&self) -> Option<ForcedContinuation> {
+        match &self.kind {
+            ResolutionKind::Forced(c) => Some(*c),
+            ResolutionKind::Window(_) => None,
+        }
     }
 
     /// Whether this is the forced-resolution run (mandatory, no window).
     /// The complement of being a reaction / fast / framework window.
     #[must_use]
     pub fn is_forced(&self) -> bool {
-        self.window.is_none()
+        matches!(self.kind, ResolutionKind::Forced(_))
     }
 }
 
@@ -1230,7 +1285,7 @@ mod open_window_tests {
     fn open_window_serde_roundtrip() {
         let window = ResolutionFrame {
             pending_triggers: Vec::new(),
-            window: Some(WindowBinding {
+            kind: ResolutionKind::Window(WindowBinding {
                 kind: WindowKind::AfterEnemyDefeated {
                     enemy: EnemyId(7),
                     by: Some(InvestigatorId(1)),

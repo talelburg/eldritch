@@ -232,10 +232,8 @@ impl GameStateBuilder {
     /// also need a reaction queue should manipulate `state` after
     /// `build()` rather than complicate this builder).
     pub fn with_open_window(mut self, kind: WindowKind, fast_actors: FastActorScope) -> Self {
-        self.open_windows.push(ResolutionFrame {
-            pending_triggers: Vec::new(),
-            window: Some(crate::state::WindowBinding { kind, fast_actors }),
-        });
+        self.open_windows
+            .push(ResolutionFrame::new_empty(kind, fast_actors));
         self
     }
 

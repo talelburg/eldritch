@@ -17,9 +17,9 @@ use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, GameState,
-    InvestigatorId, Phase, PhaseStep, ResolutionCandidate, ResolutionFrame, Status, WindowBinding,
-    WindowKind,
+    CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, ForcedContinuation,
+    GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate, ResolutionFrame,
+    ResolutionKind, Status, WindowBinding, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -60,27 +60,30 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
         .continuations
         .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers,
-            window: Some(WindowBinding {
+            kind: ResolutionKind::Window(WindowBinding {
                 kind,
                 fast_actors: FastActorScope::Any,
             }),
         }));
 }
 
-/// Open the forced-resolution run (Axis-B T5b / #213): push a `window: None`
-/// [`ResolutionFrame`] holding the 2+ simultaneous forced `candidates`, and
-/// present the lead investigator's order choice. The forced run is mandatory
-/// (cannot be skipped) and admits no Fast plays (no window). The caller
+/// Open the forced-resolution run (Axis-B T5b / #213): push a
+/// [`Forced`](ResolutionKind::Forced) [`ResolutionFrame`] holding the 2+
+/// simultaneous forced `candidates`, and present the lead investigator's
+/// order choice. The forced run is mandatory (cannot be skipped) and admits
+/// no Fast plays. `continuation` names the framework flow to resume when the
+/// run closes (see [`ForcedContinuation`]). The caller
 /// ([`super::emit::emit_event`]) returns the resulting `AwaitingInput`.
 pub(super) fn open_forced_resolution(
     cx: &mut Cx,
     candidates: Vec<ResolutionCandidate>,
+    continuation: ForcedContinuation,
 ) -> EngineOutcome {
     cx.state
         .continuations
         .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers: candidates,
-            window: None,
+            kind: ResolutionKind::Forced(continuation),
         }));
     open_queued_reaction_window(cx)
 }
@@ -549,22 +552,26 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     // "forced abilities are mandatory" rule lives in the forced resolution
     // run (its frame is `window: None` — Axis-B T5b), not here.
     let removed = cx.state.continuations.remove(idx);
-    let window_kind = removed
+    let frame = removed
         .as_resolution()
-        .expect("close_reaction_window_at: removed frame must be a Resolution frame")
-        .kind();
+        .expect("close_reaction_window_at: removed frame must be a Resolution frame");
 
-    // A window (`Some`) emits `WindowClosed` and runs its kind-specific
-    // continuation (e.g. MythosAfterDraws → mythos_phase_end). The forced
-    // run (`None`) is not a window: no event, and it finishes here for
-    // terminal emit sites — B3 adds the non-terminal resume-continuations.
-    // The continuation may suspend (e.g. upkeep step 4.5), so propagate.
-    let continuation = match window_kind {
-        Some(kind) => {
-            cx.events.push(Event::WindowClosed { kind });
-            run_window_continuation(cx, kind)
-        }
-        None => EngineOutcome::Done,
+    // A window emits `WindowClosed` and runs its kind-specific continuation
+    // (e.g. MythosAfterDraws → mythos_phase_end). The forced run (#213) is
+    // not a window: no event; instead it resumes the framework flow it
+    // suspended via its `ForcedContinuation`. Either may suspend (e.g. the
+    // upkeep act round-end advance window), so propagate the outcome.
+    let continuation = if let Some(kind) = frame.kind() {
+        cx.events.push(Event::WindowClosed { kind });
+        run_window_continuation(cx, kind)
+    } else {
+        let cont = frame.forced_continuation().unwrap_or_else(|| {
+            unreachable!(
+                "close_reaction_window_at: a non-window Resolution frame is the forced \
+                 run and must carry a ForcedContinuation"
+            )
+        });
+        resume_forced_continuation(cx, cont)
     };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
         return continuation;
@@ -766,6 +773,25 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
     }
 }
 
+/// Resume the framework flow a closed forced run (#213) suspended.
+///
+/// The forced run opens only when 2+ simultaneous forced abilities fire at a
+/// timing point and the lead must order them. Once they all resolve, control
+/// returns here to run whatever framework work followed the emit site, named
+/// by the [`ForcedContinuation`] the run carried (see
+/// [`super::emit::TimingEvent`]'s `forced_continuation`). May itself suspend
+/// (the upkeep tail opens the act round-end advance window), so propagate.
+fn resume_forced_continuation(cx: &mut Cx, continuation: ForcedContinuation) -> EngineOutcome {
+    match continuation {
+        // Genuinely terminal emit site (e.g. a move's "when you enter"
+        // forced abilities) — nothing follows.
+        ForcedContinuation::Terminal => EngineOutcome::Done,
+        // "Upkeep phase ends. Round ends." — run the upkeep step's tail
+        // (act round-end advance window, then Upkeep→Mythos).
+        ForcedContinuation::UpkeepAfterRoundEnded => super::phases::upkeep_after_round_ended(cx),
+    }
+}
+
 /// Advance the enemy-phase cursor past `investigator` and open the next
 /// window (C5b #237).
 ///
@@ -843,7 +869,7 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
         .continuations
         .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers,
-            window: Some(WindowBinding {
+            kind: ResolutionKind::Window(WindowBinding {
                 kind,
                 fast_actors: FastActorScope::Any,
             }),
