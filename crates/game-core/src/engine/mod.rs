@@ -19,7 +19,7 @@ pub(crate) mod pathfinding;
 
 pub use dispatch::act_agenda::place_doom_on_current_agenda;
 pub use dispatch::cards::discard_random_from_hand;
-pub use dispatch::choice::suspend_for_native_choice;
+pub use dispatch::choice::{resolve_choice_count, suspend_for_native_choice, ChoiceResolution};
 pub use dispatch::combat::deal_damage_to_enemy;
 pub use dispatch::elimination::take_damage;
 pub use dispatch::encounter::{

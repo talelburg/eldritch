@@ -15,8 +15,9 @@ use crate::engine::{ChoiceOption, Cx, EngineOutcome, InputRequest, OptionId, Res
 use crate::state::{ChoiceFrame, Continuation};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
-/// options (umbrella §3.4 / spec §5).
-pub(crate) enum ChoiceResolution {
+/// options (umbrella §3.4 / spec §5). `pub` so card-local natives can apply
+/// the same convention as the evaluator (Crypt Chill 01167).
+pub enum ChoiceResolution {
     /// Zero legal options — caller applies its printed fallback or rejects.
     Empty,
     /// Exactly one — auto-bind this index, no input.
@@ -26,7 +27,7 @@ pub(crate) enum ChoiceResolution {
 }
 
 /// Map a legal-option count to the resolve convention.
-pub(crate) fn resolve_choice_count(n: usize) -> ChoiceResolution {
+pub fn resolve_choice_count(n: usize) -> ChoiceResolution {
     match n {
         0 => ChoiceResolution::Empty,
         1 => ChoiceResolution::Auto(0),

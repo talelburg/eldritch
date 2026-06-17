@@ -20,7 +20,10 @@ use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{native, revelation, skill_test, Ability};
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{CardInstanceId, InvestigatorId, Zone};
-use game_core::{suspend_for_native_choice, take_damage, Cx, EngineOutcome, EvalContext, Event};
+use game_core::{
+    resolve_choice_count, suspend_for_native_choice, take_damage, ChoiceResolution, Cx,
+    EngineOutcome, EvalContext, Event,
+};
 
 /// `ArkhamDB` code for Crypt Chill.
 pub const CODE: &str = "01167";
@@ -76,17 +79,17 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         return discard_asset_instance(cx, controller, instance);
     }
 
-    match assets.len() {
+    match resolve_choice_count(assets.len()) {
         // Cannot discard an asset → take 2 damage instead (the printed
         // fallback; defeat handled by the kernel helper).
-        0 => {
+        ChoiceResolution::Empty => {
             take_damage(cx, controller, 2);
             EngineOutcome::Done
         }
         // Exactly one → auto-discard, no input.
-        1 => discard_asset_instance(cx, controller, assets[0]),
+        ChoiceResolution::Auto(i) => discard_asset_instance(cx, controller, assets[i]),
         // 2+ → suspend for the controller's choice.
-        _ => {
+        ChoiceResolution::Suspend => {
             let labels = assets.iter().map(|id| format!("{id:?}")).collect();
             suspend_for_native_choice(
                 cx,
