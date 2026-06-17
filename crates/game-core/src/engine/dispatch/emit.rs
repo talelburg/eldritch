@@ -32,16 +32,17 @@ use super::Cx;
 /// The union of [`ForcedTriggerPoint`] (the forced dispatch key) and the
 /// event-driven [`WindowKind`] variants (the reaction dispatch key). Each
 /// variant maps to an optional forced point ([`Self::forced_point`]) and an
-/// optional reaction window ([`Self::reaction_window`]); `EnemyDefeated` is
-/// **dual** (both forced and reaction at the same point).
+/// optional reaction window ([`Self::reaction_window`]); `EnemyDefeated` and
+/// `SuccessfullyInvestigated` are **dual** (both forced and reaction at the
+/// same point).
 ///
-/// The successful-investigate moment is *not* a `TimingEvent` in T5a: its
-/// forced (Obscuring Fog) and reaction (Dr. Milan) fire at different
-/// skill-test driver steps today, so collapsing them into one timing event
-/// would reorder them (RR forced-first) — a behavior change deferred to T5b.
-/// Framework `PlayerWindow(PhaseStep)` windows are *not* timing events —
-/// they have no `EventPattern` and stay on explicit `open_fast_window`
-/// calls.
+/// `SuccessfullyInvestigated` collapses the successful-investigate moment
+/// into one timing point (T5b / #213): pre-T5b its forced (Obscuring Fog)
+/// fired a skill-test driver step *after* its reaction window (Dr. Milan)
+/// opened — reaction-before-forced, against RR p.2. Routing both through one
+/// `emit_event` restores forced-before-reaction. Framework
+/// `PlayerWindow(PhaseStep)` windows are *not* timing events — they have no
+/// `EventPattern` and stay on explicit `open_fast_window` calls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TimingEvent {
     /// An investigator entered a location (forced only).
@@ -75,6 +76,15 @@ pub(crate) enum TimingEvent {
         enemy: EnemyId,
         controller: InvestigatorId,
     },
+    /// A location was successfully investigated. **Dual:** forced (Obscuring
+    /// Fog 01168 discards) + the after-investigate reaction window (Dr. Milan
+    /// 01033). Both fire at one timing point — RR p.2 forced-before-reaction
+    /// — via this single emit, replacing the pre-T5b split where the forced
+    /// fired a step *after* the reaction window opened.
+    SuccessfullyInvestigated {
+        investigator: InvestigatorId,
+        location: LocationId,
+    },
 }
 
 impl TimingEvent {
@@ -106,6 +116,13 @@ impl TimingEvent {
                 investigator: *investigator,
             }),
             TimingEvent::GameEnd => Some(ForcedTriggerPoint::GameEnd),
+            TimingEvent::SuccessfullyInvestigated {
+                investigator,
+                location,
+            } => Some(ForcedTriggerPoint::AfterLocationInvestigated {
+                investigator: *investigator,
+                location: *location,
+            }),
             TimingEvent::EnemyAttackDamagedSelf { .. } => None,
         }
     }
@@ -127,6 +144,11 @@ impl TimingEvent {
                 enemy: *enemy,
                 controller: *controller,
             }),
+            TimingEvent::SuccessfullyInvestigated { investigator, .. } => {
+                Some(WindowKind::AfterSuccessfulInvestigate {
+                    investigator: *investigator,
+                })
+            }
             _ => None,
         }
     }
@@ -173,7 +195,8 @@ impl TimingEvent {
             | TimingEvent::AgendaAdvanced { .. }
             | TimingEvent::EnemyDefeated { .. }
             | TimingEvent::GameEnd
-            | TimingEvent::EnemyAttackDamagedSelf { .. } => None,
+            | TimingEvent::EnemyAttackDamagedSelf { .. }
+            | TimingEvent::SuccessfullyInvestigated { .. } => None,
         }
     }
 }

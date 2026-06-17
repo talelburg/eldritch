@@ -96,3 +96,81 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
         "Dr. Milan's reaction gained a resource",
     );
 }
+
+#[test]
+fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
+    // #213 forced-before-reaction: the "after you successfully investigate"
+    // timing point fires Obscuring Fog 01168's *forced* discard before Dr.
+    // Milan 01033's *reaction* window opens (RR p.2). Observable: at the
+    // moment the reaction window suspends, Obscuring Fog is already gone —
+    // pre-T5b it was still attached (the forced fired a later driver step).
+    install();
+    let obscuring_fog = "01168";
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LOC);
+    // Effective shroud is 2 (printed) + 2 (Obscuring Fog) = 4. Intellect 4 +
+    // Dr. Milan's +1 = 5 ≥ 4 → success with a Numeric(0) draw.
+    inv.skills.intellect = 4;
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(DR_MILAN),
+        CardInstanceId(1),
+    ));
+    let mut loc = test_location(10, "Study"); // shroud 2
+    loc.clues = 1;
+    loc.attachments.push(CardInPlay::enter_play(
+        CardCode::new(obscuring_fog),
+        CardInstanceId(2),
+    ));
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(INV)
+        .with_turn_order([INV])
+        .with_investigator(inv)
+        .with_location(loc)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    // Investigate → commit window → commit nothing → success.
+    let paused_commit = game_core::engine::apply(
+        state,
+        Action::Player(PlayerAction::Investigate { investigator: INV }),
+    );
+    assert!(matches!(
+        paused_commit.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
+    let paused_reaction = game_core::engine::apply(paused_commit.state, commit_nothing());
+
+    // Dr. Milan's reaction window is open (suspended)...
+    assert!(
+        matches!(paused_reaction.outcome, EngineOutcome::AwaitingInput { .. }),
+        "Dr. Milan's after-investigate reaction window should open, got {:?}",
+        paused_reaction.outcome,
+    );
+    // ...and Obscuring Fog's forced discard has ALREADY run (forced-before-
+    // reaction): the attachment is gone and the card is in the encounter
+    // discard, all before the reaction is resolved.
+    assert!(
+        paused_reaction.state.locations[&LOC].attachments.is_empty(),
+        "Obscuring Fog's forced discard must precede Dr. Milan's reaction window",
+    );
+    assert!(
+        paused_reaction
+            .state
+            .encounter_discard
+            .contains(&CardCode::new(obscuring_fog)),
+        "Obscuring Fog discarded to the encounter discard before the reaction",
+    );
+
+    // Fire Dr. Milan's reaction → resume → Done.
+    let resumed = game_core::engine::apply(
+        paused_reaction.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickIndex(0),
+        }),
+    );
+    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert_eq!(resumed.state.locations[&LOC].clues, 0, "clue discovered");
+}
