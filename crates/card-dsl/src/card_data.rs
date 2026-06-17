@@ -278,6 +278,10 @@ pub struct Uses {
     pub kind: UseKind,
     /// How many the asset enters play with.
     pub count: u8,
+    /// Whether the card's text discards it when these uses deplete ("If First
+    /// Aid has no supplies, discard it.", RR p.27). `false` for uses-assets
+    /// that stay in play when empty (Flashlight, weapons). Pipeline-parsed.
+    pub discard_when_empty: bool,
 }
 
 /// A named-uses kind for asset cards that track a finite resource.
@@ -585,6 +589,7 @@ mod is_fast_tests {
         let uses = Some(Uses {
             kind: UseKind::Ammo,
             count: 4,
+            discard_when_empty: false,
         });
         let json = serde_json::to_string(&uses).expect("serialize");
         let back: Option<Uses> = serde_json::from_str(&json).expect("deserialize");

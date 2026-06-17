@@ -240,8 +240,9 @@ struct NormalizedCard {
     pack_code: String,
     is_fast: bool,
     /// Limited-use tokens parsed from a `Uses (N <kind>)` clause, as
-    /// `(count, UsesKind-variant-name)`. `None` when absent or unmodeled.
-    uses: Option<(u8, &'static str)>,
+    /// `(count, UsesKind-variant-name, discard_when_empty)`. `None` when absent
+    /// or unmodeled.
+    uses: Option<(u8, &'static str, bool)>,
     /// "Max N committed per skill test" cap, parsed from text. `None` when
     /// uncapped. Skill-only in scope.
     commit_limit: Option<u8>,
@@ -592,11 +593,12 @@ fn opt_u8(v: Option<u8>) -> String {
 }
 
 /// Emit the `Option<Uses>` literal for an asset's parsed `uses`.
-fn uses_lit(uses: Option<(u8, &'static str)>) -> String {
+fn uses_lit(uses: Option<(u8, &'static str, bool)>) -> String {
     match uses {
-        Some((count, variant)) => {
-            format!("Some(Uses {{ kind: UseKind::{variant}, count: {count} }})")
-        }
+        Some((count, variant, discard_when_empty)) => format!(
+            "Some(Uses {{ kind: UseKind::{variant}, count: {count}, \
+             discard_when_empty: {discard_when_empty} }})"
+        ),
         None => "None".into(),
     }
 }
@@ -625,7 +627,7 @@ fn has_keyword(text: &str, keyword: &str) -> bool {
 /// `variant` is the `UsesKind` Rust variant name for code emission. Returns
 /// `None` when absent; warns + returns `None` for an unmodeled kind rather
 /// than silently approximating.
-fn parse_uses(text: &str) -> Option<(u8, &'static str)> {
+fn parse_uses(text: &str) -> Option<(u8, &'static str, bool)> {
     let plain = strip_html_bold(text);
     let start = plain.find("Uses (")? + "Uses (".len();
     let inner = &plain[start..];
@@ -633,7 +635,8 @@ fn parse_uses(text: &str) -> Option<(u8, &'static str)> {
     let body = inner[..end].trim(); // e.g. "4 ammo"
     let (num, kind) = body.split_once(' ')?;
     let count: u8 = num.trim().parse().ok()?;
-    let variant = match kind.trim().to_ascii_lowercase().as_str() {
+    let kind_word = kind.trim().to_ascii_lowercase();
+    let variant = match kind_word.as_str() {
         "ammo" => "Ammo",
         "charges" => "Charges",
         "secrets" => "Secrets",
@@ -643,7 +646,13 @@ fn parse_uses(text: &str) -> Option<(u8, &'static str)> {
             return None;
         }
     };
-    Some((count, variant))
+    // "If <name> has no <kind>, discard it." — a templated depletion clause
+    // (RR p.27); tie it to this card's own uses-kind so an unrelated "discard
+    // it" elsewhere doesn't trip it.
+    let lower = plain.to_ascii_lowercase();
+    let discard_when_empty =
+        lower.contains(&format!("has no {kind_word}")) && lower.contains("discard");
+    Some((count, variant, discard_when_empty))
 }
 
 /// Parse a printed `Max N committed per skill test` clause into the cap
@@ -796,15 +805,36 @@ mod tests {
     fn parse_uses_reads_ammo_count() {
         assert_eq!(
             parse_uses("Uses (4 ammo).\n[action] Spend 1 ammo: Fight."),
-            Some((4u8, "Ammo"))
+            Some((4u8, "Ammo", false))
         );
         // All modeled UseKind variants map (not just ammo).
-        assert_eq!(parse_uses("Uses (5 charges)."), Some((5u8, "Charges")));
-        assert_eq!(parse_uses("Uses (3 secrets)."), Some((3u8, "Secrets")));
-        assert_eq!(parse_uses("Uses (3 supplies)."), Some((3u8, "Supplies")));
+        assert_eq!(
+            parse_uses("Uses (5 charges)."),
+            Some((5u8, "Charges", false))
+        );
+        assert_eq!(
+            parse_uses("Uses (3 secrets)."),
+            Some((3u8, "Secrets", false))
+        );
+        assert_eq!(
+            parse_uses("Uses (3 supplies)."),
+            Some((3u8, "Supplies", false))
+        );
         assert_eq!(parse_uses("Some other card text."), None);
         // Genuinely unmodeled kind → None (with a build warning).
         assert_eq!(parse_uses("Uses (4 time)."), None);
+    }
+
+    #[test]
+    fn parse_uses_reads_discard_when_empty() {
+        // First Aid: "Uses (3 supplies). If First Aid has no supplies, discard it."
+        let first_aid = "Uses (3 supplies). If First Aid has no supplies, discard it.";
+        assert_eq!(parse_uses(first_aid), Some((3, "Supplies", true)));
+        // Flashlight: "Uses (3 supplies)." — no discard clause.
+        assert_eq!(
+            parse_uses("Uses (3 supplies)."),
+            Some((3, "Supplies", false))
+        );
     }
 
     #[test]
