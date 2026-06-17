@@ -795,6 +795,39 @@ pub enum SkillTestKind {
 
 // ---- targets --------------------------------------------------
 
+/// A controller-facing choice of a board entity or location. Generic over its
+/// `scope` (the candidate filter). `chooser` is deferred — every choice is the
+/// controller's today; agenda 01105's "lead" choice already works via the
+/// forced-dispatch `controller = lead` binding. The wrapper reserves its home.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Choose<S> {
+    /// The candidate filter (an [`EntityScope`] or [`LocationSet`]).
+    pub scope: S,
+}
+
+/// The chooser-relative set of locations a choice is measured against — shared
+/// by location-picks (which locations may I pick?) and entity-position filters
+/// (where must the entity be?), so "your location" is defined once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LocationSet {
+    /// The chooser's own location ("your location"). Empty when the chooser is
+    /// between locations.
+    Here,
+    /// Any location in play (the old bare `ChosenByController` for locations).
+    Anywhere,
+    // `YourOrConnecting` is added by PR-8 (#306) with the adjacency model.
+}
+
+/// An entity-choice filter. Locational today; non-spatial arms (`Engaged`,
+/// `WithTrait`, …) accrete here when a card needs them — additively, touching
+/// neither [`LocationSet`] nor location-picks. (The `UsagePeriod::Round`-only
+/// minimal-enum-with-a-growth-path idiom.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EntityScope {
+    /// An entity whose location is in the given [`LocationSet`].
+    At(LocationSet),
+}
+
 /// Single-investigator target spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvestigatorTarget {
@@ -806,9 +839,28 @@ pub enum InvestigatorTarget {
     /// The active investigator at evaluation time. May or may not be
     /// "you"; matters during reactions across turns.
     Active,
-    /// The controller picks an investigator. The evaluator presents
-    /// the choice via `AwaitingInput`.
-    ChosenByController,
+    /// The chooser picks one investigator from the [`Choose`]'s scope. Bound by
+    /// the evaluator's `ground_chosen_targets` before the effect's handler runs.
+    Chosen(Choose<EntityScope>),
+}
+
+impl InvestigatorTarget {
+    /// "Choose an investigator" with no location constraint (any investigator
+    /// in play). The successor to the bare `ChosenByController`.
+    #[must_use]
+    pub fn chosen_anywhere() -> Self {
+        InvestigatorTarget::Chosen(Choose {
+            scope: EntityScope::At(LocationSet::Anywhere),
+        })
+    }
+
+    /// "Choose an investigator at your location."
+    #[must_use]
+    pub fn chosen_at_your_location() -> Self {
+        InvestigatorTarget::Chosen(Choose {
+            scope: EntityScope::At(LocationSet::Here),
+        })
+    }
 }
 
 /// Set-of-investigators target spec for [`Effect::ForEach`].
@@ -826,8 +878,9 @@ pub enum LocationTarget {
     /// The location "you" are currently at — the location of the
     /// investigator this ability acts on (see [`InvestigatorTarget::You`]).
     YourLocation,
-    /// The controller picks a location.
-    ChosenByController,
+    /// The chooser picks one location from the [`Choose`]'s scope. Bound by
+    /// `ground_chosen_targets` before the handler runs.
+    Chosen(Choose<LocationSet>),
     /// The location associated with the in-flight skill test. For
     /// Investigate that's the location being investigated; the engine
     /// snapshots it onto
@@ -840,6 +893,17 @@ pub enum LocationTarget {
     /// only reachable via `PlayerAction::PerformSkillTest` (in `game_core::action`)
     /// from outside an Investigate path).
     TestedLocation,
+}
+
+impl LocationTarget {
+    /// "Choose a location" with no constraint (any location in play). The
+    /// successor to the bare `ChosenByController`.
+    #[must_use]
+    pub fn chosen_anywhere() -> Self {
+        LocationTarget::Chosen(Choose {
+            scope: LocationSet::Anywhere,
+        })
+    }
 }
 
 // ---- conditions -----------------------------------------------
@@ -1445,6 +1509,24 @@ mod tests {
         let json = serde_json::to_string(&effect).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(effect, recovered);
+    }
+
+    #[test]
+    fn choose_surface_serde_round_trips() {
+        let inv = InvestigatorTarget::chosen_anywhere();
+        let loc = LocationTarget::chosen_anywhere();
+        let here = InvestigatorTarget::Chosen(Choose {
+            scope: EntityScope::At(LocationSet::Here),
+        });
+        for t in [inv, here] {
+            let json = serde_json::to_string(&t).unwrap();
+            assert_eq!(
+                serde_json::from_str::<InvestigatorTarget>(&json).unwrap(),
+                t
+            );
+        }
+        let json = serde_json::to_string(&loc).unwrap();
+        assert_eq!(serde_json::from_str::<LocationTarget>(&json).unwrap(), loc);
     }
 
     /// `Effect::DrawCards` (Guts/Perception/… "draw 1 card") round-trips
