@@ -109,12 +109,10 @@ pub(in crate::engine) fn start_skill_test(
     });
 
     EngineOutcome::AwaitingInput {
-        request: InputRequest {
-            prompt: format!(
-                "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
-                 (difficulty {difficulty}). Empty indices commits no cards.",
-            ),
-        },
+        request: InputRequest::prompt(format!(
+            "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
+             (difficulty {difficulty}). Empty indices commits no cards.",
+        )),
         // Routing keys off `state.in_flight_skill_test`, not the
         // token, so any opaque value is fine here. ResumeToken(0) is
         // the conventional "no extra context needed" choice for the

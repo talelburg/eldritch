@@ -331,6 +331,14 @@ pub enum InputResponse {
     /// option list. `u32` rather than `usize` for a stable wire format
     /// independent of host pointer width.
     PickIndex(u32),
+    /// Pick one option from a structured choice prompt
+    /// ([`InputRequest::choice`](crate::engine::InputRequest::choice)),
+    /// echoing back its [`OptionId`](crate::engine::OptionId). The
+    /// single-selection family for the Axis-A choice machinery; the legacy
+    /// [`PickIndex`](Self::PickIndex) / [`PickLocation`](Self::PickLocation) /
+    /// [`PickInvestigator`](Self::PickInvestigator) stay on their existing
+    /// paths.
+    PickSingle(crate::engine::OptionId),
     /// Pick a specific investigator.
     PickInvestigator(InvestigatorId),
     /// Pick a specific location.
@@ -389,6 +397,15 @@ mod input_response_tests {
         let original = InputResponse::DiscardCards {
             indices: vec![0, 3, 7],
         };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let back: InputResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn pick_single_input_serde_roundtrip() {
+        use crate::engine::OptionId;
+        let original = InputResponse::PickSingle(OptionId(2));
         let json = serde_json::to_string(&original).expect("serialize");
         let back: InputResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);

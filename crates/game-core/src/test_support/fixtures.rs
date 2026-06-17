@@ -126,9 +126,7 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
 #[must_use]
 pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest {
-            prompt: prompt.into(),
-        },
+        request: InputRequest::prompt(prompt),
         resume_token: ResumeToken(0),
     }
 }

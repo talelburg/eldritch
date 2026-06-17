@@ -26,7 +26,7 @@ pub use dispatch::encounter::{
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
 pub use evaluator::{effective_shroud, location_id_by_code, EvalContext};
-pub use outcome::{EngineOutcome, InputRequest, ResumeToken};
+pub use outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 pub use pathfinding::shortest_first_steps;
 
 // Crate-internal re-exports for `test_support::fire_forced_on_enter`.

@@ -412,9 +412,7 @@ mod tests {
     }
 
     fn req(prompt: &str) -> InputRequest {
-        InputRequest {
-            prompt: prompt.to_string(),
-        }
+        InputRequest::prompt(prompt)
     }
 
     #[test]

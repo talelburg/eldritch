@@ -742,12 +742,11 @@ fn discover_clue(
                     ability_index,
                 });
                 return EngineOutcome::AwaitingInput {
-                    request: crate::engine::outcome::InputRequest {
-                        prompt: "You would discover clue(s). Use the interrupt to discard that \
-                                 many from the source card instead? Confirm = replace, \
-                                 Skip = discover normally."
-                            .to_owned(),
-                    },
+                    request: crate::engine::outcome::InputRequest::prompt(
+                        "You would discover clue(s). Use the interrupt to discard that \
+                         many from the source card instead? Confirm = replace, \
+                         Skip = discover normally.",
+                    ),
                     resume_token: crate::engine::outcome::ResumeToken(0),
                 };
             }
