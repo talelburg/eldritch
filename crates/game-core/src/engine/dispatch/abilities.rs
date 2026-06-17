@@ -172,6 +172,15 @@ fn pay_activation_costs(
                 // Statue 01071) need the check relocated there. For First Aid
                 // (depletes via this cost) the SpendUses arm is observationally
                 // correct.
+                //
+                // HAZARD (TODO(#353)): like `Cost::DiscardSelf`, this removes the
+                // source mid-payment, invalidating the cached `in_play_pos` —
+                // any *later* source-referencing cost in this `costs` loop would
+                // index a shifted `cards_in_play`. Safe in scope: no in-scope
+                // `discard_when_empty` card pairs `SpendUses` with a later such
+                // cost, and `reject_incompatible_costs` doesn't yet know about
+                // depletion. The #353 relocation to post-resolution dissolves it;
+                // until then a new depleting card must keep `SpendUses` last.
                 let discards_when_empty = card_registry::current()
                     .and_then(|r| (r.metadata_for)(source_code))
                     .and_then(|m| match m.kind {

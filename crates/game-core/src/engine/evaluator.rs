@@ -3211,6 +3211,49 @@ mod tests {
         assert!(state.continuations.is_empty());
     }
 
+    #[test]
+    fn heal_target_chosen_suspends_when_two_are_co_located() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(test_location(1, "A"))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        state
+            .investigators
+            .get_mut(&InvestigatorId(2))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &heal(
+                HarmKind::Damage,
+                InvestigatorTarget::chosen_at_your_location(),
+                1,
+            ),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        match state.continuations.last() {
+            Some(crate::state::Continuation::Choice(frame)) => {
+                assert_eq!(
+                    frame.offered.len(),
+                    2,
+                    "two co-located heal targets offered"
+                );
+            }
+            other => panic!("expected a Choice frame, got {other:?}"),
+        }
+    }
+
     // ---- constant-modifier query tests --------------------------
 
     /// Mock registry that maps a small hardcoded set of codes to

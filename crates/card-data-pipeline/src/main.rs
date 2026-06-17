@@ -648,7 +648,9 @@ fn parse_uses(text: &str) -> Option<(u8, &'static str, bool)> {
     };
     // "If <name> has no <kind>, discard it." — a templated depletion clause
     // (RR p.27); tie it to this card's own uses-kind so an unrelated "discard
-    // it" elsewhere doesn't trip it.
+    // it" elsewhere doesn't trip it. TODO: the 2026 reprints use a second
+    // phrasing ("If there are no <kind> on <name>, discard it.", e.g. Bandages
+    // 12073); broaden to also accept "no <kind> on" when that pack is ingested.
     let lower = plain.to_ascii_lowercase();
     let discard_when_empty =
         lower.contains(&format!("has no {kind_word}")) && lower.contains("discard");
