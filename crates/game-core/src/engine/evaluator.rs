@@ -42,9 +42,11 @@
 //!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+
 //!   with a [`Continuation::Choice`](crate::state::Continuation::Choice) frame,
 //!   re-running the effect on resume to replay the recorded picks in pre-order
-//!   (single-pass suspend-and-replay; see the Axis-A spec). `Chosen`
-//!   offers all investigators / locations; the restricted "at your location"
-//!   forms the real cards want are a deferred card-level filter (#334).
+//!   (single-pass suspend-and-replay; see the Axis-A spec). A `Chosen` target
+//!   honors its scope: `Anywhere` offers all investigators / locations,
+//!   `EntityScope::At(Here)` / `LocationSet::Here` filters to the chooser's
+//!   location (#349). The enemy variety and `YourOrConnecting` are deferred to
+//!   their consuming PRs (#301 / #306).
 //!
 //! # State-mutation contract
 //!
@@ -104,13 +106,12 @@ pub struct EvalContext {
     /// window. Mirrors `failed_by` / `clue_discovery_count`. (C5b #237.)
     pub attacking_enemy: Option<crate::state::EnemyId>,
     /// The investigator a controller picked for an
-    /// `InvestigatorTarget::chosen_anywhere()`, bound by the evaluator's
-    /// target-grounding pass before the handler resolves the target. `None`
-    /// outside a grounded-choice evaluation. Mirrors `failed_by` (Axis A #334).
+    /// `InvestigatorTarget::Chosen`, bound by the evaluator's target-grounding
+    /// pass before the handler resolves the target. `None` outside a
+    /// grounded-choice evaluation. Mirrors `failed_by` (Axis A #334).
     pub chosen_investigator: Option<crate::state::InvestigatorId>,
-    /// The location a controller picked for a
-    /// `LocationTarget::chosen_anywhere()`. The location counterpart of
-    /// `chosen_investigator`.
+    /// The location a controller picked for a `LocationTarget::Chosen`. The
+    /// location counterpart of `chosen_investigator`.
     pub chosen_location: Option<crate::state::LocationId>,
     /// The option a controller picked for a native leaf that suspended for a
     /// choice (Crypt Chill 01167). The native re-enumerates its candidates and
@@ -1083,11 +1084,13 @@ fn branch_label(effect: &Effect) -> String {
 /// unchanged) for effects with no `Chosen` target, or when the
 /// choice is already bound (re-entry within the same evaluation).
 ///
-/// **Candidate scope:** the bare `Chosen` offers *all*
-/// investigators / locations. The restricted forms the real cards want
-/// ("an investigator at your location", "your or a connecting location") are a
-/// card-level filter deferred to the Axis-E cards that need them (Dynamite
-/// Blast, Medical Texts, …); no shipped card uses these targets yet.
+/// **Candidate scope:** the [`Choose`](crate::dsl::Choose) scope is forwarded
+/// to a per-variety enumerator. `Anywhere` offers all investigators / locations;
+/// `EntityScope::At(Here)` filters to investigators co-located with the
+/// controller and `LocationSet::Here` to the controller's own location (empty —
+/// hence a reject — when the controller is between locations). The enemy variety
+/// and `LocationSet::YourOrConnecting` land with their consuming PRs (#301 /
+/// #306).
 fn ground_chosen_targets(
     cx: &mut Cx,
     effect: &Effect,
@@ -1625,8 +1628,8 @@ mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
         boost_attack_damage, constant, deal_damage, deal_horror, discover_clue, draw_cards,
-        for_each_point_failed, gain_resources, modify, on_play, seq, Ability, Effect,
-        InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind, Stat,
+        for_each_point_failed, gain_resources, modify, on_play, seq, Ability, Choose, Effect,
+        InvestigatorTarget, LocationSet, LocationTarget, ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
@@ -2726,6 +2729,45 @@ mod tests {
             }
             other => panic!("expected a Choice frame, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn chosen_location_here_auto_binds_the_controllers_location() {
+        // Two locations present, but `Here` filters to the controller's own ⇒
+        // singleton ⇒ auto-bind (no Choice frame), unlike `Anywhere` which
+        // would offer both and suspend.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(test_location(1, "A"))
+            .with_location(test_location(2, "B"))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &discover_clue(
+                LocationTarget::Chosen(Choose {
+                    scope: LocationSet::Here,
+                }),
+                1,
+            ),
+            ctx(1),
+        );
+        assert!(
+            !matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "Here is a singleton ⇒ auto-binds, never suspends: {outcome:?}",
+        );
+        assert!(
+            state.continuations.is_empty(),
+            "no Choice frame for a singleton scope",
+        );
     }
 
     #[test]
