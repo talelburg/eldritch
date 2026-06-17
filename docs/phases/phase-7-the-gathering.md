@@ -156,8 +156,10 @@ when picked up.
   prereqs) shipped: **✅ PR #355**. PR-4 (#239 — the Beat Cop + First Aid
   *cards*) shipped: **✅ PR #357**, **closing C5d** (the last open Group-C
   sub-slice). The orthogonal #354 (`DealDamage`/`DealHorror` → `Effect::Deal`
-  consolidation) also shipped (PR #356). Remaining cluster PRs: #312 (Knife,
-  on #301), #321 (Medical Texts, on #302), #313 (Flashlight), #306 (Dynamite).
+  consolidation) also shipped (PR #356). PR-5 (#312 — Knife 01086, two
+  `[action]` Fight abilities on existing primitives + `Cost::DiscardSelf`)
+  shipped: **✅ PR #358**. Remaining cluster PRs: #321 (Medical Texts,
+  on #302), #313 (Flashlight), #306 (Dynamite).
   Slice 1's `fire_forced_triggers` is a forward-compatible subset Axis B
   replaces. **Note:** #213's "one mixed pool" framing was corrected to
   RR-accurate two-phase (forced-all-before-reaction, RR p.2; issue text
