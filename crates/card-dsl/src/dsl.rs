@@ -553,6 +553,11 @@ pub enum Effect {
         target: InvestigatorTarget,
         amount: u8,
     },
+    /// Deal `amount` direct (non-test) damage to the resolved enemy
+    /// `target`, applying the defeat cascade (Beat Cop 01018). Typed (not
+    /// `Native`) so the activation pre-cost check can verify ≥1 candidate
+    /// before any cost is paid. `amount == 0` is a no-op.
+    DealDamageToEnemy { target: EnemyTarget, amount: u8 },
     /// Adjust a stat by `delta` for the duration described by `scope`.
     /// Most scopes are passive contributions to engine queries
     /// rather than mutations of the investigator's stored fields.
@@ -912,6 +917,25 @@ impl LocationTarget {
     }
 }
 
+/// Single-enemy target spec. One variant today (`Chosen`); a non-chosen form
+/// (`Engaged`, a specific spawned enemy) lands with its first consumer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EnemyTarget {
+    /// The chooser picks one enemy from the [`Choose`]'s scope. Bound by
+    /// `ground_chosen_targets` before the handler runs.
+    Chosen(Choose<EntityScope>),
+}
+
+impl EnemyTarget {
+    /// "Choose an enemy at your location."
+    #[must_use]
+    pub fn chosen_at_your_location() -> Self {
+        EnemyTarget::Chosen(Choose {
+            scope: EntityScope::At(LocationSet::Here),
+        })
+    }
+}
+
 // ---- conditions -----------------------------------------------
 
 /// A boolean predicate guarding an [`Effect::If`].
@@ -1130,6 +1154,12 @@ pub fn deal_damage(target: InvestigatorTarget, amount: u8) -> Effect {
 #[must_use]
 pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
     Effect::DealHorror { target, amount }
+}
+
+/// Build an [`Effect::DealDamageToEnemy`].
+#[must_use]
+pub fn deal_damage_to_enemy(target: EnemyTarget, amount: u8) -> Effect {
+    Effect::DealDamageToEnemy { target, amount }
 }
 
 /// Build an [`Effect::BoostAttackDamage`] adding `amount` to the
@@ -1540,6 +1570,22 @@ mod tests {
         let c = Cost::DiscardSelf;
         let json = serde_json::to_string(&c).unwrap();
         assert_eq!(serde_json::from_str::<Cost>(&json).unwrap(), c);
+    }
+
+    #[test]
+    fn deal_damage_to_enemy_serde_round_trips() {
+        let e = deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1);
+        assert_eq!(
+            e,
+            Effect::DealDamageToEnemy {
+                target: EnemyTarget::Chosen(Choose {
+                    scope: EntityScope::At(LocationSet::Here)
+                }),
+                amount: 1,
+            }
+        );
+        let json = serde_json::to_string(&e).unwrap();
+        assert_eq!(serde_json::from_str::<Effect>(&json).unwrap(), e);
     }
 
     /// `Effect::DrawCards` (Guts/Perception/… "draw 1 card") round-trips

@@ -58,8 +58,8 @@
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Condition, Effect, IntExpr, InvestigatorTarget, LocationTarget, ModifierScope, SkillTestKind,
-    Stat, Trigger,
+    Condition, Effect, EnemyTarget, IntExpr, InvestigatorTarget, LocationTarget, ModifierScope,
+    SkillTestKind, Stat, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -113,6 +113,9 @@ pub struct EvalContext {
     /// The location a controller picked for a `LocationTarget::Chosen`. The
     /// location counterpart of `chosen_investigator`.
     pub chosen_location: Option<crate::state::LocationId>,
+    /// The enemy a controller picked for an `EnemyTarget::Chosen`. The enemy
+    /// counterpart of `chosen_investigator` / `chosen_location`.
+    pub chosen_enemy: Option<crate::state::EnemyId>,
     /// The option a controller picked for a native leaf that suspended for a
     /// choice (Crypt Chill 01167). The native re-enumerates its candidates and
     /// indexes by this id — the general native-pick primitive, mirroring
@@ -134,6 +137,7 @@ impl EvalContext {
             attacking_enemy: None,
             chosen_investigator: None,
             chosen_location: None,
+            chosen_enemy: None,
             chosen_option: None,
         }
     }
@@ -155,6 +159,7 @@ impl EvalContext {
             attacking_enemy: None,
             chosen_investigator: None,
             chosen_location: None,
+            chosen_enemy: None,
             chosen_option: None,
         }
     }
@@ -271,6 +276,9 @@ fn apply_effect_inner(
         Effect::DiscoverClue { from, count } => discover_clue(cx, eval_ctx, *from, *count),
         Effect::DealDamage { target, amount } => deal_damage_effect(cx, eval_ctx, *target, *amount),
         Effect::DealHorror { target, amount } => deal_horror_effect(cx, eval_ctx, *target, *amount),
+        Effect::DealDamageToEnemy { target, amount } => {
+            deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
+        }
         Effect::Seq(effects) => apply_seq(cx, effects, eval_ctx, cursor),
         Effect::Modify { stat, delta, scope } => modify(cx, eval_ctx, *stat, *delta, *scope),
         Effect::If {
@@ -919,6 +927,36 @@ fn deal_damage_effect(
     EngineOutcome::Done
 }
 
+/// Resolve [`Effect::DealDamageToEnemy`]: ground the chosen enemy (already bound
+/// by `ground_chosen_targets`) and deal direct damage via the existing
+/// `combat::deal_damage_to_enemy`, attributed to the controller so defeat
+/// triggers fire. `amount == 0` is a no-op.
+fn deal_damage_to_enemy_effect(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    target: EnemyTarget,
+    amount: u8,
+) -> EngineOutcome {
+    if amount == 0 {
+        return EngineOutcome::Done;
+    }
+    let enemy = match resolve_enemy_target(eval_ctx, target) {
+        Ok(e) => e,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    crate::engine::dispatch::combat::deal_damage_to_enemy(
+        cx,
+        enemy,
+        amount,
+        Some(eval_ctx.controller),
+    );
+    EngineOutcome::Done
+}
+
 fn deal_horror_effect(
     cx: &mut Cx,
     eval_ctx: EvalContext,
@@ -1120,6 +1158,16 @@ fn ground_chosen_targets(
         }
     }
 
+    if let Effect::DealDamageToEnemy {
+        target: EnemyTarget::Chosen(choose),
+        ..
+    } = effect
+    {
+        if eval_ctx.chosen_enemy.is_none() {
+            return ground_enemy_choice(cx, eval_ctx, cursor, choose.scope);
+        }
+    }
+
     Ok(eval_ctx)
 }
 
@@ -1196,6 +1244,47 @@ fn ground_location_choice(
                 Err(suspend_for_choice(
                     cx,
                     "Choose a location",
+                    labels,
+                    cursor.recorded_so_far(),
+                    cursor.root(),
+                    eval_ctx,
+                ))
+            }
+        }
+    }
+}
+
+/// Ground an `EnemyTarget::Chosen` against its [`EntityScope`]: candidates from
+/// `combat::enemies_in_scope`. Binds `chosen_enemy`, or suspends.
+fn ground_enemy_choice(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    cursor: &mut DecisionCursor<'_>,
+    scope: crate::dsl::EntityScope,
+) -> Result<EvalContext, EngineOutcome> {
+    use crate::engine::dispatch::choice::{
+        resolve_choice_count, suspend_for_choice, ChoiceResolution,
+    };
+    let candidates =
+        crate::engine::dispatch::combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
+    let bind = |id| {
+        let mut ctx = eval_ctx;
+        ctx.chosen_enemy = Some(id);
+        Ok(ctx)
+    };
+    match resolve_choice_count(candidates.len()) {
+        ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
+            reason: "Chosen enemy: no candidate in scope".into(),
+        }),
+        ChoiceResolution::Auto(i) => bind(candidates[i]),
+        ChoiceResolution::Suspend => {
+            if let Some(crate::engine::OptionId(i)) = cursor.take() {
+                bind(candidates[i as usize])
+            } else {
+                let labels = candidates.iter().map(|id| format!("{id:?}")).collect();
+                Err(suspend_for_choice(
+                    cx,
+                    "Choose an enemy",
                     labels,
                     cursor.recorded_so_far(),
                     cursor.root(),
@@ -1307,6 +1396,18 @@ fn resolve_location_target(
                      (investigator was between locations at test start)",
                 )
             }),
+    }
+}
+
+fn resolve_enemy_target(
+    ctx: EvalContext,
+    target: EnemyTarget,
+) -> Result<crate::state::EnemyId, &'static str> {
+    match target {
+        EnemyTarget::Chosen(_) => ctx.chosen_enemy.ok_or(
+            "EnemyTarget::Chosen resolved before target-grounding bound it \
+             (ground_chosen_targets should run first)",
+        ),
     }
 }
 
@@ -1627,15 +1728,16 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state
 mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        boost_attack_damage, constant, deal_damage, deal_horror, discover_clue, draw_cards,
-        for_each_point_failed, gain_resources, modify, on_play, seq, Ability, Choose, Effect,
-        InvestigatorTarget, LocationSet, LocationTarget, ModifierScope, SkillTestKind, Stat,
+        boost_attack_damage, constant, deal_damage, deal_damage_to_enemy, deal_horror,
+        discover_clue, draw_cards, for_each_point_failed, gain_resources, modify, on_play, seq,
+        Ability, Choose, Effect, EnemyTarget, InvestigatorTarget, LocationSet, LocationTarget,
+        ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
-        CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, SkillKind,
+        CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind,
     };
-    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
@@ -2865,6 +2967,119 @@ mod tests {
                 events: &mut events,
             },
             &gain_resources(InvestigatorTarget::chosen_at_your_location(), 1),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+        assert!(state.continuations.is_empty());
+    }
+
+    #[test]
+    fn deal_damage_to_chosen_enemy_at_your_location_auto_binds_and_damages() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(test_location(1, "A"))
+            .with_location(test_location(2, "B"))
+            .with_enemy({
+                let mut e = test_enemy(100, "Ghoul");
+                e.max_health = 3;
+                e.current_location = Some(LocationId(1));
+                e
+            })
+            .with_enemy({
+                let mut e = test_enemy(101, "Faraway");
+                e.max_health = 3;
+                e.current_location = Some(LocationId(2));
+                e
+            })
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.enemies[&EnemyId(100)].damage,
+            1,
+            "co-located enemy damaged"
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(101)].damage,
+            0,
+            "faraway enemy untouched"
+        );
+        assert!(
+            state.continuations.is_empty(),
+            "sole co-located candidate auto-binds"
+        );
+    }
+
+    #[test]
+    fn deal_damage_to_chosen_enemy_suspends_when_two_are_co_located() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(test_location(1, "A"))
+            .with_enemy({
+                let mut e = test_enemy(100, "G1");
+                e.current_location = Some(LocationId(1));
+                e
+            })
+            .with_enemy({
+                let mut e = test_enemy(101, "G2");
+                e.current_location = Some(LocationId(1));
+                e
+            })
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        match state.continuations.last() {
+            Some(crate::state::Continuation::Choice(frame)) => {
+                assert_eq!(frame.offered.len(), 2, "two co-located enemies offered");
+            }
+            other => panic!("expected a Choice frame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deal_damage_to_chosen_enemy_rejects_when_none_co_located() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(test_location(1, "A"))
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
