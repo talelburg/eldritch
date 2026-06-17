@@ -32,6 +32,34 @@ pub(crate) fn single_engaged_enemy(
     }
 }
 
+/// Enemies matching an [`EntityScope`](crate::dsl::EntityScope), in `BTreeMap`
+/// (id) order so the `OptionId` index replays deterministically. Shared by the
+/// evaluator's choice-grounding and the activation pre-cost target check.
+pub(crate) fn enemies_in_scope(
+    state: &GameState,
+    controller: InvestigatorId,
+    scope: crate::dsl::EntityScope,
+) -> Vec<EnemyId> {
+    use crate::dsl::{EntityScope, LocationSet};
+    let EntityScope::At(set) = scope;
+    match set {
+        LocationSet::Anywhere => state.enemies.keys().copied().collect(),
+        LocationSet::Here => match state
+            .investigators
+            .get(&controller)
+            .and_then(|i| i.current_location)
+        {
+            Some(here) => state
+                .enemies
+                .iter()
+                .filter(|(_, e)| e.current_location == Some(here))
+                .map(|(id, _)| *id)
+                .collect(),
+            None => Vec::new(),
+        },
+    }
+}
+
 /// Public entry point for card effects to deal damage to an enemy.
 ///
 /// A thin wrapper over `damage_enemy` (which is crate-internal) so the

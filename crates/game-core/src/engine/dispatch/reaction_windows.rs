@@ -1035,6 +1035,69 @@ fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
     matches!(effect, crate::dsl::Effect::Fight { .. })
 }
 
+/// Reject an activation whose effect needs a target it cannot get, at the check
+/// layer (before any cost is paid) so the rejection is honest for
+/// `any_fast_play_eligible` and `Effect::Fight` / `DealDamageToEnemy` can treat
+/// a missing target as an invariant violation.
+///
+/// - **Fight:** needs exactly one engaged enemy (0 = no target; 2+ multi-target
+///   selection deferred to #212/#213).
+/// - **`DealDamageToEnemy`:** needs ≥1 enemy in the chosen scope (e.g. "at your
+///   location"). ≥1 proceeds — 2+ suspends via the `Choose` resolver — so only
+///   the empty case rejects here; this is why the effect is typed, not `Native`
+///   (Beat Cop can't pay its discard-self cost for no legal target). `amount` is
+///   not consulted (a degenerate `amount: 0` ability — none in scope — would
+///   still require a target here even though its handler is a no-op).
+fn check_effect_target_available(
+    state: &GameState,
+    investigator: InvestigatorId,
+    effect: &crate::dsl::Effect,
+) -> Result<(), Cow<'static, str>> {
+    if effect_initiates_fight(effect)
+        && super::combat::single_engaged_enemy(state, investigator).is_none()
+    {
+        return Err(
+            "ActivateAbility: a Fight ability needs exactly one engaged enemy \
+             (0 = no target; 2+ multi-target selection deferred with #212/#213)"
+                .into(),
+        );
+    }
+    if let crate::dsl::Effect::DealDamageToEnemy {
+        target: crate::dsl::EnemyTarget::Chosen(choose),
+        ..
+    } = effect
+    {
+        if super::combat::enemies_in_scope(state, investigator, choose.scope).is_empty() {
+            return Err(
+                "ActivateAbility: a 'deal damage to an enemy at your location' ability \
+                 needs at least one enemy at your location"
+                    .into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Reject an ability mixing [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf)
+/// with another source-referencing cost: `DiscardSelf` removes the source, so it
+/// must be the sole such cost (Beat Cop / Knife list only it). `TODO(#301)` lift
+/// if a card ever needs the combo.
+fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'static, str>> {
+    use crate::dsl::Cost;
+    if costs.iter().any(|c| matches!(c, Cost::DiscardSelf))
+        && costs
+            .iter()
+            .any(|c| matches!(c, Cost::Exhaust | Cost::SpendUses { .. }))
+    {
+        return Err(
+            "ActivateAbility: Cost::DiscardSelf cannot combine with Exhaust/SpendUses on the \
+             same ability (it removes the source); TODO(#301) lift if a card needs the combo"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 /// Pure-validation peer to [`activate_ability`]. Mirrors
 /// [`check_play_card`]: validation block lifted verbatim, no behavior
 /// change at the call site.
@@ -1142,22 +1205,8 @@ pub(super) fn check_activate_ability(
         }
     }
 
-    // A Fight-initiating ability needs exactly one engaged enemy, validated
-    // here so the activation rejects at the check layer (and `Effect::Fight`
-    // can treat a missing target as an invariant violation). The apply-loop
-    // snapshot already guards state integrity on reject; this keeps
-    // `check_activate_ability` an honest playability oracle (it is reused by
-    // `any_fast_play_eligible`). 0 engaged → no target; 2+ → deferred
-    // multi-target selection (#212/#213 interactive-choice cluster).
-    if effect_initiates_fight(&effect)
-        && super::combat::single_engaged_enemy(state, investigator).is_none()
-    {
-        return Err(
-            "ActivateAbility: a Fight ability needs exactly one engaged enemy \
-             (0 = no target; 2+ multi-target selection deferred with #212/#213)"
-                .into(),
-        );
-    }
+    reject_incompatible_costs(&costs)?;
+    check_effect_target_available(state, investigator, &effect)?;
 
     Ok(super::ActivateCheckResult {
         in_play_pos,

@@ -166,6 +166,35 @@ fn pay_activation_costs(
                     amount: *count,
                 });
             }
+            Cost::DiscardSelf => {
+                let inv_mut = cx
+                    .state
+                    .investigators
+                    .get_mut(&investigator)
+                    .expect("validated above");
+                // Look up by instance_id (robust if an earlier cost shifted positions).
+                // `check_activate_ability` located the source in `cards_in_play`, and
+                // the DiscardSelf-combo guard rejects any co-payable cost that could
+                // have removed it, so the source is always present here — a miss is a
+                // state-corruption invariant violation, not a free ability.
+                let pos = inv_mut
+                    .cards_in_play
+                    .iter()
+                    .position(|c| c.instance_id == instance_id)
+                    .unwrap_or_else(|| {
+                        unreachable!(
+                            "Cost::DiscardSelf: source {instance_id:?} was located by \
+                             check_activate_ability but vanished before payment"
+                        )
+                    });
+                let card = inv_mut.cards_in_play.remove(pos);
+                inv_mut.discard.push(card.code.clone());
+                cx.events.push(Event::CardDiscarded {
+                    investigator,
+                    code: card.code,
+                    from: crate::state::Zone::InPlay,
+                });
+            }
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
             }
@@ -258,6 +287,9 @@ pub(super) fn check_cost_payable(
             }
             Ok(())
         }
+        // Source is in play by the activation precondition (check_activate_ability
+        // located it in cards_in_play), so it is always payable.
+        Cost::DiscardSelf => Ok(()),
         Cost::DiscardCardFromHand => Err(
             "TODO: Cost::DiscardCardFromHand requires AwaitingInput + ResolveInput \
              dispatch; no card uses this cost yet so the engine consumer hasn't landed."
