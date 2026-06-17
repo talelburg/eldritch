@@ -210,22 +210,23 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
         investigator: active_id,
     });
 
-    // Forced "at the end of your turn" abilities (threat-area cards
-    // such as Frozen in Fear 01164) fire for the investigator whose
-    // turn just ended, before the turn passes on. No real card
-    // consumes this in C4a; C4c (#235) is the first consumer.
-    //
-    // Forced "at the end of your turn" abilities (Frozen in Fear 01164's
-    // willpower test) fire for the investigator whose turn just ended,
-    // before the turn passes on.
+    // Forced "at the end of your turn" abilities (threat-area cards such as
+    // Frozen in Fear 01164's willpower test) fire for the investigator whose
+    // turn just ended, before the turn passes on (first consumer: C4c, #235).
     //
     // A forced effect that initiates a skill test suspends here
-    // (`AwaitingInput`), stranding `end_turn` before rotation. Record the
-    // active investigator in `pending_end_turn` so the skill-test
-    // commit-resume path re-enters [`resume_end_turn`] once the test
-    // resolves (C4c, #235 — mirrors `spawn_engage_pending`). A single
-    // suspending hit is handled; 2+ simultaneous suspends are #212/#213
-    // reentrancy work. A `Rejected` propagates as-is.
+    // (`AwaitingInput`), stranding `end_turn` before rotation. Two cases:
+    //
+    // - **2+ simultaneous** `EndOfTurn` forced (two Frozen in Fear copies)
+    //   open a forced run (#213) that carries its own
+    //   `ForcedContinuation::EndOfTurnAfterForced` — it resumes rotation on
+    //   close, so `end_turn` must *not* also set `pending_end_turn`.
+    // - **a single** suspending hit has no run frame; record the active
+    //   investigator in `pending_end_turn` so the skill-test commit-resume
+    //   path re-enters [`resume_end_turn`] once the test resolves (C4c, #235
+    //   — mirrors `spawn_engage_pending`).
+    //
+    // A `Rejected` propagates as-is.
     let end_of_turn = super::emit::emit_event(
         cx,
         &super::emit::TimingEvent::EndOfTurn {
@@ -235,7 +236,13 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     match end_of_turn {
         EngineOutcome::Done => resume_end_turn(cx, active_id),
         EngineOutcome::AwaitingInput { .. } => {
-            cx.state.pending_end_turn = Some(active_id);
+            let forced_run_open = matches!(
+                cx.state.continuations.last(),
+                Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
+            );
+            if !forced_run_open {
+                cx.state.pending_end_turn = Some(active_id);
+            }
             end_of_turn
         }
         EngineOutcome::Rejected { .. } => end_of_turn,
@@ -650,20 +657,35 @@ fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
             phase: Phase::Upkeep,
         },
     );
+    // No slice-1 card keys to "end of the upkeep phase", so this resolves
+    // synchronously. A 2+/suspending hit is caught structurally by
+    // `emit_event` (its forced run is unwired for this site) rather than here.
     debug_assert!(
         matches!(forced, EngineOutcome::Done),
-        "upkeep_phase_end forced trigger did not resolve to Done: {forced:?} \
-         (2+ simultaneous forced at round end needs #213)"
+        "upkeep_phase_end PhaseEnded(Upkeep) forced did not resolve to Done: {forced:?}"
     );
     // "Upkeep phase ends. Round ends." (RR p.24) — fire round-end Forced
-    // effects (agenda 01107's doom) after the upkeep-phase-end ones. Both
-    // resolve to Done in-slice (doom just increments a counter).
-    let round_end = super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded);
-    debug_assert!(
-        matches!(round_end, EngineOutcome::Done),
-        "upkeep_phase_end RoundEnded forced did not resolve to Done: {round_end:?} \
-         (2+ simultaneous forced at round end needs #213)"
-    );
+    // effects (agenda 01107's doom, Dissonant Voices 01165's discard). When
+    // 2+ fire simultaneously the lead orders them and the forced run suspends
+    // (#213); its `UpkeepAfterRoundEnded` continuation resumes the tail below
+    // on close. 0 or 1 resolve synchronously here.
+    match super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded) {
+        EngineOutcome::Done => upkeep_after_round_ended(cx),
+        // The forced run suspended for the lead's ordering choice; the tail
+        // resumes via UpkeepAfterRoundEnded when the run closes.
+        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
+        rejected @ EngineOutcome::Rejected { .. } => rejected,
+    }
+}
+
+/// The upkeep step's tail after the round-end forced abilities resolve:
+/// the act round-end advance window, then the Upkeep→Mythos transition.
+///
+/// Reached two ways: inline from [`upkeep_phase_end`] when the round-end
+/// forced abilities resolve synchronously (0 or 1), and from the forced
+/// run's [`ForcedContinuation::UpkeepAfterRoundEnded`] close when 2+ forced
+/// abilities suspended for the lead's ordering choice (#213).
+pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
     // Act objective: a round-end "may spend clues to advance" window
     // (01109). Opens only when the current act carries it AND the
     // contributor-location investigators can afford the threshold — the
@@ -2335,7 +2357,8 @@ mod enemy_phase_tests {
     use crate::engine::dispatch::resolve_input;
     use crate::engine::{apply, EngineOutcome};
     use crate::state::{
-        EnemyId, FastActorScope, InvestigatorId, LocationId, OpenWindow, Phase, Status, WindowKind,
+        EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, ResolutionFrame, Status,
+        WindowKind,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
@@ -2999,7 +3022,7 @@ mod enemy_phase_tests {
         // open AfterAllInvestigatorsAttacked → auto-skip continuation
         // → enemy_phase_end → cascade Upkeep → Mythos.
         //
-        // The synthetic OpenWindow push fakes the pause point because
+        // The synthetic ResolutionFrame push fakes the pause point because
         // a real Fast-eligibility setup would require either a card-
         // registry install (heavyweight integration test) or a Fast
         // event card in hand with resources — neither tractable in
@@ -3020,10 +3043,12 @@ mod enemy_phase_tests {
         state.enemy_attack_pending = Some(inv_id);
         state
             .continuations
-            .push(crate::state::Continuation::Resolution(OpenWindow {
-                kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+            .push(crate::state::Continuation::Resolution(ResolutionFrame {
                 pending_triggers: Vec::new(),
-                fast_actors: FastActorScope::Any,
+                kind: crate::state::ResolutionKind::Window(crate::state::WindowBinding {
+                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+                    fast_actors: FastActorScope::Any,
+                }),
             }));
 
         let result = apply(

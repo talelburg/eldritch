@@ -32,7 +32,7 @@ use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
     ChaosBag, Continuation, Counter, Enemy, EnemyId, FastActorScope, GameState, HandSizeDiscard,
-    Investigator, InvestigatorId, Location, LocationId, OpenWindow, Phase, TokenModifiers,
+    Investigator, InvestigatorId, Location, LocationId, Phase, ResolutionFrame, TokenModifiers,
     WindowKind,
 };
 
@@ -56,7 +56,7 @@ pub struct GameStateBuilder {
     rng: RngState,
     mulligan_pending: Option<InvestigatorId>,
     hand_size_discard_pending: Option<HandSizeDiscard>,
-    open_windows: Vec<OpenWindow>,
+    open_windows: Vec<ResolutionFrame>,
     scenario_id: Option<ScenarioId>,
 }
 
@@ -225,18 +225,15 @@ impl GameStateBuilder {
         self
     }
 
-    /// Push an [`OpenWindow`] onto the build's `open_windows` stack
+    /// Push a [`ResolutionFrame`] onto the build's window stack
     /// for tests that need a specific window-state shape.
     ///
     /// The pushed window has no pending triggers (test paths that
     /// also need a reaction queue should manipulate `state` after
     /// `build()` rather than complicate this builder).
     pub fn with_open_window(mut self, kind: WindowKind, fast_actors: FastActorScope) -> Self {
-        self.open_windows.push(OpenWindow {
-            kind,
-            pending_triggers: Vec::new(),
-            fast_actors,
-        });
+        self.open_windows
+            .push(ResolutionFrame::new_empty(kind, fast_actors));
         self
     }
 
@@ -338,7 +335,10 @@ mod with_open_window_tests {
             )
             .build();
         assert_eq!(state.open_windows().len(), 1);
-        assert_eq!(state.open_windows()[0].fast_actors, FastActorScope::Any);
+        assert_eq!(
+            state.open_windows()[0].fast_actors(),
+            Some(&FastActorScope::Any)
+        );
         assert!(state.open_windows()[0].pending_triggers.is_empty());
     }
 
@@ -357,8 +357,8 @@ mod with_open_window_tests {
             .build();
         assert_eq!(state.open_windows().len(), 2);
         assert!(matches!(
-            state.open_windows()[1].kind,
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)
+            state.open_windows()[1].kind(),
+            Some(WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins))
         ));
     }
 }

@@ -293,8 +293,21 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 /// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
 pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
     loop {
-        if cx.state.top_reaction_window().is_some() {
-            return super::reaction_windows::open_queued_reaction_window(cx);
+        // Suspend only for a reaction window opened *during* this test — one
+        // pushed *above* this test's `SkillTest` frame. A Resolution frame
+        // *below* it is a forced run that fired this test as one of its
+        // candidates (#213 reentrancy: two Frozen in Fear copies); it must
+        // not be mistaken for a mid-test window — it resumes only once this
+        // test fully tears down (via `resume_skill_test_commit`).
+        let skill_test_pos = cx
+            .state
+            .continuations
+            .iter()
+            .rposition(|c| matches!(c, crate::state::Continuation::SkillTest));
+        if let Some(win_idx) = cx.state.top_reaction_window_index() {
+            if skill_test_pos.is_none_or(|st| win_idx > st) {
+                return super::reaction_windows::open_queued_reaction_window(cx);
+            }
         }
 
         let (continuation, investigator, indices_u8) = {
@@ -334,8 +347,11 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                     .expect("in_flight_skill_test must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
-            FinishContinuation::PostOnResolution { succeeded } => {
-                fire_after_location_investigated(cx, investigator, succeeded);
+            FinishContinuation::PostOnResolution { succeeded: _ } => {
+                // "After you successfully investigate" (Obscuring Fog forced +
+                // Dr. Milan reaction) already fired at the PostFollowUp step,
+                // via the Investigate follow-up's `emit_event`
+                // (`SuccessfullyInvestigated`, #213) — forced-before-reaction.
                 discard_committed_cards(cx, investigator, &indices_u8);
                 cx.events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when
@@ -658,19 +674,30 @@ fn apply_skill_test_follow_up(
                 );
             }
             // This follow-up runs only on a successful Investigate, so the
-            // success gate of "after you successfully investigate" is
-            // intrinsic. Open the reaction window for those reactions (Dr.
-            // Milan 01033) once the discovery completed — `queue_reaction_window`
-            // no-ops when no matching reaction is in play, so a plain
-            // Investigate is unchanged. A suspended discovery (Cover Up's
-            // before-interrupt, AwaitingInput) resumes through PostFollowUp;
-            // queuing the window across that boundary is out of Slice-1 scope
-            // (Dr. Milan + Cover Up don't co-occur) — `TODO(#212)`.
+            // "after you successfully investigate" timing point fires once the
+            // discovery completes. Both its forced abilities (Obscuring Fog
+            // 01168 discards) and its reaction window (Dr. Milan 01033) go
+            // through one `emit_event` so the forced resolves *before* the
+            // reaction window opens (RR p.2 forced-before-reaction, #213).
+            // No-op when nothing matches, so a plain Investigate is unchanged.
+            // A suspended discovery (Cover Up's before-interrupt, AwaitingInput)
+            // resumes through PostFollowUp; firing across that boundary is out
+            // of Slice-1 scope (Dr. Milan + Cover Up don't co-occur).
             if matches!(outcome, EngineOutcome::Done) {
-                super::reaction_windows::queue_reaction_window(
-                    cx,
-                    crate::state::WindowKind::AfterSuccessfulInvestigate { investigator },
-                );
+                if let Some(location) = cx
+                    .state
+                    .investigators
+                    .get(&investigator)
+                    .and_then(|i| i.current_location)
+                {
+                    return super::emit::emit_event(
+                        cx,
+                        &super::emit::TimingEvent::SuccessfullyInvestigated {
+                            investigator,
+                            location,
+                        },
+                    );
+                }
             }
             outcome
         }
@@ -755,51 +782,6 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
         .is_some_and(|e| e.retaliate && !e.exhausted);
     if retaliates {
         super::combat::enemy_attack(cx, enemy, investigator);
-    }
-}
-
-/// Fire `ForcedTriggerPoint::AfterLocationInvestigated` if the
-/// just-resolved test was a *successful Investigate*. Runs at the
-/// `PostOnResolution` step (after on-resolution triggers and retaliate,
-/// "after applying all results"). No-op unless the test succeeded and
-/// its follow-up was `Investigate`.
-///
-/// In-scope consumers (Obscuring Fog 01168 discards itself) neither
-/// suspend nor produce 2+ simultaneous triggers, so a non-`Done`
-/// outcome is a contract violation, surfaced loudly. Unlike
-/// `fire_on_skill_test_resolution` (which only rejects on `Rejected`),
-/// there is no resume path for a suspending consumer mid-teardown, so
-/// any non-`Done` panics here. A suspending consumer is #212
-/// reentrancy work.
-fn fire_after_location_investigated(cx: &mut Cx, investigator: InvestigatorId, succeeded: bool) {
-    if !succeeded {
-        return;
-    }
-    let follow_up = cx.state.in_flight_skill_test.as_ref().map(|t| t.follow_up);
-    if !matches!(follow_up, Some(SkillTestFollowUp::Investigate)) {
-        return;
-    }
-    let Some(location) = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .and_then(|i| i.current_location)
-    else {
-        return;
-    };
-    let outcome = super::forced_triggers::fire_forced_triggers(
-        cx,
-        &super::forced_triggers::ForcedTriggerPoint::AfterLocationInvestigated {
-            investigator,
-            location,
-        },
-    );
-    if !matches!(outcome, EngineOutcome::Done) {
-        unreachable!(
-            "AfterLocationInvestigated forced trigger returned non-Done ({outcome:?}); \
-             slice-1 content (Obscuring Fog discards, no suspension / 2+ simultaneous). \
-             A suspending consumer needs the #212 reentrancy work."
-        );
     }
 }
 

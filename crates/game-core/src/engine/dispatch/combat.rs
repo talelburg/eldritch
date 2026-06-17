@@ -675,19 +675,32 @@ fn drive_attack_loop(
         // rest and surface the queued window (see fn doc step 4).
         if !cx.state.open_windows().is_empty() {
             // Single-soak-window-per-attack invariant: `pending_enemy_attack`
-            // holds one parked loop, so resume (which `take()`s it) assumes
-            // exactly one soak window per suspension. One attack queues one
-            // window per reacting soaker; two would strand the second's
-            // resume on `pending_enemy_attack == None`. Unreachable in scope
-            // (only Guard Dog 01021 reacts, and two copies need two illegal
-            // Ally slots), so guard loudly rather than handle the multi-window
-            // drain. TODO(#294): drain all same-attack soak windows before
-            // resuming (coordinates with simultaneous-trigger ordering #213).
+            // holds one parked loop, so resume (which `take()`s it) drains
+            // exactly one soak window per suspension. A single attack
+            // producing 2+ soak windows is **unconstructible in the current
+            // model**, three independent ways: (a) Guard Dog 01021 is the only
+            // card with the `EnemyAttackDamagedSelf` retaliate reaction; (b) it
+            // is an Ally — the single Ally slot forbids two copies in play;
+            // (c) `assign_attack` fills each soaker to capacity before the
+            // next, so any non-final damaged soaker reaches its health and is
+            // defeated (the survivor filter then gives it no window). So guard
+            // loudly rather than carry an unexercised multi-window drain.
+            //
+            // This unlocks once *any* of those changes (#294): a second soak
+            // reactor, an Ally-slot-granting permanent (Charisma) plus a
+            // second reactor, or — the one that makes it reachable on its own —
+            // player-chosen damage distribution (today `assign_attack` is a
+            // fill-to-capacity default standing in for that choice), which lets
+            // one attack damage two soakers without defeating either. Then
+            // resume must drain all same-attack windows before continuing
+            // (coordinates with simultaneous-trigger ordering #213).
             debug_assert_eq!(
                 cx.state.open_windows().len(),
                 1,
-                "drive_attack_loop suspended on {} open windows; multi-soak-\
-                 window-per-attack resume is unhandled (TODO(#294))",
+                "drive_attack_loop suspended on {} soak windows; the multi-\
+                 window-per-attack drain is unconstructible in scope (one \
+                 soak reactor, one Ally slot, fill-to-capacity assignment) — \
+                 reachable only once #294's avenues land",
                 cx.state.open_windows().len(),
             );
             cx.state.pending_enemy_attack = Some(PendingEnemyAttack {

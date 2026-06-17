@@ -17,8 +17,9 @@ use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, GameState,
-    InvestigatorId, OpenWindow, PendingTrigger, Phase, PhaseStep, Status, WindowKind,
+    CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, ForcedContinuation,
+    GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate, ResolutionFrame,
+    ResolutionKind, Status, WindowBinding, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -57,11 +58,34 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
     // Multi-window nesting is now structural — push twice is valid.
     cx.state
         .continuations
-        .push(Continuation::Resolution(OpenWindow {
-            kind,
+        .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers,
-            fast_actors: FastActorScope::Any,
+            kind: ResolutionKind::Window(WindowBinding {
+                kind,
+                fast_actors: FastActorScope::Any,
+            }),
         }));
+}
+
+/// Open the forced-resolution run (Axis-B T5b / #213): push a
+/// [`Forced`](ResolutionKind::Forced) [`ResolutionFrame`] holding the 2+
+/// simultaneous forced `candidates`, and present the lead investigator's
+/// order choice. The forced run is mandatory (cannot be skipped) and admits
+/// no Fast plays. `continuation` names the framework flow to resume when the
+/// run closes (see [`ForcedContinuation`]). The caller
+/// ([`super::emit::emit_event`]) returns the resulting `AwaitingInput`.
+pub(super) fn open_forced_resolution(
+    cx: &mut Cx,
+    candidates: Vec<ResolutionCandidate>,
+    continuation: ForcedContinuation,
+) -> EngineOutcome {
+    cx.state
+        .continuations
+        .push(Continuation::Resolution(ResolutionFrame {
+            pending_triggers: candidates,
+            kind: ResolutionKind::Forced(continuation),
+        }));
+    open_queued_reaction_window(cx)
 }
 
 /// Scan every investigator's `cards_in_play` for
@@ -71,7 +95,7 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
 ///
 /// Returns an empty vec when the registry isn't installed (tests that
 /// don't touch card data) or no cards match.
-fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrigger> {
+fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -90,7 +114,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
         }
     }
 
-    let mut pending: Vec<PendingTrigger> = Vec::new();
+    let mut pending: Vec<ResolutionCandidate> = Vec::new();
     for id in order {
         let Some(inv) = state.investigators.get(&id) else {
             continue;
@@ -128,13 +152,13 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<PendingTrig
                 if card.is_usage_exhausted(ability_index, ability.usage_limit, state.round) {
                     continue;
                 }
-                // Phase-3 scope: every queued trigger is optional.
-                // The DSL has no forced primitive yet (#52 doc).
-                pending.push(PendingTrigger {
+                // Reaction candidates always have a source instance (an
+                // in-play / threat-area card); abilities resolve by `code`.
+                pending.push(ResolutionCandidate {
+                    code: card.code.clone(),
                     controller: id,
-                    instance_id: card.instance_id,
                     ability_index,
-                    forced: false,
+                    source: Some(card.instance_id),
                 });
             }
         }
@@ -257,13 +281,16 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         .state
         .top_reaction_window()
         .expect("open_queued_reaction_window: caller checked is_some");
+    let skip_hint = if window.is_forced() {
+        " (forced — cannot skip; the lead orders them)"
+    } else {
+        ", or InputResponse::Skip to close"
+    };
     EngineOutcome::AwaitingInput {
         request: InputRequest {
             prompt: format!(
-                "Reaction window {:?}: {} trigger(s) pending. \
-                 Submit InputResponse::PickIndex to fire one, or \
-                 InputResponse::Skip to close.",
-                window.kind,
+                "Resolution window: {} candidate(s) pending. \
+                 Submit InputResponse::PickIndex to resolve one{skip_hint}.",
                 window.pending_triggers.len(),
             ),
         },
@@ -300,6 +327,18 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
                 .state
                 .top_reaction_window_index()
                 .expect("resume_reaction_window: caller checked is_some");
+            // Forced abilities are mandatory — the forced run (`window: None`)
+            // cannot be skipped (RR p.2 / #213). The lead must pick one.
+            if cx.state.continuations[idx]
+                .as_resolution()
+                .is_some_and(ResolutionFrame::is_forced)
+            {
+                return EngineOutcome::Rejected {
+                    reason: "ResolveInput::Skip: forced abilities are mandatory; submit \
+                             InputResponse::PickIndex to resolve one (the lead orders them)"
+                        .into(),
+                };
+            }
             close_reaction_window_at(cx, idx)
         }
         other => EngineOutcome::Rejected {
@@ -330,7 +369,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
         let window = cx.state.continuations[window_idx]
-            .as_window()
+            .as_resolution()
             .expect("fire_pending_trigger: top_reaction_window_index points at a Resolution frame");
         let idx = match usize::try_from(i) {
             Ok(idx) if idx < window.pending_triggers.len() => idx,
@@ -345,7 +384,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
                 };
             }
         };
-        (window.pending_triggers[idx], idx)
+        (window.pending_triggers[idx].clone(), idx)
     };
 
     // Look up the ability fresh from the registry. The card may have
@@ -357,30 +396,9 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
              missing; the OnceLock contract guarantees once-set-stays-set"
         );
     };
-    let inv = cx
-        .state
-        .investigators
-        .get(&trigger.controller)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "fire_pending_trigger: controller {ctl:?} vanished while reaction window \
-                 was open; this is a state-corruption invariant violation",
-                ctl = trigger.controller,
-            )
-        });
-    let card = inv
-        .controlled_card_instances()
-        .find(|c| c.instance_id == trigger.instance_id)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "fire_pending_trigger: instance {inst:?} vanished from controller {ctl:?}'s \
-                 cards_in_play / threat area while reaction window was open; \
-                 state-corruption invariant violation",
-                inst = trigger.instance_id,
-                ctl = trigger.controller,
-            )
-        });
-    let code = card.code.clone();
+    // Abilities resolve by code (works for in-play instances and scenario
+    // board cards alike); `source` is the firing instance, when any.
+    let code = trigger.code.clone();
     let abilities = (reg.abilities_for)(&code).unwrap_or_else(|| {
         unreachable!(
             "fire_pending_trigger: registry lost abilities for card {code:?} between \
@@ -399,62 +417,90 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         })
         .clone();
 
-    // Thread the source instance into the EvalContext so effects that
-    // push `PendingSkillModifier`s (or any other source-attributed
-    // state) can attribute them to the firing card. Phase-3 reaction
-    // effects (`discover_clue`, `gain_resources`) don't read this,
-    // but the first source-attributing reaction effect will, and the
-    // information is already on the trigger record.
-    let mut eval_ctx =
-        EvalContext::for_controller_with_source(trigger.controller, trigger.instance_id);
+    // Thread the source instance (if any) into the EvalContext so effects
+    // that self-reference (`DiscardSelf`) or push source-attributed state
+    // resolve against the firing card. Board-card candidates (act / agenda)
+    // have no source.
+    let mut eval_ctx = match trigger.source {
+        Some(src) => EvalContext::for_controller_with_source(trigger.controller, src),
+        None => EvalContext::for_controller(trigger.controller),
+    };
     // For `AfterEnemyAttackDamagedAsset` windows, bind the attacking
     // enemy into the context so Guard Dog's native retaliate
     // (`Effect::Native("01021:retaliate")`) can name the attacker via
     // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
     // `clue_discovery_count`. `None` for all other window kinds. (C5b
     // #237.)
-    if let WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. } = cx.state.continuations
+    if let Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) = cx.state.continuations
         [window_idx]
-        .as_window()
-        .expect("fire_pending_trigger: window_idx is a Resolution frame")
-        .kind
+        .as_resolution()
+        .and_then(ResolutionFrame::kind)
     {
         eval_ctx.attacking_enemy = Some(enemy);
     }
     let usage_limit = ability.usage_limit;
+
+    // Drop the fired entry *before* resolving its effect: if the effect
+    // suspends (a forced ability that initiates a skill test — Frozen in
+    // Fear 01164), the entry must already be consumed so the resume drives
+    // the *remaining* siblings, not this one again. `apply_effect` does not
+    // push/pop continuations, so `window_idx` stays valid across it.
+    {
+        let window = cx.state.continuations[window_idx]
+            .as_resolution_mut()
+            .expect("fire_pending_trigger: window_idx is a Resolution frame");
+        window.pending_triggers.remove(pending_idx);
+    }
+
     let result = apply_effect(cx, &ability.effect, eval_ctx);
-    if let EngineOutcome::Rejected { reason } = result {
-        // Card-impl bugs surface loudly — same policy as
-        // `fire_on_skill_test_resolution`.
-        unreachable!("OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}");
+    match result {
+        EngineOutcome::Rejected { reason } => {
+            // Card-impl bugs surface loudly — same policy as
+            // `fire_on_skill_test_resolution`.
+            unreachable!(
+                "OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}"
+            );
+        }
+        // The effect suspended (it started a skill test, pushing a `SkillTest`
+        // frame above this run's frame). Park: the run's frame stays with its
+        // remaining siblings, and `advance_resolution` re-enters it once the
+        // nested test resolves (Axis-B T5b reentrancy). In-scope suspending
+        // forced effects (Frozen in Fear) carry no usage limit, so skipping
+        // the bump here is correct for the current pool.
+        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
+        EngineOutcome::Done => {
+            if usage_limit.is_some() {
+                bump_usage_counter(cx.state, &trigger);
+            }
+            advance_resolution(cx, window_idx)
+        }
     }
+}
 
-    if usage_limit.is_some() {
-        bump_usage_counter(cx.state, &trigger);
-    }
-
-    // Drop the fired entry now that resolution succeeded. The window
-    // we drove sits at `window_idx` — apply_effect does not push or
-    // pop `open_windows` entries, so the index remains valid.
+/// Advance a resolution run after one of its candidates resolved: close it
+/// (running its continuation) when none remain, else re-emit the pick prompt.
+///
+/// Shared by [`fire_pending_trigger`]'s synchronous tail and the skill-test
+/// commit-resume path ([`super::resume_skill_test_commit`]) — the latter
+/// re-enters a forced run parked beneath a sibling's now-resolved skill test.
+pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcome {
     let window = cx.state.continuations[window_idx]
-        .as_window_mut()
-        .expect("fire_pending_trigger: window_idx is a Resolution frame");
-    window.pending_triggers.remove(pending_idx);
-
-    // If more triggers remain pending, re-emit AwaitingInput so the
-    // player can pick the next one. Otherwise the window closes
-    // automatically.
+        .as_resolution()
+        .expect("advance_resolution: window_idx is a Resolution frame");
     if window.pending_triggers.is_empty() {
         return close_reaction_window_at(cx, window_idx);
     }
-    let kind = window.kind;
+    let skip_hint = if window.is_forced() {
+        " (forced — cannot skip)"
+    } else {
+        ", or InputResponse::Skip to close"
+    };
     let pending_len = window.pending_triggers.len();
     EngineOutcome::AwaitingInput {
         request: InputRequest {
             prompt: format!(
-                "Reaction window {kind:?}: {pending_len} trigger(s) pending. \
-                 Submit InputResponse::PickIndex to fire one, or \
-                 InputResponse::Skip to close.",
+                "Resolution window: {pending_len} candidate(s) pending. \
+                 Submit InputResponse::PickIndex to resolve one{skip_hint}.",
             ),
         },
         resume_token: ResumeToken(0),
@@ -474,8 +520,16 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// resolution. When cancellation lands, the bump call must move
 /// before the effect resolves (or fork into both paths) so canceled
 /// fires still count.
-fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
+fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
     let current_round = state.round;
+    // Only usage-limited abilities reach here, and those are on in-play
+    // instances (reactions) — so `source` is always `Some`.
+    let instance_id = trigger.source.unwrap_or_else(|| {
+        unreachable!(
+            "bump_usage_counter: a usage-limited candidate must have a source instance \
+             (board cards carry no usage limits); candidate {trigger:?}"
+        )
+    });
     let inv = state
         .investigators
         .get_mut(&trigger.controller)
@@ -490,13 +544,12 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
         .cards_in_play
         .iter_mut()
         .chain(inv.threat_area.iter_mut())
-        .find(|c| c.instance_id == trigger.instance_id)
+        .find(|c| c.instance_id == instance_id)
         .unwrap_or_else(|| {
             unreachable!(
-                "bump_usage_counter: instance {inst:?} vanished from controller {ctl:?}'s \
+                "bump_usage_counter: instance {instance_id:?} vanished from controller {ctl:?}'s \
                  cards_in_play / threat area while reaction window was open; \
                  state-corruption invariant violation",
-                inst = trigger.instance_id,
                 ctl = trigger.controller,
             )
         });
@@ -521,46 +574,31 @@ fn bump_usage_counter(state: &mut GameState, trigger: &PendingTrigger) {
 /// entry. Callers compute the index via
 /// [`GameState::top_reaction_window_index`].
 pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome {
-    // Borrow the window at `idx` to check for forced triggers remaining
-    // before removing — Rejected must leave state untouched.
-    {
-        let window = cx
-            .state
-            .continuations
-            .get(idx)
-            .and_then(Continuation::as_window)
-            .expect("close_reaction_window_at: caller-supplied index must be a Resolution frame");
-        if let Some(forced) = window.pending_triggers.iter().find(|t| t.forced) {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "ResolveInput::Skip: cannot close reaction window while forced trigger \
-                     (controller {ctl:?}, instance {inst:?}, ability {ab}) remains pending; \
-                     fire it first",
-                    ctl = forced.controller,
-                    inst = forced.instance_id,
-                    ab = forced.ability_index,
-                )
-                .into(),
-            };
-        }
-    }
-    let kind = cx
-        .state
-        .continuations
-        .remove(idx)
-        .as_window()
-        .map(|w| w.kind)
-        .expect("close_reaction_window_at: removed frame must be a Resolution window");
-    cx.events.push(Event::WindowClosed { kind });
+    // Reaction windows are all-optional, so `Skip` always closes them. The
+    // "forced abilities are mandatory" rule lives in the forced resolution
+    // run (its frame is `window: None` — Axis-B T5b), not here.
+    let removed = cx.state.continuations.remove(idx);
+    let frame = removed
+        .as_resolution()
+        .expect("close_reaction_window_at: removed frame must be a Resolution frame");
 
-    // Run any kind-specific continuation (e.g. MythosAfterDraws →
-    // mythos_phase_end). For windows that have no continuation
-    // (AfterEnemyDefeated, or PlayerWindow steps like
-    // InvestigatorTurnBegins) this has no side effects and returns
-    // Done. The continuation may suspend (upkeep step 4.5
-    // hand-size discard, #111), so propagate AwaitingInput rather than
-    // dropping it.
-    let continuation = run_window_continuation(cx, kind);
+    // A window emits `WindowClosed` and runs its kind-specific continuation
+    // (e.g. MythosAfterDraws → mythos_phase_end). The forced run (#213) is
+    // not a window: no event; instead it resumes the framework flow it
+    // suspended via its `ForcedContinuation`. Either may suspend (e.g. the
+    // upkeep act round-end advance window), so propagate the outcome.
+    let continuation = if let Some(kind) = frame.kind() {
+        cx.events.push(Event::WindowClosed { kind });
+        run_window_continuation(cx, kind)
+    } else {
+        let cont = frame.forced_continuation().unwrap_or_else(|| {
+            unreachable!(
+                "close_reaction_window_at: a non-window Resolution frame is the forced \
+                 run and must carry a ForcedContinuation"
+            )
+        });
+        resume_forced_continuation(cx, cont)
+    };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
         return continuation;
     }
@@ -761,6 +799,30 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
     }
 }
 
+/// Resume the framework flow a closed forced run (#213) suspended.
+///
+/// The forced run opens only when 2+ simultaneous forced abilities fire at a
+/// timing point and the lead must order them. Once they all resolve, control
+/// returns here to run whatever framework work followed the emit site, named
+/// by the [`ForcedContinuation`] the run carried (see
+/// [`super::emit::TimingEvent`]'s `forced_continuation`). May itself suspend
+/// (the upkeep tail opens the act round-end advance window), so propagate.
+fn resume_forced_continuation(cx: &mut Cx, continuation: ForcedContinuation) -> EngineOutcome {
+    match continuation {
+        // Genuinely terminal emit site (e.g. a move's "when you enter"
+        // forced abilities) — nothing follows.
+        ForcedContinuation::Terminal => EngineOutcome::Done,
+        // "Upkeep phase ends. Round ends." — run the upkeep step's tail
+        // (act round-end advance window, then Upkeep→Mythos).
+        ForcedContinuation::UpkeepAfterRoundEnded => super::phases::upkeep_after_round_ended(cx),
+        // End of turn — run the end-of-turn tail (rotate to the next active
+        // investigator, or end the Investigation phase).
+        ForcedContinuation::EndOfTurnAfterForced { investigator } => {
+            super::phases::resume_end_turn(cx, investigator)
+        }
+    }
+}
+
 /// Advance the enemy-phase cursor past `investigator` and open the next
 /// window (C5b #237).
 ///
@@ -800,7 +862,7 @@ pub(super) fn after_enemy_phase_attacks(
 /// Open a printed Fast-play window of the given kind. Always emits
 /// [`Event::WindowOpened`] for observability. Then either:
 ///
-/// - Pushes the [`OpenWindow`] onto [`GameState::open_windows`] if any
+/// - Pushes the [`ResolutionFrame`] onto [`GameState::open_windows`] if any
 ///   pending reaction triggers or Fast-eligible plays are detected. The
 ///   apply loop's existing "pending reactions → `AwaitingInput`" path
 ///   then surfaces the wait at the dispatch tail.
@@ -836,10 +898,12 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     let pending_triggers = scan_pending_triggers(cx.state, kind);
     cx.state
         .continuations
-        .push(Continuation::Resolution(OpenWindow {
-            kind,
+        .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers,
-            fast_actors: FastActorScope::Any,
+            kind: ResolutionKind::Window(WindowBinding {
+                kind,
+                fast_actors: FastActorScope::Any,
+            }),
         }));
 
     let has_pending = !cx
@@ -922,7 +986,7 @@ pub(super) fn check_play_card(
     let owner_is_active = state.active_investigator == Some(investigator);
     let permissive_window = state
         .top_window()
-        .is_some_and(|w| w.fast_actors.permits(investigator));
+        .is_some_and(|w| w.fast_actors().is_some_and(|fa| fa.permits(investigator)));
     // Non-asset/non-event card types are filtered out by
     // `resolve_play_target` above, so `card_type` here is always one of
     // `Asset` or `Event`. The non-Fast arm collapses both into the
@@ -1036,7 +1100,7 @@ pub(super) fn check_activate_ability(
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
     let in_permissive_window = state
         .top_window()
-        .is_some_and(|w| w.fast_actors.permits(investigator));
+        .is_some_and(|w| w.fast_actors().is_some_and(|fa| fa.permits(investigator)));
     if action_cost > 0 {
         // Action-cost ability: requires Investigation phase + active investigator.
         if !active_during_investigation {

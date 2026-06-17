@@ -18,11 +18,12 @@
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
 use crate::state::{
-    CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, WindowKind,
+    CardCode, CardInstanceId, EnemyId, ForcedContinuation, InvestigatorId, LocationId, Phase,
+    WindowKind,
 };
 
 use super::super::outcome::EngineOutcome;
-use super::forced_triggers::{fire_forced_triggers, ForcedTriggerPoint};
+use super::forced_triggers::{collect_forced_hits, fire_forced_triggers, ForcedTriggerPoint};
 use super::Cx;
 
 /// A game/framework timing point at which forced and/or reaction triggers
@@ -31,16 +32,17 @@ use super::Cx;
 /// The union of [`ForcedTriggerPoint`] (the forced dispatch key) and the
 /// event-driven [`WindowKind`] variants (the reaction dispatch key). Each
 /// variant maps to an optional forced point ([`Self::forced_point`]) and an
-/// optional reaction window ([`Self::reaction_window`]); `EnemyDefeated` is
-/// **dual** (both forced and reaction at the same point).
+/// optional reaction window ([`Self::reaction_window`]); `EnemyDefeated` and
+/// `SuccessfullyInvestigated` are **dual** (both forced and reaction at the
+/// same point).
 ///
-/// The successful-investigate moment is *not* a `TimingEvent` in T5a: its
-/// forced (Obscuring Fog) and reaction (Dr. Milan) fire at different
-/// skill-test driver steps today, so collapsing them into one timing event
-/// would reorder them (RR forced-first) — a behavior change deferred to T5b.
-/// Framework `PlayerWindow(PhaseStep)` windows are *not* timing events —
-/// they have no `EventPattern` and stay on explicit `open_fast_window`
-/// calls.
+/// `SuccessfullyInvestigated` collapses the successful-investigate moment
+/// into one timing point (T5b / #213): pre-T5b its forced (Obscuring Fog)
+/// fired a skill-test driver step *after* its reaction window (Dr. Milan)
+/// opened — reaction-before-forced, against RR p.2. Routing both through one
+/// `emit_event` restores forced-before-reaction. Framework
+/// `PlayerWindow(PhaseStep)` windows are *not* timing events — they have no
+/// `EventPattern` and stay on explicit `open_fast_window` calls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TimingEvent {
     /// An investigator entered a location (forced only).
@@ -74,6 +76,15 @@ pub(crate) enum TimingEvent {
         enemy: EnemyId,
         controller: InvestigatorId,
     },
+    /// A location was successfully investigated. **Dual:** forced (Obscuring
+    /// Fog 01168 discards) + the after-investigate reaction window (Dr. Milan
+    /// 01033). Both fire at one timing point — RR p.2 forced-before-reaction
+    /// — via this single emit, replacing the pre-T5b split where the forced
+    /// fired a step *after* the reaction window opened.
+    SuccessfullyInvestigated {
+        investigator: InvestigatorId,
+        location: LocationId,
+    },
 }
 
 impl TimingEvent {
@@ -105,6 +116,13 @@ impl TimingEvent {
                 investigator: *investigator,
             }),
             TimingEvent::GameEnd => Some(ForcedTriggerPoint::GameEnd),
+            TimingEvent::SuccessfullyInvestigated {
+                investigator,
+                location,
+            } => Some(ForcedTriggerPoint::AfterLocationInvestigated {
+                investigator: *investigator,
+                location: *location,
+            }),
             TimingEvent::EnemyAttackDamagedSelf { .. } => None,
         }
     }
@@ -126,7 +144,66 @@ impl TimingEvent {
                 enemy: *enemy,
                 controller: *controller,
             }),
+            TimingEvent::SuccessfullyInvestigated { investigator, .. } => {
+                Some(WindowKind::AfterSuccessfulInvestigate {
+                    investigator: *investigator,
+                })
+            }
             _ => None,
+        }
+    }
+
+    /// How a *forced run* opened at this timing point resumes the framework
+    /// flow on close (#213). Read only when 2+ simultaneous forced abilities
+    /// fire and the lead must order them — see [`emit_event`].
+    ///
+    /// - `Some(ForcedContinuation::Terminal)` — the emit site is genuinely
+    ///   terminal: nothing in the framework runs after the forced abilities,
+    ///   so the run closes to `Done`.
+    /// - `Some(ForcedContinuation::…)` — the site has framework work after
+    ///   the emit; the named variant resumes exactly that tail.
+    /// - `None` — the site *has* a tail but its resume continuation is **not
+    ///   wired**. Safe today because no such site can produce 2+ forced in
+    ///   the current card pool; `emit_event` turns a 2+ hit here into a loud
+    ///   `unreachable!` rather than silently dropping the tail.
+    ///
+    /// The match is exhaustive over [`TimingEvent`] (and over [`Phase`] for
+    /// `PhaseEnded`) so adding a variant forces a deliberate decision here.
+    fn forced_continuation(&self) -> Option<ForcedContinuation> {
+        match self {
+            // A move completes once "when you enter" forced abilities
+            // resolve — nothing in the framework follows.
+            TimingEvent::EnteredLocation { .. } => Some(ForcedContinuation::Terminal),
+            // "Upkeep phase ends. Round ends." (RR p.24): after the round-end
+            // forced abilities resolve, the upkeep step opens the act
+            // round-end advance window and steps the phase.
+            TimingEvent::RoundEnded => Some(ForcedContinuation::UpkeepAfterRoundEnded),
+            // End of turn (RR p.24 2.2.2): after the turn-ending investigator's
+            // forced abilities resolve, rotate to the next active investigator
+            // or end the Investigation phase.
+            TimingEvent::EndOfTurn { investigator } => {
+                Some(ForcedContinuation::EndOfTurnAfterForced {
+                    investigator: *investigator,
+                })
+            }
+            // Non-terminal sites with no wired resume continuation. None can
+            // produce 2+ forced in the current card pool; if one ever does,
+            // emit_event's 2+ branch fires its loud guard rather than
+            // dropping the tail. Add a ForcedContinuation variant + arm then.
+            //
+            // Extra care for the **dual** sites (`EnemyDefeated`,
+            // `SuccessfullyInvestigated`): emit_event queues their reaction
+            // window *before* pushing the forced run on top, so wiring a
+            // continuation here must also re-surface that queued window after
+            // the forced run closes — otherwise it is left stranded below the
+            // forced frame (the apply loop has no post-dispatch window sweep).
+            TimingEvent::PhaseEnded { .. }
+            | TimingEvent::ActAdvanced { .. }
+            | TimingEvent::AgendaAdvanced { .. }
+            | TimingEvent::EnemyDefeated { .. }
+            | TimingEvent::GameEnd
+            | TimingEvent::EnemyAttackDamagedSelf { .. }
+            | TimingEvent::SuccessfullyInvestigated { .. } => None,
         }
     }
 }
@@ -151,8 +228,27 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     if let Some(kind) = event.reaction_window() {
         super::reaction_windows::queue_reaction_window(cx, kind);
     }
-    match event.forced_point() {
-        Some(point) => fire_forced_triggers(cx, &point),
-        None => EngineOutcome::Done,
+    let Some(point) = event.forced_point() else {
+        return EngineOutcome::Done;
+    };
+    // Forced phase. When 2+ forced abilities resolve at this timing point,
+    // the lead investigator orders them (#213): open the forced-resolution
+    // run and suspend for the choice. 0 or 1 resolve synchronously, as before.
+    let candidates = collect_forced_hits(cx.state, &point);
+    if candidates.len() >= 2 {
+        // 2+ simultaneous forced: the lead orders them (#213). Resume the
+        // framework flow this site suspended via its forced continuation; a
+        // non-terminal site with no wired continuation is a loud bug, not a
+        // silent dropped tail.
+        let continuation = event.forced_continuation().unwrap_or_else(|| {
+            unreachable!(
+                "emit_event: 2+ simultaneous forced abilities at {event:?}, but its \
+                 resume continuation isn't wired (#213) — add a ForcedContinuation \
+                 variant + a TimingEvent::forced_continuation arm",
+            )
+        });
+        super::reaction_windows::open_forced_resolution(cx, candidates, continuation)
+    } else {
+        fire_forced_triggers(cx, &point)
     }
 }
