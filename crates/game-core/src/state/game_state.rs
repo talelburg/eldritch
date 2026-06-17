@@ -656,7 +656,7 @@ pub enum SkillTestFollowUp {
 }
 
 /// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
-/// actions while an `ResolutionFrame` is the top of `GameState::open_windows`.
+/// actions while a [`ResolutionFrame`] is the top of the window stack.
 ///
 /// Modeled per Rules Reference: a reaction window allows any
 /// investigator to fire a triggered reaction or play a Fast card.

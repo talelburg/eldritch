@@ -210,14 +210,9 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
         investigator: active_id,
     });
 
-    // Forced "at the end of your turn" abilities (threat-area cards
-    // such as Frozen in Fear 01164) fire for the investigator whose
-    // turn just ended, before the turn passes on. No real card
-    // consumes this in C4a; C4c (#235) is the first consumer.
-    //
-    // Forced "at the end of your turn" abilities (Frozen in Fear 01164's
-    // willpower test) fire for the investigator whose turn just ended,
-    // before the turn passes on.
+    // Forced "at the end of your turn" abilities (threat-area cards such as
+    // Frozen in Fear 01164's willpower test) fire for the investigator whose
+    // turn just ended, before the turn passes on (first consumer: C4c, #235).
     //
     // A forced effect that initiates a skill test suspends here
     // (`AwaitingInput`), stranding `end_turn` before rotation. Two cases:

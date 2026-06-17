@@ -190,6 +190,13 @@ impl TimingEvent {
             // produce 2+ forced in the current card pool; if one ever does,
             // emit_event's 2+ branch fires its loud guard rather than
             // dropping the tail. Add a ForcedContinuation variant + arm then.
+            //
+            // Extra care for the **dual** sites (`EnemyDefeated`,
+            // `SuccessfullyInvestigated`): emit_event queues their reaction
+            // window *before* pushing the forced run on top, so wiring a
+            // continuation here must also re-surface that queued window after
+            // the forced run closes — otherwise it is left stranded below the
+            // forced frame (the apply loop has no post-dispatch window sweep).
             TimingEvent::PhaseEnded { .. }
             | TimingEvent::ActAdvanced { .. }
             | TimingEvent::AgendaAdvanced { .. }

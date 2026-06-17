@@ -225,7 +225,7 @@ impl GameStateBuilder {
         self
     }
 
-    /// Push an [`ResolutionFrame`] onto the build's `open_windows` stack
+    /// Push a [`ResolutionFrame`] onto the build's window stack
     /// for tests that need a specific window-state shape.
     ///
     /// The pushed window has no pending triggers (test paths that
