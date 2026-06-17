@@ -39,9 +39,9 @@
 //!   `Effect::Fight` (flat +1 combat, +1 damage; conditional-damage caveat
 //!   in the impl, TODO(#300)).
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
-//!   `DealHorror(You, 1)`.
+//!   `deal_horror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
-//!   `DealDamage(You, 1)`.
+//!   `deal_damage(You, 1)`.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`

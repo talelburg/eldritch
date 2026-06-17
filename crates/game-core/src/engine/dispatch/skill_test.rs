@@ -250,7 +250,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         // Margin-keyed failure branch of a treachery-Revelation test
         // (`Effect::SkillTest`). The failure margin is threaded so
         // `Effect::ForEachPointFailed` can scale. In-scope on_fail
-        // effects (DealDamage / DealHorror / Native) run to completion;
+        // effects (Deal / Native) run to completion;
         // a future suspending on_fail is #212 reentrancy work.
         let mut ctx = card_ctx(investigator);
         ctx.failed_by = Some(failed_by);
@@ -967,8 +967,8 @@ pub(super) fn peril_check(
 /// Apply a resolved symbol token's side effects to the testing
 /// investigator: `immediate` effects always, `on_fail` effects only when
 /// the test failed. Routes through the same elimination paths as
-/// `Effect::DealDamage` / `Effect::DealHorror`, so defeat handling and
-/// the `DamageTaken` / `HorrorTaken` events are reused.
+/// `Effect::Deal`, so defeat handling and the `DamageTaken` /
+/// `HorrorTaken` events are reused.
 fn apply_symbol_outcome(
     cx: &mut Cx,
     investigator: InvestigatorId,

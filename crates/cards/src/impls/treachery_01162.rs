@@ -31,7 +31,7 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::Effect;
+    use card_dsl::dsl::{Effect, HarmKind};
 
     #[test]
     fn revelation_tests_agility_3_then_damage_per_point() {
@@ -52,7 +52,7 @@ mod tests {
         assert!(matches!(
             on_fail.as_deref(),
             Some(Effect::ForEachPointFailed(b))
-                if matches!(**b, Effect::DealDamage { amount: 1, .. })
+                if matches!(**b, Effect::Deal { kind: HarmKind::Damage, amount: 1, .. })
         ));
     }
 }

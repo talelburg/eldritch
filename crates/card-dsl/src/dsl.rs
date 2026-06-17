@@ -539,17 +539,12 @@ pub enum Effect {
     /// investigator. (Caller responsibility: validate the location
     /// has clues and the investigator can hold them.)
     DiscoverClue { from: LocationTarget, count: u8 },
-    /// Deal `amount` damage to the resolved target investigator,
-    /// applying defeat if the new total reaches their max health.
-    /// `amount == 0` is a no-op (no event, no target resolution).
-    DealDamage {
-        target: InvestigatorTarget,
-        amount: u8,
-    },
-    /// Deal `amount` horror to the resolved target investigator,
-    /// applying defeat if the new total reaches their max sanity.
-    /// `amount == 0` is a no-op.
-    DealHorror {
+    /// Deal `amount` of `kind` (damage or horror) to the resolved target
+    /// investigator, applying defeat if the new total reaches their max health
+    /// (damage) or max sanity (horror). `amount == 0` is a no-op (no event, no
+    /// target resolution). Built via the [`deal_damage`] / [`deal_horror`] sugar.
+    Deal {
+        kind: HarmKind,
         target: InvestigatorTarget,
         amount: u8,
     },
@@ -559,7 +554,7 @@ pub enum Effect {
     /// before any cost is paid. `amount == 0` is a no-op.
     DealDamageToEnemy { target: EnemyTarget, amount: u8 },
     /// Heal `count` of `kind` (damage or horror) from the resolved target
-    /// investigator — the inverse of `DealDamage`/`DealHorror` (no defeat
+    /// investigator — the inverse of [`Effect::Deal`] (no defeat
     /// interaction). Heals at most the current amount (saturating at 0).
     /// `count == 0`, or a target with nothing to heal, is a no-op.
     Heal {
@@ -704,8 +699,8 @@ pub enum Effect {
 // ---- stats and modifier scopes --------------------------------
 
 /// Which health track a heal or harm acts on — physical (`Damage`, on health)
-/// or mental (`Horror`, on sanity). Shared by [`Effect::Heal`]; the
-/// `DealDamage`/`DealHorror` consolidation (#354) adopts it.
+/// or mental (`Horror`, on sanity). Shared by [`Effect::Heal`] and
+/// [`Effect::Deal`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HarmKind {
     /// Physical damage (reduces remaining health).
@@ -1164,10 +1159,14 @@ pub fn discover_clue(from: LocationTarget, count: u8) -> Effect {
     Effect::DiscoverClue { from, count }
 }
 
-/// Build an [`Effect::DealDamage`] against `target` for `amount`.
+/// Build an [`Effect::Deal`] dealing `amount` damage to `target`.
 #[must_use]
 pub fn deal_damage(target: InvestigatorTarget, amount: u8) -> Effect {
-    Effect::DealDamage { target, amount }
+    Effect::Deal {
+        kind: HarmKind::Damage,
+        target,
+        amount,
+    }
 }
 
 /// Build an [`Effect::Heal`].
@@ -1180,10 +1179,14 @@ pub fn heal(kind: HarmKind, target: InvestigatorTarget, count: u8) -> Effect {
     }
 }
 
-/// Build an [`Effect::DealHorror`] against `target` for `amount`.
+/// Build an [`Effect::Deal`] dealing `amount` horror to `target`.
 #[must_use]
 pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
-    Effect::DealHorror { target, amount }
+    Effect::Deal {
+        kind: HarmKind::Horror,
+        target,
+        amount,
+    }
 }
 
 /// Build an [`Effect::DealDamageToEnemy`].
@@ -1619,6 +1622,32 @@ mod tests {
         );
         let json = serde_json::to_string(&e).unwrap();
         assert_eq!(serde_json::from_str::<Effect>(&json).unwrap(), e);
+    }
+
+    #[test]
+    fn deal_builders_produce_the_kinded_effect_and_round_trip() {
+        let dmg = deal_damage(InvestigatorTarget::You, 2);
+        let hor = deal_horror(InvestigatorTarget::You, 3);
+        assert_eq!(
+            dmg,
+            Effect::Deal {
+                kind: HarmKind::Damage,
+                target: InvestigatorTarget::You,
+                amount: 2,
+            }
+        );
+        assert_eq!(
+            hor,
+            Effect::Deal {
+                kind: HarmKind::Horror,
+                target: InvestigatorTarget::You,
+                amount: 3,
+            }
+        );
+        for e in [dmg, hor] {
+            let json = serde_json::to_string(&e).unwrap();
+            assert_eq!(serde_json::from_str::<Effect>(&json).unwrap(), e);
+        }
     }
 
     #[test]
