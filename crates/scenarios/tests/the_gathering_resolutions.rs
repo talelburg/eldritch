@@ -119,7 +119,7 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
 /// Won via the real progression + defeat→advance→win latch. Drives act 1
 /// (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window) for real —
 /// act 2's reverse spawns the **real** Ghoul Priest — then fights that
-/// spawned Priest to trigger `act_01110`'s forced advance on the terminal
+/// spawned Priest to trigger `what_have_you_done`'s forced advance on the terminal
 /// act → `Resolution::Won { R1 }`.
 ///
 /// Two seeds, both off the resolution path: clues (acquiring them via
