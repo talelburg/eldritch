@@ -69,14 +69,28 @@ special-casing in `sum_skill_value`.
   covering substitution is active for that investigator, suspend with a
   yes/no prompt ("use Intellect in place of <skill>?").
 - **On "yes":** rewrite `in_flight.skill = Intellect` (keep `kind` =
-  Fight/Evade). On "no": leave it. Either way, then open the commit window.
-- **Why this is enough:** `sum_skill_value` already keys its base, constant
-  modifiers, and pending modifiers off `in_flight.skill`; commit validation
-  (`validate_commit_indices`) requires icons matching `in_flight.skill`;
-  the Fight/Evade follow-up keys off `kind`. So `skill = Intellect, kind =
-  Fight` yields exactly the FAQ behavior — intellect base, intellect/wild
-  icons, intellect bonuses, combat/agility bonuses ignored, damage still
-  dealt — with **no other engine change**.
+  Fight/Evade) **and zero `in_flight.test_modifier`** — see "Weapon attacks"
+  below. On "no": leave both. Either way, then open the commit window.
+- **Why the skill rewrite is enough for icons/stat-bonuses:**
+  `sum_skill_value` keys its base, constant modifiers, and pending modifiers
+  off `in_flight.skill`; commit validation (`validate_commit_indices`)
+  requires icons matching `in_flight.skill`; the Fight/Evade follow-up keys
+  off `kind`. So `skill = Intellect, kind = Fight` yields the FAQ behavior —
+  intellect base, intellect/wild icons, intellect stat-bonuses,
+  combat/agility *stat-keyed* bonuses ignored, damage still dealt.
+- **Weapon attacks (the load-bearing case for a Seeker):** a weapon's
+  "+N [combat]" is snapshotted onto `in_flight.test_modifier` (skill-agnostic
+  state), separate from the stat-keyed modifiers above. Per the FAQ ("ignore
+  any bonuses to Combat or Agility"), that combat bonus **must be dropped**
+  when substituting — so the "yes" path zeroes `test_modifier`. The weapon's
+  bonus **damage** (`extra_damage` / `bonus_attack_damage`) is a damage
+  bonus, not a skill bonus, so it is **kept**. Net: a Seeker fires .38
+  Special, substitutes Intellect for the test (no weapon combat bonus, uses
+  intellect value), and still deals the weapon's bonus damage on success —
+  exactly the intended play. (`test_modifier` on a Combat/Agility test is
+  only ever a weapon combat/agility bonus in scope; if a future
+  skill-agnostic `test_modifier` source that should *survive* substitution
+  lands, gate the zeroing then.)
 - **Genuine "may":** declining keeps the combat/agility test, so a player
   can choose the lower value to fail intentionally. Auto-max would be
   wrong; this is a real prompt.
@@ -140,6 +154,11 @@ A new pipeline-parsed metadata flag, mirroring `is_fast`:
   observable), an [intellect] skill card is committable while a [combat]
   one is not, and damage is still dealt on success (kind = Fight). Choosing
   "no" runs the combat test.
+- **Weapon attack while substituting:** with Mind over Matter active, fire
+  a weapon whose `Effect::Fight` carries a `+combat` modifier (e.g. .38
+  Special) and choose "yes": assert the test total uses **intellect with no
+  weapon combat bonus** (`test_modifier` zeroed), and the weapon's bonus
+  **damage** is still dealt on success.
 - Playing Mind over Matter outside your turn (Mythos window) is rejected.
 - Working a Hunch 01037 (regression): now rejected outside your turn.
 
@@ -167,12 +186,9 @@ A new pipeline-parsed metadata flag, mirroring `is_fast`:
   modeled — [#374](https://github.com/talelburg/eldritch/issues/374). MoM
   is unaffected (it's played *before* the test, not in a skill-test
   window).
-- The modifier/icon interaction is handled here for the load-bearing cases
-  (intellect test ⇒ intellect/wild icons + intellect stat-keyed bonuses;
-  combat/agility *stat-keyed* bonuses — Beat Cop, Physical Training — are
-  dropped because the test's skill is now Intellect). One niche edge stays:
-  a **weapon's `InFlightSkillTest.test_modifier`** (e.g. .38 Special's +3)
-  is skill-agnostic snapshot state, so it is *not* dropped on substitution —
-  a minor divergence from "ignore combat bonuses" for the
-  weapon-modifier-while-substituting combo (nonsensical play: substituting
-  to Intellect on a combat-weapon attack). Deferred.
+- The modifier/icon interaction is fully handled (no deferral): intellect
+  test ⇒ intellect/wild icons + intellect stat-keyed bonuses; combat/agility
+  stat-keyed bonuses (Beat Cop, Physical Training) drop because the test's
+  skill is now Intellect; and a **weapon's combat bonus** (`test_modifier`)
+  is dropped while its bonus damage is kept (Component 2, "Weapon attacks") —
+  the intended Seeker-with-a-firearm play.
