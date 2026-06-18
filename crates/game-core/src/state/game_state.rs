@@ -764,12 +764,6 @@ pub struct ResolutionFrame {
     /// lead orders. Empty is permitted — framework windows opened for
     /// phase/timing reasons gate Fast actions with no pending candidates.
     pub pending_triggers: Vec<ResolutionCandidate>,
-    /// Fast events in hand that match this window's event (Axis C, #335),
-    /// offered as `PickSingle` options *after* `pending_triggers`. Empty for
-    /// the forced run (it admits no Fast plays) and for windows opened before
-    /// the hand scan (`queue_reaction_window` populates it from
-    /// `scan_hand_fast_events`).
-    pub fast_plays: Vec<FastEventCandidate>,
     /// What this resolution run *is*: either a reaction / fast / framework
     /// [`Window`](ResolutionKind::Window) (carrying its kind + Fast-action
     /// scope), or the mandatory **forced run**
@@ -850,17 +844,8 @@ impl ResolutionFrame {
     pub fn new_empty(kind: WindowKind, fast_actors: FastActorScope) -> Self {
         Self {
             pending_triggers: Vec::new(),
-            fast_plays: Vec::new(),
             kind: ResolutionKind::Window(WindowBinding { kind, fast_actors }),
         }
-    }
-
-    /// True while this frame still has an option to offer — a pending in-play
-    /// trigger or a hand Fast-event play (Axis C). The close condition for a
-    /// resolution run is the negation of this.
-    #[must_use]
-    pub fn has_pending_options(&self) -> bool {
-        !self.pending_triggers.is_empty() || !self.fast_plays.is_empty()
     }
 
     /// The [`WindowKind`] if this frame is a window; `None` for the forced
@@ -1121,62 +1106,54 @@ pub struct HandSizeDiscard {
     pub remaining: Vec<InvestigatorId>,
 }
 
-/// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// ability waiting to resolve in a [`Continuation::Resolution`] frame.
+/// Where a [`ResolutionCandidate`] comes from — which decides how it
+/// *resolves* when picked.
 ///
-/// The **unified candidate** for both the forced run and a reaction window
-/// (Axis-B T5b): abilities resolve by `code` (registry lookup), so the same
-/// shape serves in-play instances *and* scenario board cards (act / agenda)
-/// that have no instance. Whether a candidate is mandatory vs. optional is a
-/// property of the *frame* (`can_skip`), not the candidate — forced and
-/// reaction are separate resolution runs.
+/// `InPlay` and `Board` candidates **fire an ability's effect**; a `Hand`
+/// candidate (Axis C, #335) is a Fast event **played** from hand (RR
+/// Appendix I — `CardPlayed`, run the matched ability's effect, discard),
+/// not fired in place. Replacing the former `source: Option<CardInstanceId>`
+/// with this enum lets one `pending_triggers` list carry hand events
+/// alongside in-play reactions: `None` (board) and "from hand" are distinct
+/// origins, so a bare `Option` could not tell them apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CandidateSource {
+    /// An ability on an in-play / threat-area instance (reaction trigger,
+    /// weapon, …). The instance id drives `Effect::DiscardSelf`, usage-limit
+    /// bumping, and the soak self-binding.
+    InPlay(CardInstanceId),
+    /// A scenario board card (act / agenda) — no instance; fires by `code`.
+    Board,
+    /// A Fast event in the controller's hand (Axis C) — *played* rather than
+    /// fired. No instance until it would enter play (events never do).
+    Hand,
+}
+
+/// A single pending ability/play waiting to resolve in a
+/// [`Continuation::Resolution`] frame.
+///
+/// The **unified candidate** for the forced run, a reaction window's in-play
+/// triggers, *and* (Axis C) a Fast event playable from hand: abilities resolve
+/// by `code` (registry lookup), so the same shape serves in-play instances,
+/// scenario board cards (act / agenda), and hand events. How a picked
+/// candidate resolves is decided by its [`source`](Self::source)
+/// ([`CandidateSource`]). Whether a candidate is mandatory vs. optional is a
+/// property of the *frame*, not the candidate — forced and reaction are
+/// separate resolution runs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ResolutionCandidate {
-    /// Printed code of the card whose ability fires. Abilities are looked
-    /// up by code, so this resolves both in-play instances and board cards.
+    /// Printed code of the card whose ability fires (or which is played, for
+    /// a [`CandidateSource::Hand`] event). Abilities are looked up by code.
     pub code: CardCode,
-    /// The investigator the effect resolves under (controller).
+    /// The investigator the effect resolves under (controller / player).
     pub controller: InvestigatorId,
     /// Zero-based index into the card's
-    /// [`abilities`](crate::dsl::Ability) vec — which ability fires.
+    /// [`abilities`](crate::dsl::Ability) vec — which ability fires / runs.
     pub ability_index: u8,
-    /// The firing card instance, when there is one (in-play asset,
-    /// threat-area, attachment, reaction trigger) — used for
-    /// `Effect::DiscardSelf`, usage-limit bumping, and the soak
-    /// self-binding. `None` for scenario board cards (act / agenda).
-    pub source: Option<CardInstanceId>,
-}
-
-/// One Fast event playable from hand that matches an open reaction window's
-/// event (Axis C, #335). The window offers it as a `PickSingle` option
-/// alongside in-play [`ResolutionCandidate`]s; picking it plays the event
-/// and runs ability `ability_index`'s effect. Sourced from hand, so there is
-/// no in-play instance id (unlike [`ResolutionCandidate::source`]).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct FastEventCandidate {
-    /// The investigator whose hand holds the event and who plays it.
-    pub controller: InvestigatorId,
-    /// Printed code of the Fast event in hand.
-    pub code: CardCode,
-    /// Index into the card's [`abilities`](crate::dsl::Ability) vec — the
-    /// `OnEvent` ability whose pattern matched this window and whose effect
-    /// resolves on play.
-    pub ability_index: u8,
-}
-
-impl FastEventCandidate {
-    /// Construct a candidate. Provided so integration tests outside the
-    /// crate can build one despite the `#[non_exhaustive]` attribute.
-    #[must_use]
-    pub fn new(controller: InvestigatorId, code: CardCode, ability_index: u8) -> Self {
-        Self {
-            controller,
-            code,
-            ability_index,
-        }
-    }
+    /// Where the candidate comes from, deciding how it resolves — see
+    /// [`CandidateSource`].
+    pub source: CandidateSource,
 }
 
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
@@ -1207,26 +1184,27 @@ pub struct PendingSkillModifier {
 }
 
 impl GameState {
-    /// The topmost open window that has an unresolved option — a pending
-    /// in-play trigger *or* a hand Fast-event play (Axis C). Used by the
-    /// dispatcher's "is reaction work pending?" guards. Pure Fast-gating
-    /// framework windows (no triggers and no hand plays) are skipped — they
-    /// don't block dispatch.
+    /// The topmost open window that has unresolved candidates, if any. Used
+    /// by the dispatcher's "is reaction work pending?" guards. A candidate is
+    /// an in-play trigger *or* a hand Fast-event play (Axis C) — both ride
+    /// `pending_triggers`. Pure Fast-gating framework windows (empty
+    /// `pending_triggers`) are skipped — they don't block dispatch.
     #[must_use]
     pub fn top_reaction_window(&self) -> Option<&ResolutionFrame> {
-        self.windows().rev().find(|w| w.has_pending_options())
+        self.windows()
+            .rev()
+            .find(|w| !w.pending_triggers.is_empty())
     }
 
     /// Mutable counterpart to `top_reaction_window`. Same skip rule
-    /// applies: windows with no pending option (no triggers and no hand
-    /// plays) are skipped — phase-gate-only windows are not exposed as
-    /// reaction-work.
+    /// applies: windows with empty `pending_triggers` are skipped —
+    /// phase-gate-only windows are not exposed as reaction-work.
     pub fn top_reaction_window_mut(&mut self) -> Option<&mut ResolutionFrame> {
         self.continuations
             .iter_mut()
             .rev()
             .filter_map(Continuation::as_resolution_mut)
-            .find(|w| w.has_pending_options())
+            .find(|w| !w.pending_triggers.is_empty())
     }
 
     /// Iterator over the open windows on the continuation stack, in stack
@@ -1276,7 +1254,7 @@ impl GameState {
     pub fn top_reaction_window_index(&self) -> Option<usize> {
         self.continuations.iter().rposition(|c| {
             c.as_resolution()
-                .is_some_and(ResolutionFrame::has_pending_options)
+                .is_some_and(|w| !w.pending_triggers.is_empty())
         })
     }
 
@@ -1379,7 +1357,6 @@ mod open_window_tests {
     fn open_window_serde_roundtrip() {
         let window = ResolutionFrame {
             pending_triggers: Vec::new(),
-            fast_plays: Vec::new(),
             kind: ResolutionKind::Window(WindowBinding {
                 kind: WindowKind::AfterEnemyDefeated {
                     enemy: EnemyId(7),
@@ -1402,23 +1379,17 @@ mod open_window_tests {
     }
 
     #[test]
-    fn new_empty_frame_has_no_fast_plays_and_no_pending_options() {
-        let frame = ResolutionFrame::new_empty(
-            WindowKind::AfterEnemyDefeated {
-                enemy: EnemyId(1),
-                by: Some(InvestigatorId(1)),
-            },
-            FastActorScope::Any,
-        );
-        assert!(frame.fast_plays.is_empty());
-        assert!(!frame.has_pending_options());
-    }
-
-    #[test]
-    fn fast_event_candidate_serde_round_trips() {
-        let candidate = FastEventCandidate::new(InvestigatorId(1), CardCode::new("01022"), 0);
+    fn hand_candidate_serde_round_trips() {
+        // A Fast event playable from hand (Axis C) rides ResolutionCandidate
+        // with a `Hand` source — distinct from a board card's `None`/`Board`.
+        let candidate = ResolutionCandidate {
+            code: CardCode::new("01022"),
+            controller: InvestigatorId(1),
+            ability_index: 0,
+            source: CandidateSource::Hand,
+        };
         let json = serde_json::to_string(&candidate).expect("serialize");
-        let back: FastEventCandidate = serde_json::from_str(&json).expect("deserialize");
+        let back: ResolutionCandidate = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, candidate);
     }
 }

@@ -8,7 +8,8 @@
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::state::{
-    CardCode, CardInstanceId, InvestigatorId, LocationId, Phase, ResolutionCandidate,
+    CandidateSource, CardCode, CardInstanceId, InvestigatorId, LocationId, Phase,
+    ResolutionCandidate,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -351,7 +352,12 @@ fn push_matching(
                     controller,
                     ability_index: u8::try_from(idx)
                         .expect("ability_index fits u8 — abilities vecs are tiny"),
-                    source,
+                    // Forced hits are in-play instances or scenario board
+                    // cards — never hand events.
+                    source: match source {
+                        Some(id) => CandidateSource::InPlay(id),
+                        None => CandidateSource::Board,
+                    },
                 });
             }
         }
@@ -375,8 +381,14 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     };
     let effect = abilities[usize::from(hit.ability_index)].effect.clone();
     let ctx = match hit.source {
-        Some(src) => EvalContext::for_controller_with_source(hit.controller, src),
-        None => EvalContext::for_controller(hit.controller),
+        CandidateSource::InPlay(src) => {
+            EvalContext::for_controller_with_source(hit.controller, src)
+        }
+        CandidateSource::Board => EvalContext::for_controller(hit.controller),
+        CandidateSource::Hand => unreachable!(
+            "fire_forced_triggers: a forced run never holds a Hand candidate \
+             (hand Fast events are reaction-window plays, not forced)"
+        ),
     };
     apply_effect(cx, &effect, ctx)
 }

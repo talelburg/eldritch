@@ -3043,7 +3043,6 @@ mod enemy_phase_tests {
             .continuations
             .push(crate::state::Continuation::Resolution(ResolutionFrame {
                 pending_triggers: Vec::new(),
-                fast_plays: Vec::new(),
                 kind: crate::state::ResolutionKind::Window(crate::state::WindowBinding {
                     kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
                     fast_actors: FastActorScope::Any,

@@ -98,23 +98,30 @@ by_controller: true }` matches only the investigator credited with the defeat
 Slice-1: the active investigator. The scan order mirrors `scan_pending_triggers`:
 active investigator first, then turn order.)
 
-### 2. Unified `OptionId` option list
+### 2. One candidate list, an origin discriminant (not a parallel vec)
 
-The window's offered options become the union, in a stable order:
+A hand Fast-event play is just another candidate in the window's existing
+`pending_triggers: Vec<ResolutionCandidate>` — appended after the in-play
+triggers, in a stable order:
 
 ```
-options = [ in-play pending triggers ... ] ++ [ matching hand Fast-event plays ... ]
+pending_triggers = [ in-play triggers ... ] ++ [ matching hand Fast-event plays ... ]
 ```
 
-Each becomes a `ChoiceOption { id: OptionId(i), label }` (the Axis-A type in
-`engine/outcome.rs`). `OptionId(i)` is the index into the offered list (the
-existing Axis-A convention). The window frame must record enough to map each
-`OptionId` back to its origin on resume — which in-play candidate, or which
-investigator + hand index. The exact frame representation (extend
-`ResolutionFrame`, or carry a parallel offered-options vector mirroring
-`ChoiceFrame.offered`) is settled in the plan against the borrow constraints;
-the contract is: **resume validates `OptionId` membership against the offered set
-and dispatches by origin.**
+`ResolutionCandidate` already carries `code` + `controller` + `ability_index`;
+the only thing that differs is *how it resolves*. So `source: Option<CardInstanceId>`
+(which distinguished an in-play instance from a `None` scenario board card)
+becomes a three-way `CandidateSource { InPlay(CardInstanceId), Board, Hand }`.
+A bare `Option` can't express "from hand" — `None` already means "board card"
+— so the enum is what lets one list carry both without a parallel vector or a
+near-duplicate struct.
+
+`build_resolution_options` maps the list to `ChoiceOption { id: OptionId(i), label }`
+(the Axis-A type), `OptionId(i)` = index into `pending_triggers`. Resume is
+then just `fire_pending_trigger(i)` — no id arithmetic — and `fire_pending_trigger`
+dispatches on `candidate.source`: `Hand` ⇒ play the event (§4); `InPlay`/`Board`
+⇒ fire the ability (the existing path). The label distinguishes the two
+(`"Play X from hand"` vs `"Resolve reaction: X"`).
 
 ### 3. Resume contract migration: `PickIndex` → `PickSingle(OptionId)`
 
@@ -137,23 +144,25 @@ wire-format stability); only the reaction-window path moves off it.
 
 ### 4. Resolving a hand Fast-event option = playing the card
 
-A picked hand-event option routes through the existing **play path** rather than a
-parallel implementation. Reuse `play_card`'s body
-(`dispatch/cards.rs`): emit `Event::CardPlayed`, stash the event in
-`pending_played_event` (RR Appendix I step 3 — leaves hand at play-start), run the
-event's effect through the evaluator, and let the apply loop flush
-`pending_played_event` to discard on completion (RR Appendix I step 4 — the path
-Dynamite Blast 01024 already uses for a suspending event).
+A `Hand` candidate routes through the play path, sharing `play_card`'s
+mechanics. The duplicated "commence playing an event" steps — emit
+`Event::CardPlayed`, remove the card from hand, stash it in
+`pending_played_event` (RR Appendix I step 3 — leaves hand at play-start) — are
+extracted into a `begin_event_play(cx, investigator, hand_index)` helper in
+`dispatch/cards.rs`, called by both `play_card`'s event branch and the
+reaction-window play path. The apply loop then flushes `pending_played_event`
+to discard on completion (RR Appendix I step 4 — the path Dynamite Blast 01024
+already uses for a suspending event).
 
-The effect run is the **matched `OnEvent` ability's effect** (Evidence!'s
-`discover_clue(YourLocation, 1)`). Evidence! has no separate `Trigger::OnPlay`
-ability; its sole ability is the reaction. The plan decides whether the
-window-play path runs "the matched reaction ability's effect" specifically or
-"all of the event's play-resolved abilities" — for Evidence! (one ability) the two
-coincide; the former is the precise reading of "the timing point is the triggering
-condition" and is preferred unless reuse of `play_card`'s loop makes the latter
-cleaner. `EvalContext` for the effect binds `controller = the playing investigator`
-(the defeat's `by`), so `LocationTarget::YourLocation` resolves to that
+What stays caller-side is the **effect that runs**, because that is the genuine
+difference: `play_card` runs the event's `Trigger::OnPlay` abilities; the
+reaction path runs the **matched `OnEvent` ability's effect** (Evidence!'s
+`discover_clue(YourLocation, 1)`). Evidence! has no `OnPlay` ability — its sole
+ability is the reaction whose pattern gated the play — so running `OnPlay`
+abilities (as `play_card` does) would discover no clue; running the matched
+`OnEvent` effect is the precise reading of "the timing point is the triggering
+condition." `EvalContext` binds `controller = the playing investigator` (the
+defeat's `by`), so `LocationTarget::YourLocation` resolves to that
 investigator's location.
 
 ### 5. `fast_actors` scope
@@ -175,10 +184,20 @@ deciding whether Evidence! is playable here. We document this and do not remove
   the after-event reaction-window resume path that Evidence!/Dodge need. Unifying
   the framework fast-window path onto the same `OptionId` surface is a follow-up,
   not required by any Slice-1 card. (Filed as a follow-up at plan time.)
-- **Fast assets / Fast 0-action abilities as window options are out of scope.**
-  Evidence! is a Fast *event*; the hand scan is Event-only. `any_fast_play_eligible`
-  already covers the broader set for the framework path; widening the structured
-  option list to assets/abilities waits for a card that needs it.
+- **Fast assets / Fast 0-action abilities are correctly *not* offered here —
+  this is rules-precise, not a deferral.** RR p.11 splits the two by timing
+  surface: a *Fast event* "may be played any time its play instructions
+  specify… as if the described timing point were a triggering condition" — so
+  Evidence! reacts to the *defeat triggering condition* (this window). A *Fast
+  asset* "may be played during any **player window** on his or her turn," and
+  RR p.22 defines player windows as the framework windows in the timing chart
+  ("The red boxes are player windows"). An after-defeat reaction window is
+  *not* one of those framework player windows, so a Fast asset is not playable
+  in reaction to a defeat; it is played in the surrounding framework player
+  window, which the engine models separately as `WindowKind::PlayerWindow` via
+  `open_fast_window`. The two `WindowKind` families already mirror this split,
+  so the hand scan being Event-only is the rules-correct behavior. (A Fast
+  asset offered in the after-defeat window would be a rules *bug*.)
 - **Axis D (cancellation) is out of scope.** Dodge 01023 needs both Axis C and a
   Before-timing cancel/replacement signal (#336); only the reaction-event-play
   half lands here.
@@ -236,16 +255,28 @@ not hand-typed.
   reaction twin sourced from hand (RR p.11).** Evidence! reuses Roland 01001's exact
   declaration minus the usage limit.
 - **Reaction windows move from the prompt-only `PickIndex` contract to the
-  structured `PickSingle(OptionId)` contract (Axis-A's `ChoiceOption` surface);
-  options are `{in-play triggers} ∪ {matching hand Fast-events}`.** A hand-event
-  option resolves through the existing `play_card` path (`pending_played_event`
-  discard). The legacy `PickIndex` reaction-window path is retired; `PickIndex` the
-  variant survives for other callers.
+  structured `PickSingle(OptionId)` contract (Axis-A's `ChoiceOption` surface).**
+  The legacy `PickIndex` reaction-window path is retired; `PickIndex` the variant
+  survives for other callers.
+- **Hand Fast-events ride the *one* `pending_triggers` list as `ResolutionCandidate`s,
+  distinguished by `source: CandidateSource { InPlay(id), Board, Hand }`** (replacing
+  `source: Option<CardInstanceId>`, where `None` already meant "board card" and so
+  could not also mean "from hand"). `fire_pending_trigger` dispatches on the source:
+  `Hand` ⇒ play the event, else fire the ability. No parallel `fast_plays` vec, no
+  second candidate struct, no `OptionId` arithmetic in resume.
+- **A hand event is played via a shared `begin_event_play` helper** (CardPlayed +
+  leave hand + stash `pending_played_event`), extracted from `play_card` and reused
+  by the reaction path; the matched `OnEvent` effect runs caller-side (the genuine
+  difference from `play_card`'s `OnPlay` loop).
 - **A reaction window opens when *either* an in-play trigger or a hand Fast-event
-  matches** — `queue_reaction_window`'s empty-bail now requires both sources empty.
+  matches** — `queue_reaction_window` appends the hand scan to `pending_triggers`
+  and bails only when the combined list is empty.
 - **`fast_actors` is not tightened/removed; offering is pattern-gated instead.**
   The blanket `Any` no longer decides Fast-event playability in a window.
 - **Framework `open_fast_window` fast-play unification is deferred** (separate
   non-paused `PlayCard` model; no Slice-1 card needs it).
-</content>
-</invoke>
+- **Fast assets/abilities are *not* offered in the reaction window by rules, not
+  scope** — Fast events play in reaction to a triggering condition (RR p.11);
+  Fast assets play in framework player windows (RR p.22), which the engine models
+  as `WindowKind::PlayerWindow`/`open_fast_window`. Offering a Fast asset in the
+  after-defeat window would be a rules bug.
