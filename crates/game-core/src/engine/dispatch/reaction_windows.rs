@@ -414,7 +414,28 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
 /// returns [`Done`].
 pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
-        InputResponse::PickSingle(OptionId(i)) => fire_pending_trigger(cx, *i),
+        InputResponse::PickSingle(OptionId(i)) => {
+            // Options are `pending_triggers` then `fast_plays` (see
+            // `build_resolution_options`): an id within the trigger count fires
+            // an in-play trigger; the rest play a hand Fast-event (Axis C).
+            let window_idx = cx
+                .state
+                .top_reaction_window_index()
+                .expect("resume_reaction_window: caller checked is_some");
+            let trigger_count = u32::try_from(
+                cx.state.continuations[window_idx]
+                    .as_resolution()
+                    .expect("top_reaction_window_index points at a Resolution frame")
+                    .pending_triggers
+                    .len(),
+            )
+            .expect("pending_triggers length fits in u32");
+            if *i < trigger_count {
+                fire_pending_trigger(cx, *i)
+            } else {
+                play_fast_event_in_window(cx, window_idx, (*i - trigger_count) as usize)
+            }
+        }
         InputResponse::Skip => {
             // Resolve the active reaction-window index up-front so the
             // close path operates on the same window the driver had
@@ -573,6 +594,103 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             }
             advance_resolution(cx, window_idx)
         }
+    }
+}
+
+/// Play the `fast_play_idx`-th hand Fast-event of the resolution frame at
+/// `window_idx` (Axis C, #335). Emits [`Event::CardPlayed`], stashes the event
+/// in [`GameState::pending_played_event`] (RR Appendix I step 3 — leaves hand
+/// at play-start), runs the matched `OnEvent` ability's effect, then advances
+/// the run. The apply loop flushes the event to discard on completion (RR
+/// Appendix I step 4) — the suspending-event path Dynamite Blast 01024 uses.
+///
+/// Charges no resource cost, matching [`super::cards::play_card`] (Slice 1
+/// does not model play-cost resources). Mirrors [`fire_pending_trigger`]'s
+/// snapshot-then-apply borrow discipline: the candidate is removed from the
+/// frame *before* its effect resolves, so a suspending effect's resume drives
+/// the remaining options, not this one again.
+fn play_fast_event_in_window(
+    cx: &mut Cx,
+    window_idx: usize,
+    fast_play_idx: usize,
+) -> EngineOutcome {
+    let candidate = {
+        let frame = cx.state.continuations[window_idx]
+            .as_resolution_mut()
+            .expect("play_fast_event_in_window: window_idx is a Resolution frame");
+        if fast_play_idx >= frame.fast_plays.len() {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "ResolveInput: PickSingle hand-play index {fast_play_idx} out of bounds \
+                     (fast_plays size {})",
+                    frame.fast_plays.len(),
+                )
+                .into(),
+            };
+        }
+        frame.fast_plays.remove(fast_play_idx)
+    };
+
+    // Find the event in the controller's hand by code (first match — copies
+    // are fungible; resolving by code avoids stale indices after a prior play).
+    let controller = candidate.controller;
+    let hand_idx = cx
+        .state
+        .investigators
+        .get(&controller)
+        .and_then(|inv| inv.hand.iter().position(|c| *c == candidate.code))
+        .unwrap_or_else(|| {
+            unreachable!(
+                "play_fast_event_in_window: candidate {candidate:?} vanished from \
+                 {controller:?}'s hand between scan and play"
+            )
+        });
+
+    cx.events.push(Event::CardPlayed {
+        investigator: controller,
+        code: candidate.code.clone(),
+    });
+    let card = cx
+        .state
+        .investigators
+        .get_mut(&controller)
+        .expect("controller exists (located the hand index above)")
+        .hand
+        .remove(hand_idx);
+    cx.state.pending_played_event = Some((controller, card));
+
+    // Run the matched OnEvent ability's effect under the playing investigator.
+    let reg = card_registry::current().unwrap_or_else(|| {
+        unreachable!(
+            "play_fast_event_in_window: registry installed at scan time is now missing; \
+             the OnceLock contract guarantees once-set-stays-set"
+        )
+    });
+    let abilities = (reg.abilities_for)(&candidate.code).unwrap_or_else(|| {
+        unreachable!(
+            "play_fast_event_in_window: registry lost abilities for {:?} between scan and play",
+            candidate.code,
+        )
+    });
+    let effect = abilities
+        .get(usize::from(candidate.ability_index))
+        .unwrap_or_else(|| {
+            unreachable!(
+                "play_fast_event_in_window: ability_index {} out of range for {:?}",
+                candidate.ability_index, candidate.code,
+            )
+        })
+        .effect
+        .clone();
+    let eval_ctx = EvalContext::for_controller(controller);
+
+    match apply_effect(cx, &effect, eval_ctx) {
+        EngineOutcome::Rejected { reason } => unreachable!(
+            "Fast-event play: effect for {:?} rejected unexpectedly: {reason}",
+            candidate.code,
+        ),
+        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
+        EngineOutcome::Done => advance_resolution(cx, window_idx),
     }
 }
 

@@ -1207,26 +1207,26 @@ pub struct PendingSkillModifier {
 }
 
 impl GameState {
-    /// The topmost open window that has unresolved reaction triggers,
-    /// if any. Used by the dispatcher's "is reaction work pending?"
-    /// guards. Pure Fast-gating windows (empty `pending_triggers`)
-    /// are skipped — they don't block dispatch.
+    /// The topmost open window that has an unresolved option — a pending
+    /// in-play trigger *or* a hand Fast-event play (Axis C). Used by the
+    /// dispatcher's "is reaction work pending?" guards. Pure Fast-gating
+    /// framework windows (no triggers and no hand plays) are skipped — they
+    /// don't block dispatch.
     #[must_use]
     pub fn top_reaction_window(&self) -> Option<&ResolutionFrame> {
-        self.windows()
-            .rev()
-            .find(|w| !w.pending_triggers.is_empty())
+        self.windows().rev().find(|w| w.has_pending_options())
     }
 
     /// Mutable counterpart to `top_reaction_window`. Same skip rule
-    /// applies: windows with empty `pending_triggers` are skipped —
-    /// phase-gate-only windows are not exposed as reaction-work.
+    /// applies: windows with no pending option (no triggers and no hand
+    /// plays) are skipped — phase-gate-only windows are not exposed as
+    /// reaction-work.
     pub fn top_reaction_window_mut(&mut self) -> Option<&mut ResolutionFrame> {
         self.continuations
             .iter_mut()
             .rev()
             .filter_map(Continuation::as_resolution_mut)
-            .find(|w| !w.pending_triggers.is_empty())
+            .find(|w| w.has_pending_options())
     }
 
     /// Iterator over the open windows on the continuation stack, in stack
@@ -1276,7 +1276,7 @@ impl GameState {
     pub fn top_reaction_window_index(&self) -> Option<usize> {
         self.continuations.iter().rposition(|c| {
             c.as_resolution()
-                .is_some_and(|w| !w.pending_triggers.is_empty())
+                .is_some_and(ResolutionFrame::has_pending_options)
         })
     }
 
