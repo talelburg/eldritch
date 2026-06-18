@@ -245,8 +245,9 @@ pub struct GameState {
     /// Revelation loop yields `AwaitingInput`; flushed by the skill-test
     /// driver's terminal teardown step. `None` for the common
     /// Investigate/Fight/Evade test (no pending revelation).
-    /// TODO(#212): generalize beyond skill-test-suspended revelations
-    /// once `ChooseOne` can suspend mid-resolution.
+    /// TODO(#380): generalize beyond skill-test-suspended revelations —
+    /// `ChooseOne` can now suspend mid-resolution (#350), so this side
+    /// channel can fold onto the continuation stack (coordinates with #348).
     pub pending_revelation_discard: Option<CardCode>,
     /// An event card mid-play: it has left hand ("commences being played",
     /// RR Appendix I step 3) but is not yet in discard. The apply loop
