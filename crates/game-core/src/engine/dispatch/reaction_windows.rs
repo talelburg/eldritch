@@ -1429,9 +1429,9 @@ pub(super) fn check_play_card(
 
 /// True if `effect` initiates a Fight at its top level.
 ///
-/// `TODO(#212/#213)`: recurse `Seq`/`If` once a card fights in only one
-/// branch — no Slice-1 card does (.38 Special's `IntExpr` branches both
-/// fight, so the Fight node is unconditionally top-level).
+/// Top-level only: no card yet fights in just one branch of a `Seq`/`If`
+/// (.38 Special's `IntExpr` branches both fight, so the Fight node is
+/// unconditionally top-level). Recurse here when such a card lands.
 fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
     matches!(effect, crate::dsl::Effect::Fight { .. })
 }

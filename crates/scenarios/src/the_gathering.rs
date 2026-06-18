@@ -187,20 +187,21 @@ pub fn setup() -> GameState {
     state.starting_location = Some(study);
 
     // The Ghoul Priest (01116) starts set aside; Act 2's (01109) reverse
-    // spawns it in the Hallway when the act advances (cards::act_01109).
+    // spawns it in the Hallway when the act advances (cards::the_barrier).
     // Recorded by code only — its per-investigator health is minted from
     // the corpus at spawn, when the investigator count is known.
     state.add_set_aside_enemy(meta("01116"));
 
     // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
     // corpus. 01110 advances via its Forced EnemyDefeated objective
-    // (01116; in cards::act_01110), not a clue spend — its printed clue
-    // threshold is null, which the reader maps to 0.
+    // (01116; in cards::what_have_you_done), not a clue spend — its printed
+    // clue threshold is null, which the reader maps to 0.
     // Act-2 (01109) reverse — reveals the Parlor and spawns the set-aside
-    // Ghoul Priest (01116) in the Hallway — ships in cards::act_01109 (#280).
+    // Ghoul Priest (01116) in the Hallway — ships in cards::the_barrier (#280).
     // Lita Chantler / the Parlor barrier -> #258.
-    // TODO(#281): agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul)
-    // + an `AgendaAdvanced` forced point — `advance_agenda` fires no reverse today.
+    // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) ship as
+    // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
+    // cards::rise_of_the_ghouls); #281.
     // TODO(#phase-9): act-3 (01110) reverse is the lead's R1/R2 resolution choice.
     state.act_deck = vec![
         Act {
@@ -220,7 +221,7 @@ pub fn setup() -> GameState {
             }),
         },
         Act {
-            // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::act_01110), not a clue spend.
+            // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
             resolution: Some(Resolution::Won { id: "R1".into() }),

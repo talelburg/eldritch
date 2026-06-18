@@ -86,8 +86,8 @@ pub struct ScriptedResolver {
 enum ScriptedStep {
     Response(InputResponse),
     /// Commit a set of cards from the active investigator's hand to a
-    /// skill test. TODO(#63): replace with the real commit-window
-    /// response variant(s) once finalized.
+    /// skill test. A by-`CardCode` convenience over the real index-based
+    /// commit flow (resolves codes to hand indices at replay time).
     CommitCards(Vec<CardCode>),
 }
 

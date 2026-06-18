@@ -293,7 +293,7 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 EventPattern::WouldDiscoverClues,
                 EventTiming::Before,
                 // Discard from self, then cancel the discovery (Axis D #336) —
-                // mirrors the real Cover Up 01007 (`treachery_01007`).
+                // mirrors the real Cover Up 01007 (`cover_up`).
                 Effect::Seq(vec![native(SYNTH_COVER_UP_DISCARD_TAG), Effect::Cancel]),
             ),
             forced_on_event(

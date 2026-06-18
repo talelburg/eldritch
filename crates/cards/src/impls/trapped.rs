@@ -11,8 +11,8 @@
 //! `ForcedTriggerPoint::ActAdvanced` when the act advances, before the
 //! next act becomes current. "Discard each enemy in the Study" is a
 //! faithful **no-op** — nothing can spawn into the isolated Act-1 Study
-//! in Slice-1 scope (location reveal-on-entry is TODO(#257); no encounter
-//! path targets the Study). The set-aside locations + their connections
+//! in Slice-1 scope (no encounter path targets the Study). The set-aside
+//! locations + their connections
 //! are built by the scenario's `setup()`; this ability just moves them
 //! into play, relocates investigators to the Hallway (01112), and removes
 //! the Study (01111).

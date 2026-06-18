@@ -59,18 +59,16 @@
 
 use card_dsl::dsl::Ability;
 
-pub mod act_01108;
-pub mod act_01109;
-pub mod act_01110;
-pub mod agenda_01105;
-pub mod agenda_01106;
-pub mod agenda_01107;
+pub mod ancient_evils;
 pub mod attic;
 pub mod automatic_45;
 pub mod barricade;
 pub mod beat_cop;
 pub mod cellar;
+pub mod cover_up;
+pub mod crypt_chill;
 pub mod deduction;
+pub mod dissonant_voices;
 pub mod dodge;
 pub mod dr_milan_christopher;
 pub mod dynamite_blast;
@@ -78,6 +76,8 @@ pub mod emergency_cache;
 pub mod evidence;
 pub mod first_aid;
 pub mod flashlight;
+pub mod frozen_in_fear;
+pub mod grasping_hands;
 pub mod guard_dog;
 pub mod guts;
 pub mod holy_rosary;
@@ -88,23 +88,23 @@ pub mod magnifying_glass;
 pub mod manual_dexterity;
 pub mod medical_texts;
 pub mod mind_over_matter;
+pub mod obscuring_fog;
 pub mod old_book_of_lore;
 pub mod overpower;
 pub mod perception;
 pub mod physical_training;
 pub mod research_librarian;
+pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
 pub mod roland_banks;
-pub mod treachery_01007;
-pub mod treachery_01162;
-pub mod treachery_01163;
-pub mod treachery_01164;
-pub mod treachery_01165;
-pub mod treachery_01166;
-pub mod treachery_01167;
-pub mod treachery_01168;
+pub mod rotting_remains;
+pub mod the_barrier;
+pub mod theyre_getting_out;
+pub mod trapped;
 pub mod unexpected_courage;
 pub mod vicious_blow;
+pub mod what_have_you_done;
+pub mod whats_going_on;
 pub mod working_a_hunch;
 
 /// Look up a card's hand-implemented abilities by code. Returns
@@ -112,18 +112,16 @@ pub mod working_a_hunch;
 #[must_use]
 pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     match code {
-        act_01108::CODE => Some(act_01108::abilities()),
-        act_01109::CODE => Some(act_01109::abilities()),
-        act_01110::CODE => Some(act_01110::abilities()),
-        agenda_01105::CODE => Some(agenda_01105::abilities()),
-        agenda_01106::CODE => Some(agenda_01106::abilities()),
-        agenda_01107::CODE => Some(agenda_01107::abilities()),
+        ancient_evils::CODE => Some(ancient_evils::abilities()),
         attic::CODE => Some(attic::abilities()),
         automatic_45::CODE => Some(automatic_45::abilities()),
         barricade::CODE => Some(barricade::abilities()),
         beat_cop::CODE => Some(beat_cop::abilities()),
         cellar::CODE => Some(cellar::abilities()),
+        cover_up::CODE => Some(cover_up::abilities()),
+        crypt_chill::CODE => Some(crypt_chill::abilities()),
         deduction::CODE => Some(deduction::abilities()),
+        dissonant_voices::CODE => Some(dissonant_voices::abilities()),
         dodge::CODE => Some(dodge::abilities()),
         dr_milan_christopher::CODE => Some(dr_milan_christopher::abilities()),
         dynamite_blast::CODE => Some(dynamite_blast::abilities()),
@@ -131,6 +129,8 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         evidence::CODE => Some(evidence::abilities()),
         first_aid::CODE => Some(first_aid::abilities()),
         flashlight::CODE => Some(flashlight::abilities()),
+        frozen_in_fear::CODE => Some(frozen_in_fear::abilities()),
+        grasping_hands::CODE => Some(grasping_hands::abilities()),
         guard_dog::CODE => Some(guard_dog::abilities()),
         guts::CODE => Some(guts::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),
@@ -141,23 +141,23 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         manual_dexterity::CODE => Some(manual_dexterity::abilities()),
         medical_texts::CODE => Some(medical_texts::abilities()),
         mind_over_matter::CODE => Some(mind_over_matter::abilities()),
+        obscuring_fog::CODE => Some(obscuring_fog::abilities()),
         old_book_of_lore::CODE => Some(old_book_of_lore::abilities()),
         overpower::CODE => Some(overpower::abilities()),
         perception::CODE => Some(perception::abilities()),
         physical_training::CODE => Some(physical_training::abilities()),
         research_librarian::CODE => Some(research_librarian::abilities()),
+        rise_of_the_ghouls::CODE => Some(rise_of_the_ghouls::abilities()),
         roland_38_special::CODE => Some(roland_38_special::abilities()),
         roland_banks::CODE => Some(roland_banks::abilities()),
-        treachery_01007::CODE => Some(treachery_01007::abilities()),
-        treachery_01162::CODE => Some(treachery_01162::abilities()),
-        treachery_01163::CODE => Some(treachery_01163::abilities()),
-        treachery_01164::CODE => Some(treachery_01164::abilities()),
-        treachery_01165::CODE => Some(treachery_01165::abilities()),
-        treachery_01166::CODE => Some(treachery_01166::abilities()),
-        treachery_01167::CODE => Some(treachery_01167::abilities()),
-        treachery_01168::CODE => Some(treachery_01168::abilities()),
+        rotting_remains::CODE => Some(rotting_remains::abilities()),
+        the_barrier::CODE => Some(the_barrier::abilities()),
+        theyre_getting_out::CODE => Some(theyre_getting_out::abilities()),
+        trapped::CODE => Some(trapped::abilities()),
         unexpected_courage::CODE => Some(unexpected_courage::abilities()),
         vicious_blow::CODE => Some(vicious_blow::abilities()),
+        what_have_you_done::CODE => Some(what_have_you_done::abilities()),
+        whats_going_on::CODE => Some(whats_going_on::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
         _ => None,
     }
@@ -168,16 +168,16 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
 /// per-card delegation; returns `None` for unregistered tags.
 #[must_use]
 pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
-    act_01108::native_effect_for(tag)
-        .or_else(|| act_01109::native_effect_for(tag))
-        .or_else(|| agenda_01105::native_effect_for(tag))
-        .or_else(|| agenda_01106::native_effect_for(tag))
-        .or_else(|| agenda_01107::native_effect_for(tag))
+    trapped::native_effect_for(tag)
+        .or_else(|| the_barrier::native_effect_for(tag))
+        .or_else(|| whats_going_on::native_effect_for(tag))
+        .or_else(|| rise_of_the_ghouls::native_effect_for(tag))
+        .or_else(|| theyre_getting_out::native_effect_for(tag))
         .or_else(|| dynamite_blast::native_effect_for(tag))
         .or_else(|| guard_dog::native_effect_for(tag))
         .or_else(|| mind_over_matter::native_effect_for(tag))
-        .or_else(|| treachery_01007::native_effect_for(tag))
-        .or_else(|| treachery_01166::native_effect_for(tag))
-        .or_else(|| treachery_01167::native_effect_for(tag))
-        .or_else(|| treachery_01168::native_effect_for(tag))
+        .or_else(|| cover_up::native_effect_for(tag))
+        .or_else(|| ancient_evils::native_effect_for(tag))
+        .or_else(|| crypt_chill::native_effect_for(tag))
+        .or_else(|| obscuring_fog::native_effect_for(tag))
 }
