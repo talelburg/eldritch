@@ -99,6 +99,14 @@ pub(super) fn open_forced_resolution(
     open_queued_reaction_window(cx)
 }
 
+/// Whether investigators `a` and `b` share a (revealed) current location.
+/// Used by the before-attack cancel window's "at your location" scoping
+/// (Axis D #336); two investigators between locations (`None`) never match.
+fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> bool {
+    let la = state.investigators.get(&a).and_then(|i| i.current_location);
+    la.is_some() && la == state.investigators.get(&b).and_then(|i| i.current_location)
+}
+
 /// Scan every investigator's `cards_in_play` for
 /// `Trigger::OnEvent` abilities matching `kind`, building a pending-
 /// trigger list in active-investigator-first / turn-order resolution
@@ -130,6 +138,15 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
+        // "at your location" scoping for the before-attack cancel window
+        // (Dodge 01023, Axis D #336): a candidate's controller must be
+        // co-located with the attacked investigator. Other window kinds pass
+        // all controllers through.
+        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
+            if !same_location(state, id, investigator) {
+                continue;
+            }
+        }
         for card in inv.controlled_card_instances() {
             // Self-binding: for `AfterEnemyAttackDamagedAsset` only the
             // soaked asset instance may trigger `EnemyAttackDamagedSelf`.
@@ -206,6 +223,13 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
+        // "at your location" scoping for the before-attack cancel window —
+        // mirrors `scan_pending_triggers` (Dodge 01023, Axis D #336).
+        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
+            if !same_location(state, id, investigator) {
+                continue;
+            }
+        }
         for code in &inv.hand {
             let Some(meta) = (reg.metadata_for)(code) else {
                 continue;
