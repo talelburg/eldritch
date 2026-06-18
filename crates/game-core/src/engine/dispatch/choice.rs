@@ -129,8 +129,19 @@ pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // the test's teardown — its continuation is parked at `PostFollowUp`.
     // Same reentrancy as the before-discover window's resume. A still-suspended
     // outcome (a further nested choice) returns as-is.
-    if matches!(outcome, EngineOutcome::Done) && cx.state.in_flight_skill_test.is_some() {
-        return super::skill_test::drive_skill_test(cx);
+    if matches!(outcome, EngineOutcome::Done) {
+        if cx.state.in_flight_skill_test.is_some() {
+            return super::skill_test::drive_skill_test(cx);
+        }
+        // A choice fired from inside a reaction window (Research Librarian
+        // 01032's SearchDeck suspending on 2+ eligible Tomes) leaves the window
+        // frame on the stack below; re-drive it so it closes / advances to the
+        // next pending trigger. Mirrors the skill-test reentrancy above. (Old
+        // Book of Lore's choice is fired from an activated ability — no window
+        // frame — and falls through to `outcome`.)
+        if let Some(idx) = cx.state.top_reaction_window_index() {
+            return super::reaction_windows::advance_resolution(cx, idx);
+        }
     }
     outcome
 }

@@ -378,6 +378,11 @@ fn apply_effect_inner(
         Effect::Investigate { shroud_modifier } => {
             apply_investigate(cx, &eval_ctx, shroud_modifier)
         }
+        Effect::SearchDeck {
+            target,
+            scope,
+            filter,
+        } => apply_search_deck(cx, eval_ctx, *target, *scope, filter.as_ref(), cursor),
     }
 }
 
@@ -408,6 +413,124 @@ fn draw_cards_effect(
     }
     crate::engine::dispatch::cards::draw_cards(cx, target_id, count);
     EngineOutcome::Done
+}
+
+/// Resolve [`Effect::SearchDeck`]: the resolved investigator looks at a deck
+/// region (`scope`) ∩ `filter`, takes one eligible card to hand (Rules
+/// Reference p.18: obligated if any exist; 0 ⇒ find nothing), then shuffles
+/// the deck. The select reuses the Axis-A choice machinery (cursor replay /
+/// suspend on 2+), exactly like [`apply_choose_one`]. A `Chosen` target is
+/// already bound by [`ground_chosen_targets`]; the take + shuffle are the only
+/// mutations and run after the pick resolves.
+fn apply_search_deck(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+    target: InvestigatorTarget,
+    scope: crate::dsl::SearchScope,
+    filter: Option<&crate::dsl::CardFilter>,
+    cursor: &mut DecisionCursor<'_>,
+) -> EngineOutcome {
+    use crate::dsl::SearchScope;
+    use crate::engine::dispatch::cards::shuffle_player_deck;
+    use crate::engine::dispatch::choice::{
+        resolve_choice_count, suspend_for_choice, ChoiceResolution,
+    };
+    use crate::engine::OptionId;
+
+    // 1. Whose deck. `Chosen` is bound by ground_chosen_targets; You/Active
+    //    resolve directly.
+    let who = match resolve_investigator_target(cx.state, eval_ctx, target) {
+        Ok(id) => id,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    let Some(inv) = cx.state.investigators.get(&who) else {
+        return EngineOutcome::Rejected {
+            reason: format!("SearchDeck: investigator {who:?} is not in the state").into(),
+        };
+    };
+
+    // 2. Enumerate eligible (deck-index, code) in deck order — deterministic,
+    //    so OptionId indices replay across suspend/resume (the deck is not
+    //    mutated until step 4).
+    let region = match scope {
+        SearchScope::Top(n) => usize::from(n).min(inv.deck.len()),
+        SearchScope::EntireDeck => inv.deck.len(),
+    };
+    let eligible: Vec<(usize, crate::state::CardCode)> = inv.deck[..region]
+        .iter()
+        .enumerate()
+        .filter(|(_, code)| match filter {
+            None => true,
+            Some(f) => filter_matches(f, code),
+        })
+        .map(|(i, code)| (i, code.clone()))
+        .collect();
+
+    // 3. Choice convention — but 0 ⇒ find nothing (not reject).
+    let chosen_deck_index: Option<usize> = match resolve_choice_count(eligible.len()) {
+        ChoiceResolution::Empty => None,
+        ChoiceResolution::Auto(i) => Some(eligible[i].0),
+        ChoiceResolution::Suspend => {
+            if let Some(OptionId(i)) = cursor.take() {
+                Some(eligible[i as usize].0)
+            } else {
+                let labels = eligible.iter().map(|(_, c)| c.0.clone()).collect();
+                return suspend_for_choice(
+                    cx,
+                    "Search: choose a card to take",
+                    labels,
+                    cursor.recorded_so_far(),
+                    cursor.root(),
+                    eval_ctx,
+                );
+            }
+        }
+    };
+
+    // 4. Take chosen → hand.
+    if let Some(idx) = chosen_deck_index {
+        let inv = cx.state.investigators.get_mut(&who).expect("checked above");
+        let code = inv.deck.remove(idx);
+        inv.hand.push(code.clone());
+        cx.events.push(Event::CardSearchedToHand {
+            investigator: who,
+            code,
+        });
+    }
+
+    // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffle the
+    //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
+    shuffle_player_deck(cx, who);
+    EngineOutcome::Done
+}
+
+/// Whether a deck card `code` matches a [`CardFilter`]: both `trait_` and
+/// `kind` (when `Some`) must hold, read from the installed registry's
+/// metadata. Returns `false` with no registry (a filtered search finds nothing
+/// rather than panicking — only the registry-less test paths, which never use
+/// a filter, hit this).
+fn filter_matches(f: &crate::dsl::CardFilter, code: &crate::state::CardCode) -> bool {
+    let Some(reg) = crate::card_registry::current() else {
+        return false;
+    };
+    let Some(meta) = (reg.metadata_for)(code) else {
+        return false;
+    };
+    if let Some(t) = &f.trait_ {
+        if !meta.traits.iter().any(|x| x == t) {
+            return false;
+        }
+    }
+    if let Some(k) = f.kind {
+        if meta.card_type() != k {
+            return false;
+        }
+    }
+    true
 }
 
 /// Add `amount` to the in-flight skill test's `bonus_attack_damage`
@@ -1239,7 +1362,8 @@ fn ground_chosen_targets(
         Effect::GainResources { target, .. }
         | Effect::Deal { target, .. }
         | Effect::Heal { target, .. }
-        | Effect::DrawCards { target, .. } => Some(target),
+        | Effect::DrawCards { target, .. }
+        | Effect::SearchDeck { target, .. } => Some(target),
         _ => None,
     };
     if let Some(InvestigatorTarget::Chosen(choose)) = inv_target {
@@ -2868,6 +2992,103 @@ mod tests {
             before2 + 9
         );
         assert_eq!(state.investigators[&InvestigatorId(1)].resources, before1);
+    }
+
+    #[test]
+    fn search_deck_top_n_auto_takes_single_eligible() {
+        // One card in the deck top; no filter ⇒ sole eligible ⇒ auto-take.
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.investigators.get_mut(&id).unwrap().deck = vec![CardCode::new("90001")];
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::dsl::search_deck(
+                InvestigatorTarget::You,
+                crate::dsl::SearchScope::Top(3),
+                None,
+            ),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        let inv = &state.investigators[&id];
+        assert!(inv.hand.contains(&CardCode::new("90001")));
+        assert!(inv.deck.is_empty());
+    }
+
+    #[test]
+    fn search_deck_with_no_eligible_cards_is_find_nothing_not_reject() {
+        // Empty deck: 0 eligible ⇒ find nothing, still Done (RR p.18 — a search
+        // may legally find nothing; it is NOT a rejection).
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.investigators.get_mut(&id).unwrap().deck.clear();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::dsl::search_deck(
+                InvestigatorTarget::You,
+                crate::dsl::SearchScope::Top(3),
+                None,
+            ),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.investigators[&id].hand.is_empty());
+    }
+
+    #[test]
+    fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.investigators.get_mut(&id).unwrap().deck = vec![
+            CardCode::new("90001"),
+            CardCode::new("90002"),
+            CardCode::new("90003"),
+        ];
+        let mut events = Vec::new();
+        let effect = crate::dsl::search_deck(
+            InvestigatorTarget::You,
+            crate::dsl::SearchScope::Top(3),
+            None,
+        );
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+
+        // Replay picking option 1 (the second eligible, "90002").
+        let outcome = super::apply_effect_with_decisions(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &effect,
+            ctx(1),
+            vec![crate::engine::OptionId(1)],
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        let inv = &state.investigators[&id];
+        assert!(inv.hand.contains(&CardCode::new("90002")));
+        assert!(!inv.deck.contains(&CardCode::new("90002")));
+        assert_eq!(inv.deck.len(), 2);
     }
 
     #[test]

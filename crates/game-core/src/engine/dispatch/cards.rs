@@ -36,7 +36,7 @@ pub(super) fn deck_shuffled(cx: &mut Cx, investigator: InvestigatorId) -> Engine
 ///
 /// Emits [`Event::DeckShuffled`] iff the deck had at least 2 cards
 /// (a 0- or 1-card deck has nothing to permute).
-pub(super) fn shuffle_player_deck(cx: &mut Cx, investigator: InvestigatorId) {
+pub(in crate::engine) fn shuffle_player_deck(cx: &mut Cx, investigator: InvestigatorId) {
     let inv = cx
         .state
         .investigators
@@ -567,12 +567,28 @@ pub(super) fn play_card(
             .hand
             .remove(idx);
         let in_play = super::threat_area::new_in_play_instance(cx, played);
+        let instance = in_play.instance_id;
         cx.state
             .investigators
             .get_mut(&investigator)
             .expect("checked")
             .cards_in_play
             .push(in_play);
+        // "[reaction] After … enters play" (Research Librarian 01032): emit the
+        // timing event (queues the AfterEnteredPlay window iff a matching
+        // reaction exists), then open the window so the player can act. The
+        // event is reaction-only, so `emit_event` returns `Done`; we only need
+        // to drive an opened window.
+        let _ = super::emit::emit_event(
+            cx,
+            &super::emit::TimingEvent::EnteredPlay {
+                instance,
+                controller: investigator,
+            },
+        );
+        if cx.state.top_reaction_window().is_some() {
+            return super::reaction_windows::open_queued_reaction_window(cx);
+        }
     }
     EngineOutcome::Done
 }

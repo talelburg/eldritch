@@ -304,6 +304,17 @@ pub enum Event {
         /// Whose deck was shuffled.
         investigator: InvestigatorId,
     },
+    /// A card was found by a deck search and moved to an investigator's hand
+    /// ([`Effect::SearchDeck`](crate::dsl::Effect::SearchDeck): Old Book of
+    /// Lore 01031, Research Librarian 01032). Distinct from
+    /// [`CardsDrawn`](Self::CardsDrawn) — a search is not a "draw" (no on-draw
+    /// triggers key off it), and it names the specific card.
+    CardSearchedToHand {
+        /// The investigator who searched and now holds the card.
+        investigator: InvestigatorId,
+        /// The card moved to hand.
+        code: CardCode,
+    },
     /// A shuffle of the shared encounter deck occurred. Emitted by
     /// `shuffle_encounter_deck` (in `engine::dispatch`) iff the deck
     /// had ≥ 2 cards (a 0- or 1-card shuffle is a no-op and emits

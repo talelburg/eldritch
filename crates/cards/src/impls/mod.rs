@@ -86,9 +86,11 @@ pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
 pub mod medical_texts;
+pub mod old_book_of_lore;
 pub mod overpower;
 pub mod perception;
 pub mod physical_training;
+pub mod research_librarian;
 pub mod roland_38_special;
 pub mod roland_banks;
 pub mod treachery_01007;
@@ -135,9 +137,11 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         manual_dexterity::CODE => Some(manual_dexterity::abilities()),
         medical_texts::CODE => Some(medical_texts::abilities()),
+        old_book_of_lore::CODE => Some(old_book_of_lore::abilities()),
         overpower::CODE => Some(overpower::abilities()),
         perception::CODE => Some(perception::abilities()),
         physical_training::CODE => Some(physical_training::abilities()),
+        research_librarian::CODE => Some(research_librarian::abilities()),
         roland_38_special::CODE => Some(roland_38_special::abilities()),
         roland_banks::CODE => Some(roland_banks::abilities()),
         treachery_01007::CODE => Some(treachery_01007::abilities()),

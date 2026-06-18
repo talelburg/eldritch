@@ -987,6 +987,17 @@ pub enum WindowKind {
         /// The number of clues that would be discovered.
         count: u8,
     },
+    /// Fires after a card entered play, scanning only the entered instance's
+    /// own `EnteredPlay` reactions (Research Librarian 01032). Pairs with
+    /// [`EventPattern::EnteredPlay`](crate::dsl::EventPattern::EnteredPlay) /
+    /// [`EventTiming::After`](crate::dsl::EventTiming::After). `instance` is the
+    /// entered card; `controller` its owner.
+    AfterEnteredPlay {
+        /// The card instance that just entered play (self-binding scope).
+        instance: CardInstanceId,
+        /// The investigator who controls it.
+        controller: InvestigatorId,
+    },
 }
 
 /// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits
