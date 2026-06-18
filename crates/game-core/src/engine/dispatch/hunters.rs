@@ -135,13 +135,11 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
         && enemy.current_location.is_some()
 }
 
-/// Whether `enemy` is Elite — read from its printed traits
-/// (`CardMetadata.traits` contains `"Elite"`). `false` with no registry or no
-/// metadata (treated as non-Elite, hence subject to movement blocks).
+/// Whether `enemy` is Elite — read from its `traits` (populated from card
+/// metadata at spawn, the same field the agenda's `is_ghoul` reads). No
+/// registry round-trip.
 fn enemy_is_elite(enemy: &Enemy) -> bool {
-    card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(&enemy.code))
-        .is_some_and(|m| m.traits.iter().any(|t| t == "Elite"))
+    enemy.traits.iter().any(|t| t == "Elite")
 }
 
 /// Whether `enemy` may move into `loc`. Blocked only when `loc` carries a

@@ -31,10 +31,22 @@ fn install() {
     });
 }
 
-/// A ready, unengaged hunter (code `code`) at location `at`.
+/// A ready, unengaged hunter (code `code`) at location `at`, with the printed
+/// traits of that card (Elite-ness drives the movement block, read off
+/// `Enemy.traits` as spawns populate it).
 fn hunter(id: u32, code: &str, at: LocationId) -> Enemy {
     let mut e = test_enemy(id, "Hunter");
     e.code = CardCode::new(code);
+    e.traits = if code == GHOUL_PRIEST {
+        vec![
+            "Humanoid".into(),
+            "Monster".into(),
+            "Ghoul".into(),
+            "Elite".into(),
+        ]
+    } else {
+        vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()]
+    };
     e.hunter = true;
     e.current_location = Some(at);
     e.engaged_with = None;

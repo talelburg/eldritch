@@ -52,6 +52,10 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 /// Revelation: attach to the controller's location, enforcing "Limit 1
 /// per location". A second copy on the same location is discarded to the
 /// encounter discard instead.
+///
+/// TODO(#373): collapse onto a generalized attach-to-location effect (a
+/// by-code form + an optional per-location limit) shared with Barricade
+/// 01038's `Effect::AttachSelfToLocation`, retiring this bespoke native.
 fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     let Some(loc_id) = cx
         .state

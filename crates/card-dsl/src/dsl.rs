@@ -773,6 +773,10 @@ pub enum Effect {
     /// effect) discard; no duplicate spawned by code (cf.
     /// [`PutIntoThreatArea`](Self::PutIntoThreatArea), which spawns by code only
     /// because an *encounter* card has no instance at Revelation time).
+    ///
+    /// TODO(#373): generalize into a shared attach-to-location effect (a
+    /// by-code form + an optional per-location limit) so Obscuring Fog 01168's
+    /// bespoke `limit1-attach` native collapses onto it.
     AttachSelfToLocation,
 }
 
