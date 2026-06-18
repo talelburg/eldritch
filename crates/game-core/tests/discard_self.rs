@@ -56,6 +56,7 @@ fn asset_metadata(code: &str, name: &str, text: &str) -> CardMetadata {
             is_fast: false,
             deck_limit: 1,
             uses: None,
+            play_only_during_turn: false,
         },
     }
 }

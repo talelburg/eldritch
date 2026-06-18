@@ -177,6 +177,7 @@ fn synth_fast_event_metadata() -> CardMetadata {
             skill_icons: SkillIcons::default(),
             is_fast: true,
             deck_limit: 3,
+            play_only_during_turn: false,
         },
     }
 }

@@ -239,6 +239,7 @@ struct NormalizedCard {
     quantity: u8,
     pack_code: String,
     is_fast: bool,
+    play_only_during_turn: bool,
     /// Limited-use tokens parsed from a `Uses (N <kind>)` clause, as
     /// `(count, UsesKind-variant-name, discard_when_empty)`. `None` when absent
     /// or unmodeled.
@@ -283,6 +284,11 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         .as_deref()
         .is_some_and(|t| t.starts_with("Fast.") || t.starts_with("Fast "));
 
+    let play_only_during_turn = raw
+        .text
+        .as_deref()
+        .is_some_and(|t| t.contains("Play only during your turn"));
+
     // Enemy keyword/prey/spawn data parsed from card text (read before
     // `raw.text` is moved into the struct, mirroring `is_fast`).
     let hunter = raw
@@ -319,6 +325,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         quantity: raw.quantity.unwrap_or(1),
         pack_code: raw.pack_code,
         is_fast,
+        play_only_during_turn,
         uses,
         commit_limit,
         shroud: raw.shroud,
@@ -491,7 +498,8 @@ fn render_kind(c: &NormalizedCard) -> String {
         ),
         "Asset" => format!(
             "CardKind::Asset {{ class: Class::{}, cost: {}, xp: {}, slots: {}, \
-             health: {}, sanity: {}, skill_icons: {}, is_fast: {}, deck_limit: {}, uses: {} }}",
+             health: {}, sanity: {}, skill_icons: {}, is_fast: {}, deck_limit: {}, uses: {}, \
+             play_only_during_turn: {} }}",
             c.class,
             opt_i8(c.cost),
             opt_u8(c.xp),
@@ -502,16 +510,18 @@ fn render_kind(c: &NormalizedCard) -> String {
             c.is_fast,
             c.deck_limit,
             uses_lit(c.uses),
+            c.play_only_during_turn,
         ),
         "Event" => format!(
             "CardKind::Event {{ class: Class::{}, cost: {}, xp: {}, \
-             skill_icons: {}, is_fast: {}, deck_limit: {} }}",
+             skill_icons: {}, is_fast: {}, deck_limit: {}, play_only_during_turn: {} }}",
             c.class,
             opt_i8(c.cost),
             opt_u8(c.xp),
             icons,
             c.is_fast,
             c.deck_limit,
+            c.play_only_during_turn,
         ),
         "Skill" => format!(
             "CardKind::Skill {{ class: Class::{}, xp: {}, skill_icons: {}, deck_limit: {}, \
@@ -988,6 +998,7 @@ mod tests {
             quantity: 1,
             pack_code: "core".into(),
             is_fast: false,
+            play_only_during_turn: false,
             uses: None,
             commit_limit: None,
             shroud: None,

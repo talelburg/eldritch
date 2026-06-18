@@ -47,6 +47,7 @@ fn weapon_metadata() -> CardMetadata {
                 count: 4,
                 discard_when_empty: false,
             }),
+            play_only_during_turn: false,
         },
     }
 }
