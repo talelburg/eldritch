@@ -52,10 +52,13 @@ pub struct SkillSubstitution {
 ```
 
 - **Pushed** by the card's `OnPlay` (Component 4).
-- **Expiry — "until the end of the round":** cleared at the round-boundary
-  hook in `phases.rs` where `action_surcharge_spent_this_round` already
-  resets (the round-counter bump). All substitutions are round-scoped (the
-  sole consumer), so the whole `Vec` clears.
+- **Expiry — "until the end of the round":** cleared at **step 4.6**
+  (`upkeep_after_round_ended`, after the round-end forced abilities resolve) —
+  RR p.24: "Upkeep phase ends. Round ends. … Any active 'until the end of the
+  round' lasting effects expire at this time." (Not the next round's Mythos
+  bump — functionally equivalent in Slice 1, but the rules name step 4.6.) All
+  substitutions are round-scoped (the sole consumer), so the whole `Vec`
+  clears.
 
 ### Component 2 — the substitution choice (becomes an Intellect test)
 
