@@ -163,6 +163,26 @@ impl EvalContext {
             chosen_option: None,
         }
     }
+
+    /// Construct a context for `controller`, threading `source` when present.
+    /// The common shape where a candidate / pending suspension carries an
+    /// *optional* firing instance (in-play reaction or weapon ⇒ `Some`;
+    /// scenario board card or hand-played event ⇒ `None`). Collapses the
+    /// `match source { Some => with_source, None => for_controller }` repeated
+    /// at the skill-test, choice-resume, forced-run, and reaction-window
+    /// dispatch sites. Pair with
+    /// [`CandidateSource::instance`](crate::state::CandidateSource::instance)
+    /// when the source is a `CandidateSource`.
+    #[must_use]
+    pub fn for_controller_with_optional_source(
+        controller: crate::state::InvestigatorId,
+        source: Option<crate::state::CardInstanceId>,
+    ) -> Self {
+        match source {
+            Some(src) => Self::for_controller_with_source(controller, src),
+            None => Self::for_controller(controller),
+        }
+    }
 }
 
 /// Apply an effect tree to the state.

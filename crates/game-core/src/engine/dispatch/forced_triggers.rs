@@ -380,15 +380,9 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
         };
     };
     let effect = abilities[usize::from(hit.ability_index)].effect.clone();
-    let ctx = match hit.source {
-        CandidateSource::InPlay(src) => {
-            EvalContext::for_controller_with_source(hit.controller, src)
-        }
-        CandidateSource::Board => EvalContext::for_controller(hit.controller),
-        CandidateSource::Hand => unreachable!(
-            "fire_forced_triggers: a forced run never holds a Hand candidate \
-             (hand Fast events are reaction-window plays, not forced)"
-        ),
-    };
+    // A forced run holds only in-play / board candidates (`Hand` ⇒ `None` is
+    // harmless — hand Fast events are reaction-window plays, never forced).
+    let ctx =
+        EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance());
     apply_effect(cx, &effect, ctx)
 }

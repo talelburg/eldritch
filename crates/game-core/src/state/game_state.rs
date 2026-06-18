@@ -1129,6 +1129,20 @@ pub enum CandidateSource {
     Hand,
 }
 
+impl CandidateSource {
+    /// The firing in-play instance, if any — `Some` for [`InPlay`](Self::InPlay),
+    /// `None` for [`Board`](Self::Board) (scenario card) and [`Hand`](Self::Hand)
+    /// (event not yet in play). Feeds
+    /// [`EvalContext::for_controller_with_optional_source`](crate::engine::EvalContext::for_controller_with_optional_source).
+    #[must_use]
+    pub fn instance(self) -> Option<CardInstanceId> {
+        match self {
+            CandidateSource::InPlay(id) => Some(id),
+            CandidateSource::Board | CandidateSource::Hand => None,
+        }
+    }
+}
+
 /// A single pending ability/play waiting to resolve in a
 /// [`Continuation::Resolution`] frame.
 ///

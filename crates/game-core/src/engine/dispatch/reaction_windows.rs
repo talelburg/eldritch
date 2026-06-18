@@ -543,15 +543,10 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // that self-reference (`DiscardSelf`) or push source-attributed state
     // resolve against the firing card. Board-card candidates (act / agenda)
     // have no source; hand candidates were handled above.
-    let mut eval_ctx = match trigger.source {
-        CandidateSource::InPlay(src) => {
-            EvalContext::for_controller_with_source(trigger.controller, src)
-        }
-        CandidateSource::Board => EvalContext::for_controller(trigger.controller),
-        CandidateSource::Hand => {
-            unreachable!("fire_pending_trigger: Hand candidates are played above, not fired")
-        }
-    };
+    let mut eval_ctx = EvalContext::for_controller_with_optional_source(
+        trigger.controller,
+        trigger.source.instance(),
+    );
     // For `AfterEnemyAttackDamagedAsset` windows, bind the attacking
     // enemy into the context so Guard Dog's native retaliate
     // (`Effect::Native("01021:retaliate")`) can name the attacker via
