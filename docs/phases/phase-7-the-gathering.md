@@ -163,7 +163,12 @@ when picked up.
   chosen co-located investigator; `heal_damage`/`heal_horror` DSL builders
   added) shipped: **✅ PR #360** (its choose-before-test ordering is exact
   in solo, deferred to #359 for multiplayer — mirrors Machete's #300).
-  Remaining cluster PRs: #313 (Flashlight), #306 (Dynamite).
+  PR-7 (#313 — Flashlight 01087, the new `Effect::Investigate { shroud_modifier }`
+  primitive: the Investigate mirror of `Effect::Fight`, lowering location
+  difficulty -2 clamped at 0 and reusing the base Investigate follow-up)
+  shipped: **✅ PR #362** (AoO on activated abilities — RR p.5 — is a systemic
+  engine gap also affecting First Aid / Medical Texts, carved to #361).
+  Remaining cluster PR: #306 (Dynamite).
   Slice 1's `fire_forced_triggers` is a forward-compatible subset Axis B
   replaces. **Note:** #213's "one mixed pool" framing was corrected to
   RR-accurate two-phase (forced-all-before-reaction, RR p.2; issue text
