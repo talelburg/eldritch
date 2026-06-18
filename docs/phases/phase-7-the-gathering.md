@@ -67,15 +67,66 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
 ### Ordering, dependencies, simplifications
 
 1. **Basic actions first** (#141, #77, Resign) — small, independent; Engage also unblocks #300's condition.
-2. **The keystone: mid-action suspend/resume.** Tier-1 B **and** C all hinge on `drive_attack_loop` being able to park the triggering action, open a window, and resume. Build it once and #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase.
-3. **Skill-test windows** (#374 + #64) — one reaction-window work-stream.
-4. **Roland elder-sign** (#118).
-5. **Edge correctness** (#300 after Engage, then #368, #353).
+2. **§1 continuation-stack cleanup before the keystone** (#348, see Refactor triage) — the keystone *adds* suspension modes, so migrate the existing `pending_*` onto the one stack first rather than building the Nth ad-hoc route on top.
+3. **The keystone: mid-action suspend/resume.** Tier-1 B **and** C all hinge on `drive_attack_loop` being able to park the triggering action, open a window, and resume. Build it once and #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase. Fold #119 in for #44's soak (symmetric token storage).
+4. **Skill-test windows** (#374 + #64) — one reaction-window work-stream.
+5. **Roland elder-sign** (#118).
+6. **Edge correctness** (#300 after Engage, then #368, #353).
+7. **Browser playable surface** (capstone) — once the above stabilizes; see below.
 
 **Simplifications:**
 - **#300 does not need #363 (general fan-out).** Once Engage (#77) exists, Machete's "only enemy engaged with you" is a count==1 read — gate `extra_damage` on it; don't wait for multi-target Fight.
 - **#367 is likely a wontfix for this gate** — Before-windows don't nest in 1-player scope, so the `bool` cancellation marker suffices.
-- **#380 folds into #348** (continuation-stack cleanup) — both out of gate.
+- **#380 folds into #348** (continuation-stack cleanup) — see Refactor triage.
+
+### Browser playable surface (the former "Slice D") — capstone
+
+The gate's "done" is a solo human playing in the *browser*, not just a green
+integration test. Once the Tier-1 fixes stabilize, this is the first follow-on:
+the web client (shipped Phase 6) must drive the **real** Gathering scenario.
+
+- **#205 — structured `AwaitingInput` discrimination (load-bearing, needs-design).**
+  The Gathering's cards are the first to emit non-`CommitCards` prompts
+  (`PickIndex` / `PickInvestigator` / `Confirm` / `Skip` / `DiscardCards`); the
+  client must render the right control per variant from a machine-readable
+  `InputKind`, not prompt-string heuristics. Keystone of the surface; pairs with
+  #347 (token-routed resume → stale-submit rejection).
+- **Investigator / scenario picker.** The seating protocol (B2 #221) + registry
+  swap (C7a #244) exist engine-side; the browser picker driving `StartScenario`
+  with a chosen investigator is the remaining UI.
+- **End-to-end browser playthrough** of The Gathering to a resolution, driven
+  through the client (the C7b coverage, but via the browser).
+
+Positioned **after** Tier 1: every new Tier-1 input site (AoO targeting, attack
+order, damage distribution, skill-test windows) adds an `AwaitingInput` shape the
+surface must render, so building #205 before they exist designs against a moving
+target.
+
+### Refactor / tech-debt triage
+
+Not rules bugs, but several simplify or de-risk the Tier-1 work — pull these in
+rather than deferring wholesale:
+
+- **§1 continuation-stack cleanup — #348 (+ #345, #347, #380). DO-FIRST, before
+  the keystone.** #348 migrates the remaining `pending_*` suspension modes (incl.
+  `pending_enemy_attack`, `pending_end_turn`, `clue_interrupt_pending`) onto the
+  one continuation stack and collapses the fragile `if pending_X.is_some()`
+  `resolve_input` cascade. The keystone adds attack-loop suspension, so cleaning
+  up first means it rides one stack instead of adding another ad-hoc route. #345
+  (serializable `EvalContext`) + #347 (token-routed resume) want a shared
+  brainstorm with #348; #380 folds in. **Caveat:** #345/#347 are Phase-8-robustness
+  motivated — a focused #348 (just the attack-adjacent modes) may be the right
+  *gate* scope, with the full design deferred.
+- **#119 — unify damage/horror/clues onto `CardInPlay`. DO-WITH #44.** #44 (soak
+  distribution, Tier-1 C) needs symmetric investigator/asset token storage; #119
+  makes the soak machinery symmetric instead of special-casing the investigator
+  side.
+- **Defer (no gate consumer):** #290 (mint encounter instances at reveal —
+  simplifies #373/#371 but no 1p correctness need), #373 (Obscuring Fog
+  attach-unify — single card, pairs with #290), #346 (two-pass for
+  choice-after-`Seq` — no in-scope card), #363 (general fan-out — #300's
+  simplification avoids it; Dunwich-era), #366 (replace-with-different-impact — no
+  in-scope card).
 
 ### Housekeeping
 - **Close #56** (the Study location is built and played end-to-end) and **#294** (unconstructible in scope — its own `debug_assert` guards it).
@@ -85,9 +136,9 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
 - **Phase 8 multiplayer:** #146, #151, #206.
 - **Later scenarios:** #138, #139 (no Surge/Peril in The Gathering).
 - **Perf / infra:** #117, #174, #224, #26, #31.
-- **Refactor / tech-debt:** #119, #290, #345, #346, #347, #348, #363, #366, #373, #380.
-- **UI plumbing** (playability, not rules): #205.
 - **Optional content:** #258 (Lita parley / Parlor — minus the Resign action above).
+
+(Refactor / tech-debt issues are triaged above, not here — several are pull-ins.)
 
 ## Architecture to build on
 
