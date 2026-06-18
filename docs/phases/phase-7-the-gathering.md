@@ -140,9 +140,14 @@ when picked up.
   ([#334](https://github.com/talelburg/eldritch/issues/334)) — **✅ PR #350**:
   `Effect::ChooseOne` + `Location`/`Investigator::ChosenByController` + native-leaf
   picks on a `Continuation::Choice` frame (agenda 01105 + Crypt Chill 01167
-  upgraded; see Decisions). **C**
-  reaction-event-play ([#335](https://github.com/talelburg/eldritch/issues/335)),
-  **D** cancellation/replacement ([#336](https://github.com/talelburg/eldritch/issues/336)),
+  upgraded; see Decisions). **C** reaction-event-play
+  ([#335](https://github.com/talelburg/eldritch/issues/335)) — **✅ PR #365**:
+  a Fast event in hand (Evidence! 01022, #304) rides the reaction window's one
+  candidate list and is *played* when picked; reaction/forced windows migrated
+  to `PickSingle(OptionId)`; reaction events are window-only at the play gate
+  (see Decisions).
+  **D** cancellation/replacement ([#336](https://github.com/talelburg/eldritch/issues/336)) —
+  still open; Dodge 01023 (#305) needs it plus Axis C.
   **E** orthogonal card prereqs (#301/#302/#306/#312/#313/#319/#320/#322/#323).
   The reachable subset of E (the six cards unblocked by Axes A+B) is sequenced
   as the **choice-cluster completion** sub-slice — 8 PRs mapped to existing
@@ -246,6 +251,8 @@ Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
 - **`Cost::DiscardSelf` discards the source asset in play (sole source-cost, paid last); `Effect::DealDamageToEnemy` is typed for a pre-cost target check (#301, PR #352).** `DiscardSelf` removes the source from `cards_in_play` → owner's discard (`CardDiscarded { InPlay }`), reusing the defeat-discard path; combining it with `Exhaust`/`SpendUses` is a loud reject (`reject_incompatible_costs`) and a missing source at payment is a loud `unreachable!`. The enemy variety ships as `EnemyTarget::Chosen(Choose<EntityScope>)`, reusing the keystone's `EntityScope::At`; `chosen_enemy` binds it; `combat::enemies_in_scope` is shared by the evaluator's grounding and the activation pre-cost check (`check_effect_target_available`, folded with the Fight check), which rejects 0-enemies-in-scope **before** paying — the reason `DealDamageToEnemy` is typed, not `Native` (Beat Cop can't pay its discard-self cost for no legal target). `≥1` proceeds; `2+` suspends via the Choose resolver. Beat Cop's content (PR-4 #239) and Knife's discard-self cost (PR-5 #312) are now unblocked.
 
 - **`Effect::Heal` (the engine's first heal, reusing `InvestigatorTarget::Chosen`) + uses-depletion auto-discard via a pipeline-parsed `Uses.discard_when_empty` flag (#302, PR #355).** `Heal { kind: HarmKind, target, count }` saturating-reduces damage/horror (`Event::Healed`, only when something heals); First Aid's "damage or horror" is `ChooseOne([Heal{Damage}, Heal{Horror}])`. `HarmKind { Damage, Horror }` is shared — the `DealDamage`/`DealHorror` consolidation reusing it is **#354**. `Uses.discard_when_empty` is parsed from the templated `If <name> has no <kind>, discard it` clause (RR p.27; true for First Aid 01019 / Forbidden Knowledge 01058 / Grotesque Statue 01071); the depletion-discard checks at `SpendUses` payment via a `discard_card_from_play` helper shared with `Cost::DiscardSelf`. **First-Aid-correct; rules-precise post-resolution timing + effect-depletion cards (Forbidden Knowledge depletes via *effect*, not cost) + the mid-payment source-removal hazard are deferred to #353.** First Aid (PR-4 #239) and Medical Texts' heal (PR-6 #321) are now unblocked.
+
+- **Axis C reaction-event-play: a Fast event is a reaction sourced from hand, carried on the *one* candidate list, and window-only (#335 / #304, PR #365).** Evidence! 01022 is Roland 01001's after-defeat reaction minus the usage limit; the play-timing predicate is the existing `trigger_matches`/`OnEvent` pattern (RR p.11), not a new field. Hand events ride `pending_triggers: Vec<ResolutionCandidate>` distinguished by `source: CandidateSource { InPlay(id), Board, Hand }` (replacing `source: Option<CardInstanceId>` — `None` already meant "board card", so it couldn't also mean "from hand"); `fire_pending_trigger` dispatches `Hand ⇒ play (via the shared `cards::begin_event_play`), else fire`. Reaction/forced windows now resume via `PickSingle(OptionId)` (the legacy `PickIndex` reaction path is retired; the variant survives for other callers). **A reaction event is window-only: `check_play_card` rejects a standalone `PlayCard` of any event with an `OnEvent` ability** — otherwise `play_card`'s `OnPlay`-only loop would silently discard it for no effect. **A future reaction event (Dodge 01023, #305) reuses this exact path; it adds only Axis D (cancellation, #336).** **Fast assets are *not* offered in reaction windows by rules** (RR p.11/p.22: they play in framework *player* windows = `WindowKind::PlayerWindow`/`open_fast_window`, not in reaction to a triggering condition) — not a deferral.
 
 ## Open questions
 
