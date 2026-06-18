@@ -144,6 +144,16 @@ fn enemy_is_elite(enemy: &Enemy) -> bool {
         .is_some_and(|m| m.traits.iter().any(|t| t == "Elite"))
 }
 
+/// Whether `enemy` may move into `loc`. Blocked only when `loc` carries a
+/// `Restriction::EnemyMovementBlocked` (a Barricade 01038 attachment) **and**
+/// the enemy is non-Elite (RR: movement-blockers exempt Elite). Shared by
+/// Hunter movement and forced enemy-movement effects (agenda 01107's Ghoul
+/// move), so a barricade is honored consistently regardless of what moves the
+/// enemy.
+pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationId) -> bool {
+    enemy_is_elite(enemy) || !location_blocks_enemy_movement(state, loc)
+}
+
 /// Whether `loc` carries a constant `EnemyMovementBlocked` restriction (a
 /// Barricade 01038 attachment) — read the way `play_is_prohibited` reads
 /// constant restrictions. `false` with no registry.
@@ -176,12 +186,11 @@ fn hunter_destinations(
     state: &GameState,
     from: LocationId,
     prey: Prey,
-    enemy_is_elite: bool,
+    enemy: &Enemy,
 ) -> Vec<LocationId> {
     // A barricaded location is impassable to a non-Elite enemy — graph-level,
     // so it shifts which investigator is nearest, not just the final step.
-    let is_passable =
-        |loc: LocationId| enemy_is_elite || !location_blocks_enemy_movement(state, loc);
+    let is_passable = |loc: LocationId| enemy_can_enter_location(state, enemy, loc);
     let mut reachable: Vec<(InvestigatorId, u32)> = Vec::new();
     let mut min_dist: Option<u32> = None;
     for id in &state.turn_order {
@@ -332,8 +341,7 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
     let here = cursor::active_investigators_at(cx.state, from);
     if here.is_empty() {
         let prey = cx.state.enemies[&enemy_id].prey;
-        let enemy_is_elite = enemy_is_elite(&cx.state.enemies[&enemy_id]);
-        let dests = hunter_destinations(cx.state, from, prey, enemy_is_elite);
+        let dests = hunter_destinations(cx.state, from, prey, &cx.state.enemies[&enemy_id]);
         match dests.as_slice() {
             [] => return None,
             [one] => move_hunter_to(cx, enemy_id, *one),
