@@ -2048,7 +2048,10 @@ mod tests {
         );
 
         assert_eq!(outcome, EngineOutcome::Done);
-        assert!(state.clue_interrupt_pending.is_none());
+        assert!(
+            state.open_windows().is_empty(),
+            "no before-discover window opens without a registry"
+        );
         assert_eq!(state.locations[&loc_id].clues, 2);
         assert_eq!(state.investigators[&inv_id].clues, 1);
     }

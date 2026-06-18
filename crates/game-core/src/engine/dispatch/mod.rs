@@ -21,7 +21,6 @@ mod actions;
 // pub(super): engine/mod.rs re-exports `suspend_for_native_choice` (pub) for
 // the `cards` crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
 pub(super) mod choice;
-mod clue_interrupt;
 // pub(super): evaluator reaches grant_resources via the full path
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
 pub(super) mod cards;
@@ -96,20 +95,6 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
                      to resolve an option, or InputResponse::Skip to close \
                      the window (rejected if forced triggers remain) before any \
                      other action"
-                .into(),
-        };
-    }
-
-    // A pending clue-discovery interrupt (C5a #236) blocks every action but
-    // `ResolveInput`. It coexists with an in-flight skill test (it suspends
-    // mid-follow-up), so it must precede the skill-test guard.
-    if cx.state.clue_interrupt_pending.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason: "a clue-discovery interrupt is pending; submit a PlayerAction::ResolveInput \
-                     with InputResponse::Confirm (replace) or Skip (discover normally) before \
-                     any other action"
                 .into(),
         };
     }
@@ -429,7 +414,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     //   window mid-skill-test, a Fast window — so it resumes FIRST.
     // - The **skill-test commit** frame (`SkillTest`) is the *outermost* test
     //   suspension, so it resumes LAST (below), after the legacy mid-test modes
-    //   (e.g. `clue_interrupt`, which is an *inner* suspension of the test).
+    //   (hand-size discard, act round-end) — inner suspensions of the flow.
     if matches!(
         cx.state.continuations.last(),
         Some(crate::state::Continuation::Resolution(_))
@@ -488,20 +473,15 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         return phases::resume_act_round_end_advance(cx, response);
     }
 
-    // Before-timing clue-discovery interrupt (C5a #236): arises mid-skill-
-    // test (during the Investigate follow-up), so route it before the
-    // reaction-window and skill-test resume paths.
-    if cx.state.clue_interrupt_pending.is_some() {
-        return clue_interrupt::resume_clue_interrupt(cx, response);
-    }
-
     // Open windows (reaction + pure-Fast) are `Continuation::Resolution`
     // frames, handled by the continuation router at the top of this function
-    // (umbrella §1 / Axis-B T3) — so no window check is needed here.
+    // (umbrella §1 / Axis-B T3) — so no window check is needed here. The
+    // before-discover clue interrupt (Cover Up 01007) is one such window now
+    // (Axis D #336), not a bespoke mid-test mode.
 
     // The skill-test commit window (`Continuation::SkillTest` frame) resumes
-    // here — *after* the legacy mid-test modes above (clue_interrupt et al.),
-    // which are inner suspensions of an in-flight test (Axis-B T4).
+    // here — *after* the legacy mid-test modes above, which are inner
+    // suspensions of an in-flight test (Axis-B T4).
     if matches!(
         cx.state.continuations.last(),
         Some(crate::state::Continuation::SkillTest)

@@ -286,7 +286,6 @@ impl GameStateBuilder {
             pending_end_turn: None,
             hand_size_discard_pending: self.hand_size_discard_pending,
             act_round_end_pending: None,
-            clue_interrupt_pending: None,
             pending_enemy_attack: None,
             pending_cancellation: false,
             pending_revelation_discard: None,

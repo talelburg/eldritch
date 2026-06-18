@@ -127,8 +127,8 @@ pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // If the choice completed an effect that was suspended *inside* a skill
     // test (Crypt Chill 01167's on_fail discard), re-enter the driver to run
     // the test's teardown — its continuation is parked at `PostFollowUp`.
-    // Mirrors `resume_clue_interrupt`. A still-suspended outcome (a further
-    // nested choice) returns as-is.
+    // Same reentrancy as the before-discover window's resume. A still-suspended
+    // outcome (a further nested choice) returns as-is.
     if matches!(outcome, EngineOutcome::Done) && cx.state.in_flight_skill_test.is_some() {
         return super::skill_test::drive_skill_test(cx);
     }

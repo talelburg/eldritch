@@ -556,11 +556,14 @@ pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: Investigato
         // fully) but does NOT open soak reaction windows: the returned
         // damaged-survivor list is deliberately dropped. Guard Dog 01021
         // therefore does not retaliate against attacks of opportunity yet —
-        // a documented faithfulness gap. Driving the soak window here would
-        // require suspending the *triggering* action (Move / Investigate)
-        // and resuming its primary effect after the window closes, a new
-        // mid-action suspension mechanism deferred to a fast-follow
-        // (`TODO(#293)`). Dropping
+        // a documented faithfulness gap. Likewise, AoO does not open the
+        // before-attack cancel window (Dodge 01023, Axis D #336): it calls
+        // `enemy_attack` directly, not `drive_attack_loop`. Both gaps share
+        // one cause — driving a window here would require suspending the
+        // *triggering* action (Move / Investigate) and resuming its primary
+        // effect after the window closes, a mid-action suspension mechanism
+        // deferred to `TODO(#293)` (which also keeps the AoO non-exhaust rule,
+        // RR p.7, distinct from the enemy-phase loop's always-exhaust). Dropping
         // the survivors is exactly what prevents an undriven window stranded
         // on `open_windows` (the bug this seam fixes; C5b #237).
         let _ = enemy_attack(cx, enemy_id, investigator);

@@ -226,9 +226,6 @@ pub struct GameState {
     /// awaiting the group's Confirm/Skip at the end of the round. See
     /// [`ActRoundEndPending`].
     pub act_round_end_pending: Option<ActRoundEndPending>,
-    /// Suspended clue-discovery interrupt (C5a, #236). See [`ClueInterruptPending`].
-    #[serde(default)]
-    pub clue_interrupt_pending: Option<ClueInterruptPending>,
     /// `Some` while an enemy-attack loop is suspended on a soak reaction
     /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
     #[serde(default)]
@@ -1114,30 +1111,6 @@ pub struct SpawnEngagePending {
     pub chain_count: usize,
 }
 
-/// Suspended before-timing clue-discovery interrupt (C5a, #236). `Some`
-/// while `discover_clue` is paused offering the controller the choice to
-/// replace a discovery (Cover Up 01007's `[reaction]`). The resume path
-/// (`resume_clue_interrupt`) applies the choice, then re-enters
-/// `drive_skill_test` if a test is mid-flight.
-// Not `#[non_exhaustive]`: plain serialized suspension state with no
-// construction invariant, and integration tests build it directly to
-// exercise the resume's count-coupling (no count>1 discovery source exists
-// through Investigate in Slice 1).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClueInterruptPending {
-    /// The investigator who would discover (and controls the interrupt card).
-    pub controller: InvestigatorId,
-    /// The location the discovery is from.
-    pub location: LocationId,
-    /// How many clues the discovery would move.
-    pub count: u8,
-    /// The interrupting card instance (Cover Up) — `source` for its effect.
-    pub source: CardInstanceId,
-    /// Index of the `WouldDiscoverClues` ability on the source card, so the
-    /// resume runs the right effect on `Confirm`.
-    pub ability_index: usize,
-}
-
 /// Suspended upkeep maximum-hand-size discard (#111). `Some` only while
 /// the upkeep phase is paused at step 4.5 waiting for an over-cap
 /// investigator to choose discards; cleared once the queue drains.
@@ -1541,17 +1514,6 @@ mod location_id_counter_tests {
         let json = serde_json::to_string(&state).expect("serialize");
         let back: crate::state::GameState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.location_ids.peek(), 7);
-    }
-}
-
-#[cfg(test)]
-mod clue_interrupt_pending_tests {
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn clue_interrupt_pending_defaults_none_and_absent_field_loads() {
-        let s = GameStateBuilder::new().build();
-        assert!(s.clue_interrupt_pending.is_none());
     }
 }
 
