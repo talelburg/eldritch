@@ -5,7 +5,7 @@ use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
-use crate::state::{CardCode, InvestigatorId, Phase, Status, Zone};
+use crate::state::{CardCode, InvestigatorId, Status, Zone};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -244,47 +244,8 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
 ///
 /// The draw logic itself is delegated to [`draw_one_with_deckout`].
 pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    if cx.state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Draw is only valid during the Investigation phase (was {:?})",
-                cx.state.phase
-            )
-            .into(),
-        };
-    }
-    if cx.state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Draw: {investigator:?} is not the active investigator ({:?})",
-                cx.state.active_investigator,
-            )
-            .into(),
-        };
-    }
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "Draw: active_investigator {investigator:?} is not in the investigators map; \
-             this is a state-corruption invariant violation"
-            )
-        });
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Draw: {investigator:?} is not Active (status {:?})",
-                inv.status,
-            )
-            .into(),
-        };
-    }
-    if inv.actions_remaining < 1 {
-        return EngineOutcome::Rejected {
-            reason: "Draw requires at least 1 action point".into(),
-        };
+    if let Err(rejection) = super::actions::validate_basic_action(cx.state, "Draw", investigator) {
+        return rejection;
     }
 
     // Mutate.

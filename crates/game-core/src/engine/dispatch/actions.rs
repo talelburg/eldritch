@@ -4,8 +4,8 @@
 use crate::dsl::SkillTestKind;
 use crate::event::Event;
 use crate::state::{
-    Enemy, EnemyId, GameState, InvestigatorId, LocationId, Phase, SkillKind, SkillTestFollowUp,
-    Status,
+    Enemy, EnemyId, GameState, Investigator, InvestigatorId, LocationId, Phase, SkillKind,
+    SkillTestFollowUp, Status,
 };
 
 use super::super::outcome::EngineOutcome;
@@ -27,51 +27,12 @@ use super::Cx;
 ///
 /// [`Effect::DiscoverClue`]: crate::dsl::Effect::DiscoverClue
 pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    // Validate-first.
-    if cx.state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Investigate is only valid during the Investigation phase (was {:?})",
-                cx.state.phase
-            )
-            .into(),
-        };
-    }
-    if cx.state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Investigate: {investigator:?} is not the active investigator ({:?})",
-                cx.state.active_investigator,
-            )
-            .into(),
-        };
-    }
-    // Active-investigator + missing-from-map is a state-corruption
-    // invariant violation; panic rather than silently rejecting.
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "Investigate: active_investigator {investigator:?} is not in the investigators \
-             map; this is a state-corruption invariant violation"
-            )
-        });
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Investigate: {investigator:?} is not Active (status {:?})",
-                inv.status,
-            )
-            .into(),
-        };
-    }
-    if inv.actions_remaining < 1 {
-        return EngineOutcome::Rejected {
-            reason: "Investigate requires at least 1 action point".into(),
-        };
-    }
+    // Validate-first (the shared basic-action prefix, then the
+    // location-specific checks).
+    let inv = match validate_basic_action(cx.state, "Investigate", investigator) {
+        Ok(inv) => inv,
+        Err(rejection) => return rejection,
+    };
     let Some(location_id) = inv.current_location else {
         return EngineOutcome::Rejected {
             reason: format!("Investigate: {investigator:?} has no current_location to investigate")
@@ -151,47 +112,8 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
 /// action, fire attacks of opportunity (Resource is NOT `AoO`-exempt),
 /// then — if the investigator survived the `AoO` — gain 1 resource.
 pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    if cx.state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Resource is only valid during the Investigation phase (was {:?})",
-                cx.state.phase
-            )
-            .into(),
-        };
-    }
-    if cx.state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Resource: {investigator:?} is not the active investigator ({:?})",
-                cx.state.active_investigator,
-            )
-            .into(),
-        };
-    }
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "Resource: active_investigator {investigator:?} is not in the investigators map; \
-             this is a state-corruption invariant violation"
-            )
-        });
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Resource: {investigator:?} is not Active (status {:?})",
-                inv.status
-            )
-            .into(),
-        };
-    }
-    if inv.actions_remaining < 1 {
-        return EngineOutcome::Rejected {
-            reason: "Resource requires at least 1 action point".into(),
-        };
+    if let Err(rejection) = validate_basic_action(cx.state, "Resource", investigator) {
+        return rejection;
     }
 
     // Mutate-second: spend the action, fire AoO, then gain the resource.
@@ -244,48 +166,10 @@ pub(super) fn engage(
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    if cx.state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Engage is only valid during the Investigation phase (was {:?})",
-                cx.state.phase
-            )
-            .into(),
-        };
-    }
-    if cx.state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Engage: {investigator:?} is not the active investigator ({:?})",
-                cx.state.active_investigator,
-            )
-            .into(),
-        };
-    }
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "Engage: active_investigator {investigator:?} is not in the investigators map; \
-             this is a state-corruption invariant violation"
-            )
-        });
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Engage: {investigator:?} is not Active (status {:?})",
-                inv.status
-            )
-            .into(),
-        };
-    }
-    if inv.actions_remaining < 1 {
-        return EngineOutcome::Rejected {
-            reason: "Engage requires at least 1 action point".into(),
-        };
-    }
+    let inv = match validate_basic_action(cx.state, "Engage", investigator) {
+        Ok(inv) => inv,
+        Err(rejection) => return rejection,
+    };
     // A `None` location can't host an engage (matches `investigate`'s
     // guard); without it the `enemy.current_location != inv_location`
     // check below would let a locationless investigator engage a
@@ -525,27 +409,22 @@ pub(super) fn move_action(
     )
 }
 
-/// Validate the prefix shared by Fight and Evade: phase, active
-/// investigator, action point available, enemy exists, engaged with
-/// the named enemy. Returns the borrowed enemy so the caller can pick
-/// which difficulty (fight / evade) and read any other fields it
-/// needs.
+/// Validate the preconditions shared by every action-point-spending
+/// basic action: Investigation phase, `investigator` is the active
+/// investigator, `Status::Active`, and at least one action remaining.
+/// Returns the validated investigator. `action_name` is interpolated
+/// into rejection reasons; an active investigator missing from the map
+/// is a state-corruption invariant and panics.
 ///
-/// On `Err`, returns the rejection; the caller should propagate it
-/// without further state mutation. State-corruption invariants
-/// (active investigator missing from map) panic via `unreachable!`.
-///
-/// Does NOT validate the chosen difficulty is non-negative — the
-/// caller must do that after picking, because Fight and Evade each
-/// only care about one of the two values, and validating both
-/// upfront would reject legitimate states (an enemy with `fight: -1`
-/// the investigator only ever Evades).
-fn validate_engaged_action<'a>(
+/// Move / Fight / Evade defer the action-point check to `charge_action`
+/// (which folds in the Frozen-in-Fear surcharge), so `move_action` keeps
+/// its own prefix; Fight and Evade reach this via
+/// [`validate_engaged_action`], which then adds the enemy checks.
+pub(super) fn validate_basic_action<'a>(
     state: &'a GameState,
     action_name: &'static str,
     investigator: InvestigatorId,
-    enemy_id: EnemyId,
-) -> Result<&'a Enemy, EngineOutcome> {
+) -> Result<&'a Investigator, EngineOutcome> {
     if state.phase != Phase::Investigation {
         return Err(EngineOutcome::Rejected {
             reason: format!(
@@ -584,6 +463,31 @@ fn validate_engaged_action<'a>(
             reason: format!("{action_name} requires at least 1 action point").into(),
         });
     }
+    Ok(inv)
+}
+
+/// Validate the prefix shared by Fight and Evade: the basic-action
+/// preconditions (via [`validate_basic_action`]) plus enemy exists and
+/// engaged with the named enemy. Returns the borrowed enemy so the
+/// caller can pick which difficulty (fight / evade) and read any other
+/// fields it needs.
+///
+/// On `Err`, returns the rejection; the caller should propagate it
+/// without further state mutation. State-corruption invariants
+/// (active investigator missing from map) panic via `unreachable!`.
+///
+/// Does NOT validate the chosen difficulty is non-negative — the
+/// caller must do that after picking, because Fight and Evade each
+/// only care about one of the two values, and validating both
+/// upfront would reject legitimate states (an enemy with `fight: -1`
+/// the investigator only ever Evades).
+fn validate_engaged_action<'a>(
+    state: &'a GameState,
+    action_name: &'static str,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) -> Result<&'a Enemy, EngineOutcome> {
+    validate_basic_action(state, action_name, investigator)?;
     let Some(enemy) = state.enemies.get(&enemy_id) else {
         return Err(EngineOutcome::Rejected {
             reason: format!("{action_name}: enemy {enemy_id:?} is not in state").into(),
