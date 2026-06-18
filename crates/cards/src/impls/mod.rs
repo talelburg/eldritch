@@ -87,6 +87,7 @@ pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
 pub mod medical_texts;
+pub mod mind_over_matter;
 pub mod old_book_of_lore;
 pub mod overpower;
 pub mod perception;
@@ -139,6 +140,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         manual_dexterity::CODE => Some(manual_dexterity::abilities()),
         medical_texts::CODE => Some(medical_texts::abilities()),
+        mind_over_matter::CODE => Some(mind_over_matter::abilities()),
         old_book_of_lore::CODE => Some(old_book_of_lore::abilities()),
         overpower::CODE => Some(overpower::abilities()),
         perception::CODE => Some(perception::abilities()),
@@ -173,6 +175,7 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| agenda_01107::native_effect_for(tag))
         .or_else(|| dynamite_blast::native_effect_for(tag))
         .or_else(|| guard_dog::native_effect_for(tag))
+        .or_else(|| mind_over_matter::native_effect_for(tag))
         .or_else(|| treachery_01007::native_effect_for(tag))
         .or_else(|| treachery_01166::native_effect_for(tag))
         .or_else(|| treachery_01167::native_effect_for(tag))
