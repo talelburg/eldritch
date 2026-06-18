@@ -2541,6 +2541,69 @@ mod tests {
     }
 
     #[test]
+    fn resource_action_rejects_when_not_active_status() {
+        let inv_id = InvestigatorId(1);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.status = Status::Killed;
+                i
+            })
+            .with_active_investigator(inv_id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.investigators[&inv_id].resources, 5);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+    }
+
+    #[test]
+    fn resource_action_aoo_that_eliminates_suppresses_the_gain() {
+        // A lethal AoO (attack_damage == max_health) defeats the
+        // investigator before the resource is gained; the gain is
+        // suppressed (no ResourcesGained event) while the AoO damage
+        // still lands.
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let mut enemy = test_enemy(200, "Lethal Ghoul");
+        enemy.current_location = Some(loc);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 8; // == test_investigator max_health
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+
+        // Lethal AoO landed.
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 8 } if *investigator == inv_id
+        );
+        // ...but the resource gain was suppressed.
+        assert_no_event!(result.events, Event::ResourcesGained { .. });
+    }
+
+    #[test]
     fn engage_action_engages_unengaged_enemy_at_location() {
         let inv_id = InvestigatorId(1);
         let loc = crate::state::LocationId(10);
@@ -2735,6 +2798,37 @@ mod tests {
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+    }
+
+    #[test]
+    fn engage_action_rejects_when_not_active_status() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let enemy_id = EnemyId(300);
+        let mut enemy = test_enemy(300, "Ghoul");
+        enemy.current_location = Some(loc);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i.status = Status::Insane;
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
     }
 
     #[test]

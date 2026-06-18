@@ -286,7 +286,16 @@ pub(super) fn engage(
             reason: "Engage requires at least 1 action point".into(),
         };
     }
-    let inv_location = inv.current_location;
+    // A `None` location can't host an engage (matches `investigate`'s
+    // guard); without it the `enemy.current_location != inv_location`
+    // check below would let a locationless investigator engage a
+    // locationless enemy (`None != None == false`).
+    let Some(inv_location) = inv.current_location else {
+        return EngineOutcome::Rejected {
+            reason: format!("Engage: {investigator:?} has no current_location to engage from")
+                .into(),
+        };
+    };
     let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
         return EngineOutcome::Rejected {
             reason: format!("Engage: enemy {enemy_id:?} is not in state").into(),
@@ -297,11 +306,11 @@ pub(super) fn engage(
             reason: format!("Engage: {investigator:?} is already engaged with {enemy_id:?}").into(),
         };
     }
-    if enemy.current_location != inv_location {
+    if enemy.current_location != Some(inv_location) {
         return EngineOutcome::Rejected {
             reason: format!(
-                "Engage: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({:?})",
-                enemy.current_location, inv_location,
+                "Engage: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
+                enemy.current_location,
             )
             .into(),
         };
