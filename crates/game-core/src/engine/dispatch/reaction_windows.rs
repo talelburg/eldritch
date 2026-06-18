@@ -17,9 +17,9 @@ use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, ForcedContinuation,
-    GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate, ResolutionFrame,
-    ResolutionKind, Status, WindowBinding, WindowKind,
+    CardCode, CardInstanceId, Continuation, FastActorScope, FastEventCandidate, FinishContinuation,
+    ForcedContinuation, GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate,
+    ResolutionFrame, ResolutionKind, Status, WindowBinding, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -49,7 +49,11 @@ use super::Cx;
 /// multi-defeat effect arrives.
 pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
     let pending_triggers = scan_pending_triggers(cx.state, kind);
-    if pending_triggers.is_empty() {
+    // Axis C (#335): the window also opens for a matching Fast event in hand,
+    // so a defeat with Evidence! in hand (and no in-play reaction) still opens
+    // the after-defeat window.
+    let fast_plays = scan_hand_fast_events(cx.state, kind);
+    if pending_triggers.is_empty() && fast_plays.is_empty() {
         return;
     }
     cx.events.push(Event::WindowOpened { kind });
@@ -60,8 +64,7 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
         .continuations
         .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers,
-            // Axis C (Task 4) scans the hand here; no hand plays yet.
-            fast_plays: Vec::new(),
+            fast_plays,
             kind: ResolutionKind::Window(WindowBinding {
                 kind,
                 fast_actors: FastActorScope::Any,
@@ -168,6 +171,71 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         }
     }
     pending
+}
+
+/// Scan every window-eligible investigator's hand for Fast **events** whose
+/// `Trigger::OnEvent` ability matches `kind` (Axis C, #335). The play-timing
+/// predicate is the same [`trigger_matches`] used for in-play reactions — per
+/// Rules Reference p.11 a Fast reaction event plays "as if the described
+/// timing point were a triggering condition", so a hand Fast event is its
+/// in-play twin sourced from hand.
+///
+/// Returns candidates in active-investigator-first / turn-order order, like
+/// [`scan_pending_triggers`]. Empty when the registry isn't installed (tests
+/// that don't touch card data) or nothing matches.
+fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<FastEventCandidate> {
+    let Some(reg) = card_registry::current() else {
+        return Vec::new();
+    };
+    let mut order: Vec<InvestigatorId> = Vec::with_capacity(state.turn_order.len());
+    if let Some(active) = state.active_investigator {
+        order.push(active);
+    }
+    for id in &state.turn_order {
+        if Some(*id) != state.active_investigator {
+            order.push(*id);
+        }
+    }
+
+    let mut plays = Vec::new();
+    for id in order {
+        let Some(inv) = state.investigators.get(&id) else {
+            continue;
+        };
+        for code in &inv.hand {
+            let Some(meta) = (reg.metadata_for)(code) else {
+                continue;
+            };
+            if !meta.is_fast() || meta.card_type() != CardType::Event {
+                continue;
+            }
+            let Some(abilities) = (reg.abilities_for)(code) else {
+                continue;
+            };
+            for (idx, ability) in abilities.iter().enumerate() {
+                let Trigger::OnEvent {
+                    pattern, timing, ..
+                } = &ability.trigger
+                else {
+                    continue;
+                };
+                if !trigger_matches(kind, pattern, *timing, id) {
+                    continue;
+                }
+                let ability_index = u8::try_from(idx)
+                    .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
+                plays.push(FastEventCandidate {
+                    controller: id,
+                    code: code.clone(),
+                    ability_index,
+                });
+                // One option per card: a card with two matching abilities is
+                // still offered once. No in-scope card has two.
+                break;
+            }
+        }
+    }
+    plays
 }
 
 /// Returns whether an [`Trigger::OnEvent`] ability with the given
@@ -286,13 +354,20 @@ fn trigger_matches(
 /// convention shared with [`super::choice`]. Axis C (Task 4) appends the
 /// frame's hand Fast-event plays after the triggers.
 fn build_resolution_options(frame: &ResolutionFrame) -> Vec<ChoiceOption> {
-    frame
+    let triggers = frame
         .pending_triggers
         .iter()
+        .map(|cand| format!("Resolve reaction: {}", cand.code));
+    let plays = frame
+        .fast_plays
+        .iter()
+        .map(|play| format!("Play {} from hand", play.code));
+    triggers
+        .chain(plays)
         .enumerate()
-        .map(|(i, cand)| ChoiceOption {
+        .map(|(i, label)| ChoiceOption {
             id: OptionId(u32::try_from(i).expect("option count fits in u32")),
-            label: format!("Resolve reaction: {}", cand.code),
+            label,
         })
         .collect()
 }
@@ -511,7 +586,10 @@ pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcom
     let window = cx.state.continuations[window_idx]
         .as_resolution()
         .expect("advance_resolution: window_idx is a Resolution frame");
-    if window.pending_triggers.is_empty() {
+    // Close only when no option remains — a pending in-play trigger *or* a
+    // hand Fast-event play (Axis C). A window with only a remaining hand play
+    // stays open so the player can still play it.
+    if !window.has_pending_options() {
         return close_reaction_window_at(cx, window_idx);
     }
     let skip_hint = if window.is_forced() {
