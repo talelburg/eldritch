@@ -36,7 +36,7 @@ pub(super) fn deck_shuffled(cx: &mut Cx, investigator: InvestigatorId) -> Engine
 ///
 /// Emits [`Event::DeckShuffled`] iff the deck had at least 2 cards
 /// (a 0- or 1-card deck has nothing to permute).
-pub(super) fn shuffle_player_deck(cx: &mut Cx, investigator: InvestigatorId) {
+pub(in crate::engine) fn shuffle_player_deck(cx: &mut Cx, investigator: InvestigatorId) {
     let inv = cx
         .state
         .investigators
