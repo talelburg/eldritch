@@ -33,10 +33,17 @@ here.
 
 ### Tier 1 — the work
 
-**A. Missing basic actions** (no `PlayerAction` variant exists today):
-- [#141](https://github.com/talelburg/eldritch/issues/141) — Resource action (gain 1; Investigation step 2.2.1).
-- [#77](https://github.com/talelburg/eldritch/issues/77) — Engage (+ Parley). Engage is core; Parley pairs with Lita.
-- [#258](https://github.com/talelburg/eldritch/issues/258) (Resign only) — the Resign action; the rest of #258 is optional content.
+**A. Missing basic actions** — ✅ **shipped (PR #383).** `PlayerAction::Resource`
+([#141](https://github.com/talelburg/eldritch/issues/141), closed) + the
+basic-action half of [#77](https://github.com/talelburg/eldritch/issues/77)
+(`PlayerAction::Engage`). Both fire attacks of opportunity (RR p.5 exempts only
+fight/evade/parley/resign); the pre-existing **Draw** AoO gap was fixed alongside,
+and the shared five-check prologue extracted into `validate_basic_action`.
+**Resign and Parley are NOT basic actions** (verified RR p.5: "Activate, Play,
+Resign, and Parley are not basic actions") — they are action *types* granted only
+by card/location abilities, so they live with the optional content in
+[#258](https://github.com/talelburg/eldritch/issues/258) (the Parlor's Resign,
+Lita's Parley), **not** the gate. #77 stays open for its Parley half.
 
 **B. Attacks of opportunity + non-enemy-phase attack windows** — one cluster,
 one shared mechanism (mid-action park/resume; see the keystone note):
@@ -66,7 +73,7 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
 
 ### Ordering, dependencies, simplifications
 
-1. **Basic actions first** (#141, #77, Resign) — small, independent; Engage also unblocks #300's condition.
+1. ~~**Basic actions first** (#141, #77)~~ — ✅ shipped (PR #383); Engage also unblocks #300's condition. (Resign/Parley aren't basic actions — see Tier-1 A.)
 2. **§1 continuation-stack cleanup before the keystone** — the full #348 + #345 + #347 + #380 as one designed pass (see Refactor triage). The keystone *adds* suspension modes, so migrate the existing `pending_*` onto the one stack (with serializable context + token-routed resume) first rather than building the Nth ad-hoc route on top.
 3. **The keystone: mid-action suspend/resume.** Tier-1 B **and** C all hinge on `drive_attack_loop` being able to park the triggering action, open a window, and resume. Build it once and #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase. Fold #119 in for #44's soak (symmetric token storage).
 4. **Skill-test windows** (#374 + #64) — one reaction-window work-stream.
@@ -161,7 +168,10 @@ from the Move/Investigate handlers) and `fire_retaliate_if_any` call
 `EnemyAttackSource::AttackOfOpportunity` is the reserved-unconstructed variant
 the fix wires up.** Exhaust rules differ by source: enemy-phase always
 exhausts (cancelled too — RR p.6/p.25); AoO never (RR p.7); Retaliate never
-(RR p.18). Activating an ability or playing an event fire no AoO today.
+(RR p.18). **Every non-exempt basic action — Draw, Resource, Move, Investigate,
+Engage (PR #383) — already calls `fire_attacks_of_opportunity` (window-less),
+so the keystone's window-upgrade must cover all of them uniformly**; activating
+an ability or playing an event fire no AoO yet (#361/#378).
 
 **Trigger spine.** `emit_event` is the one dispatch chokepoint (two-phase
 forced-then-reaction, RR p.2). Simultaneous triggers resolve through the
