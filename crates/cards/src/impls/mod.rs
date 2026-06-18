@@ -86,6 +86,7 @@ pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
 pub mod medical_texts;
+pub mod old_book_of_lore;
 pub mod overpower;
 pub mod perception;
 pub mod physical_training;
@@ -135,6 +136,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         manual_dexterity::CODE => Some(manual_dexterity::abilities()),
         medical_texts::CODE => Some(medical_texts::abilities()),
+        old_book_of_lore::CODE => Some(old_book_of_lore::abilities()),
         overpower::CODE => Some(overpower::abilities()),
         perception::CODE => Some(perception::abilities()),
         physical_training::CODE => Some(physical_training::abilities()),
