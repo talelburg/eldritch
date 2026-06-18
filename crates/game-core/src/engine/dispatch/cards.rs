@@ -289,6 +289,23 @@ pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
 
     // Mutate.
     super::actions::spend_one_action(cx, investigator);
+
+    // Draw is NOT on the AoO-exempt list (only Fight, Evade, Parley,
+    // Resign are), so each ready engaged enemy attacks before the card
+    // is drawn (RR p.5).
+    super::combat::fire_attacks_of_opportunity(cx, investigator);
+
+    // If the AoO eliminated the investigator, suppress the draw (the
+    // spent action + AoO events stay), mirroring `investigate`.
+    let still_active = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .is_some_and(|inv| inv.status == Status::Active);
+    if !still_active {
+        return EngineOutcome::Done;
+    }
+
     draw_one_with_deckout(cx, investigator);
     EngineOutcome::Done
 }

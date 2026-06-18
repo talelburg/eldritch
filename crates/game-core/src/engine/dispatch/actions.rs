@@ -106,8 +106,8 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
 
     // Mutate-second: spend the action, fire AoO, then resolve the
     // test. Investigate is NOT on the AoO-exempt list (only Fight,
-    // Evade, Parley, Engage, Resign are), so each ready engaged
-    // enemy attacks before the test resolves.
+    // Evade, Parley, Resign are), so each ready engaged enemy attacks
+    // before the test resolves.
     spend_one_action(cx, investigator);
     super::combat::fire_attacks_of_opportunity(cx, investigator);
 

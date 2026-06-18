@@ -2738,6 +2738,44 @@ mod tests {
     }
 
     #[test]
+    fn draw_action_fires_aoo_from_ready_engaged_enemy() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let mut enemy = test_enemy(200, "Engaged Ghoul");
+        enemy.current_location = Some(loc);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 1;
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                // Give the deck a card so the draw itself succeeds without
+                // the empty-deck horror path muddying the AoO assertion.
+                i.deck = vec![CardCode::new("_test_card_1")];
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Draw {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+    }
+
+    #[test]
     fn move_with_unengaged_enemy_at_origin_leaves_enemy_behind() {
         let (inv_id, a, b, _, mut state) = move_scenario_with_engaged_enemy();
         // Convert the engagement into a non-engagement: enemy is at A
