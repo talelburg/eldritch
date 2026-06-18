@@ -764,6 +764,12 @@ pub struct ResolutionFrame {
     /// lead orders. Empty is permitted — framework windows opened for
     /// phase/timing reasons gate Fast actions with no pending candidates.
     pub pending_triggers: Vec<ResolutionCandidate>,
+    /// Fast events in hand that match this window's event (Axis C, #335),
+    /// offered as `PickSingle` options *after* `pending_triggers`. Empty for
+    /// the forced run (it admits no Fast plays) and for windows opened before
+    /// the hand scan (`queue_reaction_window` populates it from
+    /// `scan_hand_fast_events`).
+    pub fast_plays: Vec<FastEventCandidate>,
     /// What this resolution run *is*: either a reaction / fast / framework
     /// [`Window`](ResolutionKind::Window) (carrying its kind + Fast-action
     /// scope), or the mandatory **forced run**
@@ -844,8 +850,17 @@ impl ResolutionFrame {
     pub fn new_empty(kind: WindowKind, fast_actors: FastActorScope) -> Self {
         Self {
             pending_triggers: Vec::new(),
+            fast_plays: Vec::new(),
             kind: ResolutionKind::Window(WindowBinding { kind, fast_actors }),
         }
+    }
+
+    /// True while this frame still has an option to offer — a pending in-play
+    /// trigger or a hand Fast-event play (Axis C). The close condition for a
+    /// resolution run is the negation of this.
+    #[must_use]
+    pub fn has_pending_options(&self) -> bool {
+        !self.pending_triggers.is_empty() || !self.fast_plays.is_empty()
     }
 
     /// The [`WindowKind`] if this frame is a window; `None` for the forced
@@ -1133,6 +1148,37 @@ pub struct ResolutionCandidate {
     pub source: Option<CardInstanceId>,
 }
 
+/// One Fast event playable from hand that matches an open reaction window's
+/// event (Axis C, #335). The window offers it as a `PickSingle` option
+/// alongside in-play [`ResolutionCandidate`]s; picking it plays the event
+/// and runs ability `ability_index`'s effect. Sourced from hand, so there is
+/// no in-play instance id (unlike [`ResolutionCandidate::source`]).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct FastEventCandidate {
+    /// The investigator whose hand holds the event and who plays it.
+    pub controller: InvestigatorId,
+    /// Printed code of the Fast event in hand.
+    pub code: CardCode,
+    /// Index into the card's [`abilities`](crate::dsl::Ability) vec — the
+    /// `OnEvent` ability whose pattern matched this window and whose effect
+    /// resolves on play.
+    pub ability_index: u8,
+}
+
+impl FastEventCandidate {
+    /// Construct a candidate. Provided so integration tests outside the
+    /// crate can build one despite the `#[non_exhaustive]` attribute.
+    #[must_use]
+    pub fn new(controller: InvestigatorId, code: CardCode, ability_index: u8) -> Self {
+        Self {
+            controller,
+            code,
+            ability_index,
+        }
+    }
+}
+
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
 /// apply to a skill test.
 ///
@@ -1333,6 +1379,7 @@ mod open_window_tests {
     fn open_window_serde_roundtrip() {
         let window = ResolutionFrame {
             pending_triggers: Vec::new(),
+            fast_plays: Vec::new(),
             kind: ResolutionKind::Window(WindowBinding {
                 kind: WindowKind::AfterEnemyDefeated {
                     enemy: EnemyId(7),
@@ -1352,6 +1399,27 @@ mod open_window_tests {
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn new_empty_frame_has_no_fast_plays_and_no_pending_options() {
+        let frame = ResolutionFrame::new_empty(
+            WindowKind::AfterEnemyDefeated {
+                enemy: EnemyId(1),
+                by: Some(InvestigatorId(1)),
+            },
+            FastActorScope::Any,
+        );
+        assert!(frame.fast_plays.is_empty());
+        assert!(!frame.has_pending_options());
+    }
+
+    #[test]
+    fn fast_event_candidate_serde_round_trips() {
+        let candidate = FastEventCandidate::new(InvestigatorId(1), CardCode::new("01022"), 0);
+        let json = serde_json::to_string(&candidate).expect("serialize");
+        let back: FastEventCandidate = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, candidate);
     }
 }
 

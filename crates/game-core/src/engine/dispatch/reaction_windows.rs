@@ -60,6 +60,8 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
         .continuations
         .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers,
+            // Axis C (Task 4) scans the hand here; no hand plays yet.
+            fast_plays: Vec::new(),
             kind: ResolutionKind::Window(WindowBinding {
                 kind,
                 fast_actors: FastActorScope::Any,
@@ -83,6 +85,8 @@ pub(super) fn open_forced_resolution(
         .continuations
         .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers: candidates,
+            // The forced run admits no Fast plays (RR p.2).
+            fast_plays: Vec::new(),
             kind: ResolutionKind::Forced(continuation),
         }));
     open_queued_reaction_window(cx)
@@ -922,6 +926,8 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
         .continuations
         .push(Continuation::Resolution(ResolutionFrame {
             pending_triggers,
+            // Framework Fast window (out of Axis-C scope): no hand-event options.
+            fast_plays: Vec::new(),
             kind: ResolutionKind::Window(WindowBinding {
                 kind,
                 fast_actors: FastActorScope::Any,
