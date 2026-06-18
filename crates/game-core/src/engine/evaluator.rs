@@ -874,85 +874,36 @@ fn discover_clue(
         };
     }
 
-    // Before-timing clue-discovery interrupt (Cover Up 01007, C5a #236).
-    // Offer the controller a chance to replace this discovery iff they
-    // control a card with a `WouldDiscoverClues` reaction at the
-    // controller's own location ("at your location"). No registry (unit
-    // context) or no eligible card → fall through to the normal discovery.
-    //
-    // The `card.clues > 0` gate below is NOT generic to the trigger point:
-    // it is a single-consumer stand-in for the eligibility rule "a
-    // triggered ability can only be initiated if its effect has the
-    // potential to change the game state" (RR p.2), which the engine does
-    // not yet model generically (no reaction window checks potential). For
-    // Cover Up specifically, an emptied card sits in the threat area until
-    // game end, so without this gate the engine would prompt a never-useful
-    // interrupt on every discovery for the rest of the game.
-    // TODO(#212): when a second `WouldDiscoverClues` card lands (one whose
-    // potential isn't "holds clues to discard"), lift this into a
-    // card-provided per-ability "has potential" predicate rather than a
-    // hardcoded clue check here.
-    if let Some(reg) = crate::card_registry::current() {
-        let at_your_location = cx
-            .state
-            .investigators
-            .get(&eval_ctx.controller)
-            .and_then(|i| i.current_location)
-            == Some(location_id);
-        if at_your_location {
-            // Read-only scan first (collect the hit), then set the pending
-            // state — keeps the immutable borrow of the investigator
-            // disjoint from the later mutable write.
-            let hit = cx
-                .state
-                .investigators
-                .get(&eval_ctx.controller)
-                .and_then(|inv| {
-                    inv.controlled_card_instances().find_map(|card| {
-                        // Single-consumer eligibility stand-in (see above).
-                        if card.clues == 0 {
-                            return None;
-                        }
-                        let abilities = (reg.abilities_for)(&card.code)?;
-                        let idx = abilities.iter().position(|a| {
-                            matches!(
-                                &a.trigger,
-                                crate::dsl::Trigger::OnEvent {
-                                    pattern: crate::dsl::EventPattern::WouldDiscoverClues,
-                                    timing: crate::dsl::EventTiming::Before,
-                                    ..
-                                }
-                            )
-                        })?;
-                        Some((card.instance_id, idx))
-                    })
-                });
-            if let Some((source, ability_index)) = hit {
-                // TODO(#212): `count` is the *requested* count, not the
-                // capped/actually-discoverable one. Per the card, "discard
-                // that many" means the number you would actually discover
-                // (`min(count, location.clues)`). They coincide in Slice 1
-                // (Investigate is count=1 and the empty-location early-return
-                // above guarantees >= 1 clue present), so this is latent
-                // until a multi-count or sub-availability discovery is
-                // reachable.
-                cx.state.clue_interrupt_pending = Some(crate::state::ClueInterruptPending {
-                    controller: eval_ctx.controller,
-                    location: location_id,
-                    count,
-                    source,
-                    ability_index,
-                });
-                return EngineOutcome::AwaitingInput {
-                    request: crate::engine::outcome::InputRequest::prompt(
-                        "You would discover clue(s). Use the interrupt to discard that \
-                         many from the source card instead? Confirm = replace, \
-                         Skip = discover normally.",
-                    ),
-                    resume_token: crate::engine::outcome::ResumeToken(0),
-                };
-            }
-        }
+    // Before-timing clue-discovery window (Cover Up 01007; Axis D #336,
+    // migrated from the C5a `clue_interrupt` seam). Reaction-only Before timing
+    // point: `emit_event` queues the window iff an eligible `WouldDiscoverClues`
+    // reaction is controlled at the discovery location — the "at your location"
+    // scoping and the `card.clues > 0` potential-gate stand-in (RR p.2;
+    // TODO(#368)) live in the window scan. If the window opened, suspend; the
+    // `BeforeDiscoverClues` continuation performs the deferred discovery on
+    // close (unless a reaction cancelled it). No registry / no eligible card →
+    // `open_windows` stays empty and the discovery happens now.
+    let _ = crate::engine::dispatch::emit::emit_event(
+        cx,
+        &crate::engine::dispatch::emit::TimingEvent::WouldDiscoverClues {
+            investigator: eval_ctx.controller,
+            location: location_id,
+            count,
+        },
+    );
+    // `emit_event` pushes the before-discover window (if any eligible reaction
+    // matched) on *top* of the stack. Check the top window's kind rather than
+    // "any window open" — `discover_clue` can run while an *outer* reaction
+    // window is already open (e.g. Evidence! 01022 played in an after-defeat
+    // window then discovers a clue), and that outer window must not be mistaken
+    // for a queued before-discover window.
+    if matches!(
+        cx.state
+            .top_reaction_window()
+            .and_then(crate::state::ResolutionFrame::kind),
+        Some(crate::state::WindowKind::BeforeDiscoverClues { .. })
+    ) {
+        return crate::engine::dispatch::reaction_windows::open_queued_reaction_window(cx);
     }
 
     perform_discovery(cx, location_id, count, eval_ctx.controller);

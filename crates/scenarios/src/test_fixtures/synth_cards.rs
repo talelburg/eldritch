@@ -21,7 +21,7 @@ use game_core::card_data::{
 use game_core::card_registry::{CardRegistry, NativeEffectFn};
 use game_core::dsl::{
     forced_on_event, gain_resources, native, on_play, reaction_on_event, revelation, Ability,
-    EventPattern, EventTiming, InvestigatorTarget,
+    Effect, EventPattern, EventTiming, InvestigatorTarget,
 };
 use game_core::engine::{Cx, EngineOutcome, EvalContext};
 use game_core::event::{Event, TraumaKind};
@@ -291,7 +291,9 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             reaction_on_event(
                 EventPattern::WouldDiscoverClues,
                 EventTiming::Before,
-                native(SYNTH_COVER_UP_DISCARD_TAG),
+                // Discard from self, then cancel the discovery (Axis D #336) —
+                // mirrors the real Cover Up 01007 (`treachery_01007`).
+                Effect::Seq(vec![native(SYNTH_COVER_UP_DISCARD_TAG), Effect::Cancel]),
             ),
             forced_on_event(
                 EventPattern::GameEnd,

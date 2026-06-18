@@ -1218,6 +1218,27 @@ pub struct ResolutionCandidate {
     pub source: CandidateSource,
 }
 
+impl ResolutionCandidate {
+    /// Construct a [`ResolutionCandidate`]. Provided so integration tests
+    /// outside the crate (where `#[non_exhaustive]` blocks struct-literal
+    /// construction) can build a window's pending triggers directly — the same
+    /// rationale as [`ResolutionFrame::new_empty`].
+    #[must_use]
+    pub fn new(
+        code: CardCode,
+        controller: InvestigatorId,
+        ability_index: u8,
+        source: CandidateSource,
+    ) -> Self {
+        Self {
+            code,
+            controller,
+            ability_index,
+            source,
+        }
+    }
+}
+
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
 /// apply to a skill test.
 ///

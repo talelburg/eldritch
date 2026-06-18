@@ -152,6 +152,26 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                 continue;
             }
         }
+        // "When YOU would discover … at YOUR location" (Cover Up 01007, Axis D
+        // #336): the reaction's controller is the discoverer and must be at the
+        // discovery location. (The per-card `clues > 0` potential gate is in the
+        // card loop below.)
+        if let WindowKind::BeforeDiscoverClues {
+            investigator,
+            location,
+            ..
+        } = kind
+        {
+            if id != investigator
+                || state
+                    .investigators
+                    .get(&id)
+                    .and_then(|i| i.current_location)
+                    != Some(location)
+            {
+                continue;
+            }
+        }
         for card in inv.controlled_card_instances() {
             // Self-binding: for `AfterEnemyAttackDamagedAsset` only the
             // soaked asset instance may trigger `EnemyAttackDamagedSelf`.
@@ -163,6 +183,13 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                 if card.instance_id != asset {
                     continue;
                 }
+            }
+            // Potential-gate stand-in for Cover Up (RR p.2 "an ability cannot
+            // initiate if its effect won't change the game state"; TODO(#368)):
+            // only a source still holding clues to discard can replace the
+            // discovery — an emptied Cover Up would otherwise prompt forever.
+            if matches!(kind, WindowKind::BeforeDiscoverClues { .. }) && card.clues == 0 {
+                continue;
             }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
@@ -427,7 +454,7 @@ fn build_resolution_options(frame: &ResolutionFrame) -> Vec<ChoiceOption> {
 /// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
 /// (not here) so the event appears at queue time and is symmetric with
 /// the [`open_fast_window`] path.
-pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
+pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
         .top_reaction_window()
@@ -602,12 +629,21 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
     // `clue_discovery_count`. `None` for all other window kinds. (C5b
     // #237.)
-    if let Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) = cx.state.continuations
-        [window_idx]
+    match cx.state.continuations[window_idx]
         .as_resolution()
         .and_then(ResolutionFrame::kind)
     {
-        eval_ctx.attacking_enemy = Some(enemy);
+        Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) => {
+            eval_ctx.attacking_enemy = Some(enemy);
+        }
+        // For `BeforeDiscoverClues`, bind the would-be discovery count so the
+        // replacement effect (Cover Up's "discard that many") discards the
+        // right number. Mirrors `attacking_enemy`. TODO(#368): `count` is the
+        // requested, not the capped, count.
+        Some(WindowKind::BeforeDiscoverClues { count, .. }) => {
+            eval_ctx.clue_discovery_count = Some(count);
+        }
+        _ => {}
     }
     let usage_limit = ability.usage_limit;
 
@@ -1045,9 +1081,42 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
         WindowKind::AfterEnemyAttackDamagedAsset { .. } | WindowKind::BeforeEnemyAttack { .. } => {
             super::combat::resume_enemy_attack(cx)
         }
-        // BeforeDiscoverClues: real continuation lands in Task 6 (perform the
-        // deferred discovery unless cancelled, then resume any in-flight test).
-        WindowKind::BeforeDiscoverClues { .. } => EngineOutcome::Done,
+        // BeforeDiscoverClues (Cover Up 01007, Axis D #336): the before-discover
+        // window closed. If a reaction cancelled the discovery (Cover Up played
+        // its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
+        // discovery. Then, if a skill test is in flight (the dominant path:
+        // Investigate's follow-up discovery), re-enter its driver — its
+        // continuation was pre-advanced to `PostFollowUp` by `finish_skill_test`
+        // before the follow-up suspended, so this picks up at teardown.
+        WindowKind::BeforeDiscoverClues {
+            investigator,
+            location,
+            count,
+        } => resume_before_discover_window(cx, investigator, location, count),
+    }
+}
+
+/// Resume after a [`WindowKind::BeforeDiscoverClues`] window closes (Cover Up
+/// 01007, Axis D #336). If a reaction cancelled the discovery (Cover Up played
+/// its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
+/// discovery. Then, if a skill test is in flight (the dominant path:
+/// Investigate's follow-up discovery), re-enter its driver — its continuation
+/// was pre-advanced to `PostFollowUp` by `finish_skill_test` before the
+/// follow-up suspended, so this picks up at teardown.
+fn resume_before_discover_window(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    location: crate::state::LocationId,
+    count: u8,
+) -> EngineOutcome {
+    let cancelled = std::mem::take(&mut cx.state.pending_cancellation);
+    if !cancelled {
+        crate::engine::evaluator::perform_discovery(cx, location, count, investigator);
+    }
+    if cx.state.in_flight_skill_test.is_some() {
+        super::skill_test::drive_skill_test(cx)
+    } else {
+        EngineOutcome::Done
     }
 }
 

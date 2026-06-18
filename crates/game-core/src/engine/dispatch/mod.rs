@@ -43,7 +43,10 @@ pub(crate) mod encounter;
 pub(super) mod forced_triggers;
 mod hunters;
 mod phases;
-mod reaction_windows;
+// `pub(super)` so the evaluator's `discover_clue` can open the Before-discover
+// window via the `pub(crate)` `open_queued_reaction_window` (Axis D #336);
+// other items stay `pub(super)`-to-dispatch.
+pub(super) mod reaction_windows;
 pub(crate) mod reveal;
 // pub(super): engine::evaluator reaches start_skill_test for Effect::SkillTest.
 pub(super) mod skill_test;

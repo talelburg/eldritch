@@ -18,7 +18,7 @@
 
 use card_dsl::dsl::{
     forced_on_event, native, put_into_threat_area_with_clues, reaction_on_event, revelation,
-    Ability, EventPattern, EventTiming,
+    Ability, Effect, EventPattern, EventTiming,
 };
 use game_core::card_registry::NativeEffectFn;
 use game_core::event::TraumaKind;
@@ -39,7 +39,11 @@ pub fn abilities() -> Vec<Ability> {
         reaction_on_event(
             EventPattern::WouldDiscoverClues,
             EventTiming::Before,
-            native(DISCARD_TAG),
+            // "Discard that many clues from Cover Up instead": run the discard,
+            // then cancel the discovery — cancel = degenerate replacement
+            // (Axis D #336). The before-discover window's continuation skips
+            // the deferred discovery when `pending_cancellation` is set.
+            Effect::Seq(vec![native(DISCARD_TAG), Effect::Cancel]),
         ),
         forced_on_event(
             EventPattern::GameEnd,
@@ -134,6 +138,11 @@ mod tests {
                 timing: EventTiming::Before,
                 ..
             }
+        ));
+        // The reaction discards from self, then cancels the discovery.
+        assert!(matches!(
+            &abilities[1].effect,
+            Effect::Seq(steps) if steps.len() == 2 && matches!(steps[1], Effect::Cancel)
         ));
         assert!(matches!(
             abilities[2].trigger,
