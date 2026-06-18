@@ -12,6 +12,19 @@ use crate::state::{GameState, LocationId};
 /// `Location.connections` (the engine maintains them bidirectionally,
 /// but BFS does not assume that).
 pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) -> Option<u32> {
+    bfs_distance_with(state, from, to, |_| true)
+}
+
+/// Breadth-first distance over the connection graph, skipping any location for
+/// which `is_passable` returns `false` (an impassable node is never entered —
+/// including the destination, which is then unreachable). The `from` node is
+/// always the start regardless of `is_passable`.
+pub(crate) fn bfs_distance_with(
+    state: &GameState,
+    from: LocationId,
+    to: LocationId,
+    is_passable: impl Fn(LocationId) -> bool,
+) -> Option<u32> {
     if from == to {
         return Some(0);
     }
@@ -25,6 +38,9 @@ pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) 
             continue;
         };
         for &next in &loc.connections {
+            if !is_passable(next) {
+                continue;
+            }
             if next == to {
                 return Some(dist + 1);
             }
@@ -49,7 +65,18 @@ pub fn shortest_first_steps(
     from: LocationId,
     to: LocationId,
 ) -> Vec<LocationId> {
-    let Some(total) = bfs_distance(state, from, to) else {
+    shortest_first_steps_with(state, from, to, |_| true)
+}
+
+/// Every neighbor of `from` on a shortest path to `to`, skipping impassable
+/// nodes (so a barricaded location is neither a step nor a path waypoint).
+pub fn shortest_first_steps_with(
+    state: &GameState,
+    from: LocationId,
+    to: LocationId,
+    is_passable: impl Fn(LocationId) -> bool,
+) -> Vec<LocationId> {
+    let Some(total) = bfs_distance_with(state, from, to, &is_passable) else {
         return Vec::new();
     };
     if total == 0 {
@@ -61,7 +88,7 @@ pub fn shortest_first_steps(
     loc.connections
         .iter()
         .copied()
-        .filter(|&n| bfs_distance(state, n, to) == Some(total - 1))
+        .filter(|&n| is_passable(n) && bfs_distance_with(state, n, to, &is_passable) == Some(total - 1))
         .collect()
 }
 
@@ -169,5 +196,40 @@ mod tests {
     fn first_steps_empty_when_already_at_target() {
         let s = diamond();
         assert!(shortest_first_steps(&s, LocationId(1), LocationId(1)).is_empty());
+    }
+
+    #[test]
+    fn impassable_node_reroutes_distance_and_steps() {
+        // Diamond A-B-D / A-C-D. Block B ⇒ the only route to D is via C.
+        let s = diamond();
+        let block_b = |loc: LocationId| loc != LocationId(2);
+        assert_eq!(
+            bfs_distance_with(&s, LocationId(1), LocationId(4), block_b),
+            Some(2),
+            "still distance 2 via C",
+        );
+        assert_eq!(
+            shortest_first_steps_with(&s, LocationId(1), LocationId(4), block_b),
+            vec![LocationId(3)],
+            "only C is a legal first step",
+        );
+    }
+
+    #[test]
+    fn impassable_destination_is_unreachable() {
+        // Linear A-B. Block B (the destination) ⇒ unreachable.
+        let mut a = test_location(1, "A");
+        let mut b = test_location(2, "B");
+        a.connections = vec![LocationId(2)];
+        b.connections = vec![LocationId(1)];
+        let s = GameStateBuilder::new()
+            .with_phase(Phase::Enemy)
+            .with_location(a)
+            .with_location(b)
+            .build();
+        assert_eq!(
+            bfs_distance_with(&s, LocationId(1), LocationId(2), |loc| loc != LocationId(2)),
+            None,
+        );
     }
 }
