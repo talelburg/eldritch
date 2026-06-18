@@ -195,9 +195,9 @@ pub enum PlayerAction {
     /// Validate: Investigation phase, investigator is active and
     /// `Status::Active`, `actions_remaining >= 1`.
     ///
-    /// Resource is NOT on the AoO-exempt list (only Fight, Evade,
+    /// Resource is NOT on the `AoO`-exempt list (only Fight, Evade,
     /// Parley, Resign are), so each ready engaged enemy makes an attack
-    /// of opportunity before the resource is gained; an AoO that
+    /// of opportunity before the resource is gained; an `AoO` that
     /// eliminates the investigator suppresses the gain.
     Resource {
         /// Investigator taking the action. Must be the active
@@ -213,7 +213,7 @@ pub enum PlayerAction {
     /// at the investigator's `current_location`, and is not already
     /// engaged with the investigator.
     ///
-    /// Engage is NOT on the AoO-exempt list, so OTHER ready engaged
+    /// Engage is NOT on the `AoO`-exempt list, so OTHER ready engaged
     /// enemies make attacks of opportunity before the engagement
     /// resolves (the target is not engaged at that point, so it does
     /// not). The multiplayer "engage an enemy engaged with another

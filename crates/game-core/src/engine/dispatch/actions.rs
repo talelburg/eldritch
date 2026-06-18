@@ -148,8 +148,8 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
 ///
 /// Validate-first: Investigation phase, `investigator` is active and
 /// `Status::Active`, `actions_remaining >= 1`. Mutate-second: spend 1
-/// action, fire attacks of opportunity (Resource is NOT AoO-exempt),
-/// then — if the investigator survived the AoO — gain 1 resource.
+/// action, fire attacks of opportunity (Resource is NOT `AoO`-exempt),
+/// then — if the investigator survived the `AoO` — gain 1 resource.
 pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     if cx.state.phase != Phase::Investigation {
         return EngineOutcome::Rejected {
@@ -169,16 +169,23 @@ pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> Engi
             .into(),
         };
     }
-    let inv = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Resource: active_investigator {investigator:?} is not in the investigators map; \
+    let inv = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Resource: active_investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv.status != Status::Active {
         return EngineOutcome::Rejected {
-            reason: format!("Resource: {investigator:?} is not Active (status {:?})", inv.status)
-                .into(),
+            reason: format!(
+                "Resource: {investigator:?} is not Active (status {:?})",
+                inv.status
+            )
+            .into(),
         };
     }
     if inv.actions_remaining < 1 {
@@ -193,12 +200,16 @@ pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> Engi
 
     // If AoO eliminated the investigator, the gain is suppressed; the
     // spent action + AoO events stay (mirrors `investigate`).
-    let inv_after = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Resource: investigator {investigator:?} disappeared between AoO and gain; \
+    let inv_after = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Resource: investigator {investigator:?} disappeared between AoO and gain; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv_after.status != Status::Active {
         return EngineOutcome::Done;
     }
@@ -224,8 +235,9 @@ pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> Engi
 /// `actions_remaining >= 1`, enemy in state, enemy at the investigator's
 /// `current_location`, not already engaged with the investigator.
 /// Mutate-second: spend 1 action, fire attacks of opportunity (Engage is
-/// NOT AoO-exempt — the target is not engaged yet so it cannot AoO; only
-/// OTHER engaged ready enemies do), then — if the investigator survived —
+/// NOT `AoO`-exempt — the target is not engaged yet so it cannot `AoO`;
+/// only OTHER engaged ready enemies do), then — if the investigator
+/// survived —
 /// engage the enemy.
 pub(super) fn engage(
     cx: &mut Cx,
@@ -250,16 +262,23 @@ pub(super) fn engage(
             .into(),
         };
     }
-    let inv = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Engage: active_investigator {investigator:?} is not in the investigators map; \
+    let inv = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Engage: active_investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv.status != Status::Active {
         return EngineOutcome::Rejected {
-            reason: format!("Engage: {investigator:?} is not Active (status {:?})", inv.status)
-                .into(),
+            reason: format!(
+                "Engage: {investigator:?} is not Active (status {:?})",
+                inv.status
+            )
+            .into(),
         };
     }
     if inv.actions_remaining < 1 {
@@ -292,12 +311,16 @@ pub(super) fn engage(
     spend_one_action(cx, investigator);
     super::combat::fire_attacks_of_opportunity(cx, investigator);
 
-    let inv_after = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "Engage: investigator {investigator:?} disappeared between AoO and engagement; \
+    let inv_after = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "Engage: investigator {investigator:?} disappeared between AoO and engagement; \
              this is a state-corruption invariant violation"
-        )
-    });
+            )
+        });
     if inv_after.status != Status::Active {
         return EngineOutcome::Done;
     }
