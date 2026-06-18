@@ -189,6 +189,21 @@ pub enum PlayerAction {
         /// investigator during the Investigation phase.
         investigator: InvestigatorId,
     },
+    /// Gain 1 resource (the basic "Resource" action, Rules Reference
+    /// Investigation step 2.2.1). Spends 1 action.
+    ///
+    /// Validate: Investigation phase, investigator is active and
+    /// `Status::Active`, `actions_remaining >= 1`.
+    ///
+    /// Resource is NOT on the AoO-exempt list (only Fight, Evade,
+    /// Parley, Resign are), so each ready engaged enemy makes an attack
+    /// of opportunity before the resource is gained; an AoO that
+    /// eliminates the investigator suppresses the gain.
+    Resource {
+        /// Investigator taking the action. Must be the active
+        /// investigator during the Investigation phase.
+        investigator: InvestigatorId,
+    },
     /// Play a card from an investigator's hand. Spends no action
     /// point at this stage — play-cost gating (resource cost,
     /// action cost, "Fast" exemption) lives on the card and lands

@@ -176,6 +176,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             difficulty,
         } => skill_test::perform_skill_test(cx, *investigator, *skill, *difficulty),
         PlayerAction::Investigate { investigator } => actions::investigate(cx, *investigator),
+        PlayerAction::Resource { investigator } => actions::resource_action(cx, *investigator),
         PlayerAction::Move {
             investigator,
             destination,

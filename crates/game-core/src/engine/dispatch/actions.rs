@@ -143,6 +143,79 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
     )
 }
 
+/// Handler for [`PlayerAction::Resource`]. The basic "gain 1 resource"
+/// action (Rules Reference, Investigation step 2.2.1).
+///
+/// Validate-first: Investigation phase, `investigator` is active and
+/// `Status::Active`, `actions_remaining >= 1`. Mutate-second: spend 1
+/// action, fire attacks of opportunity (Resource is NOT AoO-exempt),
+/// then — if the investigator survived the AoO — gain 1 resource.
+pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    if cx.state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Resource is only valid during the Investigation phase (was {:?})",
+                cx.state.phase
+            )
+            .into(),
+        };
+    }
+    if cx.state.active_investigator != Some(investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Resource: {investigator:?} is not the active investigator ({:?})",
+                cx.state.active_investigator,
+            )
+            .into(),
+        };
+    }
+    let inv = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Resource: active_investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv.status != Status::Active {
+        return EngineOutcome::Rejected {
+            reason: format!("Resource: {investigator:?} is not Active (status {:?})", inv.status)
+                .into(),
+        };
+    }
+    if inv.actions_remaining < 1 {
+        return EngineOutcome::Rejected {
+            reason: "Resource requires at least 1 action point".into(),
+        };
+    }
+
+    // Mutate-second: spend the action, fire AoO, then gain the resource.
+    spend_one_action(cx, investigator);
+    super::combat::fire_attacks_of_opportunity(cx, investigator);
+
+    // If AoO eliminated the investigator, the gain is suppressed; the
+    // spent action + AoO events stay (mirrors `investigate`).
+    let inv_after = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Resource: investigator {investigator:?} disappeared between AoO and gain; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv_after.status != Status::Active {
+        return EngineOutcome::Done;
+    }
+
+    let inv_mut = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("investigator existence checked above");
+    inv_mut.resources = inv_mut.resources.saturating_add(1);
+    cx.events.push(Event::ResourcesGained {
+        investigator,
+        amount: 1,
+    });
+    EngineOutcome::Done
+}
+
 /// Handler for [`PlayerAction::Move`].
 ///
 /// Spends 1 action, then updates `current_location` to a connected

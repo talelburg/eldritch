@@ -2412,6 +2412,135 @@ mod tests {
     }
 
     #[test]
+    fn resource_action_spends_action_and_gains_one_resource() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i.resources = 5;
+                i
+            })
+            .with_active_investigator(inv_id)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.investigators[&inv_id].resources, 6);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+        assert_event!(
+            result.events,
+            Event::ResourcesGained { investigator, amount: 1 } if *investigator == inv_id
+        );
+    }
+
+    #[test]
+    fn resource_action_fires_aoo_from_ready_engaged_enemy() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let mut enemy = test_enemy(200, "Engaged Ghoul");
+        enemy.current_location = Some(loc);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 1;
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // AoO fired: investigator took 1 damage, but the resource is still gained.
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].resources, 6);
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+    }
+
+    #[test]
+    fn resource_action_rejects_wrong_phase() {
+        let inv_id = InvestigatorId(1);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Mythos)
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv_id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.investigators[&inv_id].resources, 5);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+    }
+
+    #[test]
+    fn resource_action_rejects_when_not_active_investigator() {
+        let inv_id = InvestigatorId(1);
+        let other = InvestigatorId(2);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_active_investigator(other)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn resource_action_rejects_with_no_actions_remaining() {
+        let inv_id = InvestigatorId(1);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.actions_remaining = 0;
+                i
+            })
+            .with_active_investigator(inv_id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.investigators[&inv_id].resources, 5);
+    }
+
+    #[test]
     fn move_with_unengaged_enemy_at_origin_leaves_enemy_behind() {
         let (inv_id, a, b, _, mut state) = move_scenario_with_engaged_enemy();
         // Convert the engagement into a non-engagement: enemy is at A
