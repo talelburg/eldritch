@@ -738,6 +738,34 @@ fn park_on_soak_window(
     super::reaction_windows::open_queued_reaction_window(cx)
 }
 
+/// Resolve the head attacker: remove it from `attackers`, deal-or-skip its
+/// attack (per `cancelled`) and exhaust it, then — if the attack opened a soak
+/// reaction window — park the loop on it (`AfterSoak`) and return the suspend.
+/// `None` means continue to the next attacker. This is the single shared
+/// "deal one + maybe suspend" step for both [`drive_attack_loop`] (head never
+/// cancelled) and the `BeforeAttack` resume in [`resume_enemy_attack`] (head
+/// cancelled iff the closed before-window cancelled it). (Axis D #336.)
+fn deal_head_and_maybe_park(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    attackers: &mut Vec<EnemyId>,
+    source: EnemyAttackSource,
+    cancelled: bool,
+) -> Option<EngineOutcome> {
+    let enemy_id = attackers.remove(0);
+    process_attacker_dealing(cx, investigator, enemy_id, cancelled);
+    if cx.state.open_windows().is_empty() {
+        None
+    } else {
+        Some(park_on_soak_window(
+            cx,
+            investigator,
+            std::mem::take(attackers),
+            source,
+        ))
+    }
+}
+
 fn drive_attack_loop(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -778,13 +806,12 @@ fn drive_attack_loop(
             return super::reaction_windows::open_queued_reaction_window(cx);
         }
 
-        // No cancel reaction available: this attacker is not cancelled.
-        attackers.remove(0);
-        process_attacker_dealing(cx, investigator, enemy_id, false);
-
-        // If the attack opened a soak reaction window, suspend (see fn doc).
-        if !cx.state.open_windows().is_empty() {
-            return park_on_soak_window(cx, investigator, attackers, source);
+        // No cancel reaction available: deal this (un-cancelled) attacker,
+        // suspending if it opens a soak window.
+        if let Some(suspended) =
+            deal_head_and_maybe_park(cx, investigator, &mut attackers, source, false)
+        {
+            return suspended;
         }
     }
     EngineOutcome::Done
@@ -837,14 +864,17 @@ pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
     if phase == AttackLoopPhase::BeforeAttack {
         // The before-attack cancel window for the head attacker closed. If a
         // reaction cancelled the attack (Dodge played `Effect::Cancel`), skip
-        // its damage; either way the head attacker is dealt-or-skipped and
-        // exhausted (RR p.6 + p.25).
+        // its damage; either way the head is dealt-or-skipped + exhausted (RR
+        // p.6 + p.25), and a non-cancelled attack may open its own soak window.
         let cancelled = std::mem::take(&mut cx.state.pending_cancellation);
-        let enemy_id = remaining_attackers.remove(0);
-        process_attacker_dealing(cx, investigator, enemy_id, cancelled);
-        // A (non-cancelled) attack may have opened a soak window on the head.
-        if !cx.state.open_windows().is_empty() {
-            return park_on_soak_window(cx, investigator, remaining_attackers, source);
+        if let Some(suspended) = deal_head_and_maybe_park(
+            cx,
+            investigator,
+            &mut remaining_attackers,
+            source,
+            cancelled,
+        ) {
+            return suspended;
         }
     }
 
