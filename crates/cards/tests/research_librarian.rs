@@ -16,7 +16,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
-use game_core::{assert_event, apply, Action, InputResponse, OptionId, PlayerAction};
+use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 const LIBRARIAN: &str = "01032";
 const OLD_BOOK: &str = "01031"; // Item. Tome. asset

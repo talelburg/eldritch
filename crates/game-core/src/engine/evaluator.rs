@@ -493,11 +493,7 @@ fn apply_search_deck(
 
     // 4. Take chosen → hand.
     if let Some(idx) = chosen_deck_index {
-        let inv = cx
-            .state
-            .investigators
-            .get_mut(&who)
-            .expect("checked above");
+        let inv = cx.state.investigators.get_mut(&who).expect("checked above");
         let code = inv.deck.remove(idx);
         inv.hand.push(code.clone());
         cx.events.push(Event::CardSearchedToHand {

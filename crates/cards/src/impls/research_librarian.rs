@@ -26,7 +26,7 @@ use card_dsl::dsl::{
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01032";
 
-/// "[reaction] After Research Librarian enters play: Search your deck for a
+/// "`[reaction]` After Research Librarian enters play: Search your deck for a
 /// Tome asset, add it to your hand, shuffle."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
