@@ -11,6 +11,12 @@ use crate::state::{GameState, LocationId};
 /// `to` is unreachable. Connections are treated as given in
 /// `Location.connections` (the engine maintains them bidirectionally,
 /// but BFS does not assume that).
+///
+/// The unconstrained convenience over [`bfs_distance_with`]; every production
+/// caller now passes a passability predicate (hunter movement excludes
+/// barricaded locations), so this thin wrapper currently has only test
+/// consumers.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) -> Option<u32> {
     bfs_distance_with(state, from, to, |_| true)
 }

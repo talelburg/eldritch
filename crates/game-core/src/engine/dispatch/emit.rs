@@ -108,6 +108,14 @@ pub(crate) enum TimingEvent {
         /// The investigator who controls it.
         controller: InvestigatorId,
     },
+    /// An investigator left a location (forced only — Barricade 01038's
+    /// self-discard). Scans the left location's attachment zone.
+    LeftLocation {
+        /// The investigator who left.
+        investigator: InvestigatorId,
+        /// The location they left.
+        location: LocationId,
+    },
 }
 
 impl TimingEvent {
@@ -143,6 +151,13 @@ impl TimingEvent {
                 investigator,
                 location,
             } => Some(ForcedTriggerPoint::AfterLocationInvestigated {
+                investigator: *investigator,
+                location: *location,
+            }),
+            TimingEvent::LeftLocation {
+                investigator,
+                location,
+            } => Some(ForcedTriggerPoint::LeftLocation {
                 investigator: *investigator,
                 location: *location,
             }),
@@ -253,6 +268,10 @@ impl TimingEvent {
             | TimingEvent::GameEnd
             | TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::SuccessfullyInvestigated { .. }
+            // Non-terminal forced-only site (the move continues to
+            // EnteredLocation); no in-scope card produces 2+ forced here, so
+            // the loud guard is correct (Barricade 01038's single self-discard).
+            | TimingEvent::LeftLocation { .. }
             // Reaction-only Before-timing points: no forced phase (Axis D).
             | TimingEvent::EnemyAttacks { .. }
             // Reaction-only After point: no forced phase (Research Librarian).

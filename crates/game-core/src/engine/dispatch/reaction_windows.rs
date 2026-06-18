@@ -436,7 +436,8 @@ fn trigger_matches(
             | EventPattern::EnemyAttackDamagedSelf
             | EventPattern::SuccessfullyInvestigated
             | EventPattern::EnemyAttacks
-            | EventPattern::EnteredPlay,
+            | EventPattern::EnteredPlay
+            | EventPattern::LeftLocation,
         ) => false,
     }
 }
