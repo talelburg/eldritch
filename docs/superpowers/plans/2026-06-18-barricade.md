@@ -384,12 +384,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - Test: `crates/game-core/src/engine/evaluator.rs` (`#[cfg(test)]`) for the encounter-card path stays; player-card routing is covered by Task 7's integration test (needs registry metadata).
 
 **Interfaces:**
-- Consumes: `CardMetadata::class() -> Option<Class>` (`Class::Mythos` = encounter); `crate::card_registry::current()`.
-- Produces: `DiscardSelf` routing a player-class location attachment to `investigators[controller].discard`, an encounter (`Mythos`/unknown) one to `encounter_discard` (unchanged).
+- Consumes: `CardMetadata::card_type() -> CardType`; `crate::card_registry::current()`.
+- Produces: `DiscardSelf` routing a player-card-type (`Asset | Event | Skill`) location attachment to `investigators[controller].discard`, an encounter/unknown one to `encounter_discard` (unchanged).
 
 - [ ] **Step 1: Note the existing test stays green**
 
-The existing `discard_self_*` tests use encounter codes (01165/01168 → `Class::Mythos`) and must keep routing to `encounter_discard`. No new game-core test here (player-card routing needs real metadata — Task 7's integration test covers it); this task must not regress the encounter path.
+The existing `discard_self_*` tests use encounter codes (01165/01168, `CardType::Treachery`) with no registry installed, so they must keep routing to `encounter_discard`. No new game-core test here (player-card routing needs real metadata — Task 7's integration test covers it); this task must not regress the encounter path.
 
 - [ ] **Step 2: Edit the `att_owner` branch**
 
@@ -404,15 +404,21 @@ In `discard_self` (`crates/game-core/src/engine/evaluator.rs`), replace the loca
             .expect("found above")
             .attachments
             .remove(pos);
-        // A player-class attachment (Barricade 01038) goes to its owner's
-        // player discard; an encounter attachment (Obscuring Fog 01168 —
-        // `Class::Mythos`) to the encounter discard. Owner is unknown without
-        // a registry, so default to the encounter discard (preserves the
+        // A player-card-type attachment (Barricade 01038 — `Event`) goes to
+        // its owner's player discard; an encounter attachment (Obscuring Fog
+        // 01168 — `Treachery`) to the encounter discard. Without a registry the
+        // type is unknown, so default to the encounter discard (preserves the
         // pre-Barricade behavior).
         let is_player_card = crate::card_registry::current()
             .and_then(|reg| (reg.metadata_for)(&card.code))
-            .and_then(|m| m.class())
-            .is_some_and(|c| c != crate::card_data::Class::Mythos);
+            .is_some_and(|m| {
+                matches!(
+                    m.card_type(),
+                    crate::card_data::CardType::Asset
+                        | crate::card_data::CardType::Event
+                        | crate::card_data::CardType::Skill
+                )
+            });
         if is_player_card {
             // Solo: the firing controller is the owner. TODO(#371): track the
             // attachment's owner for multiplayer (owner may differ from the
@@ -1095,4 +1101,4 @@ git push
 
 **Placeholder scan:** The Task-7 integration test flags two implementation-time adapters (the hunter-phase driver entry and `PlayerAction::Move`/`Enemy` field names) — these are mechanical "match the nearest existing test" notes, not behavioral gaps; the assertions are fully specified. The corpus-code verification step (01116/01160) is an explicit check with a documented fallback. No `TODO`/`TBD` in implementation code beyond the intended `TODO(#371)`.
 
-**Type consistency:** `Effect::AttachSelfToLocation` (unit variant) / `attach_self_to_location()`; `Restriction::EnemyMovementBlocked`; `EventPattern::LeftLocation`; `ForcedTriggerPoint::LeftLocation { investigator, location }` / `TimingEvent::LeftLocation { investigator, location }`; `bfs_distance_with` / `shortest_first_steps_with(state, from, to, is_passable)`; `hunter_destinations(state, from, prey, enemy_is_elite)` — all consistent across tasks. `CardMetadata::class() -> Option<Class>`, `Class::Mythos` discriminator used once (Task 4).
+**Type consistency:** `Effect::AttachSelfToLocation` (unit variant) / `attach_self_to_location()`; `Restriction::EnemyMovementBlocked`; `EventPattern::LeftLocation`; `ForcedTriggerPoint::LeftLocation { investigator, location }` / `TimingEvent::LeftLocation { investigator, location }`; `bfs_distance_with` / `shortest_first_steps_with(state, from, to, is_passable)`; `hunter_destinations(state, from, prey, enemy_is_elite)` — all consistent across tasks. `CardMetadata::card_type() -> CardType`, the player-type (`Asset | Event | Skill`) discriminator used once (Task 4).
