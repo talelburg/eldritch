@@ -367,6 +367,9 @@ fn mythos_phase(cx: &mut Cx) {
     for inv in cx.state.investigators.values_mut() {
         inv.action_surcharge_spent_this_round.clear();
     }
+    // New round: round-scoped skill substitutions (Mind over Matter 01036)
+    // expire "until the end of the round".
+    cx.state.skill_substitutions.clear();
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });
@@ -3451,6 +3454,34 @@ mod start_scenario_tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty(), "no events on reject");
+    }
+
+    #[test]
+    fn mythos_phase_clears_round_scoped_skill_substitutions() {
+        use crate::card_data::SkillKind;
+        use crate::state::{InvestigatorId, SkillSubstitution};
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_active_investigator(id)
+            .build();
+        state.round = 1;
+        state.skill_substitutions.push(SkillSubstitution {
+            investigator: id,
+            use_skill: SkillKind::Intellect,
+            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+        });
+        let mut events = Vec::new();
+        super::mythos_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        assert!(
+            state.skill_substitutions.is_empty(),
+            "round bump clears round-scoped substitutions",
+        );
+        assert_eq!(state.round, 2);
     }
 
     #[test]

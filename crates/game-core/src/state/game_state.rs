@@ -259,6 +259,18 @@ pub struct GameState {
     /// outside an in-flight event play.
     #[serde(default)]
     pub pending_played_event: Option<(InvestigatorId, CardCode)>,
+    /// Active round-scoped skill substitutions (Mind over Matter 01036).
+    /// While present, the owning investigator may make a `for_skills` test as
+    /// a `use_skill` test instead (offered at test initiation). Cleared at the
+    /// round boundary ("until the end of the round").
+    #[serde(default)]
+    pub skill_substitutions: Vec<SkillSubstitution>,
+    /// Set while a skill test is paused on its "use X in place of Y?" prompt at
+    /// initiation (Mind over Matter 01036). Routes the next `ResolveInput` to
+    /// `resume_substitution_choice`; holds the test's investigator. `None`
+    /// otherwise.
+    #[serde(default)]
+    pub pending_substitution_prompt: Option<InvestigatorId>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -403,6 +415,20 @@ pub enum AttackLoopPhase {
     /// the head attacker dealt + exhausted. Resume drains the rest (the
     /// pre-Axis-D behavior).
     AfterSoak,
+}
+
+/// An active "use X in place of Y" skill substitution (Mind over Matter
+/// 01036). Round-scoped: cleared at the round boundary. While present, the
+/// owning `investigator` may make a `for_skills` test as a `use_skill` test
+/// instead — the choice is offered at test initiation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillSubstitution {
+    /// Whose tests this substitution applies to.
+    pub investigator: InvestigatorId,
+    /// The skill used in place of `for_skills` (Mind over Matter: Intellect).
+    pub use_skill: SkillKind,
+    /// The skills that may be replaced (Mind over Matter: Combat, Agility).
+    pub for_skills: Vec<SkillKind>,
 }
 
 /// A parked enemy-attack loop, suspended because an attack opened a reaction
