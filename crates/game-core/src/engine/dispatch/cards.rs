@@ -542,6 +542,22 @@ pub(super) fn play_card(
         investigator,
         code: code.clone(),
     });
+    // RR Appendix I, step 3: an event "commences being played" — it leaves
+    // hand now and is placed in discard on *completion* of its effect (step 4),
+    // flushed from `pending_played_event` by the apply loop on `Done`. Stashing
+    // it before running OnPlay means a suspending effect (Dynamite Blast's
+    // location choice) discards the event when it resumes rather than stranding
+    // it in hand. (An asset enters play after its OnPlay effect, below.)
+    if let super::PlayDestination::Discard = destination {
+        let card = cx
+            .state
+            .investigators
+            .get_mut(&investigator)
+            .expect("checked")
+            .hand
+            .remove(idx);
+        cx.state.pending_played_event = Some((investigator, card));
+    }
     let eval_ctx = EvalContext::for_controller(investigator);
     for ability in abilities.iter().filter(|a| a.trigger == Trigger::OnPlay) {
         let outcome = apply_effect(cx, &ability.effect, eval_ctx);
@@ -549,42 +565,47 @@ pub(super) fn play_card(
             return outcome;
         }
     }
-    match destination {
-        super::PlayDestination::InPlay => {
-            // Remove the card from hand, then mint + seed its in-play
-            // instance via the shared constructor (mints the id, seeds the
-            // asset uses-pool) and push it into the play area.
-            let played = cx
-                .state
-                .investigators
-                .get_mut(&investigator)
-                .expect("checked")
-                .hand
-                .remove(idx);
-            let in_play = super::threat_area::new_in_play_instance(cx, played);
-            cx.state
-                .investigators
-                .get_mut(&investigator)
-                .expect("checked")
-                .cards_in_play
-                .push(in_play);
-        }
-        super::PlayDestination::Discard => {
-            let inv_mut = cx
-                .state
-                .investigators
-                .get_mut(&investigator)
-                .expect("checked");
-            let card = inv_mut.hand.remove(idx);
-            inv_mut.discard.push(card.clone());
-            cx.events.push(Event::CardDiscarded {
-                investigator,
-                code: card,
-                from: Zone::Hand,
-            });
-        }
+    if let super::PlayDestination::InPlay = destination {
+        // Remove the card from hand, then mint + seed its in-play instance via
+        // the shared constructor (mints the id, seeds the asset uses-pool) and
+        // push it into the play area.
+        let played = cx
+            .state
+            .investigators
+            .get_mut(&investigator)
+            .expect("checked")
+            .hand
+            .remove(idx);
+        let in_play = super::threat_area::new_in_play_instance(cx, played);
+        cx.state
+            .investigators
+            .get_mut(&investigator)
+            .expect("checked")
+            .cards_in_play
+            .push(in_play);
     }
     EngineOutcome::Done
+}
+
+/// Flush a [`pending_played_event`](crate::state::GameState::pending_played_event)
+/// to its owner's discard pile, emitting [`Event::CardDiscarded`] (`from:
+/// Zone::Hand`). Called by the apply loop when an action completes (`Done`):
+/// per RR Appendix I step 4, an event is placed in discard "simultaneously with
+/// the completion" of its effect — so this fires immediately for a normal event
+/// and on resume for one whose `OnPlay` suspended (Dynamite Blast 01024). A
+/// no-op when no event is mid-play.
+pub(in crate::engine) fn flush_pending_played_event(cx: &mut Cx) {
+    let Some((investigator, code)) = cx.state.pending_played_event.take() else {
+        return;
+    };
+    if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
+        inv.discard.push(code.clone());
+    }
+    cx.events.push(Event::CardDiscarded {
+        investigator,
+        code,
+        from: Zone::Hand,
+    });
 }
 
 #[cfg(test)]

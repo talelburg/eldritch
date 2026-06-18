@@ -71,6 +71,7 @@ pub mod beat_cop;
 pub mod cellar;
 pub mod deduction;
 pub mod dr_milan_christopher;
+pub mod dynamite_blast;
 pub mod emergency_cache;
 pub mod first_aid;
 pub mod flashlight;
@@ -117,6 +118,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
         dr_milan_christopher::CODE => Some(dr_milan_christopher::abilities()),
+        dynamite_blast::CODE => Some(dynamite_blast::abilities()),
         emergency_cache::CODE => Some(emergency_cache::abilities()),
         first_aid::CODE => Some(first_aid::abilities()),
         flashlight::CODE => Some(flashlight::abilities()),
@@ -159,6 +161,7 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| agenda_01105::native_effect_for(tag))
         .or_else(|| agenda_01106::native_effect_for(tag))
         .or_else(|| agenda_01107::native_effect_for(tag))
+        .or_else(|| dynamite_blast::native_effect_for(tag))
         .or_else(|| guard_dog::native_effect_for(tag))
         .or_else(|| treachery_01007::native_effect_for(tag))
         .or_else(|| treachery_01166::native_effect_for(tag))

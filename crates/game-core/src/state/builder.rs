@@ -289,6 +289,7 @@ impl GameStateBuilder {
             clue_interrupt_pending: None,
             pending_enemy_attack: None,
             pending_revelation_discard: None,
+            pending_played_event: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
             agenda_deck: Vec::new(),
