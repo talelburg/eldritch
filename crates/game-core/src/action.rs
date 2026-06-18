@@ -204,6 +204,28 @@ pub enum PlayerAction {
         /// investigator during the Investigation phase.
         investigator: InvestigatorId,
     },
+    /// Engage an enemy at the active investigator's location that the
+    /// investigator is not already engaged with (Rules Reference p.4).
+    /// Spends 1 action; the enemy becomes engaged with the investigator.
+    ///
+    /// Validate: Investigation phase, investigator is active and
+    /// `Status::Active`, `actions_remaining >= 1`, the enemy exists, is
+    /// at the investigator's `current_location`, and is not already
+    /// engaged with the investigator.
+    ///
+    /// Engage is NOT on the AoO-exempt list, so OTHER ready engaged
+    /// enemies make attacks of opportunity before the engagement
+    /// resolves (the target is not engaged at that point, so it does
+    /// not). The multiplayer "engage an enemy engaged with another
+    /// investigator" clause is latent (single `engaged_with` field).
+    Engage {
+        /// Investigator performing the action. Must be the active
+        /// investigator during the Investigation phase.
+        investigator: InvestigatorId,
+        /// The enemy to engage. Must be at the investigator's location
+        /// and not already engaged with the investigator.
+        enemy: EnemyId,
+    },
     /// Play a card from an investigator's hand. Spends no action
     /// point at this stage — play-cost gating (resource cost,
     /// action cost, "Fast" exemption) lives on the card and lands

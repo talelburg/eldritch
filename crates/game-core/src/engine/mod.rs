@@ -2541,6 +2541,203 @@ mod tests {
     }
 
     #[test]
+    fn engage_action_engages_unengaged_enemy_at_location() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let enemy_id = EnemyId(300);
+        let mut enemy = test_enemy(300, "Aloof Ghoul");
+        enemy.current_location = Some(loc);
+        enemy.engaged_with = None;
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, Some(inv_id));
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
+        assert_event!(
+            result.events,
+            Event::EnemyEngaged { enemy, investigator }
+                if *enemy == enemy_id && *investigator == inv_id
+        );
+    }
+
+    #[test]
+    fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let target_id = EnemyId(300);
+        let mut target = test_enemy(300, "Target Ghoul"); // not engaged yet
+        target.current_location = Some(loc);
+        let mut other = test_enemy(301, "Already-Engaged Ghoul");
+        other.current_location = Some(loc);
+        other.engaged_with = Some(inv_id);
+        other.attack_damage = 1;
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(target)
+            .with_enemy(other)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: target_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        // The OTHER engaged enemy made the AoO; the target (not engaged at
+        // AoO time) did not. Target ends engaged; investigator took 1 damage.
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.enemies[&target_id].engaged_with, Some(inv_id));
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
+        );
+    }
+
+    #[test]
+    fn engage_action_rejects_enemy_not_at_location() {
+        let inv_id = InvestigatorId(1);
+        let here = crate::state::LocationId(10);
+        let there = crate::state::LocationId(11);
+        let enemy_id = EnemyId(300);
+        let mut enemy = test_enemy(300, "Distant Ghoul");
+        enemy.current_location = Some(there);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_location(test_location(11, "Hallway"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(here);
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+    }
+
+    #[test]
+    fn engage_action_rejects_already_engaged_enemy() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let enemy_id = EnemyId(300);
+        let mut enemy = test_enemy(300, "Engaged Ghoul");
+        enemy.current_location = Some(loc);
+        enemy.engaged_with = Some(inv_id);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+    }
+
+    #[test]
+    fn engage_action_rejects_unknown_enemy() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i
+            })
+            .with_active_investigator(inv_id)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: EnemyId(999),
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn engage_action_rejects_no_actions_remaining() {
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let enemy_id = EnemyId(300);
+        let mut enemy = test_enemy(300, "Ghoul");
+        enemy.current_location = Some(loc);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i.actions_remaining = 0;
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+    }
+
+    #[test]
     fn move_with_unengaged_enemy_at_origin_leaves_enemy_behind() {
         let (inv_id, a, b, _, mut state) = move_scenario_with_engaged_enemy();
         // Convert the engagement into a non-engagement: enemy is at A

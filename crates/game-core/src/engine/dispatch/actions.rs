@@ -216,6 +216,106 @@ pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> Engi
     EngineOutcome::Done
 }
 
+/// Handler for [`PlayerAction::Engage`]. Engage an enemy at the
+/// investigator's location that they are not already engaged with
+/// (Rules Reference p.4) — it becomes engaged with the investigator.
+///
+/// Validate-first: Investigation phase, active + `Status::Active`,
+/// `actions_remaining >= 1`, enemy in state, enemy at the investigator's
+/// `current_location`, not already engaged with the investigator.
+/// Mutate-second: spend 1 action, fire attacks of opportunity (Engage is
+/// NOT AoO-exempt — the target is not engaged yet so it cannot AoO; only
+/// OTHER engaged ready enemies do), then — if the investigator survived —
+/// engage the enemy.
+pub(super) fn engage(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) -> EngineOutcome {
+    if cx.state.phase != Phase::Investigation {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Engage is only valid during the Investigation phase (was {:?})",
+                cx.state.phase
+            )
+            .into(),
+        };
+    }
+    if cx.state.active_investigator != Some(investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Engage: {investigator:?} is not the active investigator ({:?})",
+                cx.state.active_investigator,
+            )
+            .into(),
+        };
+    }
+    let inv = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Engage: active_investigator {investigator:?} is not in the investigators map; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv.status != Status::Active {
+        return EngineOutcome::Rejected {
+            reason: format!("Engage: {investigator:?} is not Active (status {:?})", inv.status)
+                .into(),
+        };
+    }
+    if inv.actions_remaining < 1 {
+        return EngineOutcome::Rejected {
+            reason: "Engage requires at least 1 action point".into(),
+        };
+    }
+    let inv_location = inv.current_location;
+    let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
+        return EngineOutcome::Rejected {
+            reason: format!("Engage: enemy {enemy_id:?} is not in state").into(),
+        };
+    };
+    if enemy.engaged_with == Some(investigator) {
+        return EngineOutcome::Rejected {
+            reason: format!("Engage: {investigator:?} is already engaged with {enemy_id:?}").into(),
+        };
+    }
+    if enemy.current_location != inv_location {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "Engage: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({:?})",
+                enemy.current_location, inv_location,
+            )
+            .into(),
+        };
+    }
+
+    // Mutate-second.
+    spend_one_action(cx, investigator);
+    super::combat::fire_attacks_of_opportunity(cx, investigator);
+
+    let inv_after = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
+        unreachable!(
+            "Engage: investigator {investigator:?} disappeared between AoO and engagement; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    if inv_after.status != Status::Active {
+        return EngineOutcome::Done;
+    }
+
+    let enemy_mut = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+        unreachable!(
+            "Engage: enemy {enemy_id:?} disappeared between validation and engagement; \
+             this is a state-corruption invariant violation"
+        )
+    });
+    enemy_mut.engaged_with = Some(investigator);
+    cx.events.push(Event::EnemyEngaged {
+        enemy: enemy_id,
+        investigator,
+    });
+    EngineOutcome::Done
+}
+
 /// Handler for [`PlayerAction::Move`].
 ///
 /// Spends 1 action, then updates `current_location` to a connected
