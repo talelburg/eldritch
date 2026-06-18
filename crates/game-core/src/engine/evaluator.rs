@@ -752,7 +752,31 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
             .expect("found above")
             .attachments
             .remove(pos);
-        cx.state.encounter_discard.push(card.code.clone());
+        // A player-card-type attachment (Barricade 01038 — `Event`) goes to its
+        // owner's player discard; an encounter attachment (Obscuring Fog 01168 —
+        // `Treachery`) to the encounter discard. Without a registry the type is
+        // unknown, so default to the encounter discard (preserves the
+        // pre-Barricade behavior).
+        let is_player_card = crate::card_registry::current()
+            .and_then(|reg| (reg.metadata_for)(&card.code))
+            .is_some_and(|m| {
+                matches!(
+                    m.card_type(),
+                    crate::card_data::CardType::Asset
+                        | crate::card_data::CardType::Event
+                        | crate::card_data::CardType::Skill
+                )
+            });
+        if is_player_card {
+            // Solo: the firing controller is the owner. TODO(#371): track the
+            // attachment's owner for multiplayer (owner may differ from the
+            // leaving investigator).
+            if let Some(inv) = cx.state.investigators.get_mut(&eval_ctx.controller) {
+                inv.discard.push(card.code.clone());
+            }
+        } else {
+            cx.state.encounter_discard.push(card.code.clone());
+        }
         // `CardDiscarded` carries an `investigator`; for a location
         // attachment, use the controller as the bookkeeping owner.
         cx.events.push(Event::CardDiscarded {
