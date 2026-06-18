@@ -67,7 +67,7 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
 ### Ordering, dependencies, simplifications
 
 1. **Basic actions first** (#141, #77, Resign) — small, independent; Engage also unblocks #300's condition.
-2. **§1 continuation-stack cleanup before the keystone** (#348, see Refactor triage) — the keystone *adds* suspension modes, so migrate the existing `pending_*` onto the one stack first rather than building the Nth ad-hoc route on top.
+2. **§1 continuation-stack cleanup before the keystone** — the full #348 + #345 + #347 + #380 as one designed pass (see Refactor triage). The keystone *adds* suspension modes, so migrate the existing `pending_*` onto the one stack (with serializable context + token-routed resume) first rather than building the Nth ad-hoc route on top.
 3. **The keystone: mid-action suspend/resume.** Tier-1 B **and** C all hinge on `drive_attack_loop` being able to park the triggering action, open a window, and resume. Build it once and #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase. Fold #119 in for #44's soak (symmetric token storage).
 4. **Skill-test windows** (#374 + #64) — one reaction-window work-stream.
 5. **Roland elder-sign** (#118).
@@ -107,16 +107,21 @@ target.
 Not rules bugs, but several simplify or de-risk the Tier-1 work — pull these in
 rather than deferring wholesale:
 
-- **§1 continuation-stack cleanup — #348 (+ #345, #347, #380). DO-FIRST, before
-  the keystone.** #348 migrates the remaining `pending_*` suspension modes (incl.
-  `pending_enemy_attack`, `pending_end_turn`, `clue_interrupt_pending`) onto the
-  one continuation stack and collapses the fragile `if pending_X.is_some()`
-  `resolve_input` cascade. The keystone adds attack-loop suspension, so cleaning
-  up first means it rides one stack instead of adding another ad-hoc route. #345
-  (serializable `EvalContext`) + #347 (token-routed resume) want a shared
-  brainstorm with #348; #380 folds in. **Caveat:** #345/#347 are Phase-8-robustness
-  motivated — a focused #348 (just the attack-adjacent modes) may be the right
-  *gate* scope, with the full design deferred.
+- **§1 continuation-stack cleanup — the full #348 + #345 + #347 + #380, as one
+  designed pass. DO-FIRST, before the keystone.** #348 migrates the remaining
+  `pending_*` suspension modes (incl. `pending_enemy_attack`, `pending_end_turn`,
+  `clue_interrupt_pending`) onto the one continuation stack and collapses the
+  fragile `if pending_X.is_some()` `resolve_input` cascade; #345 makes
+  `EvalContext` serializable with a composable binding model so migrated frames
+  snapshot context instead of re-storing ingredient tuples; #347 makes resume
+  **token-routed** (deterministic counter, stamped on the awaiting frame) so
+  routing becomes token → frame → dispatch-on-variant, with stale/double-submit
+  rejection; #380 folds in. Designed together (they share the seam). The keystone
+  adds attack-loop suspension, so this lands first and the keystone rides one
+  clean stack. **Token-routing (#347b) also de-risks the browser surface** —
+  #205's client can submit against a superseded prompt and be rejected cleanly,
+  so doing the full cleanup in-phase (rather than a focused subset) pays off at
+  the Slice-D capstone too.
 - **#119 — unify damage/horror/clues onto `CardInPlay`. DO-WITH #44.** #44 (soak
   distribution, Tier-1 C) needs symmetric investigator/asset token storage; #119
   makes the soak machinery symmetric instead of special-casing the investigator
