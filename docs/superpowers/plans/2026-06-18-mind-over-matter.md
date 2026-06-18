@@ -24,28 +24,34 @@
 
 ---
 
-### Task 1: `CardMetadata::play_only_during_turn()` accessor
+### Task 1: `play_only_during_turn` — pipeline-parsed `CardKind` flag
+
+Mirror `is_fast` exactly: a `bool` on `CardKind::{Asset,Event}`, parsed at
+ingestion and stored, read via an accessor. Not a runtime text scan.
 
 **Files:**
-- Modify: `crates/card-dsl/src/card_data.rs` (next to `is_fast()`, ~line 509)
+- Modify: `crates/card-dsl/src/card_data.rs` (`CardKind::Asset` + `CardKind::Event` field; `play_only_during_turn()` accessor next to `is_fast()`)
+- Modify: `crates/card-data-pipeline/src/main.rs` (`NormalizedCard` field + parse + the Asset/Event emit format strings)
+- Modify: `crates/cards/src/generated/cards.rs` (regenerated — do not hand-edit)
+- Modify: the ~22 hand-written `CardKind::{Asset,Event}` literals (add `play_only_during_turn: false`) — files: `crates/card-dsl/src/card_data.rs` (tests), `crates/card-registry.rs`/`abilities.rs`/`combat.rs`/`threat_area.rs` test fixtures in `crates/game-core/src/...`, `crates/scenarios/src/test_fixtures/synth_cards.rs`, `crates/cards/src/impls/treachery_01167.rs`, `crates/cards/tests/{reject_rollback,weapon_fight}.rs`, `crates/game-core/tests/{discard_self,weapon_fight}.rs` (grep to confirm the full set)
 - Test: `crates/card-dsl/src/card_data.rs` (`#[cfg(test)]`)
 
 **Interfaces:**
-- Produces: `CardMetadata::play_only_during_turn(&self) -> bool`.
+- Produces: `CardKind::Asset.play_only_during_turn: bool`, `CardKind::Event.play_only_during_turn: bool`, `CardMetadata::play_only_during_turn(&self) -> bool`.
 
 - [ ] **Step 1: Write the failing test**
 
-In a `#[cfg(test)]` module of `crates/card-dsl/src/card_data.rs` (reuse the existing test module that builds a `CardMetadata`, or add one mirroring `is_fast_tests`), add:
+In `crates/card-dsl/src/card_data.rs` `#[cfg(test)]` (mirror the `is_fast_tests` construction):
 
 ```rust
 #[test]
-fn play_only_during_turn_reads_the_text_clause() {
+fn play_only_during_turn_reads_the_stored_flag() {
     use crate::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-    let mut m = CardMetadata {
+    let event = |play_only_during_turn| CardMetadata {
         code: "01036".into(),
         name: "Mind over Matter".into(),
         traits: vec!["Insight".into()],
-        text: Some("Fast. Play only during your turn.\nUntil the end of the round, …".into()),
+        text: Some("Fast. Play only during your turn. …".into()),
         pack_code: "core".into(),
         kind: CardKind::Event {
             class: Class::Seeker,
@@ -54,50 +60,88 @@ fn play_only_during_turn_reads_the_text_clause() {
             skill_icons: SkillIcons::default(),
             is_fast: true,
             deck_limit: 2,
+            play_only_during_turn,
         },
     };
-    assert!(m.play_only_during_turn());
-    m.text = Some("Fast. Discover 1 clue.".into());
-    assert!(!m.play_only_during_turn());
-    m.text = None;
-    assert!(!m.play_only_during_turn());
+    assert!(event(true).play_only_during_turn());
+    assert!(!event(false).play_only_during_turn());
 }
 ```
 
-(If `SkillIcons::default()` / `CardMetadata` field set differs, copy the construction from the existing `is_fast_tests` module in the same file.)
+(Copy exact field set from the existing `is_fast_tests` `CardMetadata` build; the new field is `play_only_during_turn`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p card-dsl play_only_during_turn_reads_the_text_clause`
-Expected: FAIL — no method `play_only_during_turn`.
+Run: `cargo test -p card-dsl play_only_during_turn_reads_the_stored_flag`
+Expected: FAIL — `CardKind::Event` has no field `play_only_during_turn`.
 
-- [ ] **Step 3: Add the accessor**
+- [ ] **Step 3: Add the field to both card kinds + the accessor**
 
-In `crates/card-dsl/src/card_data.rs`, immediately after the `is_fast()` method:
+In `crates/card-dsl/src/card_data.rs`, add to `CardKind::Asset` (after `uses`) and `CardKind::Event` (after `deck_limit`):
 
 ```rust
-    /// Whether the card's printed text restricts it to "Play only during your
-    /// turn" (Mind over Matter 01036, Working a Hunch 01037, …). Parse-on-read
-    /// from the already-stored `text` — no separate pipeline field. Read at the
-    /// play-timing gate (rare), so deriving it on read is fine.
+        /// Whether the card prints "Play only during your turn" (restricts a
+        /// Fast play to the controller's own Investigation turn). Pipeline-
+        /// parsed, like `is_fast`.
+        play_only_during_turn: bool,
+```
+
+Add the accessor after `is_fast()`:
+
+```rust
+    /// Whether the card is restricted to "Play only during your turn" (Mind
+    /// over Matter 01036, Working a Hunch 01037, …). Only Asset/Event carry
+    /// it; everything else is `false`. Mirrors `is_fast`.
     #[must_use]
     pub fn play_only_during_turn(&self) -> bool {
-        self.text
-            .as_deref()
-            .is_some_and(|t| t.contains("Play only during your turn"))
+        matches!(
+            self.kind,
+            CardKind::Asset { play_only_during_turn: true, .. }
+                | CardKind::Event { play_only_during_turn: true, .. }
+        )
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Parse + emit in the pipeline**
 
-Run: `cargo test -p card-dsl play_only_during_turn_reads_the_text_clause`
-Expected: PASS.
+In `crates/card-data-pipeline/src/main.rs`: add `play_only_during_turn: bool` to `struct NormalizedCard` (next to `is_fast`); parse it next to the `is_fast` parse:
 
-- [ ] **Step 5: Commit**
+```rust
+    let play_only_during_turn = raw
+        .text
+        .as_deref()
+        .is_some_and(|t| t.contains("Play only during your turn"));
+```
+
+set it in the `NormalizedCard { … }` construction (next to `is_fast,`); and add `play_only_during_turn: {}` to **both** the `"Asset"` and `"Event"` emit format strings with `c.play_only_during_turn` as the arg (mirror how `is_fast` appears in each).
+
+- [ ] **Step 5: Regenerate the corpus + fix hand-written literals**
 
 ```bash
-git add crates/card-dsl/src/card_data.rs
-git commit -m "card-dsl: CardMetadata::play_only_during_turn() (parse-on-read)
+cargo run -p card-data-pipeline
+```
+
+Then add `play_only_during_turn: false` to every hand-written `CardKind::Asset`/`CardKind::Event` literal the compiler now flags (the generated `cards.rs` is correct from the pipeline). Find them:
+
+```bash
+grep -rn 'CardKind::Event {\|CardKind::Asset {' crates --include=*.rs | grep -v 'generated/cards.rs'
+```
+
+- [ ] **Step 6: Build + run the test**
+
+Run: `cargo test -p card-dsl play_only_during_turn_reads_the_stored_flag && cargo build --all`
+Expected: PASS / clean (all literals have the field; `cards.rs` regenerated).
+
+Sanity-check the regen picked up the in-scope cards:
+
+Run: `grep -c 'play_only_during_turn: true' crates/cards/src/generated/cards.rs`
+Expected: ≥ 10 (the corpus "Play only during your turn" cards, incl. 01036 + 01037).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add crates/card-dsl/src/card_data.rs crates/card-data-pipeline/src/main.rs crates/cards/src/generated/cards.rs crates
+git commit -m "card-dsl+pipeline: play_only_during_turn flag on Asset/Event
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```

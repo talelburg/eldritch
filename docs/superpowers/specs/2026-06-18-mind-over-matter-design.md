@@ -109,16 +109,19 @@ existing commit/reaction routes (it's the innermost pending; no reaction
 window is open for this test yet). The in-flight record is the parking —
 no need to stash `start_skill_test`'s arguments.
 
-### Component 3 — "Play only during your turn" (a metadata accessor)
+### Component 3 — "Play only during your turn" (a pipeline-parsed metadata flag)
 
-A `CardMetadata::play_only_during_turn()` **parse-on-read accessor** —
-`self.text.as_deref().is_some_and(|t| t.contains("Play only during your
-turn"))`. `CardMetadata` already stores the printed `text`, so this needs
-**no new stored field, no pipeline change, and no corpus regen** (and
-avoids editing the ~22 hand-written `CardKind` literals a new struct field
-would touch). It's checked only at `check_play_card` (rare), so deriving it
-on read is fine.
+A new pipeline-parsed metadata flag, mirroring `is_fast` — parsed at
+ingestion and **stored** on the card kind, *not* matched against card text
+at runtime (runtime text-parsing in the engine would be inconsistent with
+how every other printed property is handled, and a bad precedent):
 
+- `CardKind::{Asset,Event}.play_only_during_turn: bool`, parsed in
+  `card-data-pipeline` from text containing `"Play only during your turn"`,
+  with a `CardMetadata::play_only_during_turn()` accessor that reads the
+  stored field (exactly like `is_fast()`). Costs a **corpus regen**
+  (`cargo run -p card-data-pipeline`) and adding the field to the ~22
+  hand-written `CardKind::{Asset,Event}` literals (mechanical, one-time).
 - `check_play_card` reads it: when set, the Fast gate requires
   `active_during_investigation` (drops the `permissive_window` disjunct),
   so the card can't be played in an out-of-turn permissive Fast window (the
@@ -175,11 +178,12 @@ on read is fine.
   is genuine (a player can want to fail); the type is fixed before
   commits/token (FAQ), so the prompt fires in `start_skill_test` before the
   commit window.
-- **`play_only_during_turn` is a parse-on-read `CardMetadata` accessor**
-  (derived from the already-stored `text`), not a stored `CardKind` field —
-  same behavior with no pipeline change / regen / `CardKind`-literal churn,
-  and it's only read at `check_play_card` (rare). 10 corpus consumers; it
-  retroactively fixes Working a Hunch 01037.
+- **`play_only_during_turn` is a pipeline-parsed `CardKind` flag** (parsed
+  at ingestion, stored, read via `CardMetadata::play_only_during_turn()`) —
+  consistent with `is_fast`, not a runtime text scan (which would be a bad
+  precedent for the engine). The one-time `CardKind`-literal churn + regen
+  is accepted. 10 corpus consumers; it retroactively fixes Working a Hunch
+  01037.
 - **The substitution push is `Effect::Native`** (single consumer); the
   reusable machinery is the `skill_substitutions` state + round expiry +
   the initiation prompt.
