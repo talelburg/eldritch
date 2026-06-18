@@ -114,14 +114,16 @@ fn investigate_to_interrupt(state: GameState) -> (GameState, EngineOutcome) {
 }
 
 #[test]
-fn confirm_discards_from_cover_up_instead_of_discovering() {
+fn playing_cover_up_discards_instead_of_discovering() {
     install();
     let (state, outcome) = investigate_to_interrupt(investigate_state(3));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+    // Play Cover Up (the single offered candidate) in the before-discover
+    // window → discard-from-self + cancel the discovery (Axis D #336).
     let r = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert!(matches!(r.outcome, EngineOutcome::Done));

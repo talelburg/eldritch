@@ -85,6 +85,21 @@ pub(crate) enum TimingEvent {
         investigator: InvestigatorId,
         location: LocationId,
     },
+    /// An enemy is about to attack an investigator (reaction-only, Before).
+    /// Opens the `BeforeEnemyAttack` cancel window — Dodge 01023. (Axis D
+    /// #336.)
+    EnemyAttacks {
+        enemy: EnemyId,
+        investigator: InvestigatorId,
+    },
+    /// An investigator is about to discover clues (reaction-only, Before).
+    /// Opens the `BeforeDiscoverClues` replacement window — Cover Up 01007.
+    /// (Axis D #336; migrated from the C5a `clue_interrupt` seam.)
+    WouldDiscoverClues {
+        investigator: InvestigatorId,
+        location: LocationId,
+        count: u8,
+    },
 }
 
 impl TimingEvent {
@@ -123,7 +138,9 @@ impl TimingEvent {
                 investigator: *investigator,
                 location: *location,
             }),
-            TimingEvent::EnemyAttackDamagedSelf { .. } => None,
+            TimingEvent::EnemyAttackDamagedSelf { .. }
+            | TimingEvent::EnemyAttacks { .. }
+            | TimingEvent::WouldDiscoverClues { .. } => None,
         }
     }
 
@@ -149,6 +166,22 @@ impl TimingEvent {
                     investigator: *investigator,
                 })
             }
+            TimingEvent::EnemyAttacks {
+                enemy,
+                investigator,
+            } => Some(WindowKind::BeforeEnemyAttack {
+                enemy: *enemy,
+                investigator: *investigator,
+            }),
+            TimingEvent::WouldDiscoverClues {
+                investigator,
+                location,
+                count,
+            } => Some(WindowKind::BeforeDiscoverClues {
+                investigator: *investigator,
+                location: *location,
+                count: *count,
+            }),
             _ => None,
         }
     }
@@ -203,7 +236,10 @@ impl TimingEvent {
             | TimingEvent::EnemyDefeated { .. }
             | TimingEvent::GameEnd
             | TimingEvent::EnemyAttackDamagedSelf { .. }
-            | TimingEvent::SuccessfullyInvestigated { .. } => None,
+            | TimingEvent::SuccessfullyInvestigated { .. }
+            // Reaction-only Before-timing points: no forced phase (Axis D).
+            | TimingEvent::EnemyAttacks { .. }
+            | TimingEvent::WouldDiscoverClues { .. } => None,
         }
     }
 }

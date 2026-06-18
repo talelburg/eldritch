@@ -99,6 +99,19 @@ pub(super) fn open_forced_resolution(
     open_queued_reaction_window(cx)
 }
 
+/// Whether investigators `a` and `b` share a (revealed) current location.
+/// Used by the before-attack cancel window's "at your location" scoping
+/// (Axis D #336); two investigators between locations (`None`) never match.
+fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> bool {
+    let loc = |id| {
+        state
+            .investigators
+            .get(&id)
+            .and_then(|i| i.current_location)
+    };
+    loc(a).is_some_and(|la| loc(b) == Some(la))
+}
+
 /// Scan every investigator's `cards_in_play` for
 /// `Trigger::OnEvent` abilities matching `kind`, building a pending-
 /// trigger list in active-investigator-first / turn-order resolution
@@ -130,6 +143,35 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
+        // "at your location" scoping for the before-attack cancel window
+        // (Dodge 01023, Axis D #336): a candidate's controller must be
+        // co-located with the attacked investigator. Other window kinds pass
+        // all controllers through.
+        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
+            if !same_location(state, id, investigator) {
+                continue;
+            }
+        }
+        // "When YOU would discover … at YOUR location" (Cover Up 01007, Axis D
+        // #336): the reaction's controller is the discoverer and must be at the
+        // discovery location. (The per-card `clues > 0` potential gate is in the
+        // card loop below.)
+        if let WindowKind::BeforeDiscoverClues {
+            investigator,
+            location,
+            ..
+        } = kind
+        {
+            if id != investigator
+                || state
+                    .investigators
+                    .get(&id)
+                    .and_then(|i| i.current_location)
+                    != Some(location)
+            {
+                continue;
+            }
+        }
         for card in inv.controlled_card_instances() {
             // Self-binding: for `AfterEnemyAttackDamagedAsset` only the
             // soaked asset instance may trigger `EnemyAttackDamagedSelf`.
@@ -141,6 +183,13 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                 if card.instance_id != asset {
                     continue;
                 }
+            }
+            // Potential-gate stand-in for Cover Up (RR p.2 "an ability cannot
+            // initiate if its effect won't change the game state"; TODO(#368)):
+            // only a source still holding clues to discard can replace the
+            // discovery — an emptied Cover Up would otherwise prompt forever.
+            if matches!(kind, WindowKind::BeforeDiscoverClues { .. }) && card.clues == 0 {
+                continue;
             }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
@@ -206,6 +255,13 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
+        // "at your location" scoping for the before-attack cancel window —
+        // mirrors `scan_pending_triggers` (Dodge 01023, Axis D #336).
+        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
+            if !same_location(state, id, investigator) {
+                continue;
+            }
+        }
         for code in &inv.hand {
             let Some(meta) = (reg.metadata_for)(code) else {
                 continue;
@@ -262,8 +318,22 @@ fn trigger_matches(
     timing: EventTiming,
     controller: InvestigatorId,
 ) -> bool {
-    if timing != EventTiming::After {
-        return false;
+    // Before-timing windows fire only for their exact pattern pairing (Axis D
+    // #336); the "at your location" / eligibility scoping lives in the scans.
+    match timing {
+        EventTiming::Before => {
+            return matches!(
+                (kind, pattern),
+                (
+                    WindowKind::BeforeEnemyAttack { .. },
+                    EventPattern::EnemyAttacks
+                ) | (
+                    WindowKind::BeforeDiscoverClues { .. },
+                    EventPattern::WouldDiscoverClues
+                )
+            );
+        }
+        EventTiming::After => {}
     }
     match (kind, pattern) {
         (
@@ -322,11 +392,16 @@ fn trigger_matches(
         // `AfterSuccessfulInvestigate` matches only `SuccessfullyInvestigated`
         // (handled above); `AfterLocationInvestigated` is the forced twin,
         // never matched by a reaction window.
+        // The Before-timing window kinds never reach here (the `Before`
+        // branch returned above); listed for exhaustiveness, and the
+        // `EnemyAttacks` pattern is likewise Before-only (Axis D #336).
         (
             WindowKind::PlayerWindow(_)
             | WindowKind::AfterEnemyDefeated { .. }
             | WindowKind::AfterEnemyAttackDamagedAsset { .. }
-            | WindowKind::AfterSuccessfulInvestigate { .. },
+            | WindowKind::AfterSuccessfulInvestigate { .. }
+            | WindowKind::BeforeEnemyAttack { .. }
+            | WindowKind::BeforeDiscoverClues { .. },
             EventPattern::EnemyDefeated { .. }
             | EventPattern::CardRevealed { .. }
             | EventPattern::EnemySpawned
@@ -340,7 +415,8 @@ fn trigger_matches(
             | EventPattern::WouldDiscoverClues
             | EventPattern::GameEnd
             | EventPattern::EnemyAttackDamagedSelf
-            | EventPattern::SuccessfullyInvestigated,
+            | EventPattern::SuccessfullyInvestigated
+            | EventPattern::EnemyAttacks,
         ) => false,
     }
 }
@@ -378,7 +454,7 @@ fn build_resolution_options(frame: &ResolutionFrame) -> Vec<ChoiceOption> {
 /// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
 /// (not here) so the event appears at queue time and is symmetric with
 /// the [`open_fast_window`] path.
-pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
+pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
         .top_reaction_window()
@@ -553,12 +629,21 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
     // `clue_discovery_count`. `None` for all other window kinds. (C5b
     // #237.)
-    if let Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) = cx.state.continuations
-        [window_idx]
+    match cx.state.continuations[window_idx]
         .as_resolution()
         .and_then(ResolutionFrame::kind)
     {
-        eval_ctx.attacking_enemy = Some(enemy);
+        Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) => {
+            eval_ctx.attacking_enemy = Some(enemy);
+        }
+        // For `BeforeDiscoverClues`, bind the would-be discovery count so the
+        // replacement effect (Cover Up's "discard that many") discards the
+        // right number. Mirrors `attacking_enemy`. TODO(#368): `count` is the
+        // requested, not the capped, count.
+        Some(WindowKind::BeforeDiscoverClues { count, .. }) => {
+            eval_ctx.clue_discovery_count = Some(count);
+        }
+        _ => {}
     }
     let usage_limit = ability.usage_limit;
 
@@ -987,11 +1072,51 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
         WindowKind::AfterEnemyDefeated { .. } | WindowKind::AfterSuccessfulInvestigate { .. } => {
             EngineOutcome::Done
         }
-        // AfterEnemyAttackDamagedAsset: re-enter the enemy-attack loop the
-        // soak window suspended (C5b #237). `resume_enemy_attack` drains
-        // the parked remaining attackers and, for the enemy phase, runs
+        // AfterEnemyAttackDamagedAsset (soak, C5b #237) + BeforeEnemyAttack
+        // (cancel, Axis D #336): re-enter the enemy-attack loop the window
+        // suspended. `resume_enemy_attack` reads its parked phase to either
+        // honor the cancel + deal the head attacker (BeforeAttack) or drain
+        // the remaining attackers (AfterSoak), then for the enemy phase runs
         // `after_enemy_phase_attacks` once the loop finishes.
-        WindowKind::AfterEnemyAttackDamagedAsset { .. } => super::combat::resume_enemy_attack(cx),
+        WindowKind::AfterEnemyAttackDamagedAsset { .. } | WindowKind::BeforeEnemyAttack { .. } => {
+            super::combat::resume_enemy_attack(cx)
+        }
+        // BeforeDiscoverClues (Cover Up 01007, Axis D #336): the before-discover
+        // window closed. If a reaction cancelled the discovery (Cover Up played
+        // its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
+        // discovery. Then, if a skill test is in flight (the dominant path:
+        // Investigate's follow-up discovery), re-enter its driver — its
+        // continuation was pre-advanced to `PostFollowUp` by `finish_skill_test`
+        // before the follow-up suspended, so this picks up at teardown.
+        WindowKind::BeforeDiscoverClues {
+            investigator,
+            location,
+            count,
+        } => resume_before_discover_window(cx, investigator, location, count),
+    }
+}
+
+/// Resume after a [`WindowKind::BeforeDiscoverClues`] window closes (Cover Up
+/// 01007, Axis D #336). If a reaction cancelled the discovery (Cover Up played
+/// its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
+/// discovery. Then, if a skill test is in flight (the dominant path:
+/// Investigate's follow-up discovery), re-enter its driver — its continuation
+/// was pre-advanced to `PostFollowUp` by `finish_skill_test` before the
+/// follow-up suspended, so this picks up at teardown.
+fn resume_before_discover_window(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    location: crate::state::LocationId,
+    count: u8,
+) -> EngineOutcome {
+    let cancelled = std::mem::take(&mut cx.state.pending_cancellation);
+    if !cancelled {
+        crate::engine::evaluator::perform_discovery(cx, location, count, investigator);
+    }
+    if cx.state.in_flight_skill_test.is_some() {
+        super::skill_test::drive_skill_test(cx)
+    } else {
+        EngineOutcome::Done
     }
 }
 
@@ -1556,6 +1681,51 @@ mod trigger_matches_tests {
     }
 
     #[test]
+    fn trigger_matches_before_pairs() {
+        use crate::state::LocationId;
+        let inv = InvestigatorId(1);
+        assert!(trigger_matches(
+            WindowKind::BeforeEnemyAttack {
+                enemy: EnemyId(1),
+                investigator: inv
+            },
+            &EventPattern::EnemyAttacks,
+            EventTiming::Before,
+            inv,
+        ));
+        assert!(trigger_matches(
+            WindowKind::BeforeDiscoverClues {
+                investigator: inv,
+                location: LocationId(2),
+                count: 1
+            },
+            &EventPattern::WouldDiscoverClues,
+            EventTiming::Before,
+            inv,
+        ));
+        // Wrong timing for the pairing → no match.
+        assert!(!trigger_matches(
+            WindowKind::BeforeEnemyAttack {
+                enemy: EnemyId(1),
+                investigator: inv
+            },
+            &EventPattern::EnemyAttacks,
+            EventTiming::After,
+            inv,
+        ));
+        // A Before window only matches its own pattern.
+        assert!(!trigger_matches(
+            WindowKind::BeforeEnemyAttack {
+                enemy: EnemyId(1),
+                investigator: inv
+            },
+            &EventPattern::WouldDiscoverClues,
+            EventTiming::Before,
+            inv,
+        ));
+    }
+
+    #[test]
     fn game_end_never_matches_a_player_window() {
         // GameEnd is forced-only (`ForcedTriggerPoint::GameEnd`).
         assert!(!trigger_matches(
@@ -1621,7 +1791,7 @@ mod trigger_matches_tests {
                 EventTiming::Before,
                 controller
             ),
-            "Before timing must never match (no Before reaction windows yet)"
+            "Before timing must never match this After-only window/pattern pair"
         );
         // The soak-self pattern must NOT match any other window kind — guards
         // the match-arm ordering (the `=> true` arm is scoped to this kind;

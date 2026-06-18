@@ -226,13 +226,18 @@ pub struct GameState {
     /// awaiting the group's Confirm/Skip at the end of the round. See
     /// [`ActRoundEndPending`].
     pub act_round_end_pending: Option<ActRoundEndPending>,
-    /// Suspended clue-discovery interrupt (C5a, #236). See [`ClueInterruptPending`].
-    #[serde(default)]
-    pub clue_interrupt_pending: Option<ClueInterruptPending>,
     /// `Some` while an enemy-attack loop is suspended on a soak reaction
     /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
     #[serde(default)]
     pub pending_enemy_attack: Option<PendingEnemyAttack>,
+    /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a
+    /// Before-timing reaction window resolves; read-and-cleared by the emit
+    /// site (the enemy-attack loop, `discover_clue`) after the window closes,
+    /// to skip the prevented impact (Axis D #336). A bool suffices because
+    /// Before-windows do not nest in scope — exactly one cancellable impact is
+    /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
+    #[serde(default)]
+    pub pending_cancellation: bool,
     /// A treachery whose Revelation suspended (e.g. initiated a skill
     /// test) and must be pushed to [`encounter_discard`](Self::encounter_discard)
     /// once the suspending sub-resolution completes. Set by
@@ -386,19 +391,38 @@ pub enum EnemyAttackSource {
     AttackOfOpportunity,
 }
 
-/// A parked enemy-attack loop, suspended because an attack's damage
-/// soaked onto an asset and opened an `AfterEnemyAttackDamagedAsset`
-/// reaction window. Resumed by `resume_enemy_attack` once the window
-/// closes — the same suspend/resume shape as [`GameState::pending_end_turn`].
+/// Which point in the per-attacker sequence a parked enemy-attack loop
+/// suspended at (Axis D #336).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AttackLoopPhase {
+    /// Suspended on the `BeforeEnemyAttack` cancel window, *before* the head
+    /// attacker dealt damage. Resume reads `pending_cancellation`, then deals
+    /// (or skips) and exhausts the head attacker.
+    BeforeAttack,
+    /// Suspended on the `AfterEnemyAttackDamagedAsset` soak window, *after*
+    /// the head attacker dealt + exhausted. Resume drains the rest (the
+    /// pre-Axis-D behavior).
+    AfterSoak,
+}
+
+/// A parked enemy-attack loop, suspended because an attack opened a reaction
+/// window — either the soak window (`AfterEnemyAttackDamagedAsset`, after
+/// damage; C5b #237) or the before-attack cancel window (`BeforeEnemyAttack`,
+/// before damage; Axis D #336), distinguished by [`Self::phase`]. Resumed by
+/// `resume_enemy_attack` once the window closes — the same suspend/resume
+/// shape as [`GameState::pending_end_turn`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingEnemyAttack {
     /// The investigator whose engaged enemies are attacking.
     pub investigator: InvestigatorId,
-    /// Attackers not yet resolved (the current attacker already
-    /// resolved before the window opened), in resolution order.
+    /// Attackers not yet resolved, in resolution order. The current attacker
+    /// is still at the head for [`AttackLoopPhase::BeforeAttack`] (it has not
+    /// dealt yet); already removed for [`AttackLoopPhase::AfterSoak`].
     pub remaining_attackers: Vec<EnemyId>,
     /// Which loop to re-enter.
     pub source: EnemyAttackSource,
+    /// Where in the per-attacker sequence the loop suspended (Axis D #336).
+    pub phase: AttackLoopPhase,
 }
 
 /// A frame on the [`GameState::continuations`] suspend/resume stack
@@ -942,6 +966,27 @@ pub enum WindowKind {
         /// The investigator who successfully investigated.
         investigator: InvestigatorId,
     },
+    /// Before-timing window: an enemy is about to attack `investigator` (RR
+    /// p.25 step 3.3). Opens *before* damage is dealt so a co-located cancel
+    /// reaction (Dodge 01023) can cancel the attack. (Axis D #336.)
+    BeforeEnemyAttack {
+        /// The attacking enemy.
+        enemy: EnemyId,
+        /// The investigator being attacked.
+        investigator: InvestigatorId,
+    },
+    /// Before-timing window: `investigator` is about to discover `count`
+    /// clues at `location`. Opens *before* the discovery so a replacement
+    /// reaction (Cover Up 01007) can discard-instead and cancel it. (Axis D
+    /// #336; migrated from the C5a `clue_interrupt` seam.)
+    BeforeDiscoverClues {
+        /// The discovering investigator.
+        investigator: InvestigatorId,
+        /// The location the clues would come from.
+        location: LocationId,
+        /// The number of clues that would be discovered.
+        count: u8,
+    },
 }
 
 /// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits
@@ -1066,30 +1111,6 @@ pub struct SpawnEngagePending {
     pub chain_count: usize,
 }
 
-/// Suspended before-timing clue-discovery interrupt (C5a, #236). `Some`
-/// while `discover_clue` is paused offering the controller the choice to
-/// replace a discovery (Cover Up 01007's `[reaction]`). The resume path
-/// (`resume_clue_interrupt`) applies the choice, then re-enters
-/// `drive_skill_test` if a test is mid-flight.
-// Not `#[non_exhaustive]`: plain serialized suspension state with no
-// construction invariant, and integration tests build it directly to
-// exercise the resume's count-coupling (no count>1 discovery source exists
-// through Investigate in Slice 1).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClueInterruptPending {
-    /// The investigator who would discover (and controls the interrupt card).
-    pub controller: InvestigatorId,
-    /// The location the discovery is from.
-    pub location: LocationId,
-    /// How many clues the discovery would move.
-    pub count: u8,
-    /// The interrupting card instance (Cover Up) — `source` for its effect.
-    pub source: CardInstanceId,
-    /// Index of the `WouldDiscoverClues` ability on the source card, so the
-    /// resume runs the right effect on `Confirm`.
-    pub ability_index: usize,
-}
-
 /// Suspended upkeep maximum-hand-size discard (#111). `Some` only while
 /// the upkeep phase is paused at step 4.5 waiting for an over-cap
 /// investigator to choose discards; cleared once the queue drains.
@@ -1168,6 +1189,27 @@ pub struct ResolutionCandidate {
     /// Where the candidate comes from, deciding how it resolves — see
     /// [`CandidateSource`].
     pub source: CandidateSource,
+}
+
+impl ResolutionCandidate {
+    /// Construct a [`ResolutionCandidate`]. Provided so integration tests
+    /// outside the crate (where `#[non_exhaustive]` blocks struct-literal
+    /// construction) can build a window's pending triggers directly — the same
+    /// rationale as [`ResolutionFrame::new_empty`].
+    #[must_use]
+    pub fn new(
+        code: CardCode,
+        controller: InvestigatorId,
+        ability_index: u8,
+        source: CandidateSource,
+    ) -> Self {
+        Self {
+            code,
+            controller,
+            ability_index,
+            source,
+        }
+    }
 }
 
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
@@ -1472,17 +1514,6 @@ mod location_id_counter_tests {
         let json = serde_json::to_string(&state).expect("serialize");
         let back: crate::state::GameState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.location_ids.peek(), 7);
-    }
-}
-
-#[cfg(test)]
-mod clue_interrupt_pending_tests {
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn clue_interrupt_pending_defaults_none_and_absent_field_loads() {
-        let s = GameStateBuilder::new().build();
-        assert!(s.clue_interrupt_pending.is_none());
     }
 }
 
