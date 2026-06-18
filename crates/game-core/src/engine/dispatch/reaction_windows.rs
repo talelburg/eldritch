@@ -12,7 +12,7 @@
 use std::borrow::Cow;
 
 use crate::action::InputResponse;
-use crate::card_data::CardType;
+use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
@@ -1366,6 +1366,14 @@ pub(super) fn check_play_card(
     let permissive_window = state
         .top_window()
         .is_some_and(|w| w.fast_actors().is_some_and(|fa| fa.permits(investigator)));
+    // "Play only during your turn" (Mind over Matter 01036, Working a Hunch
+    // 01037, …): a Fast card with this clause is restricted to the active
+    // investigator's Investigation turn — never an out-of-turn permissive Fast
+    // window (the Mythos `MythosAfterDraws` window). FAQ: "'your turn' is within
+    // the Investigation phase."
+    let only_during_turn = card_registry::current()
+        .and_then(|reg| (reg.metadata_for)(&code))
+        .is_some_and(CardMetadata::play_only_during_turn);
     // Non-asset/non-event card types are filtered out by
     // `resolve_play_target` above, so `card_type` here is always one of
     // `Asset` or `Event`. The non-Fast arm collapses both into the
@@ -1373,9 +1381,19 @@ pub(super) fn check_play_card(
     // gives events and assets different scopes (any vs owner-only).
     let allowed = if is_fast {
         match card_type {
-            CardType::Event => active_during_investigation || permissive_window,
+            CardType::Event => {
+                if only_during_turn {
+                    active_during_investigation
+                } else {
+                    active_during_investigation || permissive_window
+                }
+            }
             CardType::Asset => {
-                active_during_investigation || (owner_is_active && permissive_window)
+                if only_during_turn {
+                    active_during_investigation
+                } else {
+                    active_during_investigation || (owner_is_active && permissive_window)
+                }
             }
             // Unreachable: `resolve_play_target` rejects every other
             // `CardType` before we get here. Fall back to the strict
