@@ -184,6 +184,14 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                     continue;
                 }
             }
+            // Self-binding: `AfterEnteredPlay` fires only for the instance that
+            // entered play (Research Librarian 01032). Mirrors the soaked-asset
+            // filter above.
+            if let WindowKind::AfterEnteredPlay { instance, .. } = kind {
+                if card.instance_id != instance {
+                    continue;
+                }
+            }
             // Potential-gate stand-in for Cover Up (RR p.2 "an ability cannot
             // initiate if its effect won't change the game state"; TODO(#368)):
             // only a source still holding clues to discard can replace the
@@ -365,6 +373,16 @@ fn trigger_matches(
             WindowKind::AfterSuccessfulInvestigate { investigator },
             EventPattern::SuccessfullyInvestigated,
         ) => investigator == controller,
+        // `AfterEnteredPlay` matches `EnteredPlay`, scoped to the controller
+        // (the entered card's owner). The self-instance scoping is in the scan
+        // (`scan_pending_triggers` filters to the entered instance).
+        (
+            WindowKind::AfterEnteredPlay {
+                controller: window_controller,
+                ..
+            },
+            EventPattern::EnteredPlay,
+        ) => window_controller == controller,
         // PlayerWindow steps open for timing reasons; no
         // Trigger::OnEvent pattern matches them — those windows gate
         // Fast actions, not after-event reactions. AfterEnemyDefeated
@@ -400,6 +418,7 @@ fn trigger_matches(
             | WindowKind::AfterEnemyDefeated { .. }
             | WindowKind::AfterEnemyAttackDamagedAsset { .. }
             | WindowKind::AfterSuccessfulInvestigate { .. }
+            | WindowKind::AfterEnteredPlay { .. }
             | WindowKind::BeforeEnemyAttack { .. }
             | WindowKind::BeforeDiscoverClues { .. },
             EventPattern::EnemyDefeated { .. }
@@ -416,7 +435,8 @@ fn trigger_matches(
             | EventPattern::GameEnd
             | EventPattern::EnemyAttackDamagedSelf
             | EventPattern::SuccessfullyInvestigated
-            | EventPattern::EnemyAttacks,
+            | EventPattern::EnemyAttacks
+            | EventPattern::EnteredPlay,
         ) => false,
     }
 }
@@ -1072,6 +1092,10 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
         WindowKind::AfterEnemyDefeated { .. } | WindowKind::AfterSuccessfulInvestigate { .. } => {
             EngineOutcome::Done
         }
+        // AfterEnteredPlay (Research Librarian 01032): no continuation work —
+        // the asset entered play before the window opened, so closing the
+        // window just finishes the play action.
+        WindowKind::AfterEnteredPlay { .. } => EngineOutcome::Done,
         // AfterEnemyAttackDamagedAsset (soak, C5b #237) + BeforeEnemyAttack
         // (cancel, Axis D #336): re-enter the enemy-attack loop the window
         // suspended. `resume_enemy_attack` reads its parked phase to either

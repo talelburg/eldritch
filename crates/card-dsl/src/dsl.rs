@@ -370,6 +370,13 @@ pub enum EventPattern {
     ///
     /// [`EnemyAttackDamagedSelf`]: Self::EnemyAttackDamagedSelf
     EnemyAttacks,
+    /// The card this ability is printed on entered play (Research Librarian
+    /// 01032: "[reaction] After Research Librarian enters play: …"). Bare and
+    /// **self-referential** — the engine fires it only for the just-entered
+    /// instance (the reaction-window scan filters to that instance), binding
+    /// *you* = the controller. A general "after any card enters play" reaction
+    /// is out of scope; the pattern is reaction-only ([`EventTiming::After`]).
+    EnteredPlay,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can

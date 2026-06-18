@@ -100,6 +100,14 @@ pub(crate) enum TimingEvent {
         location: LocationId,
         count: u8,
     },
+    /// A card entered play (reaction-only, After). Opens the `AfterEnteredPlay`
+    /// window — Research Librarian 01032's tutor.
+    EnteredPlay {
+        /// The card instance that entered play (self-binding scope).
+        instance: CardInstanceId,
+        /// The investigator who controls it.
+        controller: InvestigatorId,
+    },
 }
 
 impl TimingEvent {
@@ -140,6 +148,7 @@ impl TimingEvent {
             }),
             TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::EnemyAttacks { .. }
+            | TimingEvent::EnteredPlay { .. }
             | TimingEvent::WouldDiscoverClues { .. } => None,
         }
     }
@@ -181,6 +190,13 @@ impl TimingEvent {
                 investigator: *investigator,
                 location: *location,
                 count: *count,
+            }),
+            TimingEvent::EnteredPlay {
+                instance,
+                controller,
+            } => Some(WindowKind::AfterEnteredPlay {
+                instance: *instance,
+                controller: *controller,
             }),
             _ => None,
         }
@@ -239,6 +255,8 @@ impl TimingEvent {
             | TimingEvent::SuccessfullyInvestigated { .. }
             // Reaction-only Before-timing points: no forced phase (Axis D).
             | TimingEvent::EnemyAttacks { .. }
+            // Reaction-only After point: no forced phase (Research Librarian).
+            | TimingEvent::EnteredPlay { .. }
             | TimingEvent::WouldDiscoverClues { .. } => None,
         }
     }
