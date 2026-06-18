@@ -288,6 +288,7 @@ impl GameStateBuilder {
             act_round_end_pending: None,
             clue_interrupt_pending: None,
             pending_enemy_attack: None,
+            pending_cancellation: false,
             pending_revelation_discard: None,
             pending_played_event: None,
             encounter_deck: VecDeque::new(),

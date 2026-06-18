@@ -346,6 +346,7 @@ fn apply_effect_inner(
             0, // a Revelation skill test takes its difficulty as printed
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
+        Effect::Cancel => cancel_current_impact(cx),
         Effect::PutIntoThreatArea { code, clues } => {
             let inst = crate::engine::dispatch::threat_area::place_in_threat_area(
                 cx,
@@ -955,6 +956,28 @@ fn discover_clue(
     }
 
     perform_discovery(cx, location_id, count, eval_ctx.controller);
+    EngineOutcome::Done
+}
+
+/// Set the `pending_cancellation` signal for [`Effect::Cancel`] (Axis D #336).
+///
+/// A resolution frame must be open: `Cancel` only resolves inside a
+/// Before-timing reaction window (via `fire_pending_trigger` /
+/// `play_fast_event`), which keeps its frame on the continuation stack until
+/// close. The check is the frame's *presence* — not `top_reaction_window`,
+/// which skips empty `pending_triggers` (the fired candidate is already
+/// removed by the time its effect runs).
+fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
+    debug_assert!(
+        cx.state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, crate::state::Continuation::Resolution(_))),
+        "Effect::Cancel evaluated with no open resolution window — a card \
+         cancelled outside a Before-timing window (TODO(#367) covers nesting; \
+         a malformed card otherwise)"
+    );
+    cx.state.pending_cancellation = true;
     EngineOutcome::Done
 }
 
@@ -1980,6 +2003,33 @@ mod tests {
         );
 
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+    }
+
+    #[test]
+    fn cancel_effect_sets_pending_cancellation() {
+        use crate::state::{Continuation, ForcedContinuation, ResolutionFrame, ResolutionKind};
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        // Effect::Cancel asserts a resolution frame is open; push a minimal one.
+        state
+            .continuations
+            .push(Continuation::Resolution(ResolutionFrame {
+                pending_triggers: Vec::new(),
+                kind: ResolutionKind::Forced(ForcedContinuation::Terminal),
+            }));
+        assert!(!state.pending_cancellation);
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &Effect::Cancel,
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.pending_cancellation);
     }
 
     #[test]

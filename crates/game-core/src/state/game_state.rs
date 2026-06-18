@@ -233,6 +233,14 @@ pub struct GameState {
     /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
     #[serde(default)]
     pub pending_enemy_attack: Option<PendingEnemyAttack>,
+    /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a
+    /// Before-timing reaction window resolves; read-and-cleared by the emit
+    /// site (the enemy-attack loop, `discover_clue`) after the window closes,
+    /// to skip the prevented impact (Axis D #336). A bool suffices because
+    /// Before-windows do not nest in scope — exactly one cancellable impact is
+    /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
+    #[serde(default)]
+    pub pending_cancellation: bool,
     /// A treachery whose Revelation suspended (e.g. initiated a skill
     /// test) and must be pushed to [`encounter_discard`](Self::encounter_discard)
     /// once the suspending sub-resolution completes. Set by
@@ -941,6 +949,27 @@ pub enum WindowKind {
     AfterSuccessfulInvestigate {
         /// The investigator who successfully investigated.
         investigator: InvestigatorId,
+    },
+    /// Before-timing window: an enemy is about to attack `investigator` (RR
+    /// p.25 step 3.3). Opens *before* damage is dealt so a co-located cancel
+    /// reaction (Dodge 01023) can cancel the attack. (Axis D #336.)
+    BeforeEnemyAttack {
+        /// The attacking enemy.
+        enemy: EnemyId,
+        /// The investigator being attacked.
+        investigator: InvestigatorId,
+    },
+    /// Before-timing window: `investigator` is about to discover `count`
+    /// clues at `location`. Opens *before* the discovery so a replacement
+    /// reaction (Cover Up 01007) can discard-instead and cancel it. (Axis D
+    /// #336; migrated from the C5a `clue_interrupt` seam.)
+    BeforeDiscoverClues {
+        /// The discovering investigator.
+        investigator: InvestigatorId,
+        /// The location the clues would come from.
+        location: LocationId,
+        /// The number of clues that would be discovered.
+        count: u8,
     },
 }
 
