@@ -360,6 +360,16 @@ pub enum EventPattern {
     /// "\[reaction\] When an enemy attack deals damage to Guard Dog: Deal 1
     /// damage to the attacking enemy." (C5b #237.)
     EnemyAttackDamagedSelf,
+    /// An enemy is making an attack against an investigator (RR p.25 step
+    /// 3.3). Before-timing only: the cancel/replacement window where Dodge
+    /// 01023 ("when an enemy attacks an investigator at your location:
+    /// cancel that attack") fires. Bare — the "at your location" spatial
+    /// scoping lives in the reaction-window scan (which has board state),
+    /// mirroring the soaked-asset filter for [`EnemyAttackDamagedSelf`].
+    /// (Axis D #336.)
+    ///
+    /// [`EnemyAttackDamagedSelf`]: Self::EnemyAttackDamagedSelf
+    EnemyAttacks,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -635,6 +645,19 @@ pub enum Effect {
     /// (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
     /// 01168). Rejects if there is no source or the instance isn't found.
     DiscardSelf,
+    /// Cancel the current cancellable game impact — the subject of the
+    /// Before-timing window this effect resolves inside. Sets the engine's
+    /// `pending_cancellation` signal, which the emit site honors after the
+    /// window closes, skipping the prevented impact (an enemy attack's
+    /// damage/horror — Dodge 01023; or a clue discovery — Cover Up 01007).
+    /// RR p.6: the cancelled thing is "still regarded as initiated", only
+    /// its effects are prevented. (Axis D #336.)
+    ///
+    /// Cancel is the degenerate replacement ("replace with nothing"): a card
+    /// that replaces with its own effect runs that effect then `Cancel`
+    /// (Cover Up = `Seq[discard-from-self, Cancel]`).
+    /// TODO(#366): a true replace-with-a-different-impact effect.
+    Cancel,
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent
     /// threat-area treacheries (Frozen in Fear 01164, Dissonant Voices
@@ -1986,6 +2009,23 @@ mod tests {
         let json = serde_json::to_string(&p).expect("serialize");
         let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(p, back);
+    }
+
+    #[test]
+    fn cancel_effect_and_enemy_attacks_pattern_round_trip() {
+        let e = Effect::Cancel;
+        let json = serde_json::to_string(&e).expect("serialize");
+        assert_eq!(
+            Effect::Cancel,
+            serde_json::from_str(&json).expect("deserialize")
+        );
+
+        let p = EventPattern::EnemyAttacks;
+        let json = serde_json::to_string(&p).expect("serialize");
+        assert_eq!(
+            EventPattern::EnemyAttacks,
+            serde_json::from_str(&json).expect("deserialize")
+        );
     }
 
     #[test]
