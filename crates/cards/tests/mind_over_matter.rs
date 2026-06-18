@@ -101,7 +101,11 @@ fn commit(state: game_core::GameState, indices: Vec<u32>) -> game_core::engine::
 fn play_then_fight_substituting_succeeds_via_intellect() {
     // combat 1 fails fight-3; intellect 4 passes.
     let r = play_card(board(1, 4, vec![CardCode::new(MOM)]), 0);
-    assert_eq!(r.outcome, EngineOutcome::Done, "MoM plays (Fast, your turn)");
+    assert_eq!(
+        r.outcome,
+        EngineOutcome::Done,
+        "MoM plays (Fast, your turn)"
+    );
     assert!(
         r.state.investigators[&INV]
             .discard
@@ -110,13 +114,22 @@ fn play_then_fight_substituting_succeeds_via_intellect() {
     );
 
     let r = fight(r.state);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }), "substitution prompt");
+    assert!(
+        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "substitution prompt"
+    );
     let r = pick(r.state, 0); // use Intellect
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }), "commit window");
+    assert!(
+        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "commit window"
+    );
     let r = commit(r.state, vec![]);
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert_event!(r.events, Event::SkillTestSucceeded { .. });
-    assert!(r.state.enemies[&ENEMY].damage >= 1, "Fight dealt damage on success");
+    assert!(
+        r.state.enemies[&ENEMY].damage >= 1,
+        "Fight dealt damage on success"
+    );
 }
 
 #[test]
@@ -127,7 +140,10 @@ fn fight_declining_substitution_fails_on_combat() {
     let r = commit(r.state, vec![]);
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert_event!(r.events, Event::SkillTestFailed { .. });
-    assert_eq!(r.state.enemies[&ENEMY].damage, 0, "combat 1 < fight 3 → no damage");
+    assert_eq!(
+        r.state.enemies[&ENEMY].damage, 0,
+        "combat 1 < fight 3 → no damage"
+    );
 }
 
 #[test]
@@ -145,7 +161,10 @@ fn substituted_intellect_test_ignores_committed_combat_icons() {
     );
     let r = fight(r.state);
     let r = pick(r.state, 0); // use Intellect → it's now an Intellect test
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }), "commit window");
+    assert!(
+        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "commit window"
+    );
     let r = commit(r.state, vec![0]); // commit Overpower (combat icons)
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert_event!(r.events, Event::SkillTestFailed { .. });
@@ -219,7 +238,10 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
             ability_index: 0,
         }),
     );
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }), "substitution prompt");
+    assert!(
+        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "substitution prompt"
+    );
     let r = pick(r.state, 0); // use Intellect (drops the +combat weapon bonus)
     let r = commit(r.state, vec![]);
     assert_eq!(r.outcome, EngineOutcome::Done);

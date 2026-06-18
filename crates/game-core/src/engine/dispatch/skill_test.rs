@@ -137,11 +137,7 @@ pub(in crate::engine) fn start_skill_test(
 
 /// Whether `investigator` has an active round-scoped substitution covering a
 /// `skill` test (Mind over Matter 01036: Intellect for Combat/Agility).
-fn substitution_covers(
-    state: &GameState,
-    investigator: InvestigatorId,
-    skill: SkillKind,
-) -> bool {
+fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: SkillKind) -> bool {
     state
         .skill_substitutions
         .iter()
@@ -1376,7 +1372,10 @@ mod tests {
             };
             resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
         };
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "commit window");
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit window"
+        );
         let t = state.in_flight_skill_test.as_ref().unwrap();
         assert_eq!(t.skill, SkillKind::Intellect, "now an intellect test");
         assert_eq!(t.kind, SkillTestKind::Fight, "still a Fight (damage)");
@@ -1414,7 +1413,10 @@ mod tests {
             };
             resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(1)))
         };
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "commit window");
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit window"
+        );
         assert_eq!(
             state.in_flight_skill_test.as_ref().unwrap().skill,
             SkillKind::Agility,
