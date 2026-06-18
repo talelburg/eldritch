@@ -2,300 +2,237 @@
 
 ## Status
 
-✅ **Slice 1 complete** (kickoff [#216](https://github.com/talelburg/eldritch/issues/216), gate [#245](https://github.com/talelburg/eldritch/issues/245)/PR #326).
-Solo Roland plays The Gathering end-to-end to genuine Won + Lost
-resolutions against the real registries; all Group C content reachable on
-today's engine shipped, with the rest carved to tracked follow-ups (the
-#212/#213 choice cluster + the per-card prereqs). Slice 2+ (investigator
-breadth) is the next arc — see "Future slices" below.
-Engine spine (A1/A2) and scenario plumbing (B1/B2) shipped; **Group C**
-(the Gathering content, decomposed into C1–C7, kickoff
-[#246](https://github.com/talelburg/eldritch/issues/246)) is done through
-**C5c**, with **C5d** partially shipped (three engine-free Guardian
-assets, PR #303) and **C5e** shipped down to its one implementable card:
-its engine prereq (`OnCommit` firing + bonus-attack-damage, PR #308) plus
-Vicious Blow 01025 (PR #309, closing #240); its other three cards are all
-choice-/cancellation-/reaction-blocked. See the Group C breakdown table
-below for per-sub-slice state. **Strategy: ship every card implementable
-on today's engine, file follow-ups for the rest, then build the deferred
-machinery (the #212/#213 choice cluster and friends) and return for
-them.** Deferred so far: C5d's Beat Cop + First Aid
-([#301](https://github.com/talelburg/eldritch/issues/301) /
-[#302](https://github.com/talelburg/eldritch/issues/302)); C5e's Evidence!
-/ Dodge / Dynamite Blast
-([#304](https://github.com/talelburg/eldritch/issues/304)–[#306](https://github.com/talelburg/eldritch/issues/306)).
-**C6 is complete** (C6a window, C6b Dr. Milan, C6c neutral cards, C6d
-encounter deck). **Next: C7** — C7a (registry swap + web `SCENARIO_ID`
-repoint) → C7b (the end-to-end Won/Lost integration test that closes
-Slice 1).
+**Slice 1 — Roland through The Gathering — is shipped.** Solo Roland plays the
+scenario end-to-end to genuine Won + Lost resolutions against the real
+registries (kickoff [#216](https://github.com/talelburg/eldritch/issues/216),
+gate [#245](https://github.com/talelburg/eldritch/issues/245)/PR #326). The
+engine spine, scenario plumbing, all Group C content (C1–C7), and the
+five-axis trigger-dispatch rework (#212/#213 + Axes A–D + the choice-cluster
+completion sub-slice) all landed — the detail lives in the closed issues and
+git history; only the architecture a future PR builds on survives in
+**Architecture to build on** below. Slice-1 design specs are in
+`docs/superpowers/specs/2026-06-1*`.
 
-Design specs:
-[Gathering design](../superpowers/specs/2026-06-10-phase-7-slice-1-gathering-design.md),
-[Group C decomposition](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
+**Now: Phase 7 is the 1-player solo rules-correctness gate.** The remaining
+work is every place solo play diverges from the rules. Scope is deliberately
+narrow — **1 player, 1 investigator, Standard** — and the categorized,
+dependency-ordered plan is **The solo correctness gate** below. Investigator
+breadth, difficulty, solo-2, and optional content are **Future slices**.
 
 ## Goal
 
-First real scenario playable in browser, solo, all 5 investigators.
+A solo human, in the browser, picks an investigator, sets up The Gathering,
+and plays it to a resolution — **rules-correct for 1-player Standard**.
 
-## Slice 1 — Roland through The Gathering
+## The solo correctness gate
 
-Vertical-slice-first: one investigator playable end-to-end (solo,
-Standard, win/lose-path fidelity) before breadth. Deferred north-star
-work: `emit_event` dispatch unification (`#212`) + iterative
-trigger-ordering (`#213`), folding in `#117`.
+In scope: anything that makes **1 player / 1 investigator / Standard** play
+wrong. Out: multiplayer, solo-2, perf, refactor, later-scenario, UI. The
+Gathering's encounter deck carries no Surge/Peril, so #138/#139 are not gated
+here.
 
-| Order | Issue | Plan | State |
-|---|---|---|---|
-| — | [#216](https://github.com/talelburg/eldritch/issues/216) — kickoff: spec + engine-spine plans + breakdown | — | ✅ PR #217 |
-| A1 | [#214](https://github.com/talelburg/eldritch/issues/214) — engine-spine primitives (DealDamage/DealHorror, EnteredLocation, Act/Agenda CardCode) | `plans/2026-06-10-…-engine-spine-primitives.md` | ✅ PR #218 |
-| A2 | [#215](https://github.com/talelburg/eldritch/issues/215) — forced-trigger dispatch (`fire_forced_triggers`) — depends on A1 | `plans/2026-06-10-…-forced-trigger-dispatch.md` | ✅ PR #219 |
-| B1 | [#220](https://github.com/talelburg/eldritch/issues/220) — `reference_card` field + symbol-token lookup plumbing | `plans/2026-06-10-…-reference-card-routing.md` | ✅ PR #223 |
-| B2 | [#221](https://github.com/talelburg/eldritch/issues/221) — roster/seating step + `StartScenario` investigator selection (protocol change) | `plans/2026-06-10-…-b2-roster-seating.md` | ✅ PR #225 |
-| B3 | [#222](https://github.com/talelburg/eldritch/issues/222) — registry-swap foundation (server installs real card registry; D5) | — | 🔀 folded into C (C7a [#244](https://github.com/talelburg/eldritch/issues/244)) |
-| — | [#246](https://github.com/talelburg/eldritch/issues/246) — kickoff: Group C decomposition spec + issue breakdown | [`…group-c-decomposition…`](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md) | ✅ PR #247 |
-| C | content: Gathering scenario cards + setup + Roland + signature/weakness + starter deck — **decomposed into C1–C7** ([#227](https://github.com/talelburg/eldritch/issues/227)–[#245](https://github.com/talelburg/eldritch/issues/245)); see breakdown below | [`…group-c-decomposition…`](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md) | 🛠️ in progress |
-| D | integration & web: investigator/scenario picker (end-to-end Won/Lost gate is C7b [#245](https://github.com/talelburg/eldritch/issues/245)) | TBD | 📐 spec'd |
+### Tier 1 — the work
 
-Group A *extends* the existing `reaction_windows.rs` OnEvent machinery
-(not greenfield); forced scenario effects take a separate immediate path
-(`fire_forced_triggers`) distinct from player reaction windows.
+**A. Missing basic actions** (no `PlayerAction` variant exists today):
+- [#141](https://github.com/talelburg/eldritch/issues/141) — Resource action (gain 1; Investigation step 2.2.1).
+- [#77](https://github.com/talelburg/eldritch/issues/77) — Engage (+ Parley). Engage is core; Parley pairs with Lita.
+- [#258](https://github.com/talelburg/eldritch/issues/258) (Resign only) — the Resign action; the rest of #258 is optional content.
 
-### Group C breakdown (C1–C7)
+**B. Attacks of opportunity + non-enemy-phase attack windows** — one cluster,
+one shared mechanism (mid-action park/resume; see the keystone note):
+- [#361](https://github.com/talelburg/eldritch/issues/361) — activated abilities don't provoke AoO (First Aid, Medical Texts, Flashlight).
+- [#378](https://github.com/talelburg/eldritch/issues/378) — action-event play doesn't provoke AoO (Dynamite Blast, Emergency Cache).
+- [#293](https://github.com/talelburg/eldritch/issues/293) — AoO opens no soak/cancel window (Guard Dog, Dodge).
+- [#379](https://github.com/talelburg/eldritch/issues/379) — Retaliate opens no soak/cancel window (Guard Dog, Dodge).
 
-Decomposed in
-[`…group-c-decomposition…`](../superpowers/specs/2026-06-11-phase-7-slice-1-group-c-decomposition-design.md).
-Split along the engine-machinery / card-content seam. `C1a` (#227) is the
-root dependency; C7 is the playable Won/Lost gate; #212 lands after C.
+**C. Enemy-attack-loop player agency:**
+- [#143](https://github.com/talelburg/eldritch/issues/143) — player picks attack order with 2+ engaged enemies.
+- [#44](https://github.com/talelburg/eldritch/issues/44) — player chooses damage/horror distribution across soakers + self (today soak-first auto).
 
-| Sub | Issue | What | State |
-|---|---|---|---|
-| C1a | [#227](https://github.com/talelburg/eldritch/issues/227) | `setup()` world-build + forced location effects | ✅ PR #250 |
-| C1b | [#228](https://github.com/talelburg/eldritch/issues/228) | Act-1 (01108) reverse board-build + Act-3 (01110) forced advance-on-defeat (act-2 01109 objective → C3d) | ✅ PR #259 |
-| C2 | [#229](https://github.com/talelburg/eldritch/issues/229) | 01104 symbol-token effects + victory points | ✅ PR #263 |
-| C3a | [#230](https://github.com/talelburg/eldritch/issues/230) | Prey variants + Retaliate | ✅ PR #269 |
-| C3b | [#231](https://github.com/talelburg/eldritch/issues/231) | the six encounter enemies | ✅ PR #272 |
-| — | [#276](https://github.com/talelburg/eldritch/issues/276) | infra: `Effect::Native` card-local-Rust bridge (prerequisite for C3c's agenda + future bespoke cards) | ✅ PR #277 |
-| C3c | [#232](https://github.com/talelburg/eldritch/issues/232) | agenda 01107 forced (movement + doom; +`RoundEnded`) | ✅ PR #278 |
-| C3d | [#275](https://github.com/talelburg/eldritch/issues/275) | act-2 (01109) round-end clue-spend window (split from C3c) | ✅ PR #279 |
-| C4a | [#233](https://github.com/talelburg/eldritch/issues/233) | threat-area zone + shared scan source (in-C consolidation seam) | ✅ PR #285 |
-| — | [#286](https://github.com/talelburg/eldritch/issues/286) | infra: `Effect::SkillTest` + `ForEachPointFailed` + failure-side follow-up + suspendable-revelation discard (prerequisite for C4b's test treacheries) | ✅ PR #287 |
-| C4b | [#234](https://github.com/talelburg/eldritch/issues/234) | one-shot Revelation treacheries (×4) | ✅ PR #288 |
-| C4c | [#235](https://github.com/talelburg/eldritch/issues/235) | persistent threat-area / attachment treacheries (×3) | ✅ PR #289 |
-| C5a | [#236](https://github.com/talelburg/eldritch/issues/236) | Cover Up before-timing interrupt + `GameEnd` | ✅ PR #291 |
-| C5b | [#237](https://github.com/talelburg/eldritch/issues/237) | Guard Dog reaction + enemy-attack soak mechanic | ✅ PR #292 |
-| — | [#295](https://github.com/talelburg/eldritch/issues/295) | infra: weapon support — ammo/uses (`Cost::SpendUses`) + inspectable `Effect::Fight` (`IntExpr` modifier + bonus damage) (prerequisite for C5c's .38 Special) | ✅ PR #297 |
-| C5c | [#238](https://github.com/talelburg/eldritch/issues/238) | .38 Special signature + Cover Up content | ✅ PR #298 |
-| C5d | [#239](https://github.com/talelburg/eldritch/issues/239) | Guardian L0 assets — .45 Automatic, Physical Training, Machete (PR #303); Guard Dog (C5b); **Beat Cop + First Aid** (PR #357, on the #301/#302 prereqs) | ✅ PR #303 + #357 |
-| — | [#307](https://github.com/talelburg/eldritch/issues/307) | infra: `Trigger::OnCommit` firing + `Effect::BoostAttackDamage` / `InFlightSkillTest.bonus_attack_damage` (prerequisite for C5e's Vicious Blow) | ✅ PR #308 |
-| C5e | [#240](https://github.com/talelburg/eldritch/issues/240) | Guardian L0 events + skill (×4) — **only Vicious Blow 01025 was implementable; shipped (PR #309).** Engine prereq landed (PR #308); Evidence! ([#304](https://github.com/talelburg/eldritch/issues/304), reaction-event-play), Dodge ([#305](https://github.com/talelburg/eldritch/issues/305), attack-cancellation), Dynamite Blast ([#306](https://github.com/talelburg/eldritch/issues/306), location-choice = #212/#213) carved to follow-ups | ✅ PR #309 |
-| C6a | [#241](https://github.com/talelburg/eldritch/issues/241) | Dr. Milan after-investigate window | ✅ PR #318 |
-| C6b | [#242](https://github.com/talelburg/eldritch/issues/242) | Seeker deck cards — **only Dr. Milan 01033 implementable** (its window: C6a); Medical Texts ([#321](https://github.com/talelburg/eldritch/issues/321), PR #360), Old Book of Lore ([#319](https://github.com/talelburg/eldritch/issues/319), PR #370) + Research Librarian ([#320](https://github.com/talelburg/eldritch/issues/320), PR #370) shipped on deck-search; Barricade ([#323](https://github.com/talelburg/eldritch/issues/323), PR #372); Mind over Matter ([#322](https://github.com/talelburg/eldritch/issues/322), PR #376) — **all C6b Seeker cards now shipped** | ✅ PR #324 |
-| — | [#310](https://github.com/talelburg/eldritch/issues/310) | infra: `Effect::DrawCards` primitive (prerequisite for C6c's draw-skills) | ✅ PR #314 |
-| — | [#311](https://github.com/talelburg/eldritch/issues/311) | infra: enforce "Max N committed per skill test" commit cap (prerequisite for C6c's skills) | ✅ PR #315 |
-| C6c | [#243](https://github.com/talelburg/eldritch/issues/243) | Neutral deck cards — **Emergency Cache 01088 + 5 skills** shipped on prereqs #310/#311; Knife 01086 ([#312](https://github.com/talelburg/eldritch/issues/312), discard-self-asset cost) + Flashlight 01087 ([#313](https://github.com/talelburg/eldritch/issues/313), `Effect::Investigate` + shroud) carved to follow-ups | ✅ PR #316 |
-| C6d | [#284](https://github.com/talelburg/eldritch/issues/284) | encounter-deck assembly in `setup()` (quantity-aware, excludes set-aside) — gates C7b; makes Mythos draws + 01106's dig operate live | ✅ PR #317 |
-| C7a | [#244](https://github.com/talelburg/eldritch/issues/244) | registry swap + web `SCENARIO_ID` repoint (B3) | ✅ PR #325 |
-| C7b | [#245](https://github.com/talelburg/eldritch/issues/245) | end-to-end Won/Lost integration test (needs C6d) | ✅ PR #326 |
+**D. Skill-test player windows:**
+[#374](https://github.com/talelburg/eldritch/issues/374) (ST.1/ST.2 fast-play
+windows) + [#64](https://github.com/talelburg/eldritch/issues/64)
+(after-resolution reaction window). Only the commit window exists today.
 
-## Future slices (after Slice 1)
+**E. Roland's signature:**
+[#118](https://github.com/talelburg/eldritch/issues/118) — elder-sign "+1 per
+clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
+(needs-design; see Open questions).
 
-Not yet specced/planned in detail — recorded here so the arc survives a
-fresh session. Rough order; each becomes its own spec → plan → issues
-when picked up.
+**F. Conditional / edge correctness:**
+[#300](https://github.com/talelburg/eldritch/issues/300) (Machete only-engaged-enemy +1),
+[#368](https://github.com/talelburg/eldritch/issues/368) (before-discover eligibility + count cap),
+[#353](https://github.com/talelburg/eldritch/issues/353) (uses-depletion timing).
 
-- **Slice 2+ — investigator breadth.** The other four original-Core
-  investigators (Daisy Walker, "Skids" O'Toole, Agnes Baker, Wendy
-  Adams), each with their signature asset/weakness pair and starter
-  deck — the same content shape as Roland in Slice 1, reusing the engine
-  spine. Likely one slice per investigator (or grouped) once Slice 1
-  proves the pipe. Goal: all five picker-eligible.
-- **Difficulty selection.** Slice 1 ships **Standard** only. Add Easy /
-  Hard / Expert chaos bags + a difficulty picker.
-- **Solo-with-2 UX.** One client driving two investigators — how the
-  picker, turn flow, and board present two characters under one player.
-  Genuinely open design question (see Open questions).
-- **Deferred optional Gathering content** (off the win/lose path, so cut
-  from Slice 1): Lita Chantler's parley/take-control and the Parlor
-  (`01115`) **Resign** action.
-- **Engine north-star — trigger-dispatch rework (cross-slice; kickoff
-  [#327](https://github.com/talelburg/eldritch/issues/327)).** `emit_event`
-  dispatch unification (`#212`) + iterative simultaneous-trigger ordering
-  (`#213`) + the trigger index (`#117`), unblocking the deferred-card
-  choice/reaction cluster. Designed in
-  [umbrella](../superpowers/specs/2026-06-16-trigger-dispatch-rework-umbrella-design.md)
-  + [Axis-B foundation](../superpowers/specs/2026-06-16-trigger-dispatch-rework-axis-b-foundation-design.md)
-  specs ([Axis-B plan](../superpowers/plans/2026-06-16-trigger-dispatch-axis-b-foundation.md)).
-  Five axes: **B** trigger-dispatch spine (one continuation stack +
-  two-phase forced-then-reaction `emit_event`; tasks
-  [#328](https://github.com/talelburg/eldritch/issues/328)–[#332](https://github.com/talelburg/eldritch/issues/332)).
-  **Substantive work done** — T1–T5 (#328–#332) shipped: the `emit_event`
-  chokepoint + `TimingEvent` closed #212; the iterative lead-ordered forced
-  run + reentrancy + the forced-before-reaction investigate collapse closed
-  #213 (T5b, PR #343). The #117 **event-keyed trigger index is deferred** to
-  Phase 4+ (zero perf return at Slice-1 board sizes vs. real index-invariant
-  carrying cost; tracked in #117, plan recorded there) — its Axis-B task
-  wrapper #333 was closed as redundant. #294 was re-examined and **kept open**
-  (its multi-soak-window state is unconstructible in scope — see Decisions),
-  not closed by Axis B. **A** interactive choice
-  ([#334](https://github.com/talelburg/eldritch/issues/334)) — **✅ PR #350**:
-  `Effect::ChooseOne` + `Location`/`Investigator::ChosenByController` + native-leaf
-  picks on a `Continuation::Choice` frame (agenda 01105 + Crypt Chill 01167
-  upgraded; see Decisions). **C** reaction-event-play
-  ([#335](https://github.com/talelburg/eldritch/issues/335)) — **✅ PR #365**:
-  a Fast event in hand (Evidence! 01022, #304) rides the reaction window's one
-  candidate list and is *played* when picked; reaction/forced windows migrated
-  to `PickSingle(OptionId)`; reaction events are window-only at the play gate
-  (see Decisions).
-  **D** cancellation/replacement ([#336](https://github.com/talelburg/eldritch/issues/336)) —
-  **✅ PR #369**: Before-timing dispatch through `emit_event` + an
-  `Effect::Cancel` signal the emit site honors (see Decisions). Dodge 01023
-  (#305) cancels an enemy-phase attack (the attacker still exhausts, RR
-  p.6+p.25); Cover Up 01007 migrated off its bespoke `clue_interrupt` seam onto
-  the general `BeforeDiscoverClues` window. Deferrals: AoO-cancel #293,
-  replacement-beyond-cancel #366, nested-window typed marker #367,
-  before-discover eligibility/count #368. **Axes A–D of the trigger-dispatch
-  rework are now all shipped;** the deck-search tutors Old Book of Lore (#319)
-  and Research Librarian (#320) shipped on `Effect::SearchDeck` (PR #370,
-  closing those two); Barricade (#323) shipped on the attach/movement-block/
-  leave-trigger machinery (PR #372); Mind over Matter (#322) shipped on skill
-  substitution + the round-scoped modifier (PR #376). **All carved Axis-E
-  cards are now shipped.**
-  **E** orthogonal card prereqs (#301/#302/#306/#312/#313/#319/#320/#322/#323).
-  The reachable subset of E (the six cards unblocked by Axes A+B) is sequenced
-  as the **choice-cluster completion** sub-slice — 8 PRs mapped to existing
-  issues, see
-  [decomposition](../superpowers/specs/2026-06-17-phase-7-choice-cluster-completion-decomposition-design.md).
-  Its keystone, the unified `Choose` surface (#349), shipped: **✅ PR #351**
-  (see Decisions; supersedes Axis A's "ChosenByController offers all" note).
-  PR-2 (#301 — `Cost::DiscardSelf` + the enemy variety + `Effect::DealDamageToEnemy`,
-  Beat Cop's engine prereqs) shipped: **✅ PR #352**.
-  PR-3 (#302 — `Effect::Heal` + uses-depletion auto-discard, First Aid's engine
-  prereqs) shipped: **✅ PR #355**. PR-4 (#239 — the Beat Cop + First Aid
-  *cards*) shipped: **✅ PR #357**, **closing C5d** (the last open Group-C
-  sub-slice). The orthogonal #354 (`DealDamage`/`DealHorror` → `Effect::Deal`
-  consolidation) also shipped (PR #356). PR-5 (#312 — Knife 01086, two
-  `[action]` Fight abilities on existing primitives + `Cost::DiscardSelf`)
-  shipped: **✅ PR #358**. PR-6 (#321 — Medical Texts 01035, the first
-  `Effect::SkillTest` from an activated ability, branching heal/deal on a
-  chosen co-located investigator; `heal_damage`/`heal_horror` DSL builders
-  added) shipped: **✅ PR #360** (its choose-before-test ordering is exact
-  in solo, deferred to #359 for multiplayer — mirrors Machete's #300).
-  PR-7 (#313 — Flashlight 01087, the new `Effect::Investigate { shroud_modifier }`
-  primitive: the Investigate mirror of `Effect::Fight`, lowering location
-  difficulty -2 clamped at 0 and reusing the base Investigate follow-up)
-  shipped: **✅ PR #362** (AoO on activated abilities — RR p.5 — is a systemic
-  engine gap also affecting First Aid / Medical Texts, carved to #361).
-  PR-8 (#306 — Dynamite Blast 01024) shipped: **✅ PR #364**, **closing the
-  choice cluster**. A card-local native (location choice +
-  enemy/investigator AoE) rather than a general fan-out: a corpus audit found
-  the only in-scope fan-out consumers are this card + agenda 01105 (different
-  shapes; the rest are Dunwich), so a general `Effect::ForEach` / `EntityTarget`
-  stays deferred and not-yet-designed in #363. Its engine prereq — a played
-  event leaves hand at play-start (`pending_played_event`) and is discarded on
-  *completion* (RR Appendix I step 4), so a suspending `OnPlay` event isn't
-  stranded — also shipped in #364.
-  **The choice-cluster completion sub-slice is done — all 8 PRs merged.**
-  Slice 1's `fire_forced_triggers` is a forward-compatible subset Axis B
-  replaces. **Note:** #213's "one mixed pool" framing was corrected to
-  RR-accurate two-phase (forced-all-before-reaction, RR p.2; issue text
-  amended).
+### Ordering, dependencies, simplifications
 
-Campaign sequencing beyond The Gathering (The Midnight Masks, The
-Devourer Below, campaign log + `Fact` enum) is **Phase 9**, not Phase 7.
+1. **Basic actions first** (#141, #77, Resign) — small, independent; Engage also unblocks #300's condition.
+2. **§1 continuation-stack cleanup before the keystone** — the full #348 + #345 + #347 + #380 as one designed pass (see Refactor triage). The keystone *adds* suspension modes, so migrate the existing `pending_*` onto the one stack (with serializable context + token-routed resume) first rather than building the Nth ad-hoc route on top.
+3. **The keystone: mid-action suspend/resume.** Tier-1 B **and** C all hinge on `drive_attack_loop` being able to park the triggering action, open a window, and resume. Build it once and #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase. Fold #119 in for #44's soak (symmetric token storage).
+4. **Skill-test windows** (#374 + #64) — one reaction-window work-stream.
+5. **Roland elder-sign** (#118).
+6. **Edge correctness** (#300 after Engage, then #368, #353).
+7. **Browser playable surface** (capstone) — once the above stabilizes; see below.
 
-## Issues (filed)
+**Simplifications:**
+- **#300 does not need #363 (general fan-out).** Once Engage (#77) exists, Machete's "only enemy engaged with you" is a count==1 read — gate `extra_damage` on it; don't wait for multi-target Fight.
+- **#367 is likely a wontfix for this gate** — Before-windows don't nest in 1-player scope, so the `bool` cancellation marker suffices.
+- **#380 folds into #348** (continuation-stack cleanup) — see Refactor triage.
 
-| # | Title | Notes |
-|---|---|---|
-| `#65` | skill-test other-investigator commits | Needed for multi-investigator commit scenarios; tagged Phase 7 because that's the first real-card consumer. |
-| `#77` | Parley + Engage actions | Basic player actions needed for full scenario coverage. |
+### Browser playable surface (the former "Slice D") — capstone
 
-## Decisions made
+The gate's "done" is a solo human playing in the *browser*, not just a green
+integration test. Once the Tier-1 fixes stabilize, this is the first follow-on:
+the web client (shipped Phase 6) must drive the **real** Gathering scenario.
 
-- **"Solo with 1–2 investigators" is the supported mode** for this phase — code should handle 1–2 investigators (lead-investigator tiebreaks, group clue pools), but multiplayer across machines is Phase 8.
+- **#205 — structured `AwaitingInput` discrimination (load-bearing, needs-design).**
+  The Gathering's cards are the first to emit non-`CommitCards` prompts
+  (`PickIndex` / `PickInvestigator` / `Confirm` / `Skip` / `DiscardCards`); the
+  client must render the right control per variant from a machine-readable
+  `InputKind`, not prompt-string heuristics. Keystone of the surface; pairs with
+  #347 (token-routed resume → stale-submit rejection).
+- **Investigator / scenario picker.** The seating protocol (B2 #221) + registry
+  swap (C7a #244) exist engine-side; the browser picker driving `StartScenario`
+  with a chosen investigator is the remaining UI.
+- **End-to-end browser playthrough** of The Gathering to a resolution, driven
+  through the client (the C7b coverage, but via the browser).
 
-- **Card stats come from the corpus — read via `cards::by_code` / `metadata_for`, never hand-typed** ([#254](https://github.com/talelburg/eldritch/issues/254) `CardKind` remodel, [#252](https://github.com/talelburg/eldritch/issues/252) ingestion). `CardMetadata` is an identity core + a `kind: CardKind` enum carrying type-specific printed stats (`Location { shroud, clues, victory }`, `Act { clue_threshold, victory }`, `Agenda { doom_threshold }`, `Enemy { fight, evade, damage, horror, health, victory, quantity, keywords, … }`); the 8 in-scope encounter files are ingested. `scenario`-type cards (e.g. ref card 01104) are **not** in the corpus — their effects live in `abilities()` impls / scenario hooks. Enemy keywords / spawn-location / per-investigator health are pipeline-parsed, so **future enemies need no hand-written impl** — they land via a snapshot bump + regen (`spawn_enemy` reads everything from `CardKind::Enemy`; out-of-scope keyword forms default + emit a build warning, never silently approximate).
+Positioned **after** Tier 1: every new Tier-1 input site (AoO targeting, attack
+order, damage distribution, skill-test windows) adds an `AwaitingInput` shape the
+surface must render, so building #205 before they exist designs against a moving
+target.
 
-- **`emit_event` unification (#212) lands *after* Group C, not before it; until #213, simultaneous triggers resolve in a fixed deterministic order.** C extends the existing `ForcedTriggerPoint` dispatcher + reaction-window pipeline with new timing points (`RoundEnded`, `EndOfTurn`, `AfterLocationInvestigated`, `GameEnd`, damage/investigate windows) as content demands; #212 then consolidates them into one emit-driven chokepoint, validated against C's real content. Front-loading #212 would design its event taxonomy before the cards defining its requirements exist.
+### Refactor / tech-debt triage
 
-- **Scenario chaos-symbol / reference-card effects live on a `ScenarioModule.resolve_symbol` hook, not card `abilities()` (C2, [#229](https://github.com/talelburg/eldritch/issues/229), PR #263).** A reference card is one-per-scenario, never a card-object, and board-dependent, so it doesn't fit the `abilities()` model; the scenario module owns it via `fn(ChaosToken, &SymbolCtx) -> SymbolOutcome` (a `modifier` applied before pass/fail + `immediate`/`on_fail` `TokenEffect`s after). **Future scenarios' reference cards add a `resolve_symbol` hook, not card impls** — no new DSL primitives.
+Not rules bugs, but several simplify or de-risk the Tier-1 work — pull these in
+rather than deferring wholesale:
 
-- **Single-use card logic lives card-locally via `Effect::Native { tag }`; add a shared `card_dsl::Effect` variant only when ≥2 cards reuse the pattern ([#276](https://github.com/talelburg/eldritch/issues/276), PR #277).** The registry's `native_effect_for: fn(&str) -> Option<NativeEffectFn>` lets the `cards` crate supply Rust card-locally, dispatched by tag (`"<cardcode>:<name>"`); the bridge lives in the registry because `card-dsl` is below `game-core`. Genuinely-reused ops are shared variants (`AdvanceCurrentAct`, `SkillTest`, `ForEachPointFailed`); one-offs (Crypt Chill's asset discard, Ancient Evils' doom via `place_doom_on_current_agenda`) stay native. Orthogonal to #212 (which unifies *trigger dispatch*, not effect *supply*).
+- **§1 continuation-stack cleanup — the full #348 + #345 + #347 + #380, as one
+  designed pass. DO-FIRST, before the keystone.** #348 migrates the remaining
+  `pending_*` suspension modes (incl. `pending_enemy_attack`, `pending_end_turn`,
+  `clue_interrupt_pending`) onto the one continuation stack and collapses the
+  fragile `if pending_X.is_some()` `resolve_input` cascade; #345 makes
+  `EvalContext` serializable with a composable binding model so migrated frames
+  snapshot context instead of re-storing ingredient tuples; #347 makes resume
+  **token-routed** (deterministic counter, stamped on the awaiting frame) so
+  routing becomes token → frame → dispatch-on-variant, with stale/double-submit
+  rejection; #380 folds in. Designed together (they share the seam). The keystone
+  adds attack-loop suspension, so this lands first and the keystone rides one
+  clean stack. **Token-routing (#347b) also de-risks the browser surface** —
+  #205's client can submit against a superseded prompt and be rejected cleanly,
+  so doing the full cleanup in-phase (rather than a focused subset) pays off at
+  the Slice-D capstone too.
+- **#119 — unify damage/horror/clues onto `CardInPlay`. DO-WITH #44.** #44 (soak
+  distribution, Tier-1 C) needs symmetric investigator/asset token storage; #119
+  makes the soak machinery symmetric instead of special-casing the investigator
+  side.
+- **Defer (no gate consumer):** #290 (mint encounter instances at reveal —
+  simplifies #373/#371 but no 1p correctness need), #373 (Obscuring Fog
+  attach-unify — single card, pairs with #290), #346 (two-pass for
+  choice-after-`Seq` — no in-scope card), #363 (general fan-out — #300's
+  simplification avoids it; Dunwich-era), #366 (replace-with-different-impact — no
+  in-scope card).
 
-- **Forced "choose one" effects defer the interactive choice to #212, shipping a deterministic legal branch now (`TODO(#212)`) rather than building bespoke `AwaitingInput` suspension.** The engine lacks mid-forced-dispatch suspension (`ChooseOne` is a stub); #212 owns it. Used by agenda 01105 (the 2-horror branch; PR #283) and Crypt Chill 01167 (discard the first controlled asset). A recorded-randomness branch (01105's random discard) is rejected as a default because it needs replay-recorded randomness.
+### Housekeeping
+- **Close #56** (the Study location is built and played end-to-end) and **#294** (unconstructible in scope — its own `debug_assert` guards it).
 
-- **A card effect initiates a skill test via `Effect::SkillTest { skill, difficulty, on_fail }` with a margin-keyed `Effect::ForEachPointFailed` failure branch; a suspending Revelation discards via `GameState.pending_revelation_discard` (C4b prereq [#286](https://github.com/talelburg/eldritch/issues/286), PR #287).** `SkillTest` calls `start_skill_test` (always suspends at the commit window); `on_fail` (on `InFlightSkillTest.on_fail`, orthogonal to the success-side `follow_up`) runs on failure with the margin in `EvalContext::failed_by`. A test-initiating Revelation suspends, so `resolve_encounter_card` records the treachery in `pending_revelation_discard`, flushed at skill-test teardown (no-op for a plain Investigate — the seam C4c extends). **`Active` status = in-play, not turn ownership, so Mythos-phase treachery tests are legal.**
+### Out of scope (defer past the gate)
+- **Solo-2** (one player, two investigators): #65, #381, #359, #153, #371.
+- **Phase 8 multiplayer:** #146, #151, #206.
+- **Later scenarios:** #138, #139 (no Surge/Peril in The Gathering).
+- **Perf / infra:** #117, #174, #224, #26, #31.
+- **Optional content:** #258 (Lita parley / Parlor — minus the Resign action above).
 
-- **Threat-area scan source (C4a, [#233](https://github.com/talelburg/eldritch/issues/233), PR #285) + C4c ([#235](https://github.com/talelburg/eldritch/issues/235)) extension points.** `Investigator::controlled_card_instances()` (chains `cards_in_play` + `threat_area`) is the single scan source for both reaction-window and forced instance scans; cards enter/leave the threat area via `dispatch::threat_area::{place_in_threat_area, discard_from_threat_area}`. New forced points `EndOfTurn` and `AfterLocationInvestigated` (skill-test `PostOnResolution`, successful Investigate) landed. **C4c must:** thread the *source instance* into the forced `EvalContext` (`resolve_one` binds controller only); extend `AfterLocationInvestigated` to also scan the investigated *location's* attachment zone (Obscuring Fog 01168 attaches to a location, not the threat area); and extend `pending_revelation_discard` (above) for persistent treacheries that stay in the threat area instead of discarding. Suspension at these forced points is unmodeled (#212 reentrancy).
+(Refactor / tech-debt issues are triaged above, not here — several are pull-ins.)
 
-- **A persistent treachery is one with any non-Revelation ability; it owns its own disposition (C4c, [#235](https://github.com/talelburg/eldritch/issues/235), PR #289).** `resolve_encounter_card` auto-discards a treachery after its Revelation **only if every ability is `Trigger::Revelation`**; a card carrying a `Constant`/`OnEvent` ability places itself (threat area via `place_in_threat_area`, or location via `attach_to_location`) and discards itself later via the typed `Effect::DiscardSelf` (which finds the firing instance through `EvalContext::source`). No suppress-discard flag. **A new persistent treachery needs no routing change — give it an ongoing ability and a self-placement Revelation.** Constant restrictions extend the inspectable DSL (`Stat::Shroud`, `Restriction::{CannotPlay, ExtraActionCost}` under `Effect::Restrict`), read by `effective_shroud` / `play_is_prohibited` / `pending_action_surcharge` the way `constant_skill_modifier` already reads `Modify` — **not** via new registry query hooks. `ExtraActionCost`'s `first_each_round` stays a field (tracked per source instance in `Investigator.action_surcharge_spent_this_round`) until a second consumer needs the gate on a non-cost mechanism.
+## Architecture to build on
 
-- **Simultaneous forced triggers resolve in a fixed deterministic order, and a suspending forced effect at end-of-turn resumes via `pending_end_turn` (C4c, PR #289).** `fire_forced_triggers` now resolves *all* collected hits in collection order (board cards before threat-area/attachment instances; `BTreeMap` order) instead of rejecting on 2+ — this is the partial #213 stand-in (player-chosen ordering is still #213). It lets Dissonant Voices' `RoundEnded` discard coexist with agenda 01107's `RoundEnded` doom. A hit that *suspends* abandons later hits (#212 reentrancy); safe while no point has 2+ simultaneous suspending hits. `Effect::SkillTest` gained a success-side `on_success` (mirror of `on_fail`); a suspending `EndOfTurn` forced effect (Frozen in Fear's willpower test) strands `end_turn` before rotation, so `end_turn` records `pending_end_turn` and the skill-test commit-resume path re-enters `resume_end_turn` (rotation / phase-end) — mirroring `spawn_engage_pending`/`resume_spawn_engage`.
+Only the facts a future PR-author needs that aren't obvious from the code or
+the issues.
 
-- **Before-timing clue-discovery interrupt is a card-local seam at the `discover_clue` chokepoint, not a general before-timing reaction-window subsystem (C5a, [#236](https://github.com/talelburg/eldritch/issues/236), PR #291).** When the controller holds a `WouldDiscoverClues` (`EventTiming::Before`) reaction, `discover_clue` suspends with a yes/no `AwaitingInput` (`GameState.clue_interrupt_pending`); `resume_clue_interrupt` (routed before the skill-test path in `resolve_input`) runs the card-local `Effect::Native` replacement on `Confirm` (count threaded via `EvalContext.clue_discovery_count`) or the deferred discovery on `Skip`. Reentrancy: `finish_skill_test` **pre-advances** its continuation to `PostFollowUp` before the Investigate follow-up, so a suspending discovery resumes through `in_flight_skill_test` without re-running the follow-up — **bounded to terminal-position discovery** (the base Investigate follow-up, the only Slice-1 clue source; nested-in-`Seq` is #212). **A future before-timing interrupt reuses this seam.** The seam's `card.clues > 0` eligibility gate is a **single-consumer stand-in for RR p.2's "ability must have potential to change the game state"** — the engine models this nowhere; lift it into a card-provided per-ability predicate when a 2nd `WouldDiscoverClues` card lands (`TODO(#212)`). Bespoke effects (discard-from-self, suffer-trauma) stay `Effect::Native`, integration-tested via `synth_cards::TEST_REGISTRY`.
+**Attack loop (keystone for Tier-1 B/C).** `enemy_attack` does `assign → place
+→ defeat`, soak-first by `CardInstanceId` order (the #44 replacement point);
+window-queuing lives in the caller `drive_attack_loop`, which parks remaining
+attackers and returns `AwaitingInput` around a window, resuming via
+`resume_enemy_attack` (the enemy-phase cursor advances once via
+`after_enemy_phase_attacks`). **Both `fire_attacks_of_opportunity` (called
+from the Move/Investigate handlers) and `fire_retaliate_if_any` call
+`enemy_attack` directly, bypassing the loop — so they open no windows;
+`EnemyAttackSource::AttackOfOpportunity` is the reserved-unconstructed variant
+the fix wires up.** Exhaust rules differ by source: enemy-phase always
+exhausts (cancelled too — RR p.6/p.25); AoO never (RR p.7); Retaliate never
+(RR p.18). Activating an ability or playing an event fire no AoO today.
 
-- **`ForcedTriggerPoint::GameEnd` fires once from `fire_scenario_resolution` on the resolution latch; game-end trauma is `Event::TraumaSuffered`-only (C5a, PR #291).** It scans every investigator's `controlled_card_instances()` for `EventPattern::GameEnd` forced abilities, before the scenario-module `apply_resolution` hook (so it runs even with no module). Trauma persistence (campaign log, max-stat reduction) is **Phase 9** — C5a emits the event and mutates no state.
+**Trigger spine.** `emit_event` is the one dispatch chokepoint (two-phase
+forced-then-reaction, RR p.2). Simultaneous triggers resolve through the
+`Continuation::Resolution` loop (lead-ordered, RR p.17); `ResolutionFrame.kind
+= Window | Forced`. Reentrancy across a forced/window effect that suspends into
+a skill test hinges on `drive_skill_test` reacting only to a window *above*
+the in-flight `SkillTest` frame, never a forced frame below it. Reaction/forced
+windows resume via `PickSingle(OptionId)` (the legacy `PickIndex` path is
+retired).
 
-- **Enemy-attack damage/horror soak is `assign → place → defeat → window`; assignment is soak-first deterministic, with interactive distribution deferred to a reframed #44 (C5b, [#237](https://github.com/talelburg/eldritch/issues/237), PR #292).** `enemy_attack` builds soakers (controlled assets with `CardKind::Asset` remaining `health`/`sanity` capacity), `assign_attack` fills them by `CardInstanceId` order before the investigator (symmetric for damage/horror), `place_assignment` places simultaneously (RR p.7) then defeats overflowed assets (`accumulated_* >= printed stat` → discard), and returns surviving damaged assets. The window-queuing lives in the **caller** (`drive_attack_loop`), not `enemy_attack`, so the enemy phase opens reaction windows while attacks of opportunity don't (see next entry). **#44's remaining scope is now just the interactive `{target → points}` distribution** (replacing the soak-first `assign_attack` body, `TODO(#44)`); soak-first is the only deterministic default that makes a soak reaction observable. A new soak reaction adds an `EnemyAttackDamagedSelf` ability (bare; self-bound to the soaked instance via `scan_pending_triggers`) — **no routing change**; the attacking enemy reaches the effect via `EvalContext.attacking_enemy`. Guard Dog's retaliate is `Effect::Native` (first card to damage a specific enemy from a reaction; public entry `deal_damage_to_enemy`).
+**Choice & cancellation.** Interactive choice is single-pass suspend-and-replay
+on a `Continuation::Choice` frame: `resolve_choice_count` (0 ⇒ reject/printed
+fallback · 1 ⇒ auto-bind · 2+ ⇒ suspend), replayed pre-order via a
+`DecisionCursor`; DSL targets bind through `ground_chosen_targets`, native
+leaves read `EvalContext.chosen_option`. Spatial targets use the unified
+`Choose<S> { scope }` surface (`LocationSet { Here, Anywhere }` /
+`EntityScope`). Before-timing cancellation is a Before reaction window the
+caller suspends on + an `Effect::Cancel` leaf that sets `pending_cancellation`,
+which the emit site honors on window close; a `bool` suffices because
+Before-windows don't nest in scope (#367). A reaction event (Evidence! 01022)
+is a Fast event carried on the reaction window's candidate list and *played*
+when picked; it is window-only at the play gate (`TriggerKind::Reaction`
+`OnEvent`).
 
-- **The enemy-phase attack loop suspends/resumes around a soak reaction window via `pending_enemy_attack`; attacks of opportunity soak but do NOT yet open the window (C5b, PR #292).** `drive_attack_loop` parks the remaining attackers and returns `AwaitingInput` when an attack opens a soak window; `resume_enemy_attack` (from the `AfterEnemyAttackDamagedAsset` window-close continuation) re-enters at the next attacker, advancing the enemy-phase cursor exactly once via the extracted `after_enemy_phase_attacks`. **AoO is the deferred gap:** full AoO reactions need a new mechanism to suspend/resume the *triggering action* (Move's relocation, Investigate's already-suspending skill test), so `fire_attacks_of_opportunity` deliberately drops the soak-window survivors (window-safe; Guard Dog soaks AoO damage but doesn't retaliate). The fast-follow ([#293](https://github.com/talelburg/eldritch/issues/293)) routes `fire_attacks_of_opportunity` through `drive_attack_loop` (`EnemyAttackSource::AttackOfOpportunity` is the reserved-but-unconstructed variant) + action suspension. Multi-soak-window-per-attack resume ([#294](https://github.com/talelburg/eldritch/issues/294)) is `debug_assert`-guarded (unreachable in Slice 1: only Guard Dog reacts, two copies need two illegal Ally slots; coordinates with #213).
+**Skill-test player windows are NOT modeled (#374).** Only the commit window
+exists; the ST.1/ST.2 framework player windows and the after-resolution window
+(#64) are absent — `OnCommit` / `OnSkillTestResolution` card triggers fire, but
+a player cannot play a Fast card mid-test.
 
-- **A weapon needs no engine work — it's `Cost::SpendUses` + `Effect::Fight` data, with ammo from the corpus (C5c prereq [#295](https://github.com/talelburg/eldritch/issues/295), PR #297).** `Uses (N <kind>)` is pipeline-parsed into `CardKind::Asset.uses`; the kind enum (`UseKind`) lives in `card-dsl` so the printed metadata and the engine's `CardInPlay.uses` runtime pool share one type. A firearm's ability is `activated(cost, vec![Cost::SpendUses { kind, count }], fight(IntExpr::cond(LocationHasClues, hi, lo), extra_damage))` — the inspectable `Effect::Fight` auto-targets the single engaged enemy, snapshots its modifier onto `InFlightSkillTest.test_modifier`, and reuses the skill-test suspend/resume path; the Fight follow-up deals `1 + extra_damage`. **`Effect::Fight` is typed, not `Native`,** so `check_activate_ability` can reject a fire with ≠1 engaged enemy before charging (multi-target selection deferred to the #212/#213 cluster; `effect_initiates_fight` is top-level-only, `TODO(#212/#213)` for a `Seq`/`If`-nested Fight). Conditional numeric values use `IntExpr { Lit, Cond }` over the general `Condition` (e.g. `LocationHasClues`) rather than duplicating the effect in an `Effect::If`. **A future weapon (breadth slices) lands via corpus + this data — no new engine primitives.** Instance-id-mint / put-into-play helper consolidation surfaced here is deferred to [#296](https://github.com/talelburg/eldritch/issues/296).
+**Content patterns (mostly later slices).** Card stats come from the corpus
+(`CardKind`; read via `cards::by_code` / `metadata_for`, never hand-typed) — a
+future enemy/card lands via a snapshot bump + regen, no impl. Single-use card
+logic is `Effect::Native { tag }` (promote to a shared `Effect` variant only at
+≥2 reuses). Scenario chaos-symbol / reference-card effects live on the
+`ScenarioModule.resolve_symbol` hook, not card `abilities()`.
 
-- **C5d ships only the engine-free Guardian assets; Beat Cop + First Aid are split to engine follow-ups (C5d, PR #303).** .45 Automatic (01016), Physical Training (01017), and Machete (01020) are pure corpus + existing-primitive data (`Effect::Fight` / `Cost::SpendUses` / `ThisSkillTest` `Modify`). The other two need new primitives, so they're carved out the way #276/#286/#295 carved earlier C prereqs: Beat Cop's fast ability wants choose-target "deal damage to an enemy at your location" + a discard-self cost ([#301](https://github.com/talelburg/eldritch/issues/301)); First Aid wants `Effect::Heal` + uses-depletion auto-discard ([#302](https://github.com/talelburg/eldritch/issues/302)). #239 stays open tracking that content; Guard Dog (01021) already shipped in C5b. **Machete's "+1 damage if the attacked enemy is the only enemy engaged with you" is encoded as unconditional `extra_damage: 1`** — exact while Fight is single-target (`Effect::Fight` auto-targets the lone engaged enemy and rejects ≠1 before cost), with [#300](https://github.com/talelburg/eldritch/issues/300) revisiting when multi-target Fight lands.
+## Future slices (after the gate)
 
-- **C5e ships only Vicious Blow — the engine prereq ([#307](https://github.com/talelburg/eldritch/issues/307), PR #308) plus the card (PR #309, closing #240); the other three cards are blocked.** `Trigger::OnCommit` was never fired (compiled + serde-round-tripped, but no engine path ran a committed card's effect); `fire_on_commit` now runs committed cards' `OnCommit` effects at the commit step, **before** chaos resolution (committing precedes resolution), mirroring `fire_on_skill_test_resolution`. Vicious Blow's "+1 damage" is `Effect::BoostAttackDamage(u8)`, accumulated onto `InFlightSkillTest.bonus_attack_damage`; the Fight follow-up deals `1 + extra_damage + bonus_attack_damage`. **`OnCommit`, not `OnSkillTestResolution` (the Deduction trigger): ordering forces it** — the Fight follow-up deals the attack's damage *during* resolution, before `fire_on_skill_test_resolution` runs, so a post-resolution trigger can't modify "that attack" without dealing a separate damage instance (extra event, wrong semantics). `OnCommit` parameterizes the resolution instead. **The "during an attack" qualifier is a card-level kind gate** — `on_commit(if_(Condition::SkillTestKind(Fight), boost_attack_damage(1)))`, symmetric to Deduction's "while investigating"; every attack (Fight action *or* `Effect::Fight` weapon) runs a `SkillTestKind::Fight` test, so the gate captures exactly "an attack." Gating the accumulate (vs. relying on the Fight follow-up being the only reader) keeps the buff from leaking if a second reader of `bonus_attack_damage` lands. **"If successful" stays intrinsic** — the Fight follow-up consumes the bonus only on success, and the outcome isn't known at commit. The other three cards were carved to follow-ups blocked on bigger machinery — Evidence! ([#304](https://github.com/talelburg/eldritch/issues/304)) on reaction-event-play (the play-card gate defers card play-timing restrictions), Dodge ([#305](https://github.com/talelburg/eldritch/issues/305)) on a new attack-cancellation subsystem, Dynamite Blast ([#306](https://github.com/talelburg/eldritch/issues/306)) on the #212/#213 location-choice.
+- **Slice 2 — investigator breadth.** Daisy Walker, "Skids" O'Toole, Agnes
+  Baker, Wendy Adams — each with their signature asset/weakness pair + starter
+  deck, reusing the engine spine. Goal: all five picker-eligible. Not yet
+  specced.
+- **Difficulty selection.** Slice 1 ships Standard only; add Easy / Hard /
+  Expert chaos bags + a picker.
+- **Solo-with-2 UX.** One client driving two investigators — picker,
+  whose-turn, two boards vs. tabbed. Open design question; the Tier-2
+  correctness issues (#65, #381, #359, #153, #371) land here.
+- **Optional Gathering content.** Lita Chantler's parley/take-control + the
+  Parlor (01115) Resign action (#258).
 
-- **C6c's two prereqs: `Effect::DrawCards` (#310, PR #314) + commit-cap enforcement (#311, PR #315).** `Effect::DrawCards { target, count }` wraps the existing `cards::draw_cards` helper (widened to `pub(in crate::engine)`); `count == 0` is a no-op. The **"Max N committed per skill test"** cap is **pipeline-parsed metadata** (`CardKind::Skill.commit_limit: Option<u8>`, Skill-only in scope) enforced in `validate_commit_indices`, which now does a registry `metadata_for` lookup (count committed cards by code, reject over cap; no-op without a registry). A future non-Skill capped card moves `commit_limit` onto the relevant `CardKind` arm. With both prereqs landed, C6c's content (#243) — Emergency Cache + the five skills — is unblocked; Knife (#312) / Flashlight (#313) remain carved out.
-
-- **"After you successfully investigate" is a reaction window (`AfterSuccessfulInvestigate`) distinct from the forced `AfterLocationInvestigated`, because the engine has no `Trigger::Forced` (C6a, [#241](https://github.com/talelburg/eldritch/issues/241), PR #318).** Dr. Milan 01033's `[reaction]` needs a player "may" window; the Investigate follow-up (success-only) queues `WindowKind::AfterSuccessfulInvestigate { investigator }`, which suspends/resumes through the existing reaction pipeline (`queue_reaction_window` → `close_reaction_window_at` re-enters the skill-test driver). It pairs with a **new** `EventPattern::SuccessfullyInvestigated` rather than reusing `AfterLocationInvestigated` (Obscuring Fog's forced twin): with no `Trigger::Forced`, the engine routes forced-vs-reaction **by pattern** — the forced one auto-fires via `fire_after_location_investigated`, the reaction one opens a window — so sharing a pattern would auto-fire a reaction (it scans the investigator's controlled instances). Unifying forced + reaction at one ordered window is #212/#213. Window is controller-scoped ("after *you* investigate"); a Cover-Up-suspended discovery doesn't queue it (`TODO(#212)`, out of Slice-1 scope). The Dr. Milan *card* ships in C6b (#242).
-
-- **The Gathering's encounter deck is six sets, assembled in `setup()` and shuffled at `StartScenario` (C6d, [#284](https://github.com/talelburg/eldritch/issues/284), PR #317).** Per the vendored campaign guide (`data/campaign-guides/…notz…pdf` p.2) the gathered sets are **The Gathering, Rats, Ghouls, Striking Fear, Ancient Evils, Chilling Cold** — six, not four (Ancient Evils + Chilling Cold *are* in scenario I; verify against the guide, not memory). `setup()` seeds `encounter_deck` from `the_gathering::ENCOUNTER_DECK_CODES` (a guide-sourced code list — the corpus carries no `encounter_code`) × `CardKind::{Enemy,Treachery}.quantity` = 26 cards, excluding the set-aside Ghoul Priest (01116) / Lita (01117) and all structural cards by construction. **The shuffle lives in `start_scenario`** (alongside the player-deck shuffle, same scenario-start RNG), so `setup()`'s construction order isn't load-bearing and the deck is replayable — C7b can drive a real Mythos cadence. Tests that need a controlled draw order must seed `encounter_deck` *after* `StartScenario` (post-shuffle).
-
-- **Slice 1 closes with a hybrid end-to-end Won/Lost test that drives the real act progression and seeds only off-resolution preconditions (C7b, [#245](https://github.com/talelburg/eldritch/issues/245), PR #326).** `crates/scenarios/tests/the_gathering_resolutions.rs` seats solo Roland via `setup()` + `StartScenario`, then: **Won** drives act 1 (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window + `Confirm`) for real — act 2's reverse spawns the *real* Ghoul Priest — and fights that spawned enemy → `act_01110`'s forced advance → `Resolution::Won { R1 }`; **Lost** seeds Roland one-from-death + an engaged enemy and drives an Enemy-phase attack → `check_all_defeated` → `Resolution::Lost`. Both assert the genuine `state.resolution` latch + `Event::ScenarioResolved`. **Seeds are deliberately off the resolution path:** a controlled `Numeric(0)` chaos bag (the Standard bag's `AutoFail` makes determinism impossible), a minimal roster deck, seeded clues (clue-acquisition is unit-tested elsewhere; the Cellar's shroud 4 also exceeds Roland's intellect 3), the spawned Priest's health (solo Roland can't out-damage a 5-health Retaliate Hunter dealing 2 horror/attack without going insane), and one benign seeded Mythos draw (Ancient Evils, 1 doom). The earlier instinct to seed *past* act 2 was dropped in review — it duplicated `act_advancement.rs` and skipped the act-2 machinery the capstone exists to exercise.
-
-- **2+ simultaneous forced abilities resolve through the *same* `Continuation::Resolution` loop as reaction windows (lead orders them, RR p.17), and that loop is reentrant across a forced effect that suspends into a skill test (Axis-B T5b, #213/#332, PR #343).** Supersedes the C4c fixed-deterministic-order stand-in *and* its abandon-on-suspend gap (both above). `ResolutionFrame.kind` is `Window(WindowBinding) | Forced(ForcedContinuation)`; a forced run carries a `ForcedContinuation` (`Terminal | UpkeepAfterRoundEnded | EndOfTurnAfterForced { investigator }`) naming the framework tail to resume on close. **`TimingEvent::forced_continuation()` is exhaustive and returns `None` for any non-terminal site with no wired continuation; `emit_event`'s 2+ branch turns `None` into `unreachable!`** — a loud guard, never a silently-dropped tail (no site produces 2+ forced in the current pool; wiring a *dual* site's continuation must also re-surface its queued reaction window, noted on that arm). Reentrancy hinges on **`drive_skill_test` reacting only to a reaction window *above* the in-flight `SkillTest` frame**, never a forced-run frame below it; a suspended candidate parks and its siblings resume via `advance_resolution` + the `resume_skill_test_commit` re-entry. End-of-turn rotation now has two mutually-exclusive mechanisms — the forced-run `EndOfTurnAfterForced` continuation (2+ hits) vs `pending_end_turn` (single hit; `end_turn` sets it only when no forced run is open). The successful-investigate dual site collapses into one `emit_event(SuccessfullyInvestigated)` so Obscuring Fog's forced discard precedes Dr. Milan's reaction window (RR p.2), **superseding the C6a by-pattern forced/reaction split** (above). #294's multi-soak-window resume stays a loud `debug_assert` (unconstructible in scope: Guard Dog is the only soak reactor / single Ally slot / `assign_attack` fills each soaker to capacity, defeating non-final ones); the issue is reworded and **kept open** for when player-chosen damage distribution lands.
-
-- **Axis A interactive choice is single-pass suspend-and-replay on a `Continuation::Choice` frame, not the umbrella's two-pass split (#334, PR #350).** A choice node (`Effect::ChooseOne`, `Location`/`Investigator::ChosenByController`, or a native leaf) applies the canonical `resolve_choice_count` convention (`0 ⇒ reject/printed fallback · 1 ⇒ auto-bind · 2+ ⇒ suspend`); on suspend the `ChoiceFrame` records the picks-so-far + the **root** effect + the `EvalContext` ingredients (`controller`/`source`), and resume re-runs the whole tree from the top, replaying picks in pre-order via a `DecisionCursor` (which carries the root so a choice nested in a `ChooseOne` branch records the whole tree). **Two guards bound scope, both loud:** `apply_seq` rejects a choice that suspends after an earlier step (single-pass can't replay past a mutation → two-pass deferred to #346), and `apply_native`'s `debug_assert` rejects a native suspending after DSL picks (native↔DSL interleaving deferred). **The input contract is `InputResponse::PickSingle(OptionId)` + structured `InputRequest.options`** — a *new* family; the legacy `PickIndex` reaction-window path is untouched (`PickMultiple` has no Axis-A consumer). **DSL targets bind via `ground_chosen_targets`** (run before each handler) into `EvalContext.chosen_investigator`/`chosen_location`; **native leaves read `EvalContext.chosen_option`** and re-enumerate+index (Crypt Chill 01167, via the `pub` `suspend_for_native_choice`). A suspending skill-test `on_fail` (Crypt Chill) reuses the clue-interrupt reentrancy: `finish_skill_test` returns the `AwaitingInput` with its continuation pre-advanced to `PostFollowUp`, and `resume_choice` re-enters `drive_skill_test` for teardown. **`ChosenByController` offers *all* candidates** — the restricted "at your location" / chooser-is-the-lead forms are a deferred uniform-`Choose`-surface redesign (#349), triggered by the first constrained Axis-E card. Other follow-ups surfaced: serializable `EvalContext` (#345), `ResumeToken` routing/stale-submit (#347), continuation-stack cleanup of the remaining `pending_*` modes (#348).
-
-- **The unified `Choose` surface (#349) unifies on the *spatial vocabulary*, not the monolithic `{variety, constraint, chooser}` (#349, PR #351).** `Choose<S> { scope }` wraps a variety-specific scope; the shared `LocationSet { Here, Anywhere }` is the chooser-relative spatial vocabulary, reused directly by location-picks and via `EntityScope { At(LocationSet) }` by entity-position-filters — so "your location" (`Here`) is defined **once** and illegal pairs (a location "at your location") are *unrepresentable*, no runtime guard. The target enums carry `Chosen(Choose<…>)` (replacing `ChosenByController` = `Chosen(…Anywhere)`, behavior-preserving); `ground_chosen_targets` forwards `scope` to per-variety enumerators (`Anywhere ⇒ all`, `At(Here)`/`Here` ⇒ controller's location, empty-⇒-reject when between locations), reusing Axis A's `Choice` frame/convention **unchanged**. **A future Axis-E entity choice adds an `EntityScope` arm (`Engaged`/`WithTrait`) additively — location-picks never see it; a new spatial term adds a `LocationSet` variant, available to both roles.** Deferred to consumers: the **enemy** variety + `chosen_enemy` (#301), `LocationSet::YourOrConnecting` + adjacency (#306), an explicit `chooser` (multiplayer / a non-lead chooser — latent in solo, where 01105's lead choice rides the forced `controller = lead` binding).
-
-- **`Cost::DiscardSelf` discards the source asset in play (sole source-cost, paid last); `Effect::DealDamageToEnemy` is typed for a pre-cost target check (#301, PR #352).** `DiscardSelf` removes the source from `cards_in_play` → owner's discard (`CardDiscarded { InPlay }`), reusing the defeat-discard path; combining it with `Exhaust`/`SpendUses` is a loud reject (`reject_incompatible_costs`) and a missing source at payment is a loud `unreachable!`. The enemy variety ships as `EnemyTarget::Chosen(Choose<EntityScope>)`, reusing the keystone's `EntityScope::At`; `chosen_enemy` binds it; `combat::enemies_in_scope` is shared by the evaluator's grounding and the activation pre-cost check (`check_effect_target_available`, folded with the Fight check), which rejects 0-enemies-in-scope **before** paying — the reason `DealDamageToEnemy` is typed, not `Native` (Beat Cop can't pay its discard-self cost for no legal target). `≥1` proceeds; `2+` suspends via the Choose resolver. Beat Cop's content (PR-4 #239) and Knife's discard-self cost (PR-5 #312) are now unblocked.
-
-- **`Effect::Heal` (the engine's first heal, reusing `InvestigatorTarget::Chosen`) + uses-depletion auto-discard via a pipeline-parsed `Uses.discard_when_empty` flag (#302, PR #355).** `Heal { kind: HarmKind, target, count }` saturating-reduces damage/horror (`Event::Healed`, only when something heals); First Aid's "damage or horror" is `ChooseOne([Heal{Damage}, Heal{Horror}])`. `HarmKind { Damage, Horror }` is shared — the `DealDamage`/`DealHorror` consolidation reusing it is **#354**. `Uses.discard_when_empty` is parsed from the templated `If <name> has no <kind>, discard it` clause (RR p.27; true for First Aid 01019 / Forbidden Knowledge 01058 / Grotesque Statue 01071); the depletion-discard checks at `SpendUses` payment via a `discard_card_from_play` helper shared with `Cost::DiscardSelf`. **First-Aid-correct; rules-precise post-resolution timing + effect-depletion cards (Forbidden Knowledge depletes via *effect*, not cost) + the mid-payment source-removal hazard are deferred to #353.** First Aid (PR-4 #239) and Medical Texts' heal (PR-6 #321) are now unblocked.
-
-- **Axis D cancellation/replacement: a Before-timing reaction window the caller suspends on (the soak-window pattern), plus an `Effect::Cancel` leaf that sets `pending_cancellation: bool`, honored by the emit site after the window closes (#336 / #305, PR #369).** `discover_clue` and the enemy-attack loop each `emit_event` a reaction-only Before `TimingEvent` (`WouldDiscoverClues` / `EnemyAttacks`) that queues a `BeforeDiscoverClues` / `BeforeEnemyAttack` window scanning in-play reactions **and** hand Fast events (Axis C). Firing/playing a candidate runs its effect; `Effect::Cancel` flags `pending_cancellation`, which the emit site `mem::take`s on window close to skip the prevented impact. **Cancel = degenerate replacement:** Cover Up 01007 becomes `Seq[discard-from-self, Cancel]` — it runs its own effect *and* cancels the discovery. **A `bool` suffices because Before-windows don't nest in scope** (the attack loop suspends, *or* `discover_clue` suspends — never both); a typed marker is **#367**. **A cancelled enemy-phase attack still exhausts the attacker** — RR p.6 "the ability apart from its effects is still regarded as initiated" + RR p.25 "exhaust upon completion of dealing the attack"; the "always exhaust" is scoped to the enemy-phase loop and **not** shared into the AoO path (RR p.7 "an enemy does not exhaust while making an attack of opportunity"; AoO-cancel deferred to **#293**). **`discover_clue` checks the *top window's kind* (`BeforeDiscoverClues`), not "any window open"** — it can run inside an outer reaction window (Evidence! 01022 played in its after-defeat window then discovers a clue), which must not be mistaken for a queued before-discover window; **a future Before-window consumer that can run mid-window must do the same.** The C5a `clue_interrupt` seam (`ClueInterruptPending` + bespoke `Confirm`/`Skip` resume) is **deleted** and re-expressed on this mechanism, making it a 2-consumer general design. Other deferrals: replacement-with-a-different-impact **#366**, before-discover eligibility (RR p.2 potential gate) + capped count **#368**.
-
-- **Axis C reaction-event-play: a Fast event is a reaction sourced from hand, carried on the *one* candidate list, and window-only (#335 / #304, PR #365).** Evidence! 01022 is Roland 01001's after-defeat reaction minus the usage limit; the play-timing predicate is the existing `trigger_matches`/`OnEvent` pattern (RR p.11), not a new field. Hand events ride `pending_triggers: Vec<ResolutionCandidate>` distinguished by `source: CandidateSource { InPlay(id), Board, Hand }` (replacing `source: Option<CardInstanceId>` — `None` already meant "board card", so it couldn't also mean "from hand"); `fire_pending_trigger` dispatches `Hand ⇒ play (via the shared `cards::begin_event_play`), else fire`. Reaction/forced windows now resume via `PickSingle(OptionId)` (the legacy `PickIndex` reaction path is retired; the variant survives for other callers). **A reaction event is window-only: `check_play_card` rejects a standalone `PlayCard` of an event with a `TriggerKind::Reaction` `OnEvent` ability** — otherwise `play_card`'s `OnPlay`-only loop would silently discard it for no effect. (Narrowed from "any `OnEvent`" to "Reaction `OnEvent`" by Barricade 01038, PR #372, whose event carries a *Forced* `OnEvent` but plays normally.) **A future reaction event (Dodge 01023, #305) reuses this exact path; it adds only Axis D (cancellation, #336).** **Fast assets are *not* offered in reaction windows by rules** (RR p.11/p.22: they play in framework *player* windows = `WindowKind::PlayerWindow`/`open_fast_window`, not in reaction to a triggering condition) — not a deferral.
-
-- **`Effect::SearchDeck` is the deck-search/tutor primitive; `EnteredPlay` is a self-referential reaction (#319/#320, PR #370).** Typed (not `Native`): enumerate a deck region (`SearchScope::{Top(n), EntireDeck}`) ∩ an optional `CardFilter { trait_, kind }` (read from registry metadata), take one card to hand via the Axis-A choice machinery (RR p.18 — *obligated to find if any eligible exist*, so 0 ⇒ find-nothing, 1 ⇒ auto, 2+ ⇒ pick; entire-deck shuffles mandatorily, top-N shuffles too), emitting `CardSearchedToHand`. Reuses the `DecisionCursor`/`suspend_for_choice` exactly like `Effect::ChooseOne` — Old Book of Lore's nested "choose investigator → choose card" replays cleanly because nothing mutates until after both picks. "draws it" vs "add to hand" both model as a move-to-hand (the only rules difference, on-draw triggers, has no Core consumer). `EnteredPlay` is a new reaction-only `EventPattern` + `WindowKind::AfterEnteredPlay`, emitted from `play_card` after an asset enters play; the reaction-window scan self-filters to the entered instance. **A choice fired from inside a reaction window (Research Librarian's `SearchDeck` on 2+ Tomes) now re-drives the window on resume** (`resume_choice`, mirroring the skill-test reentrancy) — the spec missed this; it surfaced in implementation. **A future deck-tutor lands as data on `SearchDeck` + corpus traits — no new engine work.**
-
-- **Barricade 01038 — attach-self / non-Elite movement block / leave-trigger (#323, PR #372).** A played event re-homes *itself* to its location's attachment zone via `Effect::AttachSelfToLocation`, which consumes `pending_played_event` so it is **not** also discarded (one card — *not* the `PutIntoThreatArea`-by-code pattern, which only spawns because an encounter card has no instance at Revelation). A constant `Restriction::EnemyMovementBlocked` on the attachment makes the location **graph-level impassable** to non-Elite enemies: the shared, public `enemy_can_enter_location(state, &Enemy, loc)` (Elite = the `Enemy.traits` field, populated at spawn — same source the agenda's `is_ghoul` reads; plus the attachment's restriction) feeds `bfs_distance_with`/`shortest_first_steps_with`, so the block shifts nearest-prey, not just the final step. **Both Hunter movement and the agenda-01107 forced Ghoul move use that one predicate** — a non-Elite Ghoul can't be forced into a barricade either. A new `LeftLocation` forced trigger (emitted from `move_action` for the *from* location, scanning its attachments) fires `DiscardSelf`, routed by `card_type()` to the owner's player discard (solo; multiplayer ownership = #371). The Axis-C reaction-event play gate was **narrowed to `TriggerKind::Reaction`** `OnEvent` abilities — Barricade plays normally (`OnPlay`) despite carrying a *Forced* `OnEvent` for its in-play form. **Obscuring Fog 01168 does not use `AttachSelfToLocation`** — it's a treachery (no `pending_played_event`) and carries "Limit 1 per location" logic; both share only the low-level `attach_to_location`. **A future location-attachment / enemy-movement-blocker reuses these.**
-
-- **Mind over Matter 01036 — skill substitution as an Intellect-test rewrite (#322, PR #376).** Per the [FAQ](https://arkhamdb.com/card/01036), "use intellect in place of combat/agility" *makes the test an Intellect test* — modeled by rewriting `InFlightSkillTest.skill = Intellect` (keeping `kind`) at initiation, so intellect/wild icons + intellect stat-bonuses follow for free, combat/agility stat-bonuses drop, and a weapon's `test_modifier` combat bonus is zeroed too (bonus damage kept — the Seeker-with-a-firearm play). It's a genuine "may" (a player can want to fail), so a yes/no prompt fires in `start_skill_test` *before* the commit window (the type is fixed at ST.1 per the FAQ), routed via `pending_substitution_prompt`. Round-scoped `GameState.skill_substitutions` (pushed by the card's `OnPlay` native) drives it, **cleared at round end — step 4.6 `upkeep_after_round_ended`, RR p.24 "until the end of the round … expire at this time"** (not the next-round bump). "Play only during your turn" is a pipeline-parsed `CardKind::{Asset,Event}.play_only_during_turn` flag (mirrors `is_fast`, *not* a runtime text scan) that tightens the Fast gate to `active_during_investigation` — also fixes Working a Hunch 01037. **A future "use X in place of Y" card reuses `SkillSubstitution` + the prompt.** Deferred/pre-existing: skill-test PLAYER WINDOWs (#374); the engine sums only matching committed icons but doesn't reject an off-icon commit (RR ST.2 eligibility — pre-existing).
+Campaign sequencing beyond The Gathering (The Midnight Masks, The Devourer
+Below, campaign log + `Fact` enum) is **Phase 9**.
 
 ## Open questions
 
-The Phase-6-era "scoping TBD" list is now addressed by the slice
-structure above — the scenario module, encounter/act/agenda/location
-impls, Roland, and Standard difficulty are **Slice 1** (kickoff `#216`);
-the other investigators, difficulties, solo-2 UX, and optional content
-map to **Future slices**. Genuinely-open design questions that remain:
-
-- **Solo-with-2 UX.** One player controls two investigators; how does
-  the client present that (picker, whose-turn, two boards vs. tabbed)?
-  Unresolved — a Future-slice design question.
-- **Story-asset/weakness shape.** Cover Up (Roland's, in Slice 1) is
-  scoped, but the broader campaign-driven mods (Lita Chantler, Hospital
-  Debts, …) need a pattern; revisit as they land.
+- **Roland elder-sign DSL surface (#118).** The token effect is a *dynamic*,
+  board-state-dependent skill-test modifier ("+1 for each clue on your
+  location"); the DSL has no such surface yet. needs-design; gates Tier-1 E.
+- **Solo-with-2 UX** — how one client presents two investigators. See Future
+  slices.
 
 ## Dependencies
 
-- Phase 4 (scenario plumbing) — the scenario module API.
-- Phase 5 (server + persistence) — backing store.
-- Phase 6 (web client v0) — UI.
-- Phase 3 (`#55` Roland Banks, `#56` Study) — already filed there; these spill into Phase 7's coverage.
+Phases 4 (scenario module), 5 (server + persistence), 6 (web client) — all
+closed. Phase 3's Roland Banks (#55) shipped; the Study (#56) spilled here and
+is now playable (close it).
 
 ## What "done" looks like
 
-A solo human, in the browser, picks an investigator, sets up The Gathering, plays through the scenario to a resolution. All five investigators are picker-eligible. The campaign log records the resolution's facts. Standard difficulty works correctly; harder difficulties may land here or in a polish pass.
+A solo human, in the browser, plays The Gathering to a resolution with
+**1-player Standard rules correctness**: every basic action available, attacks
+of opportunity / retaliate / soak resolving with proper player agency,
+skill-test windows open, and Roland's signature firing. Investigator breadth,
+difficulty, and solo-2 are Future slices.
