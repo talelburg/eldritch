@@ -732,6 +732,47 @@ pub enum Effect {
         /// against state at eval (Flashlight: `-2`).
         shroud_modifier: IntExpr,
     },
+    /// Search a region of an investigator's deck for one card matching
+    /// `filter`, move it to that investigator's hand, then shuffle the deck.
+    /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
+    /// Research Librarian 01032 (entire deck, a `Tome` asset, you).
+    ///
+    /// Rules Reference p.18 ("Search"): the searcher is *obligated to find* a
+    /// card if one or more eligible options exist (no decline) — so 0 eligible
+    /// ⇒ find nothing, 1 ⇒ auto-take, 2+ ⇒ the controller picks. An entire-deck
+    /// search must shuffle on completion; top-N shuffles too (Old Book
+    /// "shuffles the remaining cards into the deck"). Both "draws it" (Old
+    /// Book) and "add to your hand" (Librarian) are modeled as a move to hand —
+    /// the only rules difference (on-draw triggers) has no Core consumer.
+    SearchDeck {
+        /// Whose deck is searched.
+        target: InvestigatorTarget,
+        /// Which region of the deck to look at.
+        scope: SearchScope,
+        /// Which cards are eligible. `None` matches every card.
+        filter: Option<CardFilter>,
+    },
+}
+
+/// Which region of a deck an [`Effect::SearchDeck`] looks at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SearchScope {
+    /// The top `n` cards (Old Book of Lore: 3). Fewer if the deck is shorter.
+    Top(u8),
+    /// The whole deck (Research Librarian). Must be shuffled on completion.
+    EntireDeck,
+}
+
+/// Eligibility predicate for an [`Effect::SearchDeck`]. Both fields, when
+/// `Some`, must hold (trait AND type). `trait_` is owned (the [`Effect`] enum
+/// is serde-serializable, so no borrowed `&'static str`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CardFilter {
+    /// Required trait (e.g. `"Tome"`). `None` = any trait.
+    pub trait_: Option<String>,
+    /// Required card type (e.g. [`CardType::Asset`](crate::card_data::CardType::Asset)).
+    /// `None` = any type.
+    pub kind: Option<crate::card_data::CardType>,
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -1268,6 +1309,20 @@ pub fn draw_cards(target: InvestigatorTarget, count: u8) -> Effect {
     Effect::DrawCards { target, count }
 }
 
+/// Build an [`Effect::SearchDeck`].
+#[must_use]
+pub fn search_deck(
+    target: InvestigatorTarget,
+    scope: SearchScope,
+    filter: Option<CardFilter>,
+) -> Effect {
+    Effect::SearchDeck {
+        target,
+        scope,
+        filter,
+    }
+}
+
 /// Build an [`Effect::Modify`].
 #[must_use]
 pub fn modify(stat: Stat, delta: i8, scope: ModifierScope) -> Effect {
@@ -1749,6 +1804,40 @@ mod tests {
         let json = serde_json::to_string(&effect).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(effect, recovered);
+    }
+
+    #[test]
+    fn search_deck_builder_and_serde_round_trip() {
+        let e = search_deck(
+            InvestigatorTarget::chosen_at_your_location(),
+            SearchScope::Top(3),
+            None,
+        );
+        assert!(matches!(
+            e,
+            Effect::SearchDeck {
+                target: InvestigatorTarget::Chosen(_),
+                scope: SearchScope::Top(3),
+                filter: None,
+            }
+        ));
+        let json = serde_json::to_string(&e).expect("serialize");
+        let back: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(e, back);
+
+        let filtered = search_deck(
+            InvestigatorTarget::You,
+            SearchScope::EntireDeck,
+            Some(CardFilter {
+                trait_: Some("Tome".into()),
+                kind: Some(crate::card_data::CardType::Asset),
+            }),
+        );
+        let json = serde_json::to_string(&filtered).expect("serialize");
+        assert_eq!(
+            filtered,
+            serde_json::from_str::<Effect>(&json).expect("deserialize")
+        );
     }
 
     /// `Effect::SkillTest` (treachery-Revelation test) with a margin-keyed
