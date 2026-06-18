@@ -103,8 +103,13 @@ pub(super) fn open_forced_resolution(
 /// Used by the before-attack cancel window's "at your location" scoping
 /// (Axis D #336); two investigators between locations (`None`) never match.
 fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> bool {
-    let la = state.investigators.get(&a).and_then(|i| i.current_location);
-    la.is_some() && la == state.investigators.get(&b).and_then(|i| i.current_location)
+    let loc = |id| {
+        state
+            .investigators
+            .get(&id)
+            .and_then(|i| i.current_location)
+    };
+    loc(a).is_some_and(|la| loc(b) == Some(la))
 }
 
 /// Scan every investigator's `cards_in_play` for
