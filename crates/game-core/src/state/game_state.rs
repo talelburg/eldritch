@@ -243,6 +243,17 @@ pub struct GameState {
     /// TODO(#212): generalize beyond skill-test-suspended revelations
     /// once `ChooseOne` can suspend mid-resolution.
     pub pending_revelation_discard: Option<CardCode>,
+    /// An event card mid-play: it has left hand ("commences being played",
+    /// RR Appendix I step 3) but is not yet in discard. The apply loop
+    /// flushes it to the owner's discard pile on `Done` (step 4: the event is
+    /// placed in discard "simultaneously with the completion" of its effect),
+    /// so an `OnPlay` effect that suspends — Dynamite Blast 01024's location
+    /// choice — discards the event when it resumes rather than stranding it in
+    /// hand. The player-event analogue of
+    /// [`pending_revelation_discard`](Self::pending_revelation_discard). `None`
+    /// outside an in-flight event play.
+    #[serde(default)]
+    pub pending_played_event: Option<(InvestigatorId, CardCode)>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)

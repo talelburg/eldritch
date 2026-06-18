@@ -168,7 +168,16 @@ when picked up.
   difficulty -2 clamped at 0 and reusing the base Investigate follow-up)
   shipped: **✅ PR #362** (AoO on activated abilities — RR p.5 — is a systemic
   engine gap also affecting First Aid / Medical Texts, carved to #361).
-  Remaining cluster PR: #306 (Dynamite).
+  PR-8 (#306 — Dynamite Blast 01024) shipped: **✅ PR #364**, **closing the
+  choice cluster**. A card-local native (location choice +
+  enemy/investigator AoE) rather than a general fan-out: a corpus audit found
+  the only in-scope fan-out consumers are this card + agenda 01105 (different
+  shapes; the rest are Dunwich), so a general `Effect::ForEach` / `EntityTarget`
+  stays deferred and not-yet-designed in #363. Its engine prereq — a played
+  event leaves hand at play-start (`pending_played_event`) and is discarded on
+  *completion* (RR Appendix I step 4), so a suspending `OnPlay` event isn't
+  stranded — also shipped in #364.
+  **The choice-cluster completion sub-slice is done — all 8 PRs merged.**
   Slice 1's `fire_forced_triggers` is a forward-compatible subset Axis B
   replaces. **Note:** #213's "one mixed pool" framing was corrected to
   RR-accurate two-phase (forced-all-before-reaction, RR p.2; issue text
