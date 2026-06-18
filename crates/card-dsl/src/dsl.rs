@@ -1887,7 +1887,10 @@ mod tests {
         }
         let pat = EventPattern::LeftLocation;
         let json = serde_json::to_string(&pat).expect("ser");
-        assert_eq!(pat, serde_json::from_str::<EventPattern>(&json).expect("de"));
+        assert_eq!(
+            pat,
+            serde_json::from_str::<EventPattern>(&json).expect("de")
+        );
     }
 
     /// `Effect::SkillTest` (treachery-Revelation test) with a margin-keyed

@@ -160,7 +160,10 @@ fn location_blocks_enemy_movement(state: &GameState, loc: LocationId) -> bool {
             .flatten()
             .any(|a| {
                 a.trigger == Trigger::Constant
-                    && matches!(&a.effect, Effect::Restrict(Restriction::EnemyMovementBlocked))
+                    && matches!(
+                        &a.effect,
+                        Effect::Restrict(Restriction::EnemyMovementBlocked)
+                    )
             })
     })
 }

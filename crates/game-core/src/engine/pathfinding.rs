@@ -94,7 +94,9 @@ pub fn shortest_first_steps_with(
     loc.connections
         .iter()
         .copied()
-        .filter(|&n| is_passable(n) && bfs_distance_with(state, n, to, &is_passable) == Some(total - 1))
+        .filter(|&n| {
+            is_passable(n) && bfs_distance_with(state, n, to, &is_passable) == Some(total - 1)
+        })
         .collect()
 }
 

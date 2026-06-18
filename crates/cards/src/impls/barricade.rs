@@ -8,11 +8,11 @@
 //! ```
 //!
 //! Three abilities on one card: `OnPlay` attaches the played event to the
-//! controller's location ([`Effect::AttachSelfToLocation`] — one card, no
-//! duplicate); a `Constant` [`Restriction::EnemyMovementBlocked`] (inspected by
+//! controller's location (`Effect::AttachSelfToLocation` — one card, no
+//! duplicate); a `Constant` `Restriction::EnemyMovementBlocked` (inspected by
 //! hunter pathfinding — non-Elite enemies cannot path into the attached
 //! location); and a `Forced` self-discard when an investigator leaves the
-//! attached location ([`EventPattern::LeftLocation`] → [`Effect::DiscardSelf`],
+//! attached location (`EventPattern::LeftLocation` → `Effect::DiscardSelf`,
 //! routed to the owner's player discard).
 
 use card_dsl::dsl::{

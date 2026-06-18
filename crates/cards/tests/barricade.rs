@@ -10,7 +10,9 @@ use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase};
+use game_core::state::{
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase,
+};
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::{apply, assert_event, Action, PlayerAction};
 
@@ -99,9 +101,12 @@ fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .build();
-    state.locations.get_mut(&B).unwrap().attachments.push(
-        CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST),
-    );
+    state
+        .locations
+        .get_mut(&B)
+        .unwrap()
+        .attachments
+        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
     state
 }
 
@@ -148,9 +153,12 @@ fn leaving_the_barricaded_location_discards_barricade() {
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .build();
-    state.locations.get_mut(&A).unwrap().attachments.push(
-        CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST),
-    );
+    state
+        .locations
+        .get_mut(&A)
+        .unwrap()
+        .attachments
+        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
 
     let r = apply(
         state,
