@@ -23,7 +23,10 @@
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming, Phase};
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{EnemyId, LocationId};
-use game_core::{location_id_by_code, shortest_first_steps, Cx, EngineOutcome, EvalContext, Event};
+use game_core::{
+    enemy_can_enter_location, location_id_by_code, shortest_first_steps_with, Cx, EngineOutcome,
+    EvalContext, Event,
+};
 
 /// `ArkhamDB` code for Agenda 3, "They're Getting Out!".
 pub const CODE: &str = "01107";
@@ -85,7 +88,11 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         let Some(from) = e.current_location else {
             continue;
         };
-        let mut steps = shortest_first_steps(cx.state, from, parlor);
+        // A non-Elite Ghoul cannot move into a barricaded location (Barricade
+        // 01038); the block is graph-level, mirroring Hunter movement.
+        let mut steps = shortest_first_steps_with(cx.state, from, parlor, |loc| {
+            enemy_can_enter_location(cx.state, e, loc)
+        });
         steps.sort_unstable();
         if let Some(&to) = steps.first() {
             movers.push((*id, to));
@@ -223,6 +230,32 @@ mod tests {
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(5))
+        );
+    }
+
+    #[test]
+    fn non_elite_ghoul_does_not_move_into_a_barricaded_parlor() {
+        // A Barricade (01038) on the Parlor blocks the non-Elite Ghoul's
+        // forced move — same graph-level block as Hunter movement. Needs the
+        // real registry so the attachment's `EnemyMovementBlocked` restriction
+        // is read.
+        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let mut state = star_board();
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
+        state
+            .locations
+            .get_mut(&LocationId(5))
+            .unwrap()
+            .attachments
+            .push(game_core::state::CardInPlay::enter_play(
+                CardCode::new("01038"),
+                game_core::state::CardInstanceId(900),
+            ));
+        cx_apply(&mut state, move_ghouls_toward_parlor);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2)),
+            "Ghoul stayed in the Hallway — the only step toward the Parlor is blocked",
         );
     }
 

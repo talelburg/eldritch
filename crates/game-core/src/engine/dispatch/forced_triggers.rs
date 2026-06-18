@@ -96,6 +96,17 @@ pub(crate) enum ForcedTriggerPoint {
     /// each instance's controller. First consumer: Cover Up 01007's
     /// game-end mental-trauma forced (C5a #236).
     GameEnd,
+    /// An investigator left a location. Scans that location's attachment zone
+    /// for `EventPattern::LeftLocation` forced abilities (Barricade 01038's
+    /// self-discard); binds controller = the leaving investigator, source =
+    /// the firing attachment instance. Mirrors the attachment scan in
+    /// [`AfterLocationInvestigated`](Self::AfterLocationInvestigated).
+    LeftLocation {
+        /// The investigator who left.
+        investigator: InvestigatorId,
+        /// The location they left.
+        location: LocationId,
+    },
 }
 
 /// Fire Forced abilities matching `point`, resolving each hit in a fixed
@@ -308,6 +319,25 @@ pub(super) fn collect_forced_hits(
                         Some(card.instance_id),
                         &mut hits,
                         |p| matches!(p, EventPattern::GameEnd),
+                    );
+                }
+            }
+        }
+        ForcedTriggerPoint::LeftLocation {
+            investigator,
+            location,
+        } => {
+            // Scan the left location's attachment zone (Barricade 01038);
+            // bind source = the firing attachment instance for DiscardSelf.
+            if let Some(loc) = state.locations.get(location) {
+                for att in &loc.attachments {
+                    push_matching(
+                        reg,
+                        &att.code,
+                        *investigator,
+                        Some(att.instance_id),
+                        &mut hits,
+                        |p| matches!(p, EventPattern::LeftLocation),
                     );
                 }
             }

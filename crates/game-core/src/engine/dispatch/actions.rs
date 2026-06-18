@@ -290,6 +290,21 @@ pub(super) fn move_action(
     // Reveal the destination if this is the first investigator entry
     // (Rules Reference p.14). No-op if already revealed.
     super::reveal::reveal_location(cx, destination);
+    // The leaving investigator left `from`: fire any "when an investigator
+    // leaves attached location" forced abilities (Barricade 01038 discards
+    // itself). In scope this is a single deterministic self-discard, so it
+    // resolves synchronously; a 2+-forced suspend here is out of Slice-1 scope
+    // (emit_event's loud guard, like the other non-terminal forced sites).
+    let left = super::emit::emit_event(
+        cx,
+        &super::emit::TimingEvent::LeftLocation {
+            investigator,
+            location: from,
+        },
+    );
+    if !matches!(left, EngineOutcome::Done) {
+        return left;
+    }
     // Terminal step: the entered location's Forced on-enter abilities fire,
     // and their outcome becomes the move's outcome. This runs *after* the
     // move is applied, so if it returns Rejected (e.g. 2+ simultaneous

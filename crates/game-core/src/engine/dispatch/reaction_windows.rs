@@ -436,7 +436,8 @@ fn trigger_matches(
             | EventPattern::EnemyAttackDamagedSelf
             | EventPattern::SuccessfullyInvestigated
             | EventPattern::EnemyAttacks
-            | EventPattern::EnteredPlay,
+            | EventPattern::EnteredPlay
+            | EventPattern::LeftLocation,
         ) => false,
     }
 }
@@ -1326,18 +1327,30 @@ pub(super) fn check_play_card(
             }
         };
     // Reaction-event gate (Axis C, #335 / #304): a Fast event whose play
-    // instruction is a triggering condition is modeled as an `OnEvent` ability
-    // (e.g. Evidence! 01022's "Play after you defeat an enemy"). RR p.11: such
-    // an event "may be played any time its play instructions specify" — i.e.
-    // ONLY in its matching reaction window, where Axis C offers it as a
-    // `PickSingle` option (the window path runs `play_fast_event`, bypassing
-    // this gate). It is never a free-timing standalone play, so reject it from
-    // the `PlayCard` action — otherwise `play_card` would run only its (absent)
-    // `OnPlay` abilities and silently discard it for no effect.
+    // instruction is a triggering condition is modeled as a `TriggerKind::Reaction`
+    // `OnEvent` ability (e.g. Evidence! 01022's "Play after you defeat an enemy").
+    // RR p.11: such an event "may be played any time its play instructions
+    // specify" — i.e. ONLY in its matching reaction window, where Axis C offers
+    // it as a `PickSingle` option (the window path runs `play_fast_event`,
+    // bypassing this gate). It is never a free-timing standalone play, so reject
+    // it from the `PlayCard` action — otherwise `play_card` would run only its
+    // (absent) `OnPlay` abilities and silently discard it for no effect.
+    //
+    // Gate only on a **Reaction** `OnEvent`: an event that plays normally (an
+    // `OnPlay` effect) but carries a **Forced** `OnEvent` for its *in-play*
+    // form is not a reaction event (Barricade 01038 attaches on play, then its
+    // attachment's Forced discards it on leave). Such an event is played as a
+    // standard action.
     if card_type == CardType::Event
-        && abilities
-            .iter()
-            .any(|a| matches!(a.trigger, Trigger::OnEvent { .. }))
+        && abilities.iter().any(|a| {
+            matches!(
+                a.trigger,
+                Trigger::OnEvent {
+                    kind: crate::dsl::TriggerKind::Reaction,
+                    ..
+                }
+            )
+        })
     {
         return Err(format!(
             "PlayCard: {code} is a reaction event — it may only be played in response \

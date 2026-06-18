@@ -383,6 +383,7 @@ fn apply_effect_inner(
             scope,
             filter,
         } => apply_search_deck(cx, eval_ctx, *target, *scope, filter.as_ref(), cursor),
+        Effect::AttachSelfToLocation => apply_attach_self_to_location(cx),
     }
 }
 
@@ -531,6 +532,34 @@ fn filter_matches(f: &crate::dsl::CardFilter, code: &crate::state::CardCode) -> 
         }
     }
     true
+}
+
+/// Resolve [`Effect::AttachSelfToLocation`]: the currently-playing event
+/// (held in `pending_played_event`) attaches itself to its controller's
+/// current location, and is **consumed** from the pending slot so the apply
+/// loop's `flush_pending_played_event` does not also discard it — one card, no
+/// duplicate. Rejects if no event is mid-play or the controller is between
+/// locations.
+fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
+    let Some((investigator, code)) = cx.state.pending_played_event.clone() else {
+        return EngineOutcome::Rejected {
+            reason: "AttachSelfToLocation: no event is mid-play".into(),
+        };
+    };
+    let Some(location) = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .and_then(|i| i.current_location)
+    else {
+        return EngineOutcome::Rejected {
+            reason: "AttachSelfToLocation: controller has no current location".into(),
+        };
+    };
+    crate::engine::dispatch::threat_area::attach_to_location(cx, location, code);
+    // Consume the pending event so it is re-homed, not discarded.
+    cx.state.pending_played_event = None;
+    EngineOutcome::Done
 }
 
 /// Add `amount` to the in-flight skill test's `bonus_attack_damage`
@@ -723,7 +752,31 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
             .expect("found above")
             .attachments
             .remove(pos);
-        cx.state.encounter_discard.push(card.code.clone());
+        // A player-card-type attachment (Barricade 01038 — `Event`) goes to its
+        // owner's player discard; an encounter attachment (Obscuring Fog 01168 —
+        // `Treachery`) to the encounter discard. Without a registry the type is
+        // unknown, so default to the encounter discard (preserves the
+        // pre-Barricade behavior).
+        let is_player_card = crate::card_registry::current()
+            .and_then(|reg| (reg.metadata_for)(&card.code))
+            .is_some_and(|m| {
+                matches!(
+                    m.card_type(),
+                    crate::card_data::CardType::Asset
+                        | crate::card_data::CardType::Event
+                        | crate::card_data::CardType::Skill
+                )
+            });
+        if is_player_card {
+            // Solo: the firing controller is the owner. TODO(#371): track the
+            // attachment's owner for multiplayer (owner may differ from the
+            // leaving investigator).
+            if let Some(inv) = cx.state.investigators.get_mut(&eval_ctx.controller) {
+                inv.discard.push(card.code.clone());
+            }
+        } else {
+            cx.state.encounter_discard.push(card.code.clone());
+        }
         // `CardDiscarded` carries an `investigator`; for a location
         // attachment, use the controller as the bookkeeping owner.
         cx.events.push(Event::CardDiscarded {
@@ -2992,6 +3045,23 @@ mod tests {
             before2 + 9
         );
         assert_eq!(state.investigators[&InvestigatorId(1)].resources, before1);
+    }
+
+    #[test]
+    fn attach_self_to_location_rejects_with_no_pending_event() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let outcome = apply_effect(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &Effect::AttachSelfToLocation,
+            ctx(1),
+        );
+        assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
     }
 
     #[test]

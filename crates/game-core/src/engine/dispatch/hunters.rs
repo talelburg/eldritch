@@ -2,9 +2,9 @@
 
 use crate::card_data::{Prey, PreyDirection, PreyMeasure, SkillKind};
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::Stat;
+use crate::dsl::{Effect, Restriction, Stat, Trigger};
 use crate::engine::evaluator::unconditional_constant_stat_modifier;
-use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
+use crate::engine::pathfinding::{bfs_distance_with, shortest_first_steps_with};
 use crate::event::Event;
 use crate::state::{
     Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId, LocationId,
@@ -135,11 +135,60 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
         && enemy.current_location.is_some()
 }
 
+/// Whether `enemy` is Elite — read from its `traits` (populated from card
+/// metadata at spawn, the same field the agenda's `is_ghoul` reads). No
+/// registry round-trip.
+fn enemy_is_elite(enemy: &Enemy) -> bool {
+    enemy.traits.iter().any(|t| t == "Elite")
+}
+
+/// Whether `enemy` may move into `loc`. Blocked only when `loc` carries a
+/// `Restriction::EnemyMovementBlocked` (a Barricade 01038 attachment) **and**
+/// the enemy is non-Elite (RR: movement-blockers exempt Elite). Shared by
+/// Hunter movement and forced enemy-movement effects (agenda 01107's Ghoul
+/// move), so a barricade is honored consistently regardless of what moves the
+/// enemy.
+pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationId) -> bool {
+    enemy_is_elite(enemy) || !location_blocks_enemy_movement(state, loc)
+}
+
+/// Whether `loc` carries a constant `EnemyMovementBlocked` restriction (a
+/// Barricade 01038 attachment) — read the way `play_is_prohibited` reads
+/// constant restrictions. `false` with no registry.
+fn location_blocks_enemy_movement(state: &GameState, loc: LocationId) -> bool {
+    let Some(reg) = card_registry::current() else {
+        return false;
+    };
+    let Some(location) = state.locations.get(&loc) else {
+        return false;
+    };
+    location.attachments.iter().any(|att| {
+        (reg.abilities_for)(&att.code)
+            .into_iter()
+            .flatten()
+            .any(|a| {
+                a.trigger == Trigger::Constant
+                    && matches!(
+                        &a.effect,
+                        Effect::Restrict(Restriction::EnemyMovementBlocked)
+                    )
+            })
+    })
+}
+
 /// Compute the prey-legal destination set for a hunter at `from`:
 /// the union of shortest-path first-steps toward each
 /// equidistant-nearest, prey-filtered investigator. Empty when no
 /// investigator is reachable. Deterministic order (sorted `LocationId`).
-fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<LocationId> {
+fn hunter_destinations(
+    state: &GameState,
+    from: LocationId,
+    prey: Prey,
+    enemy: &Enemy,
+) -> Vec<LocationId> {
+    // A barricaded location is impassable to a non-Elite enemy — graph-level,
+    // so it shifts which investigator is nearest, not just the final step.
+    let is_passable = |loc: LocationId| enemy_can_enter_location(state, enemy, loc);
     let mut reachable: Vec<(InvestigatorId, u32)> = Vec::new();
     let mut min_dist: Option<u32> = None;
     for id in &state.turn_order {
@@ -152,7 +201,7 @@ fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<L
         let Some(loc) = inv.current_location else {
             continue;
         };
-        let Some(d) = bfs_distance(state, from, loc) else {
+        let Some(d) = bfs_distance_with(state, from, loc, is_passable) else {
             continue;
         };
         min_dist = Some(min_dist.map_or(d, |m| m.min(d)));
@@ -180,7 +229,7 @@ fn hunter_destinations(state: &GameState, from: LocationId, prey: Prey) -> Vec<L
         else {
             continue;
         };
-        for step in shortest_first_steps(state, from, loc) {
+        for step in shortest_first_steps_with(state, from, loc, is_passable) {
             if !dests.contains(&step) {
                 dests.push(step);
             }
@@ -290,7 +339,7 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
     let here = cursor::active_investigators_at(cx.state, from);
     if here.is_empty() {
         let prey = cx.state.enemies[&enemy_id].prey;
-        let dests = hunter_destinations(cx.state, from, prey);
+        let dests = hunter_destinations(cx.state, from, prey, &cx.state.enemies[&enemy_id]);
         match dests.as_slice() {
             [] => return None,
             [one] => move_hunter_to(cx, enemy_id, *one),

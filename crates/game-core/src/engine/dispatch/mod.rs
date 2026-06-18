@@ -40,7 +40,7 @@ pub(crate) mod encounter;
 // pub(super): engine/mod.rs re-exports ForcedTriggerPoint + fire_forced_triggers
 // via pub(crate) for test_support::fire_forced_at (Task 2 of #215).
 pub(super) mod forced_triggers;
-mod hunters;
+pub(crate) mod hunters;
 mod phases;
 // `pub(super)` so the evaluator's `discover_clue` can open the Before-discover
 // window via the `pub(crate)` `open_queued_reaction_window` (Axis D #336);

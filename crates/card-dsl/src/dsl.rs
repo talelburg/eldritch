@@ -377,6 +377,13 @@ pub enum EventPattern {
     /// *you* = the controller. A general "after any card enters play" reaction
     /// is out of scope; the pattern is reaction-only ([`EventTiming::After`]).
     EnteredPlay,
+    /// An investigator left the location this ability's source is attached to
+    /// (Barricade 01038's "Forced — When an investigator leaves attached
+    /// location"). Bare and forced-only: the engine binds the leaving
+    /// investigator (controller) and scans the *left* location's attachment
+    /// zone. Matched only by the forced dispatch path
+    /// (`ForcedTriggerPoint::LeftLocation`), never a reaction window.
+    LeftLocation,
 }
 
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
@@ -759,6 +766,18 @@ pub enum Effect {
         /// Which cards are eligible. `None` matches every card.
         filter: Option<CardFilter>,
     },
+    /// The currently-playing event attaches itself to its controller's current
+    /// location (Barricade 01038): consume the `pending_played_event` and
+    /// re-home that same card into the location's attachment zone, instead of
+    /// letting it discard. One card — hand → location attachment → (on a later
+    /// effect) discard; no duplicate spawned by code (cf.
+    /// [`PutIntoThreatArea`](Self::PutIntoThreatArea), which spawns by code only
+    /// because an *encounter* card has no instance at Revelation time).
+    ///
+    /// TODO(#373): generalize into a shared attach-to-location effect (a
+    /// by-code form + an optional per-location limit) so Obscuring Fog 01168's
+    /// bespoke `limit1-attach` native collapses onto it.
+    AttachSelfToLocation,
 }
 
 /// Which region of a deck an [`Effect::SearchDeck`] looks at.
@@ -863,6 +882,13 @@ pub enum Restriction {
         /// Gate the surcharge to the first matching action each round.
         first_each_round: bool,
     },
+    /// Non-Elite enemies cannot move into the location this restriction's
+    /// source is attached to (Barricade 01038). **Inspected, not executed** —
+    /// hunter pathfinding (`engine::dispatch::hunters`) treats a location
+    /// carrying this restriction as impassable for non-Elite enemies. The Elite
+    /// exemption (RR: most movement-blockers exempt Elite) is applied at the
+    /// read site, which has the moving enemy's traits.
+    EnemyMovementBlocked,
 }
 
 /// One action kind an [`Restriction::ExtraActionCost`] can surcharge.
@@ -1328,6 +1354,12 @@ pub fn search_deck(
         scope,
         filter,
     }
+}
+
+/// Build an [`Effect::AttachSelfToLocation`].
+#[must_use]
+pub fn attach_self_to_location() -> Effect {
+    Effect::AttachSelfToLocation
 }
 
 /// Build an [`Effect::Modify`].
@@ -1844,6 +1876,24 @@ mod tests {
         assert_eq!(
             filtered,
             serde_json::from_str::<Effect>(&json).expect("deserialize")
+        );
+    }
+
+    #[test]
+    fn barricade_dsl_variants_round_trip() {
+        use crate::dsl::{attach_self_to_location, restrict, Restriction};
+        let attach = attach_self_to_location();
+        assert_eq!(attach, Effect::AttachSelfToLocation);
+        let block = restrict(Restriction::EnemyMovementBlocked);
+        for e in [attach, block] {
+            let json = serde_json::to_string(&e).expect("ser");
+            assert_eq!(e, serde_json::from_str::<Effect>(&json).expect("de"));
+        }
+        let pat = EventPattern::LeftLocation;
+        let json = serde_json::to_string(&pat).expect("ser");
+        assert_eq!(
+            pat,
+            serde_json::from_str::<EventPattern>(&json).expect("de")
         );
     }
 

@@ -67,6 +67,7 @@ pub mod agenda_01106;
 pub mod agenda_01107;
 pub mod attic;
 pub mod automatic_45;
+pub mod barricade;
 pub mod beat_cop;
 pub mod cellar;
 pub mod deduction;
@@ -118,6 +119,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         agenda_01107::CODE => Some(agenda_01107::abilities()),
         attic::CODE => Some(attic::abilities()),
         automatic_45::CODE => Some(automatic_45::abilities()),
+        barricade::CODE => Some(barricade::abilities()),
         beat_cop::CODE => Some(beat_cop::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
