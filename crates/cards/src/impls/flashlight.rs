@@ -1,0 +1,77 @@
+//! Flashlight (neutral tool asset, 01087).
+//!
+//! ```text
+//! Uses (3 supplies).
+//! [action] Spend 1 supply: Investigate. Your location gets -2 shroud for
+//!   this investigation.
+//! ```
+//!
+//! One activated ability: an action paying 1 supply (`Cost::SpendUses`) to
+//! Investigate the controller's location with its shroud reduced by 2 for
+//! this investigation. The `-2` is an
+//! [`Effect::Investigate`](card_dsl::dsl::Effect::Investigate) `shroud_modifier`
+//! (#313) — the Investigate mirror of `Effect::Fight`: it lowers the
+//! location *difficulty* (clamped at 0), not the investigator's total, and
+//! reuses the base Investigate follow-up so a success discovers a clue. The
+//! `Uses (3 supplies)` pool and the depletion-discard are corpus metadata
+//! (`CardKind::Asset.uses` + `Uses.discard_when_empty`, pipeline-parsed) —
+//! `abilities()` declares only the action; the engine discards the asset when
+//! the last supply is spent.
+//!
+//! TODO(#361): activating this `[action]` while engaged with a ready enemy
+//! should provoke an attack of opportunity (RR p.5 — it is not a
+//! fight/evade/parley/resign ability). The engine fires no attack of
+//! opportunity on any activated ability today (a systemic gap, also
+//! affecting First Aid / Medical Texts); fixed engine-wide in #361.
+
+use card_dsl::card_data::UseKind;
+use card_dsl::dsl::{activated, investigate, Ability, Cost, IntExpr};
+
+/// `ArkhamDB` code for Flashlight (original-Core printing).
+pub const CODE: &str = "01087";
+
+/// Flashlight's `[action] Spend 1 supply: Investigate with -2 shroud` ability.
+#[must_use]
+pub fn abilities() -> Vec<Ability> {
+    vec![activated(
+        1,
+        vec![Cost::SpendUses {
+            kind: UseKind::Supplies,
+            count: 1,
+        }],
+        investigate(IntExpr::Lit(-2)),
+    )]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use card_dsl::dsl::{Effect, Trigger};
+
+    #[test]
+    fn one_action_ability_spending_a_supply_to_investigate_minus_two_shroud() {
+        let abilities = abilities();
+        assert_eq!(abilities.len(), 1);
+        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].costs,
+            vec![Cost::SpendUses {
+                kind: UseKind::Supplies,
+                count: 1,
+            }]
+        );
+        assert!(matches!(
+            abilities[0].effect,
+            Effect::Investigate {
+                shroud_modifier: IntExpr::Lit(-2),
+            }
+        ));
+    }
+
+    /// Catches a `pub mod` rename or a fat-fingered match arm in
+    /// `impls::abilities_for` — the registry must dispatch CODE here.
+    #[test]
+    fn registry_dispatches_to_this_modules_abilities() {
+        assert_eq!(crate::abilities_for(CODE), Some(abilities()));
+    }
+}

@@ -694,6 +694,21 @@ pub enum Effect {
     /// for `CannotPlay`, `pending_action_surcharge` for `ExtraActionCost`);
     /// resolving it as an effect is a misuse and rejects.
     Restrict(Restriction),
+    /// Initiate an Investigate against the controller's current location,
+    /// applying `shroud_modifier` (resolved at eval) to that location's
+    /// shroud *difficulty* for this investigation — Flashlight 01087's
+    /// "-2 shroud for this investigation." The mirror of [`Fight`](Self::Fight):
+    /// the modifier adjusts the **location difficulty**, not the
+    /// investigator's total (which is `InFlightSkillTest.test_modifier`); the
+    /// reduced shroud clamps at 0. Reuses the base Investigate skill-test
+    /// follow-up, so on success it discovers a clue like the action does.
+    /// Inspectable (not `Native`) so the activation check can reject — before
+    /// any cost is paid — an investigation with no revealed location to test.
+    Investigate {
+        /// Shroud-difficulty modifier for this investigation, resolved
+        /// against state at eval (Flashlight: `-2`).
+        shroud_modifier: IntExpr,
+    },
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -1336,6 +1351,14 @@ pub fn fight(combat_modifier: IntExpr, extra_damage: u8) -> Effect {
         combat_modifier,
         extra_damage,
     }
+}
+
+/// Build an [`Effect::Investigate`] applying `shroud_modifier` to the
+/// controller's location difficulty for this investigation (Flashlight 01087:
+/// `investigate(IntExpr::Lit(-2))`).
+#[must_use]
+pub fn investigate(shroud_modifier: IntExpr) -> Effect {
+    Effect::Investigate { shroud_modifier }
 }
 
 /// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].

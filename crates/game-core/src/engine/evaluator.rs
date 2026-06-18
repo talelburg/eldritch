@@ -354,6 +354,9 @@ fn apply_effect_inner(
         } => apply_fight(cx, &eval_ctx, combat_modifier, *extra_damage),
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
+        Effect::Investigate { shroud_modifier } => {
+            apply_investigate(cx, &eval_ctx, shroud_modifier)
+        }
     }
 }
 
@@ -447,6 +450,74 @@ fn apply_fight(
         None,
         eval_ctx.source,
         modifier,
+    )
+}
+
+/// Resolve [`Effect::Investigate`]: apply `shroud_modifier` to the
+/// controller's location difficulty and start an Investigate skill test
+/// (reusing the base Investigate follow-up, so success discovers a clue).
+/// The modifier adjusts the *location difficulty* (shroud), not the
+/// investigator's total — the reduced shroud clamps at 0 (RR p.4: game
+/// values can never be reduced below 0). The activation check has already
+/// confirmed a revealed location to test, so the missing/unrevealed cases
+/// here are defensive (state-shape) rejections.
+fn apply_investigate(
+    cx: &mut Cx,
+    eval_ctx: &EvalContext,
+    shroud_modifier: &IntExpr,
+) -> EngineOutcome {
+    let delta = match eval_int_expr(cx.state, eval_ctx.controller, shroud_modifier) {
+        Ok(d) => d,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    let Some(location_id) = cx
+        .state
+        .investigators
+        .get(&eval_ctx.controller)
+        .and_then(|inv| inv.current_location)
+    else {
+        return EngineOutcome::Rejected {
+            reason: "Effect::Investigate: controller has no current location".into(),
+        };
+    };
+    let Some(location) = cx.state.locations.get(&location_id) else {
+        return EngineOutcome::Rejected {
+            reason: format!("Effect::Investigate: location {location_id:?} is not in state").into(),
+        };
+    };
+    if !location.revealed {
+        return EngineOutcome::Rejected {
+            reason: format!("Effect::Investigate: location {location_id:?} is not revealed").into(),
+        };
+    }
+    // Effective shroud folds in attachment modifiers (Obscuring Fog); fall
+    // back to the printed value with no registry (bare unit tests), matching
+    // the base Investigate action. Shroud is u8 in state but difficulty is
+    // i8; saturate the conversion (realistic shrouds are 0–6), apply the
+    // (negative) modifier, then clamp the reduced difficulty at 0.
+    let shroud = match crate::card_registry::current() {
+        Some(reg) => effective_shroud(reg, location),
+        None => location.shroud,
+    };
+    let difficulty = i8::try_from(shroud)
+        .unwrap_or(i8::MAX)
+        .saturating_add(delta)
+        .max(0);
+    crate::engine::dispatch::skill_test::start_skill_test(
+        cx,
+        eval_ctx.controller,
+        SkillKind::Intellect,
+        SkillTestKind::Investigate,
+        difficulty,
+        crate::state::SkillTestFollowUp::Investigate,
+        None,
+        None,
+        eval_ctx.source,
+        0,
     )
 }
 

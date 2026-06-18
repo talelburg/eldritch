@@ -1048,6 +1048,8 @@ fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
 ///   (Beat Cop can't pay its discard-self cost for no legal target). `amount` is
 ///   not consulted (a degenerate `amount: 0` ability — none in scope — would
 ///   still require a target here even though its handler is a no-op).
+/// - **`Investigate`:** needs the controller at a revealed location to test
+///   (Flashlight can't pay its supply cost with nothing to investigate).
 fn check_effect_target_available(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1071,6 +1073,20 @@ fn check_effect_target_available(
             return Err(
                 "ActivateAbility: a 'deal damage to an enemy at your location' ability \
                  needs at least one enemy at your location"
+                    .into(),
+            );
+        }
+    }
+    if matches!(effect, crate::dsl::Effect::Investigate { .. }) {
+        let revealed_here = state
+            .investigators
+            .get(&investigator)
+            .and_then(|inv| inv.current_location)
+            .and_then(|loc| state.locations.get(&loc))
+            .is_some_and(|loc| loc.revealed);
+        if !revealed_here {
+            return Err(
+                "ActivateAbility: an Investigate ability needs a revealed location to investigate"
                     .into(),
             );
         }

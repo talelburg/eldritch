@@ -73,6 +73,7 @@ pub mod deduction;
 pub mod dr_milan_christopher;
 pub mod emergency_cache;
 pub mod first_aid;
+pub mod flashlight;
 pub mod guard_dog;
 pub mod guts;
 pub mod holy_rosary;
@@ -118,6 +119,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         dr_milan_christopher::CODE => Some(dr_milan_christopher::abilities()),
         emergency_cache::CODE => Some(emergency_cache::abilities()),
         first_aid::CODE => Some(first_aid::abilities()),
+        flashlight::CODE => Some(flashlight::abilities()),
         guard_dog::CODE => Some(guard_dog::abilities()),
         guts::CODE => Some(guts::abilities()),
         holy_rosary::CODE => Some(holy_rosary::abilities()),
