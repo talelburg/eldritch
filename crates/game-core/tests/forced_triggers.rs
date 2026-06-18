@@ -704,7 +704,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     let after_first = apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     // One forced resolved; the second is still pending (another choice or
@@ -722,7 +722,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     let done = apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(done.outcome, EngineOutcome::Done);

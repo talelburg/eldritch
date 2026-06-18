@@ -363,7 +363,11 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     // Order the first forced, commit nothing to its test; order the second,
     // commit nothing to its test.
     let mut resolver = ScriptedResolver::new();
-    resolver.pick(0).commit_cards(&[]).pick(0).commit_cards(&[]);
+    resolver
+        .pick_single(game_core::engine::OptionId(0))
+        .commit_cards(&[])
+        .pick_single(game_core::engine::OptionId(0))
+        .commit_cards(&[]);
     let r = drive(state, Action::Player(PlayerAction::EndTurn), resolver);
 
     assert_eq!(r.outcome, EngineOutcome::Done);

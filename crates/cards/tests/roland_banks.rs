@@ -100,9 +100,11 @@ fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
 fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
     let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(2, 0);
 
-    // Empty commit, then PickIndex(0) for the reaction window.
+    // Empty commit, then PickSingle(OptionId(0)) for the reaction window.
     let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).pick(0);
+    resolver
+        .commit_cards(&[])
+        .pick_single(game_core::engine::OptionId(0));
     let result = drive(state, fight_action(inv_id, enemy_id), resolver);
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -201,7 +203,9 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
     }
 
     let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).pick(0);
+    resolver
+        .commit_cards(&[])
+        .pick_single(game_core::engine::OptionId(0));
     let result = drive(state, fight_action(inv_id, enemy_id), resolver);
 
     assert_eq!(result.outcome, EngineOutcome::Done);

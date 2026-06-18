@@ -85,7 +85,7 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
     let resumed = game_core::engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);
@@ -168,7 +168,7 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
     let resumed = game_core::engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);

@@ -165,7 +165,7 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     state = result.state;
@@ -371,7 +371,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     state = result.state;
@@ -444,7 +444,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     state = result.state;
@@ -480,7 +480,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     let result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     state = result.state;

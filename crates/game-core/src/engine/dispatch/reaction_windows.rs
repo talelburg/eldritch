@@ -23,7 +23,7 @@ use crate::state::{
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
-use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 
 /// Queue a reaction window of the given `kind` if any in-play card
@@ -276,6 +276,23 @@ fn trigger_matches(
 /// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
 /// (not here) so the event appears at queue time and is symmetric with
 /// the [`open_fast_window`] path.
+/// Build the structured option list for a resolution frame: one
+/// [`ChoiceOption`] per pending in-play trigger, in `pending_triggers`
+/// order. `OptionId(i)` is the index into the returned list — the Axis-A
+/// convention shared with [`super::choice`]. Axis C (Task 4) appends the
+/// frame's hand Fast-event plays after the triggers.
+fn build_resolution_options(frame: &ResolutionFrame) -> Vec<ChoiceOption> {
+    frame
+        .pending_triggers
+        .iter()
+        .enumerate()
+        .map(|(i, cand)| ChoiceOption {
+            id: OptionId(u32::try_from(i).expect("option count fits in u32")),
+            label: format!("Resolve reaction: {}", cand.code),
+        })
+        .collect()
+}
+
 pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
@@ -286,12 +303,16 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
+    let options = build_resolution_options(window);
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
-            "Resolution window: {} candidate(s) pending. \
-             Submit InputResponse::PickIndex to resolve one{skip_hint}.",
-            window.pending_triggers.len(),
-        )),
+        request: InputRequest::choice(
+            format!(
+                "Resolution window: {} option(s). \
+                 Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
+                options.len(),
+            ),
+            options,
+        ),
         // No multi-window state to disambiguate — routing keys off
         // the top of `state.open_windows`. Conventional 0 like the
         // commit-window's resume token.
@@ -301,8 +322,8 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
 
 /// Resume an open reaction window with the player's response.
 ///
-/// - [`InputResponse::PickIndex(i)`]: fires the i-th pending trigger
-///   via the evaluator. After firing, removes the entry. If pending
+/// - [`InputResponse::PickSingle(OptionId(i))`]: fires the i-th pending
+///   trigger via the evaluator. After firing, removes the entry. If pending
 ///   triggers remain, re-emits [`AwaitingInput`]; else closes the
 ///   window.
 /// - [`InputResponse::Skip`]: closes the window provided no forced
@@ -314,7 +335,7 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
 /// returns [`Done`].
 pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
-        InputResponse::PickIndex(i) => fire_pending_trigger(cx, *i),
+        InputResponse::PickSingle(OptionId(i)) => fire_pending_trigger(cx, *i),
         InputResponse::Skip => {
             // Resolve the active reaction-window index up-front so the
             // close path operates on the same window the driver had
@@ -333,7 +354,8 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
             {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput::Skip: forced abilities are mandatory; submit \
-                             InputResponse::PickIndex to resolve one (the lead orders them)"
+                             InputResponse::PickSingle(OptionId) to resolve one (the lead \
+                             orders them)"
                         .into(),
                 };
             }
@@ -341,7 +363,7 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
         }
         other => EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: reaction window expects InputResponse::PickIndex \
+                "ResolveInput: reaction window expects InputResponse::PickSingle(OptionId) \
                  or InputResponse::Skip, got {other:?}",
             )
             .into(),
@@ -374,7 +396,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             _ => {
                 return EngineOutcome::Rejected {
                     reason: format!(
-                        "ResolveInput: reaction-window PickIndex({i}) out of bounds \
+                        "ResolveInput: reaction-window PickSingle(OptionId({i})) out of bounds \
                          (pending size {})",
                         window.pending_triggers.len(),
                     )
@@ -493,12 +515,16 @@ pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcom
     } else {
         ", or InputResponse::Skip to close"
     };
-    let pending_len = window.pending_triggers.len();
+    let options = build_resolution_options(window);
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
-            "Resolution window: {pending_len} candidate(s) pending. \
-             Submit InputResponse::PickIndex to resolve one{skip_hint}.",
-        )),
+        request: InputRequest::choice(
+            format!(
+                "Resolution window: {} option(s). \
+                 Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
+                options.len(),
+            ),
+            options,
+        ),
         resume_token: ResumeToken(0),
     }
 }
