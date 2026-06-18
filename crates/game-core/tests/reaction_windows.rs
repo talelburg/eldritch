@@ -255,13 +255,16 @@ fn matching_reaction_opens_window_and_suspends() {
     );
     assert_eq!(window.pending_triggers.len(), 1);
     assert_eq!(window.pending_triggers[0].controller, inv_id);
-    assert_eq!(window.pending_triggers[0].source, Some(CardInstanceId(1)));
+    assert_eq!(
+        window.pending_triggers[0].source,
+        game_core::state::CandidateSource::InPlay(CardInstanceId(1))
+    );
     assert_eq!(window.pending_triggers[0].ability_index, 0);
 }
 
 #[test]
 fn pick_index_fires_pending_trigger_and_closes_window() {
-    // Open the window, then PickIndex(0) → effect fires (clue
+    // Open the window, then PickSingle(OptionId(0)) → effect fires (clue
     // discovered), the entry drains, the window closes, and the
     // engine returns Done.
     let (inv_id, enemy_id, loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
@@ -274,7 +277,7 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
 
@@ -426,7 +429,7 @@ fn unqualified_pattern_matches_any_defeat() {
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);
@@ -450,7 +453,7 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
     let bad = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(99),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(99)),
         }),
     );
     match bad.outcome {
@@ -496,8 +499,8 @@ fn non_resolve_input_action_rejects_while_window_open() {
 #[test]
 fn multiple_pending_triggers_resolve_one_at_a_time() {
     // TWO_REACTIONS exposes two OnEvent abilities. The window opens
-    // with both pending; PickIndex(0) fires the first (clue), engine
-    // re-emits AwaitingInput with one entry remaining; PickIndex(0)
+    // with both pending; PickSingle(OptionId(0)) fires the first (clue), engine
+    // re-emits AwaitingInput with one entry remaining; PickSingle(OptionId(0))
     // again fires the second (resource); window closes.
     let (inv_id, enemy_id, loc_id, state) = fight_to_defeat_scenario(&[(TWO_REACTIONS, 1)]);
     let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
@@ -518,7 +521,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     let after_first = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert!(
@@ -544,7 +547,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     let after_second = game_core::engine::apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(after_second.outcome, EngineOutcome::Done);
@@ -597,7 +600,7 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);
@@ -725,7 +728,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     let resumed = game_core::engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);
@@ -824,17 +827,23 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         window.pending_triggers[0].controller, active,
         "active investigator's trigger must come first",
     );
-    assert_eq!(window.pending_triggers[0].source, Some(CardInstanceId(1)));
+    assert_eq!(
+        window.pending_triggers[0].source,
+        game_core::state::CandidateSource::InPlay(CardInstanceId(1))
+    );
     assert_eq!(
         window.pending_triggers[1].controller, other,
         "non-active investigator's trigger comes after, in turn order",
     );
-    assert_eq!(window.pending_triggers[1].source, Some(CardInstanceId(2)));
+    assert_eq!(
+        window.pending_triggers[1].source,
+        game_core::state::CandidateSource::InPlay(CardInstanceId(2))
+    );
 }
 
 #[test]
 fn skip_after_firing_one_drops_remaining_optionals() {
-    // TWO_REACTIONS has two optional triggers. Fire PickIndex(0)
+    // TWO_REACTIONS has two optional triggers. Fire PickSingle(OptionId(0))
     // (consuming the first), then Skip. The second optional must NOT
     // fire — its effect (gain 1 resource) leaves resources unchanged
     // from the post-first-fire baseline. The window closes cleanly.
@@ -857,7 +866,7 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     let after_first = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert!(
@@ -941,7 +950,10 @@ fn reaction_trigger_in_threat_area_opens_window() {
         .expect("threat-area reaction must populate the window");
     assert_eq!(window.pending_triggers.len(), 1);
     assert_eq!(window.pending_triggers[0].controller, inv_id);
-    assert_eq!(window.pending_triggers[0].source, Some(CardInstanceId(7)));
+    assert_eq!(
+        window.pending_triggers[0].source,
+        game_core::state::CandidateSource::InPlay(CardInstanceId(7))
+    );
 }
 
 #[test]
@@ -1022,7 +1034,7 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
 fn pick_index_fires_threat_area_reaction_and_closes_window() {
     // ROLAND_REACTION is seated in the investigator's threat_area
     // (instance id 7). The scan already finds it there; now verify
-    // the fire path also resolves it: PickIndex(0) discovers 1 clue,
+    // the fire path also resolves it: PickSingle(OptionId(0)) discovers 1 clue,
     // the window closes, and Done is returned.
     install_mock_registry();
     let inv_id = InvestigatorId(1);
@@ -1064,7 +1076,7 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
 
@@ -1156,7 +1168,7 @@ fn after_successful_investigate_fires_in_play_reaction() {
     let resumed = game_core::engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickIndex(0),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);

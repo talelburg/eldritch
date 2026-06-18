@@ -1106,31 +1106,68 @@ pub struct HandSizeDiscard {
     pub remaining: Vec<InvestigatorId>,
 }
 
-/// A single pending [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// ability waiting to resolve in a [`Continuation::Resolution`] frame.
+/// Where a [`ResolutionCandidate`] comes from — which decides how it
+/// *resolves* when picked.
 ///
-/// The **unified candidate** for both the forced run and a reaction window
-/// (Axis-B T5b): abilities resolve by `code` (registry lookup), so the same
-/// shape serves in-play instances *and* scenario board cards (act / agenda)
-/// that have no instance. Whether a candidate is mandatory vs. optional is a
-/// property of the *frame* (`can_skip`), not the candidate — forced and
-/// reaction are separate resolution runs.
+/// `InPlay` and `Board` candidates **fire an ability's effect**; a `Hand`
+/// candidate (Axis C, #335) is a Fast event **played** from hand (RR
+/// Appendix I — `CardPlayed`, run the matched ability's effect, discard),
+/// not fired in place. Replacing the former `source: Option<CardInstanceId>`
+/// with this enum lets one `pending_triggers` list carry hand events
+/// alongside in-play reactions: `None` (board) and "from hand" are distinct
+/// origins, so a bare `Option` could not tell them apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CandidateSource {
+    /// An ability on an in-play / threat-area instance (reaction trigger,
+    /// weapon, …). The instance id drives `Effect::DiscardSelf`, usage-limit
+    /// bumping, and the soak self-binding.
+    InPlay(CardInstanceId),
+    /// A scenario board card (act / agenda) — no instance; fires by `code`.
+    Board,
+    /// A Fast event in the controller's hand (Axis C) — *played* rather than
+    /// fired. No instance until it would enter play (events never do).
+    Hand,
+}
+
+impl CandidateSource {
+    /// The firing in-play instance, if any — `Some` for [`InPlay`](Self::InPlay),
+    /// `None` for [`Board`](Self::Board) (scenario card) and [`Hand`](Self::Hand)
+    /// (event not yet in play). Feeds
+    /// [`EvalContext::for_controller_with_optional_source`](crate::engine::EvalContext::for_controller_with_optional_source).
+    #[must_use]
+    pub fn instance(self) -> Option<CardInstanceId> {
+        match self {
+            CandidateSource::InPlay(id) => Some(id),
+            CandidateSource::Board | CandidateSource::Hand => None,
+        }
+    }
+}
+
+/// A single pending ability/play waiting to resolve in a
+/// [`Continuation::Resolution`] frame.
+///
+/// The **unified candidate** for the forced run, a reaction window's in-play
+/// triggers, *and* (Axis C) a Fast event playable from hand: abilities resolve
+/// by `code` (registry lookup), so the same shape serves in-play instances,
+/// scenario board cards (act / agenda), and hand events. How a picked
+/// candidate resolves is decided by its [`source`](Self::source)
+/// ([`CandidateSource`]). Whether a candidate is mandatory vs. optional is a
+/// property of the *frame*, not the candidate — forced and reaction are
+/// separate resolution runs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ResolutionCandidate {
-    /// Printed code of the card whose ability fires. Abilities are looked
-    /// up by code, so this resolves both in-play instances and board cards.
+    /// Printed code of the card whose ability fires (or which is played, for
+    /// a [`CandidateSource::Hand`] event). Abilities are looked up by code.
     pub code: CardCode,
-    /// The investigator the effect resolves under (controller).
+    /// The investigator the effect resolves under (controller / player).
     pub controller: InvestigatorId,
     /// Zero-based index into the card's
-    /// [`abilities`](crate::dsl::Ability) vec — which ability fires.
+    /// [`abilities`](crate::dsl::Ability) vec — which ability fires / runs.
     pub ability_index: u8,
-    /// The firing card instance, when there is one (in-play asset,
-    /// threat-area, attachment, reaction trigger) — used for
-    /// `Effect::DiscardSelf`, usage-limit bumping, and the soak
-    /// self-binding. `None` for scenario board cards (act / agenda).
-    pub source: Option<CardInstanceId>,
+    /// Where the candidate comes from, deciding how it resolves — see
+    /// [`CandidateSource`].
+    pub source: CandidateSource,
 }
 
 /// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
@@ -1161,10 +1198,11 @@ pub struct PendingSkillModifier {
 }
 
 impl GameState {
-    /// The topmost open window that has unresolved reaction triggers,
-    /// if any. Used by the dispatcher's "is reaction work pending?"
-    /// guards. Pure Fast-gating windows (empty `pending_triggers`)
-    /// are skipped — they don't block dispatch.
+    /// The topmost open window that has unresolved candidates, if any. Used
+    /// by the dispatcher's "is reaction work pending?" guards. A candidate is
+    /// an in-play trigger *or* a hand Fast-event play (Axis C) — both ride
+    /// `pending_triggers`. Pure Fast-gating framework windows (empty
+    /// `pending_triggers`) are skipped — they don't block dispatch.
     #[must_use]
     pub fn top_reaction_window(&self) -> Option<&ResolutionFrame> {
         self.windows()
@@ -1352,6 +1390,21 @@ mod open_window_tests {
         let json = serde_json::to_string(&kind).expect("serialize");
         let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn hand_candidate_serde_round_trips() {
+        // A Fast event playable from hand (Axis C) rides ResolutionCandidate
+        // with a `Hand` source — distinct from a board card's `None`/`Board`.
+        let candidate = ResolutionCandidate {
+            code: CardCode::new("01022"),
+            controller: InvestigatorId(1),
+            ability_index: 0,
+            source: CandidateSource::Hand,
+        };
+        let json = serde_json::to_string(&candidate).expect("serialize");
+        let back: ResolutionCandidate = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, candidate);
     }
 }
 

@@ -63,10 +63,10 @@ pub struct ChoiceOption {
 /// A prompt the engine emits when it needs player input.
 ///
 /// Carries free-form [`prompt`](Self::prompt) text plus, for the
-/// single-selection choice contract (Axis A), a structured
-/// [`options`](Self::options) list. Legacy prompt-only callers (the
-/// reaction-window `PickIndex` path, commit windows) leave `options` empty
-/// via [`InputRequest::prompt`].
+/// single-selection choice contract (Axis A + the Axis-C reaction-window
+/// migration), a structured [`options`](Self::options) list. Remaining
+/// prompt-only callers (commit windows, hand-size discard) leave `options`
+/// empty via [`InputRequest::prompt`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InputRequest {

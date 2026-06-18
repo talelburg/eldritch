@@ -121,10 +121,7 @@ pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     };
     let mut decisions = frame.decisions;
     decisions.push(*picked);
-    let eval_ctx = match frame.source {
-        Some(src) => EvalContext::for_controller_with_source(frame.controller, src),
-        None => EvalContext::for_controller(frame.controller),
-    };
+    let eval_ctx = EvalContext::for_controller_with_optional_source(frame.controller, frame.source);
     let outcome = apply_effect_with_decisions(cx, &frame.effect, eval_ctx, decisions);
 
     // If the choice completed an effect that was suspended *inside* a skill

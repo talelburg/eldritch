@@ -204,9 +204,8 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // Build the eval context for the success/failure card effects,
     // threading the firing instance (`source`) so `Effect::DiscardSelf`
     // can find itself across the suspend/resume boundary.
-    let card_ctx = |investigator: InvestigatorId| match source {
-        Some(src) => EvalContext::for_controller_with_source(investigator, src),
-        None => EvalContext::for_controller(investigator),
+    let card_ctx = |investigator: InvestigatorId| {
+        EvalContext::for_controller_with_optional_source(investigator, source)
     };
 
     // Pre-advance the continuation to PostFollowUp BEFORE running the

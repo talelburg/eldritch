@@ -89,8 +89,8 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     {
         return EngineOutcome::Rejected {
             reason: "a reaction window is open; submit a \
-                     PlayerAction::ResolveInput with an InputResponse::PickIndex \
-                     to fire a pending trigger, or InputResponse::Skip to close \
+                     PlayerAction::ResolveInput with an InputResponse::PickSingle(OptionId) \
+                     to resolve an option, or InputResponse::Skip to close \
                      the window (rejected if forced triggers remain) before any \
                      other action"
                 .into(),

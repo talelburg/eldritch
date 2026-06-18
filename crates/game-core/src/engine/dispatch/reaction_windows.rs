@@ -17,24 +17,30 @@ use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation, ForcedContinuation,
-    GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate, ResolutionFrame,
-    ResolutionKind, Status, WindowBinding, WindowKind,
+    CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation,
+    ForcedContinuation, GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate,
+    ResolutionFrame, ResolutionKind, Status, WindowBinding, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
-use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 
-/// Queue a reaction window of the given `kind` if any in-play card
-/// has a matching `Trigger::OnEvent` ability. No-op when the registry
-/// isn't installed or no card matches.
+/// Queue a reaction window of the given `kind` if any candidate matches —
+/// an in-play card with a matching `Trigger::OnEvent` ability *or* (Axis C,
+/// #335) a Fast event in hand whose play-instruction matches. No-op when the
+/// registry isn't installed or nothing matches.
 ///
 /// Emits [`Event::WindowOpened`] before pushing onto
 /// [`GameState::open_windows`] so reaction-window observability is
 /// symmetric with the Fast-window path ([`open_fast_window`]).
-/// If no triggers are pending the function returns early without
+/// If no candidate matches the function returns early without
 /// emitting anything — the window never opens.
+///
+/// The hand events are appended *after* the in-play triggers in the single
+/// `pending_triggers` list, so they are offered as options after the
+/// triggers; each carries [`CandidateSource::Hand`] so the fire path *plays*
+/// it rather than firing an in-play ability.
 ///
 /// The window suspends the surrounding driver
 /// (today, [`drive_skill_test`]) at its next step boundary: after the
@@ -48,7 +54,12 @@ use super::Cx;
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
 pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
-    let pending_triggers = scan_pending_triggers(cx.state, kind);
+    let mut pending_triggers = scan_pending_triggers(cx.state, kind);
+    // Axis C (#335): the window also opens for a matching Fast event in hand,
+    // so a defeat with Evidence! in hand (and no in-play reaction) still opens
+    // the after-defeat window. Hand plays are offered after the in-play
+    // triggers.
+    pending_triggers.extend(scan_hand_fast_events(cx.state, kind));
     if pending_triggers.is_empty() {
         return;
     }
@@ -158,12 +169,78 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                     code: card.code.clone(),
                     controller: id,
                     ability_index,
-                    source: Some(card.instance_id),
+                    source: CandidateSource::InPlay(card.instance_id),
                 });
             }
         }
     }
     pending
+}
+
+/// Scan every window-eligible investigator's hand for Fast **events** whose
+/// `Trigger::OnEvent` ability matches `kind` (Axis C, #335). The play-timing
+/// predicate is the same [`trigger_matches`] used for in-play reactions — per
+/// Rules Reference p.11 a Fast reaction event plays "as if the described
+/// timing point were a triggering condition", so a hand Fast event is its
+/// in-play twin sourced from hand.
+///
+/// Returns [`CandidateSource::Hand`] candidates in active-investigator-first
+/// / turn-order order, like [`scan_pending_triggers`]. Empty when the registry
+/// isn't installed (tests that don't touch card data) or nothing matches.
+fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionCandidate> {
+    let Some(reg) = card_registry::current() else {
+        return Vec::new();
+    };
+    let mut order: Vec<InvestigatorId> = Vec::with_capacity(state.turn_order.len());
+    if let Some(active) = state.active_investigator {
+        order.push(active);
+    }
+    for id in &state.turn_order {
+        if Some(*id) != state.active_investigator {
+            order.push(*id);
+        }
+    }
+
+    let mut plays = Vec::new();
+    for id in order {
+        let Some(inv) = state.investigators.get(&id) else {
+            continue;
+        };
+        for code in &inv.hand {
+            let Some(meta) = (reg.metadata_for)(code) else {
+                continue;
+            };
+            if !meta.is_fast() || meta.card_type() != CardType::Event {
+                continue;
+            }
+            let Some(abilities) = (reg.abilities_for)(code) else {
+                continue;
+            };
+            for (idx, ability) in abilities.iter().enumerate() {
+                let Trigger::OnEvent {
+                    pattern, timing, ..
+                } = &ability.trigger
+                else {
+                    continue;
+                };
+                if !trigger_matches(kind, pattern, *timing, id) {
+                    continue;
+                }
+                let ability_index = u8::try_from(idx)
+                    .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
+                plays.push(ResolutionCandidate {
+                    code: code.clone(),
+                    controller: id,
+                    ability_index,
+                    source: CandidateSource::Hand,
+                });
+                // One option per card: a card with two matching abilities is
+                // still offered once. No in-scope card has two.
+                break;
+            }
+        }
+    }
+    plays
 }
 
 /// Returns whether an [`Trigger::OnEvent`] ability with the given
@@ -268,6 +345,31 @@ fn trigger_matches(
     }
 }
 
+/// Build the structured option list for a resolution frame: one
+/// [`ChoiceOption`] per pending candidate, in `pending_triggers` order.
+/// `OptionId(i)` is the index into the returned list — the Axis-A convention
+/// shared with [`super::choice`]. The label distinguishes a hand Fast-event
+/// play ([`CandidateSource::Hand`]) from an in-play reaction.
+fn build_resolution_options(frame: &ResolutionFrame) -> Vec<ChoiceOption> {
+    frame
+        .pending_triggers
+        .iter()
+        .enumerate()
+        .map(|(i, cand)| {
+            let label = match cand.source {
+                CandidateSource::Hand => format!("Play {} from hand", cand.code),
+                CandidateSource::InPlay(_) | CandidateSource::Board => {
+                    format!("Resolve reaction: {}", cand.code)
+                }
+            };
+            ChoiceOption {
+                id: OptionId(u32::try_from(i).expect("option count fits in u32")),
+                label,
+            }
+        })
+        .collect()
+}
+
 /// Return [`AwaitingInput`] for the already-open reaction window at
 /// the top of [`GameState::open_windows`]. Called by [`drive_skill_test`]
 /// at a step boundary when an earlier step queued a window via
@@ -286,12 +388,16 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
+    let options = build_resolution_options(window);
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
-            "Resolution window: {} candidate(s) pending. \
-             Submit InputResponse::PickIndex to resolve one{skip_hint}.",
-            window.pending_triggers.len(),
-        )),
+        request: InputRequest::choice(
+            format!(
+                "Resolution window: {} option(s). \
+                 Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
+                options.len(),
+            ),
+            options,
+        ),
         // No multi-window state to disambiguate — routing keys off
         // the top of `state.open_windows`. Conventional 0 like the
         // commit-window's resume token.
@@ -301,8 +407,8 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
 
 /// Resume an open reaction window with the player's response.
 ///
-/// - [`InputResponse::PickIndex(i)`]: fires the i-th pending trigger
-///   via the evaluator. After firing, removes the entry. If pending
+/// - [`InputResponse::PickSingle(OptionId(i))`]: fires the i-th pending
+///   trigger via the evaluator. After firing, removes the entry. If pending
 ///   triggers remain, re-emits [`AwaitingInput`]; else closes the
 ///   window.
 /// - [`InputResponse::Skip`]: closes the window provided no forced
@@ -314,7 +420,10 @@ pub(super) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
 /// returns [`Done`].
 pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
-        InputResponse::PickIndex(i) => fire_pending_trigger(cx, *i),
+        // `OptionId(i)` indexes the single `pending_triggers` list (see
+        // `build_resolution_options`); `fire_pending_trigger` dispatches on
+        // the candidate's source (in-play ability vs. Axis-C hand play).
+        InputResponse::PickSingle(OptionId(i)) => fire_pending_trigger(cx, *i),
         InputResponse::Skip => {
             // Resolve the active reaction-window index up-front so the
             // close path operates on the same window the driver had
@@ -333,7 +442,8 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
             {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput::Skip: forced abilities are mandatory; submit \
-                             InputResponse::PickIndex to resolve one (the lead orders them)"
+                             InputResponse::PickSingle(OptionId) to resolve one (the lead \
+                             orders them)"
                         .into(),
                 };
             }
@@ -341,7 +451,7 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
         }
         other => EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: reaction window expects InputResponse::PickIndex \
+                "ResolveInput: reaction window expects InputResponse::PickSingle(OptionId) \
                  or InputResponse::Skip, got {other:?}",
             )
             .into(),
@@ -374,7 +484,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             _ => {
                 return EngineOutcome::Rejected {
                     reason: format!(
-                        "ResolveInput: reaction-window PickIndex({i}) out of bounds \
+                        "ResolveInput: reaction-window PickSingle(OptionId({i})) out of bounds \
                          (pending size {})",
                         window.pending_triggers.len(),
                     )
@@ -384,6 +494,20 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         };
         (window.pending_triggers[idx].clone(), idx)
     };
+
+    // Axis C (#335): a hand candidate is *played*, not fired in place. Remove
+    // it from the run first (so a suspending play resumes the remaining
+    // siblings, not this one again — mirrors the in-play path below), then
+    // play it.
+    if trigger.source == CandidateSource::Hand {
+        {
+            let window = cx.state.continuations[window_idx]
+                .as_resolution_mut()
+                .expect("fire_pending_trigger: window_idx is a Resolution frame");
+            window.pending_triggers.remove(pending_idx);
+        }
+        return play_fast_event(cx, window_idx, &trigger);
+    }
 
     // Look up the ability fresh from the registry. The card may have
     // changed state between scan and fire (exhausted, used, …) but
@@ -418,11 +542,11 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Thread the source instance (if any) into the EvalContext so effects
     // that self-reference (`DiscardSelf`) or push source-attributed state
     // resolve against the firing card. Board-card candidates (act / agenda)
-    // have no source.
-    let mut eval_ctx = match trigger.source {
-        Some(src) => EvalContext::for_controller_with_source(trigger.controller, src),
-        None => EvalContext::for_controller(trigger.controller),
-    };
+    // have no source; hand candidates were handled above.
+    let mut eval_ctx = EvalContext::for_controller_with_optional_source(
+        trigger.controller,
+        trigger.source.instance(),
+    );
     // For `AfterEnemyAttackDamagedAsset` windows, bind the attacking
     // enemy into the context so Guard Dog's native retaliate
     // (`Effect::Native("01021:retaliate")`) can name the attacker via
@@ -475,6 +599,75 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     }
 }
 
+/// Play the hand Fast-event `candidate` from the resolution run at
+/// `window_idx` (Axis C, #335) — the [`CandidateSource::Hand`] resolution of
+/// [`fire_pending_trigger`]. Commences the play via the shared
+/// [`super::cards::begin_event_play`] (emit [`Event::CardPlayed`], leave hand,
+/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), runs
+/// the matched `OnEvent` ability's effect, then advances the run. The apply
+/// loop flushes the event to discard on completion (step 4) — the
+/// suspending-event path Dynamite Blast 01024 uses.
+///
+/// Charges no resource cost, matching [`super::cards::play_card`] (Slice 1
+/// does not model play-cost resources). The caller has already removed the
+/// candidate from the run, so a suspending effect's resume drives the
+/// remaining siblings, not this play again.
+fn play_fast_event(
+    cx: &mut Cx,
+    window_idx: usize,
+    candidate: &ResolutionCandidate,
+) -> EngineOutcome {
+    let controller = candidate.controller;
+    // Find the event in the controller's hand by code (first match — copies
+    // are fungible; resolving by code avoids stale indices after a prior play).
+    let hand_idx = cx
+        .state
+        .investigators
+        .get(&controller)
+        .and_then(|inv| inv.hand.iter().position(|c| *c == candidate.code))
+        .unwrap_or_else(|| {
+            unreachable!(
+                "play_fast_event: candidate {candidate:?} vanished from \
+                 {controller:?}'s hand between scan and play"
+            )
+        });
+    super::cards::begin_event_play(cx, controller, hand_idx);
+
+    // Run the matched OnEvent ability's effect under the playing investigator.
+    let reg = card_registry::current().unwrap_or_else(|| {
+        unreachable!(
+            "play_fast_event: registry installed at scan time is now missing; \
+             the OnceLock contract guarantees once-set-stays-set"
+        )
+    });
+    let abilities = (reg.abilities_for)(&candidate.code).unwrap_or_else(|| {
+        unreachable!(
+            "play_fast_event: registry lost abilities for {:?} between scan and play",
+            candidate.code,
+        )
+    });
+    let effect = abilities
+        .get(usize::from(candidate.ability_index))
+        .unwrap_or_else(|| {
+            unreachable!(
+                "play_fast_event: ability_index {} out of range for {:?}",
+                candidate.ability_index, candidate.code,
+            )
+        })
+        .effect
+        .clone();
+    let eval_ctx = EvalContext::for_controller(controller);
+
+    match apply_effect(cx, &effect, eval_ctx) {
+        EngineOutcome::Rejected { reason } => unreachable!(
+            "Fast-event play: effect for {:?} rejected unexpectedly: {reason}",
+            candidate.code,
+        ),
+        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
+        EngineOutcome::Done => advance_resolution(cx, window_idx),
+    }
+}
+
 /// Advance a resolution run after one of its candidates resolved: close it
 /// (running its continuation) when none remain, else re-emit the pick prompt.
 ///
@@ -485,6 +678,9 @@ pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcom
     let window = cx.state.continuations[window_idx]
         .as_resolution()
         .expect("advance_resolution: window_idx is a Resolution frame");
+    // Close when no candidate remains. Hand Fast-event plays (Axis C) ride
+    // `pending_triggers` alongside in-play triggers, so this single check
+    // keeps a window with only a remaining hand play open.
     if window.pending_triggers.is_empty() {
         return close_reaction_window_at(cx, window_idx);
     }
@@ -493,12 +689,16 @@ pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcom
     } else {
         ", or InputResponse::Skip to close"
     };
-    let pending_len = window.pending_triggers.len();
+    let options = build_resolution_options(window);
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
-            "Resolution window: {pending_len} candidate(s) pending. \
-             Submit InputResponse::PickIndex to resolve one{skip_hint}.",
-        )),
+        request: InputRequest::choice(
+            format!(
+                "Resolution window: {} option(s). \
+                 Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
+                options.len(),
+            ),
+            options,
+        ),
         resume_token: ResumeToken(0),
     }
 }
@@ -519,13 +719,13 @@ pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcom
 fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
     let current_round = state.round;
     // Only usage-limited abilities reach here, and those are on in-play
-    // instances (reactions) — so `source` is always `Some`.
-    let instance_id = trigger.source.unwrap_or_else(|| {
+    // instances (reactions) — so the source is always `InPlay`.
+    let CandidateSource::InPlay(instance_id) = trigger.source else {
         unreachable!(
-            "bump_usage_counter: a usage-limited candidate must have a source instance \
-             (board cards carry no usage limits); candidate {trigger:?}"
+            "bump_usage_counter: a usage-limited candidate must be an in-play instance \
+             (board / hand candidates carry no usage limits); candidate {trigger:?}"
         )
-    });
+    };
     let inv = state
         .investigators
         .get_mut(&trigger.controller)
@@ -976,6 +1176,27 @@ pub(super) fn check_play_card(
                 unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
             }
         };
+    // Reaction-event gate (Axis C, #335 / #304): a Fast event whose play
+    // instruction is a triggering condition is modeled as an `OnEvent` ability
+    // (e.g. Evidence! 01022's "Play after you defeat an enemy"). RR p.11: such
+    // an event "may be played any time its play instructions specify" — i.e.
+    // ONLY in its matching reaction window, where Axis C offers it as a
+    // `PickSingle` option (the window path runs `play_fast_event`, bypassing
+    // this gate). It is never a free-timing standalone play, so reject it from
+    // the `PlayCard` action — otherwise `play_card` would run only its (absent)
+    // `OnPlay` abilities and silently discard it for no effect.
+    if card_type == CardType::Event
+        && abilities
+            .iter()
+            .any(|a| matches!(a.trigger, Trigger::OnEvent { .. }))
+    {
+        return Err(format!(
+            "PlayCard: {code} is a reaction event — it may only be played in response \
+             to its triggering condition (its reaction window), not as a standalone \
+             action (RR p.11)."
+        )
+        .into());
+    }
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);

@@ -537,26 +537,16 @@ pub(super) fn play_card(
         .hand[idx]
         .clone();
 
-    // Mutate.
-    cx.events.push(Event::CardPlayed {
-        investigator,
-        code: code.clone(),
-    });
-    // RR Appendix I, step 3: an event "commences being played" — it leaves
-    // hand now and is placed in discard on *completion* of its effect (step 4),
-    // flushed from `pending_played_event` by the apply loop on `Done`. Stashing
-    // it before running OnPlay means a suspending effect (Dynamite Blast's
-    // location choice) discards the event when it resumes rather than stranding
-    // it in hand. (An asset enters play after its OnPlay effect, below.)
-    if let super::PlayDestination::Discard = destination {
-        let card = cx
-            .state
-            .investigators
-            .get_mut(&investigator)
-            .expect("checked")
-            .hand
-            .remove(idx);
-        cx.state.pending_played_event = Some((investigator, card));
+    // Mutate. An event commences being played (`CardPlayed` + leaves hand +
+    // stashed for discard-on-completion) via the shared `begin_event_play`;
+    // an asset emits `CardPlayed` now and enters play after its OnPlay effect
+    // (below).
+    match destination {
+        super::PlayDestination::Discard => begin_event_play(cx, investigator, idx),
+        super::PlayDestination::InPlay => cx.events.push(Event::CardPlayed {
+            investigator,
+            code: code.clone(),
+        }),
     }
     let eval_ctx = EvalContext::for_controller(investigator);
     for ability in abilities.iter().filter(|a| a.trigger == Trigger::OnPlay) {
@@ -585,6 +575,42 @@ pub(super) fn play_card(
             .push(in_play);
     }
     EngineOutcome::Done
+}
+
+/// Commence playing an event from `investigator`'s hand at `hand_index` (RR
+/// Appendix I, step 3): emit [`Event::CardPlayed`], remove the card from hand,
+/// and stash it in
+/// [`pending_played_event`](crate::state::GameState::pending_played_event) so
+/// it is placed in discard on *completion* of its effect (step 4), flushed by
+/// the apply loop on `Done`. Stashing before the effect runs means a
+/// suspending effect (Dynamite Blast 01024's location choice) discards the
+/// event when it resumes rather than stranding it in hand.
+///
+/// Shared by [`play_card`]'s event branch and the Axis-C reaction-event play
+/// (`reaction_windows::play_fast_event`). The caller runs the event's
+/// effect(s) after this returns; neither path charges a resource cost (Slice 1
+/// does not model play-cost resources). The caller guarantees `investigator`
+/// exists and `hand_index` is in bounds.
+pub(super) fn begin_event_play(cx: &mut Cx, investigator: InvestigatorId, hand_index: usize) {
+    let code = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .expect("begin_event_play: caller guarantees investigator exists")
+        .hand[hand_index]
+        .clone();
+    cx.events.push(Event::CardPlayed {
+        investigator,
+        code: code.clone(),
+    });
+    let card = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("begin_event_play: caller guarantees investigator exists")
+        .hand
+        .remove(hand_index);
+    cx.state.pending_played_event = Some((investigator, card));
 }
 
 /// Flush a [`pending_played_event`](crate::state::GameState::pending_played_event)
