@@ -1176,6 +1176,27 @@ pub(super) fn check_play_card(
                 unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
             }
         };
+    // Reaction-event gate (Axis C, #335 / #304): a Fast event whose play
+    // instruction is a triggering condition is modeled as an `OnEvent` ability
+    // (e.g. Evidence! 01022's "Play after you defeat an enemy"). RR p.11: such
+    // an event "may be played any time its play instructions specify" — i.e.
+    // ONLY in its matching reaction window, where Axis C offers it as a
+    // `PickSingle` option (the window path runs `play_fast_event`, bypassing
+    // this gate). It is never a free-timing standalone play, so reject it from
+    // the `PlayCard` action — otherwise `play_card` would run only its (absent)
+    // `OnPlay` abilities and silently discard it for no effect.
+    if card_type == CardType::Event
+        && abilities
+            .iter()
+            .any(|a| matches!(a.trigger, Trigger::OnEvent { .. }))
+    {
+        return Err(format!(
+            "PlayCard: {code} is a reaction event — it may only be played in response \
+             to its triggering condition (its reaction window), not as a standalone \
+             action (RR p.11)."
+        )
+        .into());
+    }
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);

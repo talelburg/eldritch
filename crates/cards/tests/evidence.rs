@@ -20,7 +20,7 @@ use game_core::state::{
 use game_core::test_support::{
     drive, test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{assert_event, assert_no_event, Action, PlayerAction};
+use game_core::{apply, assert_event, assert_no_event, Action, PlayerAction};
 
 /// `ArkhamDB` code for original-Core Evidence!.
 const EVIDENCE: &str = "01022";
@@ -105,6 +105,40 @@ fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
         .hand
         .iter()
         .any(|c| c.as_str() == EVIDENCE));
+}
+
+#[test]
+fn evidence_cannot_be_played_as_a_standalone_action() {
+    // #304 acceptance: Evidence! is illegal outside its named window. Playing
+    // it via the ordinary PlayCard action (here, during the turn with no defeat)
+    // must reject — otherwise it would run no OnPlay effect and silently fizzle.
+    let (inv_id, _enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(2);
+    assert_eq!(
+        state.investigators[&inv_id].hand[0].as_str(),
+        EVIDENCE,
+        "fixture invariant: Evidence! is the only hand card, at index 0",
+    );
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: inv_id,
+            hand_index: 0,
+        }),
+    );
+
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "Evidence! must be illegal as a standalone play; got {:?}",
+        result.outcome,
+    );
+    // State unchanged: still in hand, not discarded, no clue moved.
+    assert!(result.state.investigators[&inv_id]
+        .hand
+        .iter()
+        .any(|c| c.as_str() == EVIDENCE));
+    assert!(result.state.investigators[&inv_id].discard.is_empty());
+    assert_eq!(result.state.locations[&loc_id].clues, 2);
 }
 
 #[test]

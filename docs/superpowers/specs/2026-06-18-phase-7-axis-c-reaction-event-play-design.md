@@ -175,6 +175,20 @@ per-card, controller-scoped predicate), so the blanket is no longer the thing
 deciding whether Evidence! is playable here. We document this and do not remove
 `fast_actors` (it remains the multiplayer-relevant "who may act" gate).
 
+### 6. Reaction-event play gate (the enforcement half of #304's acceptance)
+
+Offering Evidence! in its window is only half the contract — #304 also requires
+it to be **illegal outside** that window. A reaction event is window-only: its
+play instruction *is* a triggering condition (modeled as the `OnEvent` ability),
+and RR p.11 says such an event "may be played any time its play instructions
+specify" — i.e. only then. So `check_play_card` rejects a `PlayCard` of an
+event whose abilities contain any `Trigger::OnEvent` (the standalone-action
+path). The window play (`play_fast_event`) bypasses `check_play_card`, so the
+reaction route is unaffected. Without this gate `play_card` would run only the
+event's (absent) `OnPlay` abilities and silently discard Evidence! for no
+effect — a `no-silent-approximation` violation. The gate generalizes to Dodge
+01023 (also `OnEvent`, also window-only).
+
 ## Scope boundary
 
 - **Framework `open_fast_window` windows are out of scope.** They return `Done`
@@ -245,11 +259,19 @@ not hand-typed.
    offers Evidence! → `PickSingle` it → 1 clue discovered at the location, Evidence!
    in discard, window closed. Cover the both-sources case (Roland in play *and*
    Evidence! in hand → two options).
-4. **Regression:** existing reaction-window tests (Roland 01001, Dr. Milan 01033,
+4. **Play-gate test** (`crates/cards/tests/evidence.rs`): a `PlayCard` of Evidence!
+   as a standalone action (no defeat window open) **rejects** and leaves state
+   unchanged (still in hand, no clue) — #304's "illegal outside its window."
+5. **Regression:** existing reaction-window tests (Roland 01001, Dr. Milan 01033,
    Guard Dog soak) migrate from `PickIndex` to `PickSingle(OptionId)` and stay green.
 
 ## Decisions made (to fold into the phase doc when the PR lands)
 
+- **A reaction event is window-only: `check_play_card` rejects a `PlayCard` of an
+  event with any `Trigger::OnEvent` ability** (the standalone-action path), so
+  Evidence! is illegal outside its window (#304 acceptance) and can't silently
+  fizzle through `play_card`'s `OnPlay`-only loop. The window play (`play_fast_event`)
+  bypasses the gate. Generalizes to Dodge.
 - **Evidence!'s play-timing predicate is the existing `OnEvent`/`trigger_matches`
   match, not a new "play window" field — a Fast reaction event is its in-play-
   reaction twin sourced from hand (RR p.11).** Evidence! reuses Roland 01001's exact
