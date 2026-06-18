@@ -70,6 +70,7 @@ pub mod automatic_45;
 pub mod beat_cop;
 pub mod cellar;
 pub mod deduction;
+pub mod dodge;
 pub mod dr_milan_christopher;
 pub mod dynamite_blast;
 pub mod emergency_cache;
@@ -118,6 +119,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         beat_cop::CODE => Some(beat_cop::abilities()),
         cellar::CODE => Some(cellar::abilities()),
         deduction::CODE => Some(deduction::abilities()),
+        dodge::CODE => Some(dodge::abilities()),
         dr_milan_christopher::CODE => Some(dr_milan_christopher::abilities()),
         dynamite_blast::CODE => Some(dynamite_blast::abilities()),
         emergency_cache::CODE => Some(emergency_cache::abilities()),
