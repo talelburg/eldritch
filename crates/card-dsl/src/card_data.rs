@@ -356,6 +356,10 @@ pub enum CardKind {
         /// Limited-use tokens granted on enter-play ("Uses (N ammo)"),
         /// or `None`. Pipeline-parsed from card text.
         uses: Option<Uses>,
+        /// Whether the card prints "Play only during your turn" (restricts a
+        /// Fast play to the controller's own Investigation turn). Pipeline-
+        /// parsed, like `is_fast`.
+        play_only_during_turn: bool,
     },
     /// Event — played from hand, then discarded.
     Event {
@@ -371,6 +375,10 @@ pub enum CardKind {
         is_fast: bool,
         /// Maximum copies per deck.
         deck_limit: u8,
+        /// Whether the card prints "Play only during your turn" (restricts a
+        /// Fast play to the controller's own Investigation turn). Pipeline-
+        /// parsed, like `is_fast`.
+        play_only_during_turn: bool,
     },
     /// Skill — committed to a skill test (never played for a cost).
     Skill {
@@ -513,6 +521,23 @@ impl CardMetadata {
         )
     }
 
+    /// Whether the card is restricted to "Play only during your turn" (Mind
+    /// over Matter 01036, Working a Hunch 01037, …). Only Asset/Event carry
+    /// it; everything else is `false`. Mirrors [`is_fast`](Self::is_fast).
+    #[must_use]
+    pub fn play_only_during_turn(&self) -> bool {
+        matches!(
+            self.kind,
+            CardKind::Asset {
+                play_only_during_turn: true,
+                ..
+            } | CardKind::Event {
+                play_only_during_turn: true,
+                ..
+            }
+        )
+    }
+
     /// Surge keyword (Rules Reference p.19). Only Enemy/Treachery
     /// encounter cards carry it; everything else is `false`.
     #[must_use]
@@ -576,12 +601,35 @@ mod is_fast_tests {
                 is_fast: true,
                 deck_limit: 2,
                 uses: None,
+                play_only_during_turn: false,
             },
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
         assert!(matches!(back.kind, CardKind::Asset { is_fast: true, .. }));
+    }
+
+    #[test]
+    fn play_only_during_turn_reads_the_stored_flag() {
+        let event = |play_only_during_turn| CardMetadata {
+            code: "01036".into(),
+            name: "Mind over Matter".into(),
+            traits: vec!["Insight".into()],
+            text: Some("Fast. Play only during your turn. …".into()),
+            pack_code: "core".into(),
+            kind: CardKind::Event {
+                class: Class::Seeker,
+                cost: Some(1),
+                xp: Some(0),
+                skill_icons: SkillIcons::default(),
+                is_fast: true,
+                deck_limit: 2,
+                play_only_during_turn,
+            },
+        };
+        assert!(event(true).play_only_during_turn());
+        assert!(!event(false).play_only_during_turn());
     }
 
     #[test]

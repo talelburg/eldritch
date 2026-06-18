@@ -121,6 +121,7 @@ mod tests {
                 is_fast: false,
                 deck_limit: 2,
                 uses: None,
+                play_only_during_turn: false,
             },
         }
     }

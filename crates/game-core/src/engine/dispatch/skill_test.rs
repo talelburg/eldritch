@@ -18,8 +18,9 @@ use crate::state::{
 use super::super::evaluator::{
     apply_effect, constant_skill_modifier, pending_skill_modifier, EvalContext,
 };
-use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
+use crate::action::InputResponse;
 
 // Nine args: the skill-test parameters are genuinely independent axes
 // (skill, kind, difficulty, success/fail follow-ups, source). A params
@@ -96,29 +97,117 @@ pub(in crate::engine) fn start_skill_test(
         test_modifier,
         bonus_attack_damage: 0,
     });
-    // Resume-handle on the one stack (Axis-B T4): the test parks at its
-    // commit window. Resolution (reaction/fast) frames push *above* this
-    // when a window opens mid-test; popped when the test fully resolves.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::SkillTest);
     cx.events.push(Event::SkillTestStarted {
         investigator,
         skill,
         difficulty,
     });
 
+    // "Use X in place of Y?" (Mind over Matter 01036): if this is a Combat or
+    // Agility test and the investigator has a covering round-scoped
+    // substitution active, offer the choice BEFORE the commit window — the
+    // test type is fixed here (per the card's FAQ). The in-flight record (just
+    // created) is the parking; `resume_substitution_choice` rewrites its skill
+    // on "yes". Routed via `pending_substitution_prompt`.
+    if substitution_covers(cx.state, investigator, skill) {
+        cx.state.pending_substitution_prompt = Some(investigator);
+        let use_skill = SkillKind::Intellect; // sole substitution in scope
+        return EngineOutcome::AwaitingInput {
+            request: InputRequest::choice(
+                format!(
+                    "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \
+                     (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
+                ),
+                vec![
+                    ChoiceOption {
+                        id: OptionId(0),
+                        label: format!("Use {use_skill:?}"),
+                    },
+                    ChoiceOption {
+                        id: OptionId(1),
+                        label: format!("Keep {skill:?}"),
+                    },
+                ],
+            ),
+            resume_token: ResumeToken(0),
+        };
+    }
+    open_commit_window(cx)
+}
+
+/// Whether `investigator` has an active round-scoped substitution covering a
+/// `skill` test (Mind over Matter 01036: Intellect for Combat/Agility).
+fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: SkillKind) -> bool {
+    state
+        .skill_substitutions
+        .iter()
+        .any(|s| s.investigator == investigator && s.for_skills.contains(&skill))
+}
+
+/// Push the skill-test resume frame and return the commit-window
+/// `AwaitingInput` for the in-flight test. Shared by `start_skill_test` (the
+/// no-substitution path) and `resume_substitution_choice` (after the Mind over
+/// Matter prompt). Reads the (possibly rewritten) skill off the in-flight
+/// record so the prompt message matches.
+fn open_commit_window(cx: &mut Cx) -> EngineOutcome {
+    let (investigator, skill, difficulty) = {
+        let t = cx
+            .state
+            .in_flight_skill_test
+            .as_ref()
+            .expect("open_commit_window: in-flight test must exist");
+        (t.investigator, t.skill, t.difficulty)
+    };
+    // Resume-handle on the one stack (Axis-B T4): the test parks at its commit
+    // window. Resolution (reaction/fast) frames push *above* this when a window
+    // opens mid-test; popped when the test fully resolves.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::SkillTest);
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(format!(
             "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
              (difficulty {difficulty}). Empty indices commits no cards.",
         )),
-        // Routing keys off `state.in_flight_skill_test`, not the
-        // token, so any opaque value is fine here. ResumeToken(0) is
-        // the conventional "no extra context needed" choice for the
-        // first AwaitingInput site.
         resume_token: ResumeToken(0),
     }
+}
+
+/// Resume the Mind over Matter substitution prompt (#322): `PickSingle(0)`
+/// rewrites the in-flight test to an Intellect test (dropping any weapon combat
+/// bonus per the FAQ "ignore bonuses to Combat or Agility"); `PickSingle(1)`
+/// keeps the printed skill (a genuine "may" — a player may decline to fail on
+/// purpose). Either way, opens the commit window.
+pub(in crate::engine) fn resume_substitution_choice(
+    cx: &mut Cx,
+    response: &InputResponse,
+) -> EngineOutcome {
+    let InputResponse::PickSingle(OptionId(opt)) = response else {
+        return EngineOutcome::Rejected {
+            reason: "substitution prompt expects PickSingle(0|1)".into(),
+        };
+    };
+    if *opt > 1 {
+        return EngineOutcome::Rejected {
+            reason: format!("substitution prompt: PickSingle({opt}) out of range (0|1)").into(),
+        };
+    }
+    cx.state.pending_substitution_prompt = None;
+    if *opt == 0 {
+        // Use Intellect: the test becomes an Intellect test (base / icons /
+        // bonuses all key off `skill`), and a weapon's combat bonus
+        // (`test_modifier`) is dropped — FAQ "ignore any bonuses to Combat or
+        // Agility". Bonus damage (`extra_damage` / `bonus_attack_damage`) is
+        // separate and untouched.
+        let t = cx
+            .state
+            .in_flight_skill_test
+            .as_mut()
+            .expect("resume_substitution_choice: in-flight test must exist");
+        t.skill = SkillKind::Intellect;
+        t.test_modifier = 0;
+    }
+    open_commit_window(cx)
 }
 
 /// Commit-stage entry to the skill-test resolution driver. Handles
@@ -1231,6 +1320,142 @@ mod tests {
         assert_eq!(
             state.investigators[&inv].horror, 1,
             "on_success effect ran on the passing draw",
+        );
+    }
+
+    fn substitution_state(inv: InvestigatorId) -> GameState {
+        use crate::state::{ChaosToken, SkillSubstitution};
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        state.skill_substitutions.push(SkillSubstitution {
+            investigator: inv,
+            use_skill: SkillKind::Intellect,
+            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+        });
+        state
+    }
+
+    #[test]
+    fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
+        let inv = InvestigatorId(1);
+        let mut state = substitution_state(inv);
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            // test_modifier 2 stands in for a weapon's +combat bonus.
+            start_skill_test(
+                &mut cx,
+                inv,
+                SkillKind::Combat,
+                SkillTestKind::Fight,
+                3,
+                SkillTestFollowUp::None,
+                None,
+                None,
+                None,
+                2,
+            )
+        };
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
+        assert_eq!(state.pending_substitution_prompt, Some(inv));
+
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
+        };
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit window"
+        );
+        let t = state.in_flight_skill_test.as_ref().unwrap();
+        assert_eq!(t.skill, SkillKind::Intellect, "now an intellect test");
+        assert_eq!(t.kind, SkillTestKind::Fight, "still a Fight (damage)");
+        assert_eq!(t.test_modifier, 0, "weapon combat bonus dropped");
+        assert!(state.pending_substitution_prompt.is_none());
+    }
+
+    #[test]
+    fn substitution_choice_no_keeps_the_printed_skill() {
+        let inv = InvestigatorId(1);
+        let mut state = substitution_state(inv);
+        let mut events = Vec::new();
+        {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let _ = start_skill_test(
+                &mut cx,
+                inv,
+                SkillKind::Agility,
+                SkillTestKind::Evade,
+                3,
+                SkillTestFollowUp::None,
+                None,
+                None,
+                None,
+                0,
+            );
+        }
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(1)))
+        };
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit window"
+        );
+        assert_eq!(
+            state.in_flight_skill_test.as_ref().unwrap().skill,
+            SkillKind::Agility,
+            "declined — keeps the printed skill",
+        );
+    }
+
+    #[test]
+    fn no_active_substitution_opens_commit_window_directly() {
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![crate::state::ChaosToken::Numeric(0)];
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            start_skill_test(
+                &mut cx,
+                inv,
+                SkillKind::Combat,
+                SkillTestKind::Fight,
+                3,
+                SkillTestFollowUp::None,
+                None,
+                None,
+                None,
+                0,
+            )
+        };
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
+        assert!(state.pending_substitution_prompt.is_none(), "no prompt");
+        assert_eq!(
+            state.in_flight_skill_test.as_ref().unwrap().skill,
+            SkillKind::Combat,
         );
     }
 }

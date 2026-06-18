@@ -270,16 +270,13 @@ fn fast_activated_ability_rejected_when_no_permissive_window() {
 }
 
 #[test]
-fn fast_event_playable_by_active_investigator_outside_investigation_in_permissive_window() {
-    // Working a Hunch (01037): Fast event, "Play only during your turn.
-    // Discover 1 clue at your location." Rules Reference page 11:
-    // "A fast event card may be played from a player's hand any time
-    // its play instructions specify." The card-level "Play only during
-    // your turn" constraint is a *card-level* restriction not yet
-    // modeled in the DSL; this test exercises the *engine gate* which
-    // permits Fast events when the open window's fast_actors permits
-    // the actor. Pre-#103 the strict gate rejected for `phase !=
-    // Investigation` regardless of windows; the loosened gate accepts.
+fn fast_event_play_only_during_turn_rejected_outside_investigation() {
+    // Working a Hunch (01037): "Fast. Play only during your turn. Discover 1
+    // clue at your location." The `play_only_during_turn` metadata flag (#322)
+    // tightens the Fast gate to the active investigator's Investigation turn,
+    // so even a permissive window in the Mythos phase is rejected — per the FAQ,
+    // "'your turn' is within the Investigation phase." (Was previously, wrongly,
+    // accepted while the clause was unenforced.)
     install_cards_registry();
     let loc = LocationId(101);
     let mut a = test_investigator(1);
@@ -306,41 +303,26 @@ fn fast_event_playable_by_active_investigator_outside_investigation_in_permissiv
         }),
     );
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "Working a Hunch should play Fast for the active investigator during a permissive \
-         non-Investigation window: {:?}",
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "'Play only during your turn' is rejected outside the Investigation phase: {:?}",
         result.outcome,
     );
-    let a_after = result.state.investigators.get(&InvestigatorId(1)).unwrap();
-    assert_eq!(a_after.hand.len(), 0, "card should have left hand");
+    // Unchanged: still in hand, clue not taken.
     assert_eq!(
-        a_after.discard.len(),
+        result.state.investigators[&InvestigatorId(1)].hand.len(),
         1,
-        "event lands in discard after OnPlay resolves",
+        "card stays in hand on reject",
     );
-    // Assert the OnPlay effect actually fired: clue moved from location to investigator.
-    assert_eq!(
-        a_after.clues, 1,
-        "investigator should have picked up the clue from Working a Hunch's OnPlay effect",
-    );
-    assert_eq!(
-        result.state.locations.get(&loc).unwrap().clues,
-        0,
-        "location clue should have moved to the investigator",
-    );
+    assert_eq!(result.state.locations[&loc].clues, 1, "no clue taken");
 }
 
 #[test]
-fn fast_event_playable_by_non_owner_when_window_permits() {
-    // Working a Hunch (01037) text: "Fast. Play only during your turn.
-    // Discover 1 clue at your location."
-    // The "Play only during your turn" clause is a CARD-LEVEL constraint
-    // not yet enforced by the engine. The engine's Fast-event gate per
-    // Rules Reference p. 11 ("A fast event card may be played ... any
-    // time its play instructions specify") permits ANY actor when a
-    // window allows. This test locks in the engine-vs-card-level
-    // boundary so a future PR adding card-level enforcement doesn't
-    // accidentally tighten the engine gate.
+fn fast_event_play_only_during_turn_rejected_for_non_owner() {
+    // Working a Hunch (01037): "Fast. Play only during your turn." During
+    // investigator 1's turn (Investigation, active = inv 1), investigator 2
+    // cannot play it — it is not inv 2's turn. The `play_only_during_turn`
+    // gate (#322) requires the *active* investigator, so a non-owner is
+    // rejected even in a permissive window.
     install_cards_registry();
     let a = test_investigator(1);
     let loc = LocationId(101);
@@ -369,9 +351,8 @@ fn fast_event_playable_by_non_owner_when_window_permits() {
         }),
     );
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "engine permits Fast event by non-owner when window allows; \
-         card-level 'Play only during your turn' is a separate concern: {:?}",
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "non-owner cannot play a 'Play only during your turn' event on another's turn: {:?}",
         result.outcome,
     );
 }

@@ -28,7 +28,7 @@ pub use game_state::{
     EnemyAttackSource, FastActorScope, FinishContinuation, ForcedContinuation, GameState,
     HandSizeDiscard, HunterChoice, InFlightSkillTest, PendingEnemyAttack, PendingSkillModifier,
     PhaseStep, ResolutionCandidate, ResolutionFrame, ResolutionKind, RoundEndAdvance,
-    SkillTestFollowUp, SpawnEngagePending, WindowBinding, WindowKind,
+    SkillSubstitution, SkillTestFollowUp, SpawnEngagePending, WindowBinding, WindowKind,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};

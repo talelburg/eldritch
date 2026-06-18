@@ -290,6 +290,8 @@ impl GameStateBuilder {
             pending_cancellation: false,
             pending_revelation_discard: None,
             pending_played_event: None,
+            skill_substitutions: Vec::new(),
+            pending_substitution_prompt: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
             agenda_deck: Vec::new(),

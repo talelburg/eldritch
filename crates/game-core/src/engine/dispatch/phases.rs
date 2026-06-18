@@ -686,6 +686,11 @@ fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// run's [`ForcedContinuation::UpkeepAfterRoundEnded`] close when 2+ forced
 /// abilities suspended for the lead's ordering choice (#213).
 pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
+    // "Any active 'until the end of the round' lasting effects expire at this
+    // time" (RR p.24, step 4.6 — the round ends here, after the round-end
+    // forced abilities have resolved). Mind over Matter 01036's substitution
+    // expires now, not at the next round's Mythos step.
+    cx.state.skill_substitutions.clear();
     // Act objective: a round-end "may spend clues to advance" window
     // (01109). Opens only when the current act carries it AND the
     // contributor-location investigators can afford the threshold — the
@@ -3451,6 +3456,35 @@ mod start_scenario_tests {
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty(), "no events on reject");
+    }
+
+    #[test]
+    fn round_end_clears_round_scoped_skill_substitutions() {
+        // RR p.24 step 4.6: "until the end of the round" effects expire as the
+        // round ends — at upkeep_after_round_ended, not the next Mythos step.
+        use crate::card_data::SkillKind;
+        use crate::state::{InvestigatorId, SkillSubstitution};
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([id])
+            .with_active_investigator(id)
+            .build();
+        state.round = 1;
+        state.skill_substitutions.push(SkillSubstitution {
+            investigator: id,
+            use_skill: SkillKind::Intellect,
+            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
+        });
+        let mut events = Vec::new();
+        super::upkeep_after_round_ended(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        assert!(
+            state.skill_substitutions.is_empty(),
+            "round end (step 4.6) clears round-scoped substitutions",
+        );
     }
 
     #[test]
