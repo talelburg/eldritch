@@ -266,68 +266,9 @@ async fn play_picker_submits_play_card_by_hand_index() {
     }
 }
 
-/// A setup game where investigator 1 is on the mulligan cursor with a
-/// two-card hand.
-fn mulligan_game() -> game_core::state::GameState {
-    let mut inv = test_investigator(1);
-    inv.hand = vec![
-        CardCode::new("_synth_event_a"),
-        CardCode::new("_synth_event_b"),
-    ];
-    GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_active_investigator(InvestigatorId(1))
-        .with_phase(Phase::Investigation)
-        .with_round(1)
-        .with_mulligan_pending(InvestigatorId(1))
-        .build()
-}
-
-#[wasm_bindgen_test]
-async fn mulligan_submits_selected_indices() {
-    let mut rx = mount(mulligan_game(), EngineOutcome::Done).await;
-    let controls = last_controls();
-    // Select the first card, then submit.
-    let cards = controls.query_selector_all(".mull-card").expect("query");
-    cards
-        .item(0)
-        .expect("first mull-card")
-        .dyn_into::<web_sys::HtmlElement>()
-        .expect("HtmlElement")
-        .click();
-    leptos::task::tick().await;
-    click_in(&controls, ".mulligan-submit");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::Mulligan {
-            investigator,
-            indices_to_redraw,
-        } => {
-            assert_eq!(investigator, InvestigatorId(1));
-            assert_eq!(indices_to_redraw, vec![0]);
-        }
-        other => panic!("expected Mulligan, got {other:?}"),
-    }
-}
-
-#[wasm_bindgen_test]
-async fn mulligan_with_no_selection_keeps_hand() {
-    let mut rx = mount(mulligan_game(), EngineOutcome::Done).await;
-    click_in(&last_controls(), ".mulligan-submit");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::Mulligan {
-            investigator,
-            indices_to_redraw,
-        } => {
-            assert_eq!(investigator, InvestigatorId(1));
-            assert_eq!(indices_to_redraw, Vec::<u8>::new());
-        }
-        other => panic!("expected Mulligan, got {other:?}"),
-    }
-}
+// The dedicated mulligan-picker tests are gone (#348 part 2c-iii-a): the setup
+// mulligan is now an `AwaitingInput` handled by `AwaitingInputView`, covered by
+// the mulligan tests in tests/input.rs.
 
 /// An Investigation-phase game with one enemy (id 7) engaged with the
 /// active investigator (id 1).

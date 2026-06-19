@@ -21,7 +21,7 @@ use game_core::engine::apply;
 use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{GameState, InvestigatorId, Phase};
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::REGISTRY;
 
@@ -62,9 +62,8 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
         state,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv,
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
         ],
     );
@@ -90,7 +89,6 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
 #[test]
 fn synthetic_scenario_resolves_lost_via_doom() {
     install_registry();
-    let inv = InvestigatorId(1);
     let mut base = scenarios::test_fixtures::synthetic::setup();
     base.encounter_discard.clear();
 
@@ -99,9 +97,8 @@ fn synthetic_scenario_resolves_lost_via_doom() {
         base,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv,
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
         ],
     );

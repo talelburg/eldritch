@@ -54,7 +54,7 @@ pub struct GameStateBuilder {
     active_investigator: Option<InvestigatorId>,
     turn_order: Vec<InvestigatorId>,
     rng: RngState,
-    mulligan_pending: Option<InvestigatorId>,
+    mulligan_remaining: Option<Vec<InvestigatorId>>,
     hand_size_discard_pending: Option<HandSizeDiscard>,
     open_windows: Vec<ResolutionFrame>,
     scenario_id: Option<ScenarioId>,
@@ -77,7 +77,7 @@ impl GameStateBuilder {
             active_investigator: None,
             turn_order: Vec::new(),
             rng: RngState::new(0),
-            mulligan_pending: None,
+            mulligan_remaining: None,
             hand_size_discard_pending: None,
             open_windows: Vec::new(),
             scenario_id: None,
@@ -202,14 +202,19 @@ impl GameStateBuilder {
         self
     }
 
-    /// Seed the mulligan cursor to `id`. By default the cursor is
-    /// `None` so tests don't accidentally exercise Mulligan paths; opt
-    /// in when a test wants to fire the Mulligan action directly
-    /// without going through `StartScenario`. The investigator must be
-    /// in `turn_order` (set via [`with_turn_order`](Self::with_turn_order))
-    /// for the cursor to advance correctly after the mulligan.
-    pub fn with_mulligan_pending(mut self, id: InvestigatorId) -> Self {
-        self.mulligan_pending = Some(id);
+    /// Stage a pending setup mulligan over the given player-order queue
+    /// (front = currently prompted). By default no mulligan is staged so
+    /// tests don't accidentally exercise Mulligan paths; opt in when a test
+    /// wants to resume the mulligan loop directly via `ResolveInput` without
+    /// going through `StartScenario`. The queue must list the investigators in
+    /// `turn_order` (set via [`with_turn_order`](Self::with_turn_order)) so the
+    /// loop advances correctly. Stages a [`Continuation::Mulligan`] frame at
+    /// [`build`](Self::build).
+    pub fn with_mulligan_remaining(
+        mut self,
+        remaining: impl IntoIterator<Item = InvestigatorId>,
+    ) -> Self {
+        self.mulligan_remaining = Some(remaining.into_iter().collect());
         self
     }
 
@@ -262,6 +267,12 @@ impl GameStateBuilder {
         if let Some(hsd) = self.hand_size_discard_pending {
             continuations.push(Continuation::HandSizeDiscard(hsd));
         }
+        // A staged setup mulligan becomes a `Mulligan` frame (#348). Setup and
+        // upkeep are disjoint phases, so this never coexists with a staged
+        // hand-size discard; push order is immaterial.
+        if let Some(remaining) = self.mulligan_remaining {
+            continuations.push(Continuation::Mulligan { remaining });
+        }
         GameState {
             investigators: self.investigators,
             locations: self.locations,
@@ -276,7 +287,6 @@ impl GameStateBuilder {
             active_investigator: self.active_investigator,
             turn_order: self.turn_order,
             rng: self.rng,
-            mulligan_pending: self.mulligan_pending,
             card_instance_ids: Counter::new(),
             enemy_ids: Counter::new(),
             location_ids: Counter::new(),

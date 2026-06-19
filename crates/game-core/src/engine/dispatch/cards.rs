@@ -1,6 +1,7 @@
 //! Card-related dispatch handlers: deck management, drawing, mulligan,
 //! resource grants, and card play.
 
+use crate::action::InputResponse;
 use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::Trigger;
@@ -8,7 +9,7 @@ use crate::event::Event;
 use crate::state::{CardCode, InvestigatorId, Status, Zone};
 
 use super::super::evaluator::{apply_effect, EvalContext};
-use super::super::outcome::EngineOutcome;
+use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use super::Cx;
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -271,68 +272,89 @@ pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Handler for [`PlayerAction::Mulligan`].
+/// Push a [`Continuation::Mulligan`](crate::state::Continuation::Mulligan)
+/// frame over `remaining` and return the [`EngineOutcome::AwaitingInput`] that
+/// prompts `remaining[0]` to mulligan. Used by `start_scenario` (first prompt)
+/// and [`resume_mulligan`] (re-prompt after a queue pop). `remaining` must be
+/// non-empty; callers ensure this.
+pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
+    let next = remaining[0];
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::Mulligan { remaining });
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::prompt(format!(
+            "Setup mulligan: {next:?} may mulligan; submit InputResponse::PickMultiple with the \
+             hand indices (as option ids) to redraw (an empty selection keeps the hand).",
+        )),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume the setup mulligan loop (#348), driving the top
+/// [`Continuation::Mulligan`](crate::state::Continuation::Mulligan) frame.
 ///
-/// Per the Rules Reference, the redrawn cards shuffle directly back
-/// into the deck (not via the discard pile). Validates that it is this
-/// investigator's turn to mulligan (`mulligan_pending == Some(investigator)`,
-/// Rules Reference p.16 player order) and that the redraw indices are in
-/// bounds and unique.
-///
-/// On success: move named hand cards to the deck, shuffle, draw the
-/// same count back, advance `mulligan_pending` to the next investigator
-/// in player order, emit `MulliganPerformed`. An empty `indices_to_redraw`
-/// is a legal "keep my hand" mulligan that consumes the turn without
-/// touching the deck.
-pub(super) fn mulligan(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    indices_to_redraw: &[u8],
-) -> EngineOutcome {
-    // One check subsumes the three old ones: the cursor only ever holds
-    // an Active `turn_order` id, so a mismatch covers setup-over (`None`),
-    // wrong-player / too-early, and already-went (cursor moved past you).
-    if cx.state.mulligan_pending != Some(investigator) {
+/// The acting investigator is the frame's `remaining[0]` (Rules Reference p.16
+/// player order) — the response carries no investigator. Validates the
+/// `PickMultiple` redraw indices (each [`OptionId`](crate::engine::OptionId) is
+/// a hand index) are in bounds and unique. On success: move named hand cards
+/// directly back into the deck (not via the discard pile, per the rules),
+/// shuffle, draw the same count back, emit [`Event::MulliganPerformed`], then
+/// pop the queue front. When the queue drains, setup ends — "the game begins"
+/// (Rules Reference p.27): round 1 skips Mythos (p.24), so
+/// [`investigation_phase`](super::phases::investigation_phase) begins here.
+/// Otherwise re-prompt the next investigator. Rejections leave state and events
+/// untouched.
+pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let Some(crate::state::Continuation::Mulligan { remaining }) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_mulligan: no Mulligan frame on top of the stack")
+    };
+    let remaining = remaining.clone();
+    let investigator = remaining[0];
+
+    let InputResponse::PickMultiple { selected } = response else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "Mulligan: it is not {investigator:?}'s turn to mulligan \
-                 (pending: {:?})",
-                cx.state.mulligan_pending,
+                "ResolveInput: setup mulligan expects InputResponse::PickMultiple, got {response:?}",
             )
             .into(),
         };
-    }
+    };
+    // Each OptionId is a hand index to redraw.
+    let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
+
+    // ---- validate (state untouched on any failure) ----
     let inv = cx
         .state
         .investigators
         .get(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "mulligan_pending {investigator:?} is not in the investigators map; \
-             this is a state-corruption invariant violation"
-            )
+            "resume_mulligan: prompted investigator {investigator:?} is not in the investigators \
+             map; this is a state-corruption invariant violation"
+        )
         });
-    // Validate indices: each must be in bounds and unique.
     let hand_len = inv.hand.len();
-    for &idx in indices_to_redraw {
-        if usize::from(idx) >= hand_len {
+    for &idx in &indices {
+        if idx as usize >= hand_len {
             return EngineOutcome::Rejected {
                 reason: format!("Mulligan: hand_index {idx} out of bounds (hand size {hand_len})")
                     .into(),
             };
         }
     }
-    let mut sorted: Vec<usize> = indices_to_redraw.iter().map(|&i| usize::from(i)).collect();
+    let mut sorted: Vec<u32> = indices.clone();
     sorted.sort_unstable();
     if sorted.windows(2).any(|w| w[0] == w[1]) {
         return EngineOutcome::Rejected {
-            reason: format!("Mulligan: duplicate index in {indices_to_redraw:?}").into(),
+            reason: format!("Mulligan: duplicate index in {indices:?}").into(),
         };
     }
 
-    // Mutate.
-    let redrawn_count = u8::try_from(indices_to_redraw.len())
-        .expect("indices_to_redraw.len() <= hand.len() <= u8::MAX in practice");
+    // ---- mutate ----
+    let redrawn_count =
+        u8::try_from(indices.len()).expect("indices.len() <= hand.len() <= u8::MAX in practice");
     let inv_mut = cx
         .state
         .investigators
@@ -342,7 +364,7 @@ pub(super) fn mulligan(
     // we remove. Move named cards directly into the deck — they
     // shuffle back in per the rules, not through the discard pile.
     for &i in sorted.iter().rev() {
-        let card = inv_mut.hand.remove(i);
+        let card = inv_mut.hand.remove(i as usize);
         inv_mut.deck.push(card);
     }
     // If anything actually moved, shuffle the deck (which now contains
@@ -357,12 +379,27 @@ pub(super) fn mulligan(
         investigator,
         redrawn_count,
     });
-    // Advance to the next Active investigator in player order (or `None`
-    // when this was the last). The completion check in
-    // `apply_player_action` keys off `None` to end setup.
-    cx.state.mulligan_pending =
-        super::cursor::next_active_investigator_after(cx.state, investigator);
-    EngineOutcome::Done
+
+    // ---- advance the queue ----
+    let mut remaining = remaining;
+    remaining.remove(0);
+    // Pop the current Mulligan frame (validated above; it is the top frame).
+    cx.state.continuations.pop();
+    if remaining.is_empty() {
+        // Setup complete — "the game begins" (Rules Reference p.27). Round 1
+        // skips Mythos (p.24), so the first phase to begin is Investigation.
+        // Begin it HERE (the kickoff moved off `apply_player_action`): setup has
+        // "no action windows" (p.27), so the post-2.1 player window only opens
+        // now that mulligans are done. `investigation_phase` may leave an
+        // `InvestigationBegins` window open (a Fast-eligible play exists); we
+        // still return `Done`, so this is one of the few paths where `Done`
+        // accompanies a non-empty continuation stack — hosts present
+        // `ResolveInput::Skip` to close it, as for any phase-transition window.
+        super::phases::investigation_phase(cx);
+        EngineOutcome::Done
+    } else {
+        prompt_mulligan(cx, remaining)
+    }
 }
 
 /// Resolve the card's destination + abilities via the registry, or

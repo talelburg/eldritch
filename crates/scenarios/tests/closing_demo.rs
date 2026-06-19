@@ -105,9 +105,8 @@ fn won_walk_full_cycle_replays_identically() {
     });
     let log = vec![
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::Mulligan {
-            investigator: inv,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
         Action::Player(PlayerAction::Investigate { investigator: inv }),
         commit_nothing.clone(), // commit window for investigate 1
@@ -174,9 +173,8 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     // realized action log so the round-trip replays exactly what ran.
     let mut log = vec![
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::Mulligan {
-            investigator: inv,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     ];
     let (mut state, mut events) = drive(make_initial(), &log);

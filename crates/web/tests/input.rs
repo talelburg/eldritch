@@ -130,3 +130,50 @@ async fn commit_after_selecting_submits_that_index() {
         .expect("a frame after tick — did tick flush the click handler?");
     assert_eq!(commit_indices(frame), vec![0]);
 }
+
+// ---- Setup mulligan via AwaitingInputView (#348 part 2c-iii-a) ----
+//
+// The setup mulligan is now an `AwaitingInput` routed through this same view
+// (its dedicated picker was removed). The wrinkle vs. the commit window:
+// during the mulligan loop there is no active investigator yet, so the view
+// must fall back to the mulligan-prompted investigator's hand.
+
+/// A setup-mulligan state: investigator 1 is on the mulligan loop with a
+/// two-card hand and **no active investigator** (as the engine leaves it
+/// during setup).
+fn mulligan_game() -> game_core::state::GameState {
+    let mut inv = test_investigator(1);
+    inv.hand = vec![
+        CardCode::new("_synth_event_a"),
+        CardCode::new("_synth_event_b"),
+    ];
+    GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_mulligan_remaining([InvestigatorId(1)])
+        .build()
+}
+
+#[wasm_bindgen_test]
+async fn mulligan_renders_prompted_hand_without_active_investigator() {
+    // active_investigator is None during the mulligan loop; the view falls
+    // back to current_mulligan() so the redraw hand still renders.
+    let _rx = mount(mulligan_game()).await;
+    let section = last_section();
+    let html = section.inner_html();
+    assert!(html.contains("_synth_event_a"), "card a missing: {html}");
+    assert!(html.contains("_synth_event_b"), "card b missing: {html}");
+}
+
+#[wasm_bindgen_test]
+async fn mulligan_submits_selected_redraw_index() {
+    let mut rx = mount(mulligan_game()).await;
+    let section = last_section();
+    click_in(&section, ".hand-card", 0); // redraw index 0
+    leptos::task::tick().await;
+    click_in(&section, ".commit", 0);
+    leptos::task::tick().await;
+    let frame = rx
+        .try_recv()
+        .expect("a frame after tick — did tick flush the click handler?");
+    assert_eq!(commit_indices(frame), vec![0]);
+}

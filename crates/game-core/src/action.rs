@@ -136,30 +136,12 @@ pub enum PlayerAction {
         /// investigator.
         enemy: EnemyId,
     },
-    /// Setup-only redraw. Valid only when this investigator is the one
-    /// the `mulligan_pending` cursor points at — mulligans happen in
-    /// player order (Rules Reference p.16 / p.27). The cursor is seeded
-    /// at `StartScenario` and advances after each mulligan; when it
-    /// reaches `None` setup ends and the game begins.
-    ///
-    /// `indices_to_redraw` names zero-based positions in the hand to
-    /// redraw. An empty vec is a legal "keep my hand" signal that
-    /// still consumes the one-shot. Indices must be in bounds
-    /// (`< hand.len()`) and unique.
-    ///
-    /// On apply: named cards move hand → deck directly (per the
-    /// Rules Reference's "shuffles them back into his or her deck",
-    /// NOT via the discard pile), the deck is shuffled, and the
-    /// investigator draws replacement cards equal to the redraw
-    /// count. An empty mulligan skips both the shuffle and the
-    /// redraw — the deck stays untouched.
-    Mulligan {
-        /// Investigator mulliganing. Must be the investigator the
-        /// `mulligan_pending` cursor currently points at.
-        investigator: InvestigatorId,
-        /// Hand indices to redraw; empty = no-op-but-consumes.
-        indices_to_redraw: Vec<u8>,
-    },
+    // The setup mulligan is no longer a dedicated action (#348 part 2c-iii-a):
+    // it round-trips through `ResolveInput(PickMultiple)` against the top
+    // `Continuation::Mulligan` frame, like every other player-facing
+    // suspension. The acting investigator is the frame's `remaining[0]`; the
+    // `PickMultiple` selection carries the hand indices to redraw (empty =
+    // "keep my hand").
     /// Draw a card from the player deck. Standard turn-action:
     /// spends 1 action, draws 1 card.
     ///

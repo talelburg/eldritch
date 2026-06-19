@@ -63,16 +63,14 @@ fn drive(
 /// Returns the state after `EndTurn` has ticked through all phases
 /// and landed in Mythos with `mythos_draw_pending = Some(InvestigatorId(1))`.
 fn setup_at_mythos_draw(state: game_core::state::GameState) -> game_core::state::GameState {
-    let inv1 = InvestigatorId(1);
     let (state, _) = drive(
         state,
         vec![
             // Round 1 begins; mulligan window opens.
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
             // Close mulligan window (empty redraw = keep hand).
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv1,
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
             // Sole investigator ends their turn → auto-advance through
             // Investigation → Enemy → Upkeep → Mythos (round 2).
@@ -258,13 +256,11 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         base,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: InvestigatorId(1),
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: InvestigatorId(2),
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
             Action::Player(PlayerAction::EndTurn),
             Action::Player(PlayerAction::EndTurn),
@@ -381,13 +377,11 @@ fn mythos_phase_multi_investigator_player_order() {
         base,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv1,
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv2,
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
             // inv1 ends turn → rotates to inv2.
             Action::Player(PlayerAction::EndTurn),
@@ -484,13 +478,11 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
         base,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv1,
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
-            Action::Player(PlayerAction::Mulligan {
-                investigator: inv2,
-                indices_to_redraw: vec![],
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
             // inv1 ends turn → rotates to inv2.
             Action::Player(PlayerAction::EndTurn),
