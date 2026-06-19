@@ -463,21 +463,23 @@ mod tests {
         let mut inv = crate::test_support::test_investigator(1);
         inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
-        state.in_flight_skill_test = Some(InFlightSkillTest {
-            investigator: id,
-            skill: crate::state::SkillKind::Intellect,
-            kind: SkillTestKind::Plain,
-            difficulty: 1,
-            committed_by_active: Vec::new(),
-            tested_location: None,
-            follow_up: SkillTestFollowUp::None,
-            on_fail: None,
-            on_success: None,
-            source: None,
-            continuation: crate::state::FinishContinuation::AwaitingCommit,
-            test_modifier: 0,
-            bonus_attack_damage: 0,
-        });
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+                investigator: id,
+                skill: crate::state::SkillKind::Intellect,
+                kind: SkillTestKind::Plain,
+                difficulty: 1,
+                committed_by_active: Vec::new(),
+                tested_location: None,
+                follow_up: SkillTestFollowUp::None,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: crate::state::FinishContinuation::AwaitingCommit,
+                test_modifier: 0,
+                bonus_attack_damage: 0,
+            }));
         state
     }
 

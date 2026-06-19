@@ -495,7 +495,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // suspensions of an in-flight test (Axis-B T4).
     if matches!(
         cx.state.continuations.last(),
-        Some(crate::state::Continuation::SkillTest)
+        Some(crate::state::Continuation::SkillTest(_))
     ) {
         return resume_skill_test_commit(cx, response);
     }

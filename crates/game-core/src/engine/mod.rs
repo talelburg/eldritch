@@ -94,8 +94,9 @@ pub struct ApplyResult {
 /// On [`EngineOutcome::AwaitingInput`], the returned state and event
 /// list reflect the work done up to the pause point — e.g. a
 /// `PerformSkillTest` apply that suspends at the commit window has
-/// already emitted [`Event::SkillTestStarted`] and populated
-/// [`GameState::in_flight_skill_test`]. The resume action
+/// already emitted [`Event::SkillTestStarted`] and pushed the
+/// [`SkillTest`](crate::state::Continuation::SkillTest) frame (read via
+/// [`GameState::current_skill_test`]). The resume action
 /// ([`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput))
 /// drives the rest of resolution in a subsequent `apply` call. While
 /// paused, every non-`ResolveInput` player action rejects.
@@ -4425,9 +4426,16 @@ mod tests {
             EngineOutcome::AwaitingInput { .. }
         ));
         assert_eq!(
-            paused.state.continuations,
-            vec![crate::state::Continuation::SkillTest],
-            "parking at the commit window pushes exactly one SkillTest frame",
+            paused.state.continuations.len(),
+            1,
+            "parking at the commit window pushes exactly one frame",
+        );
+        assert!(
+            matches!(
+                paused.state.continuations.first(),
+                Some(crate::state::Continuation::SkillTest(_))
+            ),
+            "the single frame is the SkillTest frame carrying the in-flight test",
         );
 
         let resumed = apply(

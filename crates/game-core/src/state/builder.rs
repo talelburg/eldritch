@@ -270,7 +270,6 @@ impl GameStateBuilder {
             enemy_ids: Counter::new(),
             location_ids: Counter::new(),
             pending_skill_modifiers: Vec::new(),
-            in_flight_skill_test: None,
             // Builder-staged windows become `Resolution` frames on the one
             // continuation stack (Axis-B T3).
             continuations: self
