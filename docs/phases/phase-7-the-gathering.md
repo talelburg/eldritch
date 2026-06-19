@@ -115,15 +115,25 @@ Not rules bugs, but several simplify or de-risk the Tier-1 work — pull these i
 rather than deferring wholesale:
 
 - **§1 continuation-stack cleanup — the full #348 + #345 + #347 + #380, as one
-  designed pass. DO-FIRST, before the keystone.** #348 migrates the remaining
-  `pending_*` suspension modes (incl. `pending_enemy_attack`, `pending_end_turn`,
-  `clue_interrupt_pending`) onto the one continuation stack and collapses the
-  fragile `if pending_X.is_some()` `resolve_input` cascade; #345 makes
-  `EvalContext` serializable with a composable binding model so migrated frames
-  snapshot context instead of re-storing ingredient tuples; #347 makes resume
+  designed pass. DO-FIRST, before the keystone.** Designed in
+  `docs/superpowers/specs/2026-06-19-continuation-stack-cleanup-design.md`.
+  **Progress:** #345 shipped (PR #385); #347 → #348 → #380 follow as separate PRs.
+  #348 migrates the remaining
+  `pending_*` suspension modes (incl. `pending_enemy_attack`, `pending_end_turn`)
+  onto the one continuation stack and collapses the
+  fragile `if pending_X.is_some()` `resolve_input` cascade **and** the parallel
+  `apply_player_action` guard ladder into top-frame dispatch (folding
+  `Mulligan`/`DrawEncounterCard` into `ResolveInput` and `in_flight_skill_test`
+  onto its frame; `clue_interrupt_pending` is already a window); #345 makes
+  `EvalContext` serializable with **grouped optional bindings** snapshotted
+  per-frame (the Vec / per-frame-enum / global-stack alternatives were evaluated
+  and rejected — spec §D; innermost-only is corpus-moot, no TODO) so migrated
+  frames snapshot context instead of re-storing ingredient tuples; #347 makes resume
   **token-routed** (deterministic counter, stamped on the awaiting frame) so
   routing becomes token → frame → dispatch-on-variant, with stale/double-submit
-  rejection; #380 folds in. Designed together (they share the seam). The keystone
+  rejection; #380 removes the `pending_revelation_discard` side-channel by making
+  encounter-card resolution a frame whose framework teardown disposes of the card.
+  Designed together (they share the seam). The keystone
   adds attack-loop suspension, so this lands first and the keystone rides one
   clean stack. **Token-routing (#347b) also de-risks the browser surface** —
   #205's client can submit against a superseded prompt and be rejected cleanly,
