@@ -370,6 +370,15 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });
+    // Push the Mythos phase anchor (slice 1a, #393). It sits beneath the
+    // phase's framework windows; the post-1.4 MythosAfterDraws window's close
+    // routes to its on_child_pop. AfterDraws is the only Mythos boundary, so
+    // the resume is fixed at entry.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::MythosPhase {
+            resume: crate::state::MythosResume::AfterDraws,
+        });
 
     // 1.2 Place 1 doom on the current agenda.
     super::act_agenda::place_doom_on_agenda(cx);
@@ -582,7 +591,52 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// `mythos_phase_end`. Invoked from `close_reaction_window_at`'s
 /// kind-aware tail when a `MythosAfterDraws` window pops, and from
 /// `open_fast_window`'s auto-skip path inline.
+/// Run the top `*Phase` anchor's continuation after one of its framework
+/// windows closed (slice 1a, #393). The window has already been popped by the
+/// close path, so the anchor is now the top frame; its `resume` selects the
+/// relocated body. Suspension-agnostic: a body that itself suspends returns
+/// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
+/// `&mut cx`.
+pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
+    use crate::state::{Continuation, MythosResume};
+    let anchor = cx.state.continuations.last().cloned();
+    match anchor {
+        Some(Continuation::MythosPhase {
+            resume: MythosResume::AfterDraws,
+        }) => {
+            // Phase-transitioning continuation: cannot run while a skill test
+            // is in flight (would strand the test in the wrong phase). Phase 4
+            // has no Mythos-phase skill-test sources, so this is structurally
+            // unreachable today.
+            if let Some(in_flight) = cx.state.current_skill_test() {
+                unreachable!(
+                    "MythosAfterDraws closed while a skill test is in flight \
+                     (continuation={:?}); Phase 4 has no Mythos-phase skill-test sources",
+                    in_flight.continuation,
+                );
+            }
+            mythos_phase_end(cx);
+            EngineOutcome::Done
+        }
+        other => unreachable!(
+            "anchor_on_child_pop: top frame is not a known phase anchor: {other:?}"
+        ),
+    }
+}
+
 pub(super) fn mythos_phase_end(cx: &mut Cx) {
+    // Pop the Mythos anchor (slice 1a, #393): the MythosAfterDraws window has
+    // closed, so the anchor is the top frame. The transition below leaves the
+    // Mythos phase, so the anchor's lifetime ends here.
+    debug_assert!(
+        matches!(
+            cx.state.continuations.last(),
+            Some(crate::state::Continuation::MythosPhase { .. })
+        ),
+        "mythos_phase_end: expected MythosPhase anchor on top, got {:?}",
+        cx.state.continuations.last(),
+    );
+    cx.state.continuations.pop();
     // 1.5 Mythos phase ends.
     //     The PhaseEnded(Mythos) emit lives HERE rather than in
     //     step_phase so step 1.5 has explicit ownership in the
@@ -1436,6 +1490,31 @@ mod mythos_phase_tests {
     }
 
     #[test]
+    fn mythos_anchor_pushed_during_phase() {
+        // The Mythos driver pushes its anchor at entry; it sits beneath the
+        // encounter-draw loop while the phase is suspended (slice 1a).
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        let mut events = Vec::new();
+        let outcome = mythos_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(
+            state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, crate::state::Continuation::MythosPhase { .. })),
+            "MythosPhase anchor on the stack during the phase; stack = {:?}",
+            state.continuations,
+        );
+    }
+
+    #[test]
     fn mythos_phase_with_empty_turn_order_opens_after_draws_window_inline() {
         let mut state = GameStateBuilder::default()
             .with_phase(Phase::Mythos)
@@ -1499,6 +1578,13 @@ mod mythos_phase_tests {
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1)];
+        // mythos_phase_end now runs only with the MythosPhase anchor on top
+        // (slice 1a) — it pops the anchor as its first act.
+        state
+            .continuations
+            .push(crate::state::Continuation::MythosPhase {
+                resume: crate::state::MythosResume::AfterDraws,
+            });
         let mut events = Vec::new();
 
         mythos_phase_end(&mut Cx {
@@ -1506,6 +1592,10 @@ mod mythos_phase_tests {
             events: &mut events,
         });
 
+        assert!(
+            state.continuations.is_empty(),
+            "mythos_phase_end pops the anchor",
+        );
         assert_eq!(state.phase, Phase::Investigation);
         assert!(
             events.iter().any(|e| matches!(

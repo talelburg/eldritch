@@ -966,28 +966,11 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
 pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     match kind {
         WindowKind::PlayerWindow(step) => match step {
-            PhaseStep::MythosAfterDraws => {
-                // Phase-transitioning continuation: cannot run while a skill
-                // test is in flight (would strand the test in the wrong
-                // phase). Phase 4 has no Mythos-phase skill-test sources, so
-                // this branch is structurally unreachable today. A future PR
-                // adding a Mythos-phase Revelation that initiates a skill
-                // test must redesign the close-window + phase-transition
-                // ordering before this assertion fires.
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "MythosAfterDraws window closed while a skill test is in flight \
-                     (continuation={:?}). Phase transition would strand the skill test \
-                     in the wrong phase. Phase 4 has no Mythos-phase skill test sources; \
-                     if a future PR adds one (e.g. a treachery whose Revelation initiates \
-                     a skill test), the window-close + phase-transition ordering needs \
-                     redesign before this assertion can be relaxed.",
-                        in_flight.continuation,
-                    );
-                }
-                super::phases::mythos_phase_end(cx);
-                EngineOutcome::Done
-            }
+            // Phase-structure continuation now lives on the MythosPhase anchor
+            // (slice 1a, #393): the anchor sits beneath this window, so its
+            // close routes to the anchor's on_child_pop (which keeps the
+            // skill-test-in-flight guard).
+            PhaseStep::MythosAfterDraws => super::phases::anchor_on_child_pop(cx),
             PhaseStep::UpkeepBegins => {
                 // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
                 // cannot run while a skill test is in flight. Phase 4 has no
