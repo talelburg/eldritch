@@ -125,7 +125,11 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
         "`when` resolves before `at`: doom must wait for the act window"
     );
 
-    // Declining the `when` window then runs the `at` doom.
+    // Declining the `when` window then runs the `at` doom (2: one per Ghoul in
+    // Hallway/Parlor). The exact total isn't pinned because the Skip cascades
+    // through step_phase into the next Mythos phase, whose step 1.2 places a
+    // further doom on the agenda — so `>= 2` (the `at` doom landed) is the
+    // assertion that isolates this test's concern from the downstream cascade.
     let _ = resume_round_end_window(&mut state, &mut events, &InputResponse::Skip);
     assert!(
         state.agenda_doom >= 2,
