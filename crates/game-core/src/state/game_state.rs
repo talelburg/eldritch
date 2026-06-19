@@ -487,6 +487,20 @@ pub enum Continuation {
         /// currently prompted.
         remaining: Vec<InvestigatorId>,
     },
+    /// A drawn encounter **treachery** whose Revelation is mid-resolution
+    /// (#380). Pushed by `resolve_encounter_card` *before* it runs the
+    /// Revelation; sits beneath any suspension the Revelation opens (a skill
+    /// test, a choice, a nested effect). When that sub-resolution completes and
+    /// this frame is top again, the **framework** disposes of the card
+    /// (one-shot → `encounter_discard`; persistent → it placed itself during
+    /// its Revelation, so skip) and pops. Suspension-reason-agnostic — replaces
+    /// the former `pending_revelation_discard` slot, which only the skill-test
+    /// driver flushed (so a choice-only Revelation was never disposed of).
+    /// Never emits `AwaitingInput`.
+    EncounterCard {
+        /// The drawn treachery's card code, disposed of at teardown.
+        card: CardCode,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -530,7 +544,8 @@ impl Continuation {
             | Continuation::ActRoundEnd(_)
             | Continuation::SubstitutionPrompt { .. }
             | Continuation::Mulligan { .. }
-            | Continuation::EncounterDraw { .. } => None,
+            | Continuation::EncounterDraw { .. }
+            | Continuation::EncounterCard { .. } => None,
         }
     }
 
@@ -546,7 +561,8 @@ impl Continuation {
             | Continuation::ActRoundEnd(_)
             | Continuation::SubstitutionPrompt { .. }
             | Continuation::Mulligan { .. }
-            | Continuation::EncounterDraw { .. } => None,
+            | Continuation::EncounterDraw { .. }
+            | Continuation::EncounterCard { .. } => None,
         }
     }
 }

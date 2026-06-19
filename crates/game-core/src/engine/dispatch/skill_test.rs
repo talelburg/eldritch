@@ -460,14 +460,11 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                 cx.state
                     .pending_skill_modifiers
                     .retain(|m| m.investigator != investigator);
-                // A treachery whose Revelation suspended into this test
-                // discards once the test fully resolves (the discard
-                // step `resolve_encounter_card` skipped on suspend).
-                // Eventless push, matching the normal treachery-discard
-                // path in `resolve_encounter_card`.
-                if let Some(code) = cx.state.pending_revelation_discard.take() {
-                    cx.state.encounter_discard.push(code);
-                }
+                // Encounter-treachery disposal is no longer the skill-test
+                // driver's concern (#380): a treachery whose Revelation
+                // suspended into this test parks an `EncounterCard` frame
+                // beneath it, which the framework disposes of at the
+                // `resolve_input` chokepoint once this test completes.
                 // Tear down the test's SkillTest frame (Axis-B T4), which also
                 // carries the test data (#348). `take_skill_test` removes the
                 // (unique — no nesting today) frame by position, so a player-
@@ -1192,63 +1189,13 @@ mod tests {
         assert_event!(ev, Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv);
     }
 
-    /// A treachery-Revelation `Effect::SkillTest` (simulated via
-    /// `start_skill_test` with an `on_fail` + the `pending_revelation_discard`
-    /// slot `resolve_encounter_card` would set) suspends at the commit
-    /// window, then on a failing draw deals the margin in damage and
-    /// flushes the source treachery to `encounter_discard`.
-    #[test]
-    fn revelation_skill_test_failure_deals_margin_damage_and_discards() {
-        use crate::dsl::{deal_damage, for_each_point_failed, InvestigatorTarget};
-        use crate::state::{CardCode, ChaosToken};
-
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        // AutoFail forces the total to 0 → fail by `difficulty` (= 2).
-        state.chaos_bag.tokens = vec![ChaosToken::AutoFail];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        // What the evaluator's Effect::SkillTest arm does:
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            2,
-            SkillTestFollowUp::None,
-            None,
-            Some(for_each_point_failed(deal_damage(
-                InvestigatorTarget::You,
-                1,
-            ))),
-            None,
-            0,
-        );
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        // What resolve_encounter_card does on a suspended revelation:
-        cx.state.pending_revelation_discard = Some(CardCode("01162".into()));
-
-        // Resume: commit no cards → AutoFail → fail by 2 → 2 damage.
-        let out = finish_skill_test(&mut cx, &[]);
-        assert_eq!(out, EngineOutcome::Done);
-        assert_eq!(
-            state.investigators[&inv].damage, 2,
-            "1 damage per point failed"
-        );
-        assert!(
-            state.encounter_discard.contains(&CardCode("01162".into())),
-            "suspended treachery flushed to encounter_discard at teardown"
-        );
-        assert!(!state.has_skill_test_in_flight());
-        assert!(state.pending_revelation_discard.is_none());
-    }
+    // The former `revelation_skill_test_failure_deals_margin_damage_and_discards`
+    // unit test is gone (#380): it simulated the removed
+    // `pending_revelation_discard` slot and drove `finish_skill_test` directly,
+    // bypassing the new `resolve_input`-chokepoint disposal. The real
+    // suspended-Revelation-into-skill-test discard is integration-tested by
+    // `crates/cards/tests/revelation_treacheries.rs::grasping_hands_*`
+    // (01162), and the margin-damage math by the same test.
 
     /// A plain (non-revelation) skill test never touches the
     /// `pending_revelation_discard` slot — the flush is a no-op for it.

@@ -411,7 +411,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // variant"; the former hand-ordered `if pending_X.is_some()` priority
     // cascade is gone.
     use crate::state::Continuation;
-    match cx.state.continuations.last() {
+    let outcome = match cx.state.continuations.last() {
         Some(Continuation::SubstitutionPrompt { .. }) => {
             skill_test::resume_substitution_choice(cx, response)
         }
@@ -423,9 +423,25 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::ActRoundEnd(_)) => phases::resume_act_round_end_advance(cx, response),
         Some(Continuation::Mulligan { .. }) => cards::resume_mulligan(cx, response),
         Some(Continuation::EncounterDraw { .. }) => encounter::resume_encounter_draw(cx, response),
+        // An `EncounterCard` frame never awaits input — it only ever sits
+        // beneath a real suspension. If it is somehow top, no prompt is
+        // outstanding (defensive; #380).
+        Some(Continuation::EncounterCard { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (encounter-card disposal is \
+                     framework-internal)"
+                .into(),
+        },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
         None => EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
         },
+    };
+    // A treachery Revelation that suspended parks its `EncounterCard` frame
+    // beneath the suspension (#380); once that sub-resolution completes (`Done`)
+    // the frame is top again, so dispose of the card here — one generic site,
+    // no resume handler aware of treacheries.
+    if matches!(outcome, EngineOutcome::Done) {
+        return encounter::teardown_encounter_card_if_top(cx);
     }
+    outcome
 }
