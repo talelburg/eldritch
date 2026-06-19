@@ -879,7 +879,7 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Resume a parked upkeep hand-size discard (#111). Validates the
-/// `DiscardCards` response against the currently-prompted investigator
+/// `PickMultiple` response against the currently-prompted investigator
 /// (`remaining[0]`): the indices must be unique, in-bounds, and exactly
 /// `hand.len() - HAND_SIZE_LIMIT` in count. On success, discards the
 /// chosen cards (emitting [`Event::CardDiscarded`] per card), pops the
@@ -914,7 +914,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     if indices.len() != target {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput::DiscardCards: {current:?} must discard exactly {target} card(s) \
+                "hand-size discard: {current:?} must discard exactly {target} card(s) \
                  (hand {hand_len}, cap {HAND_SIZE_LIMIT}), got {}",
                 indices.len(),
             )
@@ -925,13 +925,13 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     for &i in &indices {
         if !seen.insert(i) {
             return EngineOutcome::Rejected {
-                reason: format!("ResolveInput::DiscardCards: duplicate hand index {i}").into(),
+                reason: format!("hand-size discard: duplicate hand index {i}").into(),
             };
         }
         if i as usize >= hand_len {
             return EngineOutcome::Rejected {
                 reason: format!(
-                    "ResolveInput::DiscardCards: hand index {i} out of bounds (hand size {hand_len})",
+                    "hand-size discard: hand index {i} out of bounds (hand size {hand_len})",
                 )
                 .into(),
             };

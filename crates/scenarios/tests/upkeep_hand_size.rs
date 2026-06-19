@@ -4,7 +4,7 @@
 //! `EndTurn`, padding the sole investigator's hand so that — after the
 //! step-4.4 draw — they hold more than the cap at step 4.5. The
 //! round-ending `EndTurn` must cascade into upkeep and pause with
-//! `AwaitingInput`; resolving the prompt with `DiscardCards` must land
+//! `AwaitingInput`; resolving the prompt with `PickMultiple` must land
 //! the hand at exactly the cap and let the round proceed.
 //!
 //! Lives in `crates/scenarios/tests/` for the same process-isolation /
@@ -115,7 +115,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
         "hand ({hand_at_check}) must be over the cap at 4.5"
     );
 
-    // Act 2: submit DiscardCards with exactly (hand_len - cap) indices.
+    // Act 2: submit PickMultiple with exactly (hand_len - cap) indices.
     let discard_count = hand_at_check - HAND_SIZE_LIMIT;
     let indices: Vec<u32> = (0..u32::try_from(discard_count).unwrap()).collect();
     let r4 = apply(
@@ -235,7 +235,7 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
     };
 
     // Replaying the same action sequence from the same initial state must
-    // reproduce identical state bit-for-bit — the DiscardCards path is
+    // reproduce identical state bit-for-bit — the PickMultiple discard path is
     // deterministic and must not drift between runs.
     assert_eq!(
         final_state, replayed_state,
