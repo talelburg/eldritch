@@ -81,7 +81,7 @@ fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     let locations = candidate_locations(cx, controller);
 
     // Resume: a pick was threaded in — re-enumerate and index by it.
-    if let Some(picked) = ctx.chosen_option {
+    if let Some(picked) = ctx.chosen_option() {
         let Some(&loc) = locations.get(picked.0 as usize) else {
             return EngineOutcome::Rejected {
                 reason: "01024 blast: chosen_option out of range".into(),

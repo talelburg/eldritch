@@ -185,6 +185,75 @@ impl EvalContext {
     }
 }
 
+impl EvalContext {
+    /// Just-resolved skill test's failure margin (bound only while running an
+    /// `on_fail` effect). See [`Effect::ForEachPointFailed`].
+    #[must_use]
+    pub fn failed_by(&self) -> Option<u8> {
+        self.failed_by
+    }
+    /// Clue count a before-discovery interrupt is replacing (bound only while
+    /// resolving a `WouldDiscoverClues` ability's effect).
+    #[must_use]
+    pub fn clue_discovery_count(&self) -> Option<u8> {
+        self.clue_discovery_count
+    }
+    /// Attacking enemy bound while resolving an `EnemyAttackDamagedSelf` reaction.
+    #[must_use]
+    pub fn attacking_enemy(&self) -> Option<crate::state::EnemyId> {
+        self.attacking_enemy
+    }
+    /// Investigator picked for an `InvestigatorTarget::Chosen`.
+    #[must_use]
+    pub fn chosen_investigator(&self) -> Option<crate::state::InvestigatorId> {
+        self.chosen_investigator
+    }
+    /// Location picked for a `LocationTarget::Chosen`.
+    #[must_use]
+    pub fn chosen_location(&self) -> Option<crate::state::LocationId> {
+        self.chosen_location
+    }
+    /// Enemy picked for an `EnemyTarget::Chosen`.
+    #[must_use]
+    pub fn chosen_enemy(&self) -> Option<crate::state::EnemyId> {
+        self.chosen_enemy
+    }
+    /// Option picked for a native leaf that suspended for a choice.
+    #[must_use]
+    pub fn chosen_option(&self) -> Option<crate::engine::OptionId> {
+        self.chosen_option
+    }
+
+    /// Bind the skill-test failure margin (see [`Self::failed_by`]).
+    pub fn set_failed_by(&mut self, margin: u8) {
+        self.failed_by = Some(margin);
+    }
+    /// Bind the before-discovery clue count (see [`Self::clue_discovery_count`]).
+    pub fn set_clue_discovery_count(&mut self, count: u8) {
+        self.clue_discovery_count = Some(count);
+    }
+    /// Bind the attacking enemy (see [`Self::attacking_enemy`]).
+    pub fn set_attacking_enemy(&mut self, enemy: crate::state::EnemyId) {
+        self.attacking_enemy = Some(enemy);
+    }
+    /// Bind the chosen investigator (see [`Self::chosen_investigator`]).
+    pub fn set_chosen_investigator(&mut self, id: crate::state::InvestigatorId) {
+        self.chosen_investigator = Some(id);
+    }
+    /// Bind the chosen location (see [`Self::chosen_location`]).
+    pub fn set_chosen_location(&mut self, id: crate::state::LocationId) {
+        self.chosen_location = Some(id);
+    }
+    /// Bind the chosen enemy (see [`Self::chosen_enemy`]).
+    pub fn set_chosen_enemy(&mut self, id: crate::state::EnemyId) {
+        self.chosen_enemy = Some(id);
+    }
+    /// Bind (or clear) the native-leaf chosen option (see [`Self::chosen_option`]).
+    pub fn set_chosen_option(&mut self, opt: Option<crate::engine::OptionId>) {
+        self.chosen_option = opt;
+    }
+}
+
 /// Apply an effect tree to the state.
 ///
 /// See module docs for the v0 scope and the validate-first
@@ -319,7 +388,7 @@ fn apply_effect_inner(
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
         Effect::Native { tag } => apply_native(cx, tag, eval_ctx, cursor),
         Effect::ForEachPointFailed(body) => {
-            let n = eval_ctx.failed_by.unwrap_or(0);
+            let n = eval_ctx.failed_by().unwrap_or(0);
             for _ in 0..n {
                 match apply_effect_inner(cx, body, eval_ctx, cursor) {
                     EngineOutcome::Done => {}
@@ -1287,7 +1356,7 @@ fn apply_native(
     };
     let consumed_before = cursor.has_consumed();
     let mut eval_ctx = eval_ctx;
-    eval_ctx.chosen_option = cursor.take();
+    eval_ctx.set_chosen_option(cursor.take());
     let outcome = f(cx, &eval_ctx);
     debug_assert!(
         !(matches!(outcome, EngineOutcome::AwaitingInput { .. }) && consumed_before),
@@ -1420,7 +1489,7 @@ fn ground_chosen_targets(
         _ => None,
     };
     if let Some(InvestigatorTarget::Chosen(choose)) = inv_target {
-        if eval_ctx.chosen_investigator.is_none() {
+        if eval_ctx.chosen_investigator().is_none() {
             return ground_investigator_choice(cx, eval_ctx, cursor, choose.scope);
         }
     }
@@ -1430,7 +1499,7 @@ fn ground_chosen_targets(
         ..
     } = effect
     {
-        if eval_ctx.chosen_location.is_none() {
+        if eval_ctx.chosen_location().is_none() {
             return ground_location_choice(cx, eval_ctx, cursor, choose.scope);
         }
     }
@@ -1440,7 +1509,7 @@ fn ground_chosen_targets(
         ..
     } = effect
     {
-        if eval_ctx.chosen_enemy.is_none() {
+        if eval_ctx.chosen_enemy().is_none() {
             return ground_enemy_choice(cx, eval_ctx, cursor, choose.scope);
         }
     }
@@ -1464,7 +1533,7 @@ fn ground_investigator_choice(
     let candidates = investigator_candidates(cx.state, eval_ctx.controller, scope);
     let bind = |id| {
         let mut ctx = eval_ctx;
-        ctx.chosen_investigator = Some(id);
+        ctx.set_chosen_investigator(id);
         Ok(ctx)
     };
     match resolve_choice_count(candidates.len()) {
@@ -1505,7 +1574,7 @@ fn ground_location_choice(
     let candidates = location_candidates(cx.state, eval_ctx.controller, set);
     let bind = |id| {
         let mut ctx = eval_ctx;
-        ctx.chosen_location = Some(id);
+        ctx.set_chosen_location(id);
         Ok(ctx)
     };
     match resolve_choice_count(candidates.len()) {
@@ -1546,7 +1615,7 @@ fn ground_enemy_choice(
         crate::engine::dispatch::combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
     let bind = |id| {
         let mut ctx = eval_ctx;
-        ctx.chosen_enemy = Some(id);
+        ctx.set_chosen_enemy(id);
         Ok(ctx)
     };
     match resolve_choice_count(candidates.len()) {
@@ -1641,7 +1710,7 @@ fn resolve_investigator_target(
         InvestigatorTarget::Active => state
             .active_investigator
             .ok_or("InvestigatorTarget::Active but no active investigator (outside Investigation)"),
-        InvestigatorTarget::Chosen(_) => ctx.chosen_investigator.ok_or(
+        InvestigatorTarget::Chosen(_) => ctx.chosen_investigator().ok_or(
             "InvestigatorTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
@@ -1659,7 +1728,7 @@ fn resolve_location_target(
             .get(&ctx.controller)
             .and_then(|i| i.current_location)
             .ok_or("LocationTarget::YourLocation but the controller is between locations"),
-        LocationTarget::Chosen(_) => ctx.chosen_location.ok_or(
+        LocationTarget::Chosen(_) => ctx.chosen_location().ok_or(
             "LocationTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
@@ -1681,7 +1750,7 @@ fn resolve_enemy_target(
     target: EnemyTarget,
 ) -> Result<crate::state::EnemyId, &'static str> {
     match target {
-        EnemyTarget::Chosen(_) => ctx.chosen_enemy.ok_or(
+        EnemyTarget::Chosen(_) => ctx.chosen_enemy().ok_or(
             "EnemyTarget::Chosen resolved before target-grounding bound it \
              (ground_chosen_targets should run first)",
         ),
@@ -2056,7 +2125,7 @@ mod tests {
     #[test]
     fn eval_context_defaults_clue_discovery_count_to_none() {
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        assert_eq!(ctx.clue_discovery_count, None);
+        assert_eq!(ctx.clue_discovery_count(), None);
     }
 
     #[test]
@@ -4263,7 +4332,7 @@ mod tests {
         };
         // Margin 2 → run Deal{Damage,You,1} twice → 2 damage, 2 events.
         let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
-        eval_ctx.failed_by = Some(2);
+        eval_ctx.set_failed_by(2);
         let outcome = apply_effect(
             &mut cx,
             &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),

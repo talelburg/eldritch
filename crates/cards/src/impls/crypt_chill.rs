@@ -70,7 +70,7 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     let assets = controlled_assets(cx, controller);
 
     // Resume: a pick was threaded in — re-enumerate and index by it.
-    if let Some(picked) = ctx.chosen_option {
+    if let Some(picked) = ctx.chosen_option() {
         let Some(&instance) = assets.get(picked.0 as usize) else {
             return EngineOutcome::Rejected {
                 reason: "01167 crypt-chill-fail: chosen_option out of range".into(),
