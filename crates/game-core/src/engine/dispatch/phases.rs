@@ -643,7 +643,7 @@ pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
 /// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
 /// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` emits no
 /// `PhaseEnded` itself — every phase's `*_end` helper owns its own.
-fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
+pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     // 4.6 Upkeep phase ends. Round ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
@@ -666,38 +666,13 @@ fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
         matches!(forced, EngineOutcome::Done),
         "upkeep_phase_end PhaseEnded(Upkeep) forced did not resolve to Done: {forced:?}"
     );
-    // "Upkeep phase ends. Round ends." (RR p.24) — fire round-end Forced
-    // effects (agenda 01107's doom, Dissonant Voices 01165's discard). When
-    // 2+ fire simultaneously the lead orders them and the forced run suspends
-    // (#213); its `UpkeepAfterRoundEnded` continuation resumes the tail below
-    // on close. 0 or 1 resolve synchronously here.
-    match super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded) {
-        EngineOutcome::Done => upkeep_after_round_ended(cx),
-        // The forced run suspended for the lead's ordering choice; the tail
-        // resumes via UpkeepAfterRoundEnded when the run closes.
-        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
-        rejected @ EngineOutcome::Rejected { .. } => rejected,
-    }
-}
-
-/// The upkeep step's tail after the round-end forced abilities resolve:
-/// the act round-end advance window, then the Upkeep→Mythos transition.
-///
-/// Reached two ways: inline from [`upkeep_phase_end`] when the round-end
-/// forced abilities resolve synchronously (0 or 1), and from the forced
-/// run's [`ForcedContinuation::UpkeepAfterRoundEnded`] close when 2+ forced
-/// abilities suspended for the lead's ordering choice (#213).
-pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
-    // "Any active 'until the end of the round' lasting effects expire at this
-    // time" (RR p.24, step 4.6 — the round ends here, after the round-end
-    // forced abilities have resolved). Mind over Matter 01036's substitution
-    // expires now, not at the next round's Mythos step.
-    cx.state.skill_substitutions.clear();
-    // Act objective: a round-end "may spend clues to advance" window
-    // (01109). Opens only when the current act carries it AND the
-    // contributor-location investigators can afford the threshold — the
-    // "may … spend the requisite number" is moot otherwise. Suspends; the
-    // Upkeep→Mythos transition is deferred to resume_act_round_end_advance.
+    // RR "At" entry: `at the end of the round` abilities "trigger in between
+    // any 'when...' abilities and any 'after...' abilities with the same
+    // triggering condition." So act 01109's "when the round ends" clue-spend
+    // window opens BEFORE agenda 01107's "at the end of the round" doom (RR
+    // `when` -> `at`). Open the `when` window first; the `at` RoundEnded Forced
+    // abilities + teardown run on its resume (resume_act_round_end_advance), or
+    // inline below when no window opens.
     if let Some(pending) = round_end_advance_window(cx.state) {
         let prompt = format!(
             "End of round: investigators at the contributor location may, as a group, \
@@ -713,6 +688,38 @@ pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
             resume_token: ResumeToken(0),
         };
     }
+    upkeep_round_end_at_and_after(cx)
+}
+
+/// The round-end `at the end of the round` bucket + teardown, run after the
+/// `when the round ends` act window (if any) has resolved. Fires the
+/// `RoundEnded` Forced abilities — agenda 01107's doom, Dissonant Voices
+/// 01165's discard (the RR `at` bucket). When 2+ fire simultaneously the lead
+/// orders them and the run suspends (#213); its `UpkeepAfterRoundEnded`
+/// continuation resumes the teardown via [`upkeep_round_end_teardown`]. 0 or 1
+/// resolve synchronously here.
+///
+/// Reached two ways: from [`upkeep_phase_end`] when no act window opens, and
+/// from [`resume_act_round_end_advance`] once the act window resolves.
+pub(super) fn upkeep_round_end_at_and_after(cx: &mut Cx) -> EngineOutcome {
+    match super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded) {
+        EngineOutcome::Done => upkeep_round_end_teardown(cx),
+        // The forced run suspended for the lead's ordering choice; the
+        // teardown resumes via UpkeepAfterRoundEnded when the run closes.
+        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
+        rejected @ EngineOutcome::Rejected { .. } => rejected,
+    }
+}
+
+/// Teardown after the round-end `at` Forced abilities resolve: expire active
+/// "until the end of the round" lasting effects (Mind over Matter 01036's
+/// substitution — RR p.24, "after the round-end forced abilities have
+/// resolved"), then transition Upkeep → Mythos.
+///
+/// Reached inline from [`upkeep_round_end_at_and_after`] (0/1 forced) and from
+/// the forced run's [`ForcedContinuation::UpkeepAfterRoundEnded`] close (2+).
+pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
+    cx.state.skill_substitutions.clear();
     // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
     // transition can suspend (hunter movement), so this never does.
     step_phase(cx)
@@ -740,7 +747,7 @@ fn round_end_advance_window(state: &GameState) -> Option<ActRoundEndPending> {
 /// threshold from the contributor-location investigators and advances the
 /// act; Skip declines; either way the round closes (Upkeep→Mythos). A wrong
 /// response kind rejects with state untouched.
-pub(super) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+pub(crate) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let Some(crate::state::Continuation::ActRoundEnd(pending)) = cx.state.continuations.last()
     else {
         unreachable!("resume_act_round_end_advance: no ActRoundEnd frame on top of the stack")
@@ -762,11 +769,13 @@ pub(super) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse
             // The round-end-advance act (01109) is non-terminal (resolution
             // None) — advance the cursor to the next act.
             super::act_agenda::advance_act(cx);
-            step_phase(cx)
+            // Now run the `at the end of the round` doom + teardown, AFTER this
+            // `when the round ends` window (RR `when` -> `at`).
+            upkeep_round_end_at_and_after(cx)
         }
         InputResponse::Skip => {
             cx.state.continuations.pop();
-            step_phase(cx)
+            upkeep_round_end_at_and_after(cx)
         }
         other => EngineOutcome::Rejected {
             reason: format!(
@@ -3559,7 +3568,8 @@ mod start_scenario_tests {
     #[test]
     fn round_end_clears_round_scoped_skill_substitutions() {
         // RR p.24 step 4.6: "until the end of the round" effects expire as the
-        // round ends — at upkeep_after_round_ended, not the next Mythos step.
+        // round ends — in upkeep_round_end_teardown (after the round-end forced
+        // abilities), not the next Mythos step.
         use crate::card_data::SkillKind;
         use crate::state::{InvestigatorId, SkillSubstitution};
         let id = InvestigatorId(1);
@@ -3575,7 +3585,7 @@ mod start_scenario_tests {
             for_skills: vec![SkillKind::Combat, SkillKind::Agility],
         });
         let mut events = Vec::new();
-        super::upkeep_after_round_ended(&mut Cx {
+        super::upkeep_round_end_teardown(&mut Cx {
             state: &mut state,
             events: &mut events,
         });

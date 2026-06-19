@@ -42,6 +42,10 @@ pub(crate) use dispatch::forced_triggers::{fire_forced_triggers, ForcedTriggerPo
 // The unified trigger-dispatch chokepoint (Axis-B T5a): the GameEnd site below
 // and `fire_scenario_resolution` route through it.
 pub(crate) use dispatch::emit::{emit_event, TimingEvent};
+// Round-end driver + act-window resume, exposed for `test_support`'s
+// `run_upkeep_round_end` / `resume_round_end_window` (the `when→at` ordering
+// regression in `crates/cards/tests/theyre_getting_out.rs` drives them end-to-end).
+pub(crate) use dispatch::phases::{resume_act_round_end_advance, upkeep_phase_end};
 
 use crate::action::Action;
 use crate::event::Event;
