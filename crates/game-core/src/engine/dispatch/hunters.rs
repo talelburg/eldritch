@@ -540,16 +540,24 @@ pub(super) fn resume_spawn_engage(
     cx.state.continuations.pop();
     engage_enemy_with(cx, pending.enemy, who);
 
-    // Only re-enter the Mythos surge chain if the suspend happened
-    // mid-chain (the drawing investigator is still the pending cursor).
-    // The `EncounterCardRevealed` single-draw path resolves to `Done`.
+    // Only re-enter the Mythos surge chain if the suspend happened mid-chain.
+    // The `SpawnEngage` frame was pushed *above* the drawing investigator's
+    // `EncounterDraw` frame, so now that we've popped it, that frame is on top
+    // — and its `remaining[0]` is still the drawing investigator (#348). The
+    // `EncounterCardRevealed` single-draw path (no `EncounterDraw` frame on the
+    // stack) resolves to `Done`.
     //
     // Invariant: while a SpawnEngage frame is on the stack, the apply guard
-    // (line 129) rejects every non-`ResolveInput` action, so nothing can
-    // retarget the Mythos cursor between suspend and resume. Hence
-    // `mythos_draw_pending == Some(investigator_to_draw)` reliably means
-    // "we suspended mid-chain for this investigator."
-    if cx.state.mythos_draw_pending == Some(pending.investigator_to_draw) {
+    // rejects every non-`ResolveInput` action, so nothing can retarget the
+    // Mythos loop between suspend and resume. Hence the top frame being the
+    // drawer's `EncounterDraw` reliably means "we suspended mid-chain for this
+    // investigator."
+    let mid_mythos_draw = matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::EncounterDraw { remaining })
+            if remaining.first() == Some(&pending.investigator_to_draw)
+    );
+    if mid_mythos_draw {
         super::encounter::run_mythos_draw_chain(
             cx,
             pending.investigator_to_draw,
@@ -1100,7 +1108,10 @@ mod hunter_resume_tests {
             },
             &pick(&outcome, LocationId(3)),
         );
-        assert_eq!(resumed, EngineOutcome::Done);
+        // Resolving the tie continues the Enemy phase; with no registry the
+        // attack windows auto-skip and the cascade runs to Mythos, pausing at
+        // the step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(matches!(resumed, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(3))
@@ -1205,7 +1216,10 @@ mod hunter_resume_tests {
             },
             &pick(&outcome, InvestigatorId(2)),
         );
-        assert_eq!(resumed, EngineOutcome::Done);
+        // Resolving the tie continues the Enemy phase; with no registry the
+        // attack windows auto-skip and the cascade runs to Mythos, pausing at
+        // the step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(matches!(resumed, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
             state.enemies[&EnemyId(1)].engaged_with,
             Some(InvestigatorId(2))
@@ -1315,7 +1329,10 @@ mod hunter_resume_tests {
             },
             &pick(&outcome, LocationId(2)),
         );
-        assert_eq!(resumed, EngineOutcome::Done);
+        // Resolving the tie continues the Enemy phase; with no registry the
+        // attack windows auto-skip and the cascade runs to Mythos, pausing at
+        // the step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(matches!(resumed, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
             state.enemies[&EnemyId(2)].current_location,
             Some(LocationId(4))

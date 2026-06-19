@@ -750,12 +750,16 @@ mod tests {
     #[test]
     fn test_session_fluent_round_trip() {
         let id = InvestigatorId(1);
+        // Two investigators so the first EndTurn is a mid-round rotation
+        // (reaches Done immediately) rather than a round-ending cascade — the
+        // latter would now pause at the Mythos encounter-draw prompt (#348).
         let result = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
             .with_location(test_location(10, "Study"))
             .with_active_investigator(id)
-            .with_turn_order([id])
+            .with_turn_order([id, InvestigatorId(2)])
             .session()
             .apply(Action::Player(PlayerAction::EndTurn))
             .resolve_choices(|c| {

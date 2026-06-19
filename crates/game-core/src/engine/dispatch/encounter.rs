@@ -1,11 +1,13 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
+use crate::action::InputResponse;
 use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Enemy, InvestigatorId, LocationId, Phase, PhaseStep, SpawnEngagePending, WindowKind,
+    CardCode, Continuation, Enemy, InvestigatorId, LocationId, PhaseStep, SpawnEngagePending,
+    Status, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -603,56 +605,66 @@ pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     cx.state.encounter_deck.pop_front()
 }
 
-/// Handler for [`PlayerAction::DrawEncounterCard`]. Validates phase
-/// + cursor; delegates to [`mythos_draw_for`] on success.
-pub(super) fn draw_encounter_card(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    if cx.state.phase != Phase::Mythos {
+/// Push the prompt for the topmost [`Continuation::EncounterDraw`] frame's
+/// current drawer (`remaining[0]`): an [`EngineOutcome::AwaitingInput`] whose
+/// response is a binary [`Confirm`](InputResponse::Confirm) (the draw carries
+/// no choice). Used by `mythos_phase` (first prompt) and
+/// [`advance_encounter_draw`] (re-prompt after a queue pop). The frame must
+/// already be on the stack; callers ensure this.
+pub(super) fn prompt_encounter_draw(cx: &Cx) -> EngineOutcome {
+    let drawer = cx
+        .state
+        .current_encounter_drawer()
+        .expect("prompt_encounter_draw: no EncounterDraw frame on the stack");
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::prompt(format!(
+            "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
+        )),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume the Mythos step-1.4 encounter-draw loop (#348), driving the topmost
+/// [`Continuation::EncounterDraw`] frame.
+///
+/// The acting drawer is the frame's `remaining[0]` (Rules Reference p.24
+/// player order) — the response is a binary [`Confirm`](InputResponse::Confirm)
+/// (the draw carries no choice). Runs that investigator's full surge chain via
+/// [`run_mythos_draw_chain`]; the chain may suspend on a mid-chain
+/// spawn-engagement tie (pushing a [`SpawnEngage`](Continuation::SpawnEngage)
+/// frame above this one), in which case its `AwaitingInput` propagates and
+/// [`resume_spawn_engage`](super::hunters::resume_spawn_engage) re-enters the
+/// chain. On chain completion the loop advances ([`advance_encounter_draw`]):
+/// re-prompt the next drawer, or — when drained — pop the frame and open the
+/// post-1.4 `MythosAfterDraws` window. Rejections leave state untouched.
+///
+/// # Mid-chain rejection caveat
+///
+/// Follows the same pattern as `play_card` (CLAUDE.md documents it): if
+/// [`resolve_encounter_card`] rejects mid-chain — e.g. [`spawn_enemy`]
+/// rejecting because the drawing investigator has no location — the card has
+/// already been drawn from `encounter_deck` by [`draw_encounter_top`], and the
+/// apply loop's `events.clear()` on `Rejected` wipes the event stream but does
+/// **not** roll back the state mutation. The card is silently lost. Out of
+/// Phase-4 scope (the synthetic fixture gives every investigator a location at
+/// setup).
+pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let Some(Continuation::EncounterDraw { remaining }) = cx.state.continuations.last() else {
+        unreachable!("resume_encounter_draw: no EncounterDraw frame on top of the stack")
+    };
+    let drawer = remaining[0];
+    if !matches!(response, InputResponse::Confirm) {
         return EngineOutcome::Rejected {
             reason: format!(
-                "DrawEncounterCard: only valid during Mythos phase, got {:?}",
-                cx.state.phase,
+                "ResolveInput: Mythos encounter draw expects InputResponse::Confirm, got {response:?}",
             )
             .into(),
         };
     }
-    match cx.state.mythos_draw_pending {
-        None => EngineOutcome::Rejected {
-            reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
-        },
-        Some(expected) if expected != investigator => EngineOutcome::Rejected {
-            reason: format!(
-                "DrawEncounterCard: out of order; expected {expected:?}, got {investigator:?}",
-            )
-            .into(),
-        },
-        Some(_) => mythos_draw_for(cx, investigator),
-    }
-}
-
-/// Resolves one investigator's full Mythos encounter draw — the
-/// per-card 5-step sub-sequence from Rules Reference p.24, with
-/// surge re-draws looping until the chain ends.
-///
-/// Called by [`draw_encounter_card`] with the pending-drawer's id.
-/// Returns Done on success (chain completed, `mythos_draw_pending`
-/// advanced).
-///
-/// # Mid-chain rejection caveat
-///
-/// `mythos_draw_for` follows the same pattern as `play_card` (CLAUDE.md
-/// documents it): if [`resolve_encounter_card`] rejects mid-chain — e.g.
-/// [`spawn_enemy`] rejecting because the drawing investigator has no
-/// location — the card has already been drawn from `encounter_deck` by
-/// [`draw_encounter_top`], and the apply loop's `events.clear()` on
-/// `Rejected` wipes the event stream but does **not** roll back the state
-/// mutation. The card is silently lost from the encounter deck. In Phase 4
-/// scope this can't happen because the synthetic fixture ensures every
-/// investigator has a location at scenario start; revisit if a future
-/// scenario lets investigators reach a location-less state during play.
-fn mythos_draw_for(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    // Fresh chain: count starts at 0 and the loop draws at least one
-    // card (`draw_more = true`).
-    run_mythos_draw_chain(cx, investigator, 0, true)
+    // Fresh chain: count starts at 0 and the loop draws at least one card
+    // (`draw_more = true`). On completion the chain calls
+    // `advance_encounter_draw` itself (see `run_mythos_draw_chain`'s tail).
+    run_mythos_draw_chain(cx, drawer, 0, true)
 }
 
 /// The Mythos surge-draw loop, shared by the initial draw
@@ -760,23 +772,46 @@ pub(super) fn run_mythos_draw_chain(
         draw_more = metadata.surge();
     }
 
-    // Chain complete — advance the cursor.
-    advance_mythos_draw_pending(cx);
-    EngineOutcome::Done
+    // Chain complete — advance the encounter-draw loop (drain the drawer,
+    // re-prompt the next, or open the post-1.4 window when drained).
+    advance_encounter_draw(cx)
 }
 
-/// Advance `state.mythos_draw_pending` after a completed chain. If
-/// a next investigator exists in turn order, set to that id.
-/// Otherwise set to None and open the post-1.4 window.
-pub(super) fn advance_mythos_draw_pending(cx: &mut Cx) {
-    let current = cx
+/// Advance the encounter-draw loop after a completed chain (#348, replacing the
+/// former `advance_mythos_draw_pending` cursor advance): drop the just-finished
+/// drawer from the topmost [`Continuation::EncounterDraw`] frame, then skip any
+/// now-eliminated investigators (an encounter card may have eliminated a later
+/// drawer — Rules Reference p.10: eliminated investigators do not draw,
+/// mirroring `next_active_investigator_after`'s skip). When a drawer remains,
+/// re-prompt them ([`EngineOutcome::AwaitingInput`]); when the queue drains, pop
+/// the frame and open the post-1.4 `MythosAfterDraws` window. Called only after
+/// a chain completes, with the `EncounterDraw` frame topmost.
+pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
+    let pos = cx
         .state
-        .mythos_draw_pending
-        .expect("advance_mythos_draw_pending called only after a successful chain");
-    // Eliminated-skip semantics live in `next_active_investigator_after`.
-    let next = super::cursor::next_active_investigator_after(cx.state, current);
-    cx.state.mythos_draw_pending = next;
-    if next.is_none() {
+        .continuations
+        .iter()
+        .rposition(|c| matches!(c, Continuation::EncounterDraw { .. }))
+        .expect("advance_encounter_draw: called only after a chain, EncounterDraw frame present");
+    // Pull the queue out to advance it without aliasing `state.investigators`.
+    let Continuation::EncounterDraw { remaining } = &mut cx.state.continuations[pos] else {
+        unreachable!("rposition matched EncounterDraw")
+    };
+    let mut queue = std::mem::take(remaining);
+    queue.remove(0); // drop the finished drawer
+    while let Some(&next) = queue.first() {
+        if cx
+            .state
+            .investigators
+            .get(&next)
+            .is_some_and(|inv| inv.status == Status::Active)
+        {
+            break;
+        }
+        queue.remove(0); // skip a now-eliminated investigator (RR p.10)
+    }
+    if queue.is_empty() {
+        cx.state.continuations.remove(pos); // pop the drained frame
         let outcome = super::reaction_windows::open_fast_window(
             cx,
             WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
@@ -786,6 +821,14 @@ pub(super) fn advance_mythos_draw_pending(cx: &mut Cx) {
             EngineOutcome::Done,
             "open_fast_window(MythosAfterDraws) unexpectedly suspended; this window has no suspending continuation",
         );
+        EngineOutcome::Done
+    } else {
+        // Write the advanced queue back and prompt the next drawer.
+        let Continuation::EncounterDraw { remaining } = &mut cx.state.continuations[pos] else {
+            unreachable!("rposition matched EncounterDraw")
+        };
+        *remaining = queue;
+        prompt_encounter_draw(cx)
     }
 }
 
@@ -1635,8 +1678,8 @@ mod spawn_enemy_tests {
             .with_investigator(i1)
             .with_investigator(i2)
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .with_mythos_draw_remaining([InvestigatorId(1)])
             .build();
-        state.mythos_draw_pending = Some(InvestigatorId(1));
         let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
         let outcome = spawn_enemy(
@@ -1675,8 +1718,8 @@ mod spawn_enemy_tests {
             .with_investigator(i1)
             .with_investigator(i2)
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            .with_mythos_draw_remaining([InvestigatorId(1)])
             .build();
-        state.mythos_draw_pending = Some(InvestigatorId(1));
         let metadata = synth_enemy_metadata(None);
         let mut events = Vec::new();
         let _ = spawn_enemy(
@@ -1761,7 +1804,7 @@ mod spawn_enemy_tests {
 }
 
 #[cfg(test)]
-mod mythos_draw_for_tests {
+mod resume_encounter_draw_chain_tests {
     use super::*;
     use crate::state::{CardCode, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, GameStateBuilder};
@@ -1784,9 +1827,9 @@ mod mythos_draw_for_tests {
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
+            .with_turn_order([InvestigatorId(1)])
+            .with_mythos_draw_remaining([InvestigatorId(1)])
             .build();
-        state.turn_order = vec![InvestigatorId(1)];
-        state.mythos_draw_pending = Some(InvestigatorId(1));
         // Seed the encounter deck with an unknown code so we prove the
         // reject fires at the registry or unknown-code check, not at the
         // empty-deck check.
@@ -1795,12 +1838,12 @@ mod mythos_draw_for_tests {
             .push_back(CardCode("__no_such_card".into()));
         let pre_deck_len = state.encounter_deck.len();
         let mut events = Vec::new();
-        let outcome = mythos_draw_for(
+        let outcome = resume_encounter_draw(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            InvestigatorId(1),
+            &InputResponse::Confirm,
         );
         match outcome {
             EngineOutcome::Rejected { reason } => {
@@ -1824,73 +1867,50 @@ mod mythos_draw_for_tests {
 }
 
 #[cfg(test)]
-mod draw_encounter_card_tests {
+mod resume_encounter_draw_tests {
     use super::*;
-    use crate::state::{InvestigatorId, Phase};
+    use crate::state::{Continuation, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
-    #[test]
-    fn rejects_outside_mythos_phase() {
-        let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_phase(Phase::Investigation)
-            .build();
-        state.mythos_draw_pending = Some(InvestigatorId(1));
-        let mut events = Vec::new();
-        let outcome = draw_encounter_card(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            InvestigatorId(1),
-        );
-        assert!(matches!(
-            outcome,
-            EngineOutcome::Rejected { reason } if reason.contains("only valid during Mythos")
-        ));
-    }
+    // The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
+    // / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the
+    // dedicated `DrawEncounterCard` action is removed. "Outside Mythos" and "no
+    // draw pending" are now structurally impossible — `resume_encounter_draw` is
+    // only reached when an `EncounterDraw` frame is on top, which `mythos_phase`
+    // only pushes during Mythos — and "out of order" is gone because the folded
+    // `Confirm` carries no investigator (the drawer is always `remaining[0]`).
+    // The frame-presence gate is exercised by `apply`'s `EncounterDraw` guard
+    // and `resolve_input`'s no-frame rejection.
 
     #[test]
-    fn rejects_when_no_draw_pending() {
+    fn rejects_non_confirm_response_and_preserves_frame() {
+        // Validate-first: a non-`Confirm` response rejects and leaves the
+        // `EncounterDraw` frame intact for retry.
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
+            .with_turn_order([InvestigatorId(1)])
+            .with_mythos_draw_remaining([InvestigatorId(1)])
             .build();
-        state.mythos_draw_pending = None;
         let mut events = Vec::new();
-        let outcome = draw_encounter_card(
+        let outcome = resume_encounter_draw(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            InvestigatorId(1),
+            &InputResponse::Skip,
         );
         assert!(matches!(
             outcome,
-            EngineOutcome::Rejected { reason } if reason.contains("no draw pending")
+            EngineOutcome::Rejected { reason } if reason.contains("expects InputResponse::Confirm")
         ));
-    }
-
-    #[test]
-    fn rejects_when_out_of_order() {
-        let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_phase(Phase::Mythos)
-            .build();
-        state.mythos_draw_pending = Some(InvestigatorId(1));
-        let mut events = Vec::new();
-        // Inv2 attempts to draw when inv1 is expected.
-        let outcome = draw_encounter_card(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            InvestigatorId(2),
+        assert!(
+            matches!(
+                state.continuations.last(),
+                Some(Continuation::EncounterDraw { remaining }) if remaining == &[InvestigatorId(1)]
+            ),
+            "the EncounterDraw frame must survive a rejected response for retry",
         );
-        assert!(matches!(
-            outcome,
-            EngineOutcome::Rejected { reason } if reason.contains("out of order")
-        ));
+        assert!(events.is_empty(), "a rejected response emits no events");
     }
 }

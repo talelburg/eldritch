@@ -351,7 +351,7 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// out the Rules Reference p.24 sub-steps as discrete named call
 /// sites so the rule structure is grep-able and #73 / future-peril-PR
 /// fills in TODO bodies without changing the driver shape.
-fn mythos_phase(cx: &mut Cx) {
+fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     // 1.1 Round begins. Mythos phase begins.
     //     Rules Reference p.24: "As this is the first framework event
     //     of the round, it [1.1] also formalizes the beginning of a new
@@ -378,14 +378,14 @@ fn mythos_phase(cx: &mut Cx) {
     super::act_agenda::check_doom_threshold(cx);
 
     // 1.4 Each investigator draws 1 encounter card.
-    //     Seed the cursor; the actual draws are player-driven via
-    //     PlayerAction::DrawEncounterCard (lands in T12). The
-    //     dispatch handler advances the cursor after each chain.
-    //     Per Rules Reference p.10 (Elimination), eliminated
-    //     investigators (Killed, Insane, Resigned) do not draw
-    //     encounter cards — skip to the first Active investigator.
-    cx.state.mythos_draw_pending = super::cursor::first_active_investigator(cx.state);
-    if cx.state.mythos_draw_pending.is_none() {
+    //     Push the `EncounterDraw` loop frame; the actual draws are
+    //     player-driven via `ResolveInput(Confirm)` against the top frame
+    //     (#348), and `resume_encounter_draw` advances the queue after each
+    //     chain. Per Rules Reference p.10 (Elimination), eliminated
+    //     investigators (Killed, Insane, Resigned) do not draw — the queue is
+    //     seeded with the Active investigators only.
+    let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
+    if remaining.is_empty() {
         // No Active investigators to draw (turn_order is empty or all
         // investigators are eliminated). Open the post-1.4 window
         // immediately; open_fast_window's auto-skip path triggers
@@ -401,7 +401,12 @@ fn mythos_phase(cx: &mut Cx) {
             EngineOutcome::Done,
             "open_fast_window(MythosAfterDraws) unexpectedly suspended; this window has no suspending continuation",
         );
+        return EngineOutcome::Done;
     }
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EncounterDraw { remaining });
+    super::encounter::prompt_encounter_draw(cx)
 }
 
 /// Transition to the next phase. Dispatches into phase driver
@@ -442,10 +447,7 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
     // Dispatch to phase driver if one exists; otherwise emit
     // PhaseStarted directly (for phases without a driver yet).
     match to {
-        Phase::Mythos if from != Phase::Mythos => {
-            mythos_phase(cx);
-            EngineOutcome::Done
-        }
+        Phase::Mythos if from != Phase::Mythos => mythos_phase(cx),
         Phase::Investigation if from != Phase::Investigation => {
             investigation_phase(cx);
             EngineOutcome::Done
@@ -1234,7 +1236,10 @@ mod investigation_phase_tests {
             events: &mut events,
         });
 
-        assert!(matches!(outcome, EngineOutcome::Done));
+        // Single investigator with no enemies: the round-ending EndTurn
+        // cascades Investigation → Enemy → Upkeep → Mythos and pauses at the
+        // step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(
             events.iter().any(|e| matches!(e, Event::TurnEnded { investigator } if *investigator == InvestigatorId(1))),
             "step 2.2.2 emits TurnEnded"
@@ -1391,22 +1396,25 @@ mod mythos_phase_tests {
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
-    fn mythos_phase_emits_phase_started_and_seeds_draw_pending() {
+    fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
-        state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
-        mythos_phase(&mut Cx {
+        let outcome = mythos_phase(&mut Cx {
             state: &mut state,
             events: &mut events,
         });
 
-        assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "mythos_phase opens the first encounter-draw prompt, got {outcome:?}"
+        );
+        assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
         assert!(
             events.iter().any(|e| matches!(
                 e,
@@ -1424,10 +1432,9 @@ mod mythos_phase_tests {
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order.clear();
-        state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
-        mythos_phase(&mut Cx {
+        let outcome = mythos_phase(&mut Cx {
             state: &mut state,
             events: &mut events,
         });
@@ -1435,7 +1442,8 @@ mod mythos_phase_tests {
         // No drawers → open_fast_window runs for MythosAfterDraws,
         // which auto-skips (no Fast eligibility), runs continuation
         // (mythos_phase_end), which steps into Investigation.
-        assert_eq!(state.mythos_draw_pending, None);
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.current_encounter_drawer(), None);
         assert_eq!(state.phase, Phase::Investigation);
         assert!(
             events.iter().any(|e| matches!(
@@ -1511,11 +1519,11 @@ mod mythos_phase_tests {
     }
 
     /// Site 1 fix (Rules Reference p.10): when the lead investigator in
-    /// `turn_order` is eliminated, `mythos_phase` must seed
-    /// `mythos_draw_pending` with the first Active investigator rather
-    /// than blindly taking `turn_order.first()`.
+    /// `turn_order` is eliminated, `mythos_phase` must seed the encounter-draw
+    /// queue from the first Active investigator rather than blindly taking
+    /// `turn_order.first()`.
     #[test]
-    fn mythos_phase_skips_eliminated_lead_when_seeding_cursor() {
+    fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
@@ -1527,7 +1535,6 @@ mod mythos_phase_tests {
             .get_mut(&InvestigatorId(1))
             .unwrap()
             .status = Status::Killed;
-        state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
         mythos_phase(&mut Cx {
@@ -1536,9 +1543,9 @@ mod mythos_phase_tests {
         });
 
         assert_eq!(
-            state.mythos_draw_pending,
+            state.current_encounter_drawer(),
             Some(InvestigatorId(2)),
-            "cursor must point to the first Active investigator, not the Killed lead"
+            "the queue must prompt the first Active investigator, not the Killed lead"
         );
     }
 
@@ -1561,7 +1568,6 @@ mod mythos_phase_tests {
             .get_mut(&InvestigatorId(1))
             .unwrap()
             .status = Status::Killed;
-        state.mythos_draw_pending = None;
         let mut events = Vec::new();
 
         mythos_phase(&mut Cx {
@@ -1569,7 +1575,7 @@ mod mythos_phase_tests {
             events: &mut events,
         });
 
-        assert_eq!(state.mythos_draw_pending, None);
+        assert_eq!(state.current_encounter_drawer(), None);
         assert_eq!(
             state.phase,
             Phase::Investigation,
@@ -1577,37 +1583,42 @@ mod mythos_phase_tests {
         );
     }
 
-    /// Site 2 fix (Rules Reference p.10): when advancing the cursor
-    /// after a completed draw, eliminated investigators in the middle of
-    /// `turn_order` must be skipped. Here inv2 is Killed; the cursor must
-    /// advance from inv1 to inv3.
+    /// Site 2 fix (Rules Reference p.10): when advancing the encounter-draw
+    /// queue after a completed draw, eliminated investigators in the middle of
+    /// the queue must be skipped. Here inv2 is Killed; the queue must advance
+    /// from inv1 to inv3.
     #[test]
-    fn advance_mythos_draw_pending_skips_eliminated_middle_investigator() {
+    fn advance_encounter_draw_skips_eliminated_middle_investigator() {
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_investigator(test_investigator(3))
             .with_phase(Phase::Mythos)
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
+            .with_mythos_draw_remaining([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
             .build();
-        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
         state
             .investigators
             .get_mut(&InvestigatorId(2))
             .unwrap()
             .status = Status::Killed;
-        // Simulate: inv1 has just completed their draw chain.
-        state.mythos_draw_pending = Some(InvestigatorId(1));
         let mut events = Vec::new();
 
-        super::super::encounter::advance_mythos_draw_pending(&mut super::super::Cx {
+        // inv1 has just completed their draw chain: advance drops inv1 and must
+        // skip the Killed inv2, landing on inv3.
+        let outcome = super::super::encounter::advance_encounter_draw(&mut super::super::Cx {
             state: &mut state,
             events: &mut events,
         });
 
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "a remaining drawer re-prompts, got {outcome:?}"
+        );
         assert_eq!(
-            state.mythos_draw_pending,
+            state.current_encounter_drawer(),
             Some(InvestigatorId(3)),
-            "cursor must skip the Killed inv2 and land on Active inv3"
+            "the queue must skip the Killed inv2 and land on Active inv3"
         );
     }
 
@@ -2153,10 +2164,10 @@ mod upkeep_phase_tests {
     }
 
     #[test]
-    fn end_turn_cascades_through_upkeep_to_mythos_draw_pending() {
+    fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
         // Single investigator, non-empty deck, an exhausted in-play card.
         // After EndTurn: card readied, hand +1, resources +1, landed in
-        // Mythos with draw pending and round bumped.
+        // Mythos paused at the encounter-draw prompt and round bumped.
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.actions_remaining = 0;
@@ -2176,10 +2187,16 @@ mod upkeep_phase_tests {
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        // The round-ending EndTurn cascades into Mythos and pauses at the
+        // step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(
+            matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+            "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
+            result.outcome
+        );
         assert_eq!(result.state.phase, Phase::Mythos);
         assert_eq!(result.state.round, 2, "round bumped on Mythos entry");
-        assert_eq!(result.state.mythos_draw_pending, Some(id));
+        assert_eq!(result.state.current_encounter_drawer(), Some(id));
         assert_eq!(result.state.active_investigator, None);
         assert!(
             !result.state.investigators[&id].cards_in_play[0].exhausted,
@@ -2271,7 +2288,9 @@ mod upkeep_phase_tests {
             state: &mut state,
             events: &mut events,
         });
-        assert_eq!(out, EngineOutcome::Done);
+        // Unaffordable → no round-end window; the cascade steps straight into
+        // Mythos and pauses at the step-1.4 encounter-draw prompt.
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         assert!(!matches!(
             state.continuations.last(),
             Some(crate::state::Continuation::ActRoundEnd(_))
@@ -2295,7 +2314,9 @@ mod upkeep_phase_tests {
             },
             &InputResponse::Confirm,
         );
-        assert_eq!(out, EngineOutcome::Done);
+        // Resolving the window continues the upkeep cascade into Mythos, which
+        // pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.act_index, 1, "advanced act 2 -> act 3");
         assert_eq!(state.investigators[&inv].clues, 0, "spent 3 clues");
         assert!(!matches!(
@@ -2321,7 +2342,9 @@ mod upkeep_phase_tests {
             },
             &InputResponse::Skip,
         );
-        assert_eq!(out, EngineOutcome::Done);
+        // Skipping the window still continues the upkeep cascade into Mythos,
+        // which pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.act_index, 0, "no advance on Skip");
         assert_eq!(state.investigators[&inv].clues, 3, "no clues spent");
         assert!(!matches!(
@@ -2378,7 +2401,13 @@ mod upkeep_phase_tests {
             state: &mut state,
             events: &mut events,
         });
-        assert_eq!(out, EngineOutcome::Done, "unaffordable by Hallway alone");
+        // Unaffordable by the Hallway alone: no round-end window opens, so the
+        // upkeep cascades straight into Mythos and pauses at the encounter-draw
+        // prompt (AwaitingInput) rather than opening an ActRoundEnd frame.
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "unaffordable by Hallway alone"
+        );
         assert!(!matches!(
             state.continuations.last(),
             Some(crate::state::Continuation::ActRoundEnd(_))
@@ -2424,12 +2453,12 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         });
-        assert_eq!(outcome, EngineOutcome::Done);
-        // No registry installed → the attack window auto-skips inline and
-        // the cascade runs Enemy→Upkeep→Mythos within this same call (same
-        // as `enemy_phase_emits_phase_started_and_cascades_to_mythos...`).
-        // The hunter still moved + engaged during step 3.2, and the first
-        // attack window still opened — asserted via the event stream below.
+        // No registry installed → the attack window auto-skips inline and the
+        // cascade runs Enemy→Upkeep→Mythos within this same call, pausing at the
+        // step-1.4 encounter-draw prompt (AwaitingInput). The hunter still moved
+        // + engaged during step 3.2, and the first attack window still opened —
+        // asserted via the event stream below.
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Mythos);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -2490,10 +2519,11 @@ mod enemy_phase_tests {
             },
             &InputResponse::PickSingle(pick),
         );
-        assert_eq!(resumed, EngineOutcome::Done);
-        assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked));
         // With no registry the attack window auto-skips and the cascade runs
-        // Enemy->Upkeep->Mythos within the same resume call (same as the no-tie test).
+        // Enemy->Upkeep->Mythos within the same resume call, pausing at the
+        // step-1.4 encounter-draw prompt (AwaitingInput).
+        assert!(matches!(resumed, EngineOutcome::AwaitingInput { .. }));
+        assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked));
         assert_eq!(state.phase, Phase::Mythos);
     }
 
@@ -3105,10 +3135,12 @@ mod enemy_phase_tests {
             }),
         );
 
+        // The Skip resumes the continuation; the cascade runs into Mythos and
+        // pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
         match result.outcome {
-            EngineOutcome::Done => {}
+            EngineOutcome::AwaitingInput { .. } => {}
             ref other => panic!(
-                "expected Done after Skip; got {other:?}; events = {:?}",
+                "expected AwaitingInput (Mythos draw prompt) after Skip; got {other:?}; events = {:?}",
                 result.events
             ),
         }
@@ -3298,7 +3330,9 @@ mod hand_size_tests {
             },
         );
 
-        assert_eq!(outcome, EngineOutcome::Done);
+        // The discard drains the hand-size queue, so 4.6 runs and the cascade
+        // steps into Mythos, pausing at the step-1.4 encounter-draw prompt.
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(!matches!(
             state.continuations.last(),
             Some(crate::state::Continuation::HandSizeDiscard(_))
