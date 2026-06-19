@@ -1657,7 +1657,7 @@ mod spawn_enemy_tests {
     #[test]
     fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
         // Validate-first: a pick outside the stored candidate set rejects
-        // and leaves `spawn_engage_pending` intact for retry, with the
+        // and leaves the SpawnEngage frame intact for retry, with the
         // enemy still unengaged.
         use crate::action::InputResponse;
         let mut loc = test_location(1, "Hall");

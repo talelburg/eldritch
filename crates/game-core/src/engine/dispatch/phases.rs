@@ -224,7 +224,7 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // - **a single** suspending hit has no run frame; record the active
     //   investigator in `pending_end_turn` so the skill-test commit-resume
     //   path re-enters [`resume_end_turn`] once the test resolves (C4c, #235
-    //   — mirrors `spawn_engage_pending`).
+    //   — mirrors the SpawnEngage frame).
     //
     // A `Rejected` propagates as-is.
     let end_of_turn = super::emit::emit_event(
@@ -841,7 +841,7 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
         .collect()
 }
 
-/// Stores `remaining` as `hand_size_discard_pending` and returns the
+/// Pushes a `HandSizeDiscard(remaining)` frame and returns the
 /// [`EngineOutcome::AwaitingInput`] that prompts `remaining[0]` to discard.
 /// Used by both [`check_hand_size`] (first suspension) and
 /// [`resume_hand_size_discard`] (re-prompt after a queue pop).

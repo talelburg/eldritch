@@ -406,7 +406,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
 /// Resume a suspended Hunter-movement choice with the lead
 /// investigator's response, then continue driving remaining hunters.
 /// Validates the response against the stored candidate set; on an
-/// invalid pick, rejects and leaves `hunter_move_pending` untouched so
+/// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry. (#128)
 pub(super) fn resume_hunter_choice(
     cx: &mut Cx,
@@ -494,8 +494,7 @@ pub(super) fn resume_hunter_choice(
 /// investigator's Mythos encounter-draw chain.
 ///
 /// Validate-first: an invalid pick (wrong response shape, or a target
-/// outside the stored candidate set) rejects and leaves
-/// `spawn_engage_pending` untouched so the client can retry.
+/// outside the stored candidate set) rejects and leaves the `SpawnEngage` frame on the stack so the client can retry.
 ///
 /// The chain only resumes when the suspension arose mid-Mythos-draw —
 /// i.e. the drawing investigator is still the pending cursor. The
@@ -537,7 +536,7 @@ pub(super) fn resume_spawn_engage(
     // mid-chain (the drawing investigator is still the pending cursor).
     // The `EncounterCardRevealed` single-draw path resolves to `Done`.
     //
-    // Invariant: while `spawn_engage_pending` is set, the apply guard
+    // Invariant: while a SpawnEngage frame is on the stack, the apply guard
     // (line 129) rejects every non-`ResolveInput` action, so nothing can
     // retarget the Mythos cursor between suspend and resume. Hence
     // `mythos_draw_pending == Some(investigator_to_draw)` reliably means

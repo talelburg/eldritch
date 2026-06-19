@@ -101,7 +101,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
             r3.state.continuations.last(),
             Some(game_core::state::Continuation::HandSizeDiscard(_))
         ),
-        "hand_size_discard_pending must be set while awaiting the discard"
+        "a HandSizeDiscard frame must be on the stack while awaiting the discard"
     );
     let hand_at_check = r3.state.investigators[&inv1].hand.len();
     assert_eq!(
