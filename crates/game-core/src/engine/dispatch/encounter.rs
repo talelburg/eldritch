@@ -472,10 +472,13 @@ pub(super) fn spawn_enemy_at(
                     },
                 ));
             EngineOutcome::AwaitingInput {
-                request: InputRequest::prompt(format!(
-                    "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
-                     engage among {tied:?} (submit InputResponse::PickInvestigator)"
-                )),
+                request: InputRequest::choice(
+                    format!(
+                        "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
+                         engage among {tied:?}"
+                    ),
+                    super::hunters::candidate_options(&tied),
+                ),
                 resume_token: ResumeToken(0),
             }
         }
@@ -1690,13 +1693,13 @@ mod spawn_enemy_tests {
             Some(crate::state::Continuation::SpawnEngage(_))
         ));
 
-        // Investigator 3 is not among the co-located candidates.
+        // Option id 99 is out of the co-located candidate range.
         let outcome = super::super::hunters::resume_spawn_engage(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::PickInvestigator(InvestigatorId(3)),
+            &InputResponse::PickSingle(crate::engine::OptionId(99)),
         );
         assert!(
             matches!(outcome, EngineOutcome::Rejected { .. }),

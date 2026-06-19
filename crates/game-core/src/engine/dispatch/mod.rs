@@ -121,8 +121,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     {
         return EngineOutcome::Rejected {
             reason: "a hunter-movement choice is pending; submit a PlayerAction::ResolveInput \
-                     with InputResponse::PickLocation (movement) or \
-                     InputResponse::PickInvestigator (engagement) before any other action"
+                     with InputResponse::PickSingle (an offered option id) before any other action"
                 .into(),
         };
     }
@@ -137,8 +136,8 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     {
         return EngineOutcome::Rejected {
             reason: "an engagement-on-spawn choice is pending; submit a \
-                     PlayerAction::ResolveInput with InputResponse::PickInvestigator \
-                     before any other action"
+                     PlayerAction::ResolveInput with InputResponse::PickSingle \
+                     (an offered option id) before any other action"
                 .into(),
         };
     }

@@ -304,12 +304,23 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // The cursor is unchanged — still mid-chain for inv1.
     assert_eq!(suspended.state.mythos_draw_pending, Some(InvestigatorId(1)));
 
-    // Lead picks inv2 → engage + resume the chain. The enemy is
-    // non-surge, so no further card draws; the chain advances to inv2.
+    // Lead picks inv2 (by its offered option id) → engage + resume the chain.
+    // The enemy is non-surge, so no further card draws; the chain advances to inv2.
+    let pick = {
+        let EngineOutcome::AwaitingInput { request, .. } = &suspended.outcome else {
+            unreachable!("asserted AwaitingInput above");
+        };
+        request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{:?}", InvestigatorId(2)))
+            .expect("InvestigatorId(2) among offered options")
+            .id
+    };
     let resumed = apply(
         suspended.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickInvestigator(InvestigatorId(2)),
+            response: InputResponse::PickSingle(pick),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);
