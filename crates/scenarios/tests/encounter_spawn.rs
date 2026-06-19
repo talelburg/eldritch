@@ -146,7 +146,10 @@ fn revealing_synth_enemy_with_two_investigators_at_loc_suspends_for_lead_pick() 
         "multi-investigator spawn now suspends for the lead's PickInvestigator, got {:?}",
         result.outcome,
     );
-    assert!(result.state.spawn_engage_pending.is_some());
+    assert!(matches!(
+        result.state.continuations.last(),
+        Some(game_core::state::Continuation::SpawnEngage(_))
+    ));
     let enemy = result.state.enemies.values().next().expect("enemy placed");
     assert_eq!(
         enemy.engaged_with, None,

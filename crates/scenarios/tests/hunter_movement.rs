@@ -49,7 +49,10 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
         r1.outcome,
     );
     assert!(
-        r1.state.spawn_engage_pending.is_some(),
+        matches!(
+            r1.state.continuations.last(),
+            Some(game_core::state::Continuation::SpawnEngage(_))
+        ),
         "spawn engagement tie should be pending for the lead's pick",
     );
     let spawned = r1.state.enemies.values().next().expect("enemy placed");
@@ -63,7 +66,10 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
         }),
     );
     assert_eq!(r2.outcome, EngineOutcome::Done);
-    assert!(r2.state.spawn_engage_pending.is_none());
+    assert!(!matches!(
+        r2.state.continuations.last(),
+        Some(game_core::state::Continuation::SpawnEngage(_))
+    ));
     let enemy = r2.state.enemies.values().next().expect("enemy in play");
     assert_eq!(enemy.engaged_with, Some(InvestigatorId(2)));
 }

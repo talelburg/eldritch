@@ -290,7 +290,10 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         "spawn tie must suspend, got {:?}",
         suspended.outcome,
     );
-    assert!(suspended.state.spawn_engage_pending.is_some());
+    assert!(matches!(
+        suspended.state.continuations.last(),
+        Some(game_core::state::Continuation::SpawnEngage(_))
+    ));
     let enemy = suspended
         .state
         .enemies
@@ -310,7 +313,10 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);
-    assert!(resumed.state.spawn_engage_pending.is_none());
+    assert!(!matches!(
+        resumed.state.continuations.last(),
+        Some(game_core::state::Continuation::SpawnEngage(_))
+    ));
     let enemy = resumed
         .state
         .enemies

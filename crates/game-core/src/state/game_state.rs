@@ -195,8 +195,6 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
-    /// Suspended engagement-on-spawn choice (#128). See [`SpawnEngagePending`].
-    pub spawn_engage_pending: Option<SpawnEngagePending>,
     /// Suspended end-of-turn continuation (C4c, #235): `Some(active)` while
     /// `end_turn` is paused on a suspending `EndOfTurn` forced effect
     /// (Frozen in Fear 01164's willpower test). The skill-test commit-resume
@@ -467,6 +465,9 @@ pub enum Continuation {
     /// former `GameState::hunter_move_pending` field (#348). Resumed by
     /// [`resume_hunter_choice`](crate::engine) via `ResolveInput`.
     HunterMove(HunterChoice),
+    /// A suspended engagement-on-spawn choice (#128), migrated off the former
+    /// `GameState::spawn_engage_pending` field (#348).
+    SpawnEngage(SpawnEngagePending),
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -502,9 +503,10 @@ impl Continuation {
     pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_) | Continuation::Choice(_) | Continuation::HunterMove(_) => {
-                None
-            }
+            Continuation::SkillTest(_)
+            | Continuation::Choice(_)
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_) => None,
         }
     }
 
@@ -512,9 +514,10 @@ impl Continuation {
     pub fn as_resolution_mut(&mut self) -> Option<&mut ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_) | Continuation::Choice(_) | Continuation::HunterMove(_) => {
-                None
-            }
+            Continuation::SkillTest(_)
+            | Continuation::Choice(_)
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_) => None,
         }
     }
 
@@ -529,7 +532,8 @@ impl Continuation {
             Continuation::Resolution(_)
             | Continuation::Choice(_)
             | Continuation::SkillTest(_)
-            | Continuation::HunterMove(_) => true,
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_) => true,
         }
     }
 }

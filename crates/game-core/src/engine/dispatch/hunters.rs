@@ -506,9 +506,11 @@ pub(super) fn resume_spawn_engage(
     cx: &mut Cx,
     response: &crate::action::InputResponse,
 ) -> EngineOutcome {
-    let pending = cx.state.spawn_engage_pending.clone().unwrap_or_else(|| {
-        unreachable!("resume_spawn_engage: called with no pending spawn engagement")
-    });
+    let Some(crate::state::Continuation::SpawnEngage(pending)) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_spawn_engage: called with no SpawnEngage frame on top of the stack")
+    };
+    let pending = pending.clone();
     let crate::action::InputResponse::PickInvestigator(who) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -527,7 +529,8 @@ pub(super) fn resume_spawn_engage(
             .into(),
         };
     }
-    cx.state.spawn_engage_pending = None;
+    // Pop the SpawnEngage frame we validated against (it is the top frame).
+    cx.state.continuations.pop();
     engage_enemy_with(cx, pending.enemy, *who);
 
     // Only re-enter the Mythos surge chain if the suspend happened

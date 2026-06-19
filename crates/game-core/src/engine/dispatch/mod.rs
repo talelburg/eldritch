@@ -130,8 +130,10 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     // A pending engagement-on-spawn choice (#128) likewise blocks every
     // action but `ResolveInput`. Mirrors the hunter guard above; the two
     // never coexist (different phases), so guard order is immaterial.
-    if cx.state.spawn_engage_pending.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::SpawnEngage(_))
+    ) && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "an engagement-on-spawn choice is pending; submit a \
@@ -450,7 +452,6 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // right resume handler before the reaction-window and skill-test checks.
     debug_assert!(
         [
-            cx.state.spawn_engage_pending.is_some(),
             cx.state.hand_size_discard_pending.is_some(),
             cx.state.act_round_end_pending.is_some(),
         ]
@@ -458,7 +459,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         .filter(|b| **b)
         .count()
             <= 1,
-        "spawn engagement, hand-size discard, and act round-end advance are \
+        "hand-size discard and act round-end advance are \
          mutually exclusive suspension modes (different phases)",
     );
     if matches!(
@@ -470,7 +471,10 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 
     // Engagement-on-spawn suspension (#128, option A) is a distinct mode
     // from hunter movement: its resume re-enters the Mythos draw chain.
-    if cx.state.spawn_engage_pending.is_some() {
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::SpawnEngage(_))
+    ) {
         return hunters::resume_spawn_engage(cx, response);
     }
 

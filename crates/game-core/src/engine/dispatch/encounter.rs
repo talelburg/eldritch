@@ -460,13 +460,17 @@ pub(super) fn spawn_enemy_at(
             // stored value to the live chain position before returning the
             // `AwaitingInput` (the single-draw `EncounterCardRevealed` path
             // has no chain, so 0 is correct there).
-            cx.state.spawn_engage_pending = Some(SpawnEngagePending {
-                enemy: enemy_id,
-                investigator_to_draw: investigator,
-                candidates: tied.clone(),
-                surge: metadata.surge(),
-                chain_count: 0,
-            });
+            cx.state
+                .continuations
+                .push(crate::state::Continuation::SpawnEngage(
+                    SpawnEngagePending {
+                        enemy: enemy_id,
+                        investigator_to_draw: investigator,
+                        candidates: tied.clone(),
+                        surge: metadata.surge(),
+                        chain_count: 0,
+                    },
+                ));
             EngineOutcome::AwaitingInput {
                 request: InputRequest::prompt(format!(
                     "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
@@ -739,7 +743,9 @@ pub(super) fn run_mythos_draw_chain(
                 // A mid-chain spawn engagement tie suspended. Record the
                 // live chain position so the resume keeps counting toward
                 // the cap rather than restarting its budget.
-                if let Some(pending) = cx.state.spawn_engage_pending.as_mut() {
+                if let Some(crate::state::Continuation::SpawnEngage(pending)) =
+                    cx.state.continuations.last_mut()
+                {
                     pending.chain_count = chain_count;
                 }
                 return outcome;
@@ -1640,7 +1646,10 @@ mod spawn_enemy_tests {
             &metadata,
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.spawn_engage_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::SpawnEngage(_))
+        ));
         let spawned = state.enemies.values().next().expect("one enemy");
         assert_eq!(spawned.engaged_with, None);
     }
@@ -1676,7 +1685,10 @@ mod spawn_enemy_tests {
             CardCode("_synth_enemy".into()),
             &metadata,
         );
-        assert!(state.spawn_engage_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::SpawnEngage(_))
+        ));
 
         // Investigator 3 is not among the co-located candidates.
         let outcome = super::super::hunters::resume_spawn_engage(
@@ -1691,7 +1703,10 @@ mod spawn_enemy_tests {
             "{outcome:?}"
         );
         assert!(
-            state.spawn_engage_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::SpawnEngage(_))
+            ),
             "pending must survive a rejected pick for retry",
         );
         let enemy = state.enemies.values().next().expect("enemy still placed");
