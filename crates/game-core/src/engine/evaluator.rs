@@ -118,7 +118,7 @@ pub struct ChoiceBinding {
 /// reaction-window context (for `OnEvent` triggers), etc. Keep the
 /// surface narrow and add fields only when an effect's evaluator
 /// actually reads them.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct EvalContext {
     /// The investigator whose card-effect we're resolving — the
@@ -278,7 +278,18 @@ impl EvalContext {
     }
     /// Bind (or clear) the native-leaf chosen option (see [`Self::chosen_option`]).
     pub fn set_chosen_option(&mut self, opt: Option<crate::engine::OptionId>) {
-        self.choice.get_or_insert_with(Default::default).option = opt;
+        // Match the old flat-field semantics exactly: a `None` pick must NOT
+        // materialize an otherwise-empty `choice` binding (which would make
+        // `EvalContext` compare unequal to a never-touched one). Only create the
+        // binding to store a `Some`; otherwise clear an existing slot in place.
+        match opt {
+            Some(_) => self.choice.get_or_insert_with(Default::default).option = opt,
+            None => {
+                if let Some(choice) = self.choice.as_mut() {
+                    choice.option = None;
+                }
+            }
+        }
     }
 }
 

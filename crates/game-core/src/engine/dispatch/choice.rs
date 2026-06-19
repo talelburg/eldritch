@@ -63,8 +63,7 @@ pub(crate) fn suspend_for_choice(
             decisions,
             offered,
             effect,
-            controller: eval_ctx.controller,
-            source: eval_ctx.source,
+            context: eval_ctx,
         }));
     EngineOutcome::AwaitingInput {
         request: InputRequest::choice(prompt, options),
@@ -96,9 +95,9 @@ pub fn suspend_for_native_choice(
 }
 
 /// Resume a [`Continuation::Choice`]: validate the pick is in the offered
-/// set, append it to `decisions`, pop the frame, rebuild the
-/// [`EvalContext`] from the stored ingredients, and re-run the effect from
-/// the top (the evaluator replays `decisions`).
+/// set, append it to `decisions`, pop the frame, restore the snapshotted
+/// [`EvalContext`] (durable identity + any active window bindings), and re-run
+/// the effect from the top (the evaluator replays `decisions`).
 pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let InputResponse::PickSingle(picked) = response else {
         return EngineOutcome::Rejected {
@@ -121,7 +120,7 @@ pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     };
     let mut decisions = frame.decisions;
     decisions.push(*picked);
-    let eval_ctx = EvalContext::for_controller_with_optional_source(frame.controller, frame.source);
+    let eval_ctx = frame.context;
     let outcome = apply_effect_with_decisions(cx, &frame.effect, eval_ctx, decisions);
 
     // If the choice completed an effect that was suspended *inside* a skill
@@ -163,5 +162,39 @@ mod tests {
     #[test]
     fn resolve_two_options_suspends() {
         assert!(matches!(resolve_choice_count(2), ChoiceResolution::Suspend));
+    }
+
+    #[test]
+    fn choice_frame_snapshots_active_skill_test_binding() {
+        use crate::state::InvestigatorId;
+        use crate::test_support::GameStateBuilder;
+
+        // A context carrying an active on_fail margin when a choice suspends.
+        let mut ctx = EvalContext::for_controller(InvestigatorId(1));
+        ctx.set_failed_by(2);
+
+        let mut state = GameStateBuilder::default().build();
+        let mut events = Vec::new();
+        let _ = suspend_for_choice(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            "pick",
+            vec!["a".into(), "b".into()],
+            Vec::new(),
+            crate::dsl::Effect::Seq(vec![]),
+            ctx,
+        );
+
+        let Some(Continuation::Choice(frame)) = state.continuations.last() else {
+            panic!("expected a Choice frame on the stack");
+        };
+        assert_eq!(
+            frame.context.failed_by(),
+            Some(2),
+            "the active skill-test margin must be snapshotted onto the ChoiceFrame, \
+             not dropped at suspend",
+        );
     }
 }
