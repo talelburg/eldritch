@@ -125,7 +125,9 @@ rather than deferring wholesale:
   → `PickSingle`, `Mulligan` → `PickMultiple`, `DrawEncounterCard` → `Confirm`),
   every player-facing suspension resumes through `ResolveInput`, and the bespoke
   `mulligan_pending`/`mythos_draw_pending` cursors + `in_flight_skill_test` are
-  folded onto continuation frames. #347 and #380 follow as separate PRs.
+  folded onto continuation frames. #380 (the `pending_revelation_discard`
+  side-channel → an `EncounterCard` frame, PR #392) has also landed; only
+  #347 (token-routed resume) remains.
   #348 migrates the remaining
   `pending_*` suspension modes (incl. `pending_enemy_attack`, `pending_end_turn`)
   onto the one continuation stack and collapses the
