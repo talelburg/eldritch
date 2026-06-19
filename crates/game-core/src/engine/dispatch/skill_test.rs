@@ -67,7 +67,7 @@ pub(in crate::engine) fn start_skill_test(
             reason: format!("skill test: difficulty {difficulty} must be >= 0").into(),
         };
     }
-    if cx.state.in_flight_skill_test.is_some() {
+    if cx.state.has_skill_test_in_flight() {
         return EngineOutcome::Rejected {
             reason: "skill test: another skill test is already in flight; only one test \
                      may pause at a commit window at a time"
@@ -153,8 +153,7 @@ fn open_commit_window(cx: &mut Cx) -> EngineOutcome {
     let (investigator, skill, difficulty) = {
         let t = cx
             .state
-            .in_flight_skill_test
-            .as_ref()
+            .current_skill_test()
             .expect("open_commit_window: in-flight test must exist");
         (t.investigator, t.skill, t.difficulty)
     };
@@ -201,8 +200,7 @@ pub(in crate::engine) fn resume_substitution_choice(
         // separate and untouched.
         let t = cx
             .state
-            .in_flight_skill_test
-            .as_mut()
+            .current_skill_test_mut()
             .expect("resume_substitution_choice: in-flight test must exist");
         t.skill = SkillKind::Intellect;
         t.test_modifier = 0;
@@ -238,7 +236,7 @@ pub(in crate::engine) fn resume_substitution_choice(
 pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // Snapshot the in-flight record (Copy-able primitives only) so
     // later mutation paths can re-borrow state freely.
-    let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() else {
+    let Some(in_flight) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
             reason: "ResolveInput::CommitCards: no in-flight skill test to resume".into(),
         };
@@ -276,8 +274,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // replay clarity. Safe to expect: we read `in_flight_skill_test`
     // immediately above and nothing has cleared it since.
     cx.state
-        .in_flight_skill_test
-        .as_mut()
+        .current_skill_test_mut()
         .expect("in_flight_skill_test was Some immediately above")
         .committed_by_active
         .clone_from(&indices_u8);
@@ -305,8 +302,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // set follow_up=None), so running on_success after the follow-up is
     // safe. (C5a #236.)
     cx.state
-        .in_flight_skill_test
-        .as_mut()
+        .current_skill_test_mut()
         .expect("in_flight_skill_test was Some immediately above")
         .continuation = FinishContinuation::PostFollowUp { succeeded };
 
@@ -405,7 +401,7 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
         }
 
         let (continuation, investigator, indices_u8) = {
-            let in_flight = cx.state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
+            let in_flight = cx.state.current_skill_test().unwrap_or_else(|| {
                 unreachable!(
                     "drive_skill_test: in_flight_skill_test must exist while driver is active; \
                      state-corruption invariant violation"
@@ -428,16 +424,14 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
             FinishContinuation::PostFollowUp { succeeded } => {
                 fire_on_skill_test_resolution(cx, investigator, &indices_u8, succeeded);
                 cx.state
-                    .in_flight_skill_test
-                    .as_mut()
+                    .current_skill_test_mut()
                     .expect("in_flight_skill_test must persist across driver steps")
                     .continuation = FinishContinuation::PostRetaliate { succeeded };
             }
             FinishContinuation::PostRetaliate { succeeded } => {
                 fire_retaliate_if_any(cx, investigator, succeeded);
                 cx.state
-                    .in_flight_skill_test
-                    .as_mut()
+                    .current_skill_test_mut()
                     .expect("in_flight_skill_test must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
@@ -463,7 +457,7 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                 if let Some(code) = cx.state.pending_revelation_discard.take() {
                     cx.state.encounter_discard.push(code);
                 }
-                cx.state.in_flight_skill_test = None;
+                let _ = cx.state.take_skill_test();
                 // Remove this test's SkillTest resume-handle (Axis-B T4).
                 // Usually it is the top frame, but a player-window gate can
                 // legitimately sit above it (#69/#70/#71), so remove the
@@ -591,10 +585,7 @@ fn sum_skill_value(
     let pending_mod = pending_skill_modifier(state, investigator, skill);
     // One-shot modifier the initiating effect snapshotted (a weapon's
     // "+N for this attack"); 0 for player-action tests.
-    let test_mod = state
-        .in_flight_skill_test
-        .as_ref()
-        .map_or(0, |t| t.test_modifier);
+    let test_mod = state.current_skill_test().map_or(0, |t| t.test_modifier);
     base.saturating_add(constant_mod)
         .saturating_add(pending_mod)
         .saturating_add(icon_mod)
@@ -809,8 +800,7 @@ fn apply_skill_test_follow_up(
             // of resolution — so the accumulator is readable.
             let bonus = cx
                 .state
-                .in_flight_skill_test
-                .as_ref()
+                .current_skill_test()
                 .map_or(0, |t| t.bonus_attack_damage);
             super::combat::damage_enemy(
                 cx,
@@ -865,7 +855,7 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
     if succeeded {
         return;
     }
-    let follow_up = cx.state.in_flight_skill_test.as_ref().map(|t| t.follow_up);
+    let follow_up = cx.state.current_skill_test().map(|t| t.follow_up);
     let Some(SkillTestFollowUp::Fight { enemy, .. }) = follow_up else {
         return;
     };
@@ -1251,7 +1241,7 @@ mod tests {
             state.encounter_discard.contains(&CardCode("01162".into())),
             "suspended treachery flushed to encounter_discard at teardown"
         );
-        assert!(state.in_flight_skill_test.is_none());
+        assert!(!state.has_skill_test_in_flight());
         assert!(state.pending_revelation_discard.is_none());
     }
 
@@ -1376,7 +1366,7 @@ mod tests {
             matches!(out, EngineOutcome::AwaitingInput { .. }),
             "commit window"
         );
-        let t = state.in_flight_skill_test.as_ref().unwrap();
+        let t = state.current_skill_test().unwrap();
         assert_eq!(t.skill, SkillKind::Intellect, "now an intellect test");
         assert_eq!(t.kind, SkillTestKind::Fight, "still a Fight (damage)");
         assert_eq!(t.test_modifier, 0, "weapon combat bonus dropped");
@@ -1418,7 +1408,7 @@ mod tests {
             "commit window"
         );
         assert_eq!(
-            state.in_flight_skill_test.as_ref().unwrap().skill,
+            state.current_skill_test().unwrap().skill,
             SkillKind::Agility,
             "declined — keeps the printed skill",
         );
@@ -1453,9 +1443,6 @@ mod tests {
         };
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         assert!(state.pending_substitution_prompt.is_none(), "no prompt");
-        assert_eq!(
-            state.in_flight_skill_test.as_ref().unwrap().skill,
-            SkillKind::Combat,
-        );
+        assert_eq!(state.current_skill_test().unwrap().skill, SkillKind::Combat,);
     }
 }

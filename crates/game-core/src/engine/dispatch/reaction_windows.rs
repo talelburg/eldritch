@@ -916,7 +916,7 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     // window (no driver state to resume); this happens when a future
     // non-skill-test action queues a window — `Done` is the right
     // terminal outcome.
-    if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
+    if let Some(in_flight) = cx.state.current_skill_test() {
         if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
             return super::skill_test::drive_skill_test(cx);
         }
@@ -962,7 +962,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                 // adding a Mythos-phase Revelation that initiates a skill
                 // test must redesign the close-window + phase-transition
                 // ordering before this assertion fires.
-                if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
+                if let Some(in_flight) = cx.state.current_skill_test() {
                     unreachable!(
                         "MythosAfterDraws window closed while a skill test is in flight \
                      (continuation={:?}). Phase transition would strand the skill test \
@@ -980,7 +980,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                 // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
                 // cannot run while a skill test is in flight. Phase 4 has no
                 // Upkeep-phase skill-test source, so structurally unreachable.
-                if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
+                if let Some(in_flight) = cx.state.current_skill_test() {
                     unreachable!(
                         "UpkeepBegins window closed while a skill test is in flight \
                      (continuation={:?}). Phase 4 has no Upkeep-phase skill-test \
@@ -1000,7 +1000,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                 // (e.g. a treachery-style "make an Agility test or take
                 // damage" attack ability) must redesign the window-close
                 // + phase-transition ordering before this assertion fires.
-                if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
+                if let Some(in_flight) = cx.state.current_skill_test() {
                     unreachable!(
                         "BeforeInvestigatorAttacked window closed while a \
                      skill test is in flight (continuation={:?}). Phase \
@@ -1045,7 +1045,7 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                 after_enemy_phase_attacks(cx, investigator)
             }
             PhaseStep::AfterAllInvestigatorsAttacked => {
-                if let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() {
+                if let Some(in_flight) = cx.state.current_skill_test() {
                     unreachable!(
                         "AfterAllInvestigatorsAttacked window closed while a \
                      skill test is in flight (continuation={:?}). Phase \
@@ -1138,7 +1138,7 @@ fn resume_before_discover_window(
     if !cancelled {
         crate::engine::evaluator::perform_discovery(cx, location, count, investigator);
     }
-    if cx.state.in_flight_skill_test.is_some() {
+    if cx.state.has_skill_test_in_flight() {
         super::skill_test::drive_skill_test(cx)
     } else {
         EngineOutcome::Done

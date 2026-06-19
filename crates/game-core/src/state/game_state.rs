@@ -1302,6 +1302,31 @@ impl GameState {
             .find(|w| !w.pending_triggers.is_empty())
     }
 
+    /// The skill test currently in flight, if any. Single source of truth for
+    /// "a test is mid-resolution"; `None` outside a test. (#348 moves the
+    /// payload onto the `Continuation::SkillTest` frame; this accessor hides
+    /// where it lives.)
+    #[must_use]
+    pub fn current_skill_test(&self) -> Option<&InFlightSkillTest> {
+        self.in_flight_skill_test.as_ref()
+    }
+
+    /// Mutable counterpart to [`Self::current_skill_test`].
+    pub fn current_skill_test_mut(&mut self) -> Option<&mut InFlightSkillTest> {
+        self.in_flight_skill_test.as_mut()
+    }
+
+    /// Remove and return the in-flight skill test (called at test teardown).
+    pub fn take_skill_test(&mut self) -> Option<InFlightSkillTest> {
+        self.in_flight_skill_test.take()
+    }
+
+    /// Whether a skill test is currently in flight.
+    #[must_use]
+    pub fn has_skill_test_in_flight(&self) -> bool {
+        self.in_flight_skill_test.is_some()
+    }
+
     /// Iterator over the open windows on the continuation stack, in stack
     /// order (bottom to top). The windows are `Continuation::Resolution`
     /// frames; non-window frames (Task 4+) are skipped.

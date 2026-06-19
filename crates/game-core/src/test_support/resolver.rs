@@ -187,7 +187,7 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
     if codes.is_empty() {
         return Vec::new();
     }
-    let in_flight = state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
+    let in_flight = state.current_skill_test().unwrap_or_else(|| {
         panic!(
             "ScriptedResolver::commit_cards: state has no in-flight skill test at \
              resolve time; prompt was: {prompt:?}",

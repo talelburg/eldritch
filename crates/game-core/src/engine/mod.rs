@@ -505,7 +505,7 @@ mod tests {
             "skill test should pause at the commit window, got {:?}",
             paused.outcome,
         );
-        assert!(paused.state.in_flight_skill_test.is_some());
+        assert!(paused.state.has_skill_test_in_flight());
         let s1 = paused.state.clone();
 
         // Malformed response: commit window expects CommitCards; send Skip.
@@ -522,7 +522,7 @@ mod tests {
             "rejected ResolveInput rewinds to the pause state, not pre-action",
         );
         assert!(
-            result.state.in_flight_skill_test.is_some(),
+            result.state.has_skill_test_in_flight(),
             "suspension stays open"
         );
         assert!(result.events.is_empty());
@@ -4355,7 +4355,7 @@ mod tests {
         // resume path after the commit response arrives.
         assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
         assert!(
-            result.state.in_flight_skill_test.is_some(),
+            result.state.has_skill_test_in_flight(),
             "in_flight_skill_test must be populated while paused",
         );
     }
@@ -4397,7 +4397,7 @@ mod tests {
             Event::SkillTestEnded { investigator } if *investigator == id
         );
         assert!(
-            resumed.state.in_flight_skill_test.is_none(),
+            !resumed.state.has_skill_test_in_flight(),
             "in_flight_skill_test must clear after resolution",
         );
     }
@@ -4542,7 +4542,7 @@ mod tests {
         }
         // State stays paused (engine still in-flight) so a client
         // can submit a fixed-up response without re-initiating.
-        assert!(bad.state.in_flight_skill_test.is_some());
+        assert!(bad.state.has_skill_test_in_flight());
     }
 
     #[test]
@@ -4578,7 +4578,7 @@ mod tests {
         }
         // State stays paused so the client can submit a fixed-up
         // response without re-initiating the test.
-        assert!(bad.state.in_flight_skill_test.is_some());
+        assert!(bad.state.has_skill_test_in_flight());
     }
 
     #[test]
@@ -4612,7 +4612,7 @@ mod tests {
             other => panic!("expected Rejected, got {other:?}"),
         }
         // The pause must survive the rejected action.
-        assert!(rejected.state.in_flight_skill_test.is_some());
+        assert!(rejected.state.has_skill_test_in_flight());
     }
 
     #[test]
@@ -4638,7 +4638,7 @@ mod tests {
         );
         assert!(matches!(bad.outcome, EngineOutcome::Rejected { .. }));
         // Test still paused.
-        assert!(bad.state.in_flight_skill_test.is_some());
+        assert!(bad.state.has_skill_test_in_flight());
     }
 
     #[test]

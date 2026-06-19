@@ -675,7 +675,7 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
 /// test. The Fight follow-up is the only reader, so this is inert for
 /// non-attack tests.
 fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
-    if let Some(test) = cx.state.in_flight_skill_test.as_mut() {
+    if let Some(test) = cx.state.current_skill_test_mut() {
         test.bonus_attack_damage = test.bonus_attack_damage.saturating_add(amount);
     }
     EngineOutcome::Done
@@ -952,7 +952,7 @@ fn eval_condition(
 ) -> Result<bool, String> {
     match condition {
         Condition::SkillTestKind(kind) => {
-            let t = state.in_flight_skill_test.as_ref().ok_or_else(|| {
+            let t = state.current_skill_test().ok_or_else(|| {
                 "Condition::SkillTestKind but no skill test is in flight".to_owned()
             })?;
             Ok(t.kind == *kind)
@@ -1772,8 +1772,7 @@ fn resolve_location_target(
              (ground_chosen_targets should run first)",
         ),
         LocationTarget::TestedLocation => state
-            .in_flight_skill_test
-            .as_ref()
+            .current_skill_test()
             .ok_or("LocationTarget::TestedLocation but no skill test is in flight")
             .and_then(|t| {
                 t.tested_location.ok_or(
@@ -2543,11 +2542,7 @@ mod tests {
             );
         }
         assert_eq!(
-            state
-                .in_flight_skill_test
-                .as_ref()
-                .unwrap()
-                .bonus_attack_damage,
+            state.current_skill_test().unwrap().bonus_attack_damage,
             2,
             "two BoostAttackDamage(1) applications should stack to 2"
         );
