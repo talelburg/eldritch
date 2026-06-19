@@ -71,7 +71,7 @@ fn committing_over_the_cap_is_rejected() {
         r.outcome,
     );
     // Validate-first: the in-flight test is untouched, still awaiting commit.
-    assert!(r.state.in_flight_skill_test.is_some());
+    assert!(r.state.has_skill_test_in_flight());
 }
 
 /// Committing a single copy is within the cap and resolves normally.

@@ -121,22 +121,10 @@ pub struct GameState {
     /// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
     /// [`Event::SkillTestEnded`]: crate::Event::SkillTestEnded
     pub pending_skill_modifiers: Vec<PendingSkillModifier>,
-    /// The skill test currently paused between [`SkillTestStarted`] and
-    /// [`ChaosTokenRevealed`] awaiting commit-window input from the
-    /// active investigator. `Some` whenever the engine has emitted
-    /// [`EngineOutcome::AwaitingInput`] for a commit window and is
-    /// waiting on a
-    /// [`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput)
-    /// with a
-    /// [`CommitCards`](crate::action::InputResponse::CommitCards)
-    /// response. While set, every non-`ResolveInput` player action
-    /// rejects (mirrors the [`mulligan_pending`](Self::mulligan_pending)
-    /// guard).
-    ///
-    /// [`SkillTestStarted`]: crate::Event::SkillTestStarted
-    /// [`ChaosTokenRevealed`]: crate::Event::ChaosTokenRevealed
-    /// [`EngineOutcome::AwaitingInput`]: crate::EngineOutcome::AwaitingInput
-    pub in_flight_skill_test: Option<InFlightSkillTest>,
+    // The in-flight skill test now lives on its `Continuation::SkillTest(_)`
+    // frame (#348); read it via [`Self::current_skill_test`]. The former
+    // `in_flight_skill_test: Option<InFlightSkillTest>` field is removed —
+    // the continuation stack is the single source of truth.
     /// Stack of currently-open windows. The top (`last()`) is the
     /// most recently-opened; closing pops the top. Carries pending
     /// reaction triggers and the Fast-action gate for each window.
@@ -469,12 +457,12 @@ pub enum Continuation {
     /// player resolves its `pending_triggers` one at a time; see
     /// [`ResolutionFrame`].
     Resolution(ResolutionFrame),
-    /// A skill test is mid-resolution. A resume-handle only — the test's
-    /// data lives in the singleton [`GameState::in_flight_skill_test`]
-    /// field (read by many call sites; no nesting today), so this frame
-    /// carries no payload. Pushed when the test starts (parking at its
-    /// commit window) and popped when it fully resolves (Axis-B T4).
-    SkillTest,
+    /// A skill test is mid-resolution. Carries the in-flight test's data
+    /// directly (the former `GameState::in_flight_skill_test` singleton, folded
+    /// onto the frame — #348). Pushed at test start; popped when the test fully
+    /// resolves (Axis-B T4). At most one is ever on the stack (no nesting today);
+    /// [`GameState::current_skill_test`] returns the topmost one.
+    SkillTest(InFlightSkillTest),
     /// A controller choice is mid-resolution (Axis A): the effect tree is
     /// re-run from the top on each resume, replaying `decisions` to reach
     /// the next un-ground choice. See [`ChoiceFrame`].
@@ -514,7 +502,7 @@ impl Continuation {
     pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest | Continuation::Choice(_) => None,
+            Continuation::SkillTest(_) | Continuation::Choice(_) => None,
         }
     }
 
@@ -522,7 +510,7 @@ impl Continuation {
     pub fn as_resolution_mut(&mut self) -> Option<&mut ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest | Continuation::Choice(_) => None,
+            Continuation::SkillTest(_) | Continuation::Choice(_) => None,
         }
     }
 }
@@ -1300,6 +1288,48 @@ impl GameState {
             .rev()
             .filter_map(Continuation::as_resolution_mut)
             .find(|w| !w.pending_triggers.is_empty())
+    }
+
+    /// The skill test currently in flight, if any; `None` outside a test. Reads
+    /// the topmost `Continuation::SkillTest` frame — the continuation stack is
+    /// the single source of truth for "a test is mid-resolution" (#348). Topmost
+    /// (not `.last()`) because a reaction window can sit above the test mid-
+    /// resolution; "topmost `SkillTest` = the in-flight test".
+    #[must_use]
+    pub fn current_skill_test(&self) -> Option<&InFlightSkillTest> {
+        self.continuations.iter().rev().find_map(|c| match c {
+            Continuation::SkillTest(t) => Some(t),
+            _ => None,
+        })
+    }
+
+    /// Mutable counterpart to [`Self::current_skill_test`].
+    pub fn current_skill_test_mut(&mut self) -> Option<&mut InFlightSkillTest> {
+        self.continuations.iter_mut().rev().find_map(|c| match c {
+            Continuation::SkillTest(t) => Some(t),
+            _ => None,
+        })
+    }
+
+    /// Remove and return the in-flight skill test (popping its frame off the
+    /// continuation stack). Called at test teardown.
+    pub fn take_skill_test(&mut self) -> Option<InFlightSkillTest> {
+        let pos = self
+            .continuations
+            .iter()
+            .rposition(|c| matches!(c, Continuation::SkillTest(_)))?;
+        match self.continuations.remove(pos) {
+            Continuation::SkillTest(t) => Some(t),
+            _ => unreachable!("rposition matched SkillTest"),
+        }
+    }
+
+    /// Whether a skill test is currently in flight.
+    #[must_use]
+    pub fn has_skill_test_in_flight(&self) -> bool {
+        self.continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::SkillTest(_)))
     }
 
     /// Iterator over the open windows on the continuation stack, in stack

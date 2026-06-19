@@ -94,8 +94,9 @@ pub struct ApplyResult {
 /// On [`EngineOutcome::AwaitingInput`], the returned state and event
 /// list reflect the work done up to the pause point — e.g. a
 /// `PerformSkillTest` apply that suspends at the commit window has
-/// already emitted [`Event::SkillTestStarted`] and populated
-/// [`GameState::in_flight_skill_test`]. The resume action
+/// already emitted [`Event::SkillTestStarted`] and pushed the
+/// [`SkillTest`](crate::state::Continuation::SkillTest) frame (read via
+/// [`GameState::current_skill_test`]). The resume action
 /// ([`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput))
 /// drives the rest of resolution in a subsequent `apply` call. While
 /// paused, every non-`ResolveInput` player action rejects.
@@ -505,7 +506,7 @@ mod tests {
             "skill test should pause at the commit window, got {:?}",
             paused.outcome,
         );
-        assert!(paused.state.in_flight_skill_test.is_some());
+        assert!(paused.state.has_skill_test_in_flight());
         let s1 = paused.state.clone();
 
         // Malformed response: commit window expects CommitCards; send Skip.
@@ -522,7 +523,7 @@ mod tests {
             "rejected ResolveInput rewinds to the pause state, not pre-action",
         );
         assert!(
-            result.state.in_flight_skill_test.is_some(),
+            result.state.has_skill_test_in_flight(),
             "suspension stays open"
         );
         assert!(result.events.is_empty());
@@ -4355,8 +4356,8 @@ mod tests {
         // resume path after the commit response arrives.
         assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
         assert!(
-            result.state.in_flight_skill_test.is_some(),
-            "in_flight_skill_test must be populated while paused",
+            result.state.has_skill_test_in_flight(),
+            "the SkillTest frame must be populated while paused",
         );
     }
 
@@ -4397,8 +4398,8 @@ mod tests {
             Event::SkillTestEnded { investigator } if *investigator == id
         );
         assert!(
-            resumed.state.in_flight_skill_test.is_none(),
-            "in_flight_skill_test must clear after resolution",
+            !resumed.state.has_skill_test_in_flight(),
+            "the SkillTest frame must clear after resolution",
         );
     }
 
@@ -4425,9 +4426,16 @@ mod tests {
             EngineOutcome::AwaitingInput { .. }
         ));
         assert_eq!(
-            paused.state.continuations,
-            vec![crate::state::Continuation::SkillTest],
-            "parking at the commit window pushes exactly one SkillTest frame",
+            paused.state.continuations.len(),
+            1,
+            "parking at the commit window pushes exactly one frame",
+        );
+        assert!(
+            matches!(
+                paused.state.continuations.first(),
+                Some(crate::state::Continuation::SkillTest(_))
+            ),
+            "the single frame is the SkillTest frame carrying the in-flight test",
         );
 
         let resumed = apply(
@@ -4542,7 +4550,7 @@ mod tests {
         }
         // State stays paused (engine still in-flight) so a client
         // can submit a fixed-up response without re-initiating.
-        assert!(bad.state.in_flight_skill_test.is_some());
+        assert!(bad.state.has_skill_test_in_flight());
     }
 
     #[test]
@@ -4578,7 +4586,7 @@ mod tests {
         }
         // State stays paused so the client can submit a fixed-up
         // response without re-initiating the test.
-        assert!(bad.state.in_flight_skill_test.is_some());
+        assert!(bad.state.has_skill_test_in_flight());
     }
 
     #[test]
@@ -4612,7 +4620,7 @@ mod tests {
             other => panic!("expected Rejected, got {other:?}"),
         }
         // The pause must survive the rejected action.
-        assert!(rejected.state.in_flight_skill_test.is_some());
+        assert!(rejected.state.has_skill_test_in_flight());
     }
 
     #[test]
@@ -4638,7 +4646,7 @@ mod tests {
         );
         assert!(matches!(bad.outcome, EngineOutcome::Rejected { .. }));
         // Test still paused.
-        assert!(bad.state.in_flight_skill_test.is_some());
+        assert!(bad.state.has_skill_test_in_flight());
     }
 
     #[test]

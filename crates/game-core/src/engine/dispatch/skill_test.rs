@@ -67,7 +67,7 @@ pub(in crate::engine) fn start_skill_test(
             reason: format!("skill test: difficulty {difficulty} must be >= 0").into(),
         };
     }
-    if cx.state.in_flight_skill_test.is_some() {
+    if cx.state.has_skill_test_in_flight() {
         return EngineOutcome::Rejected {
             reason: "skill test: another skill test is already in flight; only one test \
                      may pause at a commit window at a time"
@@ -82,21 +82,29 @@ pub(in crate::engine) fn start_skill_test(
     // borrow from the validation block above is still live; reading
     // `current_location` here doesn't extend it past this line.
     let tested_location = inv.current_location;
-    cx.state.in_flight_skill_test = Some(InFlightSkillTest {
-        investigator,
-        skill,
-        kind,
-        difficulty,
-        committed_by_active: Vec::new(),
-        tested_location,
-        follow_up,
-        on_fail,
-        on_success,
-        source,
-        continuation: FinishContinuation::AwaitingCommit,
-        test_modifier,
-        bonus_attack_damage: 0,
-    });
+    // Push the SkillTest frame up front (carrying the test's data — #348), so the
+    // in-flight test has a home from test start. Safe: all validation precedes
+    // this point, and the only outcomes below are `AwaitingInput` (the
+    // Mind-over-Matter substitution prompt, or the commit window). During the
+    // substitution prompt this frame sits beneath `pending_substitution_prompt`,
+    // which the `resolve_input` cascade routes first.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+            investigator,
+            skill,
+            kind,
+            difficulty,
+            committed_by_active: Vec::new(),
+            tested_location,
+            follow_up,
+            on_fail,
+            on_success,
+            source,
+            continuation: FinishContinuation::AwaitingCommit,
+            test_modifier,
+            bonus_attack_damage: 0,
+        }));
     cx.events.push(Event::SkillTestStarted {
         investigator,
         skill,
@@ -153,17 +161,14 @@ fn open_commit_window(cx: &mut Cx) -> EngineOutcome {
     let (investigator, skill, difficulty) = {
         let t = cx
             .state
-            .in_flight_skill_test
-            .as_ref()
+            .current_skill_test()
             .expect("open_commit_window: in-flight test must exist");
         (t.investigator, t.skill, t.difficulty)
     };
-    // Resume-handle on the one stack (Axis-B T4): the test parks at its commit
-    // window. Resolution (reaction/fast) frames push *above* this when a window
-    // opens mid-test; popped when the test fully resolves.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::SkillTest);
+    // The SkillTest frame (Axis-B T4) was already pushed at test start (#348);
+    // the test parks at its commit window. Resolution (reaction/fast) frames
+    // push *above* it when a window opens mid-test; it is popped when the test
+    // fully resolves.
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(format!(
             "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
@@ -201,8 +206,7 @@ pub(in crate::engine) fn resume_substitution_choice(
         // separate and untouched.
         let t = cx
             .state
-            .in_flight_skill_test
-            .as_mut()
+            .current_skill_test_mut()
             .expect("resume_substitution_choice: in-flight test must exist");
         t.skill = SkillKind::Intellect;
         t.test_modifier = 0;
@@ -238,7 +242,7 @@ pub(in crate::engine) fn resume_substitution_choice(
 pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // Snapshot the in-flight record (Copy-able primitives only) so
     // later mutation paths can re-borrow state freely.
-    let Some(in_flight) = cx.state.in_flight_skill_test.as_ref() else {
+    let Some(in_flight) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
             reason: "ResolveInput::CommitCards: no in-flight skill test to resume".into(),
         };
@@ -276,9 +280,8 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // replay clarity. Safe to expect: we read `in_flight_skill_test`
     // immediately above and nothing has cleared it since.
     cx.state
-        .in_flight_skill_test
-        .as_mut()
-        .expect("in_flight_skill_test was Some immediately above")
+        .current_skill_test_mut()
+        .expect("the SkillTest frame was present immediately above")
         .committed_by_active
         .clone_from(&indices_u8);
 
@@ -305,9 +308,8 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // set follow_up=None), so running on_success after the follow-up is
     // safe. (C5a #236.)
     cx.state
-        .in_flight_skill_test
-        .as_mut()
-        .expect("in_flight_skill_test was Some immediately above")
+        .current_skill_test_mut()
+        .expect("the SkillTest frame was present immediately above")
         .continuation = FinishContinuation::PostFollowUp { succeeded };
 
     if succeeded {
@@ -397,7 +399,7 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
             .state
             .continuations
             .iter()
-            .rposition(|c| matches!(c, crate::state::Continuation::SkillTest));
+            .rposition(|c| matches!(c, crate::state::Continuation::SkillTest(_)));
         if let Some(win_idx) = cx.state.top_reaction_window_index() {
             if skill_test_pos.is_none_or(|st| win_idx > st) {
                 return super::reaction_windows::open_queued_reaction_window(cx);
@@ -405,9 +407,9 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
         }
 
         let (continuation, investigator, indices_u8) = {
-            let in_flight = cx.state.in_flight_skill_test.as_ref().unwrap_or_else(|| {
+            let in_flight = cx.state.current_skill_test().unwrap_or_else(|| {
                 unreachable!(
-                    "drive_skill_test: in_flight_skill_test must exist while driver is active; \
+                    "drive_skill_test: the SkillTest frame must exist while driver is active; \
                      state-corruption invariant violation"
                 )
             });
@@ -428,17 +430,15 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
             FinishContinuation::PostFollowUp { succeeded } => {
                 fire_on_skill_test_resolution(cx, investigator, &indices_u8, succeeded);
                 cx.state
-                    .in_flight_skill_test
-                    .as_mut()
-                    .expect("in_flight_skill_test must persist across driver steps")
+                    .current_skill_test_mut()
+                    .expect("the SkillTest frame must persist across driver steps")
                     .continuation = FinishContinuation::PostRetaliate { succeeded };
             }
             FinishContinuation::PostRetaliate { succeeded } => {
                 fire_retaliate_if_any(cx, investigator, succeeded);
                 cx.state
-                    .in_flight_skill_test
-                    .as_mut()
-                    .expect("in_flight_skill_test must persist across driver steps")
+                    .current_skill_test_mut()
+                    .expect("the SkillTest frame must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
             FinishContinuation::PostOnResolution { succeeded: _ } => {
@@ -463,26 +463,16 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                 if let Some(code) = cx.state.pending_revelation_discard.take() {
                     cx.state.encounter_discard.push(code);
                 }
-                cx.state.in_flight_skill_test = None;
-                // Remove this test's SkillTest resume-handle (Axis-B T4).
-                // Usually it is the top frame, but a player-window gate can
-                // legitimately sit above it (#69/#70/#71), so remove the
-                // (unique — no nesting today) SkillTest frame by position
-                // rather than popping the top.
-                let frame = cx
-                    .state
-                    .continuations
-                    .iter()
-                    .rposition(|c| matches!(c, crate::state::Continuation::SkillTest));
-                match frame {
-                    Some(pos) => {
-                        cx.state.continuations.remove(pos);
-                    }
-                    None => debug_assert!(
-                        false,
-                        "skill-test teardown: no SkillTest frame on the continuation stack",
-                    ),
-                }
+                // Tear down the test's SkillTest frame (Axis-B T4), which also
+                // carries the test data (#348). `take_skill_test` removes the
+                // (unique — no nesting today) frame by position, so a player-
+                // window gate legitimately sitting above it (#69/#70/#71) is
+                // unaffected.
+                let taken = cx.state.take_skill_test();
+                debug_assert!(
+                    taken.is_some(),
+                    "skill-test teardown: no SkillTest frame on the continuation stack",
+                );
                 return EngineOutcome::Done;
             }
         }
@@ -591,10 +581,7 @@ fn sum_skill_value(
     let pending_mod = pending_skill_modifier(state, investigator, skill);
     // One-shot modifier the initiating effect snapshotted (a weapon's
     // "+N for this attack"); 0 for player-action tests.
-    let test_mod = state
-        .in_flight_skill_test
-        .as_ref()
-        .map_or(0, |t| t.test_modifier);
+    let test_mod = state.current_skill_test().map_or(0, |t| t.test_modifier);
     base.saturating_add(constant_mod)
         .saturating_add(pending_mod)
         .saturating_add(icon_mod)
@@ -809,8 +796,7 @@ fn apply_skill_test_follow_up(
             // of resolution — so the accumulator is readable.
             let bonus = cx
                 .state
-                .in_flight_skill_test
-                .as_ref()
+                .current_skill_test()
                 .map_or(0, |t| t.bonus_attack_damage);
             super::combat::damage_enemy(
                 cx,
@@ -865,7 +851,7 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
     if succeeded {
         return;
     }
-    let follow_up = cx.state.in_flight_skill_test.as_ref().map(|t| t.follow_up);
+    let follow_up = cx.state.current_skill_test().map(|t| t.follow_up);
     let Some(SkillTestFollowUp::Fight { enemy, .. }) = follow_up else {
         return;
     };
@@ -1105,24 +1091,26 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .build();
-        state.in_flight_skill_test = Some(InFlightSkillTest {
-            investigator: inv,
-            skill: SkillKind::Combat,
-            kind: SkillTestKind::Fight,
-            difficulty: 2,
-            committed_by_active: Vec::new(),
-            tested_location: None,
-            follow_up: SkillTestFollowUp::Fight {
-                enemy: EnemyId(7),
-                extra_damage: 1,
-            },
-            on_fail: None,
-            on_success: None,
-            source: None,
-            continuation: FinishContinuation::AwaitingCommit,
-            test_modifier: 0,
-            bonus_attack_damage: 2,
-        });
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+                investigator: inv,
+                skill: SkillKind::Combat,
+                kind: SkillTestKind::Fight,
+                difficulty: 2,
+                committed_by_active: Vec::new(),
+                tested_location: None,
+                follow_up: SkillTestFollowUp::Fight {
+                    enemy: EnemyId(7),
+                    extra_damage: 1,
+                },
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: FinishContinuation::AwaitingCommit,
+                test_modifier: 0,
+                bonus_attack_damage: 2,
+            }));
         let mut events = Vec::new();
         let mut cx = Cx {
             state: &mut state,
@@ -1251,7 +1239,7 @@ mod tests {
             state.encounter_discard.contains(&CardCode("01162".into())),
             "suspended treachery flushed to encounter_discard at teardown"
         );
-        assert!(state.in_flight_skill_test.is_none());
+        assert!(!state.has_skill_test_in_flight());
         assert!(state.pending_revelation_discard.is_none());
     }
 
@@ -1376,11 +1364,56 @@ mod tests {
             matches!(out, EngineOutcome::AwaitingInput { .. }),
             "commit window"
         );
-        let t = state.in_flight_skill_test.as_ref().unwrap();
+        let t = state.current_skill_test().unwrap();
         assert_eq!(t.skill, SkillKind::Intellect, "now an intellect test");
         assert_eq!(t.kind, SkillTestKind::Fight, "still a Fight (damage)");
         assert_eq!(t.test_modifier, 0, "weapon combat bonus dropped");
         assert!(state.pending_substitution_prompt.is_none());
+    }
+
+    #[test]
+    fn substitution_prompt_keeps_the_test_on_its_frame() {
+        // The substitution prompt suspends *before* the commit window — the one
+        // place test data exists pre-commit. Pin that it lives on a SkillTest
+        // frame (not a removed Option field) during that window (#348).
+        let inv = InvestigatorId(1);
+        let mut state = substitution_state(inv);
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            start_skill_test(
+                &mut cx,
+                inv,
+                SkillKind::Combat,
+                SkillTestKind::Fight,
+                3,
+                SkillTestFollowUp::None,
+                None,
+                None,
+                None,
+                0,
+            )
+        };
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "substitution prompt should suspend",
+        );
+        assert_eq!(state.pending_substitution_prompt, Some(inv));
+        assert!(
+            state.current_skill_test().is_some(),
+            "the in-flight test must live on a SkillTest frame during the \
+             substitution prompt, not in a removed Option field",
+        );
+        assert!(
+            state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, crate::state::Continuation::SkillTest(_))),
+            "a SkillTest frame is on the stack before the commit window",
+        );
     }
 
     #[test]
@@ -1418,7 +1451,7 @@ mod tests {
             "commit window"
         );
         assert_eq!(
-            state.in_flight_skill_test.as_ref().unwrap().skill,
+            state.current_skill_test().unwrap().skill,
             SkillKind::Agility,
             "declined — keeps the printed skill",
         );
@@ -1453,9 +1486,6 @@ mod tests {
         };
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         assert!(state.pending_substitution_prompt.is_none(), "no prompt");
-        assert_eq!(
-            state.in_flight_skill_test.as_ref().unwrap().skill,
-            SkillKind::Combat,
-        );
+        assert_eq!(state.current_skill_test().unwrap().skill, SkillKind::Combat,);
     }
 }

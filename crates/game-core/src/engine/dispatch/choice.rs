@@ -129,7 +129,7 @@ pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // Same reentrancy as the before-discover window's resume. A still-suspended
     // outcome (a further nested choice) returns as-is.
     if matches!(outcome, EngineOutcome::Done) {
-        if cx.state.in_flight_skill_test.is_some() {
+        if cx.state.has_skill_test_in_flight() {
             return super::skill_test::drive_skill_test(cx);
         }
         // A choice fired from inside a reaction window (Research Librarian

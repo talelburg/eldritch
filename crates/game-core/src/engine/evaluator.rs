@@ -675,7 +675,7 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
 /// test. The Fight follow-up is the only reader, so this is inert for
 /// non-attack tests.
 fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
-    if let Some(test) = cx.state.in_flight_skill_test.as_mut() {
+    if let Some(test) = cx.state.current_skill_test_mut() {
         test.bonus_attack_damage = test.bonus_attack_damage.saturating_add(amount);
     }
     EngineOutcome::Done
@@ -952,7 +952,7 @@ fn eval_condition(
 ) -> Result<bool, String> {
     match condition {
         Condition::SkillTestKind(kind) => {
-            let t = state.in_flight_skill_test.as_ref().ok_or_else(|| {
+            let t = state.current_skill_test().ok_or_else(|| {
                 "Condition::SkillTestKind but no skill test is in flight".to_owned()
             })?;
             Ok(t.kind == *kind)
@@ -1772,8 +1772,7 @@ fn resolve_location_target(
              (ground_chosen_targets should run first)",
         ),
         LocationTarget::TestedLocation => state
-            .in_flight_skill_test
-            .as_ref()
+            .current_skill_test()
             .ok_or("LocationTarget::TestedLocation but no skill test is in flight")
             .and_then(|t| {
                 t.tested_location.ok_or(
@@ -2463,21 +2462,25 @@ mod tests {
             .with_location(tested_loc)
             .with_location(elsewhere_loc)
             .build();
-        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Intellect,
-            kind: SkillTestKind::Investigate,
-            difficulty: 2,
-            committed_by_active: Vec::new(),
-            tested_location: Some(tested),
-            follow_up: crate::state::SkillTestFollowUp::Investigate,
-            on_fail: None,
-            on_success: None,
-            source: None,
-            continuation: crate::state::FinishContinuation::AwaitingCommit,
-            test_modifier: 0,
-            bonus_attack_damage: 0,
-        });
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::state::InFlightSkillTest {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Intellect,
+                    kind: SkillTestKind::Investigate,
+                    difficulty: 2,
+                    committed_by_active: Vec::new(),
+                    tested_location: Some(tested),
+                    follow_up: crate::state::SkillTestFollowUp::Investigate,
+                    on_fail: None,
+                    on_success: None,
+                    source: None,
+                    continuation: crate::state::FinishContinuation::AwaitingCommit,
+                    test_modifier: 0,
+                    bonus_attack_damage: 0,
+                },
+            ));
         let mut events = Vec::new();
 
         let outcome = apply_effect(
@@ -2516,21 +2519,25 @@ mod tests {
         );
         assert_eq!(outcome, EngineOutcome::Done);
 
-        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Combat,
-            kind: SkillTestKind::Fight,
-            difficulty: 3,
-            committed_by_active: Vec::new(),
-            tested_location: None,
-            follow_up: crate::state::SkillTestFollowUp::None,
-            on_fail: None,
-            on_success: None,
-            source: None,
-            continuation: crate::state::FinishContinuation::AwaitingCommit,
-            test_modifier: 0,
-            bonus_attack_damage: 0,
-        });
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::state::InFlightSkillTest {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Combat,
+                    kind: SkillTestKind::Fight,
+                    difficulty: 3,
+                    committed_by_active: Vec::new(),
+                    tested_location: None,
+                    follow_up: crate::state::SkillTestFollowUp::None,
+                    on_fail: None,
+                    on_success: None,
+                    source: None,
+                    continuation: crate::state::FinishContinuation::AwaitingCommit,
+                    test_modifier: 0,
+                    bonus_attack_damage: 0,
+                },
+            ));
 
         for _ in 0..2 {
             apply_effect(
@@ -2543,11 +2550,7 @@ mod tests {
             );
         }
         assert_eq!(
-            state
-                .in_flight_skill_test
-                .as_ref()
-                .unwrap()
-                .bonus_attack_damage,
+            state.current_skill_test().unwrap().bonus_attack_damage,
             2,
             "two BoostAttackDamage(1) applications should stack to 2"
         );
@@ -2639,21 +2642,25 @@ mod tests {
                 l
             })
             .build();
-        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Intellect,
-            kind,
-            difficulty: 2,
-            committed_by_active: Vec::new(),
-            tested_location: Some(LocationId(10)),
-            follow_up: crate::state::SkillTestFollowUp::None,
-            on_fail: None,
-            on_success: None,
-            source: None,
-            continuation: crate::state::FinishContinuation::AwaitingCommit,
-            test_modifier: 0,
-            bonus_attack_damage: 0,
-        });
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::state::InFlightSkillTest {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Intellect,
+                    kind,
+                    difficulty: 2,
+                    committed_by_active: Vec::new(),
+                    tested_location: Some(LocationId(10)),
+                    follow_up: crate::state::SkillTestFollowUp::None,
+                    on_fail: None,
+                    on_success: None,
+                    source: None,
+                    continuation: crate::state::FinishContinuation::AwaitingCommit,
+                    test_modifier: 0,
+                    bonus_attack_damage: 0,
+                },
+            ));
         state
     }
 
@@ -2805,21 +2812,25 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        state.in_flight_skill_test = Some(crate::state::InFlightSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Willpower,
-            kind: SkillTestKind::Plain,
-            difficulty: 2,
-            committed_by_active: Vec::new(),
-            tested_location: None,
-            follow_up: crate::state::SkillTestFollowUp::None,
-            on_fail: None,
-            on_success: None,
-            source: None,
-            continuation: crate::state::FinishContinuation::AwaitingCommit,
-            test_modifier: 0,
-            bonus_attack_damage: 0,
-        });
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::state::InFlightSkillTest {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    kind: SkillTestKind::Plain,
+                    difficulty: 2,
+                    committed_by_active: Vec::new(),
+                    tested_location: None,
+                    follow_up: crate::state::SkillTestFollowUp::None,
+                    on_fail: None,
+                    on_success: None,
+                    source: None,
+                    continuation: crate::state::FinishContinuation::AwaitingCommit,
+                    test_modifier: 0,
+                    bonus_attack_damage: 0,
+                },
+            ));
         let mut events = Vec::new();
 
         let outcome = apply_effect(

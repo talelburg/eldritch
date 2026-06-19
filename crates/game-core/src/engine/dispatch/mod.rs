@@ -102,9 +102,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     // While a skill test is paused at its commit window (no reaction
     // window open yet), only `ResolveInput` can advance the engine.
     // Mirrors the `mulligan_pending` guard above.
-    if cx.state.in_flight_skill_test.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
+    if cx.state.has_skill_test_in_flight() && !matches!(action, PlayerAction::ResolveInput { .. }) {
         return EngineOutcome::Rejected {
             reason: "a skill test is paused at its commit window; submit a \
                      PlayerAction::ResolveInput with an InputResponse::CommitCards \
@@ -497,7 +495,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // suspensions of an in-flight test (Axis-B T4).
     if matches!(
         cx.state.continuations.last(),
-        Some(crate::state::Continuation::SkillTest)
+        Some(crate::state::Continuation::SkillTest(_))
     ) {
         return resume_skill_test_commit(cx, response);
     }
