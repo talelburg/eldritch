@@ -76,10 +76,11 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
     let hand_before = r2.state.investigators[&inv1].hand.len();
     let round_before = r2.state.round; // should be 1
 
-    // EndTurn: Investigation → Enemy → Upkeep → Mythos.
+    // EndTurn: Investigation → Enemy → Upkeep → Mythos, pausing at the
+    // step-1.4 encounter-draw prompt (AwaitingInput).
     let r3 = apply(r2.state, Action::Player(PlayerAction::EndTurn));
 
-    assert_eq!(r3.outcome, EngineOutcome::Done);
+    assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r3.state.phase, Phase::Mythos, "cascade must land in Mythos");
     assert_eq!(
         r3.state.round,
@@ -87,7 +88,7 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
         "round bumped on Mythos entry"
     );
     assert!(
-        r3.state.mythos_draw_pending.is_some(),
+        r3.state.current_encounter_drawer().is_some(),
         "draw cursor must be seeded"
     );
     assert_eq!(

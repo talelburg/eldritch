@@ -206,10 +206,15 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
     state = result.state;
 
     // Guard Dog left play (discarded), so no soak window suspended the loop;
-    // the enemy phase cascaded onward.
+    // the enemy phase cascaded onward, all the way through Upkeep into the
+    // round-ending Mythos step-1.4 encounter-draw prompt (#348). The
+    // definitive "no soak window opened" proof is the event-stream assertion
+    // below; reaching the Mythos draw prompt confirms the loop was not parked.
     assert!(
-        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "no soak window should park the loop when Guard Dog is defeated: {:?}",
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. })
+            && state.phase == Phase::Mythos
+            && state.current_encounter_drawer().is_some(),
+        "the loop cascaded onward to the Mythos draw prompt (not a soak park): {:?}",
         result.outcome
     );
     assert!(

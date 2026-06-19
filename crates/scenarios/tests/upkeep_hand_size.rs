@@ -130,10 +130,10 @@ fn upkeep_prompts_and_discards_down_to_eight() {
         }),
     );
 
-    assert_eq!(
-        r4.outcome,
-        EngineOutcome::Done,
-        "resolving the discard must complete the upkeep cascade"
+    assert!(
+        matches!(r4.outcome, EngineOutcome::AwaitingInput { .. }),
+        "resolving the discard continues the upkeep cascade into Mythos, which \
+         pauses at the encounter-draw prompt"
     );
     assert_eq!(
         r4.state.investigators[&inv1].hand.len(),
@@ -161,7 +161,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
         "round must proceed into Mythos after the discard resolves"
     );
     assert!(
-        r4.state.mythos_draw_pending.is_some(),
+        r4.state.current_encounter_drawer().is_some(),
         "Mythos draw cursor must be seeded once the round proceeds"
     );
 }

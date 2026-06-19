@@ -189,7 +189,9 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     // (1 doom) to advance into Investigation, where Roland can take the Fight.
     let mythos = apply(
         after_confirm.state,
-        Action::Player(PlayerAction::DrawEncounterCard),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
     );
     assert_eq!(mythos.outcome, EngineOutcome::Done);
     let mut state = mythos.state;

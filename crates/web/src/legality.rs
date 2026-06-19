@@ -16,7 +16,6 @@ pub enum ActionControl {
     Investigate,
     PlayCard,
     EndTurn,
-    DrawEncounter,
     AdvanceAct,
     Fight,
     Evade,
@@ -37,22 +36,18 @@ pub enum ActionControl {
 /// 2. `round == 0` is the pre-start state straight from a scenario
 ///    `setup()` (the engine bumps to round 1 at `StartScenario` and only
 ///    ever increments), so `StartScenario` is the sole legal action — it
-///    seeds hands and opens the setup mulligan loop. The mulligan itself is
-///    an `AwaitingInput` (case 1 above), so it needs no dedicated control —
-///    it flows through the `ResolveInput` prompt UI like every other
-///    suspension.
-/// 3. The `mythos_draw_pending` setup cursor dominates its window
-///    (⇒ only `DrawEncounter`). A state fact, not phase, so it's checked
-///    before the phase table.
-/// 4. Otherwise, the controls the current `Phase` permits.
+///    seeds hands and opens the setup mulligan loop. The mulligan and the
+///    Mythos step-1.4 encounter draw are both `AwaitingInput`s (case 1
+///    above), so they need no dedicated control — they flow through the
+///    `ResolveInput` prompt UI like every other suspension.
+/// 3. Otherwise, the controls the current `Phase` permits.
 ///
 /// Finer checks (resources, action budget, clue presence) are
 /// deliberately not mirrored — the server's `Rejected` is the truth.
 #[must_use]
 pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<ActionControl> {
     use ActionControl::{
-        AdvanceAct, Draw, DrawEncounter, EndTurn, Evade, Fight, Investigate, Move, PlayCard,
-        StartScenario,
+        AdvanceAct, Draw, EndTurn, Evade, Fight, Investigate, Move, PlayCard, StartScenario,
     };
 
     if game.resolution.is_some() {
@@ -63,9 +58,6 @@ pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<A
     }
     if game.round == 0 {
         return BTreeSet::from([StartScenario]);
-    }
-    if game.mythos_draw_pending.is_some() {
-        return BTreeSet::from([DrawEncounter]);
     }
     match game.phase {
         Phase::Investigation => BTreeSet::from([
@@ -127,21 +119,12 @@ mod tests {
         assert_eq!(enabled_controls(&game, &out), BTreeSet::new());
     }
 
-    // The former `mulligan_pending_enables_only_mulligan` test is gone: the
-    // setup mulligan is now an `AwaitingInput`, so it is covered by
-    // `awaiting_input_disables_everything` (the mulligan prompt flows through
-    // the `ResolveInput` UI, not a dedicated control). #348 part 2c-iii-a.
-
-    #[test]
-    fn mythos_draw_pending_enables_only_draw_encounter() {
-        let mut game = investigation_game();
-        game.phase = Phase::Mythos;
-        game.mythos_draw_pending = Some(InvestigatorId(1));
-        assert_eq!(
-            enabled_controls(&game, &EngineOutcome::Done),
-            BTreeSet::from([ActionControl::DrawEncounter])
-        );
-    }
+    // The former `mulligan_pending_enables_only_mulligan` (#348 2c-iii-a) and
+    // `mythos_draw_pending_enables_only_draw_encounter` (#348 2c-iii-b) tests
+    // are gone: the setup mulligan and the Mythos step-1.4 encounter draw are
+    // now `AwaitingInput`s, so both are covered by
+    // `awaiting_input_disables_everything` — they flow through the
+    // `ResolveInput` prompt UI, not a dedicated control.
 
     #[test]
     fn investigation_phase_enables_the_core_loop() {

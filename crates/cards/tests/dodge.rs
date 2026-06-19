@@ -53,6 +53,13 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
     let mut inv = test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.hand = vec![CardCode::new(DODGE)];
+    // A spare deck card so the round-ending cascade's upkeep step-4.4 draw has
+    // something to draw. Without it, the empty deck reshuffles the discard —
+    // and since a played Dodge is discarded the instant its effect completes
+    // (RR Appendix I step 4, now flushed at completion rather than the apply
+    // boundary — #348), the reshuffle would draw Dodge straight back into hand,
+    // obscuring the "Dodge went to discard" assertion.
+    inv.deck = vec![CardCode::new("01088")];
 
     let state = game_core::test_support::GameStateBuilder::new()
         .with_phase(Phase::Investigation)

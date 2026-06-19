@@ -224,15 +224,6 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             instance_id,
             ability_index,
         } => abilities::activate_ability(cx, *investigator, *instance_id, *ability_index),
-        // The Mythos encounter draw now resumes through `ResolveInput` (the top
-        // `EncounterDraw` frame); the dedicated action is removed in the next
-        // commit (#348 part 2c-iii-b, task b2). Until then, reject it loudly.
-        PlayerAction::DrawEncounterCard => EngineOutcome::Rejected {
-            reason:
-                "PlayerAction::DrawEncounterCard is removed; submit a PlayerAction::ResolveInput \
-                     with InputResponse::Confirm instead"
-                    .into(),
-        },
         PlayerAction::ResolveInput { response } => resolve_input(cx, response),
         PlayerAction::AdvanceAct { investigator } => {
             act_agenda::advance_act_action(cx, *investigator)

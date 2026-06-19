@@ -33,16 +33,26 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
         .get_mut(&InvestigatorId(1))
         .unwrap()
         .current_location = Some(LocationId(10));
-    // Drive through the real Mythos draw path.
+    // Drive through the real Mythos draw path: stage the EncounterDraw loop
+    // frame for inv1 so the ResolveInput(Confirm) below resumes it (#348).
     state.phase = Phase::Mythos;
-    state.mythos_draw_pending = Some(InvestigatorId(1));
+    state
+        .continuations
+        .push(game_core::state::Continuation::EncounterDraw {
+            remaining: vec![InvestigatorId(1)],
+        });
     state.encounter_deck.clear();
     state
         .encounter_deck
         .push_back(game_core::state::CardCode(SYNTH_ENEMY_CODE.into()));
 
     // 1) Drawing the enemy suspends for the lead's PickSingle.
-    let r1 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let r1 = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "multi-investigator spawn suspends, got {:?}",

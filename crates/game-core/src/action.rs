@@ -259,15 +259,13 @@ pub enum PlayerAction {
         /// `Activated`-triggered ability.
         ability_index: u8,
     },
-    /// Resolve one Mythos-phase encounter draw for the acting
-    /// investigator. Valid only during `Phase::Mythos` when
-    /// `state.mythos_draw_pending == Some(acting_investigator)`.
-    /// Resolves the per-card 5-step sub-sequence from Rules
-    /// Reference p.24 step 1.4 inline (including surge re-draws);
-    /// advances `mythos_draw_pending` to the next-in-turn-order
-    /// drawer, or opens the `MythosAfterDraws` window if this was
-    /// the last drawer.
-    DrawEncounterCard,
+    // The Mythos step-1.4 encounter draw is no longer a dedicated action
+    // (#348 part 2c-iii-b): it round-trips through `ResolveInput(Confirm)`
+    // against the top `Continuation::EncounterDraw` frame, like every other
+    // player-facing suspension. The acting drawer is the frame's `remaining[0]`;
+    // the per-card 5-step sub-sequence (RR p.24 step 1.4, including surge
+    // re-draws) resolves on `Confirm`, then the loop advances to the next
+    // drawer or opens the `MythosAfterDraws` window.
     /// Respond to an `AwaitingInput` prompt the engine emitted. The
     /// shape of `response` is dictated by the active prompt. (The
     /// `EngineOutcome::AwaitingInput` variant lands in a later PR.)

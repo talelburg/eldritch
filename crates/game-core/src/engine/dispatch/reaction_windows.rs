@@ -770,7 +770,19 @@ fn play_fast_event(
             candidate.code,
         ),
         suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
-        EngineOutcome::Done => advance_resolution(cx, window_idx),
+        EngineOutcome::Done => {
+            // The Fast event's effect completed (RR Appendix I step 4): discard
+            // it NOW, before advancing the window / phase cascade. The apply
+            // loop's `flush_pending_played_event` only fires on a `Done` apply,
+            // so deferring to it would strand the event in `pending_played_event`
+            // whenever this same apply later suspends for an unrelated reason —
+            // e.g. the window close cascades into the Mythos 1.4 draw prompt
+            // (#348) or an upkeep hand-size discard (#111), both `AwaitingInput`.
+            // A no-op if the effect already disposed of the card (e.g. an event
+            // that becomes an asset clears `pending_played_event` itself).
+            super::cards::flush_pending_played_event(cx);
+            advance_resolution(cx, window_idx)
+        }
     }
 }
 

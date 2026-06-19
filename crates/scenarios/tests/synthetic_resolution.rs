@@ -120,8 +120,13 @@ fn synthetic_scenario_resolves_lost_via_doom() {
         if state.resolution.is_some() {
             break;
         }
-        if state.mythos_draw_pending.is_some() {
-            let r2 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+        if state.current_encounter_drawer().is_some() {
+            let r2 = apply(
+                state,
+                Action::Player(PlayerAction::ResolveInput {
+                    response: InputResponse::Confirm,
+                }),
+            );
             all_events.extend(r2.events);
             state = r2.state;
             if state.resolution.is_some() {

@@ -274,13 +274,11 @@ pub fn ActionControls() -> impl IntoView {
                         tx.clone(),
                         PlayerAction::EndTurn,
                     )}
-                    {submit_button(
-                        "action draw-encounter",
-                        "Draw encounter",
-                        !has(ActionControl::DrawEncounter),
-                        tx.clone(),
-                        PlayerAction::DrawEncounterCard,
-                    )}
+                    // The dedicated Mythos encounter-draw button is gone (#348
+                    // part 2c-iii-b): the draw is now an `AwaitingInput`
+                    // (Confirm), so — like the act round-end window (#275) — it
+                    // flows through the `ResolveInput` prompt UI. The Confirm /
+                    // Skip prompt rendering is deferred to #205.
                     {move_picker(&game, active, has(ActionControl::Move), tx.as_ref())}
                     {play_picker(&game, active, has(ActionControl::PlayCard), tx.as_ref())}
                     {enemy_picker(&game, active, has(ActionControl::Fight), "fight-target", "Fight", fight_action, tx.as_ref())}
