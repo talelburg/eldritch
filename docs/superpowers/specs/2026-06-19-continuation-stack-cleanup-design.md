@@ -40,10 +40,15 @@ depends on it today — this is a correctness-preserving structural pass.
 declares how it resumes. Both ladders die: `apply_player_action`'s reject-guards and
 `resolve_input`'s priority cascade collapse into **one dispatch on the top frame**.
 
-The player-facing resume signal **unifies onto `ResolveInput`**. `PlayerAction::Mulligan` and
-`PlayerAction::DrawEncounterCard` fold into `InputResponse` variants and are **removed** as
-standalone actions. Setup emits `AwaitingInput { mulligan for X }` per investigator; Mythos
-step 1.4 emits `AwaitingInput { encounter draw for X }` per drawer.
+The player-facing resume signal **unifies onto `ResolveInput`**, and the `InputResponse`
+channel is **normalized** as part of the pass: `CommitCards`/`DiscardCards` collapse into
+`PickMultiple` and `PickLocation`/`PickInvestigator` into `PickSingle` (the structured-options
+consolidation — these land here, in #348 part 2c-i/2c-ii; only the *human labels / client
+rendering* defer to #205, not the variant consolidation). On that normalized channel,
+`PlayerAction::Mulligan` and `PlayerAction::DrawEncounterCard` then fold into
+`PickMultiple` / `Confirm` and are **removed** as standalone actions (part 2c-iii). Setup
+emits `AwaitingInput { mulligan for X }` per investigator; Mythos step 1.4 emits
+`AwaitingInput { encounter draw for X }` per drawer.
 
 Two precision points:
 
@@ -278,17 +283,21 @@ applies and is the natural follow-up.
 One spec, landed as reviewable PRs, each green on the full CI gauntlet:
 
 1. **#345** — serializable `EvalContext` + grouped bindings + per-frame snapshot. Foundational;
-   establishes the storage shape the migrated frames use.
-2. **#347** — token plumbing: `next_resume_token` counter, frame stamps, `ResolveInput.token`,
-   stale-reject. Wire change; establishes the router substrate.
-3. **#348** — migrate the suspension modes onto frames (incl. folding `in_flight_skill_test`);
-   collapse both ladders into top-frame dispatch; fold in `Mulligan` / `DrawEncounterCard` →
-   `InputResponse`. The bulk of the pass.
+   establishes the storage shape the migrated frames use. *(Shipped: PR #385.)*
+2. **#348** — migrate the suspension modes onto frames (incl. folding `in_flight_skill_test`);
+   collapse both ladders into top-frame dispatch; **normalize the `InputResponse` channel** —
+   `CommitCards`/`DiscardCards` → `PickMultiple`, `PickLocation`/`PickInvestigator` →
+   `PickSingle`, then fold `Mulligan` → `PickMultiple` and `DrawEncounterCard` → `Confirm`. The
+   bulk of the pass. *(Landed incrementally: parts 2a–2c, PRs #386–#391.)*
+3. **#347** — token plumbing: `next_resume_token` counter, frame stamps, `ResolveInput.token`,
+   stale-reject. Wire change; now trivial on the unified `ResolveInput` channel #348 leaves.
 4. **#380** — encounter-card-as-frame + framework disposal teardown; remove
    `pending_revelation_discard`. Small; rides the clean stack.
 
-Rationale: bindings first (storage), then token (router substrate), then the migration
-(consumes both), then the side-channel cleanup.
+Rationale (corrected from the original `#347`-before-`#348` ordering): bindings first
+(storage), then the migration #348 (consumes the storage and collapses every suspension onto
+one `ResolveInput` channel), then token-routing #347 (trivial once that channel is unified),
+then the side-channel cleanup #380.
 
 ## What "done" looks like
 
