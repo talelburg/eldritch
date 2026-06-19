@@ -251,6 +251,17 @@ impl GameStateBuilder {
 
     /// Materialize the configured [`GameState`].
     pub fn build(self) -> GameState {
+        // Builder-staged windows become `Resolution` frames on the one
+        // continuation stack (Axis-B T3); a staged hand-size discard becomes a
+        // `HandSizeDiscard` frame on top of them (#348).
+        let mut continuations: Vec<Continuation> = self
+            .open_windows
+            .into_iter()
+            .map(Continuation::Resolution)
+            .collect();
+        if let Some(hsd) = self.hand_size_discard_pending {
+            continuations.push(Continuation::HandSizeDiscard(hsd));
+        }
         GameState {
             investigators: self.investigators,
             locations: self.locations,
@@ -270,27 +281,16 @@ impl GameStateBuilder {
             enemy_ids: Counter::new(),
             location_ids: Counter::new(),
             pending_skill_modifiers: Vec::new(),
-            // Builder-staged windows become `Resolution` frames on the one
-            // continuation stack (Axis-B T3).
-            continuations: self
-                .open_windows
-                .into_iter()
-                .map(Continuation::Resolution)
-                .collect(),
+            continuations,
             scenario_id: self.scenario_id,
             mythos_draw_pending: None,
             enemy_attack_pending: None,
-            hunter_move_pending: None,
-            spawn_engage_pending: None,
             pending_end_turn: None,
-            hand_size_discard_pending: self.hand_size_discard_pending,
-            act_round_end_pending: None,
             pending_enemy_attack: None,
             pending_cancellation: false,
             pending_revelation_discard: None,
             pending_played_event: None,
             skill_substitutions: Vec::new(),
-            pending_substitution_prompt: None,
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),
             agenda_deck: Vec::new(),

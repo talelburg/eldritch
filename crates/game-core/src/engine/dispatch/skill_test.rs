@@ -86,8 +86,8 @@ pub(in crate::engine) fn start_skill_test(
     // in-flight test has a home from test start. Safe: all validation precedes
     // this point, and the only outcomes below are `AwaitingInput` (the
     // Mind-over-Matter substitution prompt, or the commit window). During the
-    // substitution prompt this frame sits beneath `pending_substitution_prompt`,
-    // which the `resolve_input` cascade routes first.
+    // substitution prompt this frame sits beneath the `SubstitutionPrompt`
+    // frame, which top-frame dispatch routes first.
     cx.state
         .continuations
         .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
@@ -116,9 +116,11 @@ pub(in crate::engine) fn start_skill_test(
     // substitution active, offer the choice BEFORE the commit window — the
     // test type is fixed here (per the card's FAQ). The in-flight record (just
     // created) is the parking; `resume_substitution_choice` rewrites its skill
-    // on "yes". Routed via `pending_substitution_prompt`.
+    // on "yes". Routed via a `SubstitutionPrompt` frame above the `SkillTest`.
     if substitution_covers(cx.state, investigator, skill) {
-        cx.state.pending_substitution_prompt = Some(investigator);
+        cx.state
+            .continuations
+            .push(crate::state::Continuation::SubstitutionPrompt { investigator });
         let use_skill = SkillKind::Intellect; // sole substitution in scope
         return EngineOutcome::AwaitingInput {
             request: InputRequest::choice(
@@ -197,7 +199,9 @@ pub(in crate::engine) fn resume_substitution_choice(
             reason: format!("substitution prompt: PickSingle({opt}) out of range (0|1)").into(),
         };
     }
-    cx.state.pending_substitution_prompt = None;
+    // Pop the SubstitutionPrompt frame we validated against (it is the top
+    // frame, above the SkillTest frame the mutation below reaches).
+    cx.state.continuations.pop();
     if *opt == 0 {
         // Use Intellect: the test becomes an Intellect test (base / icons /
         // bonuses all key off `skill`), and a weapon's combat bonus
@@ -1351,7 +1355,9 @@ mod tests {
             )
         };
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
-        assert_eq!(state.pending_substitution_prompt, Some(inv));
+        assert!(
+            matches!(state.continuations.last(), Some(crate::state::Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+        );
 
         let out = {
             let mut cx = Cx {
@@ -1368,7 +1374,10 @@ mod tests {
         assert_eq!(t.skill, SkillKind::Intellect, "now an intellect test");
         assert_eq!(t.kind, SkillTestKind::Fight, "still a Fight (damage)");
         assert_eq!(t.test_modifier, 0, "weapon combat bonus dropped");
-        assert!(state.pending_substitution_prompt.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::SubstitutionPrompt { .. })
+        ));
     }
 
     #[test]
@@ -1401,7 +1410,9 @@ mod tests {
             matches!(out, EngineOutcome::AwaitingInput { .. }),
             "substitution prompt should suspend",
         );
-        assert_eq!(state.pending_substitution_prompt, Some(inv));
+        assert!(
+            matches!(state.continuations.last(), Some(crate::state::Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+        );
         assert!(
             state.current_skill_test().is_some(),
             "the in-flight test must live on a SkillTest frame during the \
@@ -1485,7 +1496,13 @@ mod tests {
             )
         };
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.pending_substitution_prompt.is_none(), "no prompt");
+        assert!(
+            !matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::SubstitutionPrompt { .. })
+            ),
+            "no prompt"
+        );
         assert_eq!(state.current_skill_test().unwrap().skill, SkillKind::Combat,);
     }
 }

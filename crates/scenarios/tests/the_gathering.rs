@@ -110,7 +110,10 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         "round end opens the act-2 clue-spend window, got {:?}",
         r.outcome,
     );
-    assert!(r.state.act_round_end_pending.is_some());
+    assert!(matches!(
+        r.state.continuations.last(),
+        Some(game_core::state::Continuation::ActRoundEnd(_))
+    ));
 
     // Spend the clues as a group: act 2 advances to act 3.
     let r = apply(

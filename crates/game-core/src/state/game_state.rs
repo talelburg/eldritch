@@ -195,12 +195,6 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
-    /// Suspended Hunter-movement choice (#128), `Some` only while the
-    /// Enemy phase is paused on a lead-investigator tie; cleared once
-    /// resolved. See [`HunterChoice`].
-    pub hunter_move_pending: Option<HunterChoice>,
-    /// Suspended engagement-on-spawn choice (#128). See [`SpawnEngagePending`].
-    pub spawn_engage_pending: Option<SpawnEngagePending>,
     /// Suspended end-of-turn continuation (C4c, #235): `Some(active)` while
     /// `end_turn` is paused on a suspending `EndOfTurn` forced effect
     /// (Frozen in Fear 01164's willpower test). The skill-test commit-resume
@@ -208,12 +202,6 @@ pub struct GameState {
     /// phase-end once the test resolves. Defaults to `None`.
     #[serde(default)]
     pub pending_end_turn: Option<InvestigatorId>,
-    /// Suspended upkeep hand-size discard (#111). See [`HandSizeDiscard`].
-    pub hand_size_discard_pending: Option<HandSizeDiscard>,
-    /// Suspended act round-end clue-spend window (#275). `Some` only while
-    /// awaiting the group's Confirm/Skip at the end of the round. See
-    /// [`ActRoundEndPending`].
-    pub act_round_end_pending: Option<ActRoundEndPending>,
     /// `Some` while an enemy-attack loop is suspended on a soak reaction
     /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
     #[serde(default)]
@@ -254,12 +242,6 @@ pub struct GameState {
     /// round boundary ("until the end of the round").
     #[serde(default)]
     pub skill_substitutions: Vec<SkillSubstitution>,
-    /// Set while a skill test is paused on its "use X in place of Y?" prompt at
-    /// initiation (Mind over Matter 01036). Routes the next `ResolveInput` to
-    /// `resume_substitution_choice`; holds the test's investigator. `None`
-    /// otherwise.
-    #[serde(default)]
-    pub pending_substitution_prompt: Option<InvestigatorId>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -467,6 +449,28 @@ pub enum Continuation {
     /// re-run from the top on each resume, replaying `decisions` to reach
     /// the next un-ground choice. See [`ChoiceFrame`].
     Choice(ChoiceFrame),
+    /// A suspended Hunter-movement / engagement choice (#128), migrated off the
+    /// former `GameState::hunter_move_pending` field (#348). Resumed by
+    /// [`resume_hunter_choice`](crate::engine) via `ResolveInput`.
+    HunterMove(HunterChoice),
+    /// A suspended engagement-on-spawn choice (#128), migrated off the former
+    /// `GameState::spawn_engage_pending` field (#348).
+    SpawnEngage(SpawnEngagePending),
+    /// A suspended upkeep hand-size discard (#111), migrated off the former
+    /// `GameState::hand_size_discard_pending` field (#348).
+    HandSizeDiscard(HandSizeDiscard),
+    /// A suspended act round-end clue-spend window (#275), migrated off the
+    /// former `GameState::act_round_end_pending` field (#348).
+    ActRoundEnd(ActRoundEndPending),
+    /// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
+    /// at initiation (#322), migrated off the former
+    /// `GameState::pending_substitution_prompt` field (#348). Pushed *above* the
+    /// `SkillTest` frame, so top-frame dispatch routes it before the commit
+    /// window; resumed by [`resume_substitution_choice`](crate::engine).
+    SubstitutionPrompt {
+        /// The investigator taking the test.
+        investigator: InvestigatorId,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -502,7 +506,13 @@ impl Continuation {
     pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_) | Continuation::Choice(_) => None,
+            Continuation::SkillTest(_)
+            | Continuation::Choice(_)
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_)
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::ActRoundEnd(_)
+            | Continuation::SubstitutionPrompt { .. } => None,
         }
     }
 
@@ -510,7 +520,13 @@ impl Continuation {
     pub fn as_resolution_mut(&mut self) -> Option<&mut ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_) | Continuation::Choice(_) => None,
+            Continuation::SkillTest(_)
+            | Continuation::Choice(_)
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_)
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::ActRoundEnd(_)
+            | Continuation::SubstitutionPrompt { .. } => None,
         }
     }
 }

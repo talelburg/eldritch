@@ -47,10 +47,14 @@ fn parked_window_state(clues: u8) -> GameState {
         },
     ];
     state.act_index = 0;
-    state.act_round_end_pending = Some(ActRoundEndPending {
-        contributor_location: LocationId(2),
-        threshold: 3,
-    });
+    state
+        .continuations
+        .push(game_core::state::Continuation::ActRoundEnd(
+            ActRoundEndPending {
+                contributor_location: LocationId(2),
+                threshold: 3,
+            },
+        ));
     state
 }
 
@@ -62,7 +66,13 @@ fn pending_window_blocks_non_resolve_actions() {
         matches!(r.outcome, EngineOutcome::Rejected { .. }),
         "the guard blocks non-ResolveInput actions while a window is pending"
     );
-    assert!(r.state.act_round_end_pending.is_some(), "still pending");
+    assert!(
+        matches!(
+            r.state.continuations.last(),
+            Some(game_core::state::Continuation::ActRoundEnd(_))
+        ),
+        "still pending"
+    );
 }
 
 #[test]
@@ -81,5 +91,8 @@ fn resolve_confirm_routes_to_resume_and_advances() {
         0,
         "spent 3"
     );
-    assert!(r.state.act_round_end_pending.is_none());
+    assert!(!matches!(
+        r.state.continuations.last(),
+        Some(game_core::state::Continuation::ActRoundEnd(_))
+    ));
 }

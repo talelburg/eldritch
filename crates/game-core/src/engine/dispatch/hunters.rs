@@ -394,7 +394,9 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
              {candidates:?} (submit InputResponse::PickInvestigator)"
         ),
     };
-    cx.state.hunter_move_pending = Some(choice);
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::HunterMove(choice));
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(prompt),
         resume_token: ResumeToken(0),
@@ -404,15 +406,17 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
 /// Resume a suspended Hunter-movement choice with the lead
 /// investigator's response, then continue driving remaining hunters.
 /// Validates the response against the stored candidate set; on an
-/// invalid pick, rejects and leaves `hunter_move_pending` untouched so
+/// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry. (#128)
 pub(super) fn resume_hunter_choice(
     cx: &mut Cx,
     response: &crate::action::InputResponse,
 ) -> EngineOutcome {
-    let pending = cx.state.hunter_move_pending.clone().unwrap_or_else(|| {
-        unreachable!("resume_hunter_choice: called with no pending hunter choice")
-    });
+    let Some(crate::state::Continuation::HunterMove(pending)) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_hunter_choice: called with no HunterMove frame on top of the stack")
+    };
+    let pending = pending.clone();
     let current_enemy = match (&pending, response) {
         (
             HunterChoice::Move { enemy, candidates },
@@ -426,7 +430,8 @@ pub(super) fn resume_hunter_choice(
                     .into(),
                 };
             }
-            cx.state.hunter_move_pending = None;
+            // Pop the HunterMove frame we validated against (it is the top frame).
+            cx.state.continuations.pop();
             move_hunter_to(cx, *enemy, *loc);
             // After the move, attempt engage-on-arrival; that itself may
             // suspend on an engagement tie.
@@ -447,7 +452,8 @@ pub(super) fn resume_hunter_choice(
                     .into(),
                 };
             }
-            cx.state.hunter_move_pending = None;
+            // Pop the HunterMove frame we validated against (it is the top frame).
+            cx.state.continuations.pop();
             engage_enemy_with(cx, *enemy, *who);
             *enemy
         }
@@ -488,8 +494,7 @@ pub(super) fn resume_hunter_choice(
 /// investigator's Mythos encounter-draw chain.
 ///
 /// Validate-first: an invalid pick (wrong response shape, or a target
-/// outside the stored candidate set) rejects and leaves
-/// `spawn_engage_pending` untouched so the client can retry.
+/// outside the stored candidate set) rejects and leaves the `SpawnEngage` frame on the stack so the client can retry.
 ///
 /// The chain only resumes when the suspension arose mid-Mythos-draw —
 /// i.e. the drawing investigator is still the pending cursor. The
@@ -500,9 +505,11 @@ pub(super) fn resume_spawn_engage(
     cx: &mut Cx,
     response: &crate::action::InputResponse,
 ) -> EngineOutcome {
-    let pending = cx.state.spawn_engage_pending.clone().unwrap_or_else(|| {
-        unreachable!("resume_spawn_engage: called with no pending spawn engagement")
-    });
+    let Some(crate::state::Continuation::SpawnEngage(pending)) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_spawn_engage: called with no SpawnEngage frame on top of the stack")
+    };
+    let pending = pending.clone();
     let crate::action::InputResponse::PickInvestigator(who) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -521,14 +528,15 @@ pub(super) fn resume_spawn_engage(
             .into(),
         };
     }
-    cx.state.spawn_engage_pending = None;
+    // Pop the SpawnEngage frame we validated against (it is the top frame).
+    cx.state.continuations.pop();
     engage_enemy_with(cx, pending.enemy, *who);
 
     // Only re-enter the Mythos surge chain if the suspend happened
     // mid-chain (the drawing investigator is still the pending cursor).
     // The `EncounterCardRevealed` single-draw path resolves to `Done`.
     //
-    // Invariant: while `spawn_engage_pending` is set, the apply guard
+    // Invariant: while a SpawnEngage frame is on the stack, the apply guard
     // (line 129) rejects every non-`ResolveInput` action, so nothing can
     // retarget the Mythos cursor between suspend and resume. Hence
     // `mythos_draw_pending == Some(investigator_to_draw)` reliably means
@@ -1050,7 +1058,10 @@ mod hunter_resume_tests {
             events: &mut events,
         });
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.hunter_move_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HunterMove(_))
+        ));
         // Resume by picking C.
         let mut ev2 = Vec::new();
         let resumed = super::super::resolve_input(
@@ -1065,7 +1076,10 @@ mod hunter_resume_tests {
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(3))
         );
-        assert!(state.hunter_move_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HunterMove(_))
+        ));
         assert_event!(ev2, Event::EnemyMoved { enemy, to } if *enemy == EnemyId(1) && *to == LocationId(3));
     }
 
@@ -1111,7 +1125,10 @@ mod hunter_resume_tests {
         );
         assert!(matches!(result, EngineOutcome::Rejected { .. }));
         assert!(
-            state.hunter_move_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::HunterMove(_))
+            ),
             "pending stays open on invalid pick"
         );
     }
@@ -1164,7 +1181,10 @@ mod hunter_resume_tests {
             state.enemies[&EnemyId(1)].engaged_with,
             Some(InvestigatorId(2))
         );
-        assert!(state.hunter_move_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HunterMove(_))
+        ));
     }
 
     #[test]
@@ -1312,7 +1332,10 @@ mod hunter_resume_tests {
             events: &mut events,
         });
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.hunter_move_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HunterMove(_))
+        ));
         // Submit PickInvestigator when PickLocation is expected.
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
@@ -1327,7 +1350,10 @@ mod hunter_resume_tests {
             "wrong response kind should be rejected"
         );
         assert!(
-            state.hunter_move_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::HunterMove(_))
+            ),
             "pending preserved so client can retry with PickLocation"
         );
     }
@@ -1369,7 +1395,10 @@ mod hunter_resume_tests {
             Some(LocationId(2))
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.hunter_move_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HunterMove(_))
+        ));
         // Submit PickLocation when PickInvestigator is expected.
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
@@ -1384,7 +1413,10 @@ mod hunter_resume_tests {
             "wrong response kind should be rejected"
         );
         assert!(
-            state.hunter_move_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::HunterMove(_))
+            ),
             "pending preserved so client can retry with PickInvestigator"
         );
     }

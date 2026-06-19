@@ -224,7 +224,7 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // - **a single** suspending hit has no run frame; record the active
     //   investigator in `pending_end_turn` so the skill-test commit-resume
     //   path re-enters [`resume_end_turn`] once the test resolves (C4c, #235
-    //   — mirrors `spawn_engage_pending`).
+    //   — mirrors the SpawnEngage frame).
     //
     // A `Rejected` propagates as-is.
     let end_of_turn = super::emit::emit_event(
@@ -703,7 +703,9 @@ pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
              InputResponse::Confirm to spend and advance, or Skip to decline.",
             pending.threshold,
         );
-        cx.state.act_round_end_pending = Some(pending);
+        cx.state
+            .continuations
+            .push(crate::state::Continuation::ActRoundEnd(pending));
         return EngineOutcome::AwaitingInput {
             request: InputRequest::prompt(prompt),
             resume_token: ResumeToken(0),
@@ -737,11 +739,11 @@ fn round_end_advance_window(state: &GameState) -> Option<ActRoundEndPending> {
 /// act; Skip declines; either way the round closes (Upkeep→Mythos). A wrong
 /// response kind rejects with state untouched.
 pub(super) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx
-        .state
-        .act_round_end_pending
-        .clone()
-        .unwrap_or_else(|| unreachable!("resume_act_round_end_advance: no pending window"));
+    let Some(crate::state::Continuation::ActRoundEnd(pending)) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_act_round_end_advance: no ActRoundEnd frame on top of the stack")
+    };
+    let pending = pending.clone();
     match response {
         InputResponse::Confirm => {
             let contributors =
@@ -754,14 +756,14 @@ pub(super) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse
                 };
             }
             super::act_agenda::spend_clues_from(cx.state, &contributors, pending.threshold);
-            cx.state.act_round_end_pending = None;
+            cx.state.continuations.pop();
             // The round-end-advance act (01109) is non-terminal (resolution
             // None) — advance the cursor to the next act.
             super::act_agenda::advance_act(cx);
             step_phase(cx)
         }
         InputResponse::Skip => {
-            cx.state.act_round_end_pending = None;
+            cx.state.continuations.pop();
             step_phase(cx)
         }
         other => EngineOutcome::Rejected {
@@ -839,7 +841,7 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
         .collect()
 }
 
-/// Stores `remaining` as `hand_size_discard_pending` and returns the
+/// Pushes a `HandSizeDiscard(remaining)` frame and returns the
 /// [`EngineOutcome::AwaitingInput`] that prompts `remaining[0]` to discard.
 /// Used by both [`check_hand_size`] (first suspension) and
 /// [`resume_hand_size_discard`] (re-prompt after a queue pop).
@@ -847,7 +849,11 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
 /// `remaining` must be non-empty; callers ensure this before calling.
 fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     let next = remaining[0];
-    cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::HandSizeDiscard(
+            HandSizeDiscard { remaining },
+        ));
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(format!(
             "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
@@ -881,11 +887,11 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
 /// to Mythos). Rejections leave state and events untouched.
 pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx
-        .state
-        .hand_size_discard_pending
-        .clone()
-        .unwrap_or_else(|| unreachable!("resume_hand_size_discard: no pending discard"));
+    let Some(crate::state::Continuation::HandSizeDiscard(pending)) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_hand_size_discard: no HandSizeDiscard frame on top of the stack")
+    };
+    let pending = pending.clone();
     let current = pending.remaining[0];
 
     let InputResponse::DiscardCards { indices } = response else {
@@ -960,8 +966,9 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     // ---- advance the queue ----
     let mut remaining = pending.remaining;
     remaining.remove(0);
+    // Pop the current HandSizeDiscard frame (validated above; it is the top frame).
+    cx.state.continuations.pop();
     if remaining.is_empty() {
-        cx.state.hand_size_discard_pending = None;
         upkeep_phase_end(cx) // 4.6 + transition (may open the act round-end window)
     } else {
         park_hand_size_discard(cx, remaining)
@@ -2237,7 +2244,10 @@ mod upkeep_phase_tests {
             events: &mut events,
         });
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.act_round_end_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Upkeep, "parked: did not transition");
         assert_no_event!(
             events,
@@ -2256,7 +2266,10 @@ mod upkeep_phase_tests {
             events: &mut events,
         });
         assert_eq!(out, EngineOutcome::Done);
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Mythos, "no window → straight to Mythos");
     }
 
@@ -2279,7 +2292,10 @@ mod upkeep_phase_tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 1, "advanced act 2 -> act 3");
         assert_eq!(state.investigators[&inv].clues, 0, "spent 3 clues");
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Mythos);
     }
 
@@ -2302,7 +2318,10 @@ mod upkeep_phase_tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 0, "no advance on Skip");
         assert_eq!(state.investigators[&inv].clues, 3, "no clues spent");
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Mythos);
     }
 
@@ -2323,7 +2342,13 @@ mod upkeep_phase_tests {
             &InputResponse::DiscardCards { indices: vec![] },
         );
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
-        assert!(state.act_round_end_pending.is_some(), "still pending");
+        assert!(
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::ActRoundEnd(_))
+            ),
+            "still pending"
+        );
         assert_eq!(state.phase, Phase::Upkeep);
     }
 
@@ -2348,7 +2373,10 @@ mod upkeep_phase_tests {
             events: &mut events,
         });
         assert_eq!(out, EngineOutcome::Done, "unaffordable by Hallway alone");
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
     }
 }
 
@@ -3155,10 +3183,10 @@ mod hand_size_tests {
             "over-cap investigator must suspend; got {outcome:?}"
         );
         assert_eq!(
-            state
-                .hand_size_discard_pending
-                .as_ref()
-                .map(|p| p.remaining.clone()),
+            state.continuations.iter().rev().find_map(|c| match c {
+                crate::state::Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
+                _ => None,
+            }),
             Some(vec![id]),
         );
     }
@@ -3181,7 +3209,10 @@ mod hand_size_tests {
         });
 
         assert_eq!(outcome, EngineOutcome::Done);
-        assert!(state.hand_size_discard_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HandSizeDiscard(_))
+        ));
     }
 
     #[test]
@@ -3207,7 +3238,10 @@ mod hand_size_tests {
         });
 
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.hand_size_discard_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HandSizeDiscard(_))
+        ));
         assert_eq!(
             state.phase,
             Phase::Upkeep,
@@ -3248,7 +3282,10 @@ mod hand_size_tests {
         );
 
         assert_eq!(outcome, EngineOutcome::Done);
-        assert!(state.hand_size_discard_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HandSizeDiscard(_))
+        ));
         assert_eq!(state.investigators[&id].hand.len(), 8);
         assert_eq!(state.investigators[&id].discard.len(), 2);
         assert_eq!(
@@ -3307,7 +3344,10 @@ mod hand_size_tests {
             "rejected: hand untouched"
         );
         assert!(
-            state.hand_size_discard_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::HandSizeDiscard(_))
+            ),
             "rejected: still pending"
         );
         assert!(events.is_empty(), "rejected: no events");
@@ -3390,10 +3430,10 @@ mod hand_size_tests {
         );
         assert!(matches!(o1, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
-            state
-                .hand_size_discard_pending
-                .as_ref()
-                .map(|p| p.remaining.clone()),
+            state.continuations.iter().rev().find_map(|c| match c {
+                crate::state::Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
+                _ => None,
+            }),
             Some(vec![inv2]),
         );
         assert_eq!(state.phase, Phase::Upkeep);
@@ -3430,7 +3470,10 @@ mod hand_size_tests {
             "rejected: hand untouched"
         );
         assert!(
-            state.hand_size_discard_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::HandSizeDiscard(_))
+            ),
             "rejected: still pending"
         );
         assert!(events.is_empty(), "rejected: no events");
