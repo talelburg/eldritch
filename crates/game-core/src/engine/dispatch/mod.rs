@@ -427,10 +427,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     //   suspension, so it resumes LAST (below), after the legacy mid-test modes
     //   (hand-size discard, act round-end) — inner suspensions of the flow.
     // Mind over Matter (#322): a skill test paused on its "use X in place of
-    // Y?" prompt at initiation. Set only between the prompt and the commit
-    // window, so it unambiguously owns the next input — route it first (it can
-    // sit above a forced-run / window frame, e.g. a treachery agility test).
-    if cx.state.pending_substitution_prompt.is_some() {
+    // Y?" prompt at initiation. Its `SubstitutionPrompt` frame is pushed *above*
+    // the `SkillTest` frame, so top-frame dispatch routes it before the commit
+    // window — no special-case ordering needed (#348).
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::SubstitutionPrompt { .. })
+    ) {
         return skill_test::resume_substitution_choice(cx, response);
     }
 

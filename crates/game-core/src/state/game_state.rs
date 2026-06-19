@@ -242,12 +242,6 @@ pub struct GameState {
     /// round boundary ("until the end of the round").
     #[serde(default)]
     pub skill_substitutions: Vec<SkillSubstitution>,
-    /// Set while a skill test is paused on its "use X in place of Y?" prompt at
-    /// initiation (Mind over Matter 01036). Routes the next `ResolveInput` to
-    /// `resume_substitution_choice`; holds the test's investigator. `None`
-    /// otherwise.
-    #[serde(default)]
-    pub pending_substitution_prompt: Option<InvestigatorId>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
     /// deck runs out, `draw_encounter_top` (in `engine::dispatch`)
@@ -468,6 +462,15 @@ pub enum Continuation {
     /// A suspended act round-end clue-spend window (#275), migrated off the
     /// former `GameState::act_round_end_pending` field (#348).
     ActRoundEnd(ActRoundEndPending),
+    /// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
+    /// at initiation (#322), migrated off the former
+    /// `GameState::pending_substitution_prompt` field (#348). Pushed *above* the
+    /// `SkillTest` frame, so top-frame dispatch routes it before the commit
+    /// window; resumed by [`resume_substitution_choice`](crate::engine).
+    SubstitutionPrompt {
+        /// The investigator taking the test.
+        investigator: InvestigatorId,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -508,7 +511,8 @@ impl Continuation {
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
-            | Continuation::ActRoundEnd(_) => None,
+            | Continuation::ActRoundEnd(_)
+            | Continuation::SubstitutionPrompt { .. } => None,
         }
     }
 
@@ -521,7 +525,8 @@ impl Continuation {
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
-            | Continuation::ActRoundEnd(_) => None,
+            | Continuation::ActRoundEnd(_)
+            | Continuation::SubstitutionPrompt { .. } => None,
         }
     }
 
@@ -539,7 +544,8 @@ impl Continuation {
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
-            | Continuation::ActRoundEnd(_) => true,
+            | Continuation::ActRoundEnd(_)
+            | Continuation::SubstitutionPrompt { .. } => true,
         }
     }
 }
