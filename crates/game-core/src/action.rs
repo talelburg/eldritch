@@ -384,32 +384,6 @@ pub enum InputResponse {
     PickInvestigator(InvestigatorId),
     /// Pick a specific location.
     PickLocation(LocationId),
-    /// Commit cards from hand to a skill test's commit window. Each
-    /// entry is a zero-based index into the active investigator's hand
-    /// at the moment of the prompt; the engine reads the matching
-    /// `CardCode`s, sums their printed skill icons (matching skill +
-    /// wild) into the test total, and discards them as part of the
-    /// test's cleanup. Empty `indices` is a legal "commit nothing"
-    /// signal.
-    ///
-    /// `u32` rather than `u8`; hand sizes never approach `u8`
-    /// limits in practice, the field is downcast at validation time.
-    CommitCards {
-        /// Hand indices to commit.
-        indices: Vec<u32>,
-    },
-    /// Discard cards from hand to satisfy the upkeep maximum-hand-size
-    /// step (Rules Reference p.25 step 4.5). Each entry is a zero-based index into
-    /// the prompted investigator's hand at the moment of the prompt. The
-    /// engine discards exactly the overflow (`hand.len() - 8`); any other
-    /// count, a duplicate, or an out-of-bounds index is rejected.
-    ///
-    /// `u32` rather than `u8` for wire-format symmetry with
-    /// [`CommitCards`](Self::CommitCards); downcast at validation time.
-    DiscardCards {
-        /// Hand indices to discard.
-        indices: Vec<u32>,
-    },
 }
 
 #[cfg(test)]

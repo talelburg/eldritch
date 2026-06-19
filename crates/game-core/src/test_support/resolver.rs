@@ -18,12 +18,12 @@
 //!
 //! The first (and currently only) `AwaitingInput` site is the skill-
 //! test commit window (#63). When the engine prompts, the active
-//! investigator must reply with [`InputResponse::CommitCards`].
-//! [`ScriptedResolver::commit_cards`] is the ergonomic helper: tests
-//! pass card codes, the resolver translates them to hand indices using
-//! [`GameState`] at resolve time.
+//! investigator must reply with [`InputResponse::PickMultiple`] (each
+//! `OptionId` a hand index). [`ScriptedResolver::commit_cards`] is the
+//! ergonomic helper: tests pass card codes, the resolver translates them to
+//! hand indices using [`GameState`] at resolve time.
 //!
-//! [`InputResponse::CommitCards`]: crate::action::InputResponse::CommitCards
+//! [`InputResponse::PickMultiple`]: crate::action::InputResponse::PickMultiple
 //!
 //! # Example
 //!
@@ -68,7 +68,7 @@ pub trait ChoiceResolver {
 /// Replayable [`ChoiceResolver`] backed by a FIFO of pre-recorded steps.
 ///
 /// Build the script with the fluent helpers ([`confirm`](Self::confirm),
-/// [`skip`](Self::skip), [`pick`](Self::pick),
+/// [`skip`](Self::skip), [`pick_single`](Self::pick_single),
 /// [`pick_investigator`](Self::pick_investigator),
 /// [`pick_location`](Self::pick_location),
 /// [`commit_cards`](Self::commit_cards)). When the engine prompts and the
