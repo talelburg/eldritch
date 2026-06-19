@@ -236,7 +236,7 @@ fn mythos_phase_resolves_single_spawn_enemy() {
 fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // Two investigators co-located at the synth spawn location: the
     // drawn enemy ties under Prey::Default, so the draw suspends for the
-    // lead's PickInvestigator (#128, option A). Resolving the pick
+    // lead's PickSingle (#128, option A). Resolving the pick
     // engages the chosen investigator and resumes inv1's Mythos draw
     // chain — which, the enemy being non-surge, advances the cursor to
     // inv2 and stays in Mythos.

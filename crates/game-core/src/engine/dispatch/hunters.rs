@@ -299,7 +299,7 @@ fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
 /// not engage until readied) or has no location. On a prey `Tie` this
 /// engages the lead (`tied[0]`, which is `turn_order`-first because
 /// `active_investigators_at` is turn-order-ordered) rather than
-/// suspending for the lead's `PickInvestigator` — keeping every defeat
+/// suspending for the lead's `PickSingle` — keeping every defeat
 /// caller synchronous. TODO(#151): make the multiplayer tie an
 /// interactive lead choice when multiplayer lands.
 ///
@@ -499,7 +499,7 @@ pub(super) fn resume_hunter_choice(
 }
 
 /// Resume a suspended engagement-on-spawn choice (#128, option A) with
-/// the lead investigator's `PickInvestigator`, then continue the drawing
+/// the lead investigator's `PickSingle`, then continue the drawing
 /// investigator's Mythos encounter-draw chain.
 ///
 /// Validate-first: an invalid pick (wrong response shape, or a target
@@ -1165,7 +1165,7 @@ mod hunter_resume_tests {
     #[test]
     fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
         // Two investigators at B; hunter moves A->B; default prey -> tie ->
-        // PickInvestigator.
+        // PickSingle.
         let mut a = test_location(1, "A");
         let mut b = test_location(2, "B");
         a.connections = vec![LocationId(2)];

@@ -271,7 +271,7 @@ pub fn resolve_encounter_card(
 /// sole/best candidate); `Tie` suspends via
 /// [`SpawnEngagePending`](crate::state::SpawnEngagePending) and returns
 /// [`EngineOutcome::AwaitingInput`] for the lead investigator's
-/// `PickInvestigator`. When the spawn happens inside a Mythos
+/// `PickSingle`. When the spawn happens inside a Mythos
 /// encounter-draw chain, [`resume_spawn_engage`] re-enters
 /// [`run_mythos_draw_chain`] after the pick resolves.
 ///
@@ -398,7 +398,7 @@ pub(super) fn spawn_enemy_at(
     // 2. Resolve engagement-on-spawn (validate-first). The co-located
     //    set is narrowed by the enemy's `prey`; with `Prey::Default` a 2+
     //    set ties and suspends for the lead investigator's
-    //    `PickInvestigator` (option A).
+    //    `PickSingle` (option A).
     let candidates = super::cursor::active_investigators_at(cx.state, location_id);
 
     // 3. Mint and place (mutate-second). The enemy is inserted unengaged;

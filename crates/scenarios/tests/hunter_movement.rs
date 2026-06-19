@@ -1,6 +1,6 @@
 //! #128 integration: spawn-engagement tie resolved through the real
 //! registry + Mythos draw path (option A), plus hunter-movement replay
-//! equality across a `PickLocation` round-trip.
+//! equality across a `PickSingle` round-trip.
 
 use std::sync::Once;
 
@@ -41,7 +41,7 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
         .encounter_deck
         .push_back(game_core::state::CardCode(SYNTH_ENEMY_CODE.into()));
 
-    // 1) Drawing the enemy suspends for the lead's PickInvestigator.
+    // 1) Drawing the enemy suspends for the lead's PickSingle.
     let r1 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),

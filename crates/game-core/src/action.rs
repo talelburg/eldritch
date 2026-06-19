@@ -367,9 +367,9 @@ pub enum InputResponse {
     /// Pick one option from a structured choice prompt
     /// ([`InputRequest::choice`](crate::engine::InputRequest::choice)),
     /// echoing back its [`OptionId`](crate::engine::OptionId). The
-    /// single-selection family (umbrella §3); [`PickLocation`](Self::PickLocation)
-    /// / [`PickInvestigator`](Self::PickInvestigator) consolidate into it in a
-    /// follow-up (2c-ii).
+    /// single-selection family (umbrella §3): the Axis-A choice machinery, and
+    /// the location/investigator-pick windows (hunter move/engage, spawn engage)
+    /// whose offered options index the candidate list.
     PickSingle(crate::engine::OptionId),
     /// Select a subset of the offered options, echoing back their
     /// [`OptionId`](crate::engine::OptionId)s (umbrella §3). The multi-selection
@@ -380,10 +380,6 @@ pub enum InputResponse {
         /// The chosen option ids (hand indices, for commit/discard windows).
         selected: Vec<crate::engine::OptionId>,
     },
-    /// Pick a specific investigator.
-    PickInvestigator(InvestigatorId),
-    /// Pick a specific location.
-    PickLocation(LocationId),
 }
 
 #[cfg(test)]

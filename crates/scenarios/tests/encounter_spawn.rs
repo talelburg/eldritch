@@ -12,7 +12,7 @@
 //!   does NOT appear in `encounter_discard`.
 //! - Multi-investigator suspend: two investigators at the spawn
 //!   location → the spawn suspends (`AwaitingInput`) for the lead
-//!   investigator's `PickInvestigator` (#128, option A), leaving the
+//!   investigator's `PickSingle` (#128, option A), leaving the
 //!   enemy in play but unengaged until the pick resolves.
 //!
 //! Default-spawn and location-not-in-play coverage lives in
@@ -143,7 +143,7 @@ fn revealing_synth_enemy_with_two_investigators_at_loc_suspends_for_lead_pick() 
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "multi-investigator spawn now suspends for the lead's PickInvestigator, got {:?}",
+        "multi-investigator spawn now suspends for the lead's PickSingle, got {:?}",
         result.outcome,
     );
     assert!(matches!(
