@@ -74,12 +74,13 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
 ### Ordering, dependencies, simplifications
 
 1. ~~**Basic actions first** (#141, #77)~~ — ✅ shipped (PR #383); Engage also unblocks #300's condition. (Resign/Parley aren't basic actions — see Tier-1 A.)
-2. **§1 continuation-stack cleanup before the keystone** — the full #348 + #345 + #347 + #380 as one designed pass (see Refactor triage). The keystone *adds* suspension modes, so migrate the existing `pending_*` onto the one stack (with serializable context + token-routed resume) first rather than building the Nth ad-hoc route on top.
-3. **The keystone: mid-action suspend/resume.** Tier-1 B **and** C all hinge on `drive_attack_loop` being able to park the triggering action, open a window, and resume. Build it once and #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase. Fold #119 in for #44's soak (symmetric token storage).
-4. **Skill-test windows** (#374 + #64) — one reaction-window work-stream.
-5. **Roland elder-sign** (#118).
-6. **Edge correctness** (#300 after Engage, then #368, #353).
-7. **Browser playable surface** (capstone) — once the above stabilizes; see below.
+2. **§1 continuation-stack cleanup — ✅ done.** #345 (PR #385) + #348 via parts 2a–2c + #380 (PRs #386–#392). The last piece, **#347** (token-routed resume / stale-submit rejection), **folds into #393** rather than landing standalone: the literal "token on `ResolveInput`, validated in the engine" is a ~145-site churn that #393 would rework, and stale-submit rejection is properly a *session* concern — the engine emits deterministic token *values*, the **server** rejects stale client echoes at the network boundary (the engine's `apply`/action-log stays token-free for replay). So token-routing is designed on #393's unified resume channel, at the right layer. (#348/#347 closed → #393.)
+3. **Unified control-flow model (#393) — the foundation arc, before the rest of Tier-1. ✅ designed** ([`2026-06-20-unified-control-flow-model-design.md`](../superpowers/specs/2026-06-20-unified-control-flow-model-design.md)). Reify *every* step of control flow as a continuation frame (phases, turns, the open-action choice), so the main loop collapses to a single rule: **handle the top frame.** The `InvestigatorTurn` frame re-emits the player's legal actions as `OptionId`s while actions remain — so the stack is never empty during play (empty only at bootstrap and the terminal resolution). The spec scopes a **C checkpoint** (a step is a frame *iff* it suspends or loops; net-new surface = four per-phase anchors + `InvestigatorTurn` + `AttackLoop`) and three sequenced post-C **end-states**: **B** (every step a frame, reached content-driven), **2b** (eliminate typed `PlayerAction` → gameplay is `ResolveInput(OptionId)` only; committed for UX/#205), and the **EmitEvent-frame** (the `when/at/after × forced/reaction` ordering axis as nested frames; #212 successor). It **subsumes** the keystone's substrate, the three framework cursors (`enemy_attack_pending` / `pending_end_turn` / `pending_enemy_attack`), #384's engine half (#384 closed → #393), and **token-routing / stale-submit rejection (#347, folded in → server-side)**. The engine emits `OptionId`s + keeps the id→action map internal; option metadata / browser rendering is #205 at the capstone. Build the model **before** the rest of Tier-1 so each item lands on the final engine shape.
+4. **The keystone: mid-action suspend/resume** — designed as §D of the #393 spec (its riskiest slice). Tier-1 B **and** C all hinge on the attack loop parking the *triggering action*, opening a window, and resuming — built as an `AttackLoop` frame above the action's sub-resolution (the model's first and hardest consumer), **not** a new cursor; an `on_child_pop` re-validation gate handles actor-eliminated-mid-action. #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase. Fold #119 in for #44's soak (symmetric token storage).
+5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model.
+6. **Roland elder-sign** (#118).
+7. **Edge correctness** (#300 after Engage, then #368, #353).
+8. **Browser playable surface** (capstone) — once the above stabilizes; renders the enumerated actions / #205. See below.
 
 **Simplifications:**
 - **#300 does not need #363 (general fan-out).** Once Engage (#77) exists, Machete's "only enemy engaged with you" is a count==1 read — gate `extra_damage` on it; don't wait for multi-target Fight.
@@ -92,14 +93,16 @@ The gate's "done" is a solo human playing in the *browser*, not just a green
 integration test. Once the Tier-1 fixes stabilize, this is the first follow-on:
 the web client (shipped Phase 6) must drive the **real** Gathering scenario.
 
-- **#205 — structured `AwaitingInput` discrimination (load-bearing, needs-design).**
-  The Gathering's cards are the first to emit non-commit prompts across the
-  normalized `InputResponse` set (`PickSingle` / `PickMultiple` / `Confirm` /
-  `Skip` — the §1 cleanup folded the former `PickInvestigator`/`PickLocation` and
-  `CommitCards`/`DiscardCards` into `PickSingle`/`PickMultiple`); the client must
-  render the right control per variant from machine-readable offered options, not
-  prompt-string heuristics. Keystone of the surface; pairs with #347 (token-routed
-  resume → stale-submit rejection).
+- **#205 — structured `AwaitingInput` discrimination + action rendering
+  (load-bearing, needs-design).** The engine side is provided by #393: every
+  player decision — including the open-turn's *enumerated legal actions* —
+  surfaces as a frame offering `OptionId`s on the normalized `InputResponse` set
+  (`PickSingle` / `PickMultiple` / `Confirm` / `Skip`). #205 is the **client
+  half**: decide what option *metadata* the engine surfaces (labels, per-variant
+  controls, action parameters — #393 keeps the id→action map internal for now)
+  and render the right control per option, not prompt-string heuristics. (Absorbs
+  the former #384 client half.) Keystone of the surface; pairs with #393's
+  token-routing (#347, folded in → server-side stale-submit rejection).
 - **Investigator / scenario picker.** The seating protocol (B2 #221) + registry
   swap (C7a #244) exist engine-side; the browser picker driving `StartScenario`
   with a chosen investigator is the remaining UI.
@@ -116,38 +119,54 @@ target.
 Not rules bugs, but several simplify or de-risk the Tier-1 work — pull these in
 rather than deferring wholesale:
 
-- **§1 continuation-stack cleanup — the full #348 + #345 + #347 + #380, as one
-  designed pass. DO-FIRST, before the keystone.** Designed in
+- **§1 continuation-stack cleanup — ✅ done (#345 + #348 + #380); #347 folds
+  into #393.** Designed in
   `docs/superpowers/specs/2026-06-19-continuation-stack-cleanup-design.md`.
-  **Progress:** #345 shipped (PR #385); #348 is landing incrementally (parts
+  **Progress:** #345 shipped (PR #385); #348 landed incrementally (parts
   2a–2c via PRs #386–#391) — the `InputResponse` channel is now normalized
   (`CommitCards`/`DiscardCards` → `PickMultiple`, `PickLocation`/`PickInvestigator`
   → `PickSingle`, `Mulligan` → `PickMultiple`, `DrawEncounterCard` → `Confirm`),
   every player-facing suspension resumes through `ResolveInput`, and the bespoke
   `mulligan_pending`/`mythos_draw_pending` cursors + `in_flight_skill_test` are
   folded onto continuation frames. #380 (the `pending_revelation_discard`
-  side-channel → an `EncounterCard` frame, PR #392) has also landed; only
-  #347 (token-routed resume) remains.
-  #348 migrates the remaining
-  `pending_*` suspension modes (incl. `pending_enemy_attack`, `pending_end_turn`)
-  onto the one continuation stack and collapses the
+  side-channel → an `EncounterCard` frame, PR #392) has also landed. The last
+  piece, **#347** (token-routed resume), **folds into #393** rather than landing
+  standalone (engine-level `ResolveInput.token` is ~145-site churn #393 would
+  rework; stale-submit rejection is a session concern — engine emits token
+  *values*, the server rejects stale echoes, the action log stays replay-clean).
+  Likewise the **remaining framework cursors — `enemy_attack_pending` /
+  `pending_end_turn` / `pending_enemy_attack` — move to #393** (the unified
+  control-flow model, the foundation arc that follows §1 — see Ordering step 3):
+  internal sequencing, never player-facing, they fall out when #393 reifies the
+  phase/turn/attack-loop drivers as frames.
+  #348 collapsed the
   fragile `if pending_X.is_some()` `resolve_input` cascade **and** the parallel
   `apply_player_action` guard ladder into top-frame dispatch
   (`clue_interrupt_pending` is already a window); #345 makes
   `EvalContext` serializable with **grouped optional bindings** snapshotted
   per-frame (the Vec / per-frame-enum / global-stack alternatives were evaluated
   and rejected — spec §D; innermost-only is corpus-moot, no TODO) so migrated
-  frames snapshot context instead of re-storing ingredient tuples; #347 makes resume
-  **token-routed** (deterministic counter, stamped on the awaiting frame) so
-  routing becomes token → frame → dispatch-on-variant, with stale/double-submit
-  rejection; #380 removes the `pending_revelation_discard` side-channel by making
-  encounter-card resolution a frame whose framework teardown disposes of the card.
-  Designed together (they share the seam). The keystone
-  adds attack-loop suspension, so this lands first and the keystone rides one
-  clean stack. **Token-routing (#347b) also de-risks the browser surface** —
-  #205's client can submit against a superseded prompt and be rejected cleanly,
-  so doing the full cleanup in-phase (rather than a focused subset) pays off at
-  the Slice-D capstone too.
+  frames snapshot context instead of re-storing ingredient tuples; #380 removed
+  the `pending_revelation_discard` side-channel by making encounter-card
+  resolution a frame whose framework teardown disposes of the card. **Token-
+  routing (#347 → #393)** stays valuable for the browser surface — #205's client
+  can submit against a superseded prompt and be rejected cleanly — but lands as
+  part of #393's unified resume channel, at the session layer, rather than as a
+  standalone engine pass.
+- **EmitEvent-frame — the `when/at/after` ordering axis (a #393 end-state, #212
+  successor).** `emit_event` (T5a chokepoint, PR #342) models only the RR p.2
+  `forced → reaction` axis; the orthogonal `when → at → after` axis (RR "At"
+  entry) is still hand-threaded per site. The #393 spec (§"named end-states")
+  reifies it as two nested coordinator frames (`EmitEvent` over buckets,
+  `TimingPoint` over forced/reaction) — built post-C on the proven model, since
+  `emit_event` is the highest-blast-radius engine function. Re-open #212 (or a
+  successor) scoped to this.
+- **Upkeep round-end `when→at` ordering bug — surfaced by the #393 design; fix
+  before the Upkeep-anchor slice.** `upkeep_phase_end` fires agenda 01107's `at`-
+  the-end-of-round doom **before** act 01109's `when`-the-round-ends clue-spend
+  window — inverted vs. the RR "At" rule (`when → at → after`). Consequential when
+  the doom advances the agenda (loss on agenda 3). Cheap reorder + regression test
+  (agenda-3 + act-2 at round end); file its own bug issue. (Spec §G.)
 - **#119 — unify damage/horror/clues onto `CardInPlay`. DO-WITH #44.** #44 (soak
   distribution, Tier-1 C) needs symmetric investigator/asset token storage; #119
   makes the soak machinery symmetric instead of special-casing the investigator
