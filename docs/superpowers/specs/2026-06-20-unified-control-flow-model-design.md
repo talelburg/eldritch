@@ -407,10 +407,29 @@ checkpoint. Re-open #212 (or a successor) scoped to this.
 
 Each step is independently green (mirrors §1's parts 2a–2c cadence):
 
-0. **§G ordering bug** — standalone fix + regression test (pre-req).
-1. **Main-loop scaffold + `*Phase` anchors** — introduce the four anchor variants
-   and relocate `run_window_continuation`'s arms onto them; behaviour-preserving.
-   Strand-guards become asserts.
+0. **§G ordering bug** — standalone fix + regression test (pre-req). ✅ shipped
+   (PR #396, closes #395).
+1. **`*Phase` anchors + uniform main loop** — too large for one PR; decomposes into
+   three behaviour-preserving sub-slices (exploration found `apply()` runs one
+   action per call with a *synchronous* phase cascade, and `run_window_continuation`
+   is a `match WindowKind` whose **6 `PlayerWindow(PhaseStep)` arms** —
+   `MythosAfterDraws`, `UpkeepBegins`, `BeforeInvestigatorAttacked`,
+   `AfterAllInvestigatorsAttacked`, `InvestigationBegins`, `InvestigatorTurnBegins` —
+   are the phase-structure continuations the anchors own; its other arms are
+   card/ability reactions that stay put):
+   - **1a — anchor frames + relocate the 6 `PhaseStep` arms.** Introduce the four
+     `*Phase` anchor `Continuation` variants + per-phase `resume` enums; push an
+     anchor onto the stack at each phase entry (windows/loops push *above* it); on a
+     window close, route to the anchor's `on_child_pop` instead of
+     `run_window_continuation`'s `PhaseStep` match. The anchor is a real stack frame
+     from day one (the "everything is a frame" model, not a delegation table). Guard
+     ladder, action `match`, and the card-reaction arms untouched.
+   - **1b — fold the synchronous cascade onto anchor `drive`.** `step_phase`'s
+     forward-calling cascade becomes each anchor *pushing* its phase's first child;
+     the strand-guards become cheap asserts.
+   - **1c — uniform "handle the top frame" loop in `apply`.** Replace
+     `apply_player_action`'s ad-hoc recursion with the single-rule loop; the guard
+     ladder collapses to the top-frame rule (sets up slice 2's `InvestigatorTurn`).
 2. **`InvestigatorTurn` frame (2a) + legal-action enumerator** — open-turn becomes a
    frame; guard ladder + action `match` deleted; typed `PlayerAction` validated
    against the offered set; `pending_end_turn` absorbed.
