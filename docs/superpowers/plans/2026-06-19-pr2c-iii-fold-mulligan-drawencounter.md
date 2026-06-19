@@ -84,3 +84,27 @@ This is **PR 2c-iii** (2c-i `PickMultiple` ✅, 2c-ii `PickSingle` ✅; this). S
 **Risk flags:** (1) `StartScenario`/Mythos-entry returning `AwaitingInput` is a broad test-shape change — most of the churn. (2) The surge-chain + spawn-engage re-entry is the one place logic (not just protocol) is delicate; pin it with the existing `mythos_phase` surge + spawn-engage integration tests (`scenarios/tests/{mythos_phase,encounter_spawn}.rs`), which must pass unchanged in behavior. (3) `server`/`web` removing two actions — confirm no client UI path still constructs them (the web client builds `DrawEncounterCard`? grep `crates/web/src` — if so it migrates to a Confirm control).
 
 **Out of scope:** tokens (#347), revelation disposal (#380), human option labels + client rendering (#205), `enemy_attack_pending` cursor.
+
+---
+
+## Execution notes (from a first pass on 2c-iii-a, reverted clean)
+
+A first execution of **2c-iii-a** got the engine half done cleanly but was reverted before finishing the test surface (end of a long session). What it surfaced — bake these into the next run:
+
+- **The engine half is straightforward** and worked: `Continuation::Mulligan { remaining }` + classifier arms; `cards::prompt_mulligan` + `resume_mulligan` (reads `PickMultiple { selected }` → redraw hand indices, drives `remaining`, `investigation_phase` on drain); `start_scenario` pushes the frame and returns `prompt_mulligan` (so its outcome is `AwaitingInput`, or `Done` straight to `investigation_phase` when no active investigators); the `mulligan_pending` guard in `apply_player_action` → a `Mulligan`-frame guard; remove the `Mulligan` dispatch arm + the post-mulligan kickoff block; add `Some(Continuation::Mulligan { .. }) => cards::resume_mulligan` to `resolve_input`; remove the `mulligan_pending` field.
+
+- **Add a `GameState::current_mulligan() -> Option<InvestigatorId>` accessor** (reads the top `Mulligan` frame's `remaining[0]`). It makes the test read-site migration a clean rename: `state.mulligan_pending` → `state.current_mulligan()`.
+
+- **Builder:** keep a staging field but the helper must stage the *full* remaining queue, not one id — replace `with_mulligan_pending(id)` with `with_mulligan_remaining(impl IntoIterator<Item = InvestigatorId>)`, pushing `Continuation::Mulligan { remaining }` in `build()`. The single-id form breaks the multi-investigator advance tests.
+
+- **Obsolete test (remove it):** the "out-of-order mulligan rejected" unit test (`engine/mod.rs`) tested that `Mulligan { investigator: wrong }` rejects on cursor mismatch. The folded action carries **no** investigator (the frame's `remaining[0]` is the actor), so that rejection path no longer exists — delete the test rather than port it.
+
+- **`StartScenario` now returns `AwaitingInput`:** every test doing `StartScenario → (assert Done) → Mulligan` becomes `StartScenario → (assert AwaitingInput) → ResolveInput(PickMultiple)`. Dropping the action's `investigator` field leaves unused `inv`/`id` bindings in some tests (`_`-prefix or remove).
+
+- **Mechanical action-fold transform** (worked across ~19 files with one perl in the first pass): `PlayerAction::Mulligan { investigator: _, indices_to_redraw: vec![a, b] }` → `PlayerAction::ResolveInput { response: InputResponse::PickMultiple { selected: vec![OptionId(a), OptionId(b)] } }` (empty → `vec![]`). Then add `InputResponse`/`OptionId` imports where the compiler flags (`scenarios/tests/{synthetic_resolution,upkeep_phase,the_gathering,...}.rs`).
+
+- **`server`:** `ws.rs` asserts on `state.mulligan_pending` → `state.current_mulligan()`.
+
+- **`web` client — remove the dead dedicated mulligan UI.** `enabled_controls` already short-circuits to empty on `AwaitingInput` (`legality.rs`), and mulligan is now an `AwaitingInput`, so the `mulligan_pending` legality branch, `ActionControl::Mulligan`, and the `mulligan_picker` component (+ its `mulligan_sel` signal and `web/tests/controls.rs` cases) are all unreachable. Remove them; the mulligan now flows through `input.rs`'s `AwaitingInputView`, which already builds `PickMultiple` from selected hand cards — functionally correct. The prompt-text/labeling polish is **#205**.
+
+The same shape applies to **2c-iii-b** (`DrawEncounterCard` → `Confirm`): expect a `current_encounter_drawer()` accessor, a `with_mythos_draw_remaining` builder helper, `mythos_phase` returning `AwaitingInput`, the analogous server/web touchpoints, and the surge/spawn-engage re-entry rewire called out in the design above.
