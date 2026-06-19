@@ -529,25 +529,6 @@ impl Continuation {
             | Continuation::SubstitutionPrompt { .. } => None,
         }
     }
-
-    /// Whether this frame is resumed by a player
-    /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput). Every
-    /// current variant is — but Tier-B framework-resumed suspensions (added
-    /// with the keystone) will return `false`. The exhaustive `match` forces
-    /// each new variant to be classified here (#348).
-    #[must_use]
-    pub fn awaits_resolve_input(&self) -> bool {
-        match self {
-            Continuation::Resolution(_)
-            | Continuation::Choice(_)
-            | Continuation::SkillTest(_)
-            | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_)
-            | Continuation::HandSizeDiscard(_)
-            | Continuation::ActRoundEnd(_)
-            | Continuation::SubstitutionPrompt { .. } => true,
-        }
-    }
 }
 
 /// A skill test paused mid-resolution at the commit window.
