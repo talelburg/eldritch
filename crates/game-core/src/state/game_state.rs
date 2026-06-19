@@ -200,25 +200,20 @@ pub struct GameState {
     /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
     #[serde(default)]
     pub pending_cancellation: bool,
-    /// A treachery whose Revelation suspended (e.g. initiated a skill
-    /// test) and must be pushed to [`encounter_discard`](Self::encounter_discard)
-    /// once the suspending sub-resolution completes. Set by
-    /// `resolve_encounter_card` (in `engine::dispatch`) when its
-    /// Revelation loop yields `AwaitingInput`; flushed by the skill-test
-    /// driver's terminal teardown step. `None` for the common
-    /// Investigate/Fight/Evade test (no pending revelation).
-    /// TODO(#380): generalize beyond skill-test-suspended revelations —
-    /// `ChooseOne` can now suspend mid-resolution (#350), so this side
-    /// channel can fold onto the continuation stack (coordinates with #348).
-    pub pending_revelation_discard: Option<CardCode>,
+    // The former `pending_revelation_discard: Option<CardCode>` side-channel is
+    // removed (#380): a drawn treachery's disposal now rides a
+    // `Continuation::EncounterCard` frame whose framework teardown discards it
+    // once the Revelation's whole sub-resolution completes — covering a
+    // Revelation that suspends into a choice, not just a skill test.
     /// An event card mid-play: it has left hand ("commences being played",
     /// RR Appendix I step 3) but is not yet in discard. The apply loop
     /// flushes it to the owner's discard pile on `Done` (step 4: the event is
     /// placed in discard "simultaneously with the completion" of its effect),
     /// so an `OnPlay` effect that suspends — Dynamite Blast 01024's location
     /// choice — discards the event when it resumes rather than stranding it in
-    /// hand. The player-event analogue of
-    /// [`pending_revelation_discard`](Self::pending_revelation_discard). `None`
+    /// hand. The player-event analogue of the treachery disposal that #380
+    /// moved onto the [`EncounterCard`](Continuation::EncounterCard) frame
+    /// (a sibling side-channel, folded similarly in a future cycle). `None`
     /// outside an in-flight event play.
     #[serde(default)]
     pub pending_played_event: Option<(InvestigatorId, CardCode)>,

@@ -20,9 +20,9 @@ fn install() {
     });
 }
 
-/// Synthetic setup → mulligan → the sole investigator's round-ending EndTurn
+/// Synthetic setup → mulligan → the sole investigator's round-ending `EndTurn`
 /// cascades to the Mythos step-1.4 encounter-draw prompt. Seed the encounter
-/// deck (after StartScenario's shuffle) with only the choice-treachery on top.
+/// deck (after `StartScenario`'s shuffle) with only the choice-treachery on top.
 fn at_mythos_draw_with_choice_treachery() -> GameState {
     install();
     let mut state = synthetic::setup();

@@ -178,11 +178,13 @@ pub fn resolve_encounter_card(
             {
                 match apply_effect(cx, &ability.effect, eval_ctx) {
                     EngineOutcome::Done => {}
-                    // Suspended: the `EncounterCard` frame sits beneath the
+                    // Suspended → the `EncounterCard` frame sits beneath the
                     // suspension; the `resolve_input` chokepoint disposes of the
-                    // card once the sub-resolution completes.
-                    outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
-                    outcome @ EngineOutcome::Rejected { .. } => return outcome,
+                    // card once the sub-resolution completes. Rejected → the
+                    // apply loop's transactional snapshot rolls back the pushed
+                    // frame. Either way, propagate without disposing here.
+                    outcome @ (EngineOutcome::AwaitingInput { .. }
+                    | EngineOutcome::Rejected { .. }) => return outcome,
                 }
             }
             // Synchronous completion: the frame is still top — dispose now.

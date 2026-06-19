@@ -1197,10 +1197,10 @@ mod tests {
     // `crates/cards/tests/revelation_treacheries.rs::grasping_hands_*`
     // (01162), and the margin-damage math by the same test.
 
-    /// A plain (non-revelation) skill test never touches the
-    /// `pending_revelation_discard` slot — the flush is a no-op for it.
+    /// A plain (non-revelation) skill test disposes of no encounter card — the
+    /// skill-test driver no longer touches encounter disposal at all (#380).
     #[test]
-    fn plain_skill_test_leaves_pending_revelation_discard_untouched() {
+    fn plain_skill_test_disposes_of_no_encounter_card() {
         use crate::state::ChaosToken;
 
         let inv = InvestigatorId(1);
@@ -1218,10 +1218,6 @@ mod tests {
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
         assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            state.pending_revelation_discard.is_none(),
-            "plain test must not set or flush the revelation-discard slot"
-        );
         assert!(state.encounter_discard.is_empty());
     }
 
