@@ -280,7 +280,6 @@ impl GameStateBuilder {
             scenario_id: self.scenario_id,
             mythos_draw_pending: None,
             enemy_attack_pending: None,
-            hunter_move_pending: None,
             spawn_engage_pending: None,
             pending_end_turn: None,
             hand_size_discard_pending: self.hand_size_discard_pending,

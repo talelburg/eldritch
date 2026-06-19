@@ -114,8 +114,10 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     // Hunter movement is Enemy-phase only; it can't coexist with an open
     // reaction window or an in-flight skill test, so order among the guards
     // is immaterial — but a pending hunter choice still blocks other actions.
-    if cx.state.hunter_move_pending.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::HunterMove(_))
+    ) && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "a hunter-movement choice is pending; submit a PlayerAction::ResolveInput \
@@ -448,7 +450,6 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // right resume handler before the reaction-window and skill-test checks.
     debug_assert!(
         [
-            cx.state.hunter_move_pending.is_some(),
             cx.state.spawn_engage_pending.is_some(),
             cx.state.hand_size_discard_pending.is_some(),
             cx.state.act_round_end_pending.is_some(),
@@ -457,10 +458,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         .filter(|b| **b)
         .count()
             <= 1,
-        "hunter movement, spawn engagement, hand-size discard, and act round-end advance are \
+        "spawn engagement, hand-size discard, and act round-end advance are \
          mutually exclusive suspension modes (different phases)",
     );
-    if cx.state.hunter_move_pending.is_some() {
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::HunterMove(_))
+    ) {
         return hunters::resume_hunter_choice(cx, response);
     }
 

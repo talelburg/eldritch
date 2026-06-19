@@ -195,10 +195,6 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
-    /// Suspended Hunter-movement choice (#128), `Some` only while the
-    /// Enemy phase is paused on a lead-investigator tie; cleared once
-    /// resolved. See [`HunterChoice`].
-    pub hunter_move_pending: Option<HunterChoice>,
     /// Suspended engagement-on-spawn choice (#128). See [`SpawnEngagePending`].
     pub spawn_engage_pending: Option<SpawnEngagePending>,
     /// Suspended end-of-turn continuation (C4c, #235): `Some(active)` while
@@ -467,6 +463,10 @@ pub enum Continuation {
     /// re-run from the top on each resume, replaying `decisions` to reach
     /// the next un-ground choice. See [`ChoiceFrame`].
     Choice(ChoiceFrame),
+    /// A suspended Hunter-movement / engagement choice (#128), migrated off the
+    /// former `GameState::hunter_move_pending` field (#348). Resumed by
+    /// [`resume_hunter_choice`](crate::engine) via `ResolveInput`.
+    HunterMove(HunterChoice),
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -502,7 +502,9 @@ impl Continuation {
     pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_) | Continuation::Choice(_) => None,
+            Continuation::SkillTest(_) | Continuation::Choice(_) | Continuation::HunterMove(_) => {
+                None
+            }
         }
     }
 
@@ -510,7 +512,9 @@ impl Continuation {
     pub fn as_resolution_mut(&mut self) -> Option<&mut ResolutionFrame> {
         match self {
             Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_) | Continuation::Choice(_) => None,
+            Continuation::SkillTest(_) | Continuation::Choice(_) | Continuation::HunterMove(_) => {
+                None
+            }
         }
     }
 
@@ -524,7 +528,8 @@ impl Continuation {
         match self {
             Continuation::Resolution(_)
             | Continuation::Choice(_)
-            | Continuation::SkillTest(_) => true,
+            | Continuation::SkillTest(_)
+            | Continuation::HunterMove(_) => true,
         }
     }
 }
