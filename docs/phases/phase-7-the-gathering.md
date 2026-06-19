@@ -93,11 +93,13 @@ integration test. Once the Tier-1 fixes stabilize, this is the first follow-on:
 the web client (shipped Phase 6) must drive the **real** Gathering scenario.
 
 - **#205 — structured `AwaitingInput` discrimination (load-bearing, needs-design).**
-  The Gathering's cards are the first to emit non-`CommitCards` prompts
-  (`PickIndex` / `PickInvestigator` / `Confirm` / `Skip` / `DiscardCards`); the
-  client must render the right control per variant from a machine-readable
-  `InputKind`, not prompt-string heuristics. Keystone of the surface; pairs with
-  #347 (token-routed resume → stale-submit rejection).
+  The Gathering's cards are the first to emit non-commit prompts across the
+  normalized `InputResponse` set (`PickSingle` / `PickMultiple` / `Confirm` /
+  `Skip` — the §1 cleanup folded the former `PickInvestigator`/`PickLocation` and
+  `CommitCards`/`DiscardCards` into `PickSingle`/`PickMultiple`); the client must
+  render the right control per variant from machine-readable offered options, not
+  prompt-string heuristics. Keystone of the surface; pairs with #347 (token-routed
+  resume → stale-submit rejection).
 - **Investigator / scenario picker.** The seating protocol (B2 #221) + registry
   swap (C7a #244) exist engine-side; the browser picker driving `StartScenario`
   with a chosen investigator is the remaining UI.
@@ -117,14 +119,19 @@ rather than deferring wholesale:
 - **§1 continuation-stack cleanup — the full #348 + #345 + #347 + #380, as one
   designed pass. DO-FIRST, before the keystone.** Designed in
   `docs/superpowers/specs/2026-06-19-continuation-stack-cleanup-design.md`.
-  **Progress:** #345 shipped (PR #385); #347 → #348 → #380 follow as separate PRs.
+  **Progress:** #345 shipped (PR #385); #348 is landing incrementally (parts
+  2a–2c via PRs #386–#391) — the `InputResponse` channel is now normalized
+  (`CommitCards`/`DiscardCards` → `PickMultiple`, `PickLocation`/`PickInvestigator`
+  → `PickSingle`, `Mulligan` → `PickMultiple`, `DrawEncounterCard` → `Confirm`),
+  every player-facing suspension resumes through `ResolveInput`, and the bespoke
+  `mulligan_pending`/`mythos_draw_pending` cursors + `in_flight_skill_test` are
+  folded onto continuation frames. #347 and #380 follow as separate PRs.
   #348 migrates the remaining
   `pending_*` suspension modes (incl. `pending_enemy_attack`, `pending_end_turn`)
   onto the one continuation stack and collapses the
   fragile `if pending_X.is_some()` `resolve_input` cascade **and** the parallel
-  `apply_player_action` guard ladder into top-frame dispatch (folding
-  `Mulligan`/`DrawEncounterCard` into `ResolveInput` and `in_flight_skill_test`
-  onto its frame; `clue_interrupt_pending` is already a window); #345 makes
+  `apply_player_action` guard ladder into top-frame dispatch
+  (`clue_interrupt_pending` is already a window); #345 makes
   `EvalContext` serializable with **grouped optional bindings** snapshotted
   per-frame (the Vec / per-frame-enum / global-stack alternatives were evaluated
   and rejected — spec §D; innermost-only is corpus-moot, no TODO) so migrated

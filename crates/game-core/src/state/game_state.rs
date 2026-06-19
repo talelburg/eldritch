@@ -153,16 +153,14 @@ pub struct GameState {
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.
     pub scenario_id: Option<crate::scenario::ScenarioId>,
-    /// The investigator whose Mythos-phase encounter draw is pending,
-    /// during Rules-Reference p.24 step 1.4. `Some(id)` between
-    /// `mythos_phase` entry and the last drawer's completion; `None`
-    /// otherwise. Advanced after each `PlayerAction::DrawEncounterCard`
-    /// completes its chain (including any surge re-draws). `None`
-    /// once all investigators have drawn — at which point the
-    /// `MythosAfterDraws` window opens.
-    pub mythos_draw_pending: Option<InvestigatorId>,
+    // The Mythos step-1.4 encounter-draw loop now lives on its
+    // `Continuation::EncounterDraw` frame (#348); read the prompted drawer via
+    // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
+    // Option<InvestigatorId>` cursor is removed — the continuation stack is the
+    // single source of truth (mirroring the `mulligan_pending` fold).
     /// The next investigator due to resolve engaged-enemy attacks
-    /// during Enemy phase step 3.3. Mirror of [`mythos_draw_pending`]:
+    /// during Enemy phase step 3.3. Player-order cursor (the analog of the
+    /// former Mythos `mythos_draw_pending`, now folded onto a frame):
     ///
     /// - Set to the first [`Status::Active`] investigator in
     ///   [`turn_order`] when `enemy_phase` runs step 3.3's loop
@@ -174,10 +172,9 @@ pub struct GameState {
     /// - Stays `None` during all phases other than Enemy.
     ///
     /// Eliminated investigators ([`Status::Killed`] / [`Status::Insane`]
-    /// / [`Status::Resigned`]) are skipped during advance, mirroring
-    /// the `mythos_draw_pending` semantics established in #69.
+    /// / [`Status::Resigned`]) are skipped during advance (the
+    /// player-order-cursor semantics established in #69).
     ///
-    /// [`mythos_draw_pending`]: GameState::mythos_draw_pending
     /// [`turn_order`]: GameState::turn_order
     /// [`Status::Active`]: crate::state::Status::Active
     /// [`Status::Killed`]: crate::state::Status::Killed
@@ -474,6 +471,22 @@ pub enum Continuation {
         /// currently prompted.
         remaining: Vec<InvestigatorId>,
     },
+    /// The Mythos step-1.4 encounter-draw loop (Rules Reference p.24), migrated
+    /// off the former `GameState::mythos_draw_pending` cursor field (#348).
+    /// `remaining[0]` is the investigator currently prompted to draw; the queue
+    /// is the Active investigators in [`turn_order`](GameState::turn_order).
+    /// Pushed by `mythos_phase`, advanced by `resume_encounter_draw` as each
+    /// investigator confirms (running their full surge chain), popped when
+    /// drained — at which point the post-1.4 `MythosAfterDraws` window opens.
+    /// A mid-chain spawn-engagement tie pushes a
+    /// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. While
+    /// present, the engine rejects every non-`ResolveInput` action. Read the
+    /// prompted drawer via [`GameState::current_encounter_drawer`].
+    EncounterDraw {
+        /// Active investigators yet to draw, in player order; front =
+        /// currently prompted.
+        remaining: Vec<InvestigatorId>,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -516,7 +529,8 @@ impl Continuation {
             | Continuation::HandSizeDiscard(_)
             | Continuation::ActRoundEnd(_)
             | Continuation::SubstitutionPrompt { .. }
-            | Continuation::Mulligan { .. } => None,
+            | Continuation::Mulligan { .. }
+            | Continuation::EncounterDraw { .. } => None,
         }
     }
 
@@ -531,7 +545,8 @@ impl Continuation {
             | Continuation::HandSizeDiscard(_)
             | Continuation::ActRoundEnd(_)
             | Continuation::SubstitutionPrompt { .. }
-            | Continuation::Mulligan { .. } => None,
+            | Continuation::Mulligan { .. }
+            | Continuation::EncounterDraw { .. } => None,
         }
     }
 }
@@ -1061,7 +1076,8 @@ pub enum PhaseStep {
     /// the "previous player window" investigators "return to" between
     /// resolutions). The investigator to be attacked next is carried
     /// on [`GameState::enemy_attack_pending`], not in the variant —
-    /// mirror of [`MythosAfterDraws`] + [`GameState::mythos_draw_pending`].
+    /// mirror of [`MythosAfterDraws`] (the encounter-draw loop's analog now
+    /// lives on the [`EncounterDraw`](Continuation::EncounterDraw) frame).
     ///
     /// Continuation (in `run_window_continuation`): read the cursor,
     /// resolve the pending investigator's engaged ready enemies in
@@ -1357,6 +1373,22 @@ impl GameState {
             Some(Continuation::Mulligan { remaining }) => remaining.first().copied(),
             _ => None,
         }
+    }
+
+    /// The investigator currently prompted to draw their Mythos step-1.4
+    /// encounter card, if an encounter-draw loop is in progress; `None`
+    /// otherwise. Reads the topmost [`Continuation::EncounterDraw`] frame's
+    /// `remaining[0]` — the continuation stack is the single source of truth
+    /// for "an encounter draw is pending" (#348, replacing the former
+    /// `mythos_draw_pending` cursor). Topmost (not `.last()`) because a
+    /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) frame can sit above
+    /// the draw frame while a spawn-engagement tie is resolved.
+    #[must_use]
+    pub fn current_encounter_drawer(&self) -> Option<InvestigatorId> {
+        self.continuations.iter().rev().find_map(|c| match c {
+            Continuation::EncounterDraw { remaining } => remaining.first().copied(),
+            _ => None,
+        })
     }
 
     /// Whether a skill test is currently in flight.
@@ -1702,13 +1734,13 @@ mod id_counter_tests {
 }
 
 #[cfg(test)]
-mod mythos_draw_pending_tests {
+mod encounter_draw_tests {
     use crate::test_support::GameStateBuilder;
 
     #[test]
-    fn game_state_default_has_no_mythos_draw_pending() {
+    fn game_state_default_has_no_encounter_draw_pending() {
         let state = GameStateBuilder::new().build();
-        assert_eq!(state.mythos_draw_pending, None);
+        assert_eq!(state.current_encounter_drawer(), None);
     }
 }
 

@@ -55,6 +55,7 @@ pub struct GameStateBuilder {
     turn_order: Vec<InvestigatorId>,
     rng: RngState,
     mulligan_remaining: Option<Vec<InvestigatorId>>,
+    mythos_draw_remaining: Option<Vec<InvestigatorId>>,
     hand_size_discard_pending: Option<HandSizeDiscard>,
     open_windows: Vec<ResolutionFrame>,
     scenario_id: Option<ScenarioId>,
@@ -78,6 +79,7 @@ impl GameStateBuilder {
             turn_order: Vec::new(),
             rng: RngState::new(0),
             mulligan_remaining: None,
+            mythos_draw_remaining: None,
             hand_size_discard_pending: None,
             open_windows: Vec::new(),
             scenario_id: None,
@@ -218,6 +220,22 @@ impl GameStateBuilder {
         self
     }
 
+    /// Stage a pending Mythos step-1.4 encounter draw over the given
+    /// player-order queue (front = currently prompted). By default none is
+    /// staged; opt in when a test wants to resume the encounter-draw loop
+    /// directly via `ResolveInput(Confirm)` without driving the full Mythos
+    /// cascade. The queue must list the investigators in `turn_order` (set via
+    /// [`with_turn_order`](Self::with_turn_order)) so the loop advances
+    /// correctly. Stages a [`Continuation::EncounterDraw`] frame at
+    /// [`build`](Self::build).
+    pub fn with_mythos_draw_remaining(
+        mut self,
+        remaining: impl IntoIterator<Item = InvestigatorId>,
+    ) -> Self {
+        self.mythos_draw_remaining = Some(remaining.into_iter().collect());
+        self
+    }
+
     /// Seed a pending upkeep hand-size discard for the given player-order
     /// queue (front = currently prompted).
     pub fn with_hand_size_discard_pending(
@@ -273,6 +291,11 @@ impl GameStateBuilder {
         if let Some(remaining) = self.mulligan_remaining {
             continuations.push(Continuation::Mulligan { remaining });
         }
+        // A staged Mythos encounter draw becomes an `EncounterDraw` frame
+        // (#348). Disjoint from setup/upkeep, so push order is immaterial.
+        if let Some(remaining) = self.mythos_draw_remaining {
+            continuations.push(Continuation::EncounterDraw { remaining });
+        }
         GameState {
             investigators: self.investigators,
             locations: self.locations,
@@ -293,7 +316,6 @@ impl GameStateBuilder {
             pending_skill_modifiers: Vec::new(),
             continuations,
             scenario_id: self.scenario_id,
-            mythos_draw_pending: None,
             enemy_attack_pending: None,
             pending_end_turn: None,
             pending_enemy_attack: None,

@@ -84,7 +84,9 @@ fn resolve_confirm_routes_to_resume_and_advances() {
             response: InputResponse::Confirm,
         }),
     );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    // Confirming the round-end window continues the upkeep cascade into Mythos,
+    // which pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.act_index, 1, "advanced act 2 -> act 3");
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].clues,

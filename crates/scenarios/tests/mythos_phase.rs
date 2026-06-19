@@ -95,9 +95,14 @@ fn mythos_phase_resolves_single_treachery() {
 
     let state = setup_at_mythos_draw(base);
     assert_eq!(state.phase, Phase::Mythos, "must be in Mythos before draw");
-    assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+    assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
-    let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     // Mythos → Investigation transition completes inline (MythosAfterDraws
@@ -116,7 +121,8 @@ fn mythos_phase_resolves_single_treachery() {
         "treachery must be in discard after Revelation resolves",
     );
     assert_eq!(
-        result.state.mythos_draw_pending, None,
+        result.state.current_encounter_drawer(),
+        None,
         "cursor must be cleared once all investigators have drawn",
     );
     assert_eq!(
@@ -157,7 +163,12 @@ fn mythos_phase_surge_chains_into_next_card() {
         ],
     );
 
-    let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert!(
@@ -200,7 +211,12 @@ fn mythos_phase_resolves_single_spawn_enemy() {
     let state = setup_at_mythos_draw(base);
     assert_eq!(state.phase, Phase::Mythos);
 
-    let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
@@ -231,6 +247,7 @@ fn mythos_phase_resolves_single_spawn_enemy() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // end-to-end multi-investigator spawn-suspend walkthrough
 fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // Two investigators co-located at the synth spawn location: the
     // drawn enemy ties under Prey::Default, so the draw suspends for the
@@ -267,7 +284,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         ],
     );
     assert_eq!(state.phase, Phase::Mythos);
-    assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+    assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
     // Seed the controlled draw order *after* StartScenario's shuffle:
     // inv1 draws the enemy; inv2 draws a plain treachery afterward.
@@ -280,7 +297,12 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     );
 
     // Draw → spawn tie → suspend.
-    let suspended = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let suspended = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
     assert!(
         matches!(suspended.outcome, EngineOutcome::AwaitingInput { .. }),
         "spawn tie must suspend, got {:?}",
@@ -298,7 +320,10 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         .expect("enemy placed");
     assert_eq!(enemy.engaged_with, None, "engagement deferred");
     // The cursor is unchanged — still mid-chain for inv1.
-    assert_eq!(suspended.state.mythos_draw_pending, Some(InvestigatorId(1)));
+    assert_eq!(
+        suspended.state.current_encounter_drawer(),
+        Some(InvestigatorId(1))
+    );
 
     // Lead picks inv2 (by its offered option id) → engage + resume the chain.
     // The enemy is non-surge, so no further card draws; the chain advances to inv2.
@@ -319,7 +344,12 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
             response: InputResponse::PickSingle(pick),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    // Picking engages inv2 and re-enters inv1's chain, which completes; the
+    // loop then drains inv1 and re-prompts inv2 (AwaitingInput).
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(!matches!(
         resumed.state.continuations.last(),
         Some(game_core::state::Continuation::SpawnEngage(_))
@@ -337,7 +367,10 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     );
     // Chain resumed and advanced to inv2; still in Mythos.
     assert_eq!(resumed.state.phase, Phase::Mythos);
-    assert_eq!(resumed.state.mythos_draw_pending, Some(InvestigatorId(2)));
+    assert_eq!(
+        resumed.state.current_encounter_drawer(),
+        Some(InvestigatorId(2))
+    );
     assert_event!(
         resumed.events,
         Event::EnemyEngaged { investigator, .. }
@@ -391,22 +424,36 @@ fn mythos_phase_multi_investigator_player_order() {
     );
 
     assert_eq!(state.phase, Phase::Mythos);
-    assert_eq!(state.mythos_draw_pending, Some(inv1), "inv1 draws first");
+    assert_eq!(
+        state.current_encounter_drawer(),
+        Some(inv1),
+        "inv1 draws first"
+    );
 
-    // inv1 draws their card.
-    let result1 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
-    assert_eq!(result1.outcome, EngineOutcome::Done);
+    // inv1 draws their card → the loop re-prompts inv2 (AwaitingInput).
+    let result1 = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
+    assert!(matches!(
+        result1.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // Still in Mythos; inv2 must draw next.
     assert_eq!(result1.state.phase, Phase::Mythos);
-    assert_eq!(result1.state.mythos_draw_pending, Some(inv2));
+    assert_eq!(result1.state.current_encounter_drawer(), Some(inv2));
 
     // inv2 draws their card → completes the phase.
     let result2 = apply(
         result1.state,
-        Action::Player(PlayerAction::DrawEncounterCard),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
     );
     assert_eq!(result2.outcome, EngineOutcome::Done);
-    assert_eq!(result2.state.mythos_draw_pending, None);
+    assert_eq!(result2.state.current_encounter_drawer(), None);
     assert_eq!(result2.state.phase, Phase::Investigation);
     assert!(result2.state.encounter_deck.is_empty());
     assert_eq!(result2.state.encounter_discard.len(), 2);
@@ -427,7 +474,12 @@ fn mythos_phase_full_round_chain() {
     assert_eq!(state.round, 2);
     assert_eq!(state.phase, Phase::Mythos);
 
-    let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
@@ -492,7 +544,11 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     );
 
     assert_eq!(state.phase, Phase::Mythos);
-    assert_eq!(state.mythos_draw_pending, Some(inv1), "inv1 draws first");
+    assert_eq!(
+        state.current_encounter_drawer(),
+        Some(inv1),
+        "inv1 draws first"
+    );
 
     // Seed the controlled draw order *after* StartScenario's shuffle:
     // surge on top, then two plain treacheries.
@@ -505,14 +561,23 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
         ],
     );
 
-    // inv1 draws: surge chain pulls TWO cards (surge + plain treachery).
-    let result1 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
-    assert_eq!(result1.outcome, EngineOutcome::Done);
+    // inv1 draws: surge chain pulls TWO cards (surge + plain treachery), then
+    // the loop re-prompts inv2 (AwaitingInput).
+    let result1 = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
+    assert!(matches!(
+        result1.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // The surge chain resolves within inv1's single apply; still Mythos
     // because inv2 still needs to draw.
     assert_eq!(result1.state.phase, Phase::Mythos);
     assert_eq!(
-        result1.state.mythos_draw_pending,
+        result1.state.current_encounter_drawer(),
         Some(inv2),
         "cursor advances to inv2 after inv1's chain completes"
     );
@@ -543,11 +608,13 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     // inv2 draws: one plain treachery, no surge.
     let result2 = apply(
         result1.state,
-        Action::Player(PlayerAction::DrawEncounterCard),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
     );
     assert_eq!(result2.outcome, EngineOutcome::Done);
     assert_eq!(result2.state.phase, Phase::Investigation);
-    assert_eq!(result2.state.mythos_draw_pending, None);
+    assert_eq!(result2.state.current_encounter_drawer(), None);
     assert!(result2.state.encounter_deck.is_empty());
     assert_eq!(
         result2.state.encounter_discard.len(),
@@ -576,9 +643,14 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
 
     let state = setup_at_mythos_draw(base);
     assert_eq!(state.phase, Phase::Mythos);
-    assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+    assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
-    let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
 
     match result.outcome {
         EngineOutcome::Rejected { reason } => {
@@ -597,7 +669,7 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
         "phase must not change on Rejected",
     );
     assert_eq!(
-        result.state.mythos_draw_pending,
+        result.state.current_encounter_drawer(),
         Some(InvestigatorId(1)),
         "cursor must be preserved on initial Rejected (validate-first)",
     );
@@ -640,9 +712,14 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
         .push(CardCode(SYNTH_FAST_EVENT_CODE.into()));
 
     assert_eq!(state.phase, Phase::Mythos);
-    assert_eq!(state.mythos_draw_pending, Some(InvestigatorId(1)));
+    assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
-    let result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
 
     // DrawEncounterCard should complete normally (Done) — the window
     // opens but doesn't block the draw action's completion.
@@ -720,7 +797,12 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
         .push(CardCode(SYNTH_FAST_EVENT_CODE.into()));
 
     // Advance through the draw to land in the open-window state.
-    let draw_result = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
+    let draw_result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    );
     assert_eq!(draw_result.outcome, EngineOutcome::Done);
     assert!(
         !draw_result.state.open_windows().is_empty(),

@@ -172,6 +172,22 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         };
     }
 
+    // While the Mythos step-1.4 encounter-draw loop is in progress (an
+    // `EncounterDraw` frame is on top of the stack), only `ResolveInput` can
+    // advance the engine. Mythos-phase only; never coexists with the other
+    // suspension modes, so guard order is immaterial.
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::EncounterDraw { .. })
+    ) && !matches!(action, PlayerAction::ResolveInput { .. })
+    {
+        return EngineOutcome::Rejected {
+            reason: "a Mythos encounter draw is pending; submit a PlayerAction::ResolveInput \
+                     with InputResponse::Confirm in player order before any other action"
+                .into(),
+        };
+    }
+
     let outcome = match action {
         PlayerAction::StartScenario { roster } => phases::start_scenario(cx, roster),
         PlayerAction::EndTurn => phases::end_turn(cx),
@@ -208,14 +224,6 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             instance_id,
             ability_index,
         } => abilities::activate_ability(cx, *investigator, *instance_id, *ability_index),
-        PlayerAction::DrawEncounterCard => match cx.state.mythos_draw_pending {
-            // DrawEncounterCard carries no investigator payload — the
-            // acting investigator IS the pending cursor.
-            Some(actor) => encounter::draw_encounter_card(cx, actor),
-            None => EngineOutcome::Rejected {
-                reason: "DrawEncounterCard: no draw pending (all investigators have drawn)".into(),
-            },
-        },
         PlayerAction::ResolveInput { response } => resolve_input(cx, response),
         PlayerAction::AdvanceAct { investigator } => {
             act_agenda::advance_act_action(cx, *investigator)
@@ -414,6 +422,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::HandSizeDiscard(_)) => phases::resume_hand_size_discard(cx, response),
         Some(Continuation::ActRoundEnd(_)) => phases::resume_act_round_end_advance(cx, response),
         Some(Continuation::Mulligan { .. }) => cards::resume_mulligan(cx, response),
+        Some(Continuation::EncounterDraw { .. }) => encounter::resume_encounter_draw(cx, response),
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
         None => EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),

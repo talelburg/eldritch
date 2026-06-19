@@ -7,7 +7,9 @@
 use futures::channel::mpsc;
 use game_core::state::GameStateBuilder;
 use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
+use game_core::test_support::fixtures::{
+    awaiting_commit_input, test_enemy, test_investigator, test_location,
+};
 use game_core::{EngineOutcome, PlayerAction};
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
@@ -129,58 +131,33 @@ async fn advance_act_submits_advance_act_for_active() {
     }
 }
 
-#[wasm_bindgen_test]
-async fn draw_encounter_submits_draw_encounter_card() {
-    // Mythos phase with this investigator on the draw cursor: only
-    // DrawEncounter is legal. `mythos_draw_pending` has no builder setter,
-    // so mutate the built state directly (legality.rs tests do the same).
-    let mut game = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
-        .with_active_investigator(InvestigatorId(1))
-        .with_phase(Phase::Mythos)
-        .with_round(1)
-        .build();
-    game.mythos_draw_pending = Some(InvestigatorId(1));
-
-    let mut rx = mount(game, EngineOutcome::Done).await;
-    click_in(&last_controls(), ".draw-encounter");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::DrawEncounterCard => {}
-        other => panic!("expected DrawEncounterCard, got {other:?}"),
-    }
-}
+// The former `draw_encounter_submits_draw_encounter_card` test is gone (#348
+// part 2c-iii-b): the dedicated Draw-encounter button was removed. The Mythos
+// step-1.4 draw is now an `AwaitingInput(Confirm)` that flows through the
+// `ResolveInput` prompt UI (Confirm/Skip rendering deferred to #205), not a
+// core-loop control.
 
 #[wasm_bindgen_test]
 async fn illegal_controls_are_disabled_and_do_not_submit() {
-    // Mythos + draw cursor: only DrawEncounter is legal, so End turn is
-    // disabled and DrawEncounter is not.
-    let mut game = GameStateBuilder::new()
+    // During an `AwaitingInput` pause, every core-loop control is disabled
+    // (`enabled_controls` returns empty). A disabled button must not submit a
+    // frame when clicked.
+    let game = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
-        .with_phase(Phase::Mythos)
+        .with_phase(Phase::Investigation)
         .with_round(1)
         .build();
-    game.mythos_draw_pending = Some(InvestigatorId(1));
 
-    let mut rx = mount(game, EngineOutcome::Done).await;
+    let mut rx = mount(game, awaiting_commit_input("commit")).await;
     let controls = last_controls();
     let end_turn = controls
         .query_selector(".end-turn")
         .expect("query")
         .expect("end-turn present");
-    let draw = controls
-        .query_selector(".draw-encounter")
-        .expect("query")
-        .expect("draw-encounter present");
     assert!(
         end_turn.has_attribute("disabled"),
-        "End turn should be disabled"
-    );
-    assert!(
-        !draw.has_attribute("disabled"),
-        "Draw encounter should be enabled"
+        "End turn should be disabled during an AwaitingInput pause"
     );
 
     // A disabled button does not fire click → no frame.
@@ -389,7 +366,9 @@ async fn resolved_scenario_disables_all_controls() {
 
     let _rx = mount(game, EngineOutcome::Done).await;
     let controls = last_controls();
-    for selector in [".start-scenario", ".end-turn", ".draw-encounter"] {
+    // `.draw-encounter` is gone (#348 2c-iii-b); `.draw` is a representative
+    // remaining core-loop button.
+    for selector in [".start-scenario", ".end-turn", ".draw"] {
         let btn = controls
             .query_selector(selector)
             .expect("query")

@@ -1197,19 +1197,23 @@ mod tests {
         assert_no_event!(result.events, Event::ScenarioStarted);
 
         // Second EndTurn (inv2, last in turn_order): auto-advances through
-        // Investigation → Enemy → Upkeep → Mythos and then PAUSES because
-        // mythos_draw_pending is now Some(inv1). The phase chain does NOT
-        // continue to Investigation — that waits for DrawEncounterCard.
+        // Investigation → Enemy → Upkeep → Mythos and then PAUSES at the
+        // step-1.4 encounter-draw prompt for inv1. The phase chain does NOT
+        // continue to Investigation — that waits for the ResolveInput(Confirm)s.
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        assert!(
+            matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+            "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
+            result.outcome
+        );
         let state = result.state;
         assert_eq!(state.round, 2, "round bumps on Mythos entry");
         assert_eq!(state.phase, Phase::Mythos);
         assert_eq!(
-            state.mythos_draw_pending,
+            state.current_encounter_drawer(),
             Some(inv1),
             "lead investigator (inv1) draws first"
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
 
         // Exactly 3 PhaseEnded events fire (Investigation, Enemy, Upkeep).
         // PhaseEnded(Mythos) does NOT fire here — mythos_phase_end owns it
@@ -1244,9 +1248,9 @@ mod tests {
         // Degenerate edge: with only one investigator in turn_order,
         // their single EndTurn is also the *last* EndTurn of the round.
         // It must auto-advance Investigation → Enemy → Upkeep → Mythos,
-        // bump the round, seed mythos_draw_pending = Some(id), and then
+        // bump the round, prompt the encounter draw for id, and then
         // PAUSE. It does NOT complete the full cycle — that requires the
-        // subsequent DrawEncounterCard action (needs registry, covered by
+        // subsequent ResolveInput(Confirm) (needs registry, covered by
         // crates/scenarios/tests/mythos_phase.rs).
         let id = InvestigatorId(1);
         let state = GameStateBuilder::new()
@@ -1277,11 +1281,15 @@ mod tests {
         .state;
 
         let result = apply(after_mulligan, Action::Player(PlayerAction::EndTurn));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(
+            matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+            "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
+            result.outcome
+        );
         assert_eq!(result.state.round, 2, "round bumps on Mythos entry");
         assert_eq!(result.state.phase, Phase::Mythos);
         assert_eq!(
-            result.state.mythos_draw_pending,
+            result.state.current_encounter_drawer(),
             Some(id),
             "sole investigator is the pending drawer"
         );
@@ -4763,7 +4771,13 @@ mod tests {
             Action::Player(PlayerAction::EndTurn),
             Some(&reg),
         );
-        assert_eq!(second.outcome, EngineOutcome::Done);
+        // The round-ending EndTurn cascades into Mythos and pauses at the
+        // encounter-draw prompt (AwaitingInput); the point of this test is that
+        // the already-latched resolution does NOT re-fire on this later apply.
+        assert!(matches!(
+            second.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_no_event!(second.events, Event::ScenarioResolved { .. });
     }
 

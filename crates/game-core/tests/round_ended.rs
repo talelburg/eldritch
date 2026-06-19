@@ -169,7 +169,9 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(done.outcome, EngineOutcome::Done);
+    // The upkeep tail runs through to Mythos, which pauses at the step-1.4
+    // encounter-draw prompt (AwaitingInput) after placing its +1 doom.
+    assert!(matches!(done.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         done.state.agenda_doom, 6,
         "agenda round-end forced resolved (native set 5), then Mythos entry \

@@ -115,7 +115,9 @@ fn won_walk_full_cycle_replays_identically() {
         Action::Player(PlayerAction::Investigate { investigator: inv }),
         commit_nothing.clone(), // commit window for investigate 3
         Action::Player(PlayerAction::EndTurn),
-        Action::Player(PlayerAction::DrawEncounterCard),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
         Action::Player(PlayerAction::Investigate { investigator: inv }),
         commit_nothing.clone(), // commit window for investigate 4
         Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
@@ -190,8 +192,10 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
         if state.resolution.is_some() {
             break;
         }
-        if state.mythos_draw_pending.is_some() {
-            let act = Action::Player(PlayerAction::DrawEncounterCard);
+        if state.current_encounter_drawer().is_some() {
+            let act = Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Confirm,
+            });
             let (next, ev) = apply_checked(state, &act);
             log.push(act);
             state = next;
