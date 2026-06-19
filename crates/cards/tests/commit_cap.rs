@@ -7,7 +7,7 @@
 
 use std::sync::Once;
 
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
@@ -50,7 +50,9 @@ fn perform_test() -> Action {
 
 fn commit(indices: Vec<u32>) -> Action {
     Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::CommitCards { indices },
+        response: InputResponse::PickMultiple {
+            selected: indices.into_iter().map(OptionId).collect(),
+        },
     })
 }
 

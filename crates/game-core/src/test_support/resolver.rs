@@ -18,12 +18,12 @@
 //!
 //! The first (and currently only) `AwaitingInput` site is the skill-
 //! test commit window (#63). When the engine prompts, the active
-//! investigator must reply with [`InputResponse::CommitCards`].
-//! [`ScriptedResolver::commit_cards`] is the ergonomic helper: tests
-//! pass card codes, the resolver translates them to hand indices using
-//! [`GameState`] at resolve time.
+//! investigator must reply with [`InputResponse::PickMultiple`] (each
+//! `OptionId` a hand index). [`ScriptedResolver::commit_cards`] is the
+//! ergonomic helper: tests pass card codes, the resolver translates them to
+//! hand indices using [`GameState`] at resolve time.
 //!
-//! [`InputResponse::CommitCards`]: crate::action::InputResponse::CommitCards
+//! [`InputResponse::PickMultiple`]: crate::action::InputResponse::PickMultiple
 //!
 //! # Example
 //!
@@ -68,7 +68,7 @@ pub trait ChoiceResolver {
 /// Replayable [`ChoiceResolver`] backed by a FIFO of pre-recorded steps.
 ///
 /// Build the script with the fluent helpers ([`confirm`](Self::confirm),
-/// [`skip`](Self::skip), [`pick`](Self::pick),
+/// [`skip`](Self::skip), [`pick_single`](Self::pick_single),
 /// [`pick_investigator`](Self::pick_investigator),
 /// [`pick_location`](Self::pick_location),
 /// [`commit_cards`](Self::commit_cards)). When the engine prompts and the
@@ -111,11 +111,6 @@ impl ScriptedResolver {
     /// Respond with [`InputResponse::Skip`].
     pub fn skip(&mut self) -> &mut Self {
         self.push(InputResponse::Skip)
-    }
-
-    /// Respond with [`InputResponse::PickIndex`].
-    pub fn pick(&mut self, index: u32) -> &mut Self {
-        self.push(InputResponse::PickIndex(index))
     }
 
     /// Respond with [`InputResponse::PickSingle`] (the Axis-A choice contract).
@@ -167,8 +162,11 @@ impl ChoiceResolver for ScriptedResolver {
         });
         match step {
             ScriptedStep::Response(r) => r,
-            ScriptedStep::CommitCards(codes) => InputResponse::CommitCards {
-                indices: resolve_commit_codes(&codes, state, &request.prompt),
+            ScriptedStep::CommitCards(codes) => InputResponse::PickMultiple {
+                selected: resolve_commit_codes(&codes, state, &request.prompt)
+                    .into_iter()
+                    .map(crate::engine::OptionId)
+                    .collect(),
             },
         }
     }
@@ -408,7 +406,7 @@ impl TestSession {
 mod tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine::{InputRequest, ResumeToken};
+    use crate::engine::{InputRequest, OptionId, ResumeToken};
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
 
@@ -425,16 +423,14 @@ mod tests {
         let mut r = ScriptedResolver::new();
         r.confirm()
             .skip()
-            .pick(7)
             .pick_investigator(InvestigatorId(2))
             .pick_location(LocationId(99));
-        assert_eq!(r.remaining(), 5);
+        assert_eq!(r.remaining(), 4);
 
         let state = empty_state();
         let p = req("pick");
         assert_eq!(r.next(&p, &state), InputResponse::Confirm);
         assert_eq!(r.next(&p, &state), InputResponse::Skip);
-        assert_eq!(r.next(&p, &state), InputResponse::PickIndex(7));
         assert_eq!(
             r.next(&p, &state),
             InputResponse::PickInvestigator(InvestigatorId(2))
@@ -491,7 +487,7 @@ mod tests {
         // with the engine's "empty commits is the no-op" semantics.
         let state = empty_state();
         let response = r.next(&req("commit"), &state);
-        assert_eq!(response, InputResponse::CommitCards { indices: vec![] });
+        assert_eq!(response, InputResponse::PickMultiple { selected: vec![] });
     }
 
     #[test]
@@ -502,8 +498,8 @@ mod tests {
         let response = r.next(&req("commit"), &state);
         assert_eq!(
             response,
-            InputResponse::CommitCards {
-                indices: vec![0, 1],
+            InputResponse::PickMultiple {
+                selected: vec![OptionId(0), OptionId(1)]
             }
         );
     }
@@ -516,8 +512,8 @@ mod tests {
         let response = r.next(&req("commit"), &state);
         assert_eq!(
             response,
-            InputResponse::CommitCards {
-                indices: vec![1, 3],
+            InputResponse::PickMultiple {
+                selected: vec![OptionId(1), OptionId(3)]
             }
         );
     }

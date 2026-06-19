@@ -12,7 +12,7 @@
 
 use std::sync::Once;
 
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
@@ -86,7 +86,9 @@ fn perform_and_commit_guts(state: GameState) -> game_core::engine::ApplyResult {
     game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![0] },
+            response: InputResponse::PickMultiple {
+                selected: vec![OptionId(0)],
+            },
         }),
     )
 }

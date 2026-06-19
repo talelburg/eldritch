@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::dsl::{boost_attack_damage, on_commit, Ability};
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, Phase, TokenModifiers,
@@ -126,7 +126,9 @@ fn committing_vicious_blow_adds_one_attack_damage() {
     let result = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![0] },
+            response: InputResponse::PickMultiple {
+                selected: vec![OptionId(0)],
+            },
         }),
     );
 
@@ -146,7 +148,7 @@ fn fight_without_commit_deals_base_damage() {
     let result = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![] },
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
 

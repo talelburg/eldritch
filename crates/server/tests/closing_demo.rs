@@ -105,7 +105,7 @@ async fn phase_5_closing_demo() {
     send(
         &mut actor,
         &submit(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![] },
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     )
     .await;

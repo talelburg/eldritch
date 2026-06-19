@@ -174,7 +174,8 @@ fn open_commit_window(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(format!(
             "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
-             (difficulty {difficulty}). Empty indices commits no cards.",
+             (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
+             hand indices as option ids. Empty selection commits no cards.",
         )),
         resume_token: ResumeToken(0),
     }
@@ -248,13 +249,13 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // later mutation paths can re-borrow state freely.
     let Some(in_flight) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
-            reason: "ResolveInput::CommitCards: no in-flight skill test to resume".into(),
+            reason: "skill-test commit: no in-flight skill test to resume".into(),
         };
     };
     if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput::CommitCards: commit window already closed (continuation {:?}); \
+                "skill-test commit: commit window already closed (continuation {:?}); \
                  the engine is mid-resolution, not at the commit step",
                 in_flight.continuation,
             )
@@ -508,13 +509,15 @@ fn validate_commit_indices(
     for &i in indices {
         if !seen.insert(i) {
             return Err(EngineOutcome::Rejected {
-                reason: format!("CommitCards: duplicate hand index {i}").into(),
+                reason: format!("skill-test commit: duplicate hand index {i}").into(),
             });
         }
         if (i as usize) >= hand_len {
             return Err(EngineOutcome::Rejected {
-                reason: format!("CommitCards: hand index {i} out of bounds (hand size {hand_len})")
-                    .into(),
+                reason: format!(
+                    "skill-test commit: hand index {i} out of bounds (hand size {hand_len})"
+                )
+                .into(),
             });
         }
         indices_u8.push(
@@ -542,7 +545,7 @@ fn validate_commit_indices(
                 if count > limit {
                     return Err(EngineOutcome::Rejected {
                         reason: format!(
-                            "CommitCards: {code} allows at most {limit} committed per skill \
+                            "skill-test commit: {code} allows at most {limit} committed per skill \
                              test, but {count} were committed"
                         )
                         .into(),

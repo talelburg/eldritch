@@ -44,7 +44,7 @@ fn apply_checked(state: GameState, action: &Action) -> (GameState, Vec<Event>) {
 }
 
 /// Apply `actions` in order from `initial`, concatenating all emitted
-/// events. The log includes explicit `ResolveInput { CommitCards }` steps
+/// events. The log includes explicit `ResolveInput { PickMultiple }` steps
 /// for each skill-test commit window. Each action is run through
 /// [`apply_checked`], so a `Rejected` step fails loudly.
 fn drive(mut state: GameState, actions: &[Action]) -> (GameState, Vec<Event>) {
@@ -96,12 +96,12 @@ fn won_walk_full_cycle_replays_identically() {
     let make_initial = scenarios::test_fixtures::synthetic::setup;
 
     // Round 1 (Mythos skipped): Investigate x3 (each followed by a
-    // CommitCards round-trip for the skill-test commit window) ->
+    // PickMultiple round-trip for the skill-test commit window) ->
     // EndTurn cascades through Enemy/Upkeep -> pauses at round-2 Mythos
     // 1.4 -> DrawEncounterCard finishes Mythos -> round 2 Investigate
     // (4th clue, +commit) -> AdvanceAct x2 (act 0 -> 1 -> Won).
     let commit_nothing = Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::CommitCards { indices: vec![] },
+        response: InputResponse::PickMultiple { selected: vec![] },
     });
     let log = vec![
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),

@@ -110,7 +110,7 @@ async fn resolve_input_resumes_and_completes() {
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
-                response: InputResponse::CommitCards { indices: vec![] },
+                response: InputResponse::PickMultiple { selected: vec![] },
             },
         },
     )

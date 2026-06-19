@@ -674,8 +674,8 @@ pub struct InFlightSkillTest {
 ///   skill-test start. No resume; the next dispatch step is the
 ///   commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
-///   with a [`CommitCards`](crate::action::InputResponse::CommitCards)
-///   response.
+///   with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
+///   response (each `OptionId` a hand index).
 /// - [`PostFollowUp`](Self::PostFollowUp) — set by the commit-stage
 ///   entry once steps 1–2 have run. The next driver iteration runs
 ///   step 3.

@@ -53,7 +53,7 @@ fn board() -> GameState {
 
 fn commit_nothing() -> Action {
     Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::CommitCards { indices: vec![] },
+        response: InputResponse::PickMultiple { selected: vec![] },
     })
 }
 

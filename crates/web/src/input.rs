@@ -1,13 +1,13 @@
 //! `AwaitingInput` resolution UI (P6.6, wasm-only). Renders the engine's
 //! pending prompt and a control to resolve it. Phase-6 scope is the
-//! skill-test commit window (`CommitCards`); other `InputResponse`
+//! skill-test commit window (`PickMultiple`); other `InputResponse`
 //! variants are deferred (spec S1, follow-up #205). Nothing renders when
 //! the latest outcome is not `AwaitingInput`.
 
 use std::collections::BTreeSet;
 
 use game_core::state::GameState;
-use game_core::{EngineOutcome, InputResponse, PlayerAction};
+use game_core::{EngineOutcome, InputResponse, OptionId, PlayerAction};
 use leptos::prelude::*;
 use protocol::ClientMessage;
 
@@ -63,11 +63,14 @@ pub fn AwaitingInputView() -> impl IntoView {
 
             let tx = tx.clone();
             let on_commit = move |_| {
-                let indices: Vec<u32> = selected.get().into_iter().collect();
+                let selected_ids: Vec<OptionId> =
+                    selected.get().into_iter().map(OptionId).collect();
                 if let Some(tx) = tx.clone() {
                     let _ = tx.unbounded_send(ClientMessage::Submit {
                         action: PlayerAction::ResolveInput {
-                            response: InputResponse::CommitCards { indices },
+                            response: InputResponse::PickMultiple {
+                                selected: selected_ids,
+                            },
                         },
                     });
                 }

@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn prompt_only_request_has_no_options() {
-        let req = InputRequest::prompt("Submit PickIndex");
+        let req = InputRequest::prompt("Submit a response");
         assert!(req.options.is_empty());
     }
 }
