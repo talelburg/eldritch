@@ -164,32 +164,33 @@ pub fn resolve_encounter_card(
             };
             let abilities = (registry.abilities_for)(&code).unwrap_or_default();
             let eval_ctx = EvalContext::for_controller(investigator);
+            // Push the disposal frame BEFORE the Revelation so the framework
+            // disposes of the card after the Revelation's whole sub-resolution
+            // completes — even if it suspends into a skill test or a choice
+            // (#380). A mid-Revelation `Rejected` is rolled back by the apply
+            // loop's transactional snapshot, this frame included.
+            cx.state
+                .continuations
+                .push(Continuation::EncounterCard { card: code.clone() });
             for ability in abilities
                 .iter()
                 .filter(|a| a.trigger == Trigger::Revelation)
             {
                 match apply_effect(cx, &ability.effect, eval_ctx) {
                     EngineOutcome::Done => {}
-                    outcome @ EngineOutcome::AwaitingInput { .. } => {
-                        // Revelation suspended (e.g. `Effect::SkillTest`
-                        // opened a commit window). The card discards only
-                        // once the suspended resolution completes — record
-                        // it so the resume path (skill-test teardown)
-                        // flushes it to `encounter_discard`.
-                        cx.state.pending_revelation_discard = Some(code.clone());
-                        return outcome;
-                    }
-                    outcome @ EngineOutcome::Rejected { .. } => return outcome,
+                    // Suspended → the `EncounterCard` frame sits beneath the
+                    // suspension; the `resolve_input` chokepoint disposes of the
+                    // card once the sub-resolution completes. Rejected → the
+                    // apply loop's transactional snapshot rolls back the pushed
+                    // frame. Either way, propagate without disposing here.
+                    outcome @ (EngineOutcome::AwaitingInput { .. }
+                    | EngineOutcome::Rejected { .. }) => return outcome,
                 }
             }
-            // A persistent treachery (one with an ongoing ability) placed
-            // itself during its Revelation and owns its own disposition
-            // (including Obscuring Fog's limit-1 discard); only a one-shot
-            // is auto-discarded here.
-            if !treachery_is_persistent(&abilities) {
-                cx.state.encounter_discard.push(code);
-            }
-            EngineOutcome::Done
+            // Synchronous completion: the frame is still top — dispose now.
+            // (One-shot → `encounter_discard`; persistent → it placed itself
+            // during its Revelation and is skipped.)
+            teardown_encounter_card_if_top(cx)
         }
         CardType::Enemy => {
             // Revelation effects on enemies (rare, but printed on
@@ -830,6 +831,37 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
         *remaining = queue;
         prompt_encounter_draw(cx)
     }
+}
+
+/// If the top continuation frame is a [`Continuation::EncounterCard`], dispose
+/// of its card per the framework default and pop the frame; otherwise a no-op.
+/// Always returns [`EngineOutcome::Done`].
+///
+/// Disposal (Rules Reference p.18 default): a one-shot treachery is discarded
+/// to `encounter_discard`; a **persistent** treachery (one carrying a
+/// non-`Revelation` ability) placed itself during its Revelation and owns its
+/// own disposition, so it is skipped. Persistence is re-derived from the
+/// registry by card code — the frame stays payload-minimal (#380). The discard
+/// is eventless, matching the synchronous path in [`resolve_encounter_card`].
+/// The `while` loop covers a hypothetical nested encounter resolution at no
+/// cost.
+///
+/// Called from two sites: inline at the end of [`resolve_encounter_card`]'s
+/// treachery branch (synchronous Revelation), and at the `resolve_input`
+/// chokepoint after a resume returns `Done` (a Revelation that suspended into a
+/// skill test / choice and has now completed).
+pub(super) fn teardown_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
+    while let Some(Continuation::EncounterCard { card }) = cx.state.continuations.last() {
+        let card = card.clone();
+        cx.state.continuations.pop();
+        let persistent = card_registry::current()
+            .and_then(|reg| (reg.abilities_for)(&card))
+            .is_some_and(|abilities| treachery_is_persistent(&abilities));
+        if !persistent {
+            cx.state.encounter_discard.push(card);
+        }
+    }
+    EngineOutcome::Done
 }
 
 #[cfg(test)]

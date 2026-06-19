@@ -242,19 +242,35 @@ Continuation::EncounterCard { card: CardCode }
 `FinishContinuation` — a single post-Revelation disposal step suffices for the four in-scope
 one-shot treacheries, so the frame starts payload-minimal.)
 
-- `resolve_encounter_card` pushes this frame, then runs the Revelation.
+- `resolve_encounter_card`'s **treachery** branch pushes this frame (enemies spawn into play,
+  not discard — no frame), then runs the Revelation. (Only treacheries carry the framework
+  discard step.)
 - If the Revelation suspends — into a skill test, a choice, a nested effect, *anything* — the
   `EncounterCard` frame sits on the stack **beneath** that suspension.
 - When the Revelation's whole sub-resolution completes and control pops back to the
   `EncounterCard` frame, the **framework** runs the standard teardown: one-shot → discard to
-  `encounter_discard`; persistent → attach (#235). Then it pops.
+  `encounter_discard`; persistent → attach (#235, i.e. skip — it placed itself). Then it pops.
+
+**Resume seam (the teardown hook).** A single shared helper —
+`teardown_encounter_card_if_top(cx)`: *if the top frame is `EncounterCard`, run the disposal
+and pop; else no-op* — is called from exactly two places:
+
+1. **Inline**, at the end of `resolve_encounter_card`'s treachery branch, after the Revelation
+   returns. On a synchronous `Done` the frame is top → teardown fires immediately (net-identical
+   to today's inline discard). On a suspend the suspension's frame is on top → no-op → the
+   `AwaitingInput` propagates with `EncounterCard` parked beneath it.
+2. At the **`resolve_input` chokepoint**, after the top-frame resume handler returns `Done`.
+   Whichever suspension completed (skill test, choice, …) has popped its own frame, so
+   `EncounterCard` is now top and the teardown fires. This one generic site covers *every*
+   suspension reason without the skill-test driver — or any resume handler — knowing treacheries
+   exist. (A `while top is EncounterCard` loop costs nothing and covers hypothetical nesting.)
 
 Properties: card authors write nothing (just the Revelation effect); suspension-reason-
 agnostic (rides the continuation mechanism, not a skill-test-specific flush); removes the
-global `pending_revelation_discard` slot **and** the skill-test driver's special teardown for
-it (the driver no longer knows treacheries exist). `pending_played_event` (the event-play
-analogue) is a sibling side-channel — *not* in scope here, but the same frame-teardown shape
-applies and is the natural follow-up.
+global `pending_revelation_discard` slot, its set-site in `resolve_encounter_card`, **and** the
+skill-test driver's special teardown for it (the driver no longer knows treacheries exist).
+`pending_played_event` (the event-play analogue) is a sibling side-channel — *not* in scope
+here, but the same frame-teardown shape applies and is the natural follow-up.
 
 ## Out of scope (explicitly)
 

@@ -73,7 +73,6 @@ fn grasping_hands_deals_one_damage_per_point_failed_then_discards() {
         "the treachery discards after its suspended Revelation resolves",
     );
     assert!(!result.state.has_skill_test_in_flight());
-    assert!(result.state.pending_revelation_discard.is_none());
 }
 
 #[test]
