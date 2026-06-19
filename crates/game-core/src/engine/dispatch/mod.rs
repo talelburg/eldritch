@@ -191,14 +191,6 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             destination,
         } => actions::move_action(cx, *investigator, *destination),
         PlayerAction::Draw { investigator } => cards::draw(cx, *investigator),
-        // The setup mulligan now resumes through `ResolveInput` (the top
-        // `Mulligan` frame); the dedicated action is removed in the next commit
-        // (#348 part 2c-iii-a, task a2). Until then, reject it loudly.
-        PlayerAction::Mulligan { .. } => EngineOutcome::Rejected {
-            reason: "PlayerAction::Mulligan is removed; submit a PlayerAction::ResolveInput \
-                     with InputResponse::PickMultiple (the hand indices to redraw) instead"
-                .into(),
-        },
         PlayerAction::Fight {
             investigator,
             enemy,

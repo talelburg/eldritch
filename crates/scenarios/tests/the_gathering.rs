@@ -12,7 +12,7 @@ use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
     fire_forced_on_enter, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{Action, PlayerAction};
+use game_core::{Action, InputResponse, PlayerAction};
 use scenarios::{the_gathering, REGISTRY};
 
 static INSTALL: Once = Once::new();
@@ -40,7 +40,6 @@ fn apply_checked(
 
 /// Seat solo Roland (01001, empty deck) and close the mulligan window.
 fn setup_and_seat() -> game_core::state::GameState {
-    let inv = InvestigatorId(1);
     let mut state = the_gathering::setup();
     for a in [
         Action::Player(PlayerAction::StartScenario {
@@ -49,9 +48,8 @@ fn setup_and_seat() -> game_core::state::GameState {
                 deck: vec![],
             }],
         }),
-        Action::Player(PlayerAction::Mulligan {
-            investigator: inv,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     ] {
         state = apply_checked(state, &a);

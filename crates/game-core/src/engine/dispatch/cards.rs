@@ -325,12 +325,16 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
     let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
 
     // ---- validate (state untouched on any failure) ----
-    let inv = cx.state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
+    let inv = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .unwrap_or_else(|| {
+            unreachable!(
             "resume_mulligan: prompted investigator {investigator:?} is not in the investigators \
              map; this is a state-corruption invariant violation"
         )
-    });
+        });
     let hand_len = inv.hand.len();
     for &idx in &indices {
         if idx as usize >= hand_len {

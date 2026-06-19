@@ -53,13 +53,16 @@ fn upkeep_prompts_and_discards_down_to_eight() {
         base,
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),
     );
-    assert_eq!(r1.outcome, EngineOutcome::Done);
+    assert!(
+        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
+        "StartScenario opens the mulligan prompt, got {:?}",
+        r1.outcome
+    );
 
     let r2 = apply(
         r1.state,
-        Action::Player(PlayerAction::Mulligan {
-            investigator: inv1,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
     assert_eq!(r2.outcome, EngineOutcome::Done);
@@ -202,9 +205,8 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
 
     let actions = vec![
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::Mulligan {
-            investigator: inv1,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
         Action::Player(PlayerAction::EndTurn),
         Action::Player(PlayerAction::ResolveInput {

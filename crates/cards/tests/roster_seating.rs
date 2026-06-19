@@ -36,7 +36,13 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
         Action::Player(PlayerAction::StartScenario { roster }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    // StartScenario seats the roster and opens the setup mulligan prompt
+    // (AwaitingInput) for the first investigator (#348).
+    assert!(
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "StartScenario opens the mulligan prompt, got {:?}",
+        result.outcome
+    );
     let inv = result
         .state
         .investigators

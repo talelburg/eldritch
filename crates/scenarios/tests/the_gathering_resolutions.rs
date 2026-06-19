@@ -45,19 +45,22 @@ fn seated_roland() -> GameState {
         investigator: CardCode::new(ROLAND),
         deck: vec![CardCode::new("01088"); 8],
     }];
-    // StartScenario completes (Done) with the mulligan cursor seeded; each
-    // investigator then submits a single Mulligan action before the turn's
-    // actions begin.
+    // StartScenario opens the mulligan prompt (AwaitingInput); each
+    // investigator then submits a single mulligan (ResolveInput) before the
+    // turn's actions begin.
     let started = apply(
         state,
         Action::Player(PlayerAction::StartScenario { roster }),
     );
-    assert_eq!(started.outcome, EngineOutcome::Done);
+    assert!(
+        matches!(started.outcome, EngineOutcome::AwaitingInput { .. }),
+        "StartScenario opens the mulligan prompt, got {:?}",
+        started.outcome
+    );
     let after_mulligan = apply(
         started.state,
-        Action::Player(PlayerAction::Mulligan {
-            investigator: INV,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
     assert_eq!(after_mulligan.outcome, EngineOutcome::Done);

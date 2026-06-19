@@ -16,7 +16,7 @@ use std::sync::Once;
 
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Phase};
-use game_core::{Action, PlayerAction};
+use game_core::{Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
 
@@ -57,13 +57,16 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
         base,
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),
     );
-    assert_eq!(r1.outcome, EngineOutcome::Done);
+    assert!(
+        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
+        "StartScenario opens the mulligan prompt, got {:?}",
+        r1.outcome
+    );
 
     let r2 = apply(
         r1.state,
-        Action::Player(PlayerAction::Mulligan {
-            investigator: inv1,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
     assert_eq!(r2.outcome, EngineOutcome::Done);
@@ -127,14 +130,11 @@ fn upkeep_round_replay_is_deterministic() {
         base
     };
 
-    let inv1 = InvestigatorId(1);
-
     // --- First pass: drive and collect the action log. ---
     let actions = vec![
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::Mulligan {
-            investigator: inv1,
-            indices_to_redraw: vec![],
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
         Action::Player(PlayerAction::EndTurn),
     ];

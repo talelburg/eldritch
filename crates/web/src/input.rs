@@ -89,8 +89,13 @@ pub fn AwaitingInputView() -> impl IntoView {
     }
 }
 
-/// The active investigator's hand as card-code strings (empty when there
-/// is no active investigator).
+/// The prompted investigator's hand as card-code strings (empty when no
+/// investigator is being prompted).
+///
+/// Falls back to the setup mulligan's prompted investigator
+/// ([`GameState::current_mulligan`]) when there is no active investigator:
+/// during the setup mulligan loop `active_investigator` is not yet set, but
+/// the `PickMultiple` redraw still targets that investigator's hand (#348).
 ///
 /// Solo-scope assumption: the skill-test performer equals
 /// `active_investigator`. The authoritative "whose hand commits" is
@@ -99,6 +104,7 @@ pub fn AwaitingInputView() -> impl IntoView {
 /// #205.
 fn active_hand(game: &GameState) -> Vec<String> {
     game.active_investigator
+        .or_else(|| game.current_mulligan())
         .and_then(|id| game.investigators.get(&id))
         .map(|inv| inv.hand.iter().map(ToString::to_string).collect())
         .unwrap_or_default()
