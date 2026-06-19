@@ -1170,9 +1170,11 @@ fn resume_forced_continuation(cx: &mut Cx, continuation: ForcedContinuation) -> 
         // Genuinely terminal emit site (e.g. a move's "when you enter"
         // forced abilities) — nothing follows.
         ForcedContinuation::Terminal => EngineOutcome::Done,
-        // "Upkeep phase ends. Round ends." — run the upkeep step's tail
-        // (act round-end advance window, then Upkeep→Mythos).
-        ForcedContinuation::UpkeepAfterRoundEnded => super::phases::upkeep_after_round_ended(cx),
+        // "Upkeep phase ends. Round ends." — run the upkeep teardown
+        // (expire until-end-of-round effects, then Upkeep→Mythos). The act's
+        // `when the round ends` window already resolved before the `at` forced
+        // run that scheduled this continuation.
+        ForcedContinuation::UpkeepAfterRoundEnded => super::phases::upkeep_round_end_teardown(cx),
         // End of turn — run the end-of-turn tail (rotate to the next active
         // investigator, or end the Investigation phase).
         ForcedContinuation::EndOfTurnAfterForced { investigator } => {

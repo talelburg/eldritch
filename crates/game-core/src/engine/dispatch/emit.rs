@@ -239,8 +239,10 @@ impl TimingEvent {
             // resolve — nothing in the framework follows.
             TimingEvent::EnteredLocation { .. } => Some(ForcedContinuation::Terminal),
             // "Upkeep phase ends. Round ends." (RR p.24): after the round-end
-            // forced abilities resolve, the upkeep step opens the act
-            // round-end advance window and steps the phase.
+            // `at` forced abilities resolve, the upkeep step expires
+            // until-end-of-round effects and steps to Mythos. The act's `when
+            // the round ends` window already resolved upstream (RR `when` ->
+            // `at`), so it is not part of this continuation.
             TimingEvent::RoundEnded => Some(ForcedContinuation::UpkeepAfterRoundEnded),
             // End of turn (RR p.24 2.2.2): after the turn-ending investigator's
             // forced abilities resolve, rotate to the next active investigator

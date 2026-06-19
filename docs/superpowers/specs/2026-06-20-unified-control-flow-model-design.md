@@ -323,10 +323,14 @@ act's `when` window. Consequential — if the doom advances the agenda (a loss
 condition on agenda 3), players per the rules should have gotten their act-advance
 window first.
 
-**Action:** fix the ordering directly (the cheap reorder — `when` window before
-`at` forced — plus a regression test on agenda-3 + act-2 at round end), landed as
-its **own small bug issue before** the Upkeep-anchor relocation slice, so the
-refactor stays behaviour-preserving. (Confirm during implementation there's no
+**Action:** fix the ordering directly — **not a 2-line swap but a small rethread**
+of two independently-suspendable round-end steps (the `when` act window *and* the
+`at` multi-Forced run can each suspend, #213): open the `when` window first; run
+the `at` `RoundEnded` Forced + teardown on its resume, or inline when no window
+opens. Plus a regression test on agenda-3 + act-2 at round end. Landed as its
+**own small bug issue (#395) before** the Upkeep-anchor relocation slice, so the
+refactor stays behaviour-preserving. (Shipped: PR for #395; `upkeep_phase_end` →
+`upkeep_round_end_at_and_after` → `upkeep_round_end_teardown`.) (Confirmed: no
 Gathering-specific FFG ruling exception — the act page has "No faqs yet" and the RR
 "At" rule governs.)
 

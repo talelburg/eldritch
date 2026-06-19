@@ -69,6 +69,29 @@ pub fn fire_forced_on_round_end(
     crate::engine::fire_forced_triggers(&mut cx, &crate::engine::ForcedTriggerPoint::RoundEnded)
 }
 
+/// Test helper: run the Upkeep step-4.6 round-end sequence
+/// (`upkeep_phase_end`), returning the `EngineOutcome`. Suspends on act
+/// 01109's "when the round ends" clue-spend window when affordable; resume it
+/// with [`resume_round_end_window`].
+pub fn run_upkeep_round_end(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::upkeep_phase_end(&mut cx)
+}
+
+/// Test helper: resume a parked act round-end clue-spend window
+/// (`resume_act_round_end_advance`) with `response`.
+pub fn resume_round_end_window(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    response: &crate::action::InputResponse,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::resume_act_round_end_advance(&mut cx, response)
+}
+
 /// Test helper: fire forced triggers for an act advancing, returning the
 /// `EngineOutcome`. See `fire_forced_on_enter`.
 pub fn fire_forced_on_act_advance(
