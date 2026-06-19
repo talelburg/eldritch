@@ -1372,6 +1372,51 @@ mod tests {
     }
 
     #[test]
+    fn substitution_prompt_keeps_the_test_on_its_frame() {
+        // The substitution prompt suspends *before* the commit window — the one
+        // place test data exists pre-commit. Pin that it lives on a SkillTest
+        // frame (not a removed Option field) during that window (#348).
+        let inv = InvestigatorId(1);
+        let mut state = substitution_state(inv);
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            start_skill_test(
+                &mut cx,
+                inv,
+                SkillKind::Combat,
+                SkillTestKind::Fight,
+                3,
+                SkillTestFollowUp::None,
+                None,
+                None,
+                None,
+                0,
+            )
+        };
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "substitution prompt should suspend",
+        );
+        assert_eq!(state.pending_substitution_prompt, Some(inv));
+        assert!(
+            state.current_skill_test().is_some(),
+            "the in-flight test must live on a SkillTest frame during the \
+             substitution prompt, not in a removed Option field",
+        );
+        assert!(
+            state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, crate::state::Continuation::SkillTest(_))),
+            "a SkillTest frame is on the stack before the commit window",
+        );
+    }
+
+    #[test]
     fn substitution_choice_no_keeps_the_printed_skill() {
         let inv = InvestigatorId(1);
         let mut state = substitution_state(inv);
