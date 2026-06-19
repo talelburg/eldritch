@@ -162,7 +162,10 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
         "EndTurn should open the act-2 round-end window, got {:?}",
         round_end.outcome,
     );
-    assert!(round_end.state.act_round_end_pending.is_some());
+    assert!(matches!(
+        round_end.state.continuations.last(),
+        Some(game_core::state::Continuation::ActRoundEnd(_))
+    ));
     let after_confirm = apply(
         round_end.state,
         Action::Player(PlayerAction::ResolveInput {

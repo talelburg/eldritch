@@ -703,7 +703,9 @@ pub(super) fn upkeep_after_round_ended(cx: &mut Cx) -> EngineOutcome {
              InputResponse::Confirm to spend and advance, or Skip to decline.",
             pending.threshold,
         );
-        cx.state.act_round_end_pending = Some(pending);
+        cx.state
+            .continuations
+            .push(crate::state::Continuation::ActRoundEnd(pending));
         return EngineOutcome::AwaitingInput {
             request: InputRequest::prompt(prompt),
             resume_token: ResumeToken(0),
@@ -737,11 +739,11 @@ fn round_end_advance_window(state: &GameState) -> Option<ActRoundEndPending> {
 /// act; Skip declines; either way the round closes (Upkeep→Mythos). A wrong
 /// response kind rejects with state untouched.
 pub(super) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx
-        .state
-        .act_round_end_pending
-        .clone()
-        .unwrap_or_else(|| unreachable!("resume_act_round_end_advance: no pending window"));
+    let Some(crate::state::Continuation::ActRoundEnd(pending)) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_act_round_end_advance: no ActRoundEnd frame on top of the stack")
+    };
+    let pending = pending.clone();
     match response {
         InputResponse::Confirm => {
             let contributors =
@@ -754,14 +756,14 @@ pub(super) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse
                 };
             }
             super::act_agenda::spend_clues_from(cx.state, &contributors, pending.threshold);
-            cx.state.act_round_end_pending = None;
+            cx.state.continuations.pop();
             // The round-end-advance act (01109) is non-terminal (resolution
             // None) — advance the cursor to the next act.
             super::act_agenda::advance_act(cx);
             step_phase(cx)
         }
         InputResponse::Skip => {
-            cx.state.act_round_end_pending = None;
+            cx.state.continuations.pop();
             step_phase(cx)
         }
         other => EngineOutcome::Rejected {
@@ -2242,7 +2244,10 @@ mod upkeep_phase_tests {
             events: &mut events,
         });
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.act_round_end_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Upkeep, "parked: did not transition");
         assert_no_event!(
             events,
@@ -2261,7 +2266,10 @@ mod upkeep_phase_tests {
             events: &mut events,
         });
         assert_eq!(out, EngineOutcome::Done);
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Mythos, "no window → straight to Mythos");
     }
 
@@ -2284,7 +2292,10 @@ mod upkeep_phase_tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 1, "advanced act 2 -> act 3");
         assert_eq!(state.investigators[&inv].clues, 0, "spent 3 clues");
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Mythos);
     }
 
@@ -2307,7 +2318,10 @@ mod upkeep_phase_tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 0, "no advance on Skip");
         assert_eq!(state.investigators[&inv].clues, 3, "no clues spent");
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
         assert_eq!(state.phase, Phase::Mythos);
     }
 
@@ -2328,7 +2342,13 @@ mod upkeep_phase_tests {
             &InputResponse::DiscardCards { indices: vec![] },
         );
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
-        assert!(state.act_round_end_pending.is_some(), "still pending");
+        assert!(
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::ActRoundEnd(_))
+            ),
+            "still pending"
+        );
         assert_eq!(state.phase, Phase::Upkeep);
     }
 
@@ -2353,7 +2373,10 @@ mod upkeep_phase_tests {
             events: &mut events,
         });
         assert_eq!(out, EngineOutcome::Done, "unaffordable by Hallway alone");
-        assert!(state.act_round_end_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::ActRoundEnd(_))
+        ));
     }
 }
 

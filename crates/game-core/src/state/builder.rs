@@ -286,7 +286,6 @@ impl GameStateBuilder {
             mythos_draw_pending: None,
             enemy_attack_pending: None,
             pending_end_turn: None,
-            act_round_end_pending: None,
             pending_enemy_attack: None,
             pending_cancellation: false,
             pending_revelation_discard: None,

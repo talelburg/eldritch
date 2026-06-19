@@ -202,10 +202,6 @@ pub struct GameState {
     /// phase-end once the test resolves. Defaults to `None`.
     #[serde(default)]
     pub pending_end_turn: Option<InvestigatorId>,
-    /// Suspended act round-end clue-spend window (#275). `Some` only while
-    /// awaiting the group's Confirm/Skip at the end of the round. See
-    /// [`ActRoundEndPending`].
-    pub act_round_end_pending: Option<ActRoundEndPending>,
     /// `Some` while an enemy-attack loop is suspended on a soak reaction
     /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
     #[serde(default)]
@@ -469,6 +465,9 @@ pub enum Continuation {
     /// A suspended upkeep hand-size discard (#111), migrated off the former
     /// `GameState::hand_size_discard_pending` field (#348).
     HandSizeDiscard(HandSizeDiscard),
+    /// A suspended act round-end clue-spend window (#275), migrated off the
+    /// former `GameState::act_round_end_pending` field (#348).
+    ActRoundEnd(ActRoundEndPending),
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -508,7 +507,8 @@ impl Continuation {
             | Continuation::Choice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
-            | Continuation::HandSizeDiscard(_) => None,
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::ActRoundEnd(_) => None,
         }
     }
 
@@ -520,7 +520,8 @@ impl Continuation {
             | Continuation::Choice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
-            | Continuation::HandSizeDiscard(_) => None,
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::ActRoundEnd(_) => None,
         }
     }
 
@@ -537,7 +538,8 @@ impl Continuation {
             | Continuation::SkillTest(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
-            | Continuation::HandSizeDiscard(_) => true,
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::ActRoundEnd(_) => true,
         }
     }
 }

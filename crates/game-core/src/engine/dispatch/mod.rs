@@ -160,8 +160,10 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 
     // A pending act round-end advance (#275) blocks every action but
     // `ResolveInput`. Upkeep-phase only; never coexists with the others.
-    if cx.state.act_round_end_pending.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::ActRoundEnd(_))
+    ) && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason:
@@ -481,7 +483,10 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // Act round-end clue-spend window (#275): its own suspension mode,
     // arising only in Upkeep (never mid-skill-test), so route it before the
     // reaction-window check like hand-size discard.
-    if cx.state.act_round_end_pending.is_some() {
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::ActRoundEnd(_))
+    ) {
         return phases::resume_act_round_end_advance(cx, response);
     }
 
