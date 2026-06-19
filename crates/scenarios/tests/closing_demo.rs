@@ -101,7 +101,7 @@ fn won_walk_full_cycle_replays_identically() {
     // 1.4 -> DrawEncounterCard finishes Mythos -> round 2 Investigate
     // (4th clue, +commit) -> AdvanceAct x2 (act 0 -> 1 -> Won).
     let commit_nothing = Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::CommitCards { indices: vec![] },
+        response: InputResponse::PickMultiple { selected: vec![] },
     });
     let log = vec![
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),

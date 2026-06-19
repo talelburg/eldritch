@@ -227,7 +227,7 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     let result = apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![] },
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
 

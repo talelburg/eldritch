@@ -162,8 +162,11 @@ impl ChoiceResolver for ScriptedResolver {
         });
         match step {
             ScriptedStep::Response(r) => r,
-            ScriptedStep::CommitCards(codes) => InputResponse::CommitCards {
-                indices: resolve_commit_codes(&codes, state, &request.prompt),
+            ScriptedStep::CommitCards(codes) => InputResponse::PickMultiple {
+                selected: resolve_commit_codes(&codes, state, &request.prompt)
+                    .into_iter()
+                    .map(crate::engine::OptionId)
+                    .collect(),
             },
         }
     }
@@ -403,7 +406,7 @@ impl TestSession {
 mod tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine::{InputRequest, ResumeToken};
+    use crate::engine::{InputRequest, OptionId, ResumeToken};
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
 
@@ -484,7 +487,7 @@ mod tests {
         // with the engine's "empty commits is the no-op" semantics.
         let state = empty_state();
         let response = r.next(&req("commit"), &state);
-        assert_eq!(response, InputResponse::CommitCards { indices: vec![] });
+        assert_eq!(response, InputResponse::PickMultiple { selected: vec![] });
     }
 
     #[test]
@@ -495,8 +498,8 @@ mod tests {
         let response = r.next(&req("commit"), &state);
         assert_eq!(
             response,
-            InputResponse::CommitCards {
-                indices: vec![0, 1],
+            InputResponse::PickMultiple {
+                selected: vec![OptionId(0), OptionId(1)]
             }
         );
     }
@@ -509,8 +512,8 @@ mod tests {
         let response = r.next(&req("commit"), &state);
         assert_eq!(
             response,
-            InputResponse::CommitCards {
-                indices: vec![1, 3],
+            InputResponse::PickMultiple {
+                selected: vec![OptionId(1), OptionId(3)]
             }
         );
     }

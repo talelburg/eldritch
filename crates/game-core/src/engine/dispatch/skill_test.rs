@@ -174,7 +174,8 @@ fn open_commit_window(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(format!(
             "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
-             (difficulty {difficulty}). Empty indices commits no cards.",
+             (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
+             hand indices as option ids. Empty selection commits no cards.",
         )),
         resume_token: ResumeToken(0),
     }

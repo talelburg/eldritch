@@ -83,11 +83,11 @@ fn commit_indices(frame: ClientMessage) -> Vec<u32> {
         ClientMessage::Submit {
             action:
                 PlayerAction::ResolveInput {
-                    response: InputResponse::CommitCards { indices },
+                    response: InputResponse::PickMultiple { selected },
                 },
-        } => indices,
+        } => selected.into_iter().map(|o| o.0).collect(),
         other @ ClientMessage::Submit { .. } => {
-            panic!("expected ResolveInput/CommitCards, got {other:?}")
+            panic!("expected ResolveInput/PickMultiple, got {other:?}")
         }
     }
 }

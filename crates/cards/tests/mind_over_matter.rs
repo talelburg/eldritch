@@ -92,7 +92,9 @@ fn commit(state: game_core::GameState, indices: Vec<u32>) -> game_core::engine::
     apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices },
+            response: InputResponse::PickMultiple {
+                selected: indices.into_iter().map(OptionId).collect(),
+            },
         }),
     )
 }

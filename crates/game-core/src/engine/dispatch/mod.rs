@@ -105,8 +105,8 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     if cx.state.has_skill_test_in_flight() && !matches!(action, PlayerAction::ResolveInput { .. }) {
         return EngineOutcome::Rejected {
             reason: "a skill test is paused at its commit window; submit a \
-                     PlayerAction::ResolveInput with an InputResponse::CommitCards \
-                     (empty indices commits no cards) before any other action"
+                     PlayerAction::ResolveInput with an InputResponse::PickMultiple \
+                     (empty selection commits no cards) before any other action"
                 .into(),
         };
     }
@@ -352,11 +352,13 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 }
 
 /// Resume a skill test parked at its commit window: the active investigator
-/// submits their commit list via [`InputResponse::CommitCards`].
+/// submits their commit list via [`InputResponse::PickMultiple`] (each
+/// [`OptionId`](crate::engine::OptionId) is a hand index).
 fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
-        InputResponse::CommitCards { indices } => {
-            let outcome = skill_test::finish_skill_test(cx, indices);
+        InputResponse::PickMultiple { selected } => {
+            let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
+            let outcome = skill_test::finish_skill_test(cx, &indices);
             if matches!(outcome, EngineOutcome::Done) {
                 // The resolved test was a sibling fired by a forced run (2+
                 // simultaneous `EndOfTurn` forced — two Frozen in Fear copies,
@@ -385,7 +387,7 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         }
         other => EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: skill-test commit window expects InputResponse::CommitCards, \
+                "ResolveInput: skill-test commit window expects InputResponse::PickMultiple, \
                  got {other:?}",
             )
             .into(),

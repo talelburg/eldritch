@@ -270,7 +270,7 @@ mod tests {
     };
     use crate::{assert_event, assert_event_count, assert_no_event};
 
-    use super::{apply, EngineOutcome};
+    use super::{apply, EngineOutcome, OptionId};
 
     #[test]
     fn start_scenario_advances_to_investigation_with_round_one() {
@@ -4383,7 +4383,7 @@ mod tests {
         let resumed = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::CommitCards { indices: vec![] },
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
         );
 
@@ -4441,7 +4441,7 @@ mod tests {
         let resumed = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::CommitCards { indices: vec![] },
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
         );
         assert_eq!(resumed.outcome, EngineOutcome::Done);
@@ -4473,8 +4473,8 @@ mod tests {
                 skill: SkillKind::Intellect,
                 difficulty: 3,
             }),
-            InputResponse::CommitCards {
-                indices: vec![0, 1],
+            InputResponse::PickMultiple {
+                selected: vec![OptionId(0), OptionId(1)],
             },
         );
 
@@ -4536,7 +4536,9 @@ mod tests {
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::CommitCards { indices: vec![5] },
+                response: InputResponse::PickMultiple {
+                    selected: vec![OptionId(5)],
+                },
             }),
         );
         match bad.outcome {
@@ -4573,8 +4575,8 @@ mod tests {
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::CommitCards {
-                    indices: vec![0, 0],
+                response: InputResponse::PickMultiple {
+                    selected: vec![OptionId(0), OptionId(0)],
                 },
             }),
         );
@@ -4657,7 +4659,7 @@ mod tests {
         let result = apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::CommitCards { indices: vec![] },
+                response: InputResponse::PickMultiple { selected: vec![] },
             }),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));

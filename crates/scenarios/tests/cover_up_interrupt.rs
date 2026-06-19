@@ -74,7 +74,7 @@ fn investigate_to_interrupt(state: GameState) -> (GameState, EngineOutcome) {
     let r = apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![] },
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
     (r.state, r.outcome)

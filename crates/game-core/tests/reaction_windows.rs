@@ -20,7 +20,7 @@ use game_core::dsl::{
     discover_clue, gain_resources, reaction_on_event, Ability, EventPattern, EventTiming,
     InvestigatorTarget, LocationTarget,
 };
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
@@ -183,7 +183,7 @@ fn fight_through_commit_window(state: game_core::GameState, action: Action) -> D
     let after = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![] },
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
     events.extend(after.events);
@@ -714,7 +714,9 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     let paused_reaction = game_core::engine::apply(
         paused_commit.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::CommitCards { indices: vec![0] },
+            response: InputResponse::PickMultiple {
+                selected: vec![OptionId(0)],
+            },
         }),
     );
     assert!(
@@ -1134,7 +1136,7 @@ fn investigate_to_success_scenario(
 
 fn commit_nothing() -> Action {
     Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::CommitCards { indices: vec![] },
+        response: InputResponse::PickMultiple { selected: vec![] },
     })
 }
 
