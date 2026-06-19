@@ -364,18 +364,22 @@ pub enum InputResponse {
     Confirm,
     /// Decline / skip the prompted optional action.
     Skip,
-    /// Pick the option at the given zero-based index from the prompt's
-    /// option list. `u32` rather than `usize` for a stable wire format
-    /// independent of host pointer width.
-    PickIndex(u32),
     /// Pick one option from a structured choice prompt
     /// ([`InputRequest::choice`](crate::engine::InputRequest::choice)),
     /// echoing back its [`OptionId`](crate::engine::OptionId). The
-    /// single-selection family for the Axis-A choice machinery; the legacy
-    /// [`PickIndex`](Self::PickIndex) / [`PickLocation`](Self::PickLocation) /
-    /// [`PickInvestigator`](Self::PickInvestigator) stay on their existing
-    /// paths.
+    /// single-selection family (umbrella §3); [`PickLocation`](Self::PickLocation)
+    /// / [`PickInvestigator`](Self::PickInvestigator) consolidate into it in a
+    /// follow-up (2c-ii).
     PickSingle(crate::engine::OptionId),
+    /// Select a subset of the offered options, echoing back their
+    /// [`OptionId`](crate::engine::OptionId)s (umbrella §3). The multi-selection
+    /// family — the skill-test commit window and the upkeep hand-size discard
+    /// fold into this; min/exact-count constraints live on the request/frame,
+    /// not here. For those windows an `OptionId(i)` denotes hand index `i`.
+    PickMultiple {
+        /// The chosen option ids (hand indices, for commit/discard windows).
+        selected: Vec<crate::engine::OptionId>,
+    },
     /// Pick a specific investigator.
     PickInvestigator(InvestigatorId),
     /// Pick a specific location.
@@ -388,8 +392,7 @@ pub enum InputResponse {
     /// test's cleanup. Empty `indices` is a legal "commit nothing"
     /// signal.
     ///
-    /// `u32` rather than `u8` for wire-format symmetry with
-    /// [`PickIndex`](Self::PickIndex); hand sizes never approach `u8`
+    /// `u32` rather than `u8`; hand sizes never approach `u8`
     /// limits in practice, the field is downcast at validation time.
     CommitCards {
         /// Hand indices to commit.
@@ -402,8 +405,7 @@ pub enum InputResponse {
     /// count, a duplicate, or an out-of-bounds index is rejected.
     ///
     /// `u32` rather than `u8` for wire-format symmetry with
-    /// [`CommitCards`](Self::CommitCards) / [`PickIndex`](Self::PickIndex);
-    /// downcast at validation time.
+    /// [`CommitCards`](Self::CommitCards); downcast at validation time.
     DiscardCards {
         /// Hand indices to discard.
         indices: Vec<u32>,
@@ -430,9 +432,10 @@ mod input_response_tests {
     use super::*;
 
     #[test]
-    fn discard_cards_input_serde_roundtrip() {
-        let original = InputResponse::DiscardCards {
-            indices: vec![0, 3, 7],
+    fn pick_multiple_input_serde_roundtrip() {
+        use crate::engine::OptionId;
+        let original = InputResponse::PickMultiple {
+            selected: vec![OptionId(0), OptionId(3), OptionId(7)],
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: InputResponse = serde_json::from_str(&json).expect("deserialize");

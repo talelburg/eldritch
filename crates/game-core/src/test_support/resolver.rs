@@ -113,11 +113,6 @@ impl ScriptedResolver {
         self.push(InputResponse::Skip)
     }
 
-    /// Respond with [`InputResponse::PickIndex`].
-    pub fn pick(&mut self, index: u32) -> &mut Self {
-        self.push(InputResponse::PickIndex(index))
-    }
-
     /// Respond with [`InputResponse::PickSingle`] (the Axis-A choice contract).
     pub fn pick_single(&mut self, id: crate::engine::OptionId) -> &mut Self {
         self.push(InputResponse::PickSingle(id))
@@ -425,16 +420,14 @@ mod tests {
         let mut r = ScriptedResolver::new();
         r.confirm()
             .skip()
-            .pick(7)
             .pick_investigator(InvestigatorId(2))
             .pick_location(LocationId(99));
-        assert_eq!(r.remaining(), 5);
+        assert_eq!(r.remaining(), 4);
 
         let state = empty_state();
         let p = req("pick");
         assert_eq!(r.next(&p, &state), InputResponse::Confirm);
         assert_eq!(r.next(&p, &state), InputResponse::Skip);
-        assert_eq!(r.next(&p, &state), InputResponse::PickIndex(7));
         assert_eq!(
             r.next(&p, &state),
             InputResponse::PickInvestigator(InvestigatorId(2))
