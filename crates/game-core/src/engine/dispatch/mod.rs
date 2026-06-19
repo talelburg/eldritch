@@ -419,97 +419,27 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// index. This covers the `MythosAfterDraws` window after all Fast
 /// plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    // Continuation router (umbrella §1 / Axis-B), split by frame priority:
-    //
-    // - An open **window** (`Resolution`) nests above everything — a reaction
-    //   window mid-skill-test, a Fast window — so it resumes FIRST.
-    // - The **skill-test commit** frame (`SkillTest`) is the *outermost* test
-    //   suspension, so it resumes LAST (below), after the legacy mid-test modes
-    //   (hand-size discard, act round-end) — inner suspensions of the flow.
-    // Mind over Matter (#322): a skill test paused on its "use X in place of
-    // Y?" prompt at initiation. Its `SubstitutionPrompt` frame is pushed *above*
-    // the `SkillTest` frame, so top-frame dispatch routes it before the commit
-    // window — no special-case ordering needed (#348).
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::SubstitutionPrompt { .. })
-    ) {
-        return skill_test::resume_substitution_choice(cx, response);
-    }
-
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::Resolution(_))
-    ) {
-        return resume_window(cx, response);
-    }
-
-    // A `Continuation::Choice` (Axis A) nests above whatever it suspended
-    // within (a Forced run, a skill test), so it resumes before the legacy
-    // mid-test modes below.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::Choice(_))
-    ) {
-        return choice::resume_choice(cx, response);
-    }
-
-    // Hunter movement, spawn engagement, and hand-size discard are three
-    // mutually exclusive suspension modes (different phases). Route to the
-    // right resume handler before the reaction-window and skill-test checks.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::HunterMove(_))
-    ) {
-        return hunters::resume_hunter_choice(cx, response);
-    }
-
-    // Engagement-on-spawn suspension (#128, option A) is a distinct mode
-    // from hunter movement: its resume re-enters the Mythos draw chain.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::SpawnEngage(_))
-    ) {
-        return hunters::resume_spawn_engage(cx, response);
-    }
-
-    // Upkeep step-4.5 hand-size discard (#111) is its own suspension mode;
-    // route it before the reaction-window check (it arises in Upkeep, not
-    // mid-skill-test, so the two never coexist).
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::HandSizeDiscard(_))
-    ) {
-        return phases::resume_hand_size_discard(cx, response);
-    }
-
-    // Act round-end clue-spend window (#275): its own suspension mode,
-    // arising only in Upkeep (never mid-skill-test), so route it before the
-    // reaction-window check like hand-size discard.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::ActRoundEnd(_))
-    ) {
-        return phases::resume_act_round_end_advance(cx, response);
-    }
-
-    // Open windows (reaction + pure-Fast) are `Continuation::Resolution`
-    // frames, handled by the continuation router at the top of this function
-    // (umbrella §1 / Axis-B T3) — so no window check is needed here. The
-    // before-discover clue interrupt (Cover Up 01007) is one such window now
-    // (Axis D #336), not a bespoke mid-test mode.
-
-    // The skill-test commit window (`Continuation::SkillTest` frame) resumes
-    // here — *after* the legacy mid-test modes above, which are inner
-    // suspensions of an in-flight test (Axis-B T4).
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::SkillTest(_))
-    ) {
-        return resume_skill_test_commit(cx, response);
-    }
-
-    EngineOutcome::Rejected {
-        reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
+    // Top-frame dispatch (umbrella §1 / #348): every suspension is a
+    // `Continuation` frame, and the frame awaiting input is always the top of
+    // the stack (each suspension pushes above whatever it suspended within — a
+    // `SubstitutionPrompt` above its `SkillTest`, a reaction `Resolution` above
+    // a mid-test commit, etc.). So routing is "dispatch on the top frame's
+    // variant"; the former hand-ordered `if pending_X.is_some()` priority
+    // cascade is gone.
+    use crate::state::Continuation;
+    match cx.state.continuations.last() {
+        Some(Continuation::SubstitutionPrompt { .. }) => {
+            skill_test::resume_substitution_choice(cx, response)
+        }
+        Some(Continuation::Resolution(_)) => resume_window(cx, response),
+        Some(Continuation::Choice(_)) => choice::resume_choice(cx, response),
+        Some(Continuation::HunterMove(_)) => hunters::resume_hunter_choice(cx, response),
+        Some(Continuation::SpawnEngage(_)) => hunters::resume_spawn_engage(cx, response),
+        Some(Continuation::HandSizeDiscard(_)) => phases::resume_hand_size_discard(cx, response),
+        Some(Continuation::ActRoundEnd(_)) => phases::resume_act_round_end_advance(cx, response),
+        Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
+        None => EngineOutcome::Rejected {
+            reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
+        },
     }
 }
