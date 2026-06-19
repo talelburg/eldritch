@@ -86,22 +86,11 @@ pub struct GameState {
     /// underlying [`rand_chacha::ChaCha8Rng`] is reconstructed on
     /// demand by [`RngState`] methods.
     pub rng: RngState,
-    /// The investigator whose setup mulligan is pending, processed in
-    /// player order (Rules Reference p.16 / p.27: "each player, in
-    /// player order, may mulligan once"). Mirror of
-    /// [`mythos_draw_pending`](Self::mythos_draw_pending):
-    ///
-    /// - Seeded to the first [`Status::Active`](crate::state::Status::Active)
-    ///   investigator in [`turn_order`](Self::turn_order) at
-    ///   [`PlayerAction::StartScenario`](crate::action::PlayerAction::StartScenario).
-    /// - A [`PlayerAction::Mulligan`](crate::action::PlayerAction::Mulligan)
-    ///   is valid only when `mulligan_pending == Some(that investigator)`;
-    ///   on success the cursor advances to the next Active investigator
-    ///   in `turn_order`.
-    /// - `None` once every investigator has mulliganed — at which point
-    ///   setup ends and the Investigation phase begins. While `Some`,
-    ///   the engine rejects every non-Mulligan player action.
-    pub mulligan_pending: Option<InvestigatorId>,
+    // The setup mulligan loop now lives on its `Continuation::Mulligan`
+    // frame (#348); read the prompted investigator via
+    // [`Self::current_mulligan`]. The former `mulligan_pending:
+    // Option<InvestigatorId>` cursor is removed — the continuation stack is the
+    // single source of truth (mirroring the `in_flight_skill_test` fold).
     /// Allocator for [`CardInstanceId`]s, minted when cards enter play.
     /// Deterministic across replays; serializes as a bare `u32`.
     pub card_instance_ids: Counter<CardInstanceId>,
@@ -471,6 +460,20 @@ pub enum Continuation {
         /// The investigator taking the test.
         investigator: InvestigatorId,
     },
+    /// The setup mulligan loop (Rules Reference p.27), migrated off the former
+    /// `GameState::mulligan_pending` cursor field (#348). `remaining[0]` is the
+    /// investigator currently prompted to mulligan; the queue is the Active
+    /// investigators in [`turn_order`](GameState::turn_order). Pushed by
+    /// `start_scenario`, advanced by `resume_mulligan` as each investigator
+    /// submits their `PickMultiple` redraw indices, popped when drained — at
+    /// which point setup ends and the Investigation phase begins. While present,
+    /// the engine rejects every non-`ResolveInput` action. Read the prompted
+    /// investigator via [`GameState::current_mulligan`].
+    Mulligan {
+        /// Active investigators yet to mulligan, in player order; front =
+        /// currently prompted.
+        remaining: Vec<InvestigatorId>,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -512,7 +515,8 @@ impl Continuation {
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
             | Continuation::ActRoundEnd(_)
-            | Continuation::SubstitutionPrompt { .. } => None,
+            | Continuation::SubstitutionPrompt { .. }
+            | Continuation::Mulligan { .. } => None,
         }
     }
 
@@ -526,7 +530,8 @@ impl Continuation {
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
             | Continuation::ActRoundEnd(_)
-            | Continuation::SubstitutionPrompt { .. } => None,
+            | Continuation::SubstitutionPrompt { .. }
+            | Continuation::Mulligan { .. } => None,
         }
     }
 }
@@ -1337,6 +1342,20 @@ impl GameState {
         match self.continuations.remove(pos) {
             Continuation::SkillTest(t) => Some(t),
             _ => unreachable!("rposition matched SkillTest"),
+        }
+    }
+
+    /// The investigator currently prompted to mulligan, if a setup mulligan is
+    /// in progress; `None` otherwise. Reads the top
+    /// [`Continuation::Mulligan`] frame's `remaining[0]` — the continuation
+    /// stack is the single source of truth for "a mulligan is pending" (#348,
+    /// replacing the former `mulligan_pending` cursor). The frame is only ever
+    /// the top during setup, so `.last()` (not a topmost search) is correct.
+    #[must_use]
+    pub fn current_mulligan(&self) -> Option<InvestigatorId> {
+        match self.continuations.last() {
+            Some(Continuation::Mulligan { remaining }) => remaining.first().copied(),
+            _ => None,
         }
     }
 

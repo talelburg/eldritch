@@ -59,22 +59,22 @@ pub(crate) mod threat_area;
 /// so callers and tests get a useful signal rather than a silent no-op.
 #[allow(clippy::too_many_lines)] // dispatcher: a guard ladder + one match arm per PlayerAction
 pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
-    // While a mulligan is pending (the setup mulligan cursor is `Some`),
-    // only Mulligan (and the already-rejected re-StartScenario) is valid.
-    // Per the Rules Reference, "after all players have completed their
-    // mulligans, the game begins" — the engine enforces that by gating
-    // other actions until every investigator has signaled their mulligan
-    // choice.
-    if cx.state.mulligan_pending.is_some()
-        && !matches!(
-            action,
-            PlayerAction::Mulligan { .. } | PlayerAction::StartScenario { .. }
-        )
+    // While the setup mulligan loop is in progress (a `Mulligan` frame is on
+    // top of the stack), only `ResolveInput` can advance the engine. Per the
+    // Rules Reference, "after all players have completed their mulligans, the
+    // game begins" — the engine enforces that by gating other actions until
+    // every investigator has submitted their mulligan choice. Setup-only;
+    // never coexists with the other suspension modes, so guard order is
+    // immaterial.
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::Mulligan { .. })
+    ) && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
-            reason: "a setup mulligan is pending; investigators must submit \
-                     PlayerAction::Mulligan (with an empty indices_to_redraw to \
-                     keep their hand) in player order before any other action"
+            reason: "a setup mulligan is pending; investigators must submit a \
+                     PlayerAction::ResolveInput with InputResponse::PickMultiple (the hand indices \
+                     to redraw, empty to keep their hand) in player order before any other action"
                 .into(),
         };
     }
@@ -101,7 +101,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 
     // While a skill test is paused at its commit window (no reaction
     // window open yet), only `ResolveInput` can advance the engine.
-    // Mirrors the `mulligan_pending` guard above.
+    // Mirrors the `Mulligan`-frame guard above.
     if cx.state.has_skill_test_in_flight() && !matches!(action, PlayerAction::ResolveInput { .. }) {
         return EngineOutcome::Rejected {
             reason: "a skill test is paused at its commit window; submit a \
@@ -191,10 +191,14 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
             destination,
         } => actions::move_action(cx, *investigator, *destination),
         PlayerAction::Draw { investigator } => cards::draw(cx, *investigator),
-        PlayerAction::Mulligan {
-            investigator,
-            indices_to_redraw,
-        } => cards::mulligan(cx, *investigator, indices_to_redraw),
+        // The setup mulligan now resumes through `ResolveInput` (the top
+        // `Mulligan` frame); the dedicated action is removed in the next commit
+        // (#348 part 2c-iii-a, task a2). Until then, reject it loudly.
+        PlayerAction::Mulligan { .. } => EngineOutcome::Rejected {
+            reason: "PlayerAction::Mulligan is removed; submit a PlayerAction::ResolveInput \
+                     with InputResponse::PickMultiple (the hand indices to redraw) instead"
+                .into(),
+        },
         PlayerAction::Fight {
             investigator,
             enemy,
@@ -226,31 +230,10 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         }
     };
 
-    // After a successful Mulligan, check whether every investigator
-    // has now mulliganed. If so, the cursor reaches `None` and normal
-    // play begins. Assumes `mulligan()` only ever returns `Done` or
-    // `Rejected` (never `AwaitingInput`) — if it ever grows an
-    // input-prompt path, this gate must be revisited so the cursor
-    // doesn't silently stay set across a partial mulligan.
-    if matches!(outcome, EngineOutcome::Done)
-        && matches!(action, PlayerAction::Mulligan { .. })
-        && cx.state.mulligan_pending.is_none()
-    {
-        // Setup complete — "the game begins" (Rules Reference p.27).
-        // Round 1 skips the Mythos phase (p.24), so the first phase to
-        // begin is Investigation. Kick off its driver HERE, not in
-        // start_scenario: setup has "no action windows" (p.27), so the
-        // post-2.1 player window must not open until mulligans are done.
-        //
-        // NOTE: investigation_phase may leave an InvestigationBegins
-        // window open (when a Fast-eligible play exists); this function
-        // still returns the Mulligan's `Done`. So this is one of the few
-        // paths where `Done` can accompany a non-empty `cx.state.open_windows`
-        // — hosts check `open_windows` and present `ResolveInput::Skip`
-        // to close it, exactly as for the phase-transition windows the
-        // void `*_phase` drivers open.
-        phases::investigation_phase(cx);
-    }
+    // The post-mulligan Investigation kickoff moved into `resume_mulligan`
+    // (#348): the mulligan loop now drains through `ResolveInput`, and
+    // `resume_mulligan` begins the Investigation phase itself once the last
+    // investigator has mulliganed. No outer-boundary kickoff remains here.
 
     // Reaction windows open at the step boundary inside the handler
     // that queued them (see `drive_skill_test`), not at this outer
@@ -438,6 +421,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::SpawnEngage(_)) => hunters::resume_spawn_engage(cx, response),
         Some(Continuation::HandSizeDiscard(_)) => phases::resume_hand_size_discard(cx, response),
         Some(Continuation::ActRoundEnd(_)) => phases::resume_act_round_end_advance(cx, response),
+        Some(Continuation::Mulligan { .. }) => cards::resume_mulligan(cx, response),
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
         None => EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),

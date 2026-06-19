@@ -153,23 +153,23 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // shuffles to a no-op (no event).
     super::encounter::shuffle_encounter_deck(cx);
 
-    // Seed the mulligan cursor to the first Active investigator in
-    // player order. Each investigator submits a single
-    // `PlayerAction::Mulligan` in turn; the cursor advances after each
-    // and reaches `None` once all have gone (see `apply_player_action`),
-    // at which point setup ends. Other player actions are rejected while
-    // the cursor is `Some`. An empty/all-eliminated `turn_order` seeds
-    // `None` — the same degenerate no-op as the Mythos draw cursor.
-    cx.state.mulligan_pending = super::cursor::first_active_investigator(cx.state);
-
     // Round-1 action seed: round 1 skips Mythos, so there's no Upkeep 4.2
     // to grant the first round's actions. Every Active investigator → ACTIONS_PER_TURN.
     reset_actions(cx);
 
-    // NOTE: the Investigation phase is NOT begun here. Setup has no
-    // action windows (Rules Reference p.27); the phase begins after the
-    // mulligan cursor reaches `None` — see the kickoff in apply_player_action.
-    EngineOutcome::Done
+    // Begin the setup mulligan loop. Each Active investigator submits a single
+    // mulligan (a `ResolveInput(PickMultiple)`) in player order; the loop
+    // advances after each and drains once all have gone, at which point setup
+    // ends and the Investigation phase begins (see `resume_mulligan`). While
+    // the `Mulligan` frame is on the stack, every non-`ResolveInput` action is
+    // rejected. An empty/all-eliminated `turn_order` skips the loop entirely:
+    // setup ends immediately and we begin Investigation here.
+    let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
+    if remaining.is_empty() {
+        investigation_phase(cx);
+        return EngineOutcome::Done;
+    }
+    super::cards::prompt_mulligan(cx, remaining)
 }
 
 pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
@@ -1039,7 +1039,11 @@ mod investigation_phase_tests {
             .build();
         state.turn_order = vec![InvestigatorId(1)];
         state.active_investigator = None;
-        state.mulligan_pending = Some(InvestigatorId(1));
+        state
+            .continuations
+            .push(crate::state::Continuation::Mulligan {
+                remaining: vec![InvestigatorId(1)],
+            });
 
         let mut events = Vec::new();
         let outcome = apply_player_action(
@@ -1047,16 +1051,16 @@ mod investigation_phase_tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &PlayerAction::Mulligan {
-                investigator: InvestigatorId(1),
-                indices_to_redraw: vec![],
+            &PlayerAction::ResolveInput {
+                response: crate::action::InputResponse::PickMultiple { selected: vec![] },
             },
         );
 
         assert!(matches!(outcome, EngineOutcome::Done));
         assert_eq!(
-            state.mulligan_pending, None,
-            "mulligan cursor clears once every investigator has mulliganed"
+            state.current_mulligan(),
+            None,
+            "mulligan loop drains once every investigator has mulliganed"
         );
         assert_eq!(
             state.active_investigator,
@@ -3558,7 +3562,11 @@ mod start_scenario_tests {
             state,
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        // One Active investigator → StartScenario opens the mulligan prompt.
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(result.state.round, 1);
     }
 
@@ -3590,7 +3598,10 @@ mod start_scenario_tests {
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         crate::assert_event!(result.events, crate::event::Event::EncounterDeckShuffled);
         let mut after: Vec<&str> = result
             .state
