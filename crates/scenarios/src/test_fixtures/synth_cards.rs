@@ -20,8 +20,8 @@ use game_core::card_data::{
 };
 use game_core::card_registry::{CardRegistry, NativeEffectFn};
 use game_core::dsl::{
-    forced_on_event, gain_resources, native, on_play, reaction_on_event, revelation, Ability,
-    Effect, EventPattern, EventTiming, InvestigatorTarget,
+    choose_one, forced_on_event, gain_resources, native, on_play, reaction_on_event, revelation,
+    Ability, Effect, EventPattern, EventTiming, InvestigatorTarget,
 };
 use game_core::engine::{Cx, EngineOutcome, EvalContext};
 use game_core::event::{Event, TraumaKind};
@@ -54,6 +54,14 @@ pub const SYNTH_TREACHERY_CODE: &str = "_synth_treachery";
 /// which drives the surge re-draw path in the per-card sub-sequence
 /// (Rules Reference p.19, p.24 1.4 step 5).
 pub const SYNTH_SURGE_TREACHERY_CODE: &str = "_synth_surge_treachery";
+
+/// Code for a synthetic treachery whose Revelation is a top-level
+/// [`Effect::ChooseOne`] (gain 2 vs gain 5 resources) — i.e. it suspends
+/// **directly** into a choice, *not* nested inside a skill test (the Crypt
+/// Chill 01167 shape). The #380 motivating case: before the `EncounterCard`
+/// frame, its disposal was stranded because the `pending_revelation_discard`
+/// slot was only flushed by the skill-test driver.
+pub const SYNTH_CHOICE_TREACHERY_CODE: &str = "_synth_choice_treachery";
 
 /// Code for the synthetic Fast event. Used to test the `MythosAfterDraws`
 /// window's push-then-scan ordering fix: a Fast event in hand during
@@ -101,6 +109,27 @@ fn synth_treachery_metadata() -> CardMetadata {
 fn synth_treachery_metadata_static() -> &'static CardMetadata {
     static M: OnceLock<CardMetadata> = OnceLock::new();
     M.get_or_init(synth_treachery_metadata)
+}
+
+/// Metadata for the choice-Revelation treachery (#380). A one-shot treachery
+/// shell; the load-bearing part is its `Effect::ChooseOne` Revelation in
+/// [`abilities_for`].
+fn synth_choice_treachery_metadata() -> CardMetadata {
+    CardMetadata {
+        code: SYNTH_CHOICE_TREACHERY_CODE.to_owned(),
+        name: "Synthetic Choice Treachery".to_owned(),
+        text: Some(
+            "Revelation - Choose one: gain 2 resources; or gain 5 resources. \
+             (Synthetic; not a printed card.)"
+                .to_owned(),
+        ),
+        ..synth_treachery_metadata()
+    }
+}
+
+fn synth_choice_treachery_metadata_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(synth_choice_treachery_metadata)
 }
 
 fn synth_enemy_metadata() -> CardMetadata {
@@ -275,6 +304,7 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
         SYNTH_TREACHERY_CODE => Some(synth_treachery_metadata_static()),
         SYNTH_ENEMY_CODE => Some(synth_enemy_metadata_static()),
         SYNTH_SURGE_TREACHERY_CODE => Some(synth_surge_treachery_metadata_static()),
+        SYNTH_CHOICE_TREACHERY_CODE => Some(synth_choice_treachery_metadata_static()),
         SYNTH_FAST_EVENT_CODE => Some(synth_fast_event_metadata_static()),
         SYNTH_COVER_UP_CODE => Some(synth_cover_up_metadata_static()),
         _ => None,
@@ -287,6 +317,13 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         SYNTH_TREACHERY_CODE | SYNTH_SURGE_TREACHERY_CODE => {
             Some(vec![revelation(gain_resources(InvestigatorTarget::You, 1))])
         }
+        // #380: a Revelation that suspends *directly* into a choice (two
+        // resource-gain branches), unlike Crypt Chill's choice nested inside a
+        // skill test.
+        SYNTH_CHOICE_TREACHERY_CODE => Some(vec![revelation(choose_one([
+            gain_resources(InvestigatorTarget::You, 2),
+            gain_resources(InvestigatorTarget::You, 5),
+        ]))]),
         SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(InvestigatorTarget::You, 1))]),
         SYNTH_COVER_UP_CODE => Some(vec![
             reaction_on_event(
