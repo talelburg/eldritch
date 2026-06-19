@@ -271,7 +271,7 @@ pub fn resolve_encounter_card(
 /// sole/best candidate); `Tie` suspends via
 /// [`SpawnEngagePending`](crate::state::SpawnEngagePending) and returns
 /// [`EngineOutcome::AwaitingInput`] for the lead investigator's
-/// `PickInvestigator`. When the spawn happens inside a Mythos
+/// `PickSingle`. When the spawn happens inside a Mythos
 /// encounter-draw chain, [`resume_spawn_engage`] re-enters
 /// [`run_mythos_draw_chain`] after the pick resolves.
 ///
@@ -398,7 +398,7 @@ pub(super) fn spawn_enemy_at(
     // 2. Resolve engagement-on-spawn (validate-first). The co-located
     //    set is narrowed by the enemy's `prey`; with `Prey::Default` a 2+
     //    set ties and suspends for the lead investigator's
-    //    `PickInvestigator` (option A).
+    //    `PickSingle` (option A).
     let candidates = super::cursor::active_investigators_at(cx.state, location_id);
 
     // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
@@ -472,10 +472,13 @@ pub(super) fn spawn_enemy_at(
                     },
                 ));
             EngineOutcome::AwaitingInput {
-                request: InputRequest::prompt(format!(
-                    "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
-                     engage among {tied:?} (submit InputResponse::PickInvestigator)"
-                )),
+                request: InputRequest::choice(
+                    format!(
+                        "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
+                         engage among {tied:?}"
+                    ),
+                    super::hunters::candidate_options(&tied),
+                ),
                 resume_token: ResumeToken(0),
             }
         }
@@ -1690,13 +1693,13 @@ mod spawn_enemy_tests {
             Some(crate::state::Continuation::SpawnEngage(_))
         ));
 
-        // Investigator 3 is not among the co-located candidates.
+        // Option id 99 is out of the co-located candidate range.
         let outcome = super::super::hunters::resume_spawn_engage(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::PickInvestigator(InvestigatorId(3)),
+            &InputResponse::PickSingle(crate::engine::OptionId(99)),
         );
         assert!(
             matches!(outcome, EngineOutcome::Rejected { .. }),

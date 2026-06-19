@@ -89,6 +89,12 @@ enum ScriptedStep {
     /// skill test. A by-`CardCode` convenience over the real index-based
     /// commit flow (resolves codes to hand indices at replay time).
     CommitCards(Vec<CardCode>),
+    /// Pick the offered option whose label matches this string, resolved to
+    /// `PickSingle(option.id)` at replay time. A by-id convenience for the
+    /// location/investigator-pick windows, whose options are labeled with the
+    /// candidate's debug repr (`pick_location` / `pick_investigator` store
+    /// `format!("{id:?}")`).
+    PickByLabel(String),
 }
 
 impl ScriptedResolver {
@@ -118,14 +124,22 @@ impl ScriptedResolver {
         self.push(InputResponse::PickSingle(id))
     }
 
-    /// Respond with [`InputResponse::PickInvestigator`].
+    /// Pick the investigator `id` from a structured-choice window by matching
+    /// the offered option labeled `format!("{id:?}")` at replay time, yielding
+    /// [`InputResponse::PickSingle`].
     pub fn pick_investigator(&mut self, id: InvestigatorId) -> &mut Self {
-        self.push(InputResponse::PickInvestigator(id))
+        self.steps
+            .push_back(ScriptedStep::PickByLabel(format!("{id:?}")));
+        self
     }
 
-    /// Respond with [`InputResponse::PickLocation`].
+    /// Pick the location `id` from a structured-choice window by matching the
+    /// offered option labeled `format!("{id:?}")` at replay time, yielding
+    /// [`InputResponse::PickSingle`].
     pub fn pick_location(&mut self, id: LocationId) -> &mut Self {
-        self.push(InputResponse::PickLocation(id))
+        self.steps
+            .push_back(ScriptedStep::PickByLabel(format!("{id:?}")));
+        self
     }
 
     /// Commit cards (by code) from the in-flight skill test's
@@ -168,6 +182,20 @@ impl ChoiceResolver for ScriptedResolver {
                     .map(crate::engine::OptionId)
                     .collect(),
             },
+            ScriptedStep::PickByLabel(label) => {
+                let opt = request
+                    .options
+                    .iter()
+                    .find(|o| o.label == label)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "ScriptedResolver::pick_*: no offered option labeled {label:?}; \
+                         prompt {:?}, options {:?}",
+                            request.prompt, request.options,
+                        )
+                    });
+                InputResponse::PickSingle(opt.id)
+            }
         }
     }
 }
@@ -407,7 +435,7 @@ mod tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
     use crate::engine::{InputRequest, OptionId, ResumeToken};
-    use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
+    use crate::state::{CardCode, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
 
     fn empty_state() -> GameState {
@@ -423,22 +451,16 @@ mod tests {
         let mut r = ScriptedResolver::new();
         r.confirm()
             .skip()
-            .pick_investigator(InvestigatorId(2))
-            .pick_location(LocationId(99));
+            .pick_single(OptionId(2))
+            .pick_single(OptionId(5));
         assert_eq!(r.remaining(), 4);
 
         let state = empty_state();
         let p = req("pick");
         assert_eq!(r.next(&p, &state), InputResponse::Confirm);
         assert_eq!(r.next(&p, &state), InputResponse::Skip);
-        assert_eq!(
-            r.next(&p, &state),
-            InputResponse::PickInvestigator(InvestigatorId(2))
-        );
-        assert_eq!(
-            r.next(&p, &state),
-            InputResponse::PickLocation(LocationId(99))
-        );
+        assert_eq!(r.next(&p, &state), InputResponse::PickSingle(OptionId(2)));
+        assert_eq!(r.next(&p, &state), InputResponse::PickSingle(OptionId(5)));
         assert_eq!(r.remaining(), 0);
     }
 

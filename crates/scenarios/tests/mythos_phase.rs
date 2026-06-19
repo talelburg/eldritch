@@ -236,7 +236,7 @@ fn mythos_phase_resolves_single_spawn_enemy() {
 fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // Two investigators co-located at the synth spawn location: the
     // drawn enemy ties under Prey::Default, so the draw suspends for the
-    // lead's PickInvestigator (#128, option A). Resolving the pick
+    // lead's PickSingle (#128, option A). Resolving the pick
     // engages the chosen investigator and resumes inv1's Mythos draw
     // chain — which, the enemy being non-surge, advances the cursor to
     // inv2 and stays in Mythos.
@@ -304,12 +304,23 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // The cursor is unchanged — still mid-chain for inv1.
     assert_eq!(suspended.state.mythos_draw_pending, Some(InvestigatorId(1)));
 
-    // Lead picks inv2 → engage + resume the chain. The enemy is
-    // non-surge, so no further card draws; the chain advances to inv2.
+    // Lead picks inv2 (by its offered option id) → engage + resume the chain.
+    // The enemy is non-surge, so no further card draws; the chain advances to inv2.
+    let pick = {
+        let EngineOutcome::AwaitingInput { request, .. } = &suspended.outcome else {
+            unreachable!("asserted AwaitingInput above");
+        };
+        request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{:?}", InvestigatorId(2)))
+            .expect("InvestigatorId(2) among offered options")
+            .id
+    };
     let resumed = apply(
         suspended.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickInvestigator(InvestigatorId(2)),
+            response: InputResponse::PickSingle(pick),
         }),
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);

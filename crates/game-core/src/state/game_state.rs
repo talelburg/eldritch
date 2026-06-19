@@ -1098,10 +1098,10 @@ pub enum PhaseStep {
 /// p.17).
 ///
 /// Two shapes because the two choice points need different input:
-/// movement is a `PickLocation` over a prey-filtered destination set
+/// movement is a `PickSingle` over a prey-filtered destination set
 /// (the chosen prey doesn't persist, so picking a location is
 /// outcome-equivalent to picking an investigator-then-path); engagement
-/// on arrival is a `PickInvestigator` over the co-located set.
+/// on arrival is a `PickSingle` over the co-located set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum HunterChoice {
@@ -1125,7 +1125,7 @@ pub enum HunterChoice {
 
 /// A suspended engagement-on-spawn choice (#128, option A): a
 /// multi-investigator spawn tie awaiting the lead investigator's
-/// `PickInvestigator`. `investigator_to_draw` is the drawing
+/// `PickSingle`. `investigator_to_draw` is the drawing
 /// investigator whose Mythos encounter-draw chain resumes once the
 /// engagement is chosen.
 ///

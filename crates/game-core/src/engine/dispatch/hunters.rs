@@ -12,7 +12,7 @@ use crate::state::{
 
 use super::cursor;
 use super::Cx;
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 
 /// Result of narrowing a candidate investigator set by a prey
 /// instruction (Rules Reference p.12 / p.17).
@@ -299,7 +299,7 @@ fn engage_on_arrival(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
 /// not engage until readied) or has no location. On a prey `Tie` this
 /// engages the lead (`tied[0]`, which is `turn_order`-first because
 /// `active_investigators_at` is turn-order-ordered) rather than
-/// suspending for the lead's `PickInvestigator` — keeping every defeat
+/// suspending for the lead's `PickSingle` — keeping every defeat
 /// caller synchronous. TODO(#151): make the multiplayer tie an
 /// interactive lead choice when multiplayer lands.
 ///
@@ -381,24 +381,44 @@ pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Store the pending hunter choice and return `AwaitingInput` for the
-/// lead investigator (#128, Task 7 wires the resume path).
+/// Build the offered options for a candidate list: option `i` is
+/// `candidates[i]`, label = its debug repr (#205 will make these human).
+pub(super) fn candidate_options<T: std::fmt::Debug>(candidates: &[T]) -> Vec<ChoiceOption> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(i, c)| ChoiceOption {
+            id: OptionId(u32::try_from(i).expect("candidate count fits u32")),
+            label: format!("{c:?}"),
+        })
+        .collect()
+}
+
+/// Store the pending hunter choice and return `AwaitingInput` for the lead
+/// investigator: the candidates ride the request as structured options, and the
+/// resume comes back as `PickSingle(OptionId)` indexing the candidate list (#348).
 fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
-    let prompt = match &choice {
-        HunterChoice::Move { enemy, candidates } => format!(
-            "Hunter {enemy:?} movement: lead investigator picks a destination among \
-             {candidates:?} (submit InputResponse::PickLocation)"
+    let (prompt, options) = match &choice {
+        HunterChoice::Move { enemy, candidates } => (
+            format!(
+                "Hunter {enemy:?} movement: lead investigator picks a destination among \
+                 {candidates:?}"
+            ),
+            candidate_options(candidates),
         ),
-        HunterChoice::Engage { enemy, candidates } => format!(
-            "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
-             {candidates:?} (submit InputResponse::PickInvestigator)"
+        HunterChoice::Engage { enemy, candidates } => (
+            format!(
+                "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
+                 {candidates:?}"
+            ),
+            candidate_options(candidates),
         ),
     };
     cx.state
         .continuations
         .push(crate::state::Continuation::HunterMove(choice));
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(prompt),
+        request: InputRequest::choice(prompt, options),
         resume_token: ResumeToken(0),
     }
 }
@@ -417,22 +437,29 @@ pub(super) fn resume_hunter_choice(
         unreachable!("resume_hunter_choice: called with no HunterMove frame on top of the stack")
     };
     let pending = pending.clone();
-    let current_enemy = match (&pending, response) {
-        (
-            HunterChoice::Move { enemy, candidates },
-            crate::action::InputResponse::PickLocation(loc),
-        ) => {
-            if !candidates.contains(loc) {
+    let crate::action::InputResponse::PickSingle(crate::engine::OptionId(i)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: hunter choice expects InputResponse::PickSingle, got {response:?}"
+            )
+            .into(),
+        };
+    };
+    let i = *i as usize;
+    let current_enemy = match &pending {
+        HunterChoice::Move { enemy, candidates } => {
+            let Some(&loc) = candidates.get(i) else {
                 return EngineOutcome::Rejected {
                     reason: format!(
-                        "ResolveInput: hunter move destination {loc:?} not among candidates {candidates:?}"
+                        "ResolveInput: hunter move option {i} out of range (0..{})",
+                        candidates.len()
                     )
                     .into(),
                 };
-            }
+            };
             // Pop the HunterMove frame we validated against (it is the top frame).
             cx.state.continuations.pop();
-            move_hunter_to(cx, *enemy, *loc);
+            move_hunter_to(cx, *enemy, loc);
             // After the move, attempt engage-on-arrival; that itself may
             // suspend on an engagement tie.
             if let Some(choice) = engage_on_arrival(cx, *enemy) {
@@ -440,38 +467,20 @@ pub(super) fn resume_hunter_choice(
             }
             *enemy
         }
-        (
-            HunterChoice::Engage { enemy, candidates },
-            crate::action::InputResponse::PickInvestigator(who),
-        ) => {
-            if !candidates.contains(who) {
+        HunterChoice::Engage { enemy, candidates } => {
+            let Some(&who) = candidates.get(i) else {
                 return EngineOutcome::Rejected {
                     reason: format!(
-                        "ResolveInput: hunter engage target {who:?} not among candidates {candidates:?}"
+                        "ResolveInput: hunter engage option {i} out of range (0..{})",
+                        candidates.len()
                     )
                     .into(),
                 };
-            }
+            };
             // Pop the HunterMove frame we validated against (it is the top frame).
             cx.state.continuations.pop();
-            engage_enemy_with(cx, *enemy, *who);
+            engage_enemy_with(cx, *enemy, who);
             *enemy
-        }
-        (HunterChoice::Move { .. }, other) => {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "ResolveInput: hunter movement expects InputResponse::PickLocation, got {other:?}"
-                )
-                .into(),
-            };
-        }
-        (HunterChoice::Engage { .. }, other) => {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "ResolveInput: hunter engagement expects InputResponse::PickInvestigator, got {other:?}"
-                )
-                .into(),
-            };
         }
     };
     // Continue with the next eligible hunter after the one we finished.
@@ -490,7 +499,7 @@ pub(super) fn resume_hunter_choice(
 }
 
 /// Resume a suspended engagement-on-spawn choice (#128, option A) with
-/// the lead investigator's `PickInvestigator`, then continue the drawing
+/// the lead investigator's `PickSingle`, then continue the drawing
 /// investigator's Mythos encounter-draw chain.
 ///
 /// Validate-first: an invalid pick (wrong response shape, or a target
@@ -510,27 +519,26 @@ pub(super) fn resume_spawn_engage(
         unreachable!("resume_spawn_engage: called with no SpawnEngage frame on top of the stack")
     };
     let pending = pending.clone();
-    let crate::action::InputResponse::PickInvestigator(who) = response else {
+    let crate::action::InputResponse::PickSingle(crate::engine::OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: spawn engagement expects InputResponse::PickInvestigator, \
-                 got {response:?}"
+                "ResolveInput: spawn engagement expects InputResponse::PickSingle, got {response:?}"
             )
             .into(),
         };
     };
-    if !pending.candidates.contains(who) {
+    let Some(&who) = pending.candidates.get(*i as usize) else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: spawn engage target {who:?} not among candidates {:?}",
-                pending.candidates
+                "ResolveInput: spawn engage option {i} out of range (0..{})",
+                pending.candidates.len()
             )
             .into(),
         };
-    }
+    };
     // Pop the SpawnEngage frame we validated against (it is the top frame).
     cx.state.continuations.pop();
-    engage_enemy_with(cx, pending.enemy, *who);
+    engage_enemy_with(cx, pending.enemy, who);
 
     // Only re-enter the Mythos surge chain if the suspend happened
     // mid-chain (the drawing investigator is still the pending cursor).
@@ -1023,6 +1031,27 @@ mod hunter_resume_tests {
     use crate::assert_event;
     use crate::engine::Cx;
     use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
+
+    /// Build the `PickSingle` response selecting the offered option whose label
+    /// is `format!("{target:?}")`, from a suspended `AwaitingInput`'s options.
+    /// Panics if no option matches (a test-setup error).
+    fn pick(outcome: &EngineOutcome, target: impl std::fmt::Debug) -> crate::action::InputResponse {
+        let crate::engine::EngineOutcome::AwaitingInput { request, .. } = outcome else {
+            panic!("expected AwaitingInput, got {outcome:?}");
+        };
+        let label = format!("{target:?}");
+        let opt = request
+            .options
+            .iter()
+            .find(|o| o.label == label)
+            .unwrap_or_else(|| {
+                panic!(
+                    "no offered option labeled {label:?} in {:?}",
+                    request.options
+                )
+            });
+        crate::action::InputResponse::PickSingle(opt.id)
+    }
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
@@ -1069,7 +1098,7 @@ mod hunter_resume_tests {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickLocation(LocationId(3)),
+            &pick(&outcome, LocationId(3)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
         assert_eq!(
@@ -1115,13 +1144,13 @@ mod hunter_resume_tests {
             events: &mut events,
         });
         let mut ev2 = Vec::new();
-        // LocationId(4) is the destination, not a first-step candidate.
+        // Option id 99 is out of the candidate range -> rejected.
         let result = super::super::resolve_input(
             &mut crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickLocation(LocationId(4)),
+            &crate::action::InputResponse::PickSingle(crate::engine::OptionId(99)),
         );
         assert!(matches!(result, EngineOutcome::Rejected { .. }));
         assert!(
@@ -1136,7 +1165,7 @@ mod hunter_resume_tests {
     #[test]
     fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
         // Two investigators at B; hunter moves A->B; default prey -> tie ->
-        // PickInvestigator.
+        // PickSingle.
         let mut a = test_location(1, "A");
         let mut b = test_location(2, "B");
         a.connections = vec![LocationId(2)];
@@ -1174,7 +1203,7 @@ mod hunter_resume_tests {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickInvestigator(InvestigatorId(2)),
+            &pick(&outcome, InvestigatorId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
         assert_eq!(
@@ -1284,7 +1313,7 @@ mod hunter_resume_tests {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickLocation(LocationId(2)),
+            &pick(&outcome, LocationId(2)),
         );
         assert_eq!(resumed, EngineOutcome::Done);
         assert_eq!(
@@ -1301,7 +1330,7 @@ mod hunter_resume_tests {
     fn hunter_move_tie_rejects_wrong_response_kind() {
         // Diamond A(1)-{B(2),C(3)}-D(4). Investigator at D; hunter at A,
         // default prey. Two equal first-steps (B, C) -> AwaitingInput on Move.
-        // Client submits PickInvestigator instead of PickLocation -> Rejected,
+        // Client submits a non-PickSingle response (Skip) -> Rejected,
         // pending preserved for retry.
         let mut loc_a = test_location(1, "A");
         let mut loc_b = test_location(2, "B");
@@ -1336,14 +1365,14 @@ mod hunter_resume_tests {
             state.continuations.last(),
             Some(crate::state::Continuation::HunterMove(_))
         ));
-        // Submit PickInvestigator when PickLocation is expected.
+        // Submit a non-PickSingle response (Skip).
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
             &mut crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickInvestigator(InvestigatorId(1)),
+            &crate::action::InputResponse::Skip,
         );
         assert!(
             matches!(result, EngineOutcome::Rejected { .. }),
@@ -1354,7 +1383,7 @@ mod hunter_resume_tests {
                 state.continuations.last(),
                 Some(crate::state::Continuation::HunterMove(_))
             ),
-            "pending preserved so client can retry with PickLocation"
+            "pending preserved so client can retry with PickSingle"
         );
     }
 
@@ -1362,7 +1391,7 @@ mod hunter_resume_tests {
     fn hunter_engage_tie_rejects_wrong_response_kind() {
         // Two investigators at B(2); hunter moves A(1)->B(2); default prey
         // -> engage tie -> AwaitingInput on Engage.
-        // Client submits PickLocation instead of PickInvestigator -> Rejected,
+        // Client submits a non-PickSingle response (Skip) -> Rejected,
         // pending preserved for retry.
         let mut loc_a = test_location(1, "A");
         let mut loc_b = test_location(2, "B");
@@ -1399,14 +1428,14 @@ mod hunter_resume_tests {
             state.continuations.last(),
             Some(crate::state::Continuation::HunterMove(_))
         ));
-        // Submit PickLocation when PickInvestigator is expected.
+        // Submit a non-PickSingle response (Skip).
         let mut ev2 = Vec::new();
         let result = super::super::resolve_input(
             &mut crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickLocation(LocationId(1)),
+            &crate::action::InputResponse::Skip,
         );
         assert!(
             matches!(result, EngineOutcome::Rejected { .. }),
@@ -1417,7 +1446,7 @@ mod hunter_resume_tests {
                 state.continuations.last(),
                 Some(crate::state::Continuation::HunterMove(_))
             ),
-            "pending preserved so client can retry with PickInvestigator"
+            "pending preserved so client can retry with PickSingle"
         );
     }
 }

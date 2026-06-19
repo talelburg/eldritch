@@ -2469,12 +2469,22 @@ mod enemy_phase_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Enemy);
         let mut ev2 = Vec::new();
+        // Pick LocationId(2) by its offered option id (candidates ride the request).
+        let crate::engine::EngineOutcome::AwaitingInput { request, .. } = &outcome else {
+            unreachable!("asserted AwaitingInput above");
+        };
+        let pick = request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{:?}", LocationId(2)))
+            .expect("LocationId(2) among offered options")
+            .id;
         let resumed = resolve_input(
             &mut crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &InputResponse::PickLocation(LocationId(2)),
+            &InputResponse::PickSingle(pick),
         );
         assert_eq!(resumed, EngineOutcome::Done);
         assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked));

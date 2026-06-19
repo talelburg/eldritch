@@ -1,11 +1,11 @@
 //! #128 integration: spawn-engagement tie resolved through the real
 //! registry + Mythos draw path (option A), plus hunter-movement replay
-//! equality across a `PickLocation` round-trip.
+//! equality across a `PickSingle` round-trip.
 
 use std::sync::Once;
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::Action;
@@ -41,7 +41,7 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
         .encounter_deck
         .push_back(game_core::state::CardCode(SYNTH_ENEMY_CODE.into()));
 
-    // 1) Drawing the enemy suspends for the lead's PickInvestigator.
+    // 1) Drawing the enemy suspends for the lead's PickSingle.
     let r1 = apply(state, Action::Player(PlayerAction::DrawEncounterCard));
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -58,11 +58,23 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
     let spawned = r1.state.enemies.values().next().expect("enemy placed");
     assert_eq!(spawned.engaged_with, None, "engagement deferred until pick");
 
-    // 2) Lead picks investigator 2; engagement resolves, draw chain ends.
+    // 2) Lead picks investigator 2 (by its offered option id); engagement
+    //    resolves, draw chain ends.
+    let pick = {
+        let EngineOutcome::AwaitingInput { request, .. } = &r1.outcome else {
+            unreachable!("asserted AwaitingInput above");
+        };
+        request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{:?}", InvestigatorId(2)))
+            .expect("InvestigatorId(2) among offered options")
+            .id
+    };
     let r2 = apply(
         r1.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickInvestigator(InvestigatorId(2)),
+            response: InputResponse::PickSingle(pick),
         }),
     );
     assert_eq!(r2.outcome, EngineOutcome::Done);
@@ -103,10 +115,12 @@ fn hunter_movement_pick_location_replays_identically() {
             .build()
     }
 
+    // Candidates are the sorted first-steps toward D: [LocationId(2), LocationId(3)],
+    // so LocationId(3) is offered option id 1.
     let actions = [
         Action::Player(PlayerAction::EndTurn),
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickLocation(LocationId(3)),
+            response: InputResponse::PickSingle(OptionId(1)),
         }),
     ];
 
