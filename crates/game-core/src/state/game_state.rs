@@ -500,11 +500,12 @@ pub struct ChoiceFrame {
     pub offered: Vec<crate::engine::OptionId>,
     /// Root effect being (re-)resolved. A native leaf is just one node.
     pub effect: card_dsl::dsl::Effect,
-    /// [`EvalContext`](crate::engine::EvalContext)`.controller` ingredient.
-    pub controller: InvestigatorId,
-    /// [`EvalContext`](crate::engine::EvalContext)`.source` ingredient
-    /// (`None` for scenario / forced effects with no originating instance).
-    pub source: Option<CardInstanceId>,
+    /// The [`EvalContext`](crate::engine::EvalContext) captured at suspend —
+    /// durable identity (`controller`/`source`) **and** any active window
+    /// bindings (e.g. an `on_fail` margin). Snapshotting the whole context (vs.
+    /// re-storing ingredient tuples) means bindings survive the suspend; resume
+    /// re-runs the effect with this exact context. (#345.)
+    pub context: crate::engine::EvalContext,
 }
 
 impl Continuation {

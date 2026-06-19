@@ -655,14 +655,14 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .and_then(ResolutionFrame::kind)
     {
         Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) => {
-            eval_ctx.attacking_enemy = Some(enemy);
+            eval_ctx.set_attacking_enemy(enemy);
         }
         // For `BeforeDiscoverClues`, bind the would-be discovery count so the
         // replacement effect (Cover Up's "discard that many") discards the
         // right number. Mirrors `attacking_enemy`. TODO(#368): `count` is the
         // requested, not the capped, count.
         Some(WindowKind::BeforeDiscoverClues { count, .. }) => {
-            eval_ctx.clue_discovery_count = Some(count);
+            eval_ctx.set_clue_discovery_count(count);
         }
         _ => {}
     }

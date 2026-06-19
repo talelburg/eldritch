@@ -52,7 +52,7 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 /// somehow absent we reject loudly (matching the card-effect error
 /// policy) rather than panic.
 fn retaliate(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    let Some(enemy) = ctx.attacking_enemy else {
+    let Some(enemy) = ctx.attacking_enemy() else {
         return EngineOutcome::Rejected {
             reason: "01021:retaliate fired without attacking_enemy bound — \
                      only the AfterEnemyAttackDamagedAsset window fires this \
@@ -123,7 +123,7 @@ mod tests {
         state.enemies.insert(eid, enemy);
 
         let mut ctx = EvalContext::for_controller(InvestigatorId(1));
-        ctx.attacking_enemy = Some(eid);
+        ctx.set_attacking_enemy(eid);
 
         let (out, events) = cx_apply(&mut state, &ctx, retaliate);
         assert_eq!(out, EngineOutcome::Done);

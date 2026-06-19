@@ -218,10 +218,10 @@ fn synth_cover_up_discard(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     // The seam threads the replaced count via `clue_discovery_count`; a
     // missing value means a wiring regression, not a legal 0-clue discard.
     debug_assert!(
-        ctx.clue_discovery_count.is_some(),
+        ctx.clue_discovery_count().is_some(),
         "synth_cover_up_discard: clue_discovery_count not threaded"
     );
-    let count = ctx.clue_discovery_count.unwrap_or(0);
+    let count = ctx.clue_discovery_count().unwrap_or(0);
     let Some(source) = ctx.source else {
         return EngineOutcome::Rejected {
             reason: "synth_cover_up_discard: no source instance".into(),

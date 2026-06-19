@@ -341,7 +341,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         // effects (Deal / Native) run to completion;
         // a future suspending on_fail is #212 reentrancy work.
         let mut ctx = card_ctx(investigator);
-        ctx.failed_by = Some(failed_by);
+        ctx.set_failed_by(failed_by);
         let outcome = apply_effect(cx, effect, ctx);
         if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
             // on_fail suspended on a controller choice (Crypt Chill 01167's

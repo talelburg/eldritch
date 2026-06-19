@@ -66,10 +66,10 @@ pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 /// count (threaded via `clue_discovery_count`) from the firing instance.
 fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     debug_assert!(
-        ctx.clue_discovery_count.is_some(),
+        ctx.clue_discovery_count().is_some(),
         "cover_up discard: clue_discovery_count not threaded"
     );
-    let count = ctx.clue_discovery_count.unwrap_or(0);
+    let count = ctx.clue_discovery_count().unwrap_or(0);
     let Some(source) = ctx.source else {
         return EngineOutcome::Rejected {
             reason: "cover_up discard: no source instance".into(),
