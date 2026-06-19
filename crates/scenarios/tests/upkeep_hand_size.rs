@@ -14,7 +14,7 @@
 
 use std::sync::Once;
 
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::state::{CardCode, InvestigatorId, Phase};
 use game_core::{Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
@@ -33,6 +33,7 @@ fn install_test_registry() {
 const HAND_SIZE_LIMIT: usize = 8;
 
 #[test]
+#[allow(clippy::too_many_lines)] // end-to-end upkeep walkthrough; length is inherent
 fn upkeep_prompts_and_discards_down_to_eight() {
     install_test_registry();
 
@@ -120,7 +121,9 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     let r4 = apply(
         r3.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::DiscardCards { indices },
+            response: InputResponse::PickMultiple {
+                selected: indices.into_iter().map(OptionId).collect(),
+            },
         }),
     );
 
@@ -205,8 +208,8 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
         }),
         Action::Player(PlayerAction::EndTurn),
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::DiscardCards {
-                indices: indices.clone(),
+            response: InputResponse::PickMultiple {
+                selected: indices.iter().copied().map(OptionId).collect(),
             },
         }),
     ];

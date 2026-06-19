@@ -857,8 +857,8 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(format!(
             "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
-             submit InputResponse::DiscardCards with the hand indices to discard down to \
-             {HAND_SIZE_LIMIT}.",
+             submit InputResponse::PickMultiple with the hand indices (as option ids) to \
+             discard down to {HAND_SIZE_LIMIT}.",
         )),
         resume_token: ResumeToken(0),
     }
@@ -894,14 +894,16 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     let pending = pending.clone();
     let current = pending.remaining[0];
 
-    let InputResponse::DiscardCards { indices } = response else {
+    let InputResponse::PickMultiple { selected } = response else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: hand-size discard expects InputResponse::DiscardCards, got {response:?}",
+                "ResolveInput: hand-size discard expects InputResponse::PickMultiple, got {response:?}",
             )
             .into(),
         };
     };
+    // Each OptionId is a hand index.
+    let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
 
     // ---- validate (state untouched on any failure) ----
     let inv = cx.state.investigators.get(&current).unwrap_or_else(|| {
@@ -920,7 +922,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
         };
     }
     let mut seen = std::collections::BTreeSet::new();
-    for &i in indices {
+    for &i in &indices {
         if !seen.insert(i) {
             return EngineOutcome::Rejected {
                 reason: format!("ResolveInput::DiscardCards: duplicate hand index {i}").into(),
@@ -2339,7 +2341,7 @@ mod upkeep_phase_tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::DiscardCards { indices: vec![] },
+            &InputResponse::PickMultiple { selected: vec![] },
         );
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
         assert!(
@@ -3138,6 +3140,7 @@ mod enemy_phase_tests {
 mod hand_size_tests {
     use super::*;
     use crate::assert_no_event;
+    use crate::engine::OptionId;
     use crate::state::{CardCode, InvestigatorId};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
@@ -3276,8 +3279,8 @@ mod hand_size_tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::DiscardCards {
-                indices: vec![0, 1],
+            &InputResponse::PickMultiple {
+                selected: vec![OptionId(0), OptionId(1)],
             },
         );
 
@@ -3334,7 +3337,9 @@ mod hand_size_tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::DiscardCards { indices: vec![0] },
+            &InputResponse::PickMultiple {
+                selected: vec![OptionId(0)],
+            },
         );
 
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
@@ -3378,8 +3383,8 @@ mod hand_size_tests {
                 state: &mut s1,
                 events: &mut e1,
             },
-            &InputResponse::DiscardCards {
-                indices: vec![0, 0],
+            &InputResponse::PickMultiple {
+                selected: vec![OptionId(0), OptionId(0)],
             },
         );
         assert!(matches!(o1, EngineOutcome::Rejected { .. }));
@@ -3393,8 +3398,8 @@ mod hand_size_tests {
                 state: &mut s2,
                 events: &mut e2,
             },
-            &InputResponse::DiscardCards {
-                indices: vec![0, 99],
+            &InputResponse::PickMultiple {
+                selected: vec![OptionId(0), OptionId(99)],
             },
         );
         assert!(matches!(o2, EngineOutcome::Rejected { .. }));
@@ -3426,7 +3431,9 @@ mod hand_size_tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::DiscardCards { indices: vec![0] },
+            &InputResponse::PickMultiple {
+                selected: vec![OptionId(0)],
+            },
         );
         assert!(matches!(o1, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(

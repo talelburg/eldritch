@@ -153,7 +153,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     {
         return EngineOutcome::Rejected {
             reason: "a hand-size discard choice is pending; submit a PlayerAction::ResolveInput \
-                     with InputResponse::DiscardCards before any other action"
+                     with InputResponse::PickMultiple before any other action"
                 .into(),
         };
     }
