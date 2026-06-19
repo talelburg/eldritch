@@ -4357,7 +4357,7 @@ mod tests {
         assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
         assert!(
             result.state.has_skill_test_in_flight(),
-            "in_flight_skill_test must be populated while paused",
+            "the SkillTest frame must be populated while paused",
         );
     }
 
@@ -4399,7 +4399,7 @@ mod tests {
         );
         assert!(
             !resumed.state.has_skill_test_in_flight(),
-            "in_flight_skill_test must clear after resolution",
+            "the SkillTest frame must clear after resolution",
         );
     }
 

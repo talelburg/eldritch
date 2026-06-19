@@ -1290,10 +1290,11 @@ impl GameState {
             .find(|w| !w.pending_triggers.is_empty())
     }
 
-    /// The skill test currently in flight, if any. Single source of truth for
-    /// "a test is mid-resolution"; `None` outside a test. (#348 moves the
-    /// payload onto the `Continuation::SkillTest` frame; this accessor hides
-    /// where it lives.)
+    /// The skill test currently in flight, if any; `None` outside a test. Reads
+    /// the topmost `Continuation::SkillTest` frame — the continuation stack is
+    /// the single source of truth for "a test is mid-resolution" (#348). Topmost
+    /// (not `.last()`) because a reaction window can sit above the test mid-
+    /// resolution; "topmost `SkillTest` = the in-flight test".
     #[must_use]
     pub fn current_skill_test(&self) -> Option<&InFlightSkillTest> {
         self.continuations.iter().rev().find_map(|c| match c {

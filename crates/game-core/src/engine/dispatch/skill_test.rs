@@ -281,7 +281,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // immediately above and nothing has cleared it since.
     cx.state
         .current_skill_test_mut()
-        .expect("in_flight_skill_test was Some immediately above")
+        .expect("the SkillTest frame was present immediately above")
         .committed_by_active
         .clone_from(&indices_u8);
 
@@ -309,7 +309,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     // safe. (C5a #236.)
     cx.state
         .current_skill_test_mut()
-        .expect("in_flight_skill_test was Some immediately above")
+        .expect("the SkillTest frame was present immediately above")
         .continuation = FinishContinuation::PostFollowUp { succeeded };
 
     if succeeded {
@@ -409,7 +409,7 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
         let (continuation, investigator, indices_u8) = {
             let in_flight = cx.state.current_skill_test().unwrap_or_else(|| {
                 unreachable!(
-                    "drive_skill_test: in_flight_skill_test must exist while driver is active; \
+                    "drive_skill_test: the SkillTest frame must exist while driver is active; \
                      state-corruption invariant violation"
                 )
             });
@@ -431,14 +431,14 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                 fire_on_skill_test_resolution(cx, investigator, &indices_u8, succeeded);
                 cx.state
                     .current_skill_test_mut()
-                    .expect("in_flight_skill_test must persist across driver steps")
+                    .expect("the SkillTest frame must persist across driver steps")
                     .continuation = FinishContinuation::PostRetaliate { succeeded };
             }
             FinishContinuation::PostRetaliate { succeeded } => {
                 fire_retaliate_if_any(cx, investigator, succeeded);
                 cx.state
                     .current_skill_test_mut()
-                    .expect("in_flight_skill_test must persist across driver steps")
+                    .expect("the SkillTest frame must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
             }
             FinishContinuation::PostOnResolution { succeeded: _ } => {
