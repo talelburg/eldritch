@@ -847,7 +847,11 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
 /// `remaining` must be non-empty; callers ensure this before calling.
 fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     let next = remaining[0];
-    cx.state.hand_size_discard_pending = Some(HandSizeDiscard { remaining });
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::HandSizeDiscard(
+            HandSizeDiscard { remaining },
+        ));
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(format!(
             "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
@@ -881,11 +885,11 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
 /// to Mythos). Rejections leave state and events untouched.
 pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx
-        .state
-        .hand_size_discard_pending
-        .clone()
-        .unwrap_or_else(|| unreachable!("resume_hand_size_discard: no pending discard"));
+    let Some(crate::state::Continuation::HandSizeDiscard(pending)) = cx.state.continuations.last()
+    else {
+        unreachable!("resume_hand_size_discard: no HandSizeDiscard frame on top of the stack")
+    };
+    let pending = pending.clone();
     let current = pending.remaining[0];
 
     let InputResponse::DiscardCards { indices } = response else {
@@ -960,8 +964,9 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     // ---- advance the queue ----
     let mut remaining = pending.remaining;
     remaining.remove(0);
+    // Pop the current HandSizeDiscard frame (validated above; it is the top frame).
+    cx.state.continuations.pop();
     if remaining.is_empty() {
-        cx.state.hand_size_discard_pending = None;
         upkeep_phase_end(cx) // 4.6 + transition (may open the act round-end window)
     } else {
         park_hand_size_discard(cx, remaining)
@@ -3155,10 +3160,10 @@ mod hand_size_tests {
             "over-cap investigator must suspend; got {outcome:?}"
         );
         assert_eq!(
-            state
-                .hand_size_discard_pending
-                .as_ref()
-                .map(|p| p.remaining.clone()),
+            state.continuations.iter().rev().find_map(|c| match c {
+                crate::state::Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
+                _ => None,
+            }),
             Some(vec![id]),
         );
     }
@@ -3181,7 +3186,10 @@ mod hand_size_tests {
         });
 
         assert_eq!(outcome, EngineOutcome::Done);
-        assert!(state.hand_size_discard_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HandSizeDiscard(_))
+        ));
     }
 
     #[test]
@@ -3207,7 +3215,10 @@ mod hand_size_tests {
         });
 
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-        assert!(state.hand_size_discard_pending.is_some());
+        assert!(matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HandSizeDiscard(_))
+        ));
         assert_eq!(
             state.phase,
             Phase::Upkeep,
@@ -3248,7 +3259,10 @@ mod hand_size_tests {
         );
 
         assert_eq!(outcome, EngineOutcome::Done);
-        assert!(state.hand_size_discard_pending.is_none());
+        assert!(!matches!(
+            state.continuations.last(),
+            Some(crate::state::Continuation::HandSizeDiscard(_))
+        ));
         assert_eq!(state.investigators[&id].hand.len(), 8);
         assert_eq!(state.investigators[&id].discard.len(), 2);
         assert_eq!(
@@ -3307,7 +3321,10 @@ mod hand_size_tests {
             "rejected: hand untouched"
         );
         assert!(
-            state.hand_size_discard_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::HandSizeDiscard(_))
+            ),
             "rejected: still pending"
         );
         assert!(events.is_empty(), "rejected: no events");
@@ -3390,10 +3407,10 @@ mod hand_size_tests {
         );
         assert!(matches!(o1, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
-            state
-                .hand_size_discard_pending
-                .as_ref()
-                .map(|p| p.remaining.clone()),
+            state.continuations.iter().rev().find_map(|c| match c {
+                crate::state::Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
+                _ => None,
+            }),
             Some(vec![inv2]),
         );
         assert_eq!(state.phase, Phase::Upkeep);
@@ -3430,7 +3447,10 @@ mod hand_size_tests {
             "rejected: hand untouched"
         );
         assert!(
-            state.hand_size_discard_pending.is_some(),
+            matches!(
+                state.continuations.last(),
+                Some(crate::state::Continuation::HandSizeDiscard(_))
+            ),
             "rejected: still pending"
         );
         assert!(events.is_empty(), "rejected: no events");

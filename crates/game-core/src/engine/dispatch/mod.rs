@@ -146,8 +146,10 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     // A pending upkeep hand-size discard (#111) blocks every action but
     // `ResolveInput`. Upkeep-phase only; never coexists with the other
     // suspension modes, so guard order is immaterial.
-    if cx.state.hand_size_discard_pending.is_some()
-        && !matches!(action, PlayerAction::ResolveInput { .. })
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::HandSizeDiscard(_))
+    ) && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
             reason: "a hand-size discard choice is pending; submit a PlayerAction::ResolveInput \
@@ -450,18 +452,6 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // Hunter movement, spawn engagement, and hand-size discard are three
     // mutually exclusive suspension modes (different phases). Route to the
     // right resume handler before the reaction-window and skill-test checks.
-    debug_assert!(
-        [
-            cx.state.hand_size_discard_pending.is_some(),
-            cx.state.act_round_end_pending.is_some(),
-        ]
-        .iter()
-        .filter(|b| **b)
-        .count()
-            <= 1,
-        "hand-size discard and act round-end advance are \
-         mutually exclusive suspension modes (different phases)",
-    );
     if matches!(
         cx.state.continuations.last(),
         Some(crate::state::Continuation::HunterMove(_))
@@ -481,7 +471,10 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // Upkeep step-4.5 hand-size discard (#111) is its own suspension mode;
     // route it before the reaction-window check (it arises in Upkeep, not
     // mid-skill-test, so the two never coexist).
-    if cx.state.hand_size_discard_pending.is_some() {
+    if matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::HandSizeDiscard(_))
+    ) {
         return phases::resume_hand_size_discard(cx, response);
     }
 

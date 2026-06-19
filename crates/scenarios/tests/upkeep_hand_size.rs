@@ -79,7 +79,10 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     let hand_before_end = state.investigators[&inv1].hand.len();
     let discard_pile_before = state.investigators[&inv1].discard.len();
     assert!(
-        state.hand_size_discard_pending.is_none(),
+        !matches!(
+            state.continuations.last(),
+            Some(game_core::state::Continuation::HandSizeDiscard(_))
+        ),
         "no discard should be pending before the round-ending EndTurn"
     );
 
@@ -94,7 +97,10 @@ fn upkeep_prompts_and_discards_down_to_eight() {
         r3.outcome,
     );
     assert!(
-        r3.state.hand_size_discard_pending.is_some(),
+        matches!(
+            r3.state.continuations.last(),
+            Some(game_core::state::Continuation::HandSizeDiscard(_))
+        ),
         "hand_size_discard_pending must be set while awaiting the discard"
     );
     let hand_at_check = r3.state.investigators[&inv1].hand.len();
@@ -134,7 +140,10 @@ fn upkeep_prompts_and_discards_down_to_eight() {
         "discarded cards must move to the investigator's discard pile"
     );
     assert!(
-        r4.state.hand_size_discard_pending.is_none(),
+        !matches!(
+            r4.state.continuations.last(),
+            Some(game_core::state::Continuation::HandSizeDiscard(_))
+        ),
         "discard-pending must be cleared once the queue drains"
     );
 

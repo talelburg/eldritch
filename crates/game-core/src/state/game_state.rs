@@ -202,8 +202,6 @@ pub struct GameState {
     /// phase-end once the test resolves. Defaults to `None`.
     #[serde(default)]
     pub pending_end_turn: Option<InvestigatorId>,
-    /// Suspended upkeep hand-size discard (#111). See [`HandSizeDiscard`].
-    pub hand_size_discard_pending: Option<HandSizeDiscard>,
     /// Suspended act round-end clue-spend window (#275). `Some` only while
     /// awaiting the group's Confirm/Skip at the end of the round. See
     /// [`ActRoundEndPending`].
@@ -468,6 +466,9 @@ pub enum Continuation {
     /// A suspended engagement-on-spawn choice (#128), migrated off the former
     /// `GameState::spawn_engage_pending` field (#348).
     SpawnEngage(SpawnEngagePending),
+    /// A suspended upkeep hand-size discard (#111), migrated off the former
+    /// `GameState::hand_size_discard_pending` field (#348).
+    HandSizeDiscard(HandSizeDiscard),
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -506,7 +507,8 @@ impl Continuation {
             Continuation::SkillTest(_)
             | Continuation::Choice(_)
             | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_) => None,
+            | Continuation::SpawnEngage(_)
+            | Continuation::HandSizeDiscard(_) => None,
         }
     }
 
@@ -517,7 +519,8 @@ impl Continuation {
             Continuation::SkillTest(_)
             | Continuation::Choice(_)
             | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_) => None,
+            | Continuation::SpawnEngage(_)
+            | Continuation::HandSizeDiscard(_) => None,
         }
     }
 
@@ -533,7 +536,8 @@ impl Continuation {
             | Continuation::Choice(_)
             | Continuation::SkillTest(_)
             | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_) => true,
+            | Continuation::SpawnEngage(_)
+            | Continuation::HandSizeDiscard(_) => true,
         }
     }
 }
