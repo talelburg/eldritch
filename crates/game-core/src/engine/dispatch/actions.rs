@@ -280,22 +280,24 @@ pub(super) fn engage_primary_effect(
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    let inv_location = cx
+    let inv = cx
         .state
         .investigators
         .get(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "engage_primary_effect: investigator {investigator:?} absent after the \
+                "engage_primary_effect: investigator {investigator:?} not in map after the \
                  Status::Active re-validation gate; this is a state-corruption invariant violation"
             )
-        })
-        .current_location;
-    let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
-        return EngineOutcome::Done; // target gone
+        });
+    let Some(inv_location) = inv.current_location else {
+        return EngineOutcome::Done; // lapsed: investigator lost its location during the AoO
     };
-    if enemy.engaged_with == Some(investigator) || enemy.current_location != inv_location {
-        return EngineOutcome::Done; // precondition lapsed
+    let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
+        return EngineOutcome::Done; // lapsed: target gone
+    };
+    if enemy.engaged_with == Some(investigator) || enemy.current_location != Some(inv_location) {
+        return EngineOutcome::Done; // lapsed: already engaged, or no longer co-located
     }
     let enemy_mut = cx
         .state
@@ -1279,7 +1281,7 @@ mod actions_tests {
     #[test]
     fn engage_with_nonlethal_aoo_engages_after_the_attack() {
         // A second engaged enemy AoOs (1 damage); the target (co-located, not yet
-        // engaged) is then engaged. Assert EnemyAttacked precedes EnemyEngaged, the
+        // engaged) is then engaged. Assert DamageTaken (the AoO) precedes EnemyEngaged, the
         // target's engaged_with == Some(investigator), investigator survived.
         let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
