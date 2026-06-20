@@ -317,7 +317,7 @@ pub struct ActRoundEndPending {
 pub enum EnemyAttackSource {
     /// Enemy-phase step 3.3 (`resolve_attacks_for_investigator`).
     EnemyPhase,
-    /// Attack of opportunity (`fire_attacks_of_opportunity`).
+    /// Attack of opportunity (`drive_aoo`).
     AttackOfOpportunity,
 }
 
@@ -518,8 +518,8 @@ pub enum Continuation {
         stage: AttackLoopStage,
     },
     /// An action paused over its attack-of-opportunity loop (#293, keystone of
-    /// #393). Pushed above [`InvestigatorTurn`] when an AoO-provoking action is
-    /// taken; the `AoO` [`AttackLoop`] is its child. On the loop's pop the
+    /// #393). Pushed above [`Self::InvestigatorTurn`] when an AoO-provoking action is
+    /// taken; the `AoO` [`Self::AttackLoop`] is its child. On the loop's pop the
     /// `drive` loop resumes this frame: it re-validates (actor still active +
     /// the primary's precondition) and runs the primary effect, then pops.
     /// Transient — it persists across an `apply()` boundary only while a window

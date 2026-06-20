@@ -459,14 +459,12 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// Returns the **damaged surviving soaker assets** (the
 /// [`place_assignment`] survivor list) so the caller can queue one
 /// [`WindowKind::AfterEnemyAttackDamagedAsset`] reaction window per
-/// survivor. This function does **not** queue the windows itself: the
-/// enemy phase ([`drive_attack_loop`]) drives them (suspending the loop),
-/// while attacks of opportunity ([`fire_attacks_of_opportunity`])
-/// deliberately drop the list — they soak but don't yet open soak
-/// windows, because that needs mid-action suspension of the triggering
-/// action (deferred fast-follow, `TODO(#293)`). Keeping the queueing at the call site
-/// is what lets the two callers diverge without `enemy_attack` stranding
-/// an undriven window (C5b #237).
+/// survivor. This function does **not** queue the windows itself: both
+/// callers — the enemy phase ([`drive_attack_loop`]) and attacks of
+/// opportunity ([`drive_aoo`]) — queue soak windows via the same loop
+/// mechanic (#293), so neither drops the survivor list. Keeping the
+/// queueing at the call site is what lets `enemy_attack` stay stateless
+/// and avoids stranding an undriven window (C5b #237).
 ///
 /// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
 pub(super) fn enemy_attack(
@@ -563,8 +561,7 @@ pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
 /// p.25 prescribes "the order of the attacked investigator's
 /// choosing" when an investigator is engaged with multiple enemies;
 /// `TODO(#143)`: player-pick attack order, unmilestoned, covers both
-/// this site and [`fire_attacks_of_opportunity`] (which has the same
-/// TODO).
+/// this site and [`drive_aoo`] (which has the same TODO).
 pub(super) fn resolve_attacks_for_investigator(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -851,11 +848,10 @@ fn drive_attack_loop(
 /// - [`EnemyAttackSource::EnemyPhase`]: advance the enemy-phase cursor and open
 ///   the next window via [`after_enemy_phase_attacks`].
 /// - [`EnemyAttackSource::AttackOfOpportunity`]: return [`EngineOutcome::Done`].
-///   **Currently unreachable** — attacks of opportunity
-///   ([`fire_attacks_of_opportunity`]) open neither soak nor cancel windows, so
-///   they never park. Reserved for the deferred fast-follow (`TODO(#293)`) that
-///   suspends the triggering action; kept so the source-keyed dispatch stays
-///   total (C5b #237).
+///   The `AoO` loop ([`drive_aoo`]) does open soak and cancel windows, so this
+///   arm is reachable — it fires when the mid-action park unwinds and the
+///   `AoO` loop completes (#293). Kept as a distinct arm so the source-keyed
+///   dispatch stays total (C5b #237).
 ///
 /// Called from
 /// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s
