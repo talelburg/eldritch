@@ -534,43 +534,6 @@ fn build_soakers(state: &crate::state::GameState, investigator: InvestigatorId) 
 }
 
 /// Fire attacks of opportunity from every ready enemy engaged with
-/// `investigator`. Each attacker resolves via [`enemy_attack`]; order
-/// is deterministic by `EnemyId` (`BTreeMap` iteration).
-///
-/// Per the Rules Reference, the active player chooses the order of
-/// `AoOs` from multiple engaged ready enemies; v1 uses deterministic
-/// `EnemyId` order. `TODO(#143)`: player-pick attack order
-/// (unmilestoned) covers this site alongside
-/// [`resolve_attacks_for_investigator`] — both sites share the same
-/// deterministic-order TODO.
-pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: InvestigatorId) {
-    let attackers: Vec<EnemyId> = cx
-        .state
-        .enemies
-        .iter()
-        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
-        .map(|(id, _)| *id)
-        .collect();
-    for enemy_id in attackers {
-        // AoO soaks damage onto assets (the `enemy_attack` placement runs
-        // fully) but does NOT open soak reaction windows: the returned
-        // damaged-survivor list is deliberately dropped. Guard Dog 01021
-        // therefore does not retaliate against attacks of opportunity yet —
-        // a documented faithfulness gap. Likewise, AoO does not open the
-        // before-attack cancel window (Dodge 01023, Axis D #336): it calls
-        // `enemy_attack` directly, not `drive_attack_loop`. Both gaps share
-        // one cause — driving a window here would require suspending the
-        // *triggering* action (Move / Investigate) and resuming its primary
-        // effect after the window closes, a mid-action suspension mechanism
-        // deferred to `TODO(#293)` (which also keeps the AoO non-exhaust rule,
-        // RR p.7, distinct from the enemy-phase loop's always-exhaust). Dropping
-        // the survivors is exactly what prevents an undriven window stranded
-        // on `open_windows` (the bug this seam fixes; C5b #237).
-        let _ = enemy_attack(cx, enemy_id, investigator);
-    }
-}
-
-/// Fire attacks of opportunity from every ready enemy engaged with
 /// `investigator`, driving them through the shared attack loop (#293) so each
 /// `AoO` opens its before-attack cancel window (Dodge 01023) and per-soaked-asset
 /// reaction window (Guard Dog 01021). Returns [`EngineOutcome::AwaitingInput`]

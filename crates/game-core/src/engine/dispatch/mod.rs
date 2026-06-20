@@ -230,10 +230,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         ActionResume::Investigate => actions::investigate_primary_effect(cx, investigator),
         ActionResume::Resource => actions::resource_primary_effect(cx, investigator),
         ActionResume::Engage { enemy } => actions::engage_primary_effect(cx, investigator, enemy),
-        // Draw arm lands in Task 7.
-        other @ ActionResume::Draw => {
-            unreachable!("resume_action_resolution: {other:?} not yet wired (K1 task 7)")
-        }
+        ActionResume::Draw => cards::draw_primary_effect(cx, investigator),
     }
 }
 

@@ -2949,6 +2949,87 @@ mod tests {
     }
 
     #[test]
+    fn draw_with_lethal_aoo_suppresses_the_draw() {
+        // A lethal AoO (attack_damage == max_health) defeats the investigator
+        // before the card is drawn; the draw is suppressed (no CardsDrawn event)
+        // while the AoO damage still lands. Action is still spent.
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let mut enemy = test_enemy(200, "Lethal Ghoul");
+        enemy.current_location = Some(loc);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 8; // == test_investigator max_health
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i.deck = vec![CardCode::new("_test_card_1")];
+                i
+            })
+            .with_active_investigator(inv_id)
+            .with_enemy(enemy)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Draw {
+                investigator: inv_id,
+            }),
+        );
+
+        // Lethal AoO landed.
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 8 } if *investigator == inv_id
+        );
+        // ...but the draw was suppressed.
+        assert_no_event!(result.events, Event::CardsDrawn { .. });
+    }
+
+    #[test]
+    fn draw_with_no_engaged_enemy_draws_normally() {
+        // Behaviour-preserving: no AoO enemy, so the draw resolves without
+        // interruption. One card drawn, Done.
+        let inv_id = InvestigatorId(1);
+        let loc = crate::state::LocationId(10);
+        let state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_location(test_location(10, "Study"))
+            .with_investigator({
+                let mut i = test_investigator(1);
+                i.current_location = Some(loc);
+                i.deck = vec![CardCode::new("_test_card_1")];
+                i
+            })
+            .with_active_investigator(inv_id)
+            .build();
+
+        let hand_before = state.investigators[&inv_id].hand.len();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Draw {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_eq!(
+            result.state.investigators[&inv_id].hand.len(),
+            hand_before + 1,
+            "one card drawn"
+        );
+        assert_event!(
+            result.events,
+            Event::CardsDrawn { investigator, count: 1 } if *investigator == inv_id
+        );
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+    }
+
+    #[test]
     fn move_with_unengaged_enemy_at_origin_leaves_enemy_behind() {
         let (inv_id, a, b, _, mut state) = move_scenario_with_engaged_enemy();
         // Convert the engagement into a non-engagement: enemy is at A
