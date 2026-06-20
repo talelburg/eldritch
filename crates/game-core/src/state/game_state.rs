@@ -1855,6 +1855,21 @@ mod continuation_stack_tests {
     }
 
     #[test]
+    fn investigator_turn_frame_round_trips_both_ending_states() {
+        // The frame is replay state (the `ending` flag absorbed the former
+        // `pending_end_turn`), so both flag values must serialize round-trip.
+        for ending in [false, true] {
+            let frame = Continuation::InvestigatorTurn {
+                investigator: InvestigatorId(1),
+                ending,
+            };
+            let json = serde_json::to_string(&frame).unwrap();
+            let back: Continuation = serde_json::from_str(&json).unwrap();
+            assert_eq!(frame, back);
+        }
+    }
+
+    #[test]
     fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
         let anchors = [
             Continuation::MythosPhase {
