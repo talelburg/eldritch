@@ -1169,6 +1169,56 @@ mod actions_tests {
     }
 
     #[test]
+    fn resource_with_nonlethal_aoo_still_gains() {
+        // Engaged enemy deals 1 damage, investigator has 8 health (survives).
+        // After the AoO the Resource gain resolves: ResourcesGained IS emitted,
+        // resources incremented by 1, investigator still Active, enemy not
+        // exhausted (RR p.7), investigator took 1 damage.
+        let (inv_id, enemy_id, state) = resource_scenario_with_enemy(1, 8);
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(
+            result.outcome,
+            EngineOutcome::Done,
+            "expected Done after nonlethal AoO + resource gain, got {:?}",
+            result.outcome
+        );
+        // ResourcesGained IS emitted (primary effect ran after the AoO).
+        assert_event!(
+            result.events,
+            Event::ResourcesGained { investigator, amount: 1 }
+                if *investigator == inv_id
+        );
+        // Resource count incremented by 1.
+        assert_eq!(
+            result.state.investigators[&inv_id].resources, 1,
+            "resources must increase by 1 after a nonlethal AoO"
+        );
+        // Investigator is still Active.
+        assert_eq!(
+            result.state.investigators[&inv_id].status,
+            Status::Active,
+            "investigator must still be Active after nonlethal AoO"
+        );
+        // AoO does not exhaust the attacker (RR p.7).
+        assert!(
+            !result.state.enemies[&enemy_id].exhausted,
+            "AoO must not exhaust the attacker (RR p.7)"
+        );
+        // Investigator took the AoO damage.
+        assert_eq!(
+            result.state.investigators[&inv_id].damage, 1,
+            "investigator damage == 1 after nonlethal AoO"
+        );
+    }
+
+    #[test]
     fn resource_with_no_engaged_enemy_gains_normally() {
         // No engaged enemy: behaviour-preserving — resources +1, Done.
         let inv_id = InvestigatorId(1);

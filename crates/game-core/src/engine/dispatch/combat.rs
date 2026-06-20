@@ -1345,6 +1345,10 @@ mod combat_tests {
             !cx.state.enemies[&EnemyId(100)].exhausted,
             "AoO must not exhaust the attacker (RR p.7)"
         );
+        assert_eq!(
+            cx.state.investigators[&inv_id].damage, 1,
+            "AoO damage landed on the investigator"
+        );
         // Enemy attack fires DamageTaken (no EnemyAttacked event exists); verify
         // damage landed on the investigator and no exhaust event was emitted.
         assert_event!(events, Event::DamageTaken { .. });
