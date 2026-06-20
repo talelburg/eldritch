@@ -25,7 +25,13 @@ use super::Cx;
 /// Hunch's discover-without-test) implement their own paths; this
 /// handler is the bare turn-action.
 ///
+/// The `AoO` loop now runs as an [`ActionResolution`] frame (#293): the
+/// frame is pushed, then [`combat::drive_aoo`] drives the loop. If a
+/// cancel/soak window opens the loop suspends; `drive` resumes the
+/// frame once the window closes, calling [`investigate_primary_effect`].
+///
 /// [`Effect::DiscoverClue`]: crate::dsl::Effect::DiscoverClue
+/// [`ActionResolution`]: crate::state::Continuation::ActionResolution
 pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // Validate-first (the shared basic-action prefix, then the
     // location-specific checks).
@@ -54,6 +60,46 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
             reason: format!("Investigate: location {location_id:?} is not revealed").into(),
         };
     }
+
+    // Mutate-second: spend the action, then park the investigate over
+    // its attack-of-opportunity loop (#293). Push the resume frame,
+    // then drive the AoO. Investigate is NOT on the AoO-exempt list
+    // (only Fight, Evade, Parley, Resign are), so each ready engaged
+    // enemy attacks before the skill test resolves.
+    spend_one_action(cx, investigator);
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::ActionResolution {
+            investigator,
+            resume: crate::state::ActionResume::Investigate,
+        });
+    super::combat::drive_aoo(cx, investigator)
+}
+
+/// The skill-test half of an Investigate, run after its `AoO` loop (#293).
+/// Re-reads the location + effective shroud live and re-checks the location
+/// is still revealed (the §D precondition re-check); suppresses (returns
+/// `Done`) if not.
+pub(super) fn investigate_primary_effect(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    let Some(location_id) = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .and_then(|inv| inv.current_location)
+    else {
+        // Active but locationless after AoO — not expected, but suppress
+        // (return Done) defensively rather than panic.
+        return EngineOutcome::Done;
+    };
+    let Some(location) = cx.state.locations.get(&location_id) else {
+        return EngineOutcome::Done;
+    };
+    if !location.revealed {
+        return EngineOutcome::Done; // precondition lapsed
+    }
     // Shroud is u8 in state but skill-test difficulty is i8. Saturate
     // at i8::MAX for the absurd case; realistic shrouds are 0–6. The
     // *effective* shroud folds in location-attachment modifiers (Obscuring
@@ -64,32 +110,6 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
         None => location.shroud,
     };
     let difficulty = i8::try_from(shroud).unwrap_or(i8::MAX);
-
-    // Mutate-second: spend the action, fire AoO, then resolve the
-    // test. Investigate is NOT on the AoO-exempt list (only Fight,
-    // Evade, Parley, Resign are), so each ready engaged enemy attacks
-    // before the test resolves.
-    spend_one_action(cx, investigator);
-    super::combat::fire_attacks_of_opportunity(cx, investigator);
-
-    // If AoO defeated the investigator, the action's primary effect
-    // (the skill test) is suppressed. The action point and AoO events
-    // already fired — they stay. The action declaration was legal;
-    // the investigator just can't complete it.
-    let inv_after_aoo = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-            "Investigate: investigator {investigator:?} disappeared between AoO and skill test; \
-             this is a state-corruption invariant violation"
-        )
-        });
-    if inv_after_aoo.status != Status::Active {
-        return EngineOutcome::Done;
-    }
-
     super::skill_test::start_skill_test(
         cx,
         investigator,
@@ -746,9 +766,12 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
 mod actions_tests {
     use crate::action::{Action, PlayerAction};
     use crate::engine::apply;
+    use crate::engine::EngineOutcome;
     use crate::event::Event;
-    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase, Status};
+    use crate::test_support::{
+        apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+    };
     use crate::{assert_event, assert_no_event};
 
     /// Build a Move scenario: investigator at L1, L1 connected to L2,
@@ -893,5 +916,127 @@ mod actions_tests {
         );
         // AoO does not exhaust the attacker (RR p.7).
         assert!(!result.state.enemies[&enemy_id].exhausted);
+    }
+
+    /// Build an Investigate scenario: investigator at a revealed location with
+    /// 2 clues and shroud 2, 3 actions, Investigation phase, active. Adds a
+    /// ready engaged enemy with the given `attack_damage` and a chaos bag
+    /// with a single `Numeric(0)` token (intellect 3 vs. shroud 2 → success).
+    fn investigate_scenario_with_enemy(
+        inv_health: u8,
+        attack_damage: u8,
+    ) -> (InvestigatorId, LocationId, EnemyId, crate::state::GameState) {
+        let inv_id = InvestigatorId(1);
+        let loc_id = LocationId(10);
+        let enemy_id = EnemyId(200);
+
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc_id);
+        inv.actions_remaining = 3;
+        inv.max_health = inv_health;
+        inv.damage = 0;
+
+        let mut loc = test_location(10, "Study");
+        loc.clues = 2;
+        loc.shroud = 2;
+
+        let mut enemy = test_enemy(200, "Ghoul");
+        enemy.current_location = Some(loc_id);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = attack_damage;
+        enemy.attack_horror = 0;
+        enemy.exhausted = false;
+
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .with_enemy(enemy)
+            .with_chaos_bag(crate::state::ChaosBag::new([crate::state::ChaosToken::Numeric(0)]))
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+
+        (inv_id, loc_id, enemy_id, state)
+    }
+
+    #[test]
+    fn investigate_with_nonlethal_aoo_starts_the_test_after_the_attack() {
+        // Engaged enemy deals 1 damage, investigator has 8 health (survives).
+        // After the AoO, the Investigate skill test starts (AwaitingInput at
+        // the commit window). Assert DamageTaken precedes the test start,
+        // the investigator is still Active, and took 1 damage.
+        let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
+
+        let outcome = apply(
+            state,
+            crate::action::Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+
+        // Outcome should be AwaitingInput (skill-test commit window).
+        assert!(
+            matches!(outcome.outcome, EngineOutcome::AwaitingInput { .. }),
+            "expected AwaitingInput (commit window) after nonlethal AoO, got {:?}",
+            outcome.outcome
+        );
+        // AoO damage landed before the test started.
+        assert_event!(
+            outcome.events,
+            Event::DamageTaken { investigator, amount: 1 }
+                if *investigator == inv_id
+        );
+        // The skill test started.
+        assert_event!(outcome.events, Event::SkillTestStarted { .. });
+        // Investigator is still Active.
+        assert_eq!(
+            outcome.state.investigators[&inv_id].status,
+            Status::Active,
+            "investigator must still be Active after nonlethal AoO"
+        );
+        // Investigator took 1 damage.
+        assert_eq!(
+            outcome.state.investigators[&inv_id].damage,
+            1,
+            "investigator must have taken 1 damage from AoO"
+        );
+        // AoO does not exhaust the attacker (RR p.7).
+        assert!(!outcome.state.enemies[&enemy_id].exhausted);
+    }
+
+    #[test]
+    fn investigate_with_lethal_aoo_suppresses_the_test() {
+        // AoO deals 1 damage, investigator has 1 health → lethal → no skill
+        // test starts, outcome is Done, action was spent, investigator not Active.
+        let (inv_id, _loc_id, _enemy_id, state) = investigate_scenario_with_enemy(1, 1);
+
+        let result = apply_no_commits(
+            state,
+            crate::action::Action::Player(PlayerAction::Investigate {
+                investigator: inv_id,
+            }),
+        );
+
+        // Outcome is Done (skill test suppressed).
+        assert_eq!(
+            result.outcome,
+            EngineOutcome::Done,
+            "expected Done when AoO is lethal, got {:?}",
+            result.outcome
+        );
+        // Action was spent.
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        // No skill test started.
+        assert_no_event!(result.events, Event::SkillTestStarted { .. });
+        // Investigator is not Active (defeated by AoO).
+        assert_ne!(
+            result.state.investigators[&inv_id].status,
+            Status::Active,
+            "investigator must not be Active after lethal AoO"
+        );
     }
 }
