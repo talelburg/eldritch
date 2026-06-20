@@ -475,7 +475,12 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
        with others (RR p.11).
      - **2a-ii-3 — play/activate. ✅ shipped (PR #406).** PlayCard, ActivateAbility — by
        delegation to the handlers' `check_play_card`/`check_activate_ability` predicates;
-       registry-gated, so tests live in `crates/cards/tests/`. **2a-ii-4** — AdvanceAct + sweep.
+       registry-gated, so tests live in `crates/cards/tests/`.
+     - **2a-ii-4 — AdvanceAct + sweep. ✅ shipped (PR #407) — closes 2a-ii.** AdvanceAct via
+       an extracted `check_advance_act`; a whole-enumeration sweep pins that every action
+       category is enumerated and applies. The enumerator now covers the full open-turn
+       surface (EndTurn/Resource/Draw/Investigate/Move/Fight/Evade/Engage/PlayCard/
+       ActivateAbility/AdvanceAct); routing typed dispatch through it remains 2b.
 3. **`AttackLoop` frame (cursor lift)** — `PendingEnemyAttack` +
    `enemy_attack_pending` → frame/anchor; enemy-phase attacks unchanged in behaviour.
 4. **Keystone mid-action park** — actions run as sub-resolution frames; AoO pushes

@@ -1,6 +1,8 @@
 //! Act and agenda handlers: doom placement, threshold checking, agenda
 //! advancement, clue spending, and act advancement.
 
+use std::borrow::Cow;
+
 use crate::state::{GameState, InvestigatorId, LocationId, Phase};
 
 use super::super::outcome::EngineOutcome;
@@ -104,53 +106,59 @@ fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<Investiga
         .collect()
 }
 
-/// Handler for [`PlayerAction::AdvanceAct`] — a prototype clue-spend to
-/// advance the current act (see the action's doc comment and the design
-/// spec). Validate-first: reject outside the Investigation phase, when no
-/// act deck is modeled, or when the group holds fewer clues than the
-/// current act's `clue_threshold`. On success spend exactly the threshold
-/// (acting investigator first, then the rest in `turn_order`) and either
-/// set the resolution latch (terminal act) or emit [`Event::ActAdvanced`]
-/// and advance the cursor.
-pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    if cx.state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "AdvanceAct is only valid during the Investigation phase (was {:?})",
-                cx.state.phase
-            )
-            .into(),
-        };
+/// Validate the [`AdvanceAct`](crate::action::PlayerAction::AdvanceAct) action
+/// without mutating: Investigation phase, a modeled act deck, the current act
+/// advances via the action (not a round-end objective), and the group holds at
+/// least the act's clue threshold. Returns the threshold on success (so the
+/// handler can spend it) or the rejection reason on failure. The enumerator
+/// (slice 2a-ii-4, #393) calls this in "is-legal?" mode; [`advance_act_action`]
+/// calls it then mutates.
+pub(crate) fn check_advance_act(
+    state: &GameState,
+    investigator: InvestigatorId,
+) -> Result<u8, Cow<'static, str>> {
+    if state.phase != Phase::Investigation {
+        return Err(format!(
+            "AdvanceAct is only valid during the Investigation phase (was {:?})",
+            state.phase
+        )
+        .into());
     }
-    if cx.state.act_deck.is_empty() {
-        return EngineOutcome::Rejected {
-            reason: "AdvanceAct: no act deck is modeled for this scenario".into(),
-        };
+    if state.act_deck.is_empty() {
+        return Err("AdvanceAct: no act deck is modeled for this scenario".into());
     }
-    if cx.state.act_deck[cx.state.act_index]
-        .round_end_advance
-        .is_some()
-    {
-        return EngineOutcome::Rejected {
-            reason: "this act advances only at the end of the round (its round-end \
-                     objective), not via the AdvanceAct action"
+    if state.act_deck[state.act_index].round_end_advance.is_some() {
+        return Err(
+            "this act advances only at the end of the round (its round-end \
+                    objective), not via the AdvanceAct action"
                 .into(),
-        };
+        );
     }
-    let threshold = cx.state.act_deck[cx.state.act_index].clue_threshold;
-    let total_clues: u32 = clue_contributors(cx.state, investigator)
+    let threshold = state.act_deck[state.act_index].clue_threshold;
+    let total_clues: u32 = clue_contributors(state, investigator)
         .into_iter()
-        .filter_map(|id| cx.state.investigators.get(&id))
+        .filter_map(|id| state.investigators.get(&id))
         .map(|i| u32::from(i.clues))
         .sum();
     if total_clues < u32::from(threshold) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "AdvanceAct: act requires {threshold} clues, group holds {total_clues}"
-            )
-            .into(),
-        };
+        return Err(format!(
+            "AdvanceAct: act requires {threshold} clues, group holds {total_clues}"
+        )
+        .into());
     }
+    Ok(threshold)
+}
+
+/// Handler for [`PlayerAction::AdvanceAct`](crate::action::PlayerAction::AdvanceAct):
+/// validate via [`check_advance_act`], then (on success) spend exactly the act's
+/// clue threshold (acting investigator first, then the rest in `turn_order`) and
+/// either set the resolution latch (terminal act) or emit [`Event::ActAdvanced`]
+/// and advance the cursor.
+pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let threshold = match check_advance_act(cx.state, investigator) {
+        Ok(t) => t,
+        Err(reason) => return EngineOutcome::Rejected { reason },
+    };
 
     // All validations passed — mutate.
     spend_clues(cx.state, investigator, threshold);
