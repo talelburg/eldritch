@@ -9,10 +9,10 @@ use std::sync::Once;
 
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, Phase, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
-    drive, test_enemy, test_investigator, GameStateBuilder, ScriptedResolver,
+    drive, test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
 use game_core::{assert_event, Action, EngineOutcome, PlayerAction};
 
@@ -31,20 +31,24 @@ fn install() {
 /// health 10 so the dealt damage is observable, not clamped), Vicious
 /// Blow in hand, a `Numeric(0)` chaos bag for a deterministic success.
 fn board() -> GameState {
+    let loc_id = LocationId(10);
     let mut inv = test_investigator(1);
     inv.skills.combat = 3;
     inv.hand = vec![CardCode::new(VICIOUS_BLOW)];
+    inv.current_location = Some(loc_id);
 
     let mut enemy = test_enemy(100, "Ghoul");
     enemy.fight = 2;
     enemy.max_health = 10;
     enemy.engaged_with = Some(INV);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
         .with_enemy(enemy)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())

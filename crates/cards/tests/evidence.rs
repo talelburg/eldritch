@@ -54,6 +54,7 @@ fn investigator_with_evidence_and_enemy(
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
     let mut loc = test_location(10, "Study");
     loc.clues = location_clues;
@@ -203,6 +204,7 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
     let mut loc = test_location(10, "Study");
     loc.clues = 2;

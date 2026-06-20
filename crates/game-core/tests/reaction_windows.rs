@@ -136,6 +136,7 @@ fn fight_to_defeat_scenario(
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
@@ -354,6 +355,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(attacker);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
@@ -402,6 +404,7 @@ fn unqualified_pattern_matches_any_defeat() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(attacker);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(attacker)
@@ -690,6 +693,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
@@ -803,6 +807,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(active);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(active)
@@ -927,6 +932,7 @@ fn reaction_trigger_in_threat_area_opens_window() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
@@ -1056,6 +1062,7 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let mut loc = test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
