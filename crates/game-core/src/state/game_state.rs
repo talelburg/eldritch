@@ -2368,7 +2368,13 @@ mod action_resolution_frame_tests {
             investigator: InvestigatorId(1),
             resume: ActionResume::Resource,
         };
-        assert!(!f.awaits_input(), "a mid-action frame is internal, never a prompt");
-        assert!(!f.is_phase_anchor(), "a mid-action frame is not a phase anchor");
+        assert!(
+            !f.awaits_input(),
+            "a mid-action frame is internal, never a prompt"
+        );
+        assert!(
+            !f.is_phase_anchor(),
+            "a mid-action frame is not a phase anchor"
+        );
     }
 }

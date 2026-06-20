@@ -172,10 +172,7 @@ pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> Engi
 /// state-corruption invariant violation — it must `unreachable!`-panic.
 /// There is no legitimate `Done`-return inside `resource_primary_effect`:
 /// it always gains 1 resource and returns `Done`.
-pub(super) fn resource_primary_effect(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-) -> EngineOutcome {
+pub(super) fn resource_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let inv_mut = cx
         .state
         .investigators
@@ -299,11 +296,7 @@ pub(super) fn engage_primary_effect(
     if enemy.engaged_with == Some(investigator) || enemy.current_location != Some(inv_location) {
         return EngineOutcome::Done; // lapsed: already engaged, or no longer co-located
     }
-    let enemy_mut = cx
-        .state
-        .enemies
-        .get_mut(&enemy_id)
-        .expect("checked above");
+    let enemy_mut = cx.state.enemies.get_mut(&enemy_id).expect("checked above");
     enemy_mut.engaged_with = Some(investigator);
     cx.events.push(Event::EnemyEngaged {
         enemy: enemy_id,
@@ -915,8 +908,7 @@ mod actions_tests {
             "move suppressed: investigator must not appear at destination"
         );
         assert_eq!(
-            result.state.investigators[&inv_id].actions_remaining,
-            2,
+            result.state.investigators[&inv_id].actions_remaining, 2,
             "action still spent"
         );
         // Investigator is no longer Active (defeated by AoO).
@@ -964,8 +956,7 @@ mod actions_tests {
         );
         // AoO damage is visible.
         assert_eq!(
-            result.state.investigators[&inv_id].damage,
-            1,
+            result.state.investigators[&inv_id].damage, 1,
             "investigator damage == 1 after nonlethal AoO"
         );
         // Engaged enemy moved with investigator to L2.
@@ -1011,7 +1002,9 @@ mod actions_tests {
             .with_investigator(inv)
             .with_location(loc)
             .with_enemy(enemy)
-            .with_chaos_bag(crate::state::ChaosBag::new([crate::state::ChaosToken::Numeric(0)]))
+            .with_chaos_bag(crate::state::ChaosBag::new([
+                crate::state::ChaosToken::Numeric(0),
+            ]))
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
             .build();
@@ -1054,8 +1047,7 @@ mod actions_tests {
         );
         // Investigator took 1 damage.
         assert_eq!(
-            outcome.state.investigators[&inv_id].damage,
-            1,
+            outcome.state.investigators[&inv_id].damage, 1,
             "investigator must have taken 1 damage from AoO"
         );
         // AoO does not exhaust the attacker (RR p.7).
@@ -1165,8 +1157,7 @@ mod actions_tests {
         assert_no_event!(result.events, Event::ResourcesGained { .. });
         // Investigator's resource count is unchanged (still 0).
         assert_eq!(
-            result.state.investigators[&inv_id].resources,
-            0,
+            result.state.investigators[&inv_id].resources, 0,
             "resources must not change when AoO is lethal"
         );
         // Investigator is no longer Active (defeated by AoO).
@@ -1224,8 +1215,7 @@ mod actions_tests {
         );
         // Resource count incremented.
         assert_eq!(
-            result.state.investigators[&inv_id].resources,
-            3,
+            result.state.investigators[&inv_id].resources, 3,
             "resources must increase by 1"
         );
     }
@@ -1331,8 +1321,7 @@ mod actions_tests {
         );
         // Investigator took 1 damage.
         assert_eq!(
-            result.state.investigators[&inv_id].damage,
-            1,
+            result.state.investigators[&inv_id].damage, 1,
             "investigator damage == 1 after nonlethal AoO"
         );
         // AoO attacker is not exhausted (RR p.7).
@@ -1367,8 +1356,7 @@ mod actions_tests {
         // No engagement — target must not be engaged.
         assert_no_event!(result.events, Event::EnemyEngaged { .. });
         assert_eq!(
-            result.state.enemies[&target_id].engaged_with,
-            None,
+            result.state.enemies[&target_id].engaged_with, None,
             "target must not be engaged when AoO is lethal"
         );
         // Investigator is not Active (defeated by AoO).

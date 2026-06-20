@@ -209,8 +209,10 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
 /// target precondition. Called only by [`drive`] with such a frame on top.
 fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
     use crate::state::{ActionResume, Continuation};
-    let Some(Continuation::ActionResolution { investigator, resume }) =
-        cx.state.continuations.pop()
+    let Some(Continuation::ActionResolution {
+        investigator,
+        resume,
+    }) = cx.state.continuations.pop()
     else {
         unreachable!("resume_action_resolution: top frame is not an ActionResolution");
     };

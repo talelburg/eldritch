@@ -523,21 +523,35 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 }
 
 // ---------------------------------------------------------------------
-// Case 5 — attack of opportunity soaks onto Guard Dog but strands no
-// reaction window (regression guard for the AoO seam; C5b #237)
+// Case 5 — attack of opportunity soaks onto Guard Dog; the soak window
+// opens, Guard Dog retaliates, and the move completes after resume
+// (#293 acceptance).
+//
+// Verified card text (ArkhamDB https://arkhamdb.com/card/01021, 2026-06-21):
+//   Guard Dog (01021): "[reaction] When an enemy attack deals damage to
+//   Guard Dog: Deal 1 damage to the attacking enemy." Health 3, Sanity 1.
+//   FAQ: "You can use Guard Dog's ability when you assign lethal damage/
+//   horror to it." Also confirmed via FAQ: Guard Dog's reaction fires
+//   against attacks of opportunity (the trigger is 'when an enemy attack
+//   deals damage', with no carve-out for AoO).
+//
+// The before-#293 behaviour was: `drive_aoo` dropped the survivor list so
+// Guard Dog's soak window was never queued. After #293 the AoO runs through
+// `drive_attack_loop` (which opens both the BeforeEnemyAttack cancel window
+// and the AfterEnemyAttackDamagedAsset soak window), so the full suspend/
+// resume cycle now applies to AoO attacks.
 // ---------------------------------------------------------------------
 
 #[test]
-fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() {
+#[allow(clippy::too_many_lines)]
+fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     // An investigator controlling Guard Dog, engaged by a ready enemy,
-    // takes a Move action. The Move fires an attack of opportunity BEFORE
-    // resolving, and the AoO's damage soaks onto Guard Dog. The bug this
-    // guards: `enemy_attack` used to queue an `AfterEnemyAttackDamagedAsset`
-    // reaction window unconditionally, so the AoO would leave an undriven
-    // window on `open_windows` after `fire_attacks_of_opportunity` returns.
-    // AoO now drops the soak-survivor list (Guard Dog does not retaliate
-    // against AoO yet — deferred fast-follow), so the move resolves cleanly
-    // with no stranded window.
+    // takes a Move action. The Move fires an attack of opportunity (through
+    // the ActionResolution frame + drive_aoo path, #293). Guard Dog has no
+    // cancel reaction so the before-attack window auto-skips; the AoO
+    // damage soaks onto Guard Dog; the soak window opens and suspends;
+    // the player fires Guard Dog's reaction; the attacker takes 1 damage;
+    // the move then completes as the ActionResolution frame resumes.
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
     let inv_id = InvestigatorId(1);
@@ -556,7 +570,7 @@ fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() 
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
-    // all of it.
+    // all of it and survives (2 < 3).
     let attacker = engaged_attacker(7, inv_id, from, 2, 3);
 
     let state = game_core::test_support::GameStateBuilder::new()
@@ -569,6 +583,9 @@ fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() 
         .with_enemy(attacker)
         .build();
 
+    // Step 1: take the Move — AoO runs; Guard Dog has no cancel reaction
+    // so the before-attack window is skipped; damage soaks onto Guard Dog;
+    // the soak window opens and suspends.
     let result = apply(
         state,
         Action::Player(PlayerAction::Move {
@@ -576,9 +593,16 @@ fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() 
             destination: dest,
         }),
     );
-    let state = result.state;
+    let mut state = result.state;
 
-    // The AoO soaked its damage onto Guard Dog.
+    // The AoO's soak window suspended the loop (the ActionResolution
+    // frame is parked beneath the AttackLoop beneath the Resolution window).
+    assert!(
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "AoO soak window must suspend the loop: {:?}",
+        result.outcome
+    );
+    // AoO damage fully soaked onto Guard Dog; investigator took none.
     assert_eq!(
         guard_dog_card(&state, inv_id, dog).accumulated_damage,
         2,
@@ -588,48 +612,80 @@ fn move_attack_of_opportunity_soaks_onto_guard_dog_without_stranding_a_window() 
         state.investigators[&inv_id].damage, 0,
         "investigator took no AoO damage (fully soaked)"
     );
-
-    // The bug guard: no stranded soak window, and the outcome is NOT a
-    // dangling AwaitingInput on a soak window — AoO does not open one.
+    // The soak window opened.
     assert!(
-        state.open_windows().is_empty(),
-        "no reaction window stranded by the AoO: {:?}",
-        state.open_windows()
-    );
-    assert!(
-        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "AoO must not suspend on a soak window: {:?}",
-        result.outcome
-    );
-    assert!(
-        !result
+        result
             .events
             .iter()
             .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "no soak window opened for the AoO: {:?}",
+                if matches!(kind, game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
+        "AfterEnemyAttackDamagedAsset window opened: {:?}",
+        result.events
+    );
+    // Investigator has NOT moved yet (the ActionResolution frame is parked).
+    assert_eq!(
+        state.investigators[&inv_id].current_location,
+        Some(from),
+        "move not yet resolved while window is open"
+    );
+    // No retaliation damage on the attacker yet.
+    assert_eq!(state.enemies[&enemy_id].damage, 0);
+
+    // Step 2: fire Guard Dog's soak reaction (the single pending trigger).
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+        }),
+    );
+    state = result.state;
+
+    // Guard Dog dealt 1 retaliate damage to the attacker.
+    assert_eq!(
+        state.enemies[&enemy_id].damage, 1,
+        "Guard Dog's reaction dealt 1 damage to the AoO attacker"
+    );
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == enemy_id
+        )),
+        "EnemyDamaged {{ amount: 1 }} emitted: {:?}",
         result.events
     );
 
-    // The move resolved: the engaged enemy is NOT exhausted (AoO does not
-    // exhaust the attacker), the investigator and the engaged enemy both
-    // moved to the destination, and no retaliation hit the attacker.
+    // The attacker did NOT exhaust (RR p.7: AoO attackers never exhaust).
     assert!(
         !state.enemies[&enemy_id].exhausted,
-        "an attack of opportunity does not exhaust the attacker"
+        "an attack of opportunity does not exhaust the attacker (RR p.7)"
     );
+
+    // The move completed: investigator and engaged enemy are at the
+    // destination, confirming the ActionResolution frame resumed correctly.
     assert_eq!(
         state.investigators[&inv_id].current_location,
         Some(dest),
-        "investigator moved to the destination"
+        "move resolved: investigator reached the destination"
     );
     assert_eq!(
         state.enemies[&enemy_id].current_location,
         Some(dest),
-        "engaged enemy moved with the investigator"
+        "engaged enemy moved with the investigator to the destination"
     );
-    assert_eq!(
-        state.enemies[&enemy_id].damage, 0,
-        "Guard Dog does not retaliate against an attack of opportunity (yet)"
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            Event::InvestigatorMoved { investigator, from: f, to } if
+                *investigator == inv_id && *f == from && *to == dest
+        )),
+        "InvestigatorMoved event emitted after window closed: {:?}",
+        result.events
+    );
+
+    // No reaction windows remain after the full cycle.
+    assert!(
+        state.open_windows().is_empty(),
+        "no windows stranded after Guard Dog reaction + move resume: {:?}",
+        state.open_windows()
     );
 }

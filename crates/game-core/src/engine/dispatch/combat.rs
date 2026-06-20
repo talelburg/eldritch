@@ -547,7 +547,12 @@ pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
         .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
         .map(|(id, _)| *id)
         .collect();
-    drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::AttackOfOpportunity)
+    drive_attack_loop(
+        cx,
+        investigator,
+        attackers,
+        EnemyAttackSource::AttackOfOpportunity,
+    )
 }
 
 /// Resolve all of one investigator's engaged ready enemies' attacks
