@@ -379,6 +379,14 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 .into(),
         },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
+        // A parked `AttackLoop` frame (#411) never awaits input — the reaction
+        // window pushed above it is the prompt, and the frame is only ever
+        // momentarily top inside `resume_enemy_attack`. If one is somehow top, no
+        // prompt is outstanding (defensive, mirrors the EncounterCard arm).
+        Some(Continuation::AttackLoop { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (a parked attack loop is top)"
+                .into(),
+        },
         // The open turn does not emit an AwaitingInput prompt in 2a (typed
         // actions drive it; the enumeration is 2a-ii / surfacing is 2b). A
         // ResolveInput arriving here is spurious — reject defensively, mirroring

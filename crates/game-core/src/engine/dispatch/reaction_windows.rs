@@ -18,8 +18,8 @@ use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation,
-    ForcedContinuation, GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate,
-    ResolutionFrame, ResolutionKind, Status, WindowBinding, WindowKind,
+    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, ResolutionFrame,
+    ResolutionKind, Status, WindowBinding, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -1058,9 +1058,8 @@ fn resume_forced_continuation(cx: &mut Cx, continuation: ForcedContinuation) -> 
 /// continuation so it runs from BOTH that arm (after the attack loop
 /// completes without suspending) AND
 /// [`super::combat::resume_enemy_attack`] (after a suspended loop
-/// resumes and finishes). Advances
-/// [`GameState::enemy_attack_pending`](crate::state::GameState::enemy_attack_pending)
-/// to the next Active investigator AFTER `investigator` via
+/// resumes and finishes). Advances the `EnemyPhase` anchor's `attacking`
+/// cursor to the next Active investigator AFTER `investigator` via
 /// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
 /// — the helper indexes off `turn_order` (not the filtered-Active
 /// list), so `investigator` itself can have been defeated mid-loop and
@@ -1071,25 +1070,8 @@ pub(super) fn after_enemy_phase_attacks(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    cx.state.enemy_attack_pending =
-        super::cursor::next_active_investigator_after(cx.state, investigator);
-
-    if cx.state.enemy_attack_pending.is_some() {
-        super::phases::set_enemy_anchor_resume(
-            cx,
-            crate::state::EnemyResume::BeforeInvestigatorAttacked,
-        );
-        open_fast_window(
-            cx,
-            WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
-        )
-    } else {
-        super::phases::set_enemy_anchor_resume(cx, crate::state::EnemyResume::AfterAllAttacked);
-        open_fast_window(
-            cx,
-            WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
-        )
-    }
+    let next = super::cursor::next_active_investigator_after(cx.state, investigator);
+    super::phases::open_attack_window(cx, next)
 }
 
 /// Open a printed Fast-play window of the given kind. Always emits
@@ -1818,7 +1800,7 @@ mod any_fast_play_eligible_tests {
 mod open_fast_window_tests {
     use super::*;
     use crate::event::Event;
-    use crate::state::{EnemyId, WindowKind};
+    use crate::state::{EnemyId, PhaseStep, WindowKind};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]

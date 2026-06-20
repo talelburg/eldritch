@@ -368,6 +368,57 @@ fresh, re-scan" structural. Build on the *proven* model (post-C); `emit_event` i
 the highest-blast-radius function in the engine, so it does not ride the C
 checkpoint. Re-open #212 (or a successor) scoped to this.
 
+**Dissolve `WindowKind` / `ResolutionKind` / `Resolution` into two purpose-built
+window frames (do it here, not before).** Today every open window — framework
+fast-play windows, event reaction windows, and the #213 forced run — is the *same*
+generic frame, `Continuation::Resolution(ResolutionFrame { pending_triggers, kind:
+ResolutionKind::{Window(WindowBinding { kind: WindowKind, .. }) | Forced} })`. That
+is several layers of indirection over what are really two concrete things, and the
+`PhaseStep` discriminant inside `WindowKind::PlayerWindow` is now dead weight (slice
+1a moved per-step control flow onto the anchor's `resume`; nothing binds to a
+`PhaseStep` — no `EventPattern` matches one). The end-state replaces all of it with:
+
+- **`Continuation::FastWindow { candidates, fast_actors }`** — the red-box framework
+  player window. *No* `PhaseStep`: the `*Phase` anchor directly beneath it on the
+  stack already carries "where in the flow" (its `resume`), and `WindowOpened/Closed`
+  observability can read that context rather than duplicate it. Anchor-pushed.
+- **`Continuation::TimingPointWindow { event: TimingEvent, mode, candidates }`** — one
+  *flat* variant for **all** the event windows, parameterized by the existing
+  `emit::TimingEvent` (the `WindowKind` event variants are a near-duplicate of it, so
+  this is de-duplication, not a rename). Pushed by the `EmitEvent`/`TimingPoint`
+  coordinator, which holds the `when→at→after` sequencing; the window carries its
+  `TimingEvent` directly (self-contained + serializable; reactions bind its entities
+  into `EvalContext`) rather than peeking at the coordinator frame below it.
+
+**The forced run is not a separate frame — it is a `mode` on `TimingPointWindow`.**
+`ResolutionKind::{Window | Forced}` collapses to `mode: Reaction | Forced`. The four
+apparent differences are one coherent mode, not independent axes:
+
+| | `Forced` | `Reaction` |
+|---|---|---|
+| `Skip` accepted? | rejected | accepted (closes the window) |
+| drain all candidates? | yes | no — optional subset |
+| Fast plays injectable? | no | yes (Evidence!-style) |
+| player's choice | order only, when 2+ | which / whether to use |
+
+The resolve handler keys off the one flag (RR p.3: *"all forced abilities … must
+resolve before any reaction abilities referencing the same timing point may be
+initiated"* — so a timing point is `mode=Forced` drained, then `mode=Reaction`: two
+passes of the same frame, exactly what the coordinator drives per bucket). The
+lead-orders-simultaneous-forced rule (RR p.17) is a property of *driving* the
+candidate list, not a reason for a distinct frame.
+
+So the EmitEvent-frame slice deletes **`WindowKind`, `ResolutionKind`,
+`WindowBinding`, `ResolutionFrame`, and `Continuation::Resolution`**, replacing them
+with `FastWindow` + `TimingPointWindow{event, mode}` + the `EmitEvent`/`TimingPoint`
+coordinators. (Resisted further collapsing `FastWindow` into
+`TimingPointWindow{event: None}` — that re-introduces the generic parameterized
+frame this is removing; two self-describing frames read better.) Cards binding to
+framework points stays **additive** (no `EventPattern` covers a framework step
+today). This belongs here, not before: `emit_event` is the highest-blast-radius
+function in the engine, so it must ride the *proven* post-C model, and building the
+window taxonomy before `emit_event` is the single chokepoint means building it twice.
+
 ## Bugs surfaced
 
 - **Upkeep `when→at` round-end ordering** (§G) — file + fix before the Upkeep-anchor
