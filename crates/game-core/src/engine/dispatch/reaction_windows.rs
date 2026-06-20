@@ -1053,34 +1053,12 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                 }
                 super::phases::enemy_phase_end(cx)
             }
-            PhaseStep::InvestigationBegins => {
-                // Post-2.1 window closed; start the first turn (step 2.2).
-                // No skill-test-in-flight guard: this runs at phase start
-                // (no test can be in flight) and does not transition phase.
-                if let Some(id) = super::cursor::first_active_investigator(cx.state) {
-                    super::phases::begin_investigator_turn(cx, id);
-                }
-                // None branch: no active investigator can take a turn. Per
-                // Rules Reference p.10 step 6 the scenario ends — that
-                // resolution now fires at the defeat site:
-                // `check_all_defeated` latches `Resolution::Lost` (and emits
-                // `AllInvestigatorsDefeated`), which the `apply` hook turns
-                // into `ScenarioResolved` + `apply_resolution`. So by the
-                // time the cascade would re-enter Investigation with no
-                // active investigator, the loss has already resolved; this
-                // park branch stays as the cascade-breaker (auto-advancing
-                // would loop the round forever — every other phase auto-skips
-                // with no active investigators, so Investigation is the
-                // cascade's only natural pause point).
-                EngineOutcome::Done
+            // Phase-structure continuations now live on the InvestigationPhase
+            // anchor (slice 1a, #393): the anchor's resume (Begins vs.
+            // TurnBegins) selects the body. Both route through on_child_pop.
+            PhaseStep::InvestigationBegins | PhaseStep::InvestigatorTurnBegins => {
+                super::phases::anchor_on_child_pop(cx)
             }
-            // InvestigatorTurnBegins: 2.2.1 — the active investigator now
-            // takes actions (Investigate / Move / Fight / Evade / PlayCard /
-            // Draw / ActivateAbility) as player-driven inputs, then ends the
-            // turn via EndTurn (2.2.2). No continuation work — the engine
-            // waits. The per-action "return to the previous player window"
-            // re-open (Rules Reference p.24 2.2.1) is deferred to #146.
-            PhaseStep::InvestigatorTurnBegins => EngineOutcome::Done,
         },
         // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
         // work. The skill-test driver (which queued the window mid-resolution)
@@ -1937,6 +1915,11 @@ mod open_fast_window_tests {
         // opens and closes without ever landing on state.open_windows.
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
+            // The MythosAfterDraws window now closes onto the MythosPhase anchor
+            // (slice 1a); stage it so the auto-skip continuation has its frame.
+            .with_phase_anchor(crate::state::Continuation::MythosPhase {
+                resume: crate::state::MythosResume::AfterDraws,
+            })
             .build();
         let mut events = Vec::new();
         open_fast_window(

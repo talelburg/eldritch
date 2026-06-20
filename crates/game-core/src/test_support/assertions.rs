@@ -26,6 +26,7 @@
 //! use game_core::{
 //!     apply, Action, Event, InvestigatorId, PlayerAction, Phase,
 //!     assert_event, assert_no_event,
+//!     state::{Continuation, InvestigationResume},
 //!     test_support::{test_investigator, GameStateBuilder},
 //! };
 //!
@@ -33,6 +34,10 @@
 //!     .with_phase(Phase::Investigation)
 //!     .with_investigator(test_investigator(1))
 //!     .with_active_investigator(InvestigatorId(1))
+//!     // A state constructed mid-phase needs its phase anchor (slice 1a).
+//!     .with_phase_anchor(Continuation::InvestigationPhase {
+//!         resume: InvestigationResume::TurnBegins,
+//!     })
 //!     .build();
 //! let result = apply(state, Action::Player(PlayerAction::EndTurn));
 //!

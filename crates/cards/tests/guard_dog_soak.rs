@@ -96,6 +96,11 @@ fn soak_state(
     for enemy in enemies {
         builder = builder.with_enemy(enemy);
     }
+    // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
+    // InvestigationPhase anchor at investigation_phase_end.
+    builder = builder.with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+        resume: game_core::state::InvestigationResume::TurnBegins,
+    });
     (builder.build(), inv_id, loc_id)
 }
 

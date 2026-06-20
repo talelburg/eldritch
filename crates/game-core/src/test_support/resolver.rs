@@ -760,6 +760,9 @@ mod tests {
             .with_location(test_location(10, "Study"))
             .with_active_investigator(id)
             .with_turn_order([id, InvestigatorId(2)])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
             .session()
             .apply(Action::Player(PlayerAction::EndTurn))
             .resolve_choices(|c| {

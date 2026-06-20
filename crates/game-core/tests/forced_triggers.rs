@@ -488,6 +488,11 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
+        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
+        // InvestigationPhase anchor at investigation_phase_end.
+        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        })
         .build();
 
     let result = apply(state, Action::Player(PlayerAction::EndTurn));

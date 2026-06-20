@@ -391,6 +391,9 @@ mod tests {
             .with_phase(Phase::Investigation)
             .with_investigator(roland)
             .with_active_investigator(id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
             .build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
@@ -4758,7 +4761,15 @@ mod tests {
 
     #[test]
     fn resolution_does_not_refire_on_a_later_apply() {
-        let state = terminal_act_state(Some("stamp"));
+        let mut state = terminal_act_state(Some("stamp"));
+        // Mid-Investigation invariant (slice 1a): the EndTurn below cascades
+        // through investigation_phase_end, which pops the InvestigationPhase
+        // anchor — so it must be present.
+        state
+            .continuations
+            .push(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            });
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,
         };

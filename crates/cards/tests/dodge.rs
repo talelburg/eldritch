@@ -68,6 +68,11 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_enemy(engaged_attacker(7, inv_id, loc_id))
+        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
+        // InvestigationPhase anchor at investigation_phase_end.
+        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        })
         .build();
     (state, inv_id, enemy_id)
 }

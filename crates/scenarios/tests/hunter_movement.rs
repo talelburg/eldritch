@@ -36,6 +36,13 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
     // Drive through the real Mythos draw path: stage the EncounterDraw loop
     // frame for inv1 so the ResolveInput(Confirm) below resumes it (#348).
     state.phase = Phase::Mythos;
+    // Mythos anchor (slice 1a) sits beneath the EncounterDraw loop; the
+    // post-1.4 MythosAfterDraws close routes to it.
+    state
+        .continuations
+        .push(game_core::state::Continuation::MythosPhase {
+            resume: game_core::state::MythosResume::AfterDraws,
+        });
     state
         .continuations
         .push(game_core::state::Continuation::EncounterDraw {
@@ -122,6 +129,11 @@ fn hunter_movement_pick_location_replays_identically() {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
+            // Mid-Investigation invariant (slice 1a): the end_turn cascade pops
+            // the InvestigationPhase anchor at investigation_phase_end.
+            .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+                resume: game_core::state::InvestigationResume::TurnBegins,
+            })
             .build()
     }
 
