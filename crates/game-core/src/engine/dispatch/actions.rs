@@ -355,13 +355,21 @@ pub(super) fn move_primary_effect(
     investigator: InvestigatorId,
     destination: LocationId,
 ) -> EngineOutcome {
-    let Some(from) = cx
+    let inv = cx
         .state
         .investigators
         .get(&investigator)
-        .and_then(|inv| inv.current_location)
-    else {
-        return EngineOutcome::Done; // actor gone/locationless: suppress
+        .unwrap_or_else(|| {
+            unreachable!(
+                "move_primary_effect: investigator {investigator:?} absent after the \
+                 Status::Active re-validation gate; this is a state-corruption invariant \
+                 violation"
+            )
+        });
+    let Some(from) = inv.current_location else {
+        // Active but locationless — not expected post-AoO, but suppress
+        // (return Done) defensively rather than panic.
+        return EngineOutcome::Done;
     };
     let still_connected = cx
         .state
