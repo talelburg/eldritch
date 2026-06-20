@@ -79,20 +79,29 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
 /// The skill-test half of an Investigate, run after its `AoO` loop (#293).
 /// Re-reads the location + effective shroud live and re-checks the location
 /// is still revealed (the §D precondition re-check); suppresses (returns
-/// `Done`) if not.
+/// `Done`) if the precondition has lapsed.
+///
+/// A missing investigator map entry panics — `resume_action_resolution`'s
+/// `Status::Active` gate upstream already guarantees the investigator is
+/// present, so absence here is a state-corruption invariant violation. A
+/// legitimately lapsed precondition (no `current_location`, or location
+/// absent / not `revealed`) returns `Done` instead.
 pub(super) fn investigate_primary_effect(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    let Some(location_id) = cx
+    let inv = cx
         .state
         .investigators
         .get(&investigator)
-        .and_then(|inv| inv.current_location)
-    else {
-        // Active but locationless after AoO — not expected, but suppress
-        // (return Done) defensively rather than panic.
-        return EngineOutcome::Done;
+        .unwrap_or_else(|| {
+            unreachable!(
+                "investigate_primary_effect: investigator {investigator:?} not in map after the \
+                 Status::Active re-validation gate; this is a state-corruption invariant violation"
+            )
+        });
+    let Some(location_id) = inv.current_location else {
+        return EngineOutcome::Done; // lapsed: locationless after AoO
     };
     let Some(location) = cx.state.locations.get(&location_id) else {
         return EngineOutcome::Done;
@@ -772,7 +781,7 @@ mod actions_tests {
     use crate::test_support::{
         apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
     };
-    use crate::{assert_event, assert_no_event};
+    use crate::{assert_event, assert_event_sequence, assert_no_event};
 
     /// Build a Move scenario: investigator at L1, L1 connected to L2,
     /// 3 actions, Investigation phase, active investigator, with one
@@ -980,14 +989,12 @@ mod actions_tests {
             "expected AwaitingInput (commit window) after nonlethal AoO, got {:?}",
             outcome.outcome
         );
-        // AoO damage landed before the test started.
-        assert_event!(
+        // AoO damage landed before the test started — prove ordering.
+        assert_event_sequence!(
             outcome.events,
-            Event::DamageTaken { investigator, amount: 1 }
-                if *investigator == inv_id
+            Event::DamageTaken { .. },
+            Event::SkillTestStarted { .. }
         );
-        // The skill test started.
-        assert_event!(outcome.events, Event::SkillTestStarted { .. });
         // Investigator is still Active.
         assert_eq!(
             outcome.state.investigators[&inv_id].status,
