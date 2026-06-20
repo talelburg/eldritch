@@ -379,7 +379,17 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
-    step_phase(cx) // Investigation → Enemy; calls enemy_phase
+    // Investigation → Enemy (slice 1b, #393): advance `state.phase` + push the
+    // Enemy anchor at `Entry`. The main loop's `drive` advances it (runs
+    // enemy_phase); a hunter-movement-tie suspension surfaces through `drive`.
+    // Replaces the former synchronous `step_phase(cx)`.
+    cx.state.phase = Phase::Enemy;
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EnemyPhase {
+            resume: crate::state::EnemyResume::Entry,
+        });
+    EngineOutcome::Done
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
@@ -1561,10 +1571,16 @@ mod investigation_phase_tests {
             });
 
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
 
         // Single investigator with no enemies: the round-ending EndTurn
         // cascades Investigation → Enemy → Upkeep → Mythos and pauses at the
@@ -1623,10 +1639,16 @@ mod investigation_phase_tests {
             });
 
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
 
         assert!(matches!(outcome, EngineOutcome::Done));
         assert_eq!(
@@ -2890,10 +2912,16 @@ mod enemy_phase_tests {
                 resume: crate::state::InvestigationResume::TurnBegins,
             });
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
         // No registry installed → the attack window auto-skips inline and the
         // cascade runs Enemy→Upkeep→Mythos within this same call, pausing at the
         // step-1.4 encounter-draw prompt (AwaitingInput). The hunter still moved
@@ -2944,10 +2972,16 @@ mod enemy_phase_tests {
                 resume: crate::state::InvestigationResume::TurnBegins,
             });
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Enemy);
         // The EnemyPhase anchor (slice 1a) is on the stack beneath the
