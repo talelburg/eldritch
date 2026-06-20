@@ -1106,13 +1106,16 @@ mod hunter_resume_tests {
         ));
         // Resume by picking C.
         let mut ev2 = Vec::new();
-        let resumed = super::super::resolve_input(
-            &mut crate::engine::Cx {
+        let resumed = {
+            let mut cx = crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
-            },
-            &pick(&outcome, LocationId(3)),
-        );
+            };
+            // resolve_input resumes the tie; drive then carries the Enemy→Upkeep
+            // →Mythos cascade forward (slice 1b), as the apply boundary does.
+            let o = super::super::resolve_input(&mut cx, &pick(&outcome, LocationId(3)));
+            super::super::drive(&mut cx, o)
+        };
         // Resolving the tie continues the Enemy phase; with no registry the
         // attack windows auto-skip and the cascade runs to Mythos, pausing at
         // the step-1.4 encounter-draw prompt (AwaitingInput).
@@ -1219,13 +1222,14 @@ mod hunter_resume_tests {
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         let mut ev2 = Vec::new();
-        let resumed = super::super::resolve_input(
-            &mut crate::engine::Cx {
+        let resumed = {
+            let mut cx = crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
-            },
-            &pick(&outcome, InvestigatorId(2)),
-        );
+            };
+            let o = super::super::resolve_input(&mut cx, &pick(&outcome, InvestigatorId(2)));
+            super::super::drive(&mut cx, o) // slice 1b: complete the Enemy→… cascade
+        };
         // Resolving the tie continues the Enemy phase; with no registry the
         // attack windows auto-skip and the cascade runs to Mythos, pausing at
         // the step-1.4 encounter-draw prompt (AwaitingInput).
@@ -1337,13 +1341,14 @@ mod hunter_resume_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         // Resolve hunter 1's tie -> hunter 2 then moves B->D and engages.
         let mut ev2 = Vec::new();
-        let resumed = super::super::resolve_input(
-            &mut crate::engine::Cx {
+        let resumed = {
+            let mut cx = crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
-            },
-            &pick(&outcome, LocationId(2)),
-        );
+            };
+            let o = super::super::resolve_input(&mut cx, &pick(&outcome, LocationId(2)));
+            super::super::drive(&mut cx, o) // slice 1b: complete the Enemy→… cascade
+        };
         // Resolving the tie continues the Enemy phase; with no registry the
         // attack windows auto-skip and the cascade runs to Mythos, pausing at
         // the step-1.4 encounter-draw prompt (AwaitingInput).
