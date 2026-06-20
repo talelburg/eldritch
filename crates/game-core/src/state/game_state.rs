@@ -517,6 +517,19 @@ pub enum Continuation {
         /// Where in the per-attacker sequence the loop suspended (Axis D #336).
         stage: AttackLoopStage,
     },
+    /// An action paused over its attack-of-opportunity loop (#293, keystone of
+    /// #393). Pushed above [`InvestigatorTurn`] when an AoO-provoking action is
+    /// taken; the `AoO` [`AttackLoop`] is its child. On the loop's pop the
+    /// `drive` loop resumes this frame: it re-validates (actor still active +
+    /// the primary's precondition) and runs the primary effect, then pops.
+    /// Transient — it persists across an `apply()` boundary only while a window
+    /// suspends the loop. Never awaits input itself.
+    ActionResolution {
+        /// The acting investigator.
+        investigator: InvestigatorId,
+        /// Which primary effect to run when the `AoO` loop completes.
+        resume: ActionResume,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -544,6 +557,25 @@ pub struct ChoiceFrame {
     /// re-storing ingredient tuples) means bindings survive the suspend; resume
     /// re-runs the effect with this exact context. (#345.)
     pub context: crate::engine::EvalContext,
+}
+
+/// Which action's primary effect a parked [`Continuation::ActionResolution`]
+/// frame runs once its attack-of-opportunity loop completes (#293). Carries
+/// only the action's *parameters*; board-dependent values (Investigate
+/// difficulty, enemy presence) are re-derived live on resume so a mid-action
+/// board change is reflected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionResume {
+    /// Relocate the investigator (and engaged enemies) to `destination`.
+    Move { destination: LocationId },
+    /// Begin the Investigate skill test on the investigator's location.
+    Investigate,
+    /// Gain 1 resource.
+    Resource,
+    /// Engage `enemy`.
+    Engage { enemy: EnemyId },
+    /// Draw 1 card (with the empty-deck penalty path).
+    Draw,
 }
 
 impl Continuation {
@@ -587,7 +619,9 @@ impl Continuation {
             // reaction window pushed above it is the player-facing prompt, not
             // this frame — it is only ever momentarily on top inside
             // `resume_enemy_attack`, never at a suspension boundary (#411).
-            Continuation::InvestigatorTurn { .. } | Continuation::AttackLoop { .. } => false,
+            Continuation::InvestigatorTurn { .. }
+            | Continuation::AttackLoop { .. }
+            | Continuation::ActionResolution { .. } => false,
             other => !other.is_phase_anchor(),
         }
     }
@@ -609,6 +643,7 @@ impl Continuation {
             | Continuation::EncounterCard { .. }
             | Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
+            | Continuation::ActionResolution { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -632,6 +667,7 @@ impl Continuation {
             | Continuation::EncounterCard { .. }
             | Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
+            | Continuation::ActionResolution { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -2319,5 +2355,20 @@ mod starting_location_tests {
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.starting_location, Some(crate::state::LocationId(7)));
+    }
+}
+
+#[cfg(test)]
+mod action_resolution_frame_tests {
+    use super::*;
+
+    #[test]
+    fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {
+        let f = Continuation::ActionResolution {
+            investigator: InvestigatorId(1),
+            resume: ActionResume::Resource,
+        };
+        assert!(!f.awaits_input(), "a mid-action frame is internal, never a prompt");
+        assert!(!f.is_phase_anchor(), "a mid-action frame is not a phase anchor");
     }
 }

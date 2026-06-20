@@ -387,6 +387,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             reason: "ResolveInput: no input prompt is outstanding (a parked attack loop is top)"
                 .into(),
         },
+        // A mid-action ActionResolution frame never awaits input — it is only
+        // momentarily top inside `drive`. A ResolveInput here is spurious.
+        Some(Continuation::ActionResolution { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (a mid-action resolution \
+                     frame is top)"
+                .into(),
+        },
         // The open turn does not emit an AwaitingInput prompt in 2a (typed
         // actions drive it; the enumeration is 2a-ii / surfacing is 2b). A
         // ResolveInput arriving here is spurious — reject defensively, mirroring
