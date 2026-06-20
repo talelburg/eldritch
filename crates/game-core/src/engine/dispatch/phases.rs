@@ -566,34 +566,44 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// (hand-size discard, #111), so the outcome propagates rather than being
 /// discarded.
 pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
-    if let Some(inv) = super::cursor::first_active_investigator(cx.state) {
-        set_enemy_anchor(
-            cx,
-            crate::state::EnemyResume::BeforeInvestigatorAttacked,
-            Some(inv),
-        );
-        super::reaction_windows::open_fast_window(
-            cx,
-            WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
-        )
-    } else {
-        // No Active investigators (turn_order empty or all eliminated).
-        // Skip straight to the final window — mirror of mythos_phase's
-        // no-drawer path.
-        set_enemy_anchor(cx, crate::state::EnemyResume::AfterAllAttacked, None);
-        super::reaction_windows::open_fast_window(
-            cx,
-            WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
-        )
-    }
+    // No Active investigators (turn_order empty or all eliminated) → `None`
+    // opens the final window directly, mirroring mythos_phase's no-drawer path.
+    open_attack_window(cx, super::cursor::first_active_investigator(cx.state))
 }
 
-/// Set the Enemy phase anchor's `resume` and `attacking` cursor (slice 1a /
-/// #411) before opening one of its attack windows, so the window's close routes
-/// to the matching `anchor_on_child_pop` body for the right investigator. Both
-/// fields are set together so neither is dropped. The anchor is the bottom-most
-/// Enemy frame; a no-op if it is absent (only in tests that drive the attack
-/// loop in isolation).
+/// Point the Enemy phase anchor at the next step-3.3 window and open it. The
+/// `attacking` cursor is the single source of truth (#411): `Some(inv)` opens
+/// that investigator's `BeforeInvestigatorAttacked` window and the anchor
+/// resumes into resolving their attacks; `None` means no investigator remains,
+/// so open the terminal `AfterAllInvestigatorsAttacked` window and the anchor
+/// resumes into `enemy_phase_end`. Deriving the resume, the window, and the
+/// cursor from one `Option` here makes a mismatched pairing unrepresentable.
+///
+/// Shared by [`enemy_attack_kickoff`] (step 3.3 entry, cursor =
+/// [`cursor::first_active_investigator`](super::cursor::first_active_investigator))
+/// and [`after_enemy_phase_attacks`](super::reaction_windows::after_enemy_phase_attacks)
+/// (per-investigator advance, cursor =
+/// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)).
+pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>) -> EngineOutcome {
+    let (resume, step) = match attacking {
+        Some(_) => (
+            crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            PhaseStep::BeforeInvestigatorAttacked,
+        ),
+        None => (
+            crate::state::EnemyResume::AfterAllAttacked,
+            PhaseStep::AfterAllInvestigatorsAttacked,
+        ),
+    };
+    set_enemy_anchor(cx, resume, attacking);
+    super::reaction_windows::open_fast_window(cx, WindowKind::PlayerWindow(step))
+}
+
+/// Set the Enemy phase anchor's `resume` and `attacking` cursor together (slice
+/// 1a / #411) so neither is dropped. The low-level primitive behind
+/// [`open_attack_window`]; the anchor is the bottom-most Enemy frame, and this
+/// is a no-op if it is absent (only in tests that drive the attack loop in
+/// isolation).
 pub(super) fn set_enemy_anchor(
     cx: &mut Cx,
     resume: crate::state::EnemyResume,

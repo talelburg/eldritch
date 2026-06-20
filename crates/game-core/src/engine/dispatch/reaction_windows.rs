@@ -18,8 +18,8 @@ use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation,
-    ForcedContinuation, GameState, InvestigatorId, Phase, PhaseStep, ResolutionCandidate,
-    ResolutionFrame, ResolutionKind, Status, WindowBinding, WindowKind,
+    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, ResolutionFrame,
+    ResolutionKind, Status, WindowBinding, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -1071,24 +1071,7 @@ pub(super) fn after_enemy_phase_attacks(
     investigator: InvestigatorId,
 ) -> EngineOutcome {
     let next = super::cursor::next_active_investigator_after(cx.state, investigator);
-
-    if let Some(inv) = next {
-        super::phases::set_enemy_anchor(
-            cx,
-            crate::state::EnemyResume::BeforeInvestigatorAttacked,
-            Some(inv),
-        );
-        open_fast_window(
-            cx,
-            WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
-        )
-    } else {
-        super::phases::set_enemy_anchor(cx, crate::state::EnemyResume::AfterAllAttacked, None);
-        open_fast_window(
-            cx,
-            WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
-        )
-    }
+    super::phases::open_attack_window(cx, next)
 }
 
 /// Open a printed Fast-play window of the given kind. Always emits
@@ -1817,7 +1800,7 @@ mod any_fast_play_eligible_tests {
 mod open_fast_window_tests {
     use super::*;
     use crate::event::Event;
-    use crate::state::{EnemyId, WindowKind};
+    use crate::state::{EnemyId, PhaseStep, WindowKind};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
