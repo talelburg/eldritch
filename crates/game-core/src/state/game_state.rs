@@ -181,12 +181,6 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
-    /// `Some` while an enemy-attack loop is suspended on a soak reaction
-    /// window (C5b #237). Mirror of the former `pending_end_turn` (now the
-    /// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's `ending`
-    /// flag, slice 2a-i #393): a framework cursor for a suspended continuation.
-    #[serde(default)]
-    pub pending_enemy_attack: Option<PendingEnemyAttack>,
     /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a
     /// Before-timing reaction window resolves; read-and-cleared by the emit
     /// site (the enemy-attack loop, `discover_clue`) after the window closes,
@@ -378,27 +372,6 @@ pub struct SkillSubstitution {
     pub for_skills: Vec<SkillKind>,
 }
 
-/// A parked enemy-attack loop, suspended because an attack opened a reaction
-/// window — either the soak window (`AfterEnemyAttackDamagedAsset`, after
-/// damage; C5b #237) or the before-attack cancel window (`BeforeEnemyAttack`,
-/// before damage; Axis D #336), distinguished by [`Self::stage`]. Resumed by
-/// `resume_enemy_attack` once the window closes — the same suspend/resume
-/// shape as the [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's
-/// `ending` flag (slice 2a-i #393, which absorbed the former `pending_end_turn`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PendingEnemyAttack {
-    /// The investigator whose engaged enemies are attacking.
-    pub investigator: InvestigatorId,
-    /// Attackers not yet resolved, in resolution order. The current attacker
-    /// is still at the head for [`AttackLoopStage::BeforeAttack`] (it has not
-    /// dealt yet); already removed for [`AttackLoopStage::AfterSoak`].
-    pub remaining_attackers: Vec<EnemyId>,
-    /// Which loop to re-enter.
-    pub source: EnemyAttackSource,
-    /// Where in the per-attacker sequence the loop suspended (Axis D #336).
-    pub stage: AttackLoopStage,
-}
-
 /// A frame on the [`GameState::continuations`] suspend/resume stack
 /// (umbrella §1 / Axis-B): a typed resume point, not a closure, so it
 /// serializes for replay/persistence like every other state field.
@@ -538,6 +511,29 @@ pub enum Continuation {
         /// test leaves it `false`.
         ending: bool,
     },
+    /// A parked enemy-attack loop, suspended because an attack opened a reaction
+    /// window — either the soak window (`AfterEnemyAttackDamagedAsset`, after
+    /// damage; C5b #237) or the before-attack cancel window (`BeforeEnemyAttack`,
+    /// before damage; Axis D #336), distinguished by its `stage`. Pushed
+    /// *beneath* that reaction window by the attack-loop driver
+    /// (`drive_attack_loop` / `park_on_soak_window`); resumed by
+    /// [`resume_enemy_attack`](crate::engine) (which pops it) once the window
+    /// closes. An internal sequencing frame — never awaits player input itself
+    /// (the window above it does); it is only ever momentarily on top inside
+    /// `resume_enemy_attack`, between the window pop and its own pop. Lifted off
+    /// the former `GameState::pending_enemy_attack` (#411, step 3 of #393).
+    AttackLoop {
+        /// The investigator whose engaged enemies are attacking.
+        investigator: InvestigatorId,
+        /// Attackers not yet resolved, in resolution order. The current attacker
+        /// is still at the head for [`AttackLoopStage::BeforeAttack`] (it has not
+        /// dealt yet); already removed for [`AttackLoopStage::AfterSoak`].
+        remaining_attackers: Vec<EnemyId>,
+        /// Which loop to re-enter.
+        source: EnemyAttackSource,
+        /// Where in the per-attacker sequence the loop suspended (Axis D #336).
+        stage: AttackLoopStage,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -602,9 +598,13 @@ impl Continuation {
     pub fn awaits_input(&self) -> bool {
         match self {
             Continuation::Resolution(f) => !f.pending_triggers.is_empty(),
-            // The open turn: typed actions (Move/Investigate/Fight/…) run, so it
-            // is NOT a mandatory ResolveInput prompt (slice 2a-i, #393).
-            Continuation::InvestigatorTurn { .. } => false,
+            // Neither is a mandatory ResolveInput prompt. The open turn takes
+            // typed actions (Move/Investigate/Fight/…), not ResolveInput (slice
+            // 2a-i, #393). The parked attack loop is internal sequencing: the
+            // reaction window pushed above it is the player-facing prompt, not
+            // this frame — it is only ever momentarily on top inside
+            // `resume_enemy_attack`, never at a suspension boundary (#411).
+            Continuation::InvestigatorTurn { .. } | Continuation::AttackLoop { .. } => false,
             other => !other.is_phase_anchor(),
         }
     }
@@ -625,6 +625,7 @@ impl Continuation {
             | Continuation::EncounterDraw { .. }
             | Continuation::EncounterCard { .. }
             | Continuation::InvestigatorTurn { .. }
+            | Continuation::AttackLoop { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -647,6 +648,7 @@ impl Continuation {
             | Continuation::EncounterDraw { .. }
             | Continuation::EncounterCard { .. }
             | Continuation::InvestigatorTurn { .. }
+            | Continuation::AttackLoop { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -2000,6 +2002,21 @@ mod enemy_attack_pending_tests {
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.enemy_attack_pending, Some(InvestigatorId(7)));
+    }
+
+    #[test]
+    fn attack_loop_frame_round_trips_through_serde() {
+        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId};
+        let mut state = GameStateBuilder::new().build();
+        state.continuations.push(Continuation::AttackLoop {
+            investigator: InvestigatorId(7),
+            remaining_attackers: vec![EnemyId(2), EnemyId(3)],
+            source: EnemyAttackSource::EnemyPhase,
+            stage: AttackLoopStage::AfterSoak,
+        });
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.continuations, state.continuations);
     }
 }
 

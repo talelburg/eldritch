@@ -26,7 +26,8 @@ use std::sync::Once;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase, Zone,
+    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, InvestigatorId, LocationId,
+    Phase, Zone,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location};
 use game_core::{Action, InputResponse, PlayerAction};
@@ -439,12 +440,15 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         !state.enemies[&second].exhausted,
         "second attacker not yet resolved"
     );
-    // The remaining attacker is parked.
+    // The remaining attacker is parked on the AttackLoop frame.
     assert_eq!(
-        state
-            .pending_enemy_attack
-            .as_ref()
-            .map(|p| p.remaining_attackers.clone()),
+        state.continuations.iter().rev().find_map(|c| match c {
+            Continuation::AttackLoop {
+                remaining_attackers,
+                ..
+            } => Some(remaining_attackers.clone()),
+            _ => None,
+        }),
         Some(vec![second]),
         "second attacker parked for resume"
     );
@@ -483,7 +487,10 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         result.outcome
     );
     assert!(
-        state.pending_enemy_attack.is_some(),
+        state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
         "loop is parked again after the second attack"
     );
 
@@ -503,7 +510,10 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         "second attacker took Guard Dog's retaliation on the second window"
     );
     assert!(
-        state.pending_enemy_attack.is_none(),
+        !state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
         "no parked attack after both attackers fully resolve"
     );
     assert!(
