@@ -353,7 +353,7 @@ pub enum EnemyAttackSource {
 /// Which point in the per-attacker sequence a parked enemy-attack loop
 /// suspended at (Axis D #336).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AttackLoopPhase {
+pub enum AttackLoopStage {
     /// Suspended on the `BeforeEnemyAttack` cancel window, *before* the head
     /// attacker dealt damage. Resume reads `pending_cancellation`, then deals
     /// (or skips) and exhausts the head attacker.
@@ -381,7 +381,7 @@ pub struct SkillSubstitution {
 /// A parked enemy-attack loop, suspended because an attack opened a reaction
 /// window — either the soak window (`AfterEnemyAttackDamagedAsset`, after
 /// damage; C5b #237) or the before-attack cancel window (`BeforeEnemyAttack`,
-/// before damage; Axis D #336), distinguished by [`Self::phase`]. Resumed by
+/// before damage; Axis D #336), distinguished by [`Self::stage`]. Resumed by
 /// `resume_enemy_attack` once the window closes — the same suspend/resume
 /// shape as the [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's
 /// `ending` flag (slice 2a-i #393, which absorbed the former `pending_end_turn`).
@@ -390,13 +390,13 @@ pub struct PendingEnemyAttack {
     /// The investigator whose engaged enemies are attacking.
     pub investigator: InvestigatorId,
     /// Attackers not yet resolved, in resolution order. The current attacker
-    /// is still at the head for [`AttackLoopPhase::BeforeAttack`] (it has not
-    /// dealt yet); already removed for [`AttackLoopPhase::AfterSoak`].
+    /// is still at the head for [`AttackLoopStage::BeforeAttack`] (it has not
+    /// dealt yet); already removed for [`AttackLoopStage::AfterSoak`].
     pub remaining_attackers: Vec<EnemyId>,
     /// Which loop to re-enter.
     pub source: EnemyAttackSource,
     /// Where in the per-attacker sequence the loop suspended (Axis D #336).
-    pub phase: AttackLoopPhase,
+    pub stage: AttackLoopStage,
 }
 
 /// A frame on the [`GameState::continuations`] suspend/resume stack

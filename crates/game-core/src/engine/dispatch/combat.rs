@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    AttackLoopPhase, CardInstanceId, DefeatCause, EnemyAttackSource, EnemyId, GameState,
+    AttackLoopStage, CardInstanceId, DefeatCause, EnemyAttackSource, EnemyId, GameState,
     InvestigatorId, PendingEnemyAttack, Status,
 };
 
@@ -736,7 +736,7 @@ fn park_on_soak_window(
         investigator,
         remaining_attackers,
         source,
-        phase: AttackLoopPhase::AfterSoak,
+        stage: AttackLoopStage::AfterSoak,
     });
     super::reaction_windows::open_queued_reaction_window(cx)
 }
@@ -804,7 +804,7 @@ fn drive_attack_loop(
                 investigator,
                 remaining_attackers: attackers,
                 source,
-                phase: AttackLoopPhase::BeforeAttack,
+                stage: AttackLoopStage::BeforeAttack,
             });
             return super::reaction_windows::open_queued_reaction_window(cx);
         }
@@ -823,14 +823,14 @@ fn drive_attack_loop(
 /// Re-enter a suspended enemy-attack loop after the reaction window it parked
 /// on closed. Mirror of the other pending-resume drivers (`resume_end_turn` /
 /// spawn-engage). Takes the parked [`PendingEnemyAttack`] and resumes per its
-/// [`AttackLoopPhase`]:
+/// [`AttackLoopStage`]:
 ///
-/// - [`AttackLoopPhase::BeforeAttack`] (Axis D #336): the before-attack cancel
+/// - [`AttackLoopStage::BeforeAttack`] (Axis D #336): the before-attack cancel
 ///   window closed. Read-and-clear `pending_cancellation`, then deal-or-skip
 ///   the head attacker (still at the front of `remaining_attackers`) via
 ///   [`process_attacker_dealing`] and exhaust it. If *that* attack opens a soak
 ///   window, re-park as `AfterSoak`; otherwise drain the rest.
-/// - [`AttackLoopPhase::AfterSoak`] (C5b #237): the soak window closed; drain
+/// - [`AttackLoopStage::AfterSoak`] (C5b #237): the soak window closed; drain
 ///   the remaining attackers.
 ///
 /// If the loop suspends again, that [`EngineOutcome::AwaitingInput`] is returned
@@ -854,7 +854,7 @@ pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
         investigator,
         mut remaining_attackers,
         source,
-        phase,
+        stage,
     } = cx.state.pending_enemy_attack.take().unwrap_or_else(|| {
         unreachable!(
             "resume_enemy_attack: no pending_enemy_attack parked; the \
@@ -864,7 +864,7 @@ pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
         )
     });
 
-    if phase == AttackLoopPhase::BeforeAttack {
+    if stage == AttackLoopStage::BeforeAttack {
         // The before-attack cancel window for the head attacker closed. If a
         // reaction cancelled the attack (Dodge played `Effect::Cancel`), skip
         // its damage; either way the head is dealt-or-skipped + exhausted (RR
@@ -1132,7 +1132,7 @@ mod combat_tests {
         // assert it drains both attackers (exhausting each) and advances the
         // enemy-phase cursor past the (sole) investigator to `None`.
         use crate::state::{
-            AttackLoopPhase, EnemyAttackSource, InvestigatorId, PendingEnemyAttack,
+            AttackLoopStage, EnemyAttackSource, InvestigatorId, PendingEnemyAttack,
         };
 
         let inv_id = InvestigatorId(1);
@@ -1165,7 +1165,7 @@ mod combat_tests {
             investigator: inv_id,
             remaining_attackers: vec![second, third],
             source: EnemyAttackSource::EnemyPhase,
-            phase: AttackLoopPhase::AfterSoak,
+            stage: AttackLoopStage::AfterSoak,
         });
 
         let mut events = Vec::new();
@@ -1208,7 +1208,7 @@ mod combat_tests {
     #[test]
     fn resume_before_attack_cancel_skips_damage_but_exhausts() {
         use crate::state::{
-            AttackLoopPhase, EnemyAttackSource, InvestigatorId, PendingEnemyAttack,
+            AttackLoopStage, EnemyAttackSource, InvestigatorId, PendingEnemyAttack,
         };
 
         let inv_id = InvestigatorId(1);
@@ -1232,7 +1232,7 @@ mod combat_tests {
             investigator: inv_id,
             remaining_attackers: vec![attacker], // head still present (BeforeAttack)
             source: EnemyAttackSource::EnemyPhase,
-            phase: AttackLoopPhase::BeforeAttack,
+            stage: AttackLoopStage::BeforeAttack,
         });
 
         let mut events = Vec::new();
@@ -1263,7 +1263,7 @@ mod combat_tests {
     #[test]
     fn resume_before_attack_without_cancel_deals_damage() {
         use crate::state::{
-            AttackLoopPhase, EnemyAttackSource, InvestigatorId, PendingEnemyAttack,
+            AttackLoopStage, EnemyAttackSource, InvestigatorId, PendingEnemyAttack,
         };
 
         let inv_id = InvestigatorId(1);
@@ -1287,7 +1287,7 @@ mod combat_tests {
             investigator: inv_id,
             remaining_attackers: vec![attacker],
             source: EnemyAttackSource::EnemyPhase,
-            phase: AttackLoopPhase::BeforeAttack,
+            stage: AttackLoopStage::BeforeAttack,
         });
 
         let mut events = Vec::new();

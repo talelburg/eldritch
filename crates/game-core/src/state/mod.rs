@@ -24,7 +24,7 @@ pub use counter::Counter;
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
-    Act, ActRoundEndPending, Agenda, AttackLoopPhase, CandidateSource, ChoiceFrame, Continuation,
+    Act, ActRoundEndPending, Agenda, AttackLoopStage, CandidateSource, ChoiceFrame, Continuation,
     EnemyAttackSource, EnemyResume, FastActorScope, FinishContinuation, ForcedContinuation,
     GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationResume, MythosResume,
     PendingEnemyAttack, PendingSkillModifier, PhaseStep, ResolutionCandidate, ResolutionFrame,
