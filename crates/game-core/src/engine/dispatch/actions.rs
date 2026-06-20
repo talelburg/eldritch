@@ -201,11 +201,15 @@ pub(super) fn resource_primary_effect(
 /// Validate-first: Investigation phase, active + `Status::Active`,
 /// `actions_remaining >= 1`, enemy in state, enemy at the investigator's
 /// `current_location`, not already engaged with the investigator.
-/// Mutate-second: spend 1 action, fire attacks of opportunity (Engage is
-/// NOT `AoO`-exempt — the target is not engaged yet so it cannot `AoO`;
-/// only OTHER engaged ready enemies do), then — if the investigator
-/// survived —
-/// engage the enemy.
+/// Mutate-second: spend 1 action, then park the engagement over its
+/// attack-of-opportunity loop (#293). The target enemy is not yet engaged
+/// so it cannot `AoO`; only OTHER ready engaged enemies do. If the
+/// investigator survives, [`engage_primary_effect`] runs the engagement.
+///
+/// The `AoO` loop now runs as an [`ActionResolution`] frame (#293): the
+/// frame is pushed, then [`combat::drive_aoo`] drives the loop.
+///
+/// [`ActionResolution`]: crate::state::Continuation::ActionResolution
 pub(super) fn engage(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -245,30 +249,59 @@ pub(super) fn engage(
         };
     }
 
-    // Mutate-second.
+    // Mutate-second: spend the action, then park the engagement over its
+    // attack-of-opportunity loop (#293). Push the resume frame, then drive
+    // the AoO. Engage is NOT on the AoO-exempt list (only Fight, Evade,
+    // Parley, Resign are). The target is not yet engaged so it cannot AoO;
+    // only OTHER ready engaged enemies do.
     spend_one_action(cx, investigator);
-    super::combat::fire_attacks_of_opportunity(cx, investigator);
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::ActionResolution {
+            investigator,
+            resume: crate::state::ActionResume::Engage { enemy: enemy_id },
+        });
+    super::combat::drive_aoo(cx, investigator)
+}
 
-    let inv_after = cx
+/// The engagement half of an Engage action, run after its `AoO` loop (#293).
+///
+/// Re-reads the enemy from live state and re-checks the target precondition
+/// (the §D primary-precondition re-check): enemy still exists, is co-located
+/// with the investigator, and is not already engaged with this investigator.
+/// Returns `Done` on any lapsed precondition (the engagement simply does not
+/// happen — legitimately suppressed, not a state corruption).
+///
+/// A missing investigator map entry after the `Status::Active` gate in
+/// `resume_action_resolution` is a state-corruption invariant violation and
+/// must `unreachable!`-panic — absence here is impossible if the gate held.
+pub(super) fn engage_primary_effect(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+) -> EngineOutcome {
+    let inv_location = cx
         .state
         .investigators
         .get(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "Engage: investigator {investigator:?} disappeared between AoO and engagement; \
-             this is a state-corruption invariant violation"
+                "engage_primary_effect: investigator {investigator:?} absent after the \
+                 Status::Active re-validation gate; this is a state-corruption invariant violation"
             )
-        });
-    if inv_after.status != Status::Active {
-        return EngineOutcome::Done;
+        })
+        .current_location;
+    let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
+        return EngineOutcome::Done; // target gone
+    };
+    if enemy.engaged_with == Some(investigator) || enemy.current_location != inv_location {
+        return EngineOutcome::Done; // precondition lapsed
     }
-
-    let enemy_mut = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
-        unreachable!(
-            "Engage: enemy {enemy_id:?} disappeared between validation and engagement; \
-             this is a state-corruption invariant violation"
-        )
-    });
+    let enemy_mut = cx
+        .state
+        .enemies
+        .get_mut(&enemy_id)
+        .expect("checked above");
     enemy_mut.engaged_with = Some(investigator);
     cx.events.push(Event::EnemyEngaged {
         enemy: enemy_id,
@@ -1192,6 +1225,155 @@ mod actions_tests {
             result.state.investigators[&inv_id].resources,
             3,
             "resources must increase by 1"
+        );
+    }
+
+    /// Build an Engage scenario: investigator at L1, a target enemy at L1
+    /// (not yet engaged), and an `AoO` enemy at L1 already engaged with the
+    /// investigator. Returns `(inv_id, target_id, aoo_enemy_id, state)`.
+    fn engage_scenario_with_aoo_enemy(
+        inv_health: u8,
+        aoo_damage: u8,
+    ) -> (InvestigatorId, EnemyId, EnemyId, crate::state::GameState) {
+        let inv_id = InvestigatorId(1);
+        let loc_id = LocationId(10);
+        let target_id = EnemyId(400);
+        let aoo_enemy_id = EnemyId(401);
+
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc_id);
+        inv.actions_remaining = 3;
+        inv.max_health = inv_health;
+        inv.damage = 0;
+
+        let loc = test_location(10, "Study");
+
+        // The target: co-located, not yet engaged — cannot AoO.
+        let mut target = test_enemy(400, "Cultist");
+        target.current_location = Some(loc_id);
+        target.engaged_with = None;
+        target.attack_damage = 0;
+        target.attack_horror = 0;
+        target.exhausted = false;
+
+        // The AoO attacker: already engaged, ready — it WILL AoO.
+        let mut aoo_enemy = test_enemy(401, "Ghoul");
+        aoo_enemy.current_location = Some(loc_id);
+        aoo_enemy.engaged_with = Some(inv_id);
+        aoo_enemy.attack_damage = aoo_damage;
+        aoo_enemy.attack_horror = 0;
+        aoo_enemy.exhausted = false;
+
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .with_enemy(target)
+            .with_enemy(aoo_enemy)
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+
+        (inv_id, target_id, aoo_enemy_id, state)
+    }
+
+    #[test]
+    fn engage_with_nonlethal_aoo_engages_after_the_attack() {
+        // A second engaged enemy AoOs (1 damage); the target (co-located, not yet
+        // engaged) is then engaged. Assert EnemyAttacked precedes EnemyEngaged, the
+        // target's engaged_with == Some(investigator), investigator survived.
+        let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: target_id,
+            }),
+        );
+
+        assert_eq!(
+            result.outcome,
+            EngineOutcome::Done,
+            "expected Done after nonlethal AoO + engage, got {:?}",
+            result.outcome
+        );
+        // AoO damage landed.
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 }
+                if *investigator == inv_id
+        );
+        // EnemyEngaged fired (target is now engaged).
+        assert_event!(
+            result.events,
+            Event::EnemyEngaged { enemy, investigator }
+                if *enemy == target_id && *investigator == inv_id
+        );
+        // AoO damage (DamageTaken) precedes the engagement.
+        assert_event_sequence!(
+            result.events,
+            Event::DamageTaken { .. },
+            Event::EnemyEngaged { .. }
+        );
+        // Target is now engaged with the investigator.
+        assert_eq!(
+            result.state.enemies[&target_id].engaged_with,
+            Some(inv_id),
+            "target must be engaged with the investigator after engage action"
+        );
+        // Investigator is still Active.
+        assert_eq!(
+            result.state.investigators[&inv_id].status,
+            crate::state::Status::Active,
+            "investigator must still be Active after nonlethal AoO"
+        );
+        // Investigator took 1 damage.
+        assert_eq!(
+            result.state.investigators[&inv_id].damage,
+            1,
+            "investigator damage == 1 after nonlethal AoO"
+        );
+        // AoO attacker is not exhausted (RR p.7).
+        assert!(!result.state.enemies[&aoo_enemy_id].exhausted);
+    }
+
+    #[test]
+    fn engage_with_lethal_aoo_suppresses_the_engagement() {
+        // The other engaged enemy's AoO defeats the investigator: no EnemyEngaged.
+        let (inv_id, target_id, _aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(1, 1);
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Engage {
+                investigator: inv_id,
+                enemy: target_id,
+            }),
+        );
+
+        assert_eq!(
+            result.outcome,
+            EngineOutcome::Done,
+            "expected Done when AoO is lethal, got {:?}",
+            result.outcome
+        );
+        // Action was still spent.
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        // No engagement — target must not be engaged.
+        assert_no_event!(result.events, Event::EnemyEngaged { .. });
+        assert_eq!(
+            result.state.enemies[&target_id].engaged_with,
+            None,
+            "target must not be engaged when AoO is lethal"
+        );
+        // Investigator is not Active (defeated by AoO).
+        assert_ne!(
+            result.state.investigators[&inv_id].status,
+            crate::state::Status::Active,
+            "investigator must not be Active after lethal AoO"
         );
     }
 }
