@@ -49,39 +49,40 @@ fn push_combat_engage_actions(
         action_cost(state, investigator, crate::dsl::ActionClass::Fight) <= actions_remaining;
     let evade_affordable =
         action_cost(state, investigator, crate::dsl::ActionClass::Evade) <= actions_remaining;
+    let inv_location = inv.current_location;
 
-    // Fight / Evade: one option per enemy engaged with the investigator, gated
-    // on a non-negative difficulty (the handler rejects a negative one).
+    // One pass over the enemies. An enemy is either engaged with the
+    // investigator — a Fight/Evade target — or it is not, in which case it is an
+    // Engage target if it shares the investigator's location. The two cases are
+    // mutually exclusive (Fight/Evade need `engaged_with == me`; Engage needs
+    // `!= me`), so a single `if`/`else` covers both.
     for (&enemy_id, enemy) in &state.enemies {
-        if enemy.engaged_with != Some(investigator) {
-            continue;
-        }
-        if fight_affordable && enemy.fight >= 0 {
-            out.push(PlayerAction::Fight {
-                investigator,
-                enemy: enemy_id,
-            });
-        }
-        if evade_affordable && enemy.evade >= 0 {
-            out.push(PlayerAction::Evade {
-                investigator,
-                enemy: enemy_id,
-            });
-        }
-    }
-
-    // Engage: one option per enemy at the investigator's location not already
-    // engaged with them — including an enemy engaged with *another* investigator
-    // (engaging pulls it across; RR p.11). Engage costs 1 action, already gated
-    // by the `validate_basic_action` prologue above.
-    if let Some(loc) = inv.current_location {
-        for (&enemy_id, enemy) in &state.enemies {
-            if enemy.current_location == Some(loc) && enemy.engaged_with != Some(investigator) {
-                out.push(PlayerAction::Engage {
+        if enemy.engaged_with == Some(investigator) {
+            // Fight / Evade: gated on a non-negative difficulty (the handler
+            // rejects a negative one) and affordability.
+            if fight_affordable && enemy.fight >= 0 {
+                out.push(PlayerAction::Fight {
                     investigator,
                     enemy: enemy_id,
                 });
             }
+            if evade_affordable && enemy.evade >= 0 {
+                out.push(PlayerAction::Evade {
+                    investigator,
+                    enemy: enemy_id,
+                });
+            }
+        } else if inv_location.is_some() && enemy.current_location == inv_location {
+            // Engage: at the investigator's location, not already engaged with
+            // them — including an enemy engaged with *another* investigator
+            // (engaging pulls it across; RR p.11). Engage costs 1 action, already
+            // gated by the `validate_basic_action` prologue above. The
+            // `inv_location.is_some()` guard avoids a `None == None` match when
+            // both are locationless (mirrors the handler's guard).
+            out.push(PlayerAction::Engage {
+                investigator,
+                enemy: enemy_id,
+            });
         }
     }
 }
