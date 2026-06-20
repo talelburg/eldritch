@@ -181,15 +181,10 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
-    /// Suspended end-of-turn continuation (C4c, #235): `Some(active)` while
-    /// `end_turn` is paused on a suspending `EndOfTurn` forced effect
-    /// (Frozen in Fear 01164's willpower test). The skill-test commit-resume
-    /// path re-enters `resume_end_turn` to run the stranded rotation /
-    /// phase-end once the test resolves. Defaults to `None`.
-    #[serde(default)]
-    pub pending_end_turn: Option<InvestigatorId>,
     /// `Some` while an enemy-attack loop is suspended on a soak reaction
-    /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
+    /// window (C5b #237). Mirror of the former `pending_end_turn` (now the
+    /// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's `ending`
+    /// flag, slice 2a-i #393): a framework cursor for a suspended continuation.
     #[serde(default)]
     pub pending_enemy_attack: Option<PendingEnemyAttack>,
     /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a
@@ -388,7 +383,8 @@ pub struct SkillSubstitution {
 /// damage; C5b #237) or the before-attack cancel window (`BeforeEnemyAttack`,
 /// before damage; Axis D #336), distinguished by [`Self::phase`]. Resumed by
 /// `resume_enemy_attack` once the window closes — the same suspend/resume
-/// shape as [`GameState::pending_end_turn`].
+/// shape as the [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's
+/// `ending` flag (slice 2a-i #393, which absorbed the former `pending_end_turn`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingEnemyAttack {
     /// The investigator whose engaged enemies are attacking.
@@ -534,6 +530,13 @@ pub enum Continuation {
         /// Whose turn this is. Mirrors [`GameState::active_investigator`] while on
         /// top; the durable source for the end-of-turn rotation.
         investigator: InvestigatorId,
+        /// `true` once `end_turn`'s `EndOfTurn` forced effect suspended into a
+        /// skill test before rotation (a single Frozen in Fear 01164), stranding
+        /// the turn (slice 2a-i, #393 — absorbs the former
+        /// `GameState::pending_end_turn`). The skill-test commit resume reads this
+        /// to decide the resolved test triggers rotation; an ordinary mid-turn
+        /// test leaves it `false`.
+        ending: bool,
     },
 }
 
@@ -1840,6 +1843,7 @@ mod continuation_stack_tests {
     fn investigator_turn_frame_classification() {
         let frame = Continuation::InvestigatorTurn {
             investigator: InvestigatorId(1),
+            ending: false,
         };
         // The open turn is not a framework anchor...
         assert!(!frame.is_phase_anchor());

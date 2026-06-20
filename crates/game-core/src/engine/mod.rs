@@ -4779,6 +4779,7 @@ mod tests {
             .continuations
             .push(crate::state::Continuation::InvestigatorTurn {
                 investigator: InvestigatorId(1),
+                ending: false,
             });
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,

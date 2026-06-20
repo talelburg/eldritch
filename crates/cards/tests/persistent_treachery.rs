@@ -319,7 +319,12 @@ fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
         Some(InvestigatorId(2)),
         "end_turn resumed after the test and rotated to investigator 2",
     );
-    assert!(r.state.pending_end_turn.is_none());
+    // The turn was not left stranded: no InvestigatorTurn frame is mid-end
+    // (slice 2a-i absorbed the former pending_end_turn into `ending`).
+    assert!(!r.state.continuations.iter().any(|c| matches!(
+        c,
+        game_core::state::Continuation::InvestigatorTurn { ending: true, .. }
+    )));
 }
 
 #[test]
@@ -336,7 +341,12 @@ fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
     assert!(!r.state.encounter_discard.contains(&CardCode::new("01164")));
     // Turn still progresses regardless of the test outcome.
     assert_eq!(r.state.active_investigator, Some(InvestigatorId(2)));
-    assert!(r.state.pending_end_turn.is_none());
+    // The turn was not left stranded: no InvestigatorTurn frame is mid-end
+    // (slice 2a-i absorbed the former pending_end_turn into `ending`).
+    assert!(!r.state.continuations.iter().any(|c| matches!(
+        c,
+        game_core::state::Continuation::InvestigatorTurn { ending: true, .. }
+    )));
 }
 
 #[test]
@@ -408,7 +418,12 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
         Some(InvestigatorId(2)),
         "end_turn resumed after both tests and rotated to investigator 2",
     );
-    assert!(r.state.pending_end_turn.is_none());
+    // The turn was not left stranded: no InvestigatorTurn frame is mid-end
+    // (slice 2a-i absorbed the former pending_end_turn into `ending`).
+    assert!(!r.state.continuations.iter().any(|c| matches!(
+        c,
+        game_core::state::Continuation::InvestigatorTurn { ending: true, .. }
+    )));
 }
 
 #[test]

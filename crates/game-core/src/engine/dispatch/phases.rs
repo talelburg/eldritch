@@ -220,11 +220,12 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // - **2+ simultaneous** `EndOfTurn` forced (two Frozen in Fear copies)
     //   open a forced run (#213) that carries its own
     //   `ForcedContinuation::EndOfTurnAfterForced` — it resumes rotation on
-    //   close, so `end_turn` must *not* also set `pending_end_turn`.
-    // - **a single** suspending hit has no run frame; record the active
-    //   investigator in `pending_end_turn` so the skill-test commit-resume
-    //   path re-enters [`resume_end_turn`] once the test resolves (C4c, #235
-    //   — mirrors the SpawnEngage frame).
+    //   close, so `end_turn` must *not* also flag the frame.
+    // - **a single** suspending hit has no run frame; flag the
+    //   `InvestigatorTurn` frame (below the skill test) as `ending` so the
+    //   skill-test commit-resume path re-enters [`resume_end_turn`] once the
+    //   test resolves (C4c, #235; slice 2a-i absorbs the former
+    //   `pending_end_turn` — mirrors the SpawnEngage frame).
     //
     // A `Rejected` propagates as-is.
     let end_of_turn = super::emit::emit_event(
@@ -241,7 +242,26 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
                 Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
             );
             if !forced_run_open {
-                cx.state.pending_end_turn = Some(active_id);
+                // The skill test sits above the InvestigatorTurn frame; find it
+                // and set `ending` so the commit-resume triggers rotation.
+                let ending = cx
+                    .state
+                    .continuations
+                    .iter_mut()
+                    .rev()
+                    .find_map(|c| match c {
+                        crate::state::Continuation::InvestigatorTurn {
+                            investigator,
+                            ending,
+                        } if *investigator == active_id => Some(ending),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| {
+                        unreachable!(
+                            "end_turn stranded with no InvestigatorTurn({active_id:?}) on the stack"
+                        )
+                    });
+                *ending = true;
             }
             end_of_turn
         }
@@ -253,9 +273,9 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 /// Reference p.24 step 2.2.2): rotate to the next active investigator, or
 /// end the Investigation phase. Called inline by `end_turn` when the
 /// `EndOfTurn` forced effects resolved synchronously, and by the
-/// skill-test commit-resume path (via `pending_end_turn`) when a
-/// suspending `EndOfTurn` forced effect (Frozen in Fear 01164) stranded
-/// `end_turn` before rotation.
+/// skill-test commit-resume path (keyed off the `InvestigatorTurn` frame's
+/// `ending` flag) when a suspending `EndOfTurn` forced effect (Frozen in
+/// Fear 01164) stranded `end_turn` before rotation.
 pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineOutcome {
     // The turn is over: pop the InvestigatorTurn frame this turn ran on (slice
     // 2a-i, #393). It is always on top here — end_turn reaches this after the
@@ -264,7 +284,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::InvestigatorTurn { investigator })
+            Some(crate::state::Continuation::InvestigatorTurn { investigator, .. })
                 if *investigator == active_id
         ),
         "resume_end_turn: expected InvestigatorTurn({active_id:?}) on top, got {:?}",
@@ -860,9 +880,10 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                      begin_investigator_turn always sets it"
                 )
             });
-            cx.state
-                .continuations
-                .push(Continuation::InvestigatorTurn { investigator });
+            cx.state.continuations.push(Continuation::InvestigatorTurn {
+                investigator,
+                ending: false,
+            });
             EngineOutcome::Done
         }
         Some(Continuation::MythosPhase {
@@ -1347,6 +1368,29 @@ mod investigation_phase_tests {
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
+    fn investigator_turn_defaults_to_not_ending() {
+        use crate::state::Continuation;
+        // The builder-staged open-turn frame is not mid-end-turn.
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
+        assert_eq!(
+            state.continuations.last(),
+            Some(&Continuation::InvestigatorTurn {
+                investigator: InvestigatorId(1),
+                ending: false,
+            }),
+        );
+    }
+
+    #[test]
     fn open_turn_leaves_investigator_turn_frame_on_top() {
         use crate::state::{Continuation, InvestigationResume};
         // Reach the open turn the way production does: enter the Investigation
@@ -1376,6 +1420,7 @@ mod investigation_phase_tests {
             state.continuations.last(),
             Some(&Continuation::InvestigatorTurn {
                 investigator: InvestigatorId(1),
+                ending: false,
             }),
         );
         // ...sitting above the still-present InvestigationPhase anchor.

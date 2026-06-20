@@ -324,7 +324,10 @@ impl GameStateBuilder {
         // A staged open turn (slice 2a-i, #393) sits directly above the anchor;
         // any window opened during the turn is a sub-resolution above it.
         if let Some(investigator) = self.investigator_turn {
-            continuations.push(Continuation::InvestigatorTurn { investigator });
+            continuations.push(Continuation::InvestigatorTurn {
+                investigator,
+                ending: false,
+            });
         }
         continuations.extend(self.open_windows.into_iter().map(Continuation::Resolution));
         if let Some(hsd) = self.hand_size_discard_pending {
@@ -362,7 +365,6 @@ impl GameStateBuilder {
             continuations,
             scenario_id: self.scenario_id,
             enemy_attack_pending: None,
-            pending_end_turn: None,
             pending_enemy_attack: None,
             pending_cancellation: false,
             pending_played_event: None,
