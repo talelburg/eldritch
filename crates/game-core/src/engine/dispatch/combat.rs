@@ -570,6 +570,26 @@ pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: Investigato
     }
 }
 
+/// Fire attacks of opportunity from every ready enemy engaged with
+/// `investigator`, driving them through the shared attack loop (#293) so each
+/// `AoO` opens its before-attack cancel window (Dodge 01023) and per-soaked-asset
+/// reaction window (Guard Dog 01021). Returns [`EngineOutcome::AwaitingInput`]
+/// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. Attackers
+/// resolve in deterministic [`EnemyId`] order (player-pick is #143/K4). `AoO`
+/// attackers never exhaust (RR p.7) — honored by
+/// [`EnemyAttackSource::AttackOfOpportunity`].
+#[allow(dead_code)] // TODO(#293): wired into handlers in Tasks 3–7
+pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let attackers: Vec<EnemyId> = cx
+        .state
+        .enemies
+        .iter()
+        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
+        .map(|(id, _)| *id)
+        .collect();
+    drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::AttackOfOpportunity)
+}
+
 /// Resolve all of one investigator's engaged ready enemies' attacks
 /// (Rules Reference p.25 step 3.3 inner body). Snapshot the attacker
 /// list in [`EnemyId`] order (`BTreeMap` iteration is sorted), then
@@ -646,14 +666,15 @@ pub(super) fn resolve_attacks_for_investigator(
 /// Returns [`EngineOutcome::Done`] when the list is exhausted with no
 /// suspension.
 /// Deal one attacker's damage (unless `cancelled`), queue its soak window(s),
-/// and exhaust it. The open-window suspend check is left to the caller (so the
-/// before-cancel and soak resume paths can both reuse this body). Enemy-phase
-/// only — attacks of opportunity neither route through here nor exhaust (RR
-/// p.7); see [`fire_attacks_of_opportunity`].
+/// and exhaust it (enemy phase only). The open-window suspend check is left to
+/// the caller (so the before-cancel and soak resume paths can both reuse this
+/// body). `AoO` attacks route through here via [`drive_aoo`] but never exhaust
+/// (RR p.7) — the `source` parameter guards that branch.
 fn process_attacker_dealing(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
+    source: EnemyAttackSource,
     cancelled: bool,
 ) {
     // Unless cancelled (Dodge 01023, RR p.6): damage + horror placement
@@ -681,19 +702,20 @@ fn process_attacker_dealing(
         }
     }
 
-    // Exhaust the attacker — even on cancel. RR p.6: a cancelled attack is
-    // "still regarded as initiated"; RR p.25: the enemy exhausts "upon
-    // completion of dealing the attack". The attack was made; only its effect
-    // was prevented. (AoO never exhausts, RR p.7 — but AoO doesn't reach here.)
-    let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
-        unreachable!(
-            "process_attacker_dealing: snapshotted enemy {enemy_id:?} is \
-             gone from state.enemies; this is a state-corruption \
-             invariant violation"
-        )
-    });
-    enemy.exhausted = true;
-    cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
+    // Exhaust only on the enemy phase. AoO never exhausts (RR p.7).
+    // RR p.6: a cancelled attack is "still regarded as initiated"; RR p.25:
+    // the enemy exhausts "upon completion of dealing the attack". The attack
+    // was made; only its effect was prevented.
+    if source == EnemyAttackSource::EnemyPhase {
+        let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+            unreachable!(
+                "process_attacker_dealing: snapshotted enemy {enemy_id:?} is gone from \
+                 state.enemies; this is a state-corruption invariant violation"
+            )
+        });
+        enemy.exhausted = true;
+        cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
+    }
 }
 
 /// Park the loop on the soak reaction window the just-dealt attack opened and
@@ -782,7 +804,7 @@ fn deal_head_and_maybe_park(
     cancelled: bool,
 ) -> Option<EngineOutcome> {
     let enemy_id = attackers.remove(0);
-    process_attacker_dealing(cx, investigator, enemy_id, cancelled);
+    process_attacker_dealing(cx, investigator, enemy_id, source, cancelled);
     if cx.state.open_windows().is_empty() {
         None
     } else {
@@ -1333,6 +1355,37 @@ mod combat_tests {
             "an un-cancelled attack deals its damage"
         );
         assert!(state.enemies[&attacker].exhausted, "attacker exhausted");
+    }
+
+    #[test]
+    fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
+        // RR p.7: an enemy does not exhaust while making an attack of opportunity.
+        let inv_id = InvestigatorId(1);
+        let mut enemy = test_enemy(100, "Ghoul");
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = 1;
+        enemy.attack_horror = 0;
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        let outcome = super::drive_aoo(&mut cx, inv_id);
+
+        assert!(matches!(outcome, crate::engine::EngineOutcome::Done));
+        assert!(
+            !cx.state.enemies[&EnemyId(100)].exhausted,
+            "AoO must not exhaust the attacker (RR p.7)"
+        );
+        // Enemy attack fires DamageTaken (no EnemyAttacked event exists); verify
+        // damage landed on the investigator and no exhaust event was emitted.
+        assert_event!(events, Event::DamageTaken { .. });
+        assert_no_event!(events, Event::EnemyExhausted { .. });
     }
 
     #[test]
