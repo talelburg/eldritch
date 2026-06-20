@@ -407,10 +407,32 @@ checkpoint. Re-open #212 (or a successor) scoped to this.
 
 Each step is independently green (mirrors §1's parts 2a–2c cadence):
 
-0. **§G ordering bug** — standalone fix + regression test (pre-req).
-1. **Main-loop scaffold + `*Phase` anchors** — introduce the four anchor variants
-   and relocate `run_window_continuation`'s arms onto them; behaviour-preserving.
-   Strand-guards become asserts.
+0. **§G ordering bug** — standalone fix + regression test (pre-req). ✅ shipped
+   (PR #396, closes #395).
+1. **`*Phase` anchors + uniform main loop** — too large for one PR; decomposes into
+   three behaviour-preserving sub-slices (exploration found `apply()` runs one
+   action per call with a *synchronous* phase cascade, and `run_window_continuation`
+   is a `match WindowKind` whose **6 `PlayerWindow(PhaseStep)` arms** —
+   `MythosAfterDraws`, `UpkeepBegins`, `BeforeInvestigatorAttacked`,
+   `AfterAllInvestigatorsAttacked`, `InvestigationBegins`, `InvestigatorTurnBegins` —
+   are the phase-structure continuations the anchors own; its other arms are
+   card/ability reactions that stay put):
+   - **1a — anchor frames + relocate the 6 `PhaseStep` arms. ✅ shipped (PR #397).**
+     Introduced the four `*Phase` anchor `Continuation` variants + per-phase `resume`
+     enums; each phase pushes its anchor at entry (windows/loops push *above* it) and
+     pops at its exit (Upkeep at `upkeep_round_end_teardown`, after the round-end
+     sequence); the `run_window_continuation` `PlayerWindow` match collapsed to a
+     single `PlayerWindow(_) => anchor_on_child_pop` arm — the `PhaseStep` is no
+     longer the continuation key, the anchor's `resume` is. Behaviour-preserving
+     (review-confirmed faithful). Added `GameStateBuilder::with_phase_anchor` for the
+     ~20 tests that construct mid-phase states directly. Guard ladder, action
+     `match`, card-reaction arms untouched.
+   - **1b — fold the synchronous cascade onto anchor `drive`.** `step_phase`'s
+     forward-calling cascade becomes each anchor *pushing* its phase's first child;
+     the strand-guards become cheap asserts.
+   - **1c — uniform "handle the top frame" loop in `apply`.** Replace
+     `apply_player_action`'s ad-hoc recursion with the single-rule loop; the guard
+     ladder collapses to the top-frame rule (sets up slice 2's `InvestigatorTurn`).
 2. **`InvestigatorTurn` frame (2a) + legal-action enumerator** — open-turn becomes a
    frame; guard ladder + action `match` deleted; typed `PlayerAction` validated
    against the offered set; `pending_end_turn` absorbed.

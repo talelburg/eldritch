@@ -12,7 +12,7 @@
 //! ```
 //! use game_core::{
 //!     apply, Action, PlayerAction, Phase, InvestigatorId,
-//!     state::GameStateBuilder,
+//!     state::{GameStateBuilder, Continuation, InvestigationResume},
 //!     test_support::{test_investigator, test_location},
 //! };
 //!
@@ -21,6 +21,10 @@
 //!     .with_investigator(test_investigator(1))
 //!     .with_location(test_location(10, "Study"))
 //!     .with_active_investigator(InvestigatorId(1))
+//!     // A state constructed mid-phase needs its phase anchor (slice 1a).
+//!     .with_phase_anchor(Continuation::InvestigationPhase {
+//!         resume: InvestigationResume::TurnBegins,
+//!     })
 //!     .build();
 //!
 //! let result = apply(state, Action::Player(PlayerAction::EndTurn));
@@ -58,6 +62,7 @@ pub struct GameStateBuilder {
     mythos_draw_remaining: Option<Vec<InvestigatorId>>,
     hand_size_discard_pending: Option<HandSizeDiscard>,
     open_windows: Vec<ResolutionFrame>,
+    phase_anchor: Option<Continuation>,
     scenario_id: Option<ScenarioId>,
 }
 
@@ -82,6 +87,7 @@ impl GameStateBuilder {
             mythos_draw_remaining: None,
             hand_size_discard_pending: None,
             open_windows: Vec::new(),
+            phase_anchor: None,
             scenario_id: None,
         }
     }
@@ -260,6 +266,27 @@ impl GameStateBuilder {
         self
     }
 
+    /// Stage a `*Phase` anchor frame (slice 1a, #393) at the **bottom** of the
+    /// continuation stack — the realistic invariant for a state constructed
+    /// mid-phase (the real driver pushes the anchor at phase entry, beneath any
+    /// framework windows). Tests that drive `end_turn` / open phase windows
+    /// without going through the phase driver use this to satisfy the anchor
+    /// invariant. Panics if `c` is not a `*Phase` anchor variant.
+    pub fn with_phase_anchor(mut self, c: Continuation) -> Self {
+        assert!(
+            matches!(
+                c,
+                Continuation::MythosPhase { .. }
+                    | Continuation::InvestigationPhase { .. }
+                    | Continuation::EnemyPhase { .. }
+                    | Continuation::UpkeepPhase { .. }
+            ),
+            "with_phase_anchor expects a *Phase anchor variant, got {c:?}",
+        );
+        self.phase_anchor = Some(c);
+        self
+    }
+
     /// Set the scenario id this state belongs to. `None` (the
     /// default from [`GameStateBuilder::new`]) means the engine's post-apply
     /// resolution hook will short-circuit. Passing a `ScenarioId`
@@ -277,11 +304,10 @@ impl GameStateBuilder {
         // Builder-staged windows become `Resolution` frames on the one
         // continuation stack (Axis-B T3); a staged hand-size discard becomes a
         // `HandSizeDiscard` frame on top of them (#348).
-        let mut continuations: Vec<Continuation> = self
-            .open_windows
-            .into_iter()
-            .map(Continuation::Resolution)
-            .collect();
+        // A staged `*Phase` anchor (slice 1a, #393) sits at the bottom of the
+        // stack — beneath any windows, which open *above* it during the phase.
+        let mut continuations: Vec<Continuation> = self.phase_anchor.into_iter().collect();
+        continuations.extend(self.open_windows.into_iter().map(Continuation::Resolution));
         if let Some(hsd) = self.hand_size_discard_pending {
             continuations.push(Continuation::HandSizeDiscard(hsd));
         }

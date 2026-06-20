@@ -1152,6 +1152,11 @@ mod combat_tests {
             .with_turn_order([inv_id])
             .with_enemy(e2)
             .with_enemy(e3)
+            // EnemyPhase anchor (slice 1a): the attack-loop resume opens a
+            // window whose close routes to anchor_on_child_pop.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         // The enemy phase set the cursor to this investigator before opening
         // the BeforeInvestigatorAttacked window; resume must advance it.
@@ -1215,6 +1220,11 @@ mod combat_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
+            // EnemyPhase anchor (slice 1a): the attack-loop resume opens a
+            // window whose close routes to anchor_on_child_pop.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         state.enemy_attack_pending = Some(inv_id);
         state.pending_cancellation = true; // a cancel reaction fired in the window
@@ -1265,6 +1275,11 @@ mod combat_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
+            // EnemyPhase anchor (slice 1a): the attack-loop resume opens a
+            // window whose close routes to anchor_on_child_pop.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         state.enemy_attack_pending = Some(inv_id);
         // pending_cancellation defaults to false (no reaction cancelled).

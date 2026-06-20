@@ -1088,6 +1088,11 @@ mod hunter_resume_tests {
             .with_investigator(inv)
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
+            // EnemyPhase anchor (slice 1a): the resume cascade reaches the
+            // attack kickoff / enemy_phase_end, which require it.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         let mut events = Vec::new();
         let outcome = drive_hunter_moves(&mut Cx {
@@ -1196,6 +1201,11 @@ mod hunter_resume_tests {
             .with_investigator(i2)
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
             .with_enemy(h)
+            // EnemyPhase anchor (slice 1a): resume cascades into the attack
+            // kickoff / enemy_phase_end.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         let mut events = Vec::new();
         let outcome = drive_hunter_moves(&mut Cx {
@@ -1313,6 +1323,11 @@ mod hunter_resume_tests {
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(tie_hunter)
             .with_enemy(clean_hunter)
+            // EnemyPhase anchor (slice 1a): resume cascades into the attack
+            // kickoff / enemy_phase_end.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         let mut events = Vec::new();
         let outcome = drive_hunter_moves(&mut Cx {
@@ -1371,6 +1386,11 @@ mod hunter_resume_tests {
             .with_investigator(inv)
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
+            // EnemyPhase anchor (slice 1a): the resume cascade reaches the
+            // attack kickoff / enemy_phase_end, which require it.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         let mut events = Vec::new();
         let outcome = drive_hunter_moves(&mut Cx {

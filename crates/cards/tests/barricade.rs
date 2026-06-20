@@ -112,6 +112,11 @@ fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
         .with_enemy(hunter(100, enemy_code, A))
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
+        // InvestigationPhase anchor at investigation_phase_end.
+        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        })
         .build();
     state
         .locations

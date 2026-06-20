@@ -19,6 +19,10 @@ fn parked_window_state(clues: u8) -> GameState {
         .with_investigator(test_investigator(1))
         .with_turn_order([inv])
         .with_phase(Phase::Upkeep)
+        // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
+        .with_phase_anchor(game_core::state::Continuation::UpkeepPhase {
+            resume: game_core::state::UpkeepResume::Begins,
+        })
         .with_location(Location::new(
             LocationId(2),
             CardCode("01112".into()),

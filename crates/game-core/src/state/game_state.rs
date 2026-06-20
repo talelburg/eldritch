@@ -496,6 +496,30 @@ pub enum Continuation {
         /// The drawn treachery's card code, disposed of at teardown.
         card: CardCode,
     },
+    /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
+    /// beneath the phase's framework windows. On a child window's close the
+    /// framework routes to the anchor's `on_child_pop` (keyed by `resume`).
+    /// Never awaits input; popped when the phase transitions away.
+    MythosPhase {
+        /// Which child-pop boundary the anchor resumes at.
+        resume: MythosResume,
+    },
+    /// The Investigation phase anchor (slice 1a, #393). See
+    /// [`Continuation::MythosPhase`].
+    InvestigationPhase {
+        /// Which child-pop boundary the anchor resumes at.
+        resume: InvestigationResume,
+    },
+    /// The Enemy phase anchor (slice 1a, #393). See [`Continuation::MythosPhase`].
+    EnemyPhase {
+        /// Which child-pop boundary the anchor resumes at.
+        resume: EnemyResume,
+    },
+    /// The Upkeep phase anchor (slice 1a, #393). See [`Continuation::MythosPhase`].
+    UpkeepPhase {
+        /// Which child-pop boundary the anchor resumes at.
+        resume: UpkeepResume,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -540,7 +564,11 @@ impl Continuation {
             | Continuation::SubstitutionPrompt { .. }
             | Continuation::Mulligan { .. }
             | Continuation::EncounterDraw { .. }
-            | Continuation::EncounterCard { .. } => None,
+            | Continuation::EncounterCard { .. }
+            | Continuation::MythosPhase { .. }
+            | Continuation::InvestigationPhase { .. }
+            | Continuation::EnemyPhase { .. }
+            | Continuation::UpkeepPhase { .. } => None,
         }
     }
 
@@ -557,9 +585,48 @@ impl Continuation {
             | Continuation::SubstitutionPrompt { .. }
             | Continuation::Mulligan { .. }
             | Continuation::EncounterDraw { .. }
-            | Continuation::EncounterCard { .. } => None,
+            | Continuation::EncounterCard { .. }
+            | Continuation::MythosPhase { .. }
+            | Continuation::InvestigationPhase { .. }
+            | Continuation::EnemyPhase { .. }
+            | Continuation::UpkeepPhase { .. } => None,
         }
     }
+}
+
+/// The Mythos-phase child-pop boundary an anchor resumes at (slice 1a, #393).
+/// Names the framework window whose close re-enters the Mythos driver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MythosResume {
+    /// Post-step-1.4 (encounter draws done) window closed; run `mythos_phase_end`.
+    AfterDraws,
+}
+
+/// The Investigation-phase child-pop boundary (slice 1a, #393).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InvestigationResume {
+    /// Post-2.1 window closed; begin the first investigator's turn.
+    Begins,
+    /// Post-2.2 turn-begins window closed; the investigator now acts (no
+    /// continuation work — slice 2 makes this an `InvestigatorTurn` frame).
+    TurnBegins,
+}
+
+/// The Enemy-phase child-pop boundary (slice 1a, #393).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EnemyResume {
+    /// Before-investigator-attacked window closed; resolve this investigator's
+    /// attacks (step 3.3).
+    BeforeInvestigatorAttacked,
+    /// After-all-investigators-attacked window closed; run `enemy_phase_end`.
+    AfterAllAttacked,
+}
+
+/// The Upkeep-phase child-pop boundary (slice 1a, #393).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpkeepResume {
+    /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
+    Begins,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -1668,6 +1735,32 @@ mod location_id_counter_tests {
 mod continuation_stack_tests {
     use super::*;
     use crate::test_support::GameStateBuilder;
+
+    #[test]
+    fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
+        let anchors = [
+            Continuation::MythosPhase {
+                resume: MythosResume::AfterDraws,
+            },
+            Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
+            },
+            Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
+            },
+            Continuation::UpkeepPhase {
+                resume: UpkeepResume::Begins,
+            },
+        ];
+        for a in anchors {
+            // Anchors are framework frames, never reaction windows.
+            assert!(a.as_resolution().is_none());
+            // Serializable like every other frame.
+            let json = serde_json::to_string(&a).unwrap();
+            let back: Continuation = serde_json::from_str(&json).unwrap();
+            assert_eq!(a, back);
+        }
+    }
 
     #[test]
     fn continuations_default_empty_and_absent_field_loads() {

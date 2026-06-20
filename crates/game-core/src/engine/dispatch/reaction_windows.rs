@@ -937,168 +937,36 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     EngineOutcome::Done
 }
 
-/// Kind-aware continuation called when a window closes (whether
-/// inline via [`open_fast_window`]'s auto-skip path or via the
-/// [`close_reaction_window_at`] pop path). For
-/// [`PhaseStep::MythosAfterDraws`], runs
-/// [`mythos_phase_end`](super::phases::mythos_phase_end); for
-/// [`PhaseStep::UpkeepBegins`], runs [`upkeep_resume`](super::phases::upkeep_resume). For
-/// [`PhaseStep::BeforeInvestigatorAttacked`], resolves the cursor
-/// investigator's engaged-enemy attacks via
-/// [`resolve_attacks_for_investigator`](super::combat::resolve_attacks_for_investigator), advances
-/// [`GameState::enemy_attack_pending`] to the next Active investigator
-/// via [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after),
-/// and opens the next window
-/// ([`PhaseStep::BeforeInvestigatorAttacked`] again if the cursor
-/// advanced to `Some`, otherwise [`PhaseStep::AfterAllInvestigatorsAttacked`]).
-/// For [`PhaseStep::AfterAllInvestigatorsAttacked`], runs
-/// [`enemy_phase_end`](super::phases::enemy_phase_end). For [`PhaseStep::InvestigationBegins`], starts
-/// the first turn via [`begin_investigator_turn`](super::phases::begin_investigator_turn) for the first Active
-/// investigator (or parks if none). [`WindowKind::AfterEnemyDefeated`] and
-/// [`PhaseStep::InvestigatorTurnBegins`] windows have no
-/// continuation — for them this returns [`EngineOutcome::Done`],
-/// preserving the existing [`close_reaction_window_at`] behavior.
+/// Kind-aware continuation called when a window closes (whether inline via
+/// [`open_fast_window`]'s auto-skip path or via the [`close_reaction_window_at`]
+/// pop path).
 ///
-/// Returns the continuation's [`EngineOutcome`]. Today every path
-/// returns [`EngineOutcome::Done`]; the return type is widened ahead of
-/// upkeep step 4.5 (hand-size discard) gaining an
-/// [`EngineOutcome::AwaitingInput`] producer (#111).
+/// Every framework [`WindowKind::PlayerWindow`] close routes to the `*Phase`
+/// anchor beneath it via
+/// [`anchor_on_child_pop`](super::phases::anchor_on_child_pop) (slice 1a, #393):
+/// the anchor's `resume` — not the [`PhaseStep`] — selects the relocated body
+/// (the Mythos/Investigation transitions, the Enemy attack-loop step incl. its
+/// mid-loop soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6
+/// cascade). The card/ability-reaction kinds run inline here: soak / before-
+/// attack ([`WindowKind::AfterEnemyAttackDamagedAsset`] /
+/// [`WindowKind::BeforeEnemyAttack`]) re-enter the attack loop via
+/// [`resume_enemy_attack`](super::combat::resume_enemy_attack);
+/// [`WindowKind::BeforeDiscoverClues`] performs the deferred discovery;
+/// [`WindowKind::AfterEnemyDefeated`] / [`WindowKind::AfterSuccessfulInvestigate`]
+/// / [`WindowKind::AfterEnteredPlay`] have no continuation work.
+///
+/// Returns the continuation's [`EngineOutcome`] — `Done`, or `AwaitingInput`
+/// when a body suspends (an Enemy soak window, the Upkeep step-4.5 hand-size
+/// discard, …).
 pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     match kind {
-        WindowKind::PlayerWindow(step) => match step {
-            PhaseStep::MythosAfterDraws => {
-                // Phase-transitioning continuation: cannot run while a skill
-                // test is in flight (would strand the test in the wrong
-                // phase). Phase 4 has no Mythos-phase skill-test sources, so
-                // this branch is structurally unreachable today. A future PR
-                // adding a Mythos-phase Revelation that initiates a skill
-                // test must redesign the close-window + phase-transition
-                // ordering before this assertion fires.
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "MythosAfterDraws window closed while a skill test is in flight \
-                     (continuation={:?}). Phase transition would strand the skill test \
-                     in the wrong phase. Phase 4 has no Mythos-phase skill test sources; \
-                     if a future PR adds one (e.g. a treachery whose Revelation initiates \
-                     a skill test), the window-close + phase-transition ordering needs \
-                     redesign before this assertion can be relaxed.",
-                        in_flight.continuation,
-                    );
-                }
-                super::phases::mythos_phase_end(cx);
-                EngineOutcome::Done
-            }
-            PhaseStep::UpkeepBegins => {
-                // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
-                // cannot run while a skill test is in flight. Phase 4 has no
-                // Upkeep-phase skill-test source, so structurally unreachable.
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "UpkeepBegins window closed while a skill test is in flight \
-                     (continuation={:?}). Phase 4 has no Upkeep-phase skill-test \
-                     sources; a future PR adding one needs the window-close + \
-                     phase-transition ordering redesigned before this fires.",
-                        in_flight.continuation,
-                    );
-                }
-                super::phases::upkeep_resume(cx)
-            }
-            PhaseStep::BeforeInvestigatorAttacked => {
-                // Phase-transitioning continuation (advances to the next
-                // window and ultimately to Upkeep) — cannot run while a
-                // skill test is in flight (would strand it). Phase 4 has
-                // no Enemy-phase skill-test source, so this branch is
-                // structurally unreachable today. A future PR adding one
-                // (e.g. a treachery-style "make an Agility test or take
-                // damage" attack ability) must redesign the window-close
-                // + phase-transition ordering before this assertion fires.
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "BeforeInvestigatorAttacked window closed while a \
-                     skill test is in flight (continuation={:?}). Phase \
-                     transition would strand the skill test in the \
-                     wrong phase. Phase 4 has no Enemy-phase skill test \
-                     sources; if a future PR adds one, the window-close \
-                     + phase-transition ordering needs redesign before \
-                     this assertion can be relaxed.",
-                        in_flight.continuation,
-                    );
-                }
-
-                // Cursor expect-Some: BeforeInvestigatorAttacked is only
-                // ever opened after enemy_attack_pending is set to Some(_)
-                // in enemy_phase or in the advance below. A None cursor
-                // here is a state-corruption invariant violation, not a
-                // normal rejection path.
-                let investigator = cx.state.enemy_attack_pending.unwrap_or_else(|| {
-                    unreachable!(
-                        "BeforeInvestigatorAttacked closed with \
-                     enemy_attack_pending == None; this is a \
-                     state-corruption invariant violation"
-                    )
-                });
-
-                let outcome = super::combat::resolve_attacks_for_investigator(cx, investigator);
-
-                // The attack loop suspended on a mid-loop soak reaction
-                // window (C5b #237): surface it immediately, WITHOUT
-                // advancing the cursor. The cursor advances later, once
-                // the loop truly finishes, via `resume_enemy_attack` →
-                // `after_enemy_phase_attacks` on window close.
-                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-                    return outcome;
-                }
-                debug_assert!(
-                    matches!(outcome, EngineOutcome::Done),
-                    "resolve_attacks_for_investigator returned unexpected \
-                     {outcome:?} (expected Done or AwaitingInput)",
-                );
-
-                after_enemy_phase_attacks(cx, investigator)
-            }
-            PhaseStep::AfterAllInvestigatorsAttacked => {
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "AfterAllInvestigatorsAttacked window closed while a \
-                     skill test is in flight (continuation={:?}). Phase \
-                     4 has no Enemy-phase skill-test sources; a future \
-                     PR adding one needs the window-close + \
-                     phase-transition ordering redesigned before this \
-                     fires.",
-                        in_flight.continuation,
-                    );
-                }
-                super::phases::enemy_phase_end(cx)
-            }
-            PhaseStep::InvestigationBegins => {
-                // Post-2.1 window closed; start the first turn (step 2.2).
-                // No skill-test-in-flight guard: this runs at phase start
-                // (no test can be in flight) and does not transition phase.
-                if let Some(id) = super::cursor::first_active_investigator(cx.state) {
-                    super::phases::begin_investigator_turn(cx, id);
-                }
-                // None branch: no active investigator can take a turn. Per
-                // Rules Reference p.10 step 6 the scenario ends — that
-                // resolution now fires at the defeat site:
-                // `check_all_defeated` latches `Resolution::Lost` (and emits
-                // `AllInvestigatorsDefeated`), which the `apply` hook turns
-                // into `ScenarioResolved` + `apply_resolution`. So by the
-                // time the cascade would re-enter Investigation with no
-                // active investigator, the loss has already resolved; this
-                // park branch stays as the cascade-breaker (auto-advancing
-                // would loop the round forever — every other phase auto-skips
-                // with no active investigators, so Investigation is the
-                // cascade's only natural pause point).
-                EngineOutcome::Done
-            }
-            // InvestigatorTurnBegins: 2.2.1 — the active investigator now
-            // takes actions (Investigate / Move / Fight / Evade / PlayCard /
-            // Draw / ActivateAbility) as player-driven inputs, then ends the
-            // turn via EndTurn (2.2.2). No continuation work — the engine
-            // waits. The per-action "return to the previous player window"
-            // re-open (Rules Reference p.24 2.2.1) is deferred to #146.
-            PhaseStep::InvestigatorTurnBegins => EngineOutcome::Done,
-        },
+        // Every framework `PlayerWindow(PhaseStep)` close routes to the `*Phase`
+        // anchor beneath it (slice 1a, #393): the anchor's `resume` selects the
+        // relocated body — the skill-test-in-flight guards, the Enemy
+        // soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6 cascade,
+        // the Mythos/Investigation transitions. The `PhaseStep` is no longer the
+        // continuation key; the anchor's `resume` is.
+        WindowKind::PlayerWindow(_) => super::phases::anchor_on_child_pop(cx),
         // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
         // work. The skill-test driver (which queued the window mid-resolution)
         // resumes via `close_reaction_window_at`'s in-flight re-entry.
@@ -1207,11 +1075,16 @@ pub(super) fn after_enemy_phase_attacks(
         super::cursor::next_active_investigator_after(cx.state, investigator);
 
     if cx.state.enemy_attack_pending.is_some() {
+        super::phases::set_enemy_anchor_resume(
+            cx,
+            crate::state::EnemyResume::BeforeInvestigatorAttacked,
+        );
         open_fast_window(
             cx,
             WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
         )
     } else {
+        super::phases::set_enemy_anchor_resume(cx, crate::state::EnemyResume::AfterAllAttacked);
         open_fast_window(
             cx,
             WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
@@ -1954,6 +1827,11 @@ mod open_fast_window_tests {
         // opens and closes without ever landing on state.open_windows.
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
+            // The MythosAfterDraws window now closes onto the MythosPhase anchor
+            // (slice 1a); stage it so the auto-skip continuation has its frame.
+            .with_phase_anchor(crate::state::Continuation::MythosPhase {
+                resume: crate::state::MythosResume::AfterDraws,
+            })
             .build();
         let mut events = Vec::new();
         open_fast_window(

@@ -432,6 +432,17 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 .into(),
         },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
+        // Phase anchors (slice 1a, #393) never await input — they only sit
+        // beneath framework windows. If one is somehow top, no prompt is
+        // outstanding (defensive, mirrors the EncounterCard arm).
+        Some(
+            Continuation::MythosPhase { .. }
+            | Continuation::InvestigationPhase { .. }
+            | Continuation::EnemyPhase { .. }
+            | Continuation::UpkeepPhase { .. },
+        ) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (a phase anchor is top)".into(),
+        },
         None => EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
         },

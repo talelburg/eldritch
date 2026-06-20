@@ -281,6 +281,11 @@ fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
         .with_investigator(test_investigator(2))
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
+        // through the InvestigationPhase anchor.
+        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        })
         .build();
     state.chaos_bag.tokens = vec![token];
     state
@@ -356,6 +361,11 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
         .with_investigator(test_investigator(2))
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+        // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
+        // through the InvestigationPhase anchor.
+        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        })
         .build();
     // Two Numeric(0) draws → willpower 3 vs difficulty 3 → both succeed.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0), ChaosToken::Numeric(0)];
