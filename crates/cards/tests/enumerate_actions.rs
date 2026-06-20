@@ -96,3 +96,88 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
         );
     }
 }
+
+#[test]
+fn full_enumeration_covers_every_action_category_and_all_apply() {
+    use game_core::state::{Act, EnemyId};
+
+    let inst = CardInstanceId(0);
+    let mut state = open_turn_state(&[HOLY_ROSARY], vec![flashlight_in_play(inst)]);
+    // A connected destination (Move), an engaged enemy (Fight/Evade), a
+    // co-located unengaged enemy (Engage), and an advanceable act (AdvanceAct).
+    let mut other = test_location(11, "Hall");
+    other.revealed = true;
+    state
+        .locations
+        .get_mut(&LOC)
+        .unwrap()
+        .connections
+        .push(other.id);
+    let other_id = other.id;
+    state.locations.insert(other_id, other);
+
+    let mut foe = game_core::test_support::test_enemy(7, "Ghoul");
+    foe.engaged_with = Some(INV);
+    foe.current_location = Some(LOC);
+    state.enemies.insert(EnemyId(7), foe);
+    let mut rat = game_core::test_support::test_enemy(8, "Rat");
+    rat.current_location = Some(LOC);
+    state.enemies.insert(EnemyId(8), rat);
+
+    state.investigators.get_mut(&INV).unwrap().clues = 2;
+    state.act_deck = vec![
+        Act {
+            code: CardCode("_act1".into()),
+            clue_threshold: 2,
+            resolution: None,
+            round_end_advance: None,
+        },
+        Act {
+            code: CardCode("_act2".into()),
+            clue_threshold: 99,
+            resolution: None,
+            round_end_advance: None,
+        },
+    ];
+
+    let actions = legal_actions(&state);
+
+    // Every category is represented.
+    let has = |p: fn(&PlayerAction) -> bool| actions.iter().any(p);
+    assert!(actions.contains(&PlayerAction::EndTurn), "EndTurn");
+    assert!(has(|a| matches!(a, PlayerAction::Move { .. })), "Move");
+    assert!(
+        has(|a| matches!(a, PlayerAction::Investigate { .. })),
+        "Investigate"
+    );
+    assert!(
+        has(|a| matches!(a, PlayerAction::Resource { .. })),
+        "Resource"
+    );
+    assert!(has(|a| matches!(a, PlayerAction::Draw { .. })), "Draw");
+    assert!(has(|a| matches!(a, PlayerAction::Fight { .. })), "Fight");
+    assert!(has(|a| matches!(a, PlayerAction::Evade { .. })), "Evade");
+    assert!(has(|a| matches!(a, PlayerAction::Engage { .. })), "Engage");
+    assert!(
+        has(|a| matches!(a, PlayerAction::PlayCard { .. })),
+        "PlayCard"
+    );
+    assert!(
+        has(|a| matches!(a, PlayerAction::ActivateAbility { .. })),
+        "ActivateAbility"
+    );
+    assert!(
+        has(|a| matches!(a, PlayerAction::AdvanceAct { .. })),
+        "AdvanceAct"
+    );
+
+    // And all of them apply without Rejected.
+    for action in actions {
+        let result = game_core::apply(state.clone(), Action::Player(action.clone()));
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "enumerated action {action:?} was rejected: {:?}",
+            result.outcome,
+        );
+    }
+}

@@ -9,10 +9,13 @@ use crate::state::{Continuation, GameState, InvestigatorId};
 /// The legal [`PlayerAction`]s the active investigator may take at the open
 /// turn, in stable order (position = the future `OptionId`). Empty unless an
 /// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame is on top — the
-/// only point gameplay actions are taken (slice 2a-ii-1, #393).
+/// only point gameplay actions are taken (slice 2a-ii, #393).
 ///
-/// Read-only and side-effect-free. Each action is included iff the same
-/// legality predicate the handler uses accepts it, so the enumeration matches
+/// Covers the full open-turn surface: `EndTurn`, `Resource`, `Draw`,
+/// `Investigate`, `Move` (basic); `Fight`, `Evade`, `Engage` (combat/engage);
+/// `PlayCard`, `ActivateAbility` (cards, registry-gated); `AdvanceAct`.
+/// Read-only and side-effect-free; each action is included iff the same legality
+/// predicate the handler uses accepts it, so the enumeration matches
 /// handler-acceptance by construction (routing typed dispatch through it is 2b).
 #[must_use]
 pub fn legal_actions(state: &GameState) -> Vec<PlayerAction> {
