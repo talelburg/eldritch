@@ -272,8 +272,8 @@ pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
 /// there is no secondary precondition re-check here. The `resume_action_resolution`
 /// `Status::Active` gate upstream already guarantees the investigator is
 /// present and Active; a missing map entry here is therefore a
-/// state-corruption invariant violation — it must `unreachable!`-panic,
-/// never return a silent `Done`.
+/// state-corruption invariant violation — it must panic (via
+/// `draw_one_with_deckout`'s `expect`), never silently return `Done`.
 pub(super) fn draw_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     draw_one_with_deckout(cx, investigator);
     EngineOutcome::Done

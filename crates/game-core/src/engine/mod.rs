@@ -2985,6 +2985,12 @@ mod tests {
             result.events,
             Event::DamageTaken { investigator, amount: 8 } if *investigator == inv_id
         );
+        // Action was spent before the lethal AoO (3 → 2).
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
         // ...but the draw was suppressed.
         assert_no_event!(result.events, Event::CardsDrawn { .. });
     }
