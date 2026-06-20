@@ -23,7 +23,52 @@ pub fn legal_actions(state: &GameState) -> Vec<PlayerAction> {
     let investigator = *investigator;
     let mut actions = Vec::new();
     push_basic_actions(state, investigator, &mut actions);
+    push_combat_engage_actions(state, investigator, &mut actions);
     actions
+}
+
+/// Append the combat / engage actions legal for `investigator`, mirroring the
+/// `fight`/`evade`/`engage` handlers (slice 2a-ii-2, #393). Fight/Evade target
+/// enemies *engaged with* the investigator — matching the current handler
+/// (`validate_engaged_action`); the rules allow Fight against any co-located
+/// enemy (RR p.12), tracked in #401, which will widen this domain in lockstep.
+fn push_combat_engage_actions(
+    state: &GameState,
+    investigator: InvestigatorId,
+    out: &mut Vec<PlayerAction>,
+) {
+    use crate::engine::dispatch::actions::{action_cost, validate_basic_action};
+
+    // The shared basic-action prologue gates Fight/Evade/Engage alike; if it
+    // fails (wrong phase / not active / no action), none are legal.
+    let Ok(inv) = validate_basic_action(state, "enumerate", investigator) else {
+        return;
+    };
+    let actions_remaining = inv.actions_remaining;
+    let fight_affordable =
+        action_cost(state, investigator, crate::dsl::ActionClass::Fight) <= actions_remaining;
+    let evade_affordable =
+        action_cost(state, investigator, crate::dsl::ActionClass::Evade) <= actions_remaining;
+
+    // Fight / Evade: one option per enemy engaged with the investigator, gated
+    // on a non-negative difficulty (the handler rejects a negative one).
+    for (&enemy_id, enemy) in &state.enemies {
+        if enemy.engaged_with != Some(investigator) {
+            continue;
+        }
+        if fight_affordable && enemy.fight >= 0 {
+            out.push(PlayerAction::Fight {
+                investigator,
+                enemy: enemy_id,
+            });
+        }
+        if evade_affordable && enemy.evade >= 0 {
+            out.push(PlayerAction::Evade {
+                investigator,
+                enemy: enemy_id,
+            });
+        }
+    }
 }
 
 /// Append the basic actions legal for `investigator`. `EndTurn` is always legal
@@ -111,10 +156,95 @@ mod tests {
             .build()
     }
 
+    /// An enemy engaged with investigator 1 at `loc`, ready.
+    fn engaged_enemy(id: u32, loc: crate::state::LocationId) -> crate::state::Enemy {
+        let mut e = crate::test_support::test_enemy(id, "Ghoul");
+        e.engaged_with = Some(InvestigatorId(1));
+        e.current_location = Some(loc);
+        e
+    }
+
     #[test]
     fn end_turn_is_always_offered_at_the_open_turn() {
         let state = open_turn_state();
         assert!(legal_actions(&state).contains(&PlayerAction::EndTurn));
+    }
+
+    #[test]
+    fn fight_and_evade_offered_for_each_engaged_enemy() {
+        let mut state = open_turn_state();
+        let loc = crate::test_support::test_location(10, "Study");
+        let loc_id = loc.id;
+        state.locations.insert(loc_id, loc);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(loc_id);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 3;
+        let e = engaged_enemy(7, loc_id);
+        state.enemies.insert(e.id, e);
+
+        let actions = legal_actions(&state);
+        assert!(actions.contains(&PlayerAction::Fight {
+            investigator: InvestigatorId(1),
+            enemy: crate::state::EnemyId(7),
+        }));
+        assert!(actions.contains(&PlayerAction::Evade {
+            investigator: InvestigatorId(1),
+            enemy: crate::state::EnemyId(7),
+        }));
+    }
+
+    #[test]
+    fn no_fight_or_evade_for_an_unengaged_enemy() {
+        let mut state = open_turn_state();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 3;
+        // Enemy present but engaged with nobody → not a Fight/Evade target.
+        let e = crate::test_support::test_enemy(7, "Ghoul");
+        state.enemies.insert(e.id, e);
+        assert!(!legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, PlayerAction::Fight { .. } | PlayerAction::Evade { .. })));
+    }
+
+    #[test]
+    fn negative_fight_value_offers_evade_only() {
+        let mut state = open_turn_state();
+        let loc = crate::test_support::test_location(10, "Study");
+        let loc_id = loc.id;
+        state.locations.insert(loc_id, loc);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(loc_id);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 3;
+        let mut e = engaged_enemy(7, loc_id);
+        e.fight = -1; // malformed-but-handled: handler rejects Fight, allows Evade
+        state.enemies.insert(e.id, e);
+
+        let actions = legal_actions(&state);
+        assert!(!actions.contains(&PlayerAction::Fight {
+            investigator: InvestigatorId(1),
+            enemy: crate::state::EnemyId(7),
+        }));
+        assert!(actions.contains(&PlayerAction::Evade {
+            investigator: InvestigatorId(1),
+            enemy: crate::state::EnemyId(7),
+        }));
     }
 
     #[test]
@@ -272,6 +402,11 @@ mod tests {
             .get_mut(&InvestigatorId(1))
             .unwrap()
             .actions_remaining = 3;
+        // An enemy engaged with the active investigator → Fight + Evade enumerated.
+        let mut foe = crate::test_support::test_enemy(7, "Ghoul");
+        foe.engaged_with = Some(InvestigatorId(1));
+        foe.current_location = Some(a_id);
+        state.enemies.insert(foe.id, foe);
 
         for action in legal_actions(&state) {
             let result = crate::apply(state.clone(), crate::Action::Player(action.clone()));
