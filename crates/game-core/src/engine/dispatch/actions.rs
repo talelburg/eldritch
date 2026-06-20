@@ -138,38 +138,54 @@ pub(super) fn investigate_primary_effect(
 ///
 /// Validate-first: Investigation phase, `investigator` is active and
 /// `Status::Active`, `actions_remaining >= 1`. Mutate-second: spend 1
-/// action, fire attacks of opportunity (Resource is NOT `AoO`-exempt),
-/// then — if the investigator survived the `AoO` — gain 1 resource.
+/// action, push an [`ActionResolution`] frame, and drive the
+/// attack-of-opportunity loop (#293). If the investigator survives the
+/// `AoO` loop, [`resource_primary_effect`] fires and gains 1 resource.
+///
+/// [`ActionResolution`]: crate::state::Continuation::ActionResolution
 pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     if let Err(rejection) = validate_basic_action(cx.state, "Resource", investigator) {
         return rejection;
     }
 
-    // Mutate-second: spend the action, fire AoO, then gain the resource.
+    // Mutate-second: spend the action, then park the resource gain over its
+    // attack-of-opportunity loop (#293). Push the resume frame, then drive
+    // the AoO. Resource is NOT on the AoO-exempt list (only Fight, Evade,
+    // Parley, Resign are), so each ready engaged enemy attacks before the
+    // gain resolves.
     spend_one_action(cx, investigator);
-    super::combat::fire_attacks_of_opportunity(cx, investigator);
-
-    // If AoO eliminated the investigator, the gain is suppressed; the
-    // spent action + AoO events stay (mirrors `investigate`).
-    let inv_after = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "Resource: investigator {investigator:?} disappeared between AoO and gain; \
-             this is a state-corruption invariant violation"
-            )
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::ActionResolution {
+            investigator,
+            resume: crate::state::ActionResume::Resource,
         });
-    if inv_after.status != Status::Active {
-        return EngineOutcome::Done;
-    }
+    super::combat::drive_aoo(cx, investigator)
+}
 
+/// The gain half of a Resource action, run after its `AoO` loop (#293).
+///
+/// Resource has no target precondition (unlike Move or Investigate), so
+/// there is no secondary precondition re-check here. The `resume_action_resolution`
+/// `Status::Active` gate upstream already guarantees the investigator is
+/// present and Active; a missing map entry here is therefore a
+/// state-corruption invariant violation — it must `unreachable!`-panic.
+/// There is no legitimate `Done`-return inside `resource_primary_effect`:
+/// it always gains 1 resource and returns `Done`.
+pub(super) fn resource_primary_effect(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
     let inv_mut = cx
         .state
         .investigators
         .get_mut(&investigator)
-        .expect("investigator existence checked above");
+        .unwrap_or_else(|| {
+            unreachable!(
+                "resource_primary_effect: investigator {investigator:?} not in map after the \
+                 Status::Active re-validation gate; this is a state-corruption invariant violation"
+            )
+        });
     inv_mut.resources = inv_mut.resources.saturating_add(1);
     cx.events.push(Event::ResourcesGained {
         investigator,
@@ -1044,6 +1060,138 @@ mod actions_tests {
             result.state.investigators[&inv_id].status,
             Status::Active,
             "investigator must not be Active after lethal AoO"
+        );
+    }
+
+    /// Build a Resource scenario: investigator at a location, 3 actions,
+    /// Investigation phase, active. Adds a ready engaged enemy with the
+    /// given `attack_damage` and `inv_health`.
+    fn resource_scenario_with_enemy(
+        attack_damage: u8,
+        inv_health: u8,
+    ) -> (InvestigatorId, EnemyId, crate::state::GameState) {
+        let inv_id = InvestigatorId(1);
+        let loc_id = LocationId(10);
+        let enemy_id = EnemyId(300);
+
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc_id);
+        inv.actions_remaining = 3;
+        inv.max_health = inv_health;
+        inv.damage = 0;
+        inv.resources = 0;
+
+        let loc = test_location(10, "Study");
+
+        let mut enemy = test_enemy(300, "Ghoul");
+        enemy.current_location = Some(loc_id);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = attack_damage;
+        enemy.attack_horror = 0;
+        enemy.exhausted = false;
+
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .with_enemy(enemy)
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+
+        (inv_id, enemy_id, state)
+    }
+
+    #[test]
+    fn resource_with_lethal_aoo_suppresses_the_gain() {
+        // AoO defeats the investigator: no ResourcesGained, action spent.
+        // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
+        let (inv_id, _enemy_id, state) = resource_scenario_with_enemy(1, 1);
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(
+            result.outcome,
+            EngineOutcome::Done,
+            "expected Done when AoO is lethal, got {:?}",
+            result.outcome
+        );
+        // Action was still spent.
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        // No resources were gained.
+        assert_no_event!(result.events, Event::ResourcesGained { .. });
+        // Investigator's resource count is unchanged (still 0).
+        assert_eq!(
+            result.state.investigators[&inv_id].resources,
+            0,
+            "resources must not change when AoO is lethal"
+        );
+        // Investigator is no longer Active (defeated by AoO).
+        assert_ne!(
+            result.state.investigators[&inv_id].status,
+            Status::Active,
+            "investigator must not be Active after lethal AoO"
+        );
+    }
+
+    #[test]
+    fn resource_with_no_engaged_enemy_gains_normally() {
+        // No engaged enemy: behaviour-preserving — resources +1, Done.
+        let inv_id = InvestigatorId(1);
+        let loc_id = LocationId(10);
+
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc_id);
+        inv.actions_remaining = 3;
+        inv.resources = 2;
+
+        let loc = test_location(10, "Study");
+
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Resource {
+                investigator: inv_id,
+            }),
+        );
+
+        assert_eq!(
+            result.outcome,
+            EngineOutcome::Done,
+            "expected Done on no-AoO resource gain, got {:?}",
+            result.outcome
+        );
+        // Action was spent.
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        // ResourcesGained emitted.
+        assert_event!(
+            result.events,
+            Event::ResourcesGained { investigator, amount: 1 }
+                if *investigator == inv_id
+        );
+        // Resource count incremented.
+        assert_eq!(
+            result.state.investigators[&inv_id].resources,
+            3,
+            "resources must increase by 1"
         );
     }
 }

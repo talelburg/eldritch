@@ -228,8 +228,9 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
             actions::move_primary_effect(cx, investigator, destination)
         }
         ActionResume::Investigate => actions::investigate_primary_effect(cx, investigator),
-        // Resource/Engage/Draw arms land in Tasks 5–7.
-        other => unreachable!("resume_action_resolution: {other:?} not yet wired (K1 tasks 5-7)"),
+        ActionResume::Resource => actions::resource_primary_effect(cx, investigator),
+        // Engage/Draw arms land in Tasks 6–7.
+        other => unreachable!("resume_action_resolution: {other:?} not yet wired (K1 tasks 6-7)"),
     }
 }
 
