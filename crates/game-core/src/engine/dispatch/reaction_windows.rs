@@ -937,32 +937,27 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     EngineOutcome::Done
 }
 
-/// Kind-aware continuation called when a window closes (whether
-/// inline via [`open_fast_window`]'s auto-skip path or via the
-/// [`close_reaction_window_at`] pop path). For
-/// [`PhaseStep::MythosAfterDraws`], runs
-/// [`mythos_phase_end`](super::phases::mythos_phase_end); for
-/// [`PhaseStep::UpkeepBegins`], runs [`upkeep_resume`](super::phases::upkeep_resume). For
-/// [`PhaseStep::BeforeInvestigatorAttacked`], resolves the cursor
-/// investigator's engaged-enemy attacks via
-/// [`resolve_attacks_for_investigator`](super::combat::resolve_attacks_for_investigator), advances
-/// [`GameState::enemy_attack_pending`] to the next Active investigator
-/// via [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after),
-/// and opens the next window
-/// ([`PhaseStep::BeforeInvestigatorAttacked`] again if the cursor
-/// advanced to `Some`, otherwise [`PhaseStep::AfterAllInvestigatorsAttacked`]).
-/// For [`PhaseStep::AfterAllInvestigatorsAttacked`], runs
-/// [`enemy_phase_end`](super::phases::enemy_phase_end). For [`PhaseStep::InvestigationBegins`], starts
-/// the first turn via [`begin_investigator_turn`](super::phases::begin_investigator_turn) for the first Active
-/// investigator (or parks if none). [`WindowKind::AfterEnemyDefeated`] and
-/// [`PhaseStep::InvestigatorTurnBegins`] windows have no
-/// continuation — for them this returns [`EngineOutcome::Done`],
-/// preserving the existing [`close_reaction_window_at`] behavior.
+/// Kind-aware continuation called when a window closes (whether inline via
+/// [`open_fast_window`]'s auto-skip path or via the [`close_reaction_window_at`]
+/// pop path).
 ///
-/// Returns the continuation's [`EngineOutcome`]. Today every path
-/// returns [`EngineOutcome::Done`]; the return type is widened ahead of
-/// upkeep step 4.5 (hand-size discard) gaining an
-/// [`EngineOutcome::AwaitingInput`] producer (#111).
+/// Every framework [`WindowKind::PlayerWindow`] close routes to the `*Phase`
+/// anchor beneath it via
+/// [`anchor_on_child_pop`](super::phases::anchor_on_child_pop) (slice 1a, #393):
+/// the anchor's `resume` — not the [`PhaseStep`] — selects the relocated body
+/// (the Mythos/Investigation transitions, the Enemy attack-loop step incl. its
+/// mid-loop soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6
+/// cascade). The card/ability-reaction kinds run inline here: soak / before-
+/// attack ([`WindowKind::AfterEnemyAttackDamagedAsset`] /
+/// [`WindowKind::BeforeEnemyAttack`]) re-enter the attack loop via
+/// [`resume_enemy_attack`](super::combat::resume_enemy_attack);
+/// [`WindowKind::BeforeDiscoverClues`] performs the deferred discovery;
+/// [`WindowKind::AfterEnemyDefeated`] / [`WindowKind::AfterSuccessfulInvestigate`]
+/// / [`WindowKind::AfterEnteredPlay`] have no continuation work.
+///
+/// Returns the continuation's [`EngineOutcome`] — `Done`, or `AwaitingInput`
+/// when a body suspends (an Enemy soak window, the Upkeep step-4.5 hand-size
+/// discard, …).
 pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     match kind {
         // Every framework `PlayerWindow(PhaseStep)` close routes to the `*Phase`

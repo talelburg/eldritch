@@ -1,5 +1,7 @@
 # Phase Anchor Frames (slice 1a) Implementation Plan
 
+> **Status: ✅ shipped (PR #397).** All six tasks executed inline; behaviour-preserving (review-confirmed faithful), full gauntlet green. Note: Task 3 (Investigation) expanded well beyond plan — introducing the anchor made "anchor on the stack throughout a phase" a real invariant, so ~20 tests that construct mid-phase states directly needed the new `GameStateBuilder::with_phase_anchor` helper.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make each game phase a real continuation-stack frame (a `*Phase` *anchor*) that owns "what runs after a framework window closes," relocating `run_window_continuation`'s six `PlayerWindow(PhaseStep)` arms onto the anchors — behaviour-preserving.

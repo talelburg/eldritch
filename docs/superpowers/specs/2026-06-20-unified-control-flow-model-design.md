@@ -417,13 +417,16 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
    `AfterAllInvestigatorsAttacked`, `InvestigationBegins`, `InvestigatorTurnBegins` —
    are the phase-structure continuations the anchors own; its other arms are
    card/ability reactions that stay put):
-   - **1a — anchor frames + relocate the 6 `PhaseStep` arms.** Introduce the four
-     `*Phase` anchor `Continuation` variants + per-phase `resume` enums; push an
-     anchor onto the stack at each phase entry (windows/loops push *above* it); on a
-     window close, route to the anchor's `on_child_pop` instead of
-     `run_window_continuation`'s `PhaseStep` match. The anchor is a real stack frame
-     from day one (the "everything is a frame" model, not a delegation table). Guard
-     ladder, action `match`, and the card-reaction arms untouched.
+   - **1a — anchor frames + relocate the 6 `PhaseStep` arms. ✅ shipped (PR #397).**
+     Introduced the four `*Phase` anchor `Continuation` variants + per-phase `resume`
+     enums; each phase pushes its anchor at entry (windows/loops push *above* it) and
+     pops at its exit (Upkeep at `upkeep_round_end_teardown`, after the round-end
+     sequence); the `run_window_continuation` `PlayerWindow` match collapsed to a
+     single `PlayerWindow(_) => anchor_on_child_pop` arm — the `PhaseStep` is no
+     longer the continuation key, the anchor's `resume` is. Behaviour-preserving
+     (review-confirmed faithful). Added `GameStateBuilder::with_phase_anchor` for the
+     ~20 tests that construct mid-phase states directly. Guard ladder, action
+     `match`, card-reaction arms untouched.
    - **1b — fold the synchronous cascade onto anchor `drive`.** `step_phase`'s
      forward-calling cascade becomes each anchor *pushing* its phase's first child;
      the strand-guards become cheap asserts.
