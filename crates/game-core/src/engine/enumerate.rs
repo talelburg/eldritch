@@ -69,6 +69,21 @@ fn push_combat_engage_actions(
             });
         }
     }
+
+    // Engage: one option per enemy at the investigator's location not already
+    // engaged with them — including an enemy engaged with *another* investigator
+    // (engaging pulls it across; RR p.11). Engage costs 1 action, already gated
+    // by the `validate_basic_action` prologue above.
+    if let Some(loc) = inv.current_location {
+        for (&enemy_id, enemy) in &state.enemies {
+            if enemy.current_location == Some(loc) && enemy.engaged_with != Some(investigator) {
+                out.push(PlayerAction::Engage {
+                    investigator,
+                    enemy: enemy_id,
+                });
+            }
+        }
+    }
 }
 
 /// Append the basic actions legal for `investigator`. `EndTurn` is always legal
@@ -380,6 +395,72 @@ mod tests {
     }
 
     #[test]
+    fn engage_offered_for_co_located_enemy_engaged_with_another() {
+        let mut state = open_turn_state();
+        // Two investigators so an enemy can be engaged with the *other* one.
+        state
+            .investigators
+            .insert(InvestigatorId(2), test_investigator(2));
+        let loc = crate::test_support::test_location(10, "Study");
+        let loc_id = loc.id;
+        state.locations.insert(loc_id, loc);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(loc_id);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 3;
+        // Enemy at my location, engaged with investigator 2 → I may engage it.
+        let mut e = crate::test_support::test_enemy(7, "Ghoul");
+        e.current_location = Some(loc_id);
+        e.engaged_with = Some(InvestigatorId(2));
+        state.enemies.insert(e.id, e);
+
+        assert!(legal_actions(&state).contains(&PlayerAction::Engage {
+            investigator: InvestigatorId(1),
+            enemy: crate::state::EnemyId(7),
+        }));
+    }
+
+    #[test]
+    fn no_engage_for_an_enemy_already_engaged_with_me_or_elsewhere() {
+        let mut state = open_turn_state();
+        let loc = crate::test_support::test_location(10, "Study");
+        let other = crate::test_support::test_location(11, "Hall");
+        let (loc_id, other_id) = (loc.id, other.id);
+        state.locations.insert(loc_id, loc);
+        state.locations.insert(other_id, other);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(loc_id);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 3;
+        // Already engaged with me → not engageable.
+        let mut mine = engaged_enemy(7, loc_id);
+        mine.current_location = Some(loc_id);
+        state.enemies.insert(mine.id, mine);
+        // At a different location → not engageable.
+        let mut away = crate::test_support::test_enemy(8, "Rat");
+        away.current_location = Some(other_id);
+        state.enemies.insert(away.id, away);
+
+        let engages: Vec<_> = legal_actions(&state)
+            .into_iter()
+            .filter(|a| matches!(a, PlayerAction::Engage { .. }))
+            .collect();
+        assert!(engages.is_empty(), "no Engage offered, got {engages:?}");
+    }
+
+    #[test]
     fn every_enumerated_action_is_accepted_by_its_handler() {
         // The cross-check that makes "defer routing" safe: each enumerated
         // action applies without Rejected (Done or AwaitingInput both mean
@@ -407,6 +488,11 @@ mod tests {
         foe.engaged_with = Some(InvestigatorId(1));
         foe.current_location = Some(a_id);
         state.enemies.insert(foe.id, foe);
+        // A co-located unengaged enemy → Engage enumerated (its AoO comes from
+        // the engaged foe above; that is enemy_attack, never a Rejected).
+        let mut engageable = crate::test_support::test_enemy(8, "Rat");
+        engageable.current_location = Some(a_id);
+        state.enemies.insert(engageable.id, engageable);
 
         for action in legal_actions(&state) {
             let result = crate::apply(state.clone(), crate::Action::Player(action.clone()));
