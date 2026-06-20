@@ -420,7 +420,7 @@ pub(super) fn move_action(
 /// (which folds in the Frozen-in-Fear surcharge), so `move_action` keeps
 /// its own prefix; Fight and Evade reach this via
 /// [`validate_engaged_action`], which then adds the enemy checks.
-pub(super) fn validate_basic_action<'a>(
+pub(crate) fn validate_basic_action<'a>(
     state: &'a GameState,
     action_name: &'static str,
     investigator: InvestigatorId,
