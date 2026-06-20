@@ -1408,7 +1408,7 @@ fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'stat
 ///
 /// Returns `Ok(ActivateCheckResult)` if the ability is currently
 /// activatable, `Err(reason)` otherwise. Does not mutate state.
-pub(super) fn check_activate_ability(
+pub(crate) fn check_activate_ability(
     state: &GameState,
     investigator: InvestigatorId,
     instance_id: CardInstanceId,

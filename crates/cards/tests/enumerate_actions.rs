@@ -6,13 +6,14 @@
 use std::sync::Once;
 
 use game_core::state::{
-    CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, InvestigationResume, InvestigatorId,
-    Phase,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, InvestigationResume,
+    InvestigatorId, Phase,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 use game_core::{legal_actions, Action, EngineOutcome, LocationId, PlayerAction};
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
+const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
@@ -57,12 +58,35 @@ fn play_card_offered_for_a_playable_hand_card() {
     }));
 }
 
+/// Flashlight in play with 3 Supplies uses, ready — its `ability_index: 0`
+/// activated ability is usable.
+fn flashlight_in_play(instance: CardInstanceId) -> CardInPlay {
+    use game_core::state::UseKind;
+    let mut torch = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), instance);
+    torch.uses.insert(UseKind::Supplies, 3);
+    torch
+}
+
+#[test]
+fn activate_offered_for_an_in_play_activated_ability() {
+    let inst = CardInstanceId(0);
+    let state = open_turn_state(&[], vec![flashlight_in_play(inst)]);
+    assert!(
+        legal_actions(&state).contains(&PlayerAction::ActivateAbility {
+            investigator: INV,
+            instance_id: inst,
+            ability_index: 0,
+        })
+    );
+}
+
 #[test]
 fn every_enumerated_action_applies_without_rejection_with_registry() {
     // Cross-check, registry edition: with real card data the enumeration
-    // includes PlayCard (Holy Rosary) alongside the basic actions; each applies
-    // without Rejected (Done or AwaitingInput are both acceptance).
-    let state = open_turn_state(&[HOLY_ROSARY], Vec::new());
+    // includes PlayCard (Holy Rosary) and ActivateAbility (Flashlight) alongside
+    // the basic actions; each applies without Rejected (Done or AwaitingInput
+    // are both acceptance).
+    let state = open_turn_state(&[HOLY_ROSARY], vec![flashlight_in_play(CardInstanceId(0))]);
     for action in legal_actions(&state) {
         let result = game_core::apply(state.clone(), Action::Player(action.clone()));
         assert!(

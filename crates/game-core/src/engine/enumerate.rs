@@ -66,6 +66,31 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
             }
         }
     }
+
+    // ActivateAbility: one option per activatable ability on each in-play card.
+    // `ability_index` indexes the card's full ability list; `check_activate_ability`
+    // filters to the activated, payable, window-eligible ones (so non-`Activated`
+    // indices are simply not offered).
+    for card in &inv.cards_in_play {
+        let ability_count = (reg.abilities_for)(&card.code).map_or(0, |a| a.len());
+        for idx in 0..ability_count {
+            let ability_index = u8::try_from(idx).unwrap_or(u8::MAX);
+            if crate::engine::dispatch::reaction_windows::check_activate_ability(
+                state,
+                investigator,
+                card.instance_id,
+                ability_index,
+            )
+            .is_ok()
+            {
+                out.push(PlayerAction::ActivateAbility {
+                    investigator,
+                    instance_id: card.instance_id,
+                    ability_index,
+                });
+            }
+        }
+    }
 }
 
 /// Append the combat / engage actions legal for `investigator`, mirroring the
