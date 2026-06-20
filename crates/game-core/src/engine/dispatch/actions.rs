@@ -536,22 +536,50 @@ pub(super) fn spend_actions(cx: &mut Cx, investigator: InvestigatorId, n: u8) {
 /// round. **Mutates on success**, so call it after every other precondition
 /// for the action has passed. Falls back to cost 1 with no surcharge when
 /// no registry is installed (bare unit tests). Shared by move/fight/evade.
+/// The action-point cost of `action_class` for `investigator`: base 1 plus any
+/// Frozen-in-Fear `ExtraActionCost` surcharge (Rules Reference; #164). Pure —
+/// reads `card_registry::current()` for the surcharge, falling back to 1 with no
+/// registry installed (bare unit tests). The enumerator uses this for Move/Fight/
+/// Evade affordability; [`charge_action`] uses it then spends.
+pub(crate) fn action_cost(
+    state: &GameState,
+    investigator: InvestigatorId,
+    action_class: crate::dsl::ActionClass,
+) -> u8 {
+    let extra = match crate::card_registry::current() {
+        Some(reg) => {
+            crate::engine::evaluator::pending_action_surcharge(
+                state,
+                reg,
+                investigator,
+                action_class,
+            )
+            .0
+        }
+        None => 0,
+    };
+    1u8.saturating_add(extra)
+}
+
 fn charge_action(
     cx: &mut Cx,
     investigator: InvestigatorId,
     action_class: crate::dsl::ActionClass,
     action_name: &str,
 ) -> Result<(), EngineOutcome> {
-    let (extra, to_mark) = match crate::card_registry::current() {
-        Some(reg) => crate::engine::evaluator::pending_action_surcharge(
-            cx.state,
-            reg,
-            investigator,
-            action_class,
-        ),
-        None => (0, Vec::new()),
+    let to_mark = match crate::card_registry::current() {
+        Some(reg) => {
+            crate::engine::evaluator::pending_action_surcharge(
+                cx.state,
+                reg,
+                investigator,
+                action_class,
+            )
+            .1
+        }
+        None => Vec::new(),
     };
-    let cost = 1u8.saturating_add(extra);
+    let cost = action_cost(cx.state, investigator, action_class);
     let remaining = cx
         .state
         .investigators

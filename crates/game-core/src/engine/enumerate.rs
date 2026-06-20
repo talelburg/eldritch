@@ -34,7 +34,7 @@ fn push_basic_actions(
     investigator: InvestigatorId,
     out: &mut Vec<PlayerAction>,
 ) {
-    use crate::engine::dispatch::actions::validate_basic_action;
+    use crate::engine::dispatch::actions::{action_cost, validate_basic_action};
 
     // EndTurn: always legal at the open turn (no action point required).
     out.push(PlayerAction::EndTurn);
@@ -42,14 +42,43 @@ fn push_basic_actions(
     // Resource / Draw / Investigate share the basic-action prologue (phase +
     // active + Status::Active + actions_remaining >= 1). Investigate adds a
     // revealed-current-location gate.
-    let Ok(inv) = validate_basic_action(state, "enumerate", investigator) else {
+    if let Ok(inv) = validate_basic_action(state, "enumerate", investigator) {
+        out.push(PlayerAction::Resource { investigator });
+        out.push(PlayerAction::Draw { investigator });
+        if let Some(loc_id) = inv.current_location {
+            if state.locations.get(&loc_id).is_some_and(|l| l.revealed) {
+                out.push(PlayerAction::Investigate { investigator });
+            }
+        }
+    }
+
+    // Move uses its own prefix (the action-point check folds into the cost):
+    // phase Investigation + active + Status::Active + a current location +
+    // affordable, with one option per connected destination in state.
+    let Some(inv) = state.investigators.get(&investigator) else {
         return;
     };
-    out.push(PlayerAction::Resource { investigator });
-    out.push(PlayerAction::Draw { investigator });
-    if let Some(loc_id) = inv.current_location {
-        if state.locations.get(&loc_id).is_some_and(|l| l.revealed) {
-            out.push(PlayerAction::Investigate { investigator });
+    if state.phase != crate::state::Phase::Investigation
+        || state.active_investigator != Some(investigator)
+        || inv.status != crate::state::Status::Active
+    {
+        return;
+    }
+    let Some(from) = inv.current_location else {
+        return;
+    };
+    if action_cost(state, investigator, crate::dsl::ActionClass::Move) > inv.actions_remaining {
+        return;
+    }
+    let Some(from_loc) = state.locations.get(&from) else {
+        return;
+    };
+    for &dest in &from_loc.connections {
+        if dest != from && state.locations.contains_key(&dest) {
+            out.push(PlayerAction::Move {
+                investigator,
+                destination: dest,
+            });
         }
     }
 }
@@ -165,20 +194,79 @@ mod tests {
     }
 
     #[test]
-    fn every_enumerated_action_is_accepted_by_its_handler() {
-        // The cross-check that makes "defer routing" safe: each enumerated
-        // action applies without Rejected (Done or AwaitingInput both mean
-        // "accepted"). Apply to a fresh clone per action.
+    fn move_offers_one_option_per_connected_destination() {
         let mut state = open_turn_state();
-        let loc = crate::test_support::test_location(10, "Study");
-        let loc_id = loc.id;
-        state.locations.insert(loc_id, loc);
-        state.locations.get_mut(&loc_id).unwrap().revealed = true;
+        let mut a = crate::test_support::test_location(10, "A");
+        let b = crate::test_support::test_location(11, "B");
+        a.connections = vec![b.id];
+        let (a_id, b_id) = (a.id, b.id);
+        state.locations.insert(a_id, a);
+        state.locations.insert(b_id, b);
         state
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .current_location = Some(loc_id);
+            .current_location = Some(a_id);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 3;
+
+        let actions = legal_actions(&state);
+        assert!(actions.contains(&PlayerAction::Move {
+            investigator: InvestigatorId(1),
+            destination: b_id,
+        }));
+        // No self-move.
+        assert!(!actions.contains(&PlayerAction::Move {
+            investigator: InvestigatorId(1),
+            destination: a_id,
+        }));
+    }
+
+    #[test]
+    fn move_absent_when_unaffordable() {
+        let mut state = open_turn_state();
+        let mut a = crate::test_support::test_location(10, "A");
+        let b = crate::test_support::test_location(11, "B");
+        a.connections = vec![b.id];
+        let (a_id, b_id) = (a.id, b.id);
+        state.locations.insert(a_id, a);
+        state.locations.insert(b_id, b);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(a_id);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 0;
+        assert!(!legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, PlayerAction::Move { .. })));
+    }
+
+    #[test]
+    fn every_enumerated_action_is_accepted_by_its_handler() {
+        // The cross-check that makes "defer routing" safe: each enumerated
+        // action applies without Rejected (Done or AwaitingInput both mean
+        // "accepted"). Apply to a fresh clone per action. The board has a
+        // connected, revealed destination so a Move is enumerated and checked too.
+        let mut state = open_turn_state();
+        let mut a = crate::test_support::test_location(10, "A");
+        let b = crate::test_support::test_location(11, "B");
+        a.connections = vec![b.id];
+        let (a_id, _b_id) = (a.id, b.id);
+        state.locations.insert(a_id, a);
+        state.locations.insert(b.id, b);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(a_id);
         state
             .investigators
             .get_mut(&InvestigatorId(1))
