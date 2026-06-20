@@ -59,131 +59,27 @@ pub(crate) mod threat_area;
 /// so callers and tests get a useful signal rather than a silent no-op.
 #[allow(clippy::too_many_lines)] // dispatcher: a guard ladder + one match arm per PlayerAction
 pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
-    // While the setup mulligan loop is in progress (a `Mulligan` frame is on
-    // top of the stack), only `ResolveInput` can advance the engine. Per the
-    // Rules Reference, "after all players have completed their mulligans, the
-    // game begins" — the engine enforces that by gating other actions until
-    // every investigator has submitted their mulligan choice. Setup-only;
-    // never coexists with the other suspension modes, so guard order is
-    // immaterial.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::Mulligan { .. })
-    ) && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason: "a setup mulligan is pending; investigators must submit a \
-                     PlayerAction::ResolveInput with InputResponse::PickMultiple (the hand indices \
-                     to redraw, empty to keep their hand) in player order before any other action"
-                .into(),
-        };
-    }
-
-    // Reaction-window guard runs BEFORE the skill-test guard: when a
-    // window opens mid-skill-test (e.g. Roland's "after you defeat an
-    // enemy" firing during a Fight that defeats), both
-    // `in_flight_skill_test` and the open reaction window on
-    // `cx.state.open_windows` are populated — the test is mid-resolution,
-    // parked at the window boundary inside `drive_skill_test`. The
-    // reaction-window message is the one the client needs.
-    if cx.state.top_reaction_window().is_some()
+    // A pending prompt gates every action but `ResolveInput` (slice 1b, #393).
+    // After the §1 continuation-stack work and the phase-anchor slices, the
+    // frame awaiting input is always the top of the stack, and *every* non-anchor
+    // frame on top is such a prompt — reaction/Fast window, skill-test commit,
+    // choice, substitution prompt, hunter/spawn pick, hand-size discard, act
+    // round-end, mulligan, encounter draw. A `*Phase` anchor on top is the open
+    // turn (or inert), so typed actions are allowed there. This single rule
+    // replaces the former eight per-suspension guard blocks; the specific
+    // expected `InputResponse` rides the `AwaitingInput` request the client
+    // already holds.
+    if cx
+        .state
+        .continuations
+        .last()
+        .is_some_and(crate::state::Continuation::awaits_input)
         && !matches!(action, PlayerAction::ResolveInput { .. })
     {
         return EngineOutcome::Rejected {
-            reason: "a reaction window is open; submit a \
-                     PlayerAction::ResolveInput with an InputResponse::PickSingle(OptionId) \
-                     to resolve an option, or InputResponse::Skip to close \
-                     the window (rejected if forced triggers remain) before any \
-                     other action"
-                .into(),
-        };
-    }
-
-    // While a skill test is paused at its commit window (no reaction
-    // window open yet), only `ResolveInput` can advance the engine.
-    // Mirrors the `Mulligan`-frame guard above.
-    if cx.state.has_skill_test_in_flight() && !matches!(action, PlayerAction::ResolveInput { .. }) {
-        return EngineOutcome::Rejected {
-            reason: "a skill test is paused at its commit window; submit a \
-                     PlayerAction::ResolveInput with an InputResponse::PickMultiple \
-                     (empty selection commits no cards) before any other action"
-                .into(),
-        };
-    }
-
-    // Hunter movement is Enemy-phase only; it can't coexist with an open
-    // reaction window or an in-flight skill test, so order among the guards
-    // is immaterial — but a pending hunter choice still blocks other actions.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::HunterMove(_))
-    ) && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason: "a hunter-movement choice is pending; submit a PlayerAction::ResolveInput \
-                     with InputResponse::PickSingle (an offered option id) before any other action"
-                .into(),
-        };
-    }
-
-    // A pending engagement-on-spawn choice (#128) likewise blocks every
-    // action but `ResolveInput`. Mirrors the hunter guard above; the two
-    // never coexist (different phases), so guard order is immaterial.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::SpawnEngage(_))
-    ) && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason: "an engagement-on-spawn choice is pending; submit a \
-                     PlayerAction::ResolveInput with InputResponse::PickSingle \
-                     (an offered option id) before any other action"
-                .into(),
-        };
-    }
-
-    // A pending upkeep hand-size discard (#111) blocks every action but
-    // `ResolveInput`. Upkeep-phase only; never coexists with the other
-    // suspension modes, so guard order is immaterial.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::HandSizeDiscard(_))
-    ) && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason: "a hand-size discard choice is pending; submit a PlayerAction::ResolveInput \
-                     with InputResponse::PickMultiple before any other action"
-                .into(),
-        };
-    }
-
-    // A pending act round-end advance (#275) blocks every action but
-    // `ResolveInput`. Upkeep-phase only; never coexists with the others.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::ActRoundEnd(_))
-    ) && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason:
-                "an act round-end advance choice is pending; submit a PlayerAction::ResolveInput \
-                     with InputResponse::Confirm or Skip before any other action"
-                    .into(),
-        };
-    }
-
-    // While the Mythos step-1.4 encounter-draw loop is in progress (an
-    // `EncounterDraw` frame is on top of the stack), only `ResolveInput` can
-    // advance the engine. Mythos-phase only; never coexists with the other
-    // suspension modes, so guard order is immaterial.
-    if matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::EncounterDraw { .. })
-    ) && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason: "a Mythos encounter draw is pending; submit a PlayerAction::ResolveInput \
-                     with InputResponse::Confirm in player order before any other action"
+            reason: "a prompt is outstanding; submit a PlayerAction::ResolveInput with the \
+                     InputResponse the AwaitingInput request describes (PickSingle / \
+                     PickMultiple / Confirm / Skip) before any other action"
                 .into(),
         };
     }

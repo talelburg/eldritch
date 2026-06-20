@@ -579,6 +579,30 @@ impl Continuation {
         )
     }
 
+    /// True if this top frame is a mandatory prompt that only `ResolveInput` may
+    /// advance (slice 1b, #393): a reaction/forced window, skill-test commit,
+    /// choice, hunter/spawn pick, hand-size discard, act round-end, substitution
+    /// prompt, mulligan, or encounter draw.
+    ///
+    /// Two exceptions return `false` — the engine accepts other actions:
+    /// - **`*Phase` anchors** are inert / the open turn, so typed actions run.
+    /// - a **Fast-play window** — a [`Continuation::Resolution`] with *no*
+    ///   pending triggers — is a play *opportunity*, not a mandatory prompt:
+    ///   Fast `PlayCard`/`ActivateAbility` are allowed (the handlers gate
+    ///   eligibility) and `ResolveInput::Skip` closes it. A window *with* pending
+    ///   triggers (reaction or forced) does await `ResolveInput`. This mirrors
+    ///   [`GameState::top_reaction_window`], which skips empty-trigger windows.
+    ///
+    /// (`EncounterCard` is framework-internal and never sits on top at an action
+    /// boundary, so its `true` here is moot.)
+    #[must_use]
+    pub fn awaits_input(&self) -> bool {
+        match self {
+            Continuation::Resolution(f) => !f.pending_triggers.is_empty(),
+            other => !other.is_phase_anchor(),
+        }
+    }
+
     /// The window payload if this frame is a [`Continuation::Resolution`].
     #[must_use]
     pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
