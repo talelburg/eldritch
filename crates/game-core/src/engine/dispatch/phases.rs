@@ -1437,17 +1437,13 @@ mod investigation_phase_tests {
         // After the last investigator mulligans, setup ends and the
         // Investigation phase begins (Rules Reference p.27: no action
         // windows during setup; the game begins after mulligans).
+        // active_investigator defaults to None (set when the phase rotates).
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
+            .with_turn_order([InvestigatorId(1)])
+            .with_mulligan_remaining([InvestigatorId(1)])
             .build();
-        state.turn_order = vec![InvestigatorId(1)];
-        state.active_investigator = None;
-        state
-            .continuations
-            .push(crate::state::Continuation::Mulligan {
-                remaining: vec![InvestigatorId(1)],
-            });
 
         let mut events = Vec::new();
         let outcome = apply_player_action(
@@ -2002,18 +1998,16 @@ mod mythos_phase_tests {
 
     #[test]
     fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
+        // mythos_phase_end now runs only with the MythosPhase anchor on top
+        // (slice 1a) — it pops the anchor as its first act.
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Mythos)
-            .build();
-        state.turn_order = vec![InvestigatorId(1)];
-        // mythos_phase_end now runs only with the MythosPhase anchor on top
-        // (slice 1a) — it pops the anchor as its first act.
-        state
-            .continuations
-            .push(crate::state::Continuation::MythosPhase {
+            .with_turn_order([InvestigatorId(1)])
+            .with_phase_anchor(crate::state::Continuation::MythosPhase {
                 resume: crate::state::MythosResume::AfterDraws,
-            });
+            })
+            .build();
         let mut events = Vec::new();
 
         // mythos_phase_end pops the Mythos anchor + pushes the Investigation
@@ -2981,8 +2975,7 @@ mod enemy_phase_tests {
     use crate::engine::dispatch::resolve_input;
     use crate::engine::{apply, EngineOutcome};
     use crate::state::{
-        EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, ResolutionFrame, Status,
-        WindowKind,
+        EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, Status, WindowKind,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
@@ -3696,9 +3689,9 @@ mod enemy_phase_tests {
         // open AfterAllInvestigatorsAttacked → auto-skip continuation
         // → enemy_phase_end → cascade Upkeep → Mythos.
         //
-        // The synthetic ResolutionFrame push fakes the pause point because
-        // a real Fast-eligibility setup would require either a card-
-        // registry install (heavyweight integration test) or a Fast
+        // The synthetic empty window (staged via with_open_window) fakes the
+        // pause point because a real Fast-eligibility setup would require either
+        // a card-registry install (heavyweight integration test) or a Fast
         // event card in hand with resources — neither tractable in
         // the engine layer. The Skip path itself is the load-bearing
         // resume mechanism this test exercises.
@@ -3707,29 +3700,23 @@ mod enemy_phase_tests {
         let mut enemy = test_enemy(1, "Test Enemy");
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
+        // active_investigator defaults to None. The EnemyPhase anchor (slice 1a)
+        // sits beneath the synthetic BeforeInvestigatorAttacked window staged
+        // above it; the window's close routes to anchor_on_child_pop.
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .with_phase(Phase::Enemy)
-            // The EnemyPhase anchor (slice 1a) sits beneath the synthetic
-            // BeforeInvestigatorAttacked window pushed below; its close routes
-            // to anchor_on_child_pop.
+            .with_turn_order([inv_id])
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
             })
+            .with_open_window(
+                WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+                FastActorScope::Any,
+            )
             .build();
-        state.turn_order = vec![inv_id];
-        state.active_investigator = None;
         state.enemy_attack_pending = Some(inv_id);
-        state
-            .continuations
-            .push(crate::state::Continuation::Resolution(ResolutionFrame {
-                pending_triggers: Vec::new(),
-                kind: crate::state::ResolutionKind::Window(crate::state::WindowBinding {
-                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
-                    fast_actors: FastActorScope::Any,
-                }),
-            }));
 
         let result = apply(
             state,
