@@ -394,6 +394,7 @@ mod tests {
             .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
             })
+            .with_investigator_turn(id)
             .build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
@@ -4771,6 +4772,14 @@ mod tests {
             .continuations
             .push(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
+            });
+        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame on
+        // top of the anchor, popped by the EndTurn below.
+        state
+            .continuations
+            .push(crate::state::Continuation::InvestigatorTurn {
+                investigator: InvestigatorId(1),
+                ending: false,
             });
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,

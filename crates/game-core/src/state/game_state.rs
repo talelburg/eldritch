@@ -181,15 +181,10 @@ pub struct GameState {
     /// [`Status::Insane`]: crate::state::Status::Insane
     /// [`Status::Resigned`]: crate::state::Status::Resigned
     pub enemy_attack_pending: Option<InvestigatorId>,
-    /// Suspended end-of-turn continuation (C4c, #235): `Some(active)` while
-    /// `end_turn` is paused on a suspending `EndOfTurn` forced effect
-    /// (Frozen in Fear 01164's willpower test). The skill-test commit-resume
-    /// path re-enters `resume_end_turn` to run the stranded rotation /
-    /// phase-end once the test resolves. Defaults to `None`.
-    #[serde(default)]
-    pub pending_end_turn: Option<InvestigatorId>,
     /// `Some` while an enemy-attack loop is suspended on a soak reaction
-    /// window (C5b #237). Mirror of [`pending_end_turn`](Self::pending_end_turn).
+    /// window (C5b #237). Mirror of the former `pending_end_turn` (now the
+    /// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's `ending`
+    /// flag, slice 2a-i #393): a framework cursor for a suspended continuation.
     #[serde(default)]
     pub pending_enemy_attack: Option<PendingEnemyAttack>,
     /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a
@@ -388,7 +383,8 @@ pub struct SkillSubstitution {
 /// damage; C5b #237) or the before-attack cancel window (`BeforeEnemyAttack`,
 /// before damage; Axis D #336), distinguished by [`Self::phase`]. Resumed by
 /// `resume_enemy_attack` once the window closes — the same suspend/resume
-/// shape as [`GameState::pending_end_turn`].
+/// shape as the [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's
+/// `ending` flag (slice 2a-i #393, which absorbed the former `pending_end_turn`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingEnemyAttack {
     /// The investigator whose engaged enemies are attacking.
@@ -520,6 +516,28 @@ pub enum Continuation {
         /// Which child-pop boundary the anchor resumes at.
         resume: UpkeepResume,
     },
+    /// The active investigator's open turn — Rules Reference step 2.2.1
+    /// (slice 2a-i, #393). Pushed *above* the [`Continuation::InvestigationPhase`]
+    /// anchor once the `InvestigatorTurnBegins` window closes; the anchor spans the
+    /// whole phase beneath it. The player takes basic actions (each a typed
+    /// `PlayerAction` today; a sub-resolution frame above this one tomorrow) while
+    /// it is on top; `EndTurn` pops it via
+    /// [`resume_end_turn`](crate::engine). Does **not** await `ResolveInput` — like
+    /// the `TurnBegins` anchor it replaced, typed actions run against it (the idle
+    /// outcome stays `Done`; surfacing the legal-action enumeration as
+    /// `AwaitingInput` is slice 2b/#205).
+    InvestigatorTurn {
+        /// Whose turn this is. Mirrors [`GameState::active_investigator`] while on
+        /// top; the durable source for the end-of-turn rotation.
+        investigator: InvestigatorId,
+        /// `true` once `end_turn`'s `EndOfTurn` forced effect suspended into a
+        /// skill test before rotation (a single Frozen in Fear 01164), stranding
+        /// the turn (slice 2a-i, #393 — absorbs the former
+        /// `GameState::pending_end_turn`). The skill-test commit resume reads this
+        /// to decide the resolved test triggers rotation; an ordinary mid-turn
+        /// test leaves it `false`.
+        ending: bool,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -564,21 +582,6 @@ impl Continuation {
         )
     }
 
-    /// True if this is the open-turn idle point — `InvestigationPhase` at
-    /// `TurnBegins` (slice 1b, #393). The engine waits for the active
-    /// investigator's *typed* action here, so `drive` must break (not advance)
-    /// rather than spin. Slice 2 replaces this with a real `InvestigatorTurn`
-    /// frame that awaits input.
-    #[must_use]
-    pub fn is_open_turn(&self) -> bool {
-        matches!(
-            self,
-            Continuation::InvestigationPhase {
-                resume: InvestigationResume::TurnBegins,
-            }
-        )
-    }
-
     /// True if this top frame is a mandatory prompt that only `ResolveInput` may
     /// advance (slice 1b, #393): a reaction/forced window, skill-test commit,
     /// choice, hunter/spawn pick, hand-size discard, act round-end, substitution
@@ -599,6 +602,9 @@ impl Continuation {
     pub fn awaits_input(&self) -> bool {
         match self {
             Continuation::Resolution(f) => !f.pending_triggers.is_empty(),
+            // The open turn: typed actions (Move/Investigate/Fight/…) run, so it
+            // is NOT a mandatory ResolveInput prompt (slice 2a-i, #393).
+            Continuation::InvestigatorTurn { .. } => false,
             other => !other.is_phase_anchor(),
         }
     }
@@ -618,6 +624,7 @@ impl Continuation {
             | Continuation::Mulligan { .. }
             | Continuation::EncounterDraw { .. }
             | Continuation::EncounterCard { .. }
+            | Continuation::InvestigatorTurn { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -639,6 +646,7 @@ impl Continuation {
             | Continuation::Mulligan { .. }
             | Continuation::EncounterDraw { .. }
             | Continuation::EncounterCard { .. }
+            | Continuation::InvestigatorTurn { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -1829,6 +1837,36 @@ mod continuation_stack_tests {
         .awaits_input());
         assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
         assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
+    }
+
+    #[test]
+    fn investigator_turn_frame_classification() {
+        let frame = Continuation::InvestigatorTurn {
+            investigator: InvestigatorId(1),
+            ending: false,
+        };
+        // The open turn is not a framework anchor...
+        assert!(!frame.is_phase_anchor());
+        // ...and it does NOT await ResolveInput — typed actions (Move, Fight, …)
+        // run against it, exactly as they ran against the TurnBegins anchor.
+        assert!(!frame.awaits_input());
+        // It carries no resolution payload.
+        assert!(frame.as_resolution().is_none());
+    }
+
+    #[test]
+    fn investigator_turn_frame_round_trips_both_ending_states() {
+        // The frame is replay state (the `ending` flag absorbed the former
+        // `pending_end_turn`), so both flag values must serialize round-trip.
+        for ending in [false, true] {
+            let frame = Continuation::InvestigatorTurn {
+                investigator: InvestigatorId(1),
+                ending,
+            };
+            let json = serde_json::to_string(&frame).unwrap();
+            let back: Continuation = serde_json::from_str(&json).unwrap();
+            assert_eq!(frame, back);
+        }
     }
 
     #[test]

@@ -134,6 +134,9 @@ fn hunter_movement_pick_location_replays_identically() {
             .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
                 resume: game_core::state::InvestigationResume::TurnBegins,
             })
+            // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame
+            // the end_turn cascade pops before advancing into the Enemy phase.
+            .with_investigator_turn(InvestigatorId(1))
             .build()
     }
 

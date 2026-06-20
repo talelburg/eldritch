@@ -25,6 +25,8 @@
 //!     .with_phase_anchor(Continuation::InvestigationPhase {
 //!         resume: InvestigationResume::TurnBegins,
 //!     })
+//!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
+//!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
 //!
 //! let result = apply(state, Action::Player(PlayerAction::EndTurn));
@@ -63,6 +65,7 @@ pub struct GameStateBuilder {
     hand_size_discard_pending: Option<HandSizeDiscard>,
     open_windows: Vec<ResolutionFrame>,
     phase_anchor: Option<Continuation>,
+    investigator_turn: Option<InvestigatorId>,
     scenario_id: Option<ScenarioId>,
 }
 
@@ -88,6 +91,7 @@ impl GameStateBuilder {
             hand_size_discard_pending: None,
             open_windows: Vec::new(),
             phase_anchor: None,
+            investigator_turn: None,
             scenario_id: None,
         }
     }
@@ -287,6 +291,16 @@ impl GameStateBuilder {
         self
     }
 
+    /// Stage an [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame
+    /// (slice 2a-i, #393) on top of the staged `*Phase` anchor — the realistic
+    /// invariant for a state constructed mid-turn (the real driver pushes it once
+    /// the `InvestigatorTurnBegins` window closes). Pair with
+    /// `with_phase_anchor(InvestigationPhase { resume: TurnBegins })`.
+    pub fn with_investigator_turn(mut self, investigator: InvestigatorId) -> Self {
+        self.investigator_turn = Some(investigator);
+        self
+    }
+
     /// Set the scenario id this state belongs to. `None` (the
     /// default from [`GameStateBuilder::new`]) means the engine's post-apply
     /// resolution hook will short-circuit. Passing a `ScenarioId`
@@ -307,6 +321,14 @@ impl GameStateBuilder {
         // A staged `*Phase` anchor (slice 1a, #393) sits at the bottom of the
         // stack — beneath any windows, which open *above* it during the phase.
         let mut continuations: Vec<Continuation> = self.phase_anchor.into_iter().collect();
+        // A staged open turn (slice 2a-i, #393) sits directly above the anchor;
+        // any window opened during the turn is a sub-resolution above it.
+        if let Some(investigator) = self.investigator_turn {
+            continuations.push(Continuation::InvestigatorTurn {
+                investigator,
+                ending: false,
+            });
+        }
         continuations.extend(self.open_windows.into_iter().map(Continuation::Resolution));
         if let Some(hsd) = self.hand_size_discard_pending {
             continuations.push(Continuation::HandSizeDiscard(hsd));
@@ -343,7 +365,6 @@ impl GameStateBuilder {
             continuations,
             scenario_id: self.scenario_id,
             enemy_attack_pending: None,
-            pending_end_turn: None,
             pending_enemy_attack: None,
             pending_cancellation: false,
             pending_played_event: None,

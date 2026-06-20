@@ -151,13 +151,14 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 ///
 /// - non-`Done` `outcome` (a suspension / rejection from the action itself)
 ///   passes straight through;
-/// - a `*Phase` anchor on top (other than the open turn) is advanced via
+/// - a `*Phase` anchor on top is advanced via
 ///   [`phases::anchor_on_child_pop`], which runs its resume-keyed chunk and,
 ///   at a phase boundary, transitions by popping itself + pushing the next
 ///   phase's anchor (`Entry`) — the loop then advances that;
 /// - the loop stops with `AwaitingInput` when an advance suspends, and with
-///   `Done` at the open turn (`InvestigationPhase{TurnBegins}`), at terminal
-///   (empty stack), or when an advance makes no progress (a parked phase, e.g.
+///   `Done` when an [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn)
+///   frame is on top (the open turn — slice 2a-i, #393), at terminal (empty
+///   stack), or when an advance makes no progress (a parked phase, e.g.
 ///   Investigation with no active investigator).
 pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
     if !matches!(outcome, EngineOutcome::Done) {
@@ -166,7 +167,7 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
     loop {
         let top = cx.state.continuations.last().cloned();
         match top {
-            Some(ref c) if c.is_phase_anchor() && !c.is_open_turn() => {
+            Some(ref c) if c.is_phase_anchor() => {
                 match phases::anchor_on_child_pop(cx) {
                     EngineOutcome::Done => {
                         // No-progress guard: a parked phase (e.g. Investigation
@@ -179,8 +180,9 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other,
                 }
             }
-            // Open turn idle, terminal (empty), or a suspension on top (which a
-            // handler already surfaced as AwaitingInput before reaching here).
+            // Open turn idle (an `InvestigatorTurn` frame on top), terminal
+            // (empty), or a suspension on top (which a handler already surfaced
+            // as AwaitingInput before reaching here).
             _ => return EngineOutcome::Done,
         }
     }
@@ -285,9 +287,9 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 // simultaneous `EndOfTurn` forced — two Frozen in Fear copies,
                 // #213). The run's frame is now back on top; re-enter it to
                 // fire the remaining siblings, or close it (running its
-                // continuation, e.g. end-of-turn rotation). Checked before
-                // `pending_end_turn`: a forced run owns its own post-run
-                // continuation and never sets `pending_end_turn`.
+                // continuation, e.g. end-of-turn rotation). Checked before the
+                // `ending` frame: a forced run owns its own post-run
+                // continuation and never flags the `InvestigatorTurn` frame.
                 if matches!(
                     cx.state.continuations.last(),
                     Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
@@ -296,11 +298,17 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                     return reaction_windows::advance_resolution(cx, idx);
                 }
                 // Otherwise: a single suspending `EndOfTurn` forced effect
-                // (one Frozen in Fear) stranded `end_turn` before rotation;
-                // resume it now that the test is fully done (C4c, #235). An
-                // `AwaitingInput` mid-teardown leaves `pending_end_turn` set
-                // for the next resume.
-                if let Some(active_id) = cx.state.pending_end_turn.take() {
+                // (one Frozen in Fear) stranded `end_turn` before rotation. The
+                // SkillTest has popped, so the `InvestigatorTurn` frame is back
+                // on top; if its `ending` flag is set, resume rotation now that
+                // the test is fully done (C4c, #235; slice 2a-i absorbs
+                // `pending_end_turn`). `resume_end_turn` pops the frame.
+                if let Some(crate::state::Continuation::InvestigatorTurn {
+                    investigator,
+                    ending: true,
+                }) = cx.state.continuations.last()
+                {
+                    let active_id = *investigator;
                     return phases::resume_end_turn(cx, active_id);
                 }
             }
@@ -371,6 +379,15 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 .into(),
         },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
+        // The open turn does not emit an AwaitingInput prompt in 2a (typed
+        // actions drive it; the enumeration is 2a-ii / surfacing is 2b). A
+        // ResolveInput arriving here is spurious — reject defensively, mirroring
+        // the phase-anchor arm (slice 2a-i, #393).
+        Some(Continuation::InvestigatorTurn { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (the open turn \
+                     takes typed actions, not ResolveInput)"
+                .into(),
+        },
         // Phase anchors (slice 1a, #393) never await input — they only sit
         // beneath framework windows. If one is somehow top, no prompt is
         // outstanding (defensive, mirrors the EncounterCard arm).

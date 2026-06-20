@@ -220,11 +220,12 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // - **2+ simultaneous** `EndOfTurn` forced (two Frozen in Fear copies)
     //   open a forced run (#213) that carries its own
     //   `ForcedContinuation::EndOfTurnAfterForced` — it resumes rotation on
-    //   close, so `end_turn` must *not* also set `pending_end_turn`.
-    // - **a single** suspending hit has no run frame; record the active
-    //   investigator in `pending_end_turn` so the skill-test commit-resume
-    //   path re-enters [`resume_end_turn`] once the test resolves (C4c, #235
-    //   — mirrors the SpawnEngage frame).
+    //   close, so `end_turn` must *not* also flag the frame.
+    // - **a single** suspending hit has no run frame; flag the
+    //   `InvestigatorTurn` frame (below the skill test) as `ending` so the
+    //   skill-test commit-resume path re-enters [`resume_end_turn`] once the
+    //   test resolves (C4c, #235; slice 2a-i absorbs the former
+    //   `pending_end_turn` — mirrors the SpawnEngage frame).
     //
     // A `Rejected` propagates as-is.
     let end_of_turn = super::emit::emit_event(
@@ -241,7 +242,26 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
                 Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
             );
             if !forced_run_open {
-                cx.state.pending_end_turn = Some(active_id);
+                // The skill test sits above the InvestigatorTurn frame; find it
+                // and set `ending` so the commit-resume triggers rotation.
+                let ending = cx
+                    .state
+                    .continuations
+                    .iter_mut()
+                    .rev()
+                    .find_map(|c| match c {
+                        crate::state::Continuation::InvestigatorTurn {
+                            investigator,
+                            ending,
+                        } if *investigator == active_id => Some(ending),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| {
+                        unreachable!(
+                            "end_turn stranded with no InvestigatorTurn({active_id:?}) on the stack"
+                        )
+                    });
+                *ending = true;
             }
             end_of_turn
         }
@@ -253,10 +273,25 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
 /// Reference p.24 step 2.2.2): rotate to the next active investigator, or
 /// end the Investigation phase. Called inline by `end_turn` when the
 /// `EndOfTurn` forced effects resolved synchronously, and by the
-/// skill-test commit-resume path (via `pending_end_turn`) when a
-/// suspending `EndOfTurn` forced effect (Frozen in Fear 01164) stranded
-/// `end_turn` before rotation.
+/// skill-test commit-resume path (keyed off the `InvestigatorTurn` frame's
+/// `ending` flag) when a suspending `EndOfTurn` forced effect (Frozen in
+/// Fear 01164) stranded `end_turn` before rotation.
 pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineOutcome {
+    // The turn is over: pop the InvestigatorTurn frame this turn ran on (slice
+    // 2a-i, #393). It is always on top here — end_turn reaches this after the
+    // EndOfTurn forced run resolves, the stranded-skill-test resume after the
+    // SkillTest pops, and the forced-run continuation after its Resolution pops.
+    debug_assert!(
+        matches!(
+            cx.state.continuations.last(),
+            Some(crate::state::Continuation::InvestigatorTurn { investigator, .. })
+                if *investigator == active_id
+        ),
+        "resume_end_turn: expected InvestigatorTurn({active_id:?}) on top, got {:?}",
+        cx.state.continuations.last(),
+    );
+    cx.state.continuations.pop();
+
     // 2.2.2 decision: "return to 2.2" for the next investigator, or
     // proceed to 2.3. next_active_investigator_after skips eliminated
     // investigators (Rules Reference p.10) — the same shared helper the
@@ -834,8 +869,21 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::InvestigationPhase {
             resume: InvestigationResume::TurnBegins,
         }) => {
-            // 2.2.1 — the active investigator now acts as player-driven input;
-            // no continuation work (slice 2 makes this an InvestigatorTurn frame).
+            // 2.2.1 — push the InvestigatorTurn frame above the anchor (slice
+            // 2a-i, #393). The anchor stays at TurnBegins beneath it; the frame
+            // is the open-turn idle point (drive breaks here, returning Done).
+            // `active_investigator` was set by rotate_to_active in
+            // begin_investigator_turn; it is the frame's investigator.
+            let investigator = cx.state.active_investigator.unwrap_or_else(|| {
+                unreachable!(
+                    "TurnBegins reached with no active_investigator; \
+                     begin_investigator_turn always sets it"
+                )
+            });
+            cx.state.continuations.push(Continuation::InvestigatorTurn {
+                investigator,
+                ending: false,
+            });
             EngineOutcome::Done
         }
         Some(Continuation::MythosPhase {
@@ -1320,6 +1368,71 @@ mod investigation_phase_tests {
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
+    fn investigator_turn_defaults_to_not_ending() {
+        use crate::state::Continuation;
+        // The builder-staged open-turn frame is not mid-end-turn.
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
+        assert_eq!(
+            state.continuations.last(),
+            Some(&Continuation::InvestigatorTurn {
+                investigator: InvestigatorId(1),
+                ending: false,
+            }),
+        );
+    }
+
+    #[test]
+    fn open_turn_leaves_investigator_turn_frame_on_top() {
+        use crate::state::{Continuation, InvestigationResume};
+        // Reach the open turn the way production does: enter the Investigation
+        // phase for a single investigator (no Fast cards → windows auto-skip).
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+
+        let mut events = Vec::new();
+        let outcome = {
+            let mut cx = crate::engine::Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            // investigation_phase pushes the anchor + opens (auto-skips) both
+            // windows, landing the first investigator's open turn.
+            investigation_phase(&mut cx);
+            super::super::drive(&mut cx, EngineOutcome::Done)
+        };
+
+        // The open turn idles as Done (NOT AwaitingInput) — behaviour-preserving.
+        assert_eq!(outcome, EngineOutcome::Done);
+        // Top frame is the InvestigatorTurn for investigator 1...
+        assert_eq!(
+            state.continuations.last(),
+            Some(&Continuation::InvestigatorTurn {
+                investigator: InvestigatorId(1),
+                ending: false,
+            }),
+        );
+        // ...sitting above the still-present InvestigationPhase anchor.
+        assert!(state.continuations.iter().any(|c| matches!(
+            c,
+            Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins
+            }
+        )));
+    }
+
+    #[test]
     fn mulligan_completion_kicks_off_investigation_phase() {
         // After the last investigator mulligans, setup ends and the
         // Investigation phase begins (Rules Reference p.27: no action
@@ -1542,15 +1655,14 @@ mod investigation_phase_tests {
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
-            .build();
-        state.turn_order = vec![InvestigatorId(1)];
-        // Mid-Investigation invariant (slice 1a): push the InvestigationPhase
-        // anchor that investigation_phase would have left on the stack.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            .with_turn_order([InvestigatorId(1)])
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
 
         let mut events = Vec::new();
         let outcome = {
@@ -1610,15 +1722,14 @@ mod investigation_phase_tests {
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
-            .build();
-        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
-        // Mid-Investigation invariant (slice 1a): push the InvestigationPhase
-        // anchor that investigation_phase would have left on the stack.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
 
         let mut events = Vec::new();
         let outcome = {
@@ -2603,20 +2714,19 @@ mod upkeep_phase_tests {
         inv.cards_in_play = vec![card];
         let res_before = inv.resources;
         let hand_before = inv.hand.len();
-        let mut state = GameStateBuilder::default()
+        let state = GameStateBuilder::default()
             .with_investigator(inv)
             .with_phase(Phase::Investigation)
-            .build();
-        state.turn_order = vec![id];
-        state.active_investigator = Some(id);
-        state.round = 1;
-        // Mid-Investigation invariant (slice 1a): push the InvestigationPhase
-        // anchor that investigation_phase would have left on the stack.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            .with_turn_order([id])
+            .with_active_investigator(id)
+            .with_round(1)
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
+            })
+            .with_investigator_turn(id)
+            .build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
@@ -2895,15 +3005,15 @@ mod enemy_phase_tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
-            .build();
-        // Mid-Investigation invariant (slice 1a): the InvestigationPhase anchor
-        // is on the stack all phase. These tests construct the state directly
-        // (bypassing investigation_phase), so push it explicitly.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            // These tests construct the state directly (bypassing
+            // investigation_phase), so stage both explicitly.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
         let mut events = Vec::new();
         let outcome = {
             // end_turn may push the next phase's Entry anchor (slice 1b); drive
@@ -2955,15 +3065,15 @@ mod enemy_phase_tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
-            .build();
-        // Mid-Investigation invariant (slice 1a): the InvestigationPhase anchor
-        // is on the stack all phase. These tests construct the state directly
-        // (bypassing investigation_phase), so push it explicitly.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            // These tests construct the state directly (bypassing
+            // investigation_phase), so stage both explicitly.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
         let mut events = Vec::new();
         let outcome = {
             // end_turn may push the next phase's Entry anchor (slice 1b); drive

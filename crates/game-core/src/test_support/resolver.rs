@@ -763,6 +763,7 @@ mod tests {
             .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
             })
+            .with_investigator_turn(id)
             .session()
             .apply(Action::Player(PlayerAction::EndTurn))
             .resolve_choices(|c| {
