@@ -578,7 +578,6 @@ pub(super) fn fire_attacks_of_opportunity(cx: &mut Cx, investigator: Investigato
 /// resolve in deterministic [`EnemyId`] order (player-pick is #143/K4). `AoO`
 /// attackers never exhaust (RR p.7) — honored by
 /// [`EnemyAttackSource::AttackOfOpportunity`].
-#[allow(dead_code)] // TODO(#293): wired into handlers in Tasks 3–7
 pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let attackers: Vec<EnemyId> = cx
         .state

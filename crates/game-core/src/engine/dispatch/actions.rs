@@ -240,9 +240,13 @@ pub(super) fn engage(
 /// opportunity before the move resolves, and engaged enemies move
 /// with the investigator. Both behaviors land alongside enemy state
 /// in #67; this handler covers only the bare movement.
-// Pre-existing bulk (99/100 lines before the Cx migration); the longer
-// `cx.state.` qualifier nudged it past the limit without adding logic.
-#[allow(clippy::too_many_lines)]
+///
+/// The `AoO` loop now runs as an [`ActionResolution`] frame (#293): the
+/// frame is pushed, then [`combat::drive_aoo`] drives the loop. If a
+/// cancel/soak window opens the loop suspends; `drive` resumes the
+/// frame once the window closes, calling [`move_primary_effect`].
+///
+/// [`ActionResolution`]: crate::state::Continuation::ActionResolution
 pub(super) fn move_action(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -328,26 +332,45 @@ pub(super) fn move_action(
         return rejected;
     }
 
-    // Move triggers attacks of opportunity from each ready engaged
-    // enemy. Per the Rules Reference, this happens BEFORE the move
-    // resolves.
-    super::combat::fire_attacks_of_opportunity(cx, investigator);
+    // Park the move over its attack-of-opportunity loop (#293): push the
+    // resume frame, then drive the AoO. If a cancel/soak window opens the loop
+    // suspends here; otherwise `drive` resumes the frame and relocates.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::ActionResolution {
+            investigator,
+            resume: crate::state::ActionResume::Move { destination },
+        });
+    super::combat::drive_aoo(cx, investigator)
+}
 
-    // If AoO defeated the investigator, the move is cancelled. The
-    // action point and AoO events stay; the investigator (and any
-    // engaged enemies) don't change location.
-    let inv_after_aoo = cx
+/// The relocation half of a Move, run after its attack-of-opportunity loop
+/// completes (#293). Re-derives `from` from the live `current_location` (the `AoO`
+/// never moves the actor) and re-checks the destination is still connected —
+/// the §D primary-precondition re-check — suppressing the move (returns `Done`)
+/// if it no longer holds. Engaged enemies move with the investigator; the
+/// entered location's Forced on-enter abilities become the move's outcome.
+pub(super) fn move_primary_effect(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    destination: LocationId,
+) -> EngineOutcome {
+    let Some(from) = cx
         .state
         .investigators
         .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "Move: investigator {investigator:?} disappeared between AoO and move resolution; \
-             this is a state-corruption invariant violation"
-            )
-        });
-    if inv_after_aoo.status != Status::Active {
-        return EngineOutcome::Done;
+        .and_then(|inv| inv.current_location)
+    else {
+        return EngineOutcome::Done; // actor gone/locationless: suppress
+    };
+    let still_connected = cx
+        .state
+        .locations
+        .get(&from)
+        .is_some_and(|l| l.connections.contains(&destination))
+        && cx.state.locations.contains_key(&destination);
+    if !still_connected {
+        return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
     // Engaged enemies move with the investigator. Capture the
@@ -364,7 +387,7 @@ pub(super) fn move_action(
     cx.state
         .investigators
         .get_mut(&investigator)
-        .expect("investigator existence checked above")
+        .expect("investigator existence checked above via current_location")
         .current_location = Some(destination);
     for enemy_id in engaged {
         if let Some(enemy) = cx.state.enemies.get_mut(&enemy_id) {
@@ -709,4 +732,158 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         None,
         0, // no weapon/effect modifier on a base Evade
     )
+}
+
+#[cfg(test)]
+mod actions_tests {
+    use crate::action::{Action, PlayerAction};
+    use crate::engine::apply;
+    use crate::event::Event;
+    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::{assert_event, assert_no_event};
+
+    /// Build a Move scenario: investigator at L1, L1 connected to L2,
+    /// 3 actions, Investigation phase, active investigator, with one
+    /// engaged ready enemy at the same location.
+    fn move_scenario_with_enemy(
+        attack_damage: u8,
+        inv_health: u8,
+    ) -> (
+        InvestigatorId,
+        LocationId,
+        LocationId,
+        EnemyId,
+        crate::state::GameState,
+    ) {
+        let inv_id = InvestigatorId(1);
+        let l1 = LocationId(10);
+        let l2 = LocationId(11);
+        let enemy_id = EnemyId(100);
+
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(l1);
+        inv.actions_remaining = 3;
+        inv.max_health = inv_health;
+        inv.damage = 0;
+
+        let mut loc1 = test_location(10, "L1");
+        loc1.connections = vec![l2];
+        let loc2 = test_location(11, "L2");
+
+        let mut enemy = test_enemy(100, "Ghoul");
+        enemy.current_location = Some(l1);
+        enemy.engaged_with = Some(inv_id);
+        enemy.attack_damage = attack_damage;
+        enemy.attack_horror = 0;
+        enemy.exhausted = false;
+
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc1)
+            .with_location(loc2)
+            .with_enemy(enemy)
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .build();
+
+        (inv_id, l1, l2, enemy_id, state)
+    }
+
+    #[test]
+    fn move_with_lethal_aoo_suppresses_relocation_but_keeps_spent_action() {
+        // An engaged enemy whose AoO defeats the investigator: the move is
+        // suppressed, the action point + AoO damage persist.
+        // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
+        //
+        // Note: `apply_investigator_defeat` clears `current_location` to `None`
+        // on defeat — the investigator is removed from their location as part of
+        // defeat resolution. The key invariant is that no `InvestigatorMoved`
+        // event fires and the investigator does NOT appear at the destination.
+        let (inv_id, _l1, l2, _enemy_id, state) = move_scenario_with_enemy(1, 1);
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: l2,
+            }),
+        );
+
+        assert_eq!(result.outcome, crate::engine::EngineOutcome::Done);
+        // Action was still spent.
+        assert_event!(
+            result.events,
+            Event::ActionsRemainingChanged { investigator, new_count: 2 }
+                if *investigator == inv_id
+        );
+        // Move is suppressed — investigator did NOT reach L2.
+        assert_ne!(
+            result.state.investigators[&inv_id].current_location,
+            Some(l2),
+            "move suppressed: investigator must not appear at destination"
+        );
+        assert_eq!(
+            result.state.investigators[&inv_id].actions_remaining,
+            2,
+            "action still spent"
+        );
+        // Investigator is no longer Active (defeated by AoO).
+        assert_ne!(
+            result.state.investigators[&inv_id].status,
+            crate::state::Status::Active,
+            "investigator not Active after lethal AoO"
+        );
+        // No InvestigatorMoved emitted.
+        assert_no_event!(result.events, Event::InvestigatorMoved { .. });
+    }
+
+    #[test]
+    fn move_with_nonlethal_aoo_relocates_after_the_attack() {
+        // Engaged enemy, 1 damage, investigator survives (8 health):
+        // AoO deals damage, then the move resolves.
+        // No registry installed → no cancel/soak windows → no suspension.
+        let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
+
+        let result = apply(
+            state,
+            Action::Player(PlayerAction::Move {
+                investigator: inv_id,
+                destination: l2,
+            }),
+        );
+
+        assert_eq!(result.outcome, crate::engine::EngineOutcome::Done);
+        // AoO damage landed.
+        assert_event!(
+            result.events,
+            Event::DamageTaken { investigator, amount: 1 }
+                if *investigator == inv_id
+        );
+        // Move proceeded: investigator is at L2.
+        assert_eq!(
+            result.state.investigators[&inv_id].current_location,
+            Some(l2),
+            "investigator must have relocated to L2"
+        );
+        assert_event!(
+            result.events,
+            Event::InvestigatorMoved { investigator, from: _, to }
+                if *investigator == inv_id && *to == l2
+        );
+        // AoO damage is visible.
+        assert_eq!(
+            result.state.investigators[&inv_id].damage,
+            1,
+            "investigator damage == 1 after nonlethal AoO"
+        );
+        // Engaged enemy moved with investigator to L2.
+        assert_eq!(
+            result.state.enemies[&enemy_id].current_location,
+            Some(l2),
+            "engaged enemy must follow to L2"
+        );
+        // AoO does not exhaust the attacker (RR p.7).
+        assert!(!result.state.enemies[&enemy_id].exhausted);
+    }
 }

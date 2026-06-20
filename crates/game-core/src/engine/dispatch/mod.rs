@@ -155,12 +155,16 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 ///   [`phases::anchor_on_child_pop`], which runs its resume-keyed chunk and,
 ///   at a phase boundary, transitions by popping itself + pushing the next
 ///   phase's anchor (`Entry`) — the loop then advances that;
+/// - an [`ActionResolution`](crate::state::Continuation::ActionResolution) frame
+///   on top is resumed via [`resume_action_resolution`], which runs the
+///   action's primary effect (or suppresses it if the actor was defeated);
 /// - the loop stops with `AwaitingInput` when an advance suspends, and with
 ///   `Done` when an [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn)
 ///   frame is on top (the open turn — slice 2a-i, #393), at terminal (empty
 ///   stack), or when an advance makes no progress (a parked phase, e.g.
 ///   Investigation with no active investigator).
 pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
+    use crate::state::Continuation;
     if !matches!(outcome, EngineOutcome::Done) {
         return outcome;
     }
@@ -180,11 +184,51 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other,
                 }
             }
+            Some(Continuation::ActionResolution { .. }) => {
+                match resume_action_resolution(cx) {
+                    EngineOutcome::Done => {
+                        // Primary ran (or was suppressed) + frame popped; loop
+                        // on — the InvestigatorTurn frame beneath is now top.
+                    }
+                    other => return other, // primary effect suspended (e.g. skill test)
+                }
+            }
             // Open turn idle (an `InvestigatorTurn` frame on top), terminal
             // (empty), or a suspension on top (which a handler already surfaced
             // as AwaitingInput before reaching here).
             _ => return EngineOutcome::Done,
         }
+    }
+}
+
+/// Resume a parked [`ActionResolution`](crate::state::Continuation::ActionResolution)
+/// frame (#293): pop it, run the §D re-validation gate, then dispatch to the
+/// action's primary effect. The gate suppresses the primary (returns `Done`,
+/// leaving the spent action + AoO/window effects in place) if the actor was
+/// defeated mid-action; each primary effect additionally re-checks its own
+/// target precondition. Called only by [`drive`] with such a frame on top.
+fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
+    use crate::state::{ActionResume, Continuation};
+    let Some(Continuation::ActionResolution { investigator, resume }) =
+        cx.state.continuations.pop()
+    else {
+        unreachable!("resume_action_resolution: top frame is not an ActionResolution");
+    };
+    // §D re-validation: actor still Active? If not, suppress the primary.
+    let active = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .is_some_and(|inv| inv.status == crate::state::Status::Active);
+    if !active {
+        return EngineOutcome::Done;
+    }
+    match resume {
+        ActionResume::Move { destination } => {
+            actions::move_primary_effect(cx, investigator, destination)
+        }
+        // Investigate/Resource/Engage/Draw arms land in Tasks 4–7.
+        other => unreachable!("resume_action_resolution: {other:?} not yet wired (K1 tasks 4-7)"),
     }
 }
 
