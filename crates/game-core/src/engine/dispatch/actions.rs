@@ -418,8 +418,9 @@ pub(super) fn move_action(
 ///
 /// Move / Fight / Evade defer the action-point check to `charge_action`
 /// (which folds in the Frozen-in-Fear surcharge), so `move_action` keeps
-/// its own prefix; Fight and Evade reach this via
-/// [`validate_engaged_action`], which then adds the enemy checks.
+/// its own prefix; `fight` calls this directly then does its own co-location
+/// check (#401), while `evade` reaches it via [`validate_engaged_action`],
+/// which adds the engagement check.
 pub(crate) fn validate_basic_action<'a>(
     state: &'a GameState,
     action_name: &'static str,
@@ -466,21 +467,20 @@ pub(crate) fn validate_basic_action<'a>(
     Ok(inv)
 }
 
-/// Validate the prefix shared by Fight and Evade: the basic-action
-/// preconditions (via [`validate_basic_action`]) plus enemy exists and
-/// engaged with the named enemy. Returns the borrowed enemy so the
-/// caller can pick which difficulty (fight / evade) and read any other
-/// fields it needs.
+/// Validate the Evade prefix: the basic-action preconditions (via
+/// [`validate_basic_action`]) plus enemy exists and is engaged with the
+/// named enemy. Returns the borrowed enemy so the caller can read the evade
+/// difficulty and any other fields it needs. (Only `evade` uses this — Evade
+/// is engagement-only per RR p.11; `fight` is co-location-gated since #401 and
+/// does its own check.)
 ///
 /// On `Err`, returns the rejection; the caller should propagate it
 /// without further state mutation. State-corruption invariants
 /// (active investigator missing from map) panic via `unreachable!`.
 ///
-/// Does NOT validate the chosen difficulty is non-negative — the
-/// caller must do that after picking, because Fight and Evade each
-/// only care about one of the two values, and validating both
-/// upfront would reject legitimate states (an enemy with `fight: -1`
-/// the investigator only ever Evades).
+/// Does NOT validate the evade difficulty is non-negative — the caller does
+/// that after the engagement check, so a malformed `evade: -1` rejects with a
+/// clear reason rather than being silently clamped.
 fn validate_engaged_action<'a>(
     state: &'a GameState,
     action_name: &'static str,
