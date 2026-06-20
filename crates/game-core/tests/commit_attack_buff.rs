@@ -17,9 +17,9 @@ use game_core::dsl::{boost_attack_damage, on_commit, Ability};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, Phase, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{test_enemy, test_investigator, GameStateBuilder};
+use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::{assert_event, Action, InputResponse, PlayerAction};
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
@@ -83,20 +83,24 @@ fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
     let id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
 
+    let loc_id = LocationId(10);
     let mut inv = test_investigator(1);
     inv.skills.combat = 3;
     inv.hand = vec![CardCode::new(SKILL)];
+    inv.current_location = Some(loc_id);
 
     let mut enemy = test_enemy(100, "Ghoul");
     enemy.fight = 2;
     enemy.max_health = 10;
     enemy.engaged_with = Some(id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_turn_order([id])
         .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
         .with_enemy(enemy)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())

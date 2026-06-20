@@ -107,10 +107,13 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
 }
 
 /// Append the combat / engage actions legal for `investigator`, mirroring the
-/// `fight`/`evade`/`engage` handlers (slice 2a-ii-2, #393). Fight/Evade target
-/// enemies *engaged with* the investigator — matching the current handler
-/// (`validate_engaged_action`); the rules allow Fight against any co-located
-/// enemy (RR p.12), tracked in #401, which will widen this domain in lockstep.
+/// `fight`/`evade`/`engage` handlers (slice 2a-ii-2, #393). The three target
+/// distinct, overlapping enemy sets:
+/// - **Fight**: any enemy at the investigator's location, engaged or not (RR
+///   p.12, #401 — co-location, like Engage).
+/// - **Evade**: only an enemy engaged with the investigator (RR p.11).
+/// - **Engage**: a co-located enemy not already engaged with the investigator
+///   (including one engaged with another investigator; RR p.11).
 fn push_combat_engage_actions(
     state: &GameState,
     investigator: InvestigatorId,
@@ -130,34 +133,31 @@ fn push_combat_engage_actions(
         action_cost(state, investigator, crate::dsl::ActionClass::Evade) <= actions_remaining;
     let inv_location = inv.current_location;
 
-    // One pass over the enemies. An enemy is either engaged with the
-    // investigator — a Fight/Evade target — or it is not, in which case it is an
-    // Engage target if it shares the investigator's location. The two cases are
-    // mutually exclusive (Fight/Evade need `engaged_with == me`; Engage needs
-    // `!= me`), so a single `if`/`else` covers both.
+    // One pass over the enemies; the three actions' conditions are independent
+    // and can overlap (a co-located engaged enemy is both a Fight and an Evade
+    // target; a co-located unengaged enemy is both a Fight and an Engage target).
+    // The `inv_location.is_some()` guard avoids a `None == None` co-location match
+    // when both are locationless (mirrors the fight/engage handlers' guard).
     for (&enemy_id, enemy) in &state.enemies {
-        if enemy.engaged_with == Some(investigator) {
-            // Fight / Evade: gated on a non-negative difficulty (the handler
-            // rejects a negative one) and affordability.
-            if fight_affordable && enemy.fight >= 0 {
-                out.push(PlayerAction::Fight {
-                    investigator,
-                    enemy: enemy_id,
-                });
-            }
-            if evade_affordable && enemy.evade >= 0 {
-                out.push(PlayerAction::Evade {
-                    investigator,
-                    enemy: enemy_id,
-                });
-            }
-        } else if inv_location.is_some() && enemy.current_location == inv_location {
-            // Engage: at the investigator's location, not already engaged with
-            // them — including an enemy engaged with *another* investigator
-            // (engaging pulls it across; RR p.11). Engage costs 1 action, already
-            // gated by the `validate_basic_action` prologue above. The
-            // `inv_location.is_some()` guard avoids a `None == None` match when
-            // both are locationless (mirrors the handler's guard).
+        let co_located = inv_location.is_some() && enemy.current_location == inv_location;
+        let engaged_with_me = enemy.engaged_with == Some(investigator);
+
+        // Fight: any co-located enemy, non-negative difficulty, affordable.
+        if co_located && fight_affordable && enemy.fight >= 0 {
+            out.push(PlayerAction::Fight {
+                investigator,
+                enemy: enemy_id,
+            });
+        }
+        // Evade: only an enemy engaged with the investigator.
+        if engaged_with_me && evade_affordable && enemy.evade >= 0 {
+            out.push(PlayerAction::Evade {
+                investigator,
+                enemy: enemy_id,
+            });
+        }
+        // Engage: a co-located enemy not already engaged with the investigator.
+        if co_located && !engaged_with_me {
             out.push(PlayerAction::Engage {
                 investigator,
                 enemy: enemy_id,
@@ -340,15 +340,61 @@ mod tests {
     }
 
     #[test]
-    fn no_fight_or_evade_for_an_unengaged_enemy() {
+    fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
+        // #401: Fight targets any co-located enemy (RR p.12); Evade is
+        // engagement-only (RR p.11). An unengaged enemy at the investigator's
+        // location is a Fight target but not an Evade target.
         let mut state = open_turn_state();
+        let loc = crate::test_support::test_location(10, "Study");
+        let loc_id = loc.id;
+        state.locations.insert(loc_id, loc);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(loc_id);
         state
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
             .actions_remaining = 3;
-        // Enemy present but engaged with nobody → not a Fight/Evade target.
-        let e = crate::test_support::test_enemy(7, "Ghoul");
+        let mut e = crate::test_support::test_enemy(7, "Ghoul");
+        e.current_location = Some(loc_id); // co-located, but engaged with nobody
+        state.enemies.insert(e.id, e);
+
+        let actions = legal_actions(&state);
+        assert!(actions.contains(&PlayerAction::Fight {
+            investigator: InvestigatorId(1),
+            enemy: crate::state::EnemyId(7),
+        }));
+        assert!(!actions.contains(&PlayerAction::Evade {
+            investigator: InvestigatorId(1),
+            enemy: crate::state::EnemyId(7),
+        }));
+    }
+
+    #[test]
+    fn no_combat_for_an_enemy_at_a_different_location() {
+        // An enemy elsewhere (and unengaged) is neither a Fight nor an Evade
+        // target (#401: Fight needs co-location).
+        let mut state = open_turn_state();
+        let here = crate::test_support::test_location(10, "Study");
+        let there = crate::test_support::test_location(11, "Attic");
+        let (here_id, there_id) = (here.id, there.id);
+        state.locations.insert(here_id, here);
+        state.locations.insert(there_id, there);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(here_id);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .actions_remaining = 3;
+        let mut e = crate::test_support::test_enemy(7, "Ghoul");
+        e.current_location = Some(there_id);
         state.enemies.insert(e.id, e);
         assert!(!legal_actions(&state)
             .iter()

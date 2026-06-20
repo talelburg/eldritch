@@ -47,6 +47,7 @@ fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> game_core::GameState
     enemy.fight = 3;
     enemy.max_health = 5; // survives so we can read `damage`
     enemy.engaged_with = Some(INV);
+    enemy.current_location = Some(LOC); // co-located: Fight is location-gated (#401)
 
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -220,6 +221,7 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
     enemy.fight = 3;
     enemy.max_health = 5;
     enemy.engaged_with = Some(INV);
+    enemy.current_location = Some(LOC); // co-located: Fight is location-gated (#401)
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
