@@ -451,8 +451,21 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
      call `investigation_phase` directly rather than pushing
      `InvestigationPhase{Entry}`; behaviour-identical, but two conventions).
 2. **`InvestigatorTurn` frame (2a) + legal-action enumerator** — open-turn becomes a
-   frame; guard ladder + action `match` deleted; typed `PlayerAction` validated
-   against the offered set; `pending_end_turn` absorbed.
+   frame; typed `PlayerAction` validated against the offered set; `pending_end_turn`
+   absorbed. Splits into two behaviour-preserving sub-slices:
+   - **2a-i — the frame + cursor absorption. ✅ shipped (PR #400).** The open turn is a
+     `Continuation::InvestigatorTurn { investigator, ending }` pushed above the
+     `InvestigationPhase` anchor when the `InvestigatorTurnBegins` window closes; `drive`
+     idles on it (`is_open_turn` removed); `resume_end_turn` pops it. `pending_end_turn`
+     folded onto the frame's `ending` flag (field removed). Idle outcome stays `Done`
+     (typed actions survive; `AwaitingInput` surfacing is 2b). **No `AfterTurn` anchor-
+     resume variant needed** — `resume_end_turn` is always called directly (the three
+     end-of-turn sites), never re-entered via the anchor's `on_child_pop`, so the anchor
+     parks at `TurnBegins` beneath the frame. (Legacy build-then-push test setups for
+     other phases tracked in #399.)
+   - **2a-ii — the legal-action enumerator** + validate-typed-against-offered (§E). The
+     `InvestigatorTurn` frame emits the enumeration as `OptionId`s with an internal
+     id→action map. (Not yet shipped.)
 3. **`AttackLoop` frame (cursor lift)** — `PendingEnemyAttack` +
    `enemy_attack_pending` → frame/anchor; enemy-phase attacks unchanged in behaviour.
 4. **Keystone mid-action park** — actions run as sub-resolution frames; AoO pushes
