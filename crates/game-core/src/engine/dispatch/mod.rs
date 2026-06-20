@@ -244,7 +244,50 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     // driver must add its own boundary check; there's no fallback
     // here.
 
-    outcome
+    // Run the main loop (slice 1b, #393): advance any `*Phase` anchor a handler
+    // left on top (a phase transition), carrying the cascade forward until it
+    // blocks on a suspension, idles at the open turn, or reaches terminal.
+    drive(cx, outcome)
+}
+
+/// The uniform main loop (slice 1b, #393). Given the action's `outcome`,
+/// advance the top continuation frame until the engine blocks or idles:
+///
+/// - non-`Done` `outcome` (a suspension / rejection from the action itself)
+///   passes straight through;
+/// - a `*Phase` anchor on top (other than the open turn) is advanced via
+///   [`phases::anchor_on_child_pop`], which runs its resume-keyed chunk and,
+///   at a phase boundary, transitions by popping itself + pushing the next
+///   phase's anchor (`Entry`) — the loop then advances that;
+/// - the loop stops with `AwaitingInput` when an advance suspends, and with
+///   `Done` at the open turn (`InvestigationPhase{TurnBegins}`), at terminal
+///   (empty stack), or when an advance makes no progress (a parked phase, e.g.
+///   Investigation with no active investigator).
+pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
+    if !matches!(outcome, EngineOutcome::Done) {
+        return outcome;
+    }
+    loop {
+        let top = cx.state.continuations.last().cloned();
+        match top {
+            Some(ref c) if c.is_phase_anchor() && !c.is_open_turn() => {
+                match phases::anchor_on_child_pop(cx) {
+                    EngineOutcome::Done => {
+                        // No-progress guard: a parked phase (e.g. Investigation
+                        // with no active investigator) leaves the same anchor on
+                        // top — break rather than spin.
+                        if cx.state.continuations.last() == top.as_ref() {
+                            return EngineOutcome::Done;
+                        }
+                    }
+                    other => return other,
+                }
+            }
+            // Open turn idle, terminal (empty), or a suspension on top (which a
+            // handler already surfaced as AwaitingInput before reaching here).
+            _ => return EngineOutcome::Done,
+        }
+    }
 }
 
 /// Apply an [`EngineRecord`] to the state, pushing events.

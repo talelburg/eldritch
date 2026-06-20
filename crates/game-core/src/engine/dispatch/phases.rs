@@ -692,21 +692,66 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });
-    // Mythos → Investigation; calls investigation_phase. Only the
-    // Investigation→Enemy transition can suspend (hunter movement), so
-    // this cascade always completes.
-    let outcome = step_phase(cx);
-    debug_assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "unexpected suspension in Mythos→Investigation transition"
-    );
+    // Mythos → Investigation (slice 1b, #393): advance `state.phase` and push the
+    // next phase's anchor at `Entry`. The main loop's `drive` advances it (runs
+    // investigation_phase's opening). Replaces the former synchronous
+    // `step_phase(cx)` call — the transition is now loop-driven.
+    cx.state.phase = Phase::Investigation;
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::InvestigationPhase {
+            resume: crate::state::InvestigationResume::Entry,
+        });
+}
+
+/// Advance a freshly-entered phase anchor (slice 1b, #393): if the top frame is
+/// a `*Phase` anchor at `Entry`, pop the placeholder and run that phase's
+/// opening via its existing driver (which pushes the running anchor at its first
+/// boundary resume + the phase's first child). Returns `None` when the top is
+/// not an `Entry` anchor, so [`anchor_on_child_pop`] falls through to its
+/// boundary dispatch.
+fn advance_phase_entry(
+    cx: &mut Cx,
+    anchor: Option<&crate::state::Continuation>,
+) -> Option<EngineOutcome> {
+    use crate::state::{
+        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
+    };
+    match anchor {
+        Some(Continuation::MythosPhase {
+            resume: MythosResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            Some(mythos_phase(cx))
+        }
+        Some(Continuation::InvestigationPhase {
+            resume: InvestigationResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            investigation_phase(cx);
+            Some(EngineOutcome::Done)
+        }
+        Some(Continuation::EnemyPhase {
+            resume: EnemyResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            Some(enemy_phase(cx))
+        }
+        Some(Continuation::UpkeepPhase {
+            resume: UpkeepResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            Some(upkeep_phase(cx))
+        }
+        _ => None,
+    }
 }
 
 /// Run the top `*Phase` anchor's continuation after one of its framework
-/// windows closed (slice 1a, #393). The window has already been popped by the
-/// close path, so the anchor is now the top frame; its `resume` selects the
-/// relocated body. Suspension-agnostic: a body that itself suspends returns
+/// windows closed (slice 1a, #393), or advance it from `Entry` (slice 1b, via
+/// [`advance_phase_entry`]). The window has already been popped by the close
+/// path, so the anchor is now the top frame; its `resume` selects the relocated
+/// body. Suspension-agnostic: a body that itself suspends returns
 /// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
 /// `&mut cx`.
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
@@ -714,6 +759,11 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
     };
     let anchor = cx.state.continuations.last().cloned();
+    // `Entry` advances (slice 1b, #393) run the phase opening; delegated so this
+    // function stays the boundary-dispatch it was in slice 1a.
+    if let Some(out) = advance_phase_entry(cx, anchor.as_ref()) {
+        return out;
+    }
     match anchor {
         Some(Continuation::UpkeepPhase {
             resume: UpkeepResume::Begins,
@@ -1714,6 +1764,44 @@ mod mythos_phase_tests {
     }
 
     #[test]
+    fn mythos_drives_from_entry_via_the_loop() {
+        // slice 1b: a MythosPhase{Entry} anchor advanced by `drive` runs the
+        // phase opening (PhaseStarted + round bump + push the EncounterDraw
+        // loop) and suspends at the first drawer prompt — same as the old
+        // synchronous mythos_phase entry.
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .with_phase_anchor(crate::state::Continuation::MythosPhase {
+                resume: crate::state::MythosResume::Entry,
+            })
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        let mut events = Vec::new();
+        let outcome = super::super::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "drive advances the Entry anchor and suspends at the draw prompt; got {outcome:?}",
+        );
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::PhaseStarted {
+                phase: Phase::Mythos
+            }
+        )));
+        assert!(state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, crate::state::Continuation::EncounterDraw { .. })));
+    }
+
+    #[test]
     fn mythos_anchor_pushed_during_phase() {
         // The Mythos driver pushes its anchor at entry; it sits beneath the
         // encounter-draw loop while the phase is suspended (slice 1a).
@@ -1746,14 +1834,16 @@ mod mythos_phase_tests {
         state.turn_order.clear();
         let mut events = Vec::new();
 
-        let outcome = mythos_phase(&mut Cx {
+        // No drawers → MythosAfterDraws auto-skips, mythos_phase_end pushes the
+        // Investigation anchor; `drive` then advances it (slice 1b) — completing
+        // the Mythos→Investigation transition that was synchronous in slice 1a.
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
-        });
+        };
+        let outcome = mythos_phase(&mut cx);
+        let outcome = super::super::drive(&mut cx, outcome);
 
-        // No drawers → open_fast_window runs for MythosAfterDraws,
-        // which auto-skips (no Fast eligibility), runs continuation
-        // (mythos_phase_end), which steps into Investigation.
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.current_encounter_drawer(), None);
         assert_eq!(state.phase, Phase::Investigation);
@@ -1811,10 +1901,15 @@ mod mythos_phase_tests {
             });
         let mut events = Vec::new();
 
-        mythos_phase_end(&mut Cx {
+        // mythos_phase_end pops the Mythos anchor + pushes the Investigation
+        // anchor (Entry); `drive` advances it to run investigation_phase (slice
+        // 1b) — completing the transition.
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
-        });
+        };
+        mythos_phase_end(&mut cx);
+        let _ = super::super::drive(&mut cx, EngineOutcome::Done);
 
         assert!(
             !state
