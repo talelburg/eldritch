@@ -25,7 +25,17 @@ pub fn legal_actions(state: &GameState) -> Vec<PlayerAction> {
     push_basic_actions(state, investigator, &mut actions);
     push_combat_engage_actions(state, investigator, &mut actions);
     push_card_actions(state, investigator, &mut actions);
+    push_act_actions(state, investigator, &mut actions);
     actions
+}
+
+/// Append the `AdvanceAct` action if legal (slice 2a-ii-4, #393) — delegated to
+/// `check_advance_act`, registry-free (act decks are scenario state, not card
+/// data).
+fn push_act_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<PlayerAction>) {
+    if crate::engine::dispatch::act_agenda::check_advance_act(state, investigator).is_ok() {
+        out.push(PlayerAction::AdvanceAct { investigator });
+    }
 }
 
 /// Append the card actions legal for `investigator` — `PlayCard` and (Task 2)
@@ -236,6 +246,50 @@ mod tests {
             })
             .with_investigator_turn(InvestigatorId(1))
             .build()
+    }
+
+    /// An open-turn state with an advanceable act (threshold `t`) and the
+    /// investigator holding `clues`.
+    fn open_turn_with_act(threshold: u8, clues: u8) -> crate::state::GameState {
+        use crate::state::{Act, CardCode};
+        let mut state = open_turn_state();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .clues = clues;
+        state.act_deck = vec![Act {
+            code: CardCode("_test_act".into()),
+            clue_threshold: threshold,
+            resolution: None,
+            round_end_advance: None,
+        }];
+        state
+    }
+
+    #[test]
+    fn advance_act_offered_when_clues_meet_threshold() {
+        let state = open_turn_with_act(2, 2);
+        assert!(legal_actions(&state).contains(&PlayerAction::AdvanceAct {
+            investigator: InvestigatorId(1),
+        }));
+    }
+
+    #[test]
+    fn advance_act_absent_when_clues_insufficient() {
+        let state = open_turn_with_act(2, 1);
+        assert!(!legal_actions(&state).contains(&PlayerAction::AdvanceAct {
+            investigator: InvestigatorId(1),
+        }));
+    }
+
+    #[test]
+    fn advance_act_absent_with_no_act_deck() {
+        // open_turn_state has an empty act_deck → AdvanceAct not offered.
+        let state = open_turn_state();
+        assert!(!legal_actions(&state).contains(&PlayerAction::AdvanceAct {
+            investigator: InvestigatorId(1),
+        }));
     }
 
     /// An enemy engaged with investigator 1 at `loc`, ready.
@@ -560,6 +614,27 @@ mod tests {
         let mut engageable = crate::test_support::test_enemy(8, "Rat");
         engageable.current_location = Some(a_id);
         state.enemies.insert(engageable.id, engageable);
+        // An advanceable act (threshold met) → AdvanceAct enumerated; a second
+        // act so advancing is a clean transition, not a terminal resolution.
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .clues = 2;
+        state.act_deck = vec![
+            crate::state::Act {
+                code: crate::state::CardCode("_act1".into()),
+                clue_threshold: 2,
+                resolution: None,
+                round_end_advance: None,
+            },
+            crate::state::Act {
+                code: crate::state::CardCode("_act2".into()),
+                clue_threshold: 99,
+                resolution: None,
+                round_end_advance: None,
+            },
+        ];
 
         for action in legal_actions(&state) {
             let result = crate::apply(state.clone(), crate::Action::Player(action.clone()));
