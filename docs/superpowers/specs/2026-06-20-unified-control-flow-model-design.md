@@ -473,7 +473,9 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
      - **2a-ii-2 — combat/engage. ✅ shipped (PR #405).** Fight per current engaged-only
        handler (#401 widens to co-located later); Evade; Engage incl. enemies engaged
        with others (RR p.11).
-     - **2a-ii-3** — play/activate (PlayCard, ActivateAbility). **2a-ii-4** — AdvanceAct + sweep.
+     - **2a-ii-3 — play/activate. ✅ shipped (PR #406).** PlayCard, ActivateAbility — by
+       delegation to the handlers' `check_play_card`/`check_activate_ability` predicates;
+       registry-gated, so tests live in `crates/cards/tests/`. **2a-ii-4** — AdvanceAct + sweep.
 3. **`AttackLoop` frame (cursor lift)** — `PendingEnemyAttack` +
    `enemy_attack_pending` → frame/anchor; enemy-phase attacks unchanged in behaviour.
 4. **Keystone mid-action park** — actions run as sub-resolution frames; AoO pushes

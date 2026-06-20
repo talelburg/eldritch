@@ -1169,7 +1169,7 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
 /// Used by [`play_card`] (which then runs the mutation block on the
 /// `Ok` payload) and by `any_fast_play_eligible` (which only
 /// inspects `Ok` vs `Err`).
-pub(super) fn check_play_card(
+pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
     hand_index: u8,
@@ -1408,7 +1408,7 @@ fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'stat
 ///
 /// Returns `Ok(ActivateCheckResult)` if the ability is currently
 /// activatable, `Err(reason)` otherwise. Does not mutate state.
-pub(super) fn check_activate_ability(
+pub(crate) fn check_activate_ability(
     state: &GameState,
     investigator: InvestigatorId,
     instance_id: CardInstanceId,
