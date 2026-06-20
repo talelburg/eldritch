@@ -17,7 +17,7 @@ use super::Cx;
 
 mod abilities;
 pub(crate) mod act_agenda;
-mod actions;
+pub(crate) mod actions;
 // pub(super): engine/mod.rs re-exports `suspend_for_native_choice` (pub) for
 // the `cards` crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
 pub(super) mod choice;

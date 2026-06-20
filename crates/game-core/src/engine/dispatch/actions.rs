@@ -420,7 +420,7 @@ pub(super) fn move_action(
 /// (which folds in the Frozen-in-Fear surcharge), so `move_action` keeps
 /// its own prefix; Fight and Evade reach this via
 /// [`validate_engaged_action`], which then adds the enemy checks.
-pub(super) fn validate_basic_action<'a>(
+pub(crate) fn validate_basic_action<'a>(
     state: &'a GameState,
     action_name: &'static str,
     investigator: InvestigatorId,
@@ -529,6 +529,31 @@ pub(super) fn spend_actions(cx: &mut Cx, investigator: InvestigatorId, n: u8) {
     });
 }
 
+/// The action-point cost of `action_class` for `investigator`: base 1 plus any
+/// Frozen-in-Fear `ExtraActionCost` surcharge (Rules Reference; #164). Pure —
+/// reads `card_registry::current()` for the surcharge, falling back to 1 with no
+/// registry installed (bare unit tests). The enumerator uses this for Move/Fight/
+/// Evade affordability; [`charge_action`] uses it then spends.
+pub(crate) fn action_cost(
+    state: &GameState,
+    investigator: InvestigatorId,
+    action_class: crate::dsl::ActionClass,
+) -> u8 {
+    let extra = match crate::card_registry::current() {
+        Some(reg) => {
+            crate::engine::evaluator::pending_action_surcharge(
+                state,
+                reg,
+                investigator,
+                action_class,
+            )
+            .0
+        }
+        None => 0,
+    };
+    1u8.saturating_add(extra)
+}
+
 /// Charge the action cost for `action_class` (base 1 + any Frozen-in-Fear
 /// `ExtraActionCost` surcharge): validate-first, returning `Err(Rejected)`
 /// without mutating if the investigator lacks the points. On `Ok` the
@@ -542,16 +567,19 @@ fn charge_action(
     action_class: crate::dsl::ActionClass,
     action_name: &str,
 ) -> Result<(), EngineOutcome> {
-    let (extra, to_mark) = match crate::card_registry::current() {
-        Some(reg) => crate::engine::evaluator::pending_action_surcharge(
-            cx.state,
-            reg,
-            investigator,
-            action_class,
-        ),
-        None => (0, Vec::new()),
+    let to_mark = match crate::card_registry::current() {
+        Some(reg) => {
+            crate::engine::evaluator::pending_action_surcharge(
+                cx.state,
+                reg,
+                investigator,
+                action_class,
+            )
+            .1
+        }
+        None => Vec::new(),
     };
-    let cost = 1u8.saturating_add(extra);
+    let cost = action_cost(cx.state, investigator, action_class);
     let remaining = cx
         .state
         .investigators

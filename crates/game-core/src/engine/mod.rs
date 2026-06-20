@@ -13,6 +13,7 @@
 mod cx;
 pub use cx::Cx;
 mod dispatch;
+pub mod enumerate;
 pub mod evaluator;
 mod outcome;
 pub(crate) mod pathfinding;
@@ -28,6 +29,7 @@ pub use dispatch::encounter::{
 pub use dispatch::hunters::enemy_can_enter_location;
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
+pub use enumerate::legal_actions;
 pub use evaluator::{effective_shroud, location_id_by_code, EvalContext};
 pub use outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 pub use pathfinding::{shortest_first_steps, shortest_first_steps_with};
