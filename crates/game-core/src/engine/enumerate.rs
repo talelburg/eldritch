@@ -24,7 +24,48 @@ pub fn legal_actions(state: &GameState) -> Vec<PlayerAction> {
     let mut actions = Vec::new();
     push_basic_actions(state, investigator, &mut actions);
     push_combat_engage_actions(state, investigator, &mut actions);
+    push_card_actions(state, investigator, &mut actions);
     actions
+}
+
+/// Append the card actions legal for `investigator` — `PlayCard` and (Task 2)
+/// `ActivateAbility` (slice 2a-ii-3, #393). Both need card data, so they yield
+/// nothing without a registry (matching the handlers, which reject on `None`).
+/// Fidelity is by delegation: the enumerator calls the same `check_play_card` /
+/// `check_activate_ability` the handlers call, plus the `PlayCard` handler's
+/// inline `play_is_prohibited` guard.
+fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<PlayerAction>) {
+    let Some(reg) = crate::card_registry::current() else {
+        return;
+    };
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return;
+    };
+
+    // PlayCard: one option per hand card the handler would accept — playable
+    // (`check_play_card`) and not forbidden by a constant restriction
+    // (`play_is_prohibited`, e.g. Dissonant Voices 01165).
+    let hand_len = inv.hand.len();
+    for idx in 0..hand_len {
+        let hand_index = u8::try_from(idx).unwrap_or(u8::MAX);
+        if let Ok(check) = crate::engine::dispatch::reaction_windows::check_play_card(
+            state,
+            investigator,
+            hand_index,
+        ) {
+            if !crate::engine::evaluator::play_is_prohibited(
+                state,
+                reg,
+                investigator,
+                check.card_type,
+            ) {
+                out.push(PlayerAction::PlayCard {
+                    investigator,
+                    hand_index,
+                });
+            }
+        }
+    }
 }
 
 /// Append the combat / engage actions legal for `investigator`, mirroring the

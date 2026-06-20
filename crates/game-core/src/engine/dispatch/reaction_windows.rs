@@ -1169,7 +1169,7 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
 /// Used by [`play_card`] (which then runs the mutation block on the
 /// `Ok` payload) and by `any_fast_play_eligible` (which only
 /// inspects `Ok` vs `Err`).
-pub(super) fn check_play_card(
+pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
     hand_index: u8,
