@@ -1800,6 +1800,38 @@ mod continuation_stack_tests {
     use crate::test_support::GameStateBuilder;
 
     #[test]
+    fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
+        // slice 1b: the one guard rule keys off this. Phase anchors are inert
+        // (open turn / loop-driven), so typed actions run there.
+        assert!(!Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
+        }
+        .awaits_input());
+        assert!(!Continuation::MythosPhase {
+            resume: MythosResume::Entry,
+        }
+        .awaits_input());
+        // A Fast-play window (Resolution with no pending triggers) is a play
+        // opportunity, not a mandatory prompt — Fast plays stay allowed.
+        assert!(!Continuation::Resolution(ResolutionFrame::new_empty(
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastActorScope::Any,
+        ))
+        .awaits_input());
+        // Every other suspension hits the `_ => true` arm and awaits
+        // ResolveInput. This includes a `Choice` (e.g. a `ChooseOne` OnPlay
+        // event mid-resolution) and a `SubstitutionPrompt`, which the former
+        // eight-block guard ladder did NOT explicitly gate — the unified rule
+        // now correctly rejects typed actions while one is on top.
+        assert!(Continuation::SubstitutionPrompt {
+            investigator: InvestigatorId(1),
+        }
+        .awaits_input());
+        assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
+        assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
+    }
+
+    #[test]
     fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
         let anchors = [
             Continuation::MythosPhase {

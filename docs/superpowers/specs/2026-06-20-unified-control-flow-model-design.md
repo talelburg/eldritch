@@ -427,8 +427,8 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
      (review-confirmed faithful). Added `GameStateBuilder::with_phase_anchor` for the
      ~20 tests that construct mid-phase states directly. Guard ladder, action
      `match`, card-reaction arms untouched.
-   - **1b — uniform main loop + cascade-fold (merges the former 1b/1c).** On
-     exploration the cascade-fold and the loop proved inseparable — "anchor drive"
+   - **1b — uniform main loop + cascade-fold (merges the former 1b/1c). ✅ shipped
+     (PR #398).** On exploration the cascade-fold and the loop proved inseparable — "anchor drive"
      only means something once a loop *invokes* the advance when a child pops, and
      the strand-guard payoff only materializes with loop-driven transitions. So one
      slice: add a `drive(cx)` loop the `apply` entry runs, which **advances the top
@@ -443,6 +443,13 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
      one rule (top frame is a non-anchor suspension ⇒ only `ResolveInput`); the
      **strand-guards** become genuinely impossible (a skill test sits *above* its
      phase anchor) → `debug_assert!`. Sets up slice 2's `InvestigatorTurn`.
+     *Surfaced in review:* the unified guard rule also gates `Choice` /
+     `SubstitutionPrompt` frames that the eight-block ladder never covered —
+     closing a latent hole where a typed action arriving mid-`Choice` (a
+     `ChooseOne` OnPlay) fell through and mutated half-resolved state. A
+     `*Phase`-entry follow-up remains (`start_scenario`/`resume_mulligan` still
+     call `investigation_phase` directly rather than pushing
+     `InvestigationPhase{Entry}`; behaviour-identical, but two conventions).
 2. **`InvestigatorTurn` frame (2a) + legal-action enumerator** — open-turn becomes a
    frame; guard ladder + action `match` deleted; typed `PlayerAction` validated
    against the offered set; `pending_end_turn` absorbed.

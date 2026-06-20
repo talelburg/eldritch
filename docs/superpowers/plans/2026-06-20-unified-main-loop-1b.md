@@ -1,5 +1,7 @@
 # Unified Main Loop + Cascade-Fold (slice 1b) Implementation Plan
 
+> **Status: ✅ shipped (PR #398).** Executed inline as 6 commits; behaviour-preserving, full gauntlet green, review APPROVE (`drive` proven non-spinning). Deviation from plan: the per-phase migration used driver *reuse* (`advance(Entry)` = pop placeholder + call the existing driver) rather than moving driver bodies, and Tasks 3+4 merged (the `step_phase` retirement touches all its call sites at once). Review surfaced a beneficial behaviour change — the unified guard now gates `Choice`/`SubstitutionPrompt` (a latent hole the old ladder missed) — and a `*Phase`-entry unification follow-up (`start_scenario`/`resume_mulligan`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the forward-calling synchronous phase cascade (`step_phase` → driver → `*_phase_end` → `step_phase`) with a uniform `drive(cx)` loop that advances the top continuation frame, so phase transitions are loop-driven (pop anchor + push next anchor) rather than native-stack recursion — and the guard ladder + strand-guards collapse out of it. Behaviour-preserving.
