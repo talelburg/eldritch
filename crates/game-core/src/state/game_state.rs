@@ -520,6 +520,21 @@ pub enum Continuation {
         /// Which child-pop boundary the anchor resumes at.
         resume: UpkeepResume,
     },
+    /// The active investigator's open turn — Rules Reference step 2.2.1
+    /// (slice 2a-i, #393). Pushed *above* the [`Continuation::InvestigationPhase`]
+    /// anchor once the `InvestigatorTurnBegins` window closes; the anchor spans the
+    /// whole phase beneath it. The player takes basic actions (each a typed
+    /// `PlayerAction` today; a sub-resolution frame above this one tomorrow) while
+    /// it is on top; `EndTurn` pops it via
+    /// [`resume_end_turn`](crate::engine). Does **not** await `ResolveInput` — like
+    /// the `TurnBegins` anchor it replaced, typed actions run against it (the idle
+    /// outcome stays `Done`; surfacing the legal-action enumeration as
+    /// `AwaitingInput` is slice 2b/#205).
+    InvestigatorTurn {
+        /// Whose turn this is. Mirrors [`GameState::active_investigator`] while on
+        /// top; the durable source for the end-of-turn rotation.
+        investigator: InvestigatorId,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -599,6 +614,9 @@ impl Continuation {
     pub fn awaits_input(&self) -> bool {
         match self {
             Continuation::Resolution(f) => !f.pending_triggers.is_empty(),
+            // The open turn: typed actions (Move/Investigate/Fight/…) run, so it
+            // is NOT a mandatory ResolveInput prompt (slice 2a-i, #393).
+            Continuation::InvestigatorTurn { .. } => false,
             other => !other.is_phase_anchor(),
         }
     }
@@ -618,6 +636,7 @@ impl Continuation {
             | Continuation::Mulligan { .. }
             | Continuation::EncounterDraw { .. }
             | Continuation::EncounterCard { .. }
+            | Continuation::InvestigatorTurn { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -639,6 +658,7 @@ impl Continuation {
             | Continuation::Mulligan { .. }
             | Continuation::EncounterDraw { .. }
             | Continuation::EncounterCard { .. }
+            | Continuation::InvestigatorTurn { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -1829,6 +1849,20 @@ mod continuation_stack_tests {
         .awaits_input());
         assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
         assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
+    }
+
+    #[test]
+    fn investigator_turn_frame_classification() {
+        let frame = Continuation::InvestigatorTurn {
+            investigator: InvestigatorId(1),
+        };
+        // The open turn is not a framework anchor...
+        assert!(!frame.is_phase_anchor());
+        // ...and it does NOT await ResolveInput — typed actions (Move, Fight, …)
+        // run against it, exactly as they ran against the TurnBegins anchor.
+        assert!(!frame.awaits_input());
+        // It carries no resolution payload.
+        assert!(frame.as_resolution().is_none());
     }
 
     #[test]

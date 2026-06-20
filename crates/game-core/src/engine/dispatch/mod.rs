@@ -371,6 +371,15 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 .into(),
         },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
+        // The open turn does not emit an AwaitingInput prompt in 2a (typed
+        // actions drive it; the enumeration is 2a-ii / surfacing is 2b). A
+        // ResolveInput arriving here is spurious — reject defensively, mirroring
+        // the phase-anchor arm (slice 2a-i, #393).
+        Some(Continuation::InvestigatorTurn { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (the open turn \
+                     takes typed actions, not ResolveInput)"
+                .into(),
+        },
         // Phase anchors (slice 1a, #393) never await input — they only sit
         // beneath framework windows. If one is somehow top, no prompt is
         // outstanding (defensive, mirrors the EncounterCard arm).
