@@ -4563,8 +4563,10 @@ mod tests {
         let rejected = apply(paused.state, Action::Player(PlayerAction::EndTurn));
         match rejected.outcome {
             EngineOutcome::Rejected { reason } => {
+                // slice 1b collapsed the per-suspension guards into one rule with
+                // a unified reason; the specific InputResponse rides the request.
                 assert!(
-                    reason.contains("commit window"),
+                    reason.contains("a prompt is outstanding") && reason.contains("ResolveInput"),
                     "unexpected reason: {reason}",
                 );
             }

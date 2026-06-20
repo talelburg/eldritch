@@ -550,6 +550,59 @@ pub struct ChoiceFrame {
 }
 
 impl Continuation {
+    /// True if this is a `*Phase` anchor (slice 1b, #393): an inert framework
+    /// frame the main loop's `drive` advances, never one that awaits player
+    /// input itself. Everything else on top of the stack *is* awaiting input.
+    #[must_use]
+    pub fn is_phase_anchor(&self) -> bool {
+        matches!(
+            self,
+            Continuation::MythosPhase { .. }
+                | Continuation::InvestigationPhase { .. }
+                | Continuation::EnemyPhase { .. }
+                | Continuation::UpkeepPhase { .. }
+        )
+    }
+
+    /// True if this is the open-turn idle point — `InvestigationPhase` at
+    /// `TurnBegins` (slice 1b, #393). The engine waits for the active
+    /// investigator's *typed* action here, so `drive` must break (not advance)
+    /// rather than spin. Slice 2 replaces this with a real `InvestigatorTurn`
+    /// frame that awaits input.
+    #[must_use]
+    pub fn is_open_turn(&self) -> bool {
+        matches!(
+            self,
+            Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
+            }
+        )
+    }
+
+    /// True if this top frame is a mandatory prompt that only `ResolveInput` may
+    /// advance (slice 1b, #393): a reaction/forced window, skill-test commit,
+    /// choice, hunter/spawn pick, hand-size discard, act round-end, substitution
+    /// prompt, mulligan, or encounter draw.
+    ///
+    /// Two exceptions return `false` — the engine accepts other actions:
+    /// - **`*Phase` anchors** are inert / the open turn, so typed actions run.
+    /// - a **Fast-play window** — a [`Continuation::Resolution`] with *no*
+    ///   pending triggers — is a play *opportunity*, not a mandatory prompt:
+    ///   Fast `PlayCard`/`ActivateAbility` are allowed (the handlers gate
+    ///   eligibility) and `ResolveInput::Skip` closes it. A window *with* pending
+    ///   triggers (reaction or forced) does await `ResolveInput`. This mirrors
+    ///   [`GameState::top_reaction_window`], which skips empty-trigger windows.
+    ///
+    /// (`EncounterCard` is framework-internal and never sits on top at an action
+    /// boundary, so its `true` here is moot.)
+    #[must_use]
+    pub fn awaits_input(&self) -> bool {
+        match self {
+            Continuation::Resolution(f) => !f.pending_triggers.is_empty(),
+            other => !other.is_phase_anchor(),
+        }
+    }
+
     /// The window payload if this frame is a [`Continuation::Resolution`].
     #[must_use]
     pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
@@ -598,6 +651,10 @@ impl Continuation {
 /// Names the framework window whose close re-enters the Mythos driver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MythosResume {
+    /// Just entered (slice 1b, #393): the loop's `advance` runs the phase opening
+    /// (round bump, `PhaseStarted`, steps 1.1–1.4) and replaces this with the
+    /// running anchor.
+    Entry,
     /// Post-step-1.4 (encounter draws done) window closed; run `mythos_phase_end`.
     AfterDraws,
 }
@@ -605,6 +662,8 @@ pub enum MythosResume {
 /// The Investigation-phase child-pop boundary (slice 1a, #393).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InvestigationResume {
+    /// Just entered (slice 1b, #393): the loop's `advance` runs the phase opening.
+    Entry,
     /// Post-2.1 window closed; begin the first investigator's turn.
     Begins,
     /// Post-2.2 turn-begins window closed; the investigator now acts (no
@@ -615,6 +674,8 @@ pub enum InvestigationResume {
 /// The Enemy-phase child-pop boundary (slice 1a, #393).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EnemyResume {
+    /// Just entered (slice 1b, #393): the loop's `advance` runs the phase opening.
+    Entry,
     /// Before-investigator-attacked window closed; resolve this investigator's
     /// attacks (step 3.3).
     BeforeInvestigatorAttacked,
@@ -625,6 +686,8 @@ pub enum EnemyResume {
 /// The Upkeep-phase child-pop boundary (slice 1a, #393).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UpkeepResume {
+    /// Just entered (slice 1b, #393): the loop's `advance` runs the phase opening.
+    Entry,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
 }
@@ -1735,6 +1798,38 @@ mod location_id_counter_tests {
 mod continuation_stack_tests {
     use super::*;
     use crate::test_support::GameStateBuilder;
+
+    #[test]
+    fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
+        // slice 1b: the one guard rule keys off this. Phase anchors are inert
+        // (open turn / loop-driven), so typed actions run there.
+        assert!(!Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
+        }
+        .awaits_input());
+        assert!(!Continuation::MythosPhase {
+            resume: MythosResume::Entry,
+        }
+        .awaits_input());
+        // A Fast-play window (Resolution with no pending triggers) is a play
+        // opportunity, not a mandatory prompt — Fast plays stay allowed.
+        assert!(!Continuation::Resolution(ResolutionFrame::new_empty(
+            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastActorScope::Any,
+        ))
+        .awaits_input());
+        // Every other suspension hits the `_ => true` arm and awaits
+        // ResolveInput. This includes a `Choice` (e.g. a `ChooseOne` OnPlay
+        // event mid-resolution) and a `SubstitutionPrompt`, which the former
+        // eight-block guard ladder did NOT explicitly gate — the unified rule
+        // now correctly rejects typed actions while one is on top.
+        assert!(Continuation::SubstitutionPrompt {
+            investigator: InvestigatorId(1),
+        }
+        .awaits_input());
+        assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
+        assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
+    }
 
     #[test]
     fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {

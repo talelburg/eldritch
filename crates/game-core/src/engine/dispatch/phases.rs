@@ -379,7 +379,17 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
     });
-    step_phase(cx) // Investigation → Enemy; calls enemy_phase
+    // Investigation → Enemy (slice 1b, #393): advance `state.phase` + push the
+    // Enemy anchor at `Entry`. The main loop's `drive` advances it (runs
+    // enemy_phase); a hunter-movement-tie suspension surfaces through `drive`.
+    // Replaces the former synchronous `step_phase(cx)`.
+    cx.state.phase = Phase::Enemy;
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EnemyPhase {
+            resume: crate::state::EnemyResume::Entry,
+        });
+    EngineOutcome::Done
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
@@ -453,58 +463,36 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     super::encounter::prompt_encounter_draw(cx)
 }
 
-/// Transition to the next phase. Dispatches into phase driver
-/// functions when they exist (each driver owns its own
-/// `PhaseStarted` emit). For phases without a driver, emits
-/// `PhaseStarted` directly.
-///
-/// **`PhaseEnded` invariant:** `step_phase` emits **no** `PhaseEnded`
-/// for any phase. Each phase's `*_end` helper owns its own boundary
-/// emit: `mythos_phase_end` (step 1.5), `investigation_phase_end`
-/// (step 2.3), `enemy_phase_end` (step 3.4), `upkeep_phase_end`
-/// (step 4.6). `start_scenario`'s first-round-skip path bypasses the
-/// entire Mythos phase — no `PhaseStarted(Mythos)` /
-/// `PhaseEnded(Mythos)` events fire on round 1 — per Rules Reference
-/// p.24 ("skip the mythos phase").
-///
-/// **Round-bump:** the round-counter increment now lives in
-/// `mythos_phase` step 1.1 — the rules' "round begins" point —
-/// rather than here. `step_phase` no longer touches `state.round`.
-///
-/// Returns the transition's [`EngineOutcome`]. Two arms can return
-/// [`EngineOutcome::AwaitingInput`]:
-/// - **Investigation→Enemy**: a hunter-movement tie in [`enemy_phase`],
-///   owned by [`investigation_phase_end`] and propagated through [`end_turn`].
-/// - **Enemy→Upkeep**: the step-4.5 hand-size discard (#111), owned by
-///   [`upkeep_resume`].
-///
-/// Every other arm runs its driver to completion and returns
-/// [`EngineOutcome::Done`].
+/// Test helper (slice 1b, #393): advance to the next phase via the main loop,
+/// the way a real transition does — set `state.phase` to the next phase, push
+/// its anchor at `Entry`, and `drive`. Production no longer has a synchronous
+/// phase-stepping function: the four `*_phase_end`/teardown transitions push the
+/// next `{Entry}` anchor and the apply boundary's `drive` advances it. Tests
+/// that constructed a state in phase *N* and want phase *N+1* run through the
+/// same mechanism here.
+#[cfg(test)]
 fn step_phase(cx: &mut Cx) -> EngineOutcome {
-    let from = cx.state.phase;
-    let to = from.next();
-
+    use crate::state::{
+        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
+    };
+    let to = cx.state.phase.next();
     cx.state.phase = to;
-    // The round-counter bump moves into mythos_phase (step 1.1).
-    // step_phase no longer touches state.round.
-
-    // Dispatch to phase driver if one exists; otherwise emit
-    // PhaseStarted directly (for phases without a driver yet).
-    match to {
-        Phase::Mythos if from != Phase::Mythos => mythos_phase(cx),
-        Phase::Investigation if from != Phase::Investigation => {
-            investigation_phase(cx);
-            EngineOutcome::Done
-        }
-        Phase::Enemy if from != Phase::Enemy => enemy_phase(cx),
-        Phase::Upkeep if from != Phase::Upkeep => upkeep_phase(cx),
-        _ => unreachable!(
-            "step_phase: from == to (from={from:?}, to={to:?}); Phase::next \
-             never returns the same phase, so this branch is structurally \
-             unreachable. If it ever fires, something has corrupted \
-             state.phase between the read and the dispatch."
-        ),
-    }
+    let anchor = match to {
+        Phase::Mythos => Continuation::MythosPhase {
+            resume: MythosResume::Entry,
+        },
+        Phase::Investigation => Continuation::InvestigationPhase {
+            resume: InvestigationResume::Entry,
+        },
+        Phase::Enemy => Continuation::EnemyPhase {
+            resume: EnemyResume::Entry,
+        },
+        Phase::Upkeep => Continuation::UpkeepPhase {
+            resume: UpkeepResume::Entry,
+        },
+    };
+    cx.state.continuations.push(anchor);
+    super::drive(cx, EngineOutcome::Done)
 }
 
 /// Set `active_investigator` to `id`. Does NOT refresh actions —
@@ -654,10 +642,17 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     if !matches!(forced, EngineOutcome::Done) {
         return forced; // 2+-trigger loud reject (unreachable in-slice); propagate
     }
-    // Enemy → Upkeep; calls upkeep_phase. This may now suspend at step
-    // 4.5 (hand-size discard, #111), so the outcome propagates rather
-    // than being asserted Done.
-    step_phase(cx)
+    // Enemy → Upkeep (slice 1b, #393): advance `state.phase` + push the Upkeep
+    // anchor at `Entry`. The main loop's `drive` advances it (runs upkeep_phase,
+    // which may suspend at step 4.5 hand-size discard — surfaced through
+    // `drive`). Replaces the former synchronous `step_phase(cx)`.
+    cx.state.phase = Phase::Upkeep;
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::UpkeepPhase {
+            resume: crate::state::UpkeepResume::Entry,
+        });
+    EngineOutcome::Done
 }
 
 /// Called after the post-1.4 window closes. Emits 1.5's
@@ -692,21 +687,66 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
     });
-    // Mythos → Investigation; calls investigation_phase. Only the
-    // Investigation→Enemy transition can suspend (hunter movement), so
-    // this cascade always completes.
-    let outcome = step_phase(cx);
-    debug_assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "unexpected suspension in Mythos→Investigation transition"
-    );
+    // Mythos → Investigation (slice 1b, #393): advance `state.phase` and push the
+    // next phase's anchor at `Entry`. The main loop's `drive` advances it (runs
+    // investigation_phase's opening). Replaces the former synchronous
+    // `step_phase(cx)` call — the transition is now loop-driven.
+    cx.state.phase = Phase::Investigation;
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::InvestigationPhase {
+            resume: crate::state::InvestigationResume::Entry,
+        });
+}
+
+/// Advance a freshly-entered phase anchor (slice 1b, #393): if the top frame is
+/// a `*Phase` anchor at `Entry`, pop the placeholder and run that phase's
+/// opening via its existing driver (which pushes the running anchor at its first
+/// boundary resume + the phase's first child). Returns `None` when the top is
+/// not an `Entry` anchor, so [`anchor_on_child_pop`] falls through to its
+/// boundary dispatch.
+fn advance_phase_entry(
+    cx: &mut Cx,
+    anchor: Option<&crate::state::Continuation>,
+) -> Option<EngineOutcome> {
+    use crate::state::{
+        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
+    };
+    match anchor {
+        Some(Continuation::MythosPhase {
+            resume: MythosResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            Some(mythos_phase(cx))
+        }
+        Some(Continuation::InvestigationPhase {
+            resume: InvestigationResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            investigation_phase(cx);
+            Some(EngineOutcome::Done)
+        }
+        Some(Continuation::EnemyPhase {
+            resume: EnemyResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            Some(enemy_phase(cx))
+        }
+        Some(Continuation::UpkeepPhase {
+            resume: UpkeepResume::Entry,
+        }) => {
+            cx.state.continuations.pop();
+            Some(upkeep_phase(cx))
+        }
+        _ => None,
+    }
 }
 
 /// Run the top `*Phase` anchor's continuation after one of its framework
-/// windows closed (slice 1a, #393). The window has already been popped by the
-/// close path, so the anchor is now the top frame; its `resume` selects the
-/// relocated body. Suspension-agnostic: a body that itself suspends returns
+/// windows closed (slice 1a, #393), or advance it from `Entry` (slice 1b, via
+/// [`advance_phase_entry`]). The window has already been popped by the close
+/// path, so the anchor is now the top frame; its `resume` selects the relocated
+/// body. Suspension-agnostic: a body that itself suspends returns
 /// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
 /// `&mut cx`.
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
@@ -714,36 +754,35 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
     };
     let anchor = cx.state.continuations.last().cloned();
+    // `Entry` advances (slice 1b, #393) run the phase opening; delegated so this
+    // function stays the boundary-dispatch it was in slice 1a.
+    if let Some(out) = advance_phase_entry(cx, anchor.as_ref()) {
+        return out;
+    }
     match anchor {
         Some(Continuation::UpkeepPhase {
             resume: UpkeepResume::Begins,
         }) => {
-            // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
-            // cannot run while a skill test is in flight. Phase 4 has no
-            // Upkeep-phase skill-test source, so structurally unreachable today.
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "UpkeepBegins closed while a skill test is in flight \
-                     (continuation={:?}); Phase 4 has no Upkeep-phase skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b, #393): a
+            // skill test in flight sits *above* its phase anchor, so `drive`
+            // never advances the anchor with one pending. (Was an `unreachable!`
+            // gated on "no Upkeep-phase skill-test source"; now a cheap assert.)
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "UpkeepBegins advanced with a skill test in flight",
+            );
             upkeep_resume(cx)
         }
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::BeforeInvestigatorAttacked,
         }) => {
-            // Phase-transitioning continuation: cannot run while a skill test is
-            // in flight (would strand it). Phase 4 has no Enemy-phase skill-test
-            // source, so structurally unreachable today.
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "BeforeInvestigatorAttacked closed while a skill test is in \
-                     flight (continuation={:?}); Phase 4 has no Enemy-phase \
-                     skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b): a skill
+            // test in flight sits above its phase anchor, so `drive` never
+            // advances the anchor with one pending.
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "BeforeInvestigatorAttacked advanced with a skill test in flight",
+            );
             // Cursor expect-Some: BeforeInvestigatorAttacked is only ever opened
             // after enemy_attack_pending is set to Some(_). A None cursor here is
             // a state-corruption invariant violation.
@@ -770,14 +809,12 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::AfterAllAttacked,
         }) => {
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "AfterAllInvestigatorsAttacked closed while a skill test is in \
-                     flight (continuation={:?}); Phase 4 has no Enemy-phase \
-                     skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b): see the
+            // BeforeInvestigatorAttacked arm above.
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "AfterAllInvestigatorsAttacked advanced with a skill test in flight",
+            );
             enemy_phase_end(cx)
         }
         Some(Continuation::InvestigationPhase {
@@ -804,17 +841,13 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::MythosPhase {
             resume: MythosResume::AfterDraws,
         }) => {
-            // Phase-transitioning continuation: cannot run while a skill test
-            // is in flight (would strand the test in the wrong phase). Phase 4
-            // has no Mythos-phase skill-test sources, so this is structurally
-            // unreachable today.
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "MythosAfterDraws closed while a skill test is in flight \
-                     (continuation={:?}); Phase 4 has no Mythos-phase skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b): a skill
+            // test in flight sits above its phase anchor, so `drive` never
+            // advances the anchor with one pending.
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "MythosAfterDraws advanced with a skill test in flight",
+            );
             mythos_phase_end(cx);
             EngineOutcome::Done
         }
@@ -958,9 +991,18 @@ pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
         cx.state.continuations.last(),
     );
     cx.state.continuations.pop();
-    // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
-    // transition can suspend (hunter movement), so this never does.
-    step_phase(cx)
+    // Upkeep → Mythos (slice 1b, #393): advance `state.phase` + push the Mythos
+    // anchor at `Entry`. The main loop's `drive` advances it (runs mythos_phase —
+    // the round bump + PhaseStarted(Mythos) live there). Replaces the former
+    // synchronous `step_phase(cx)`. With all four transitions now loop-driven,
+    // `step_phase` is gone.
+    cx.state.phase = Phase::Mythos;
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::MythosPhase {
+            resume: crate::state::MythosResume::Entry,
+        });
+    EngineOutcome::Done
 }
 
 /// The round-end advance window to open, if the current act offers one and
@@ -1511,10 +1553,16 @@ mod investigation_phase_tests {
             });
 
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
 
         // Single investigator with no enemies: the round-ending EndTurn
         // cascades Investigation → Enemy → Upkeep → Mythos and pauses at the
@@ -1573,10 +1621,16 @@ mod investigation_phase_tests {
             });
 
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
 
         assert!(matches!(outcome, EngineOutcome::Done));
         assert_eq!(
@@ -1714,6 +1768,44 @@ mod mythos_phase_tests {
     }
 
     #[test]
+    fn mythos_drives_from_entry_via_the_loop() {
+        // slice 1b: a MythosPhase{Entry} anchor advanced by `drive` runs the
+        // phase opening (PhaseStarted + round bump + push the EncounterDraw
+        // loop) and suspends at the first drawer prompt — same as the old
+        // synchronous mythos_phase entry.
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .with_phase_anchor(crate::state::Continuation::MythosPhase {
+                resume: crate::state::MythosResume::Entry,
+            })
+            .build();
+        state.turn_order = vec![InvestigatorId(1)];
+        let mut events = Vec::new();
+        let outcome = super::super::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "drive advances the Entry anchor and suspends at the draw prompt; got {outcome:?}",
+        );
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::PhaseStarted {
+                phase: Phase::Mythos
+            }
+        )));
+        assert!(state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, crate::state::Continuation::EncounterDraw { .. })));
+    }
+
+    #[test]
     fn mythos_anchor_pushed_during_phase() {
         // The Mythos driver pushes its anchor at entry; it sits beneath the
         // encounter-draw loop while the phase is suspended (slice 1a).
@@ -1746,14 +1838,16 @@ mod mythos_phase_tests {
         state.turn_order.clear();
         let mut events = Vec::new();
 
-        let outcome = mythos_phase(&mut Cx {
+        // No drawers → MythosAfterDraws auto-skips, mythos_phase_end pushes the
+        // Investigation anchor; `drive` then advances it (slice 1b) — completing
+        // the Mythos→Investigation transition that was synchronous in slice 1a.
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
-        });
+        };
+        let outcome = mythos_phase(&mut cx);
+        let outcome = super::super::drive(&mut cx, outcome);
 
-        // No drawers → open_fast_window runs for MythosAfterDraws,
-        // which auto-skips (no Fast eligibility), runs continuation
-        // (mythos_phase_end), which steps into Investigation.
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.current_encounter_drawer(), None);
         assert_eq!(state.phase, Phase::Investigation);
@@ -1811,10 +1905,15 @@ mod mythos_phase_tests {
             });
         let mut events = Vec::new();
 
-        mythos_phase_end(&mut Cx {
+        // mythos_phase_end pops the Mythos anchor + pushes the Investigation
+        // anchor (Entry); `drive` advances it to run investigation_phase (slice
+        // 1b) — completing the transition.
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
-        });
+        };
+        mythos_phase_end(&mut cx);
+        let _ = super::super::drive(&mut cx, EngineOutcome::Done);
 
         assert!(
             !state
@@ -2622,10 +2721,15 @@ mod upkeep_phase_tests {
     fn upkeep_phase_end_skips_window_when_unaffordable() {
         let (mut state, _) = round_end_window_state(2); // < threshold 3
         let mut events = Vec::new();
-        let out = upkeep_phase_end(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            // slice 1b: the Upkeep→Mythos transition is loop-driven.
+            let o = upkeep_phase_end(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
         // Unaffordable → no round-end window; the cascade steps straight into
         // Mythos and pauses at the step-1.4 encounter-draw prompt.
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
@@ -2645,13 +2749,14 @@ mod upkeep_phase_tests {
             state: &mut state,
             events: &mut events,
         });
-        let out = resume_act_round_end_advance(
-            &mut Cx {
+        let out = {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut events,
-            },
-            &InputResponse::Confirm,
-        );
+            };
+            let o = resume_act_round_end_advance(&mut cx, &InputResponse::Confirm);
+            super::super::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
+        };
         // Resolving the window continues the upkeep cascade into Mythos, which
         // pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
@@ -2673,13 +2778,14 @@ mod upkeep_phase_tests {
             state: &mut state,
             events: &mut events,
         });
-        let out = resume_act_round_end_advance(
-            &mut Cx {
+        let out = {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut events,
-            },
-            &InputResponse::Skip,
-        );
+            };
+            let o = resume_act_round_end_advance(&mut cx, &InputResponse::Skip);
+            super::super::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
+        };
         // Skipping the window still continues the upkeep cascade into Mythos,
         // which pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
@@ -2735,10 +2841,14 @@ mod upkeep_phase_tests {
             Location::new(LocationId(9), CardCode("99999".into()), "Far", 1, 0),
         );
         let mut events = Vec::new();
-        let out = upkeep_phase_end(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = upkeep_phase_end(&mut cx);
+            super::super::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
+        };
         // Unaffordable by the Hallway alone: no round-end window opens, so the
         // upkeep cascades straight into Mythos and pauses at the encounter-draw
         // prompt (AwaitingInput) rather than opening an ActRoundEnd frame.
@@ -2795,10 +2905,16 @@ mod enemy_phase_tests {
                 resume: crate::state::InvestigationResume::TurnBegins,
             });
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
         // No registry installed → the attack window auto-skips inline and the
         // cascade runs Enemy→Upkeep→Mythos within this same call, pausing at the
         // step-1.4 encounter-draw prompt (AwaitingInput). The hunter still moved
@@ -2849,10 +2965,16 @@ mod enemy_phase_tests {
                 resume: crate::state::InvestigationResume::TurnBegins,
             });
         let mut events = Vec::new();
-        let outcome = end_turn(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
+        let outcome = {
+            // end_turn may push the next phase's Entry anchor (slice 1b); drive
+            // completes the transition, as the apply boundary does in production.
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            let o = end_turn(&mut cx);
+            super::super::drive(&mut cx, o)
+        };
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Enemy);
         // The EnemyPhase anchor (slice 1a) is on the stack beneath the
@@ -2876,13 +2998,14 @@ mod enemy_phase_tests {
             .find(|o| o.label == format!("{:?}", LocationId(2)))
             .expect("LocationId(2) among offered options")
             .id;
-        let resumed = resolve_input(
-            &mut crate::engine::Cx {
+        let resumed = {
+            let mut cx = crate::engine::Cx {
                 state: &mut state,
                 events: &mut ev2,
-            },
-            &InputResponse::PickSingle(pick),
-        );
+            };
+            let o = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+            super::super::drive(&mut cx, o) // slice 1b: complete the cascade
+        };
         // With no registry the attack window auto-skips and the cascade runs
         // Enemy->Upkeep->Mythos within the same resume call, pausing at the
         // step-1.4 encounter-draw prompt (AwaitingInput).
@@ -3727,15 +3850,19 @@ mod hand_size_tests {
             (0..10).map(|i| CardCode(format!("c{i}"))).collect();
 
         let mut events = Vec::new();
-        let outcome = resume_hand_size_discard(
-            &mut Cx {
+        let outcome = {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut events,
-            },
-            &InputResponse::PickMultiple {
-                selected: vec![OptionId(0), OptionId(1)],
-            },
-        );
+            };
+            let o = resume_hand_size_discard(
+                &mut cx,
+                &InputResponse::PickMultiple {
+                    selected: vec![OptionId(0), OptionId(1)],
+                },
+            );
+            super::super::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
+        };
 
         // The discard drains the hand-size queue, so 4.6 runs and the cascade
         // steps into Mythos, pausing at the step-1.4 encounter-draw prompt.

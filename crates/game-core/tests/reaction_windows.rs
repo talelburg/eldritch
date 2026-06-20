@@ -486,8 +486,9 @@ fn non_resolve_input_action_rejects_while_window_open() {
     let rejected = game_core::engine::apply(paused.state, Action::Player(PlayerAction::EndTurn));
     match rejected.outcome {
         EngineOutcome::Rejected { reason } => {
+            // slice 1b: one unified guard reason (the request carries specifics).
             assert!(
-                reason.contains("reaction window"),
+                reason.contains("a prompt is outstanding") && reason.contains("ResolveInput"),
                 "unexpected reason: {reason}",
             );
         }
