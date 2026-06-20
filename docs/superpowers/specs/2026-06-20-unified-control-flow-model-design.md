@@ -470,8 +470,9 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
      pins the equivalence. Sub-sliced by action group:
      - **2a-ii-1 — scaffold + basic actions. ✅ shipped (PR #402).** EndTurn, Resource,
        Draw, Investigate, Move; extracted a pure `action_cost` out of `charge_action`.
-     - **2a-ii-2** — combat/engage (Fight per current engaged-only handler — #401 widens
-       to co-located later; Evade; Engage incl. enemies engaged with others, RR p.11).
+     - **2a-ii-2 — combat/engage. ✅ shipped (PR #405).** Fight per current engaged-only
+       handler (#401 widens to co-located later); Evade; Engage incl. enemies engaged
+       with others (RR p.11).
      - **2a-ii-3** — play/activate (PlayCard, ActivateAbility). **2a-ii-4** — AdvanceAct + sweep.
 3. **`AttackLoop` frame (cursor lift)** — `PendingEnemyAttack` +
    `enemy_attack_pending` → frame/anchor; enemy-phase attacks unchanged in behaviour.
