@@ -368,6 +368,41 @@ fresh, re-scan" structural. Build on the *proven* model (post-C); `emit_event` i
 the highest-blast-radius function in the engine, so it does not ride the C
 checkpoint. Re-open #212 (or a successor) scoped to this.
 
+**Fold the framework player windows into the same `TimingPoint` taxonomy (do it
+here, not before).** Today `WindowKind` mixes two RR concepts: the event-reaction
+windows (`AfterEnemyDefeated`, `BeforeEnemyAttack`, `AfterEnemyAttackDamagedAsset`,
+…) already pair with an `EventPattern` + `EventTiming::{Before,After}` and flow
+through `emit_event`; the framework windows (`PlayerWindow(PhaseStep)` —
+`MythosAfterDraws`, `BeforeInvestigatorAttacked`, `InvestigatorTurnBegins`, …) are
+the lone holdout, keyed by *structural step* and opened by `open_fast_window`. Their
+**control-flow** role is already dead (slice 1a moved per-step dispatch onto the
+anchor's `resume`), so the `PhaseStep` discriminant now only carries window
+*identity* for trigger-matching + the `WindowOpened/Closed` markers.
+
+The RR justifies unifying them. Appendix II (p.22) distinguishes **framework events**
+(grey boxes, mandatory) from **player windows** (red boxes, where free [⤴] /
+Fast may be used), and a *reaction* ability fires "any time that triggering
+condition is met" (p.3) — a distinct, event-driven opportunity, not a player
+window. **But** a framework step boundary is itself a referenceable timing point
+(p.24: "The beginning of a phase is an important game milestone that may be
+referenced in card text… as a point at which an ability may or must resolve"), so a
+card *can* bind a reaction to "after the mythos phase begins." So a framework step
+is one `TimingPoint` with **two facets**: it *always* offers a standing fast-play
+window (the red box), and it *may also* carry reaction triggers bound to it.
+
+End-state: `WindowKind` dissolves into `TimingPoint`; the four `*Phase` anchors
+become the **emitters** that fire their framework timing points (anchor calls
+`emit_event(framework point)` at the right step, replacing `open_fast_window(
+PlayerWindow(_))`) — the anchors still own *when* in the round each point occurs,
+`emit_event` owns *how* the window opens and matches. The standing-vs-trigger-gated
+difference survives as a **property of the timing point** (framework points always
+open a fast window + emit their markers even when empty; event points open only on a
+matched trigger), not as two enums. Cards binding to framework points is **additive**
+(no `EventPattern` covers them today — see the `PhaseStep` doc-comment). This is a
+strictly bigger simplification than emptying the `PlayerWindow` payload, and it only
+makes sense once `emit_event` is the single timing chokepoint — i.e. *this*
+checkpoint, not before (building it earlier means building it twice).
+
 ## Bugs surfaced
 
 - **Upkeep `when→at` round-end ordering** (§G) — file + fix before the Upkeep-anchor
