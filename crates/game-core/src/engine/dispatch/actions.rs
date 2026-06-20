@@ -529,13 +529,6 @@ pub(super) fn spend_actions(cx: &mut Cx, investigator: InvestigatorId, n: u8) {
     });
 }
 
-/// Charge the action cost for `action_class` (base 1 + any Frozen-in-Fear
-/// `ExtraActionCost` surcharge): validate-first, returning `Err(Rejected)`
-/// without mutating if the investigator lacks the points. On `Ok` the
-/// actions are spent and the surcharge sources are marked spent for the
-/// round. **Mutates on success**, so call it after every other precondition
-/// for the action has passed. Falls back to cost 1 with no surcharge when
-/// no registry is installed (bare unit tests). Shared by move/fight/evade.
 /// The action-point cost of `action_class` for `investigator`: base 1 plus any
 /// Frozen-in-Fear `ExtraActionCost` surcharge (Rules Reference; #164). Pure —
 /// reads `card_registry::current()` for the surcharge, falling back to 1 with no
@@ -561,6 +554,13 @@ pub(crate) fn action_cost(
     1u8.saturating_add(extra)
 }
 
+/// Charge the action cost for `action_class` (base 1 + any Frozen-in-Fear
+/// `ExtraActionCost` surcharge): validate-first, returning `Err(Rejected)`
+/// without mutating if the investigator lacks the points. On `Ok` the
+/// actions are spent and the surcharge sources are marked spent for the
+/// round. **Mutates on success**, so call it after every other precondition
+/// for the action has passed. Falls back to cost 1 with no surcharge when
+/// no registry is installed (bare unit tests). Shared by move/fight/evade.
 fn charge_action(
     cx: &mut Cx,
     investigator: InvestigatorId,
