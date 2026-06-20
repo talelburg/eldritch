@@ -17,7 +17,7 @@ use super::Cx;
 
 mod abilities;
 pub(crate) mod act_agenda;
-mod actions;
+pub(crate) mod actions;
 // pub(super): engine/mod.rs re-exports `suspend_for_native_choice` (pub) for
 // the `cards` crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
 pub(super) mod choice;
@@ -45,7 +45,7 @@ pub(super) mod phases;
 // `pub(super)` so the evaluator's `discover_clue` can open the Before-discover
 // window via the `pub(crate)` `open_queued_reaction_window` (Axis D #336);
 // other items stay `pub(super)`-to-dispatch.
-pub(super) mod reaction_windows;
+pub(crate) mod reaction_windows;
 pub(crate) mod reveal;
 // pub(super): engine::evaluator reaches start_skill_test for Effect::SkillTest.
 pub(super) mod skill_test;
@@ -223,7 +223,7 @@ pub(super) enum PlayDestination {
 /// that are only read by a `pub(super)` function not yet wired up.
 #[derive(Debug)]
 #[allow(dead_code)]
-pub(super) struct PlayCheckResult {
+pub(crate) struct PlayCheckResult {
     pub destination: PlayDestination,
     pub abilities: Vec<crate::dsl::Ability>,
     pub is_fast: bool,

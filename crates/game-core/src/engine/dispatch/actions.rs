@@ -418,9 +418,10 @@ pub(super) fn move_action(
 ///
 /// Move / Fight / Evade defer the action-point check to `charge_action`
 /// (which folds in the Frozen-in-Fear surcharge), so `move_action` keeps
-/// its own prefix; Fight and Evade reach this via
-/// [`validate_engaged_action`], which then adds the enemy checks.
-pub(super) fn validate_basic_action<'a>(
+/// its own prefix; `fight` calls this directly then does its own co-location
+/// check (#401), while `evade` reaches it via [`validate_engaged_action`],
+/// which adds the engagement check.
+pub(crate) fn validate_basic_action<'a>(
     state: &'a GameState,
     action_name: &'static str,
     investigator: InvestigatorId,
@@ -466,21 +467,20 @@ pub(super) fn validate_basic_action<'a>(
     Ok(inv)
 }
 
-/// Validate the prefix shared by Fight and Evade: the basic-action
-/// preconditions (via [`validate_basic_action`]) plus enemy exists and
-/// engaged with the named enemy. Returns the borrowed enemy so the
-/// caller can pick which difficulty (fight / evade) and read any other
-/// fields it needs.
+/// Validate the Evade prefix: the basic-action preconditions (via
+/// [`validate_basic_action`]) plus enemy exists and is engaged with the
+/// named enemy. Returns the borrowed enemy so the caller can read the evade
+/// difficulty and any other fields it needs. (Only `evade` uses this — Evade
+/// is engagement-only per RR p.11; `fight` is co-location-gated since #401 and
+/// does its own check.)
 ///
 /// On `Err`, returns the rejection; the caller should propagate it
 /// without further state mutation. State-corruption invariants
 /// (active investigator missing from map) panic via `unreachable!`.
 ///
-/// Does NOT validate the chosen difficulty is non-negative — the
-/// caller must do that after picking, because Fight and Evade each
-/// only care about one of the two values, and validating both
-/// upfront would reject legitimate states (an enemy with `fight: -1`
-/// the investigator only ever Evades).
+/// Does NOT validate the evade difficulty is non-negative — the caller does
+/// that after the engagement check, so a malformed `evade: -1` rejects with a
+/// clear reason rather than being silently clamped.
 fn validate_engaged_action<'a>(
     state: &'a GameState,
     action_name: &'static str,
@@ -529,6 +529,31 @@ pub(super) fn spend_actions(cx: &mut Cx, investigator: InvestigatorId, n: u8) {
     });
 }
 
+/// The action-point cost of `action_class` for `investigator`: base 1 plus any
+/// Frozen-in-Fear `ExtraActionCost` surcharge (Rules Reference; #164). Pure —
+/// reads `card_registry::current()` for the surcharge, falling back to 1 with no
+/// registry installed (bare unit tests). The enumerator uses this for Move/Fight/
+/// Evade affordability; [`charge_action`] uses it then spends.
+pub(crate) fn action_cost(
+    state: &GameState,
+    investigator: InvestigatorId,
+    action_class: crate::dsl::ActionClass,
+) -> u8 {
+    let extra = match crate::card_registry::current() {
+        Some(reg) => {
+            crate::engine::evaluator::pending_action_surcharge(
+                state,
+                reg,
+                investigator,
+                action_class,
+            )
+            .0
+        }
+        None => 0,
+    };
+    1u8.saturating_add(extra)
+}
+
 /// Charge the action cost for `action_class` (base 1 + any Frozen-in-Fear
 /// `ExtraActionCost` surcharge): validate-first, returning `Err(Rejected)`
 /// without mutating if the investigator lacks the points. On `Ok` the
@@ -542,16 +567,19 @@ fn charge_action(
     action_class: crate::dsl::ActionClass,
     action_name: &str,
 ) -> Result<(), EngineOutcome> {
-    let (extra, to_mark) = match crate::card_registry::current() {
-        Some(reg) => crate::engine::evaluator::pending_action_surcharge(
-            cx.state,
-            reg,
-            investigator,
-            action_class,
-        ),
-        None => (0, Vec::new()),
+    let to_mark = match crate::card_registry::current() {
+        Some(reg) => {
+            crate::engine::evaluator::pending_action_surcharge(
+                cx.state,
+                reg,
+                investigator,
+                action_class,
+            )
+            .1
+        }
+        None => Vec::new(),
     };
-    let cost = 1u8.saturating_add(extra);
+    let cost = action_cost(cx.state, investigator, action_class);
     let remaining = cx
         .state
         .investigators
@@ -575,26 +603,53 @@ fn charge_action(
 /// fight value, and on success deals 1 damage. If damage reaches
 /// `max_health`, the enemy is defeated and removed from play.
 ///
+/// Per Rules Reference p.12 ("To fight an enemy **at his or her location**…"),
+/// Fight targets any enemy at the investigator's location — engaged with them or
+/// not (unlike Evade, which is engagement-only; RR p.11). The eligibility check
+/// is co-location, mirroring [`engage`] (#401).
+///
 /// Damage > 1 (weapons, card buffs), after-success / after-failure
 /// triggers (#64), and `AoO` from *other* engaged enemies (#78) are all
 /// downstream. `AoO` does NOT fire on Fight itself per the Rules
 /// Reference's `AoO`-exempt list.
 pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId) -> EngineOutcome {
-    let fight_difficulty = match validate_engaged_action(cx.state, "Fight", investigator, enemy_id)
-    {
-        Ok(enemy) => {
-            if enemy.fight < 0 {
-                return EngineOutcome::Rejected {
-                    reason: format!(
-                        "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
-                        enemy.fight,
-                    )
-                    .into(),
-                };
-            }
-            enemy.fight
+    let inv = match validate_basic_action(cx.state, "Fight", investigator) {
+        Ok(inv) => inv,
+        Err(rejection) => return rejection,
+    };
+    // A `None` location can't host a fight (mirrors `engage`); without it the
+    // `enemy.current_location != inv_location` check would let a locationless
+    // investigator fight a locationless enemy (`None != None == false`).
+    let Some(inv_location) = inv.current_location else {
+        return EngineOutcome::Rejected {
+            reason: format!("Fight: {investigator:?} has no current_location to fight from").into(),
+        };
+    };
+    let fight_difficulty = {
+        let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
+            return EngineOutcome::Rejected {
+                reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
+            };
+        };
+        if enemy.current_location != Some(inv_location) {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
+                    enemy.current_location,
+                )
+                .into(),
+            };
         }
-        Err(rejected) => return rejected,
+        if enemy.fight < 0 {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
+                    enemy.fight,
+                )
+                .into(),
+            };
+        }
+        enemy.fight
     };
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
     {

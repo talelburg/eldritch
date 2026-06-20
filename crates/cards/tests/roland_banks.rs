@@ -71,6 +71,7 @@ fn roland_at_location_with_enemy(
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
+    enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
     let mut loc = test_location(10, "Study");
     loc.clues = location_clues;

@@ -13,6 +13,7 @@
 mod cx;
 pub use cx::Cx;
 mod dispatch;
+pub mod enumerate;
 pub mod evaluator;
 mod outcome;
 pub(crate) mod pathfinding;
@@ -28,6 +29,7 @@ pub use dispatch::encounter::{
 pub use dispatch::hunters::enemy_can_enter_location;
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
+pub use enumerate::legal_actions;
 pub use evaluator::{effective_shroud, location_id_by_code, EvalContext};
 pub use outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 pub use pathfinding::{shortest_first_steps, shortest_first_steps_with};
@@ -266,8 +268,8 @@ mod tests {
     use crate::event::{Event, FailureReason};
     use crate::state::EnemyId;
     use crate::state::{
-        CardCode, ChaosToken, DefeatCause, GameState, InvestigatorId, Phase, SkillKind, Status,
-        TokenModifiers, TokenResolution, Zone,
+        CardCode, ChaosToken, DefeatCause, GameState, InvestigatorId, LocationId, Phase, SkillKind,
+        Status, TokenModifiers, TokenResolution, Zone,
     };
     use crate::test_support::{
         apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -1867,16 +1869,22 @@ mod tests {
     fn fight_evade_scenario() -> (InvestigatorId, EnemyId, GameState) {
         let inv_id = InvestigatorId(1);
         let enemy_id = EnemyId(100);
+        let loc_id = LocationId(40);
         let mut inv = test_investigator(1);
         inv.actions_remaining = 3;
+        // Investigator and enemy share a location: Fight is co-location-gated
+        // (RR p.12, #401), Evade engagement-gated (RR p.11) — this satisfies both.
+        inv.current_location = Some(loc_id);
         let mut enemy = test_enemy(100, "Test Ghoul");
         enemy.fight = 3;
         enemy.evade = 3;
         enemy.max_health = 2;
         enemy.engaged_with = Some(inv_id);
+        enemy.current_location = Some(loc_id);
         let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_enemy(enemy)
+            .with_location(test_location(40, "Test Hall"))
             .with_chaos_bag(bag_only_zero())
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
@@ -2148,9 +2156,58 @@ mod tests {
     }
 
     #[test]
-    fn fight_when_not_engaged_with_target_is_rejected() {
+    fn fight_against_co_located_unengaged_enemy_is_accepted() {
+        // Rules Reference p.12: "To fight an enemy at his or her location…" —
+        // Fight targets any enemy at the investigator's location, engaged or not
+        // (#401). An unengaged but co-located enemy is a legal Fight target.
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
-        state.enemies.get_mut(&enemy_id).unwrap().engaged_with = None;
+        let loc = test_location(50, "Hall");
+        let loc_id = loc.id;
+        state.locations.insert(loc_id, loc);
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .current_location = Some(loc_id);
+        let enemy = state.enemies.get_mut(&enemy_id).unwrap();
+        enemy.current_location = Some(loc_id);
+        enemy.engaged_with = None;
+
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+        // Accepted: the Fight resolves its combat test rather than rejecting.
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "co-located fight should be accepted, got {:?}",
+            result.outcome,
+        );
+    }
+
+    #[test]
+    fn fight_against_enemy_at_a_different_location_is_rejected() {
+        // The flip side of #401: an enemy NOT at the investigator's location is
+        // not a Fight target, even though enemies engaged with the investigator
+        // are (they share the location). Here the enemy is unengaged and elsewhere.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        let here = test_location(50, "Hall");
+        let there = test_location(51, "Attic");
+        let (here_id, there_id) = (here.id, there.id);
+        state.locations.insert(here_id, here);
+        state.locations.insert(there_id, there);
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .current_location = Some(here_id);
+        let enemy = state.enemies.get_mut(&enemy_id).unwrap();
+        enemy.current_location = Some(there_id);
+        enemy.engaged_with = None;
+
         let result = apply_no_commits(
             state,
             Action::Player(PlayerAction::Fight {
