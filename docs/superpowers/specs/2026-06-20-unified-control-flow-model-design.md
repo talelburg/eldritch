@@ -427,12 +427,22 @@ Each step is independently green (mirrors §1's parts 2a–2c cadence):
      (review-confirmed faithful). Added `GameStateBuilder::with_phase_anchor` for the
      ~20 tests that construct mid-phase states directly. Guard ladder, action
      `match`, card-reaction arms untouched.
-   - **1b — fold the synchronous cascade onto anchor `drive`.** `step_phase`'s
-     forward-calling cascade becomes each anchor *pushing* its phase's first child;
-     the strand-guards become cheap asserts.
-   - **1c — uniform "handle the top frame" loop in `apply`.** Replace
-     `apply_player_action`'s ad-hoc recursion with the single-rule loop; the guard
-     ladder collapses to the top-frame rule (sets up slice 2's `InvestigatorTurn`).
+   - **1b — uniform main loop + cascade-fold (merges the former 1b/1c).** On
+     exploration the cascade-fold and the loop proved inseparable — "anchor drive"
+     only means something once a loop *invokes* the advance when a child pops, and
+     the strand-guard payoff only materializes with loop-driven transitions. So one
+     slice: add a `drive(cx)` loop the `apply` entry runs, which **advances the top
+     frame** until it (a) hits a suspension awaiting input → `AwaitingInput`, (b)
+     reaches the open turn (`InvestigationPhase{TurnBegins}`) → idle `Done`, or (c)
+     reaches terminal → `Done`. Each `*Resume` gains an **`Entry`** variant; the
+     anchor's resume-keyed `advance` subsumes the phase drivers (`Entry` = today's
+     `mythos_phase`/… opening), the boundary chunks (today's `anchor_on_child_pop`),
+     and the transitions (pop self + advance `state.phase` + push next anchor
+     `{Entry}` — replacing `*_phase_end`'s synchronous `step_phase`). `step_phase`
+     and the four `*_phase_end` functions dissolve. The **guard ladder** collapses to
+     one rule (top frame is a non-anchor suspension ⇒ only `ResolveInput`); the
+     **strand-guards** become genuinely impossible (a skill test sits *above* its
+     phase anchor) → `debug_assert!`. Sets up slice 2's `InvestigatorTurn`.
 2. **`InvestigatorTurn` frame (2a) + legal-action enumerator** — open-turn becomes a
    frame; guard ladder + action `match` deleted; typed `PlayerAction` validated
    against the offered set; `pending_end_turn` absorbed.
