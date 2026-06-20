@@ -101,6 +101,9 @@ fn soak_state(
     builder = builder.with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
         resume: game_core::state::InvestigationResume::TurnBegins,
     });
+    // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
+    // EndTurn cascade pops before advancing into the Enemy phase.
+    builder = builder.with_investigator_turn(inv_id);
     (builder.build(), inv_id, loc_id)
 }
 

@@ -493,6 +493,9 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
         .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
             resume: game_core::state::InvestigationResume::TurnBegins,
         })
+        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
+        // EndTurn pops (or strands a skill test below, then pops on resume).
+        .with_investigator_turn(InvestigatorId(1))
         .build();
 
     let result = apply(state, Action::Player(PlayerAction::EndTurn));

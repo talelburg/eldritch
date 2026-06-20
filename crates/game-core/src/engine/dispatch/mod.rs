@@ -151,13 +151,14 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 ///
 /// - non-`Done` `outcome` (a suspension / rejection from the action itself)
 ///   passes straight through;
-/// - a `*Phase` anchor on top (other than the open turn) is advanced via
+/// - a `*Phase` anchor on top is advanced via
 ///   [`phases::anchor_on_child_pop`], which runs its resume-keyed chunk and,
 ///   at a phase boundary, transitions by popping itself + pushing the next
 ///   phase's anchor (`Entry`) — the loop then advances that;
 /// - the loop stops with `AwaitingInput` when an advance suspends, and with
-///   `Done` at the open turn (`InvestigationPhase{TurnBegins}`), at terminal
-///   (empty stack), or when an advance makes no progress (a parked phase, e.g.
+///   `Done` when an [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn)
+///   frame is on top (the open turn — slice 2a-i, #393), at terminal (empty
+///   stack), or when an advance makes no progress (a parked phase, e.g.
 ///   Investigation with no active investigator).
 pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
     if !matches!(outcome, EngineOutcome::Done) {
@@ -166,7 +167,7 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
     loop {
         let top = cx.state.continuations.last().cloned();
         match top {
-            Some(ref c) if c.is_phase_anchor() && !c.is_open_turn() => {
+            Some(ref c) if c.is_phase_anchor() => {
                 match phases::anchor_on_child_pop(cx) {
                     EngineOutcome::Done => {
                         // No-progress guard: a parked phase (e.g. Investigation
@@ -179,8 +180,9 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other,
                 }
             }
-            // Open turn idle, terminal (empty), or a suspension on top (which a
-            // handler already surfaced as AwaitingInput before reaching here).
+            // Open turn idle (an `InvestigatorTurn` frame on top), terminal
+            // (empty), or a suspension on top (which a handler already surfaced
+            // as AwaitingInput before reaching here).
             _ => return EngineOutcome::Done,
         }
     }

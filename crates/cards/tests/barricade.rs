@@ -117,6 +117,9 @@ fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
         .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
             resume: game_core::state::InvestigationResume::TurnBegins,
         })
+        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
+        // EndTurn cascade pops before rotating / cascading.
+        .with_investigator_turn(INV)
         .build();
     state
         .locations

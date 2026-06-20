@@ -38,6 +38,8 @@
 //!     .with_phase_anchor(Continuation::InvestigationPhase {
 //!         resume: InvestigationResume::TurnBegins,
 //!     })
+//!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
+//!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
 //! let result = apply(state, Action::Player(PlayerAction::EndTurn));
 //!

@@ -579,21 +579,6 @@ impl Continuation {
         )
     }
 
-    /// True if this is the open-turn idle point — `InvestigationPhase` at
-    /// `TurnBegins` (slice 1b, #393). The engine waits for the active
-    /// investigator's *typed* action here, so `drive` must break (not advance)
-    /// rather than spin. Slice 2 replaces this with a real `InvestigatorTurn`
-    /// frame that awaits input.
-    #[must_use]
-    pub fn is_open_turn(&self) -> bool {
-        matches!(
-            self,
-            Continuation::InvestigationPhase {
-                resume: InvestigationResume::TurnBegins,
-            }
-        )
-    }
-
     /// True if this top frame is a mandatory prompt that only `ResolveInput` may
     /// advance (slice 1b, #393): a reaction/forced window, skill-test commit,
     /// choice, hunter/spawn pick, hand-size discard, act round-end, substitution

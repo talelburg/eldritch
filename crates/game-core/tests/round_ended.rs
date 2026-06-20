@@ -118,6 +118,9 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
         .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
             resume: game_core::state::InvestigationResume::TurnBegins,
         })
+        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
+        // EndTurn cascade pops before advancing past Investigation.
+        .with_investigator_turn(InvestigatorId(1))
         .build();
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(AGENDA),
