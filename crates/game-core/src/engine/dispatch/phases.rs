@@ -710,9 +710,26 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
 /// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
 /// `&mut cx`.
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{Continuation, EnemyResume, InvestigationResume, MythosResume};
+    use crate::state::{
+        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
+    };
     let anchor = cx.state.continuations.last().cloned();
     match anchor {
+        Some(Continuation::UpkeepPhase {
+            resume: UpkeepResume::Begins,
+        }) => {
+            // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
+            // cannot run while a skill test is in flight. Phase 4 has no
+            // Upkeep-phase skill-test source, so structurally unreachable today.
+            if let Some(in_flight) = cx.state.current_skill_test() {
+                unreachable!(
+                    "UpkeepBegins closed while a skill test is in flight \
+                     (continuation={:?}); Phase 4 has no Upkeep-phase skill-test sources",
+                    in_flight.continuation,
+                );
+            }
+            upkeep_resume(cx)
+        }
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::BeforeInvestigatorAttacked,
         }) => {
@@ -819,8 +836,17 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Upkeep,
     });
+    // Push the Upkeep phase anchor (slice 1a, #393). It persists for the whole
+    // phase — beneath the post-4.1 window, any step-4.5 hand-size discard, and
+    // the round-end act window — and is popped at upkeep_round_end_teardown (the
+    // single Upkeep→Mythos exit, after the round-end sequence finishes).
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::UpkeepPhase {
+            resume: crate::state::UpkeepResume::Begins,
+        });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
-    // via run_window_continuation) when nothing is Fast-eligible.
+    // via the anchor's on_child_pop) when nothing is Fast-eligible.
     super::reaction_windows::open_fast_window(cx, WindowKind::PlayerWindow(PhaseStep::UpkeepBegins))
 }
 
@@ -920,6 +946,18 @@ pub(super) fn upkeep_round_end_at_and_after(cx: &mut Cx) -> EngineOutcome {
 /// the forced run's [`ForcedContinuation::UpkeepAfterRoundEnded`] close (2+).
 pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
     cx.state.skill_substitutions.clear();
+    // Pop the Upkeep anchor (slice 1a, #393): this is the single Upkeep→Mythos
+    // exit, reached after the whole round-end sequence (act window, doom) has
+    // resolved, so the anchor is the top frame here.
+    debug_assert!(
+        matches!(
+            cx.state.continuations.last(),
+            Some(crate::state::Continuation::UpkeepPhase { .. })
+        ),
+        "upkeep_round_end_teardown: expected UpkeepPhase anchor on top, got {:?}",
+        cx.state.continuations.last(),
+    );
+    cx.state.continuations.pop();
     // Upkeep → Mythos; calls mythos_phase. Only the Investigation→Enemy
     // transition can suspend (hunter movement), so this never does.
     step_phase(cx)
@@ -2523,6 +2561,10 @@ mod upkeep_phase_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([inv])
             .with_phase(Phase::Upkeep)
+            // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
+            .with_phase_anchor(crate::state::Continuation::UpkeepPhase {
+                resume: crate::state::UpkeepResume::Begins,
+            })
             .with_location(Location::new(
                 LocationId(2),
                 CardCode("01112".into()),
@@ -3539,6 +3581,38 @@ mod hand_size_tests {
     }
 
     #[test]
+    fn upkeep_anchor_present_while_suspended_at_hand_size() {
+        // upkeep_phase pushes the UpkeepPhase anchor at entry; it sits beneath
+        // the step-4.5 hand-size discard while the phase is suspended (slice 1a).
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.hand = vec![CardCode("x".into()); 10];
+        inv.deck = vec![CardCode("y".into())]; // step 4.4 draws 1
+        let mut state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_turn_order([id])
+            .with_phase(Phase::Upkeep)
+            .build();
+        let mut events = Vec::new();
+        let outcome = upkeep_phase(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "suspends at step 4.5 hand-size discard; got {outcome:?}",
+        );
+        assert!(
+            state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, crate::state::Continuation::UpkeepPhase { .. })),
+            "UpkeepPhase anchor present while suspended; stack = {:?}",
+            state.continuations,
+        );
+    }
+
+    #[test]
     fn check_hand_size_suspends_for_over_cap_investigator() {
         use crate::state::CardCode;
         let id = InvestigatorId(1);
@@ -3641,6 +3715,11 @@ mod hand_size_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
+            // UpkeepPhase anchor (slice 1a) sits beneath the staged hand-size
+            // discard; the round-end teardown pops it.
+            .with_phase_anchor(crate::state::Continuation::UpkeepPhase {
+                resume: crate::state::UpkeepResume::Begins,
+            })
             .with_hand_size_discard_pending([id])
             .build();
         // 10-card hand: discard exactly 2 (indices 0 and 1) → land at 8.
@@ -3896,6 +3975,10 @@ mod start_scenario_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([id])
             .with_active_investigator(id)
+            // upkeep_round_end_teardown pops the UpkeepPhase anchor (slice 1a).
+            .with_phase_anchor(crate::state::Continuation::UpkeepPhase {
+                resume: crate::state::UpkeepResume::Begins,
+            })
             .build();
         state.round = 1;
         state.skill_substitutions.push(SkillSubstitution {

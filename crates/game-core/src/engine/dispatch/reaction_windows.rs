@@ -965,33 +965,13 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
 /// [`EngineOutcome::AwaitingInput`] producer (#111).
 pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     match kind {
-        WindowKind::PlayerWindow(step) => match step {
-            // Phase-structure continuations live on the `*Phase` anchor beneath
-            // each window (slice 1a, #393): the anchor's `resume` selects the
-            // relocated body (incl. the skill-test-in-flight guards and the
-            // Enemy soak-window `AwaitingInput` propagation). `UpkeepBegins` is
-            // the last arm still inline (its anchor relocation is the next task).
-            PhaseStep::MythosAfterDraws
-            | PhaseStep::BeforeInvestigatorAttacked
-            | PhaseStep::AfterAllInvestigatorsAttacked
-            | PhaseStep::InvestigationBegins
-            | PhaseStep::InvestigatorTurnBegins => super::phases::anchor_on_child_pop(cx),
-            PhaseStep::UpkeepBegins => {
-                // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
-                // cannot run while a skill test is in flight. Phase 4 has no
-                // Upkeep-phase skill-test source, so structurally unreachable.
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "UpkeepBegins window closed while a skill test is in flight \
-                     (continuation={:?}). Phase 4 has no Upkeep-phase skill-test \
-                     sources; a future PR adding one needs the window-close + \
-                     phase-transition ordering redesigned before this fires.",
-                        in_flight.continuation,
-                    );
-                }
-                super::phases::upkeep_resume(cx)
-            }
-        },
+        // Every framework `PlayerWindow(PhaseStep)` close routes to the `*Phase`
+        // anchor beneath it (slice 1a, #393): the anchor's `resume` selects the
+        // relocated body — the skill-test-in-flight guards, the Enemy
+        // soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6 cascade,
+        // the Mythos/Investigation transitions. The `PhaseStep` is no longer the
+        // continuation key; the anchor's `resume` is.
+        WindowKind::PlayerWindow(_) => super::phases::anchor_on_child_pop(cx),
         // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
         // work. The skill-test driver (which queued the window mid-resolution)
         // resumes via `close_reaction_window_at`'s in-flight re-entry.
