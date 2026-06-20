@@ -158,29 +158,6 @@ pub struct GameState {
     // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
     // Option<InvestigatorId>` cursor is removed — the continuation stack is the
     // single source of truth (mirroring the `mulligan_pending` fold).
-    /// The next investigator due to resolve engaged-enemy attacks
-    /// during Enemy phase step 3.3. Player-order cursor (the analog of the
-    /// former Mythos `mythos_draw_pending`, now folded onto a frame):
-    ///
-    /// - Set to the first [`Status::Active`] investigator in
-    ///   [`turn_order`] when `enemy_phase` runs step 3.3's loop
-    ///   kickoff.
-    /// - Advanced by `run_window_continuation` after each
-    ///   per-investigator attack resolution closes, to the next Active
-    ///   investigator in [`turn_order`] (or `None` when the loop is
-    ///   done).
-    /// - Stays `None` during all phases other than Enemy.
-    ///
-    /// Eliminated investigators ([`Status::Killed`] / [`Status::Insane`]
-    /// / [`Status::Resigned`]) are skipped during advance (the
-    /// player-order-cursor semantics established in #69).
-    ///
-    /// [`turn_order`]: GameState::turn_order
-    /// [`Status::Active`]: crate::state::Status::Active
-    /// [`Status::Killed`]: crate::state::Status::Killed
-    /// [`Status::Insane`]: crate::state::Status::Insane
-    /// [`Status::Resigned`]: crate::state::Status::Resigned
-    pub enemy_attack_pending: Option<InvestigatorId>,
     /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a
     /// Before-timing reaction window resolves; read-and-cleared by the emit
     /// site (the enemy-attack loop, `discover_clue`) after the window closes,
@@ -483,6 +460,12 @@ pub enum Continuation {
     EnemyPhase {
         /// Which child-pop boundary the anchor resumes at.
         resume: EnemyResume,
+        /// The investigator whose engaged enemies are currently attacking
+        /// (Enemy step 3.3), or `None` before kickoff (the anchor is pushed
+        /// ahead of hunter movement) and after the last investigator. The
+        /// per-investigator cursor, lifted off the former
+        /// `GameState::enemy_attack_pending` (#411, step 3 of #393).
+        attacking: Option<InvestigatorId>,
     },
     /// The Upkeep phase anchor (slice 1a, #393). See [`Continuation::MythosPhase`].
     UpkeepPhase {
@@ -517,7 +500,7 @@ pub enum Continuation {
     /// before damage; Axis D #336), distinguished by its `stage`. Pushed
     /// *beneath* that reaction window by the attack-loop driver
     /// (`drive_attack_loop` / `park_on_soak_window`); resumed by
-    /// [`resume_enemy_attack`](crate::engine) (which pops it) once the window
+    /// `resume_enemy_attack` (which pops it) once the window
     /// closes. An internal sequencing frame — never awaits player input itself
     /// (the window above it does); it is only ever momentarily on top inside
     /// `resume_enemy_attack`, between the window pop and its own pop. Lifted off
@@ -1226,9 +1209,10 @@ pub enum PhaseStep {
     /// enemies resolve their attacks (Rules Reference p.25 step 3.3,
     /// the "previous player window" investigators "return to" between
     /// resolutions). The investigator to be attacked next is carried
-    /// on [`GameState::enemy_attack_pending`], not in the variant —
-    /// mirror of [`MythosAfterDraws`] (the encounter-draw loop's analog now
-    /// lives on the [`EncounterDraw`](Continuation::EncounterDraw) frame).
+    /// on the [`EnemyPhase`](Continuation::EnemyPhase) anchor's `attacking`
+    /// cursor (#411), not in the variant — mirror of [`MythosAfterDraws`] (the
+    /// encounter-draw loop's analog lives on the
+    /// [`EncounterDraw`](Continuation::EncounterDraw) frame).
     ///
     /// Continuation (in `run_window_continuation`): read the cursor,
     /// resolve the pending investigator's engaged ready enemies in
@@ -1882,6 +1866,7 @@ mod continuation_stack_tests {
             },
             Continuation::EnemyPhase {
                 resume: EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(InvestigatorId(3)),
             },
             Continuation::UpkeepPhase {
                 resume: UpkeepResume::Begins,
@@ -1984,24 +1969,22 @@ mod encounter_draw_tests {
 }
 
 #[cfg(test)]
-mod enemy_attack_pending_tests {
+mod enemy_attack_loop_tests {
     use super::*;
     use crate::state::InvestigatorId;
     use crate::test_support::GameStateBuilder;
 
     #[test]
-    fn game_state_default_has_no_enemy_attack_pending() {
-        let state = GameStateBuilder::new().build();
-        assert_eq!(state.enemy_attack_pending, None);
-    }
-
-    #[test]
-    fn enemy_attack_pending_round_trips_through_serde() {
+    fn enemy_phase_anchor_attacking_round_trips_through_serde() {
+        use crate::state::{Continuation, EnemyResume};
         let mut state = GameStateBuilder::new().build();
-        state.enemy_attack_pending = Some(InvestigatorId(7));
+        state.continuations.push(Continuation::EnemyPhase {
+            resume: EnemyResume::BeforeInvestigatorAttacked,
+            attacking: Some(InvestigatorId(7)),
+        });
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.enemy_attack_pending, Some(InvestigatorId(7)));
+        assert_eq!(back.continuations, state.continuations);
     }
 
     #[test]

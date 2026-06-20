@@ -1092,6 +1092,7 @@ mod hunter_resume_tests {
             // attack kickoff / enemy_phase_end, which require it.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: None,
             })
             .build();
         let mut events = Vec::new();
@@ -1208,6 +1209,7 @@ mod hunter_resume_tests {
             // kickoff / enemy_phase_end.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: None,
             })
             .build();
         let mut events = Vec::new();
@@ -1331,6 +1333,7 @@ mod hunter_resume_tests {
             // kickoff / enemy_phase_end.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: None,
             })
             .build();
         let mut events = Vec::new();
@@ -1395,6 +1398,7 @@ mod hunter_resume_tests {
             // attack kickoff / enemy_phase_end, which require it.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: None,
             })
             .build();
         let mut events = Vec::new();

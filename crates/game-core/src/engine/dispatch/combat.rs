@@ -1183,11 +1183,9 @@ mod combat_tests {
             // window whose close routes to anchor_on_child_pop.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(inv_id),
             })
             .build();
-        // The enemy phase set the cursor to this investigator before opening
-        // the BeforeInvestigatorAttacked window; resume must advance it.
-        state.enemy_attack_pending = Some(inv_id);
         state.continuations.push(Continuation::AttackLoop {
             investigator: inv_id,
             remaining_attackers: vec![second, third],
@@ -1219,11 +1217,18 @@ mod combat_tests {
         assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == second);
         assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == third);
         // Loop finished → `after_enemy_phase_attacks` advanced the cursor
-        // past the only investigator to None and opened the all-attacked
-        // window (auto-skips inline with no registry).
+        // past the only investigator and opened the all-attacked window
+        // (auto-skips inline with no registry), cascading the EnemyPhase anchor
+        // off the stack — so no anchor is left still attacking anyone.
         assert!(
-            state.enemy_attack_pending.is_none(),
-            "cursor advanced past the sole investigator to None"
+            !state.continuations.iter().any(|c| matches!(
+                c,
+                Continuation::EnemyPhase {
+                    attacking: Some(_),
+                    ..
+                }
+            )),
+            "cursor advanced past the sole investigator (no anchor still attacking)"
         );
         // Outcome is whatever the all-investigators-attacked continuation
         // returns (Done when it auto-skips and cascades). The contract this
@@ -1252,9 +1257,9 @@ mod combat_tests {
             // window whose close routes to anchor_on_child_pop.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(inv_id),
             })
             .build();
-        state.enemy_attack_pending = Some(inv_id);
         state.pending_cancellation = true; // a cancel reaction fired in the window
         state.continuations.push(Continuation::AttackLoop {
             investigator: inv_id,
@@ -1305,9 +1310,9 @@ mod combat_tests {
             // window whose close routes to anchor_on_child_pop.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(inv_id),
             })
             .build();
-        state.enemy_attack_pending = Some(inv_id);
         // pending_cancellation defaults to false (no reaction cancelled).
         state.continuations.push(Continuation::AttackLoop {
             investigator: inv_id,

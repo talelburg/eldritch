@@ -364,7 +364,6 @@ impl GameStateBuilder {
             pending_skill_modifiers: Vec::new(),
             continuations,
             scenario_id: self.scenario_id,
-            enemy_attack_pending: None,
             pending_cancellation: false,
             pending_played_event: None,
             skill_substitutions: Vec::new(),
