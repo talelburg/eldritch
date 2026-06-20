@@ -368,40 +368,56 @@ fresh, re-scan" structural. Build on the *proven* model (post-C); `emit_event` i
 the highest-blast-radius function in the engine, so it does not ride the C
 checkpoint. Re-open #212 (or a successor) scoped to this.
 
-**Fold the framework player windows into the same `TimingPoint` taxonomy (do it
-here, not before).** Today `WindowKind` mixes two RR concepts: the event-reaction
-windows (`AfterEnemyDefeated`, `BeforeEnemyAttack`, `AfterEnemyAttackDamagedAsset`,
-…) already pair with an `EventPattern` + `EventTiming::{Before,After}` and flow
-through `emit_event`; the framework windows (`PlayerWindow(PhaseStep)` —
-`MythosAfterDraws`, `BeforeInvestigatorAttacked`, `InvestigatorTurnBegins`, …) are
-the lone holdout, keyed by *structural step* and opened by `open_fast_window`. Their
-**control-flow** role is already dead (slice 1a moved per-step dispatch onto the
-anchor's `resume`), so the `PhaseStep` discriminant now only carries window
-*identity* for trigger-matching + the `WindowOpened/Closed` markers.
+**Dissolve `WindowKind` / `ResolutionKind` / `Resolution` into two purpose-built
+window frames (do it here, not before).** Today every open window — framework
+fast-play windows, event reaction windows, and the #213 forced run — is the *same*
+generic frame, `Continuation::Resolution(ResolutionFrame { pending_triggers, kind:
+ResolutionKind::{Window(WindowBinding { kind: WindowKind, .. }) | Forced} })`. That
+is several layers of indirection over what are really two concrete things, and the
+`PhaseStep` discriminant inside `WindowKind::PlayerWindow` is now dead weight (slice
+1a moved per-step control flow onto the anchor's `resume`; nothing binds to a
+`PhaseStep` — no `EventPattern` matches one). The end-state replaces all of it with:
 
-The RR justifies unifying them. Appendix II (p.22) distinguishes **framework events**
-(grey boxes, mandatory) from **player windows** (red boxes, where free [⤴] /
-Fast may be used), and a *reaction* ability fires "any time that triggering
-condition is met" (p.3) — a distinct, event-driven opportunity, not a player
-window. **But** a framework step boundary is itself a referenceable timing point
-(p.24: "The beginning of a phase is an important game milestone that may be
-referenced in card text… as a point at which an ability may or must resolve"), so a
-card *can* bind a reaction to "after the mythos phase begins." So a framework step
-is one `TimingPoint` with **two facets**: it *always* offers a standing fast-play
-window (the red box), and it *may also* carry reaction triggers bound to it.
+- **`Continuation::FastWindow { candidates, fast_actors }`** — the red-box framework
+  player window. *No* `PhaseStep`: the `*Phase` anchor directly beneath it on the
+  stack already carries "where in the flow" (its `resume`), and `WindowOpened/Closed`
+  observability can read that context rather than duplicate it. Anchor-pushed.
+- **`Continuation::TimingPointWindow { event: TimingEvent, mode, candidates }`** — one
+  *flat* variant for **all** the event windows, parameterized by the existing
+  `emit::TimingEvent` (the `WindowKind` event variants are a near-duplicate of it, so
+  this is de-duplication, not a rename). Pushed by the `EmitEvent`/`TimingPoint`
+  coordinator, which holds the `when→at→after` sequencing; the window carries its
+  `TimingEvent` directly (self-contained + serializable; reactions bind its entities
+  into `EvalContext`) rather than peeking at the coordinator frame below it.
 
-End-state: `WindowKind` dissolves into `TimingPoint`; the four `*Phase` anchors
-become the **emitters** that fire their framework timing points (anchor calls
-`emit_event(framework point)` at the right step, replacing `open_fast_window(
-PlayerWindow(_))`) — the anchors still own *when* in the round each point occurs,
-`emit_event` owns *how* the window opens and matches. The standing-vs-trigger-gated
-difference survives as a **property of the timing point** (framework points always
-open a fast window + emit their markers even when empty; event points open only on a
-matched trigger), not as two enums. Cards binding to framework points is **additive**
-(no `EventPattern` covers them today — see the `PhaseStep` doc-comment). This is a
-strictly bigger simplification than emptying the `PlayerWindow` payload, and it only
-makes sense once `emit_event` is the single timing chokepoint — i.e. *this*
-checkpoint, not before (building it earlier means building it twice).
+**The forced run is not a separate frame — it is a `mode` on `TimingPointWindow`.**
+`ResolutionKind::{Window | Forced}` collapses to `mode: Reaction | Forced`. The four
+apparent differences are one coherent mode, not independent axes:
+
+| | `Forced` | `Reaction` |
+|---|---|---|
+| `Skip` accepted? | rejected | accepted (closes the window) |
+| drain all candidates? | yes | no — optional subset |
+| Fast plays injectable? | no | yes (Evidence!-style) |
+| player's choice | order only, when 2+ | which / whether to use |
+
+The resolve handler keys off the one flag (RR p.3: *"all forced abilities … must
+resolve before any reaction abilities referencing the same timing point may be
+initiated"* — so a timing point is `mode=Forced` drained, then `mode=Reaction`: two
+passes of the same frame, exactly what the coordinator drives per bucket). The
+lead-orders-simultaneous-forced rule (RR p.17) is a property of *driving* the
+candidate list, not a reason for a distinct frame.
+
+So the EmitEvent-frame slice deletes **`WindowKind`, `ResolutionKind`,
+`WindowBinding`, `ResolutionFrame`, and `Continuation::Resolution`**, replacing them
+with `FastWindow` + `TimingPointWindow{event, mode}` + the `EmitEvent`/`TimingPoint`
+coordinators. (Resisted further collapsing `FastWindow` into
+`TimingPointWindow{event: None}` — that re-introduces the generic parameterized
+frame this is removing; two self-describing frames read better.) Cards binding to
+framework points stays **additive** (no `EventPattern` covers a framework step
+today). This belongs here, not before: `emit_event` is the highest-blast-radius
+function in the engine, so it must ride the *proven* post-C model, and building the
+window taxonomy before `emit_event` is the single chokepoint means building it twice.
 
 ## Bugs surfaced
 
