@@ -763,32 +763,26 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::UpkeepPhase {
             resume: UpkeepResume::Begins,
         }) => {
-            // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
-            // cannot run while a skill test is in flight. Phase 4 has no
-            // Upkeep-phase skill-test source, so structurally unreachable today.
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "UpkeepBegins closed while a skill test is in flight \
-                     (continuation={:?}); Phase 4 has no Upkeep-phase skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b, #393): a
+            // skill test in flight sits *above* its phase anchor, so `drive`
+            // never advances the anchor with one pending. (Was an `unreachable!`
+            // gated on "no Upkeep-phase skill-test source"; now a cheap assert.)
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "UpkeepBegins advanced with a skill test in flight",
+            );
             upkeep_resume(cx)
         }
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::BeforeInvestigatorAttacked,
         }) => {
-            // Phase-transitioning continuation: cannot run while a skill test is
-            // in flight (would strand it). Phase 4 has no Enemy-phase skill-test
-            // source, so structurally unreachable today.
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "BeforeInvestigatorAttacked closed while a skill test is in \
-                     flight (continuation={:?}); Phase 4 has no Enemy-phase \
-                     skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b): a skill
+            // test in flight sits above its phase anchor, so `drive` never
+            // advances the anchor with one pending.
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "BeforeInvestigatorAttacked advanced with a skill test in flight",
+            );
             // Cursor expect-Some: BeforeInvestigatorAttacked is only ever opened
             // after enemy_attack_pending is set to Some(_). A None cursor here is
             // a state-corruption invariant violation.
@@ -815,14 +809,12 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::AfterAllAttacked,
         }) => {
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "AfterAllInvestigatorsAttacked closed while a skill test is in \
-                     flight (continuation={:?}); Phase 4 has no Enemy-phase \
-                     skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b): see the
+            // BeforeInvestigatorAttacked arm above.
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "AfterAllInvestigatorsAttacked advanced with a skill test in flight",
+            );
             enemy_phase_end(cx)
         }
         Some(Continuation::InvestigationPhase {
@@ -849,17 +841,13 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::MythosPhase {
             resume: MythosResume::AfterDraws,
         }) => {
-            // Phase-transitioning continuation: cannot run while a skill test
-            // is in flight (would strand the test in the wrong phase). Phase 4
-            // has no Mythos-phase skill-test sources, so this is structurally
-            // unreachable today.
-            if let Some(in_flight) = cx.state.current_skill_test() {
-                unreachable!(
-                    "MythosAfterDraws closed while a skill test is in flight \
-                     (continuation={:?}); Phase 4 has no Mythos-phase skill-test sources",
-                    in_flight.continuation,
-                );
-            }
+            // Structurally impossible under the main loop (slice 1b): a skill
+            // test in flight sits above its phase anchor, so `drive` never
+            // advances the anchor with one pending.
+            debug_assert!(
+                cx.state.current_skill_test().is_none(),
+                "MythosAfterDraws advanced with a skill test in flight",
+            );
             mythos_phase_end(cx);
             EngineOutcome::Done
         }
