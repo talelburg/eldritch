@@ -544,6 +544,7 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     cx.state.enemy_attack_pending = super::cursor::first_active_investigator(cx.state);
 
     if cx.state.enemy_attack_pending.is_some() {
+        set_enemy_anchor_resume(cx, crate::state::EnemyResume::BeforeInvestigatorAttacked);
         super::reaction_windows::open_fast_window(
             cx,
             WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
@@ -552,10 +553,28 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
         // No Active investigators (turn_order empty or all eliminated).
         // Skip straight to the final window — mirror of mythos_phase's
         // no-drawer path.
+        set_enemy_anchor_resume(cx, crate::state::EnemyResume::AfterAllAttacked);
         super::reaction_windows::open_fast_window(
             cx,
             WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
         )
+    }
+}
+
+/// Set the Enemy phase anchor's `resume` (slice 1a, #393) before opening one of
+/// its attack windows, so the window's close routes to the matching
+/// `anchor_on_child_pop` body. The anchor is the bottom-most Enemy frame; a
+/// no-op if it is absent (only in tests that drive the attack loop in
+/// isolation).
+pub(super) fn set_enemy_anchor_resume(cx: &mut Cx, resume: crate::state::EnemyResume) {
+    if let Some(c) = cx
+        .state
+        .continuations
+        .iter_mut()
+        .rev()
+        .find(|c| matches!(c, crate::state::Continuation::EnemyPhase { .. }))
+    {
+        *c = crate::state::Continuation::EnemyPhase { resume };
     }
 }
 
@@ -577,6 +596,16 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Enemy,
     });
+    // Push the Enemy phase anchor (slice 1a, #393) before hunter movement, so a
+    // lead-tie suspension parks above it and the kickoff on resume finds it.
+    // `enemy_attack_kickoff` / `after_enemy_phase_attacks` set its `resume`
+    // before opening each attack window. The placeholder resume is overwritten
+    // before the first window opens.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EnemyPhase {
+            resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+        });
 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
     //     attack-loop kickoff then happens on resume.
@@ -598,6 +627,17 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
 /// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
 pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
+    // Pop the Enemy anchor (slice 1a, #393): the AfterAllInvestigatorsAttacked
+    // window has closed, so the anchor is the top frame, and the phase ends.
+    debug_assert!(
+        matches!(
+            cx.state.continuations.last(),
+            Some(crate::state::Continuation::EnemyPhase { .. })
+        ),
+        "enemy_phase_end: expected EnemyPhase anchor on top, got {:?}",
+        cx.state.continuations.last(),
+    );
+    cx.state.continuations.pop();
     // 3.4 Enemy phase ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
@@ -670,9 +710,59 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
 /// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
 /// `&mut cx`.
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{Continuation, InvestigationResume, MythosResume};
+    use crate::state::{Continuation, EnemyResume, InvestigationResume, MythosResume};
     let anchor = cx.state.continuations.last().cloned();
     match anchor {
+        Some(Continuation::EnemyPhase {
+            resume: EnemyResume::BeforeInvestigatorAttacked,
+        }) => {
+            // Phase-transitioning continuation: cannot run while a skill test is
+            // in flight (would strand it). Phase 4 has no Enemy-phase skill-test
+            // source, so structurally unreachable today.
+            if let Some(in_flight) = cx.state.current_skill_test() {
+                unreachable!(
+                    "BeforeInvestigatorAttacked closed while a skill test is in \
+                     flight (continuation={:?}); Phase 4 has no Enemy-phase \
+                     skill-test sources",
+                    in_flight.continuation,
+                );
+            }
+            // Cursor expect-Some: BeforeInvestigatorAttacked is only ever opened
+            // after enemy_attack_pending is set to Some(_). A None cursor here is
+            // a state-corruption invariant violation.
+            let investigator = cx.state.enemy_attack_pending.unwrap_or_else(|| {
+                unreachable!(
+                    "BeforeInvestigatorAttacked closed with enemy_attack_pending \
+                     == None; state-corruption invariant violation"
+                )
+            });
+            let outcome = super::combat::resolve_attacks_for_investigator(cx, investigator);
+            // The attack loop suspended on a mid-loop soak reaction window (C5b
+            // #237): surface it WITHOUT advancing the cursor. The cursor advances
+            // later, once the loop truly finishes, via resume_enemy_attack →
+            // after_enemy_phase_attacks on window close.
+            if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                return outcome;
+            }
+            debug_assert!(
+                matches!(outcome, EngineOutcome::Done),
+                "resolve_attacks_for_investigator returned unexpected {outcome:?}",
+            );
+            super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
+        }
+        Some(Continuation::EnemyPhase {
+            resume: EnemyResume::AfterAllAttacked,
+        }) => {
+            if let Some(in_flight) = cx.state.current_skill_test() {
+                unreachable!(
+                    "AfterAllInvestigatorsAttacked closed while a skill test is in \
+                     flight (continuation={:?}); Phase 4 has no Enemy-phase \
+                     skill-test sources",
+                    in_flight.continuation,
+                );
+            }
+            enemy_phase_end(cx)
+        }
         Some(Continuation::InvestigationPhase {
             resume: InvestigationResume::Begins,
         }) => {
@@ -2723,6 +2813,16 @@ mod enemy_phase_tests {
         });
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Enemy);
+        // The EnemyPhase anchor (slice 1a) is on the stack beneath the
+        // suspended hunter-movement choice.
+        assert!(
+            state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, crate::state::Continuation::EnemyPhase { .. })),
+            "EnemyPhase anchor present while suspended in the Enemy phase; stack = {:?}",
+            state.continuations,
+        );
         let mut ev2 = Vec::new();
         // Pick LocationId(2) by its offered option id (candidates ride the request).
         let crate::engine::EngineOutcome::AwaitingInput { request, .. } = &outcome else {
@@ -3336,6 +3436,12 @@ mod enemy_phase_tests {
             .with_investigator(test_investigator(1))
             .with_enemy(enemy)
             .with_phase(Phase::Enemy)
+            // The EnemyPhase anchor (slice 1a) sits beneath the synthetic
+            // BeforeInvestigatorAttacked window pushed below; its close routes
+            // to anchor_on_child_pop.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            })
             .build();
         state.turn_order = vec![inv_id];
         state.active_investigator = None;

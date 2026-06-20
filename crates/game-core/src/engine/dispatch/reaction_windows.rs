@@ -966,11 +966,16 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
 pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     match kind {
         WindowKind::PlayerWindow(step) => match step {
-            // Phase-structure continuation now lives on the MythosPhase anchor
-            // (slice 1a, #393): the anchor sits beneath this window, so its
-            // close routes to the anchor's on_child_pop (which keeps the
-            // skill-test-in-flight guard).
-            PhaseStep::MythosAfterDraws => super::phases::anchor_on_child_pop(cx),
+            // Phase-structure continuations live on the `*Phase` anchor beneath
+            // each window (slice 1a, #393): the anchor's `resume` selects the
+            // relocated body (incl. the skill-test-in-flight guards and the
+            // Enemy soak-window `AwaitingInput` propagation). `UpkeepBegins` is
+            // the last arm still inline (its anchor relocation is the next task).
+            PhaseStep::MythosAfterDraws
+            | PhaseStep::BeforeInvestigatorAttacked
+            | PhaseStep::AfterAllInvestigatorsAttacked
+            | PhaseStep::InvestigationBegins
+            | PhaseStep::InvestigatorTurnBegins => super::phases::anchor_on_child_pop(cx),
             PhaseStep::UpkeepBegins => {
                 // Phase-transitioning continuation (4.2–4.6 then Upkeep→Mythos):
                 // cannot run while a skill test is in flight. Phase 4 has no
@@ -985,79 +990,6 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
                     );
                 }
                 super::phases::upkeep_resume(cx)
-            }
-            PhaseStep::BeforeInvestigatorAttacked => {
-                // Phase-transitioning continuation (advances to the next
-                // window and ultimately to Upkeep) — cannot run while a
-                // skill test is in flight (would strand it). Phase 4 has
-                // no Enemy-phase skill-test source, so this branch is
-                // structurally unreachable today. A future PR adding one
-                // (e.g. a treachery-style "make an Agility test or take
-                // damage" attack ability) must redesign the window-close
-                // + phase-transition ordering before this assertion fires.
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "BeforeInvestigatorAttacked window closed while a \
-                     skill test is in flight (continuation={:?}). Phase \
-                     transition would strand the skill test in the \
-                     wrong phase. Phase 4 has no Enemy-phase skill test \
-                     sources; if a future PR adds one, the window-close \
-                     + phase-transition ordering needs redesign before \
-                     this assertion can be relaxed.",
-                        in_flight.continuation,
-                    );
-                }
-
-                // Cursor expect-Some: BeforeInvestigatorAttacked is only
-                // ever opened after enemy_attack_pending is set to Some(_)
-                // in enemy_phase or in the advance below. A None cursor
-                // here is a state-corruption invariant violation, not a
-                // normal rejection path.
-                let investigator = cx.state.enemy_attack_pending.unwrap_or_else(|| {
-                    unreachable!(
-                        "BeforeInvestigatorAttacked closed with \
-                     enemy_attack_pending == None; this is a \
-                     state-corruption invariant violation"
-                    )
-                });
-
-                let outcome = super::combat::resolve_attacks_for_investigator(cx, investigator);
-
-                // The attack loop suspended on a mid-loop soak reaction
-                // window (C5b #237): surface it immediately, WITHOUT
-                // advancing the cursor. The cursor advances later, once
-                // the loop truly finishes, via `resume_enemy_attack` →
-                // `after_enemy_phase_attacks` on window close.
-                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-                    return outcome;
-                }
-                debug_assert!(
-                    matches!(outcome, EngineOutcome::Done),
-                    "resolve_attacks_for_investigator returned unexpected \
-                     {outcome:?} (expected Done or AwaitingInput)",
-                );
-
-                after_enemy_phase_attacks(cx, investigator)
-            }
-            PhaseStep::AfterAllInvestigatorsAttacked => {
-                if let Some(in_flight) = cx.state.current_skill_test() {
-                    unreachable!(
-                        "AfterAllInvestigatorsAttacked window closed while a \
-                     skill test is in flight (continuation={:?}). Phase \
-                     4 has no Enemy-phase skill-test sources; a future \
-                     PR adding one needs the window-close + \
-                     phase-transition ordering redesigned before this \
-                     fires.",
-                        in_flight.continuation,
-                    );
-                }
-                super::phases::enemy_phase_end(cx)
-            }
-            // Phase-structure continuations now live on the InvestigationPhase
-            // anchor (slice 1a, #393): the anchor's resume (Begins vs.
-            // TurnBegins) selects the body. Both route through on_child_pop.
-            PhaseStep::InvestigationBegins | PhaseStep::InvestigatorTurnBegins => {
-                super::phases::anchor_on_child_pop(cx)
             }
         },
         // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
@@ -1168,11 +1100,16 @@ pub(super) fn after_enemy_phase_attacks(
         super::cursor::next_active_investigator_after(cx.state, investigator);
 
     if cx.state.enemy_attack_pending.is_some() {
+        super::phases::set_enemy_anchor_resume(
+            cx,
+            crate::state::EnemyResume::BeforeInvestigatorAttacked,
+        );
         open_fast_window(
             cx,
             WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
         )
     } else {
+        super::phases::set_enemy_anchor_resume(cx, crate::state::EnemyResume::AfterAllAttacked);
         open_fast_window(
             cx,
             WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked),
