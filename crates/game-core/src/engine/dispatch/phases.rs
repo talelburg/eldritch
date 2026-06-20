@@ -1610,22 +1610,14 @@ mod investigation_phase_tests {
             .with_investigator(test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
-            .build();
-        state.turn_order = vec![InvestigatorId(1)];
-        // Mid-Investigation invariant (slice 1a): push the InvestigationPhase
-        // anchor that investigation_phase would have left on the stack.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            .with_turn_order([InvestigatorId(1)])
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // driver leaves on top once the InvestigatorTurnBegins window closes.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigatorTurn {
-                investigator: InvestigatorId(1),
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
 
         let mut events = Vec::new();
         let outcome = {
@@ -1685,22 +1677,14 @@ mod investigation_phase_tests {
             .with_investigator(test_investigator(2))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
-            .build();
-        state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
-        // Mid-Investigation invariant (slice 1a): push the InvestigationPhase
-        // anchor that investigation_phase would have left on the stack.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // driver leaves on top once the InvestigatorTurnBegins window closes.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigatorTurn {
-                investigator: InvestigatorId(1),
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
 
         let mut events = Vec::new();
         let outcome = {
@@ -2685,27 +2669,19 @@ mod upkeep_phase_tests {
         inv.cards_in_play = vec![card];
         let res_before = inv.resources;
         let hand_before = inv.hand.len();
-        let mut state = GameStateBuilder::default()
+        let state = GameStateBuilder::default()
             .with_investigator(inv)
             .with_phase(Phase::Investigation)
-            .build();
-        state.turn_order = vec![id];
-        state.active_investigator = Some(id);
-        state.round = 1;
-        // Mid-Investigation invariant (slice 1a): push the InvestigationPhase
-        // anchor that investigation_phase would have left on the stack.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            .with_turn_order([id])
+            .with_active_investigator(id)
+            .with_round(1)
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // driver leaves on top once the InvestigatorTurnBegins window closes.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigatorTurn {
-                investigator: InvestigatorId(1),
-            });
+            })
+            .with_investigator_turn(id)
+            .build();
 
         let result = apply(state, Action::Player(PlayerAction::EndTurn));
 
@@ -2984,22 +2960,15 @@ mod enemy_phase_tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
-            .build();
-        // Mid-Investigation invariant (slice 1a): the InvestigationPhase anchor
-        // is on the stack all phase. These tests construct the state directly
-        // (bypassing investigation_phase), so push it explicitly.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            // These tests construct the state directly (bypassing
+            // investigation_phase), so stage both explicitly.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // driver leaves on top once the InvestigatorTurnBegins window closes.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigatorTurn {
-                investigator: InvestigatorId(1),
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
         let mut events = Vec::new();
         let outcome = {
             // end_turn may push the next phase's Entry anchor (slice 1b); drive
@@ -3051,22 +3020,15 @@ mod enemy_phase_tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
-            .build();
-        // Mid-Investigation invariant (slice 1a): the InvestigationPhase anchor
-        // is on the stack all phase. These tests construct the state directly
-        // (bypassing investigation_phase), so push it explicitly.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
+            // Mid-Investigation invariant: the InvestigationPhase anchor (slice
+            // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
+            // These tests construct the state directly (bypassing
+            // investigation_phase), so stage both explicitly.
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
                 resume: crate::state::InvestigationResume::TurnBegins,
-            });
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // driver leaves on top once the InvestigatorTurnBegins window closes.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigatorTurn {
-                investigator: InvestigatorId(1),
-            });
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
         let mut events = Vec::new();
         let outcome = {
             // end_turn may push the next phase's Entry anchor (slice 1b); drive
