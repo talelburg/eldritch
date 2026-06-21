@@ -3325,7 +3325,11 @@ mod enemy_phase_tests {
             .find(|o| o.label == format!("{:?}", EnemyId(10)))
             .expect("EnemyId(10) offered")
             .id;
-        assert_eq!(pick, OptionId(1), "EnemyId(10) is option 1 in EnemyId order");
+        assert_eq!(
+            pick,
+            OptionId(1),
+            "EnemyId(10) is option 1 in EnemyId order"
+        );
 
         let resumed = resolve_input(
             &mut super::super::Cx {

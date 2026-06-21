@@ -536,9 +536,10 @@ fn build_soakers(state: &crate::state::GameState, investigator: InvestigatorId) 
 /// `investigator`, driving them through the shared attack loop (#293) so each
 /// `AoO` opens its before-attack cancel window (Dodge 01023) and per-soaked-asset
 /// reaction window (Guard Dog 01021). Returns [`EngineOutcome::AwaitingInput`]
-/// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. Attackers
-/// resolve in deterministic [`EnemyId`] order (player-pick is #143/K4). `AoO`
-/// attackers never exhaust (RR p.7) — honored by
+/// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. With 2+
+/// engaged ready enemies the loop suspends for the player's attack-order pick
+/// (#143, RR p.25 step 3.3); a single attacker resolves inline. `AoO` attackers
+/// never exhaust (RR p.7) — honored by
 /// [`EnemyAttackSource::AttackOfOpportunity`].
 pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let attackers: Vec<EnemyId> = cx
@@ -583,11 +584,14 @@ pub(super) fn drive_retaliate(
 /// steps (early-break-on-defeat, [`enemy_attack`], exhaust) and the
 /// soak-window suspend/resume contract (C5b #237).
 ///
-/// **Attack order:** deterministic by [`EnemyId`]. Rules Reference
-/// p.25 prescribes "the order of the attacked investigator's
-/// choosing" when an investigator is engaged with multiple enemies;
-/// `TODO(#143)`: player-pick attack order, unmilestoned, covers both
-/// this site and [`drive_aoo`] (which has the same TODO).
+/// **Attack order:** player-chosen (#143). With 2+ ready engaged enemies
+/// the loop suspends on a `PickSingle` ([`AttackLoopStage::PickOrder`]) so
+/// the attacked investigator picks which strikes next (RR p.25 step 3.3:
+/// "resolve their attacks in the order of the attacked investigator's
+/// choosing"), one at a time between attacks; a single attacker resolves
+/// inline. The attacker set is snapshotted here in [`EnemyId`] order (the
+/// option order) and frozen for the sequence — the pick reorders the stored
+/// list, never re-scanning state.
 pub(super) fn resolve_attacks_for_investigator(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -914,7 +918,7 @@ fn drive_attack_loop(
 
 /// The source-keyed step that runs once an attack loop drains to
 /// [`EngineOutcome::Done`]: enemy phase advances its per-investigator cursor and
-/// opens the next window; an AoO returns control to the parked
+/// opens the next window; an `AoO` returns control to the parked
 /// `ActionResolution` frame (`Done`, the `drive` loop resumes it); a retaliate
 /// re-enters the Fight's skill-test follow-up. Shared by [`resume_enemy_attack`]
 /// (window-close drain) and `resume_attack_order_pick` (order-pick drain, #143).
@@ -1082,9 +1086,7 @@ mod combat_tests {
     use super::single_engaged_enemy;
     use crate::engine::{EngineOutcome, OptionId};
     use crate::event::Event;
-    use crate::state::{
-        AttackLoopStage, Continuation, EnemyAttackSource, EnemyId, InvestigatorId,
-    };
+    use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId, InvestigatorId};
     use crate::test_support::{test_enemy, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
@@ -1615,7 +1617,11 @@ mod combat_tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(damages, vec![2, 1], "chosen EnemyId(6) (dmg 2) struck first");
+        assert_eq!(
+            damages,
+            vec![2, 1],
+            "chosen EnemyId(6) (dmg 2) struck first"
+        );
         assert!(
             !state.enemies[&EnemyId(5)].exhausted && !state.enemies[&EnemyId(6)].exhausted,
             "AoO attackers never exhaust (RR p.7)"
