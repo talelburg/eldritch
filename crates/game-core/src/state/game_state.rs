@@ -599,6 +599,70 @@ pub enum Continuation {
         /// How to resume after placement.
         source: DamageSource,
     },
+    /// A node of an in-progress card-effect walk (#422). The effect evaluator is
+    /// frame-driven: each control-flow node parks here while its children
+    /// resolve; the global `drive` loop steps the top frame. Replaces the former
+    /// single-pass replay (`DecisionCursor`). A node that needs a controller pick
+    /// suspends *in place* (its `Leaf` step returns `AwaitingInput` and the frame
+    /// stays on top — it *is* the prompt), so this variant can await input
+    /// (routed in `resolve_input`, like [`Self::DamageAssignment`]). Carries its
+    /// own [`EvalContext`](crate::engine::EvalContext) snapshot (#345's grouped
+    /// bindings) so resume re-binds without replay.
+    Effect(EffectFrame),
+}
+
+/// One node of a frame-driven card-effect walk (#422). See
+/// [`Continuation::Effect`]. Stepped by the evaluator's `step_effect_frame`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectFrame {
+    /// A `Seq([..])` in progress: run `effects[next]`, advance `next` on each
+    /// child pop, complete when `next == effects.len()`.
+    Seq {
+        /// The sequence's effects.
+        effects: Vec<card_dsl::dsl::Effect>,
+        /// Index of the next child to run.
+        next: usize,
+        /// The evaluation context for this sequence.
+        ctx: crate::engine::EvalContext,
+    },
+    /// A `ForEachPointFailed(body)` in progress: run `body` `remaining` more
+    /// times, decrementing on each child pop. Holds its own count on the stack
+    /// so each iteration may suspend independently (fixes Grasping Hands).
+    ForEachPointFailed {
+        /// Iterations still to run.
+        remaining: u8,
+        /// The per-iteration body effect.
+        body: Box<card_dsl::dsl::Effect>,
+        /// The evaluation context for this loop.
+        ctx: crate::engine::EvalContext,
+    },
+    /// An `If` whose condition has been evaluated and chosen branch pushed; this
+    /// frame completes when that child pops. (`If` may instead be resolved
+    /// inline by pushing the chosen branch directly — see the evaluator.)
+    If {
+        /// The `then` branch.
+        then_: Box<card_dsl::dsl::Effect>,
+        /// The optional `else` branch.
+        else_: Option<Box<card_dsl::dsl::Effect>>,
+        /// Whether the `then` branch was taken.
+        took_then: bool,
+        /// The evaluation context for this conditional.
+        ctx: crate::engine::EvalContext,
+    },
+    /// A single effect node to evaluate. A terminal effect runs and pops;
+    /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
+    /// `DamageAssignment` (K5b-2); `Effect::Native { tag }` runs the native fn.
+    /// **Suspends in place** for a controller pick (`ChooseOne`, a `*::Chosen`
+    /// target, a native choice): the step returns `AwaitingInput` and the frame
+    /// stays on top — it *is* the prompt. Resume re-steps it with
+    /// `ctx.chosen_option` set; the node grounds/picks (checked indexing,
+    /// validate-first) instead of suspending.
+    Leaf {
+        /// The effect node to evaluate.
+        effect: Box<card_dsl::dsl::Effect>,
+        /// The evaluation context for this node.
+        ctx: crate::engine::EvalContext,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -744,7 +808,8 @@ impl Continuation {
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. } => None,
+            | Continuation::UpkeepPhase { .. }
+            | Continuation::Effect(_) => None,
         }
     }
 
@@ -769,7 +834,8 @@ impl Continuation {
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. } => None,
+            | Continuation::UpkeepPhase { .. }
+            | Continuation::Effect(_) => None,
         }
     }
 }
@@ -2509,5 +2575,24 @@ mod action_resolution_frame_tests {
             !f.is_phase_anchor(),
             "a mid-action frame is not a phase anchor"
         );
+    }
+}
+
+#[cfg(test)]
+mod effect_frame_tests {
+    use crate::dsl::Effect;
+    use crate::engine::EvalContext;
+    use crate::state::{Continuation, EffectFrame, InvestigatorId};
+
+    #[test]
+    fn effect_frame_variant_roundtrips_serde() {
+        let frame = Continuation::Effect(EffectFrame::Seq {
+            effects: vec![Effect::Seq(vec![])],
+            next: 0,
+            ctx: EvalContext::for_controller(InvestigatorId(1)),
+        });
+        let json = serde_json::to_string(&frame).expect("serialize");
+        let back: Continuation = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(frame, back);
     }
 }

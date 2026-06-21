@@ -479,6 +479,12 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         ) => EngineOutcome::Rejected {
             reason: "ResolveInput: no input prompt is outstanding (a phase anchor is top)".into(),
         },
+        // Dormant until Task 2/3 wire the frame-driven evaluator (#422). A
+        // `Continuation::Effect` frame is never produced yet, so this is
+        // unreachable; the real `resume_effect_choice` arm lands in Task 3.
+        Some(Continuation::Effect(_)) => EngineOutcome::Rejected {
+            reason: "ResolveInput: effect-frame resume not yet wired (#422)".into(),
+        },
         None => EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
         },
