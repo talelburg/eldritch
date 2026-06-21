@@ -537,6 +537,26 @@ fn build_soakers(state: &crate::state::GameState, investigator: InvestigatorId) 
 /// reaction window (Guard Dog 01021). Returns [`EngineOutcome::AwaitingInput`]
 /// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. Attackers
 /// resolve in deterministic [`EnemyId`] order (player-pick is #143/K4). `AoO`
+/// Fire a single Retaliate attack from `enemy` against `investigator`, driving it
+/// through the shared attack loop (#379) so it opens the before-attack cancel
+/// window (Dodge 01023) and the per-soaked-asset reaction window (Guard Dog 01021).
+/// A retaliate is one enemy attacking once, so the attacker list is a singleton;
+/// the two sequential suspension points are tracked by [`AttackLoopStage`]. Returns
+/// [`AwaitingInput`] if a window suspends, [`Done`] otherwise. Non-exhausting
+/// (RR p.18) — honored by [`EnemyAttackSource::Retaliate`] (exhaust is
+/// `EnemyPhase`-gated). Caller (`fire_retaliate_if_any`) has already confirmed the
+/// enemy is ready + has the retaliate keyword.
+///
+/// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
+/// [`Done`]: crate::engine::EngineOutcome::Done
+pub(super) fn drive_retaliate(
+    cx: &mut Cx,
+    enemy: EnemyId,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    drive_attack_loop(cx, investigator, vec![enemy], EnemyAttackSource::Retaliate)
+}
+
 /// attackers never exhaust (RR p.7) — honored by
 /// [`EnemyAttackSource::AttackOfOpportunity`].
 pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
@@ -909,6 +929,10 @@ pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
             super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
         }
         EnemyAttackSource::AttackOfOpportunity => EngineOutcome::Done,
+        // The retaliate's window closed; the loop drained. Hand control back to the
+        // Fight's skill-test follow-up (its `SkillTest` frame is now top, cursor at
+        // `PostOnResolution`) so teardown finishes (#379).
+        EnemyAttackSource::Retaliate => super::skill_test::drive_skill_test(cx),
     }
 }
 
@@ -1318,6 +1342,39 @@ mod combat_tests {
             "an un-cancelled attack deals its damage"
         );
         assert!(state.enemies[&attacker].exhausted, "attacker exhausted");
+    }
+
+    #[test]
+    fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
+        // RR p.18: a retaliate attack does not exhaust the attacker.
+        let inv_id = InvestigatorId(1);
+        let mut enemy = test_enemy(100, "Retaliator");
+        enemy.retaliate = true;
+        enemy.attack_damage = 1;
+        enemy.attack_horror = 0;
+        // Not engaged: a retaliate fires regardless of engagement, driven by enemy id.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        let outcome = super::drive_retaliate(&mut cx, EnemyId(100), inv_id);
+
+        assert!(matches!(outcome, crate::engine::EngineOutcome::Done));
+        assert!(
+            !cx.state.enemies[&EnemyId(100)].exhausted,
+            "retaliate must not exhaust (RR p.18)"
+        );
+        assert_eq!(
+            cx.state.investigators[&inv_id].damage, 1,
+            "retaliate dealt 1 damage"
+        );
+        assert_no_event!(events, Event::EnemyExhausted { .. });
     }
 
     #[test]

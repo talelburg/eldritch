@@ -2073,6 +2073,36 @@ mod tests {
     }
 
     #[test]
+    fn retaliate_via_loop_does_not_exhaust_the_enemy() {
+        // After K2 routes retaliate through drive_attack_loop, a failed Fight against a
+        // ready retaliate enemy still deals the retaliate damage AND leaves the enemy
+        // ready (RR p.18) — the loop path must not exhaust it.
+        let (inv_id, enemy_id, mut state) = fight_evade_scenario();
+        state.investigators.get_mut(&inv_id).unwrap().skills.combat = 1; // vs fight 3 → fail
+        let e = state.enemies.get_mut(&enemy_id).unwrap();
+        e.retaliate = true;
+        e.attack_damage = 1;
+        e.attack_horror = 0;
+        let result = apply_no_commits(
+            state,
+            Action::Player(PlayerAction::Fight {
+                investigator: inv_id,
+                enemy: enemy_id,
+            }),
+        );
+
+        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert_event!(result.events, Event::SkillTestFailed { .. });
+        // Retaliate damage landed.
+        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        // Enemy must remain ready (not exhausted) after the retaliate (RR p.18).
+        assert!(!result.state.enemies[&enemy_id].exhausted);
+        assert_no_event!(result.events, Event::EnemyExhausted { .. });
+        // Skill test still tears down cleanly.
+        assert_event!(result.events, Event::SkillTestEnded { .. });
+    }
+
+    #[test]
     fn fight_defeats_enemy_when_damage_reaches_max_health() {
         // Enemy at 1/2 already; Fight success → damage 2, defeated,
         // removed from state, engagement cleared.
