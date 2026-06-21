@@ -49,7 +49,7 @@ Lita's Parley), **not** the gate. #77 stays open for its Parley half.
 one shared mechanism (mid-action park/resume), now a sub-sliced arc **K1→K5**
 (see Ordering step 4 + its design spec). **The foundation shipped:**
 - ✅ [#293](https://github.com/talelburg/eldritch/issues/293) — AoO open cancel/soak windows (Guard Dog, Dodge). **Shipped — K1, PR #413** (`ActionResolution` frame + `drive_aoo`).
-- [#379](https://github.com/talelburg/eldritch/issues/379) — Retaliate opens no soak/cancel window (Guard Dog, Dodge). **K2.**
+- ✅ [#379](https://github.com/talelburg/eldritch/issues/379) — Retaliate opens cancel/soak windows (Guard Dog, Dodge). **Shipped — K2, PR #414** (`drive_retaliate`; resume re-enters `drive_skill_test`).
 - [#361](https://github.com/talelburg/eldritch/issues/361) — activated abilities don't provoke AoO (First Aid, Medical Texts, Flashlight). **K3.**
 - [#378](https://github.com/talelburg/eldritch/issues/378) — action-event play doesn't provoke AoO (Dynamite Blast, Emergency Cache). **K3.**
 
@@ -80,7 +80,8 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
    - **Slice 3 — `AttackLoop` frame (cursor lift). ✅ shipped (PR #412, closes #411).** Lifted the last two framework cursors onto the stack: the parked enemy-attack loop is now a `Continuation::AttackLoop` frame (inserted *beneath* the reaction window it suspends on), and the per-investigator cursor is the `EnemyPhase` anchor's `attacking: Option<InvestigatorId>` field. Behaviour-preserving. **Deliberately Shape A:** the `AttackLoop` frame spans only the *parked suspension*, not the whole per-investigator step 3.3 — see the keystone caveat below.
 4. **The keystone: mid-action suspend/resume — 🔨 in progress (K1 shipped).** Designed in its own spec ([`2026-06-20-phase-7-keystone-mid-action-park-design.md`](../superpowers/specs/2026-06-20-phase-7-keystone-mid-action-park-design.md)) — §D of #393 expanded into a sub-sliced arc **K1→K5** collapsing #293/#379/#361/#378/#143/#44 (+#119), the highest-leverage item in the phase. The action parks its *triggering action* on a `Continuation::ActionResolution` frame (above `InvestigatorTurn`) with the AoO `AttackLoop` (slice 3 / #411) as its child; on the loop's pop an `on_child_pop` re-validation gate (actor-Active + the primary's target precondition) resumes the action's primary effect, aborting cleanly on a mid-action lapse.
    - **K1 — AoO open cancel/soak windows (#293). ✅ shipped (PR #413).** `ActionResolution` frame + `drive_aoo`; the five basic actions fire AoO through `drive_attack_loop`, so Dodge cancels and Guard Dog retaliates against an AoO; `fire_attacks_of_opportunity` deleted. RR p.7 AoO-non-exhaust source-gated.
-   - **K2 #379** retaliate windows · **K3 #361/#378** AoO from activated abilities + action-event play · **K4 #143** player attack-order — *also extends the enemy-phase `AttackLoop` to span the whole step 3.3 (resolving slice 3's Shape-A caveat) and settles attacker-snapshot timing* · **K5 #44 (+#119)** player damage/soak distribution. Each rides the K1 substrate.
+   - **K2 — Retaliate opens cancel/soak windows (#379). ✅ shipped (PR #414).** `drive_retaliate` routes the failed-Fight retaliate through `drive_attack_loop` under `EnemyAttackSource::Retaliate`; the resume re-enters `drive_skill_test` (the retaliate's park point is the existing `SkillTest` frame, not an `ActionResolution` frame).
+   - **K3 #361/#378** AoO from activated abilities + action-event play · **K4 #143** player attack-order — *also extends the enemy-phase `AttackLoop` to span the whole step 3.3 (resolving slice 3's Shape-A caveat) and settles attacker-snapshot timing* · **K5 #44 (+#119)** player damage/soak distribution. Each rides the K1 substrate.
 5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model.
 6. **Roland elder-sign** (#118).
 7. **Edge correctness** (#300 after Engage, then #368, #353).
@@ -213,8 +214,11 @@ a `Continuation::ActionResolution` frame and fire AoO via **`drive_aoo`** →
 `drive_attack_loop` (so `EnemyAttackSource::AttackOfOpportunity` is now live), opening
 the cancel (Dodge) and soak (Guard Dog) windows; on the loop's pop the `drive` loop
 resumes the action frame under an actor-Active + target re-validation gate.
-**`fire_retaliate_if_any` still calls `enemy_attack` directly, bypassing the loop —
-K2 (#379) routes it through the same mechanism.** Exhaust rules differ by source:
+**K2 (PR #414) routed `fire_retaliate_if_any` through `drive_retaliate` →
+`drive_attack_loop` (`EnemyAttackSource::Retaliate`), so a failed-Fight retaliate now
+opens the cancel/soak windows too; its resume re-enters `drive_skill_test` (the
+retaliate's park point is the `SkillTest` frame). No direct-`enemy_attack` window
+bypass remains.** Exhaust rules differ by source:
 enemy-phase always exhausts (cancelled too — RR p.6/p.25); AoO never (RR p.7 —
 source-gated in `process_attacker_dealing`); Retaliate never (RR p.18). Activating an
 ability or playing an event fire no AoO yet — **K3 (#361/#378)**.

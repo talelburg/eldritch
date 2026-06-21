@@ -319,6 +319,8 @@ pub enum EnemyAttackSource {
     EnemyPhase,
     /// Attack of opportunity (`drive_aoo`).
     AttackOfOpportunity,
+    /// Retaliate attack from a failed Fight (`drive_retaliate`, RR p.18).
+    Retaliate,
 }
 
 /// Which point in the per-attacker sequence a parked enemy-attack loop

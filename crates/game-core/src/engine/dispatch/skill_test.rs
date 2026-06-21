@@ -440,11 +440,17 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                     .continuation = FinishContinuation::PostRetaliate { succeeded };
             }
             FinishContinuation::PostRetaliate { succeeded } => {
-                fire_retaliate_if_any(cx, investigator, succeeded);
+                // Advance the cursor first: a retaliate that suspends on its
+                // cancel/soak window resumes here at PostOnResolution (the retaliate
+                // already happened; only its window is being resolved).
                 cx.state
                     .current_skill_test_mut()
                     .expect("the SkillTest frame must persist across driver steps")
                     .continuation = FinishContinuation::PostOnResolution { succeeded };
+                let outcome = fire_retaliate_if_any(cx, investigator, succeeded);
+                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                    return outcome; // parked on the retaliate's window; resume via drive_skill_test
+                }
             }
             FinishContinuation::PostOnResolution { succeeded: _ } => {
                 // "After you successfully investigate" (Obscuring Fog forced +
@@ -840,24 +846,33 @@ fn apply_skill_test_follow_up(
 ///
 /// Runs at the `PostRetaliate` step — after `fire_on_skill_test_resolution`
 /// (the rest of ST.7) and before the `PostOnResolution` teardown (ST.8) —
-/// matching "after applying all results." The attack routes through
-/// [`super::combat::enemy_attack`], which does not exhaust the attacker,
-/// satisfying the no-exhaust clause for free.
+/// matching "after applying all results." Routes through
+/// [`super::combat::drive_retaliate`] so the attack opens its before-attack
+/// cancel window (Dodge 01023) and per-soaked-asset soak window (Guard Dog
+/// 01021) (#379). Returns [`AwaitingInput`] if a window suspends, [`Done`]
+/// otherwise. Non-exhausting (RR p.18) — honored by
+/// [`EnemyAttackSource::Retaliate`] inside `drive_retaliate`.
 ///
 /// No-op unless every condition holds: the test failed; its follow-up was
 /// `Fight`; the enemy is still in play, ready (`!exhausted`), and has
 /// `retaliate`. A missing enemy is skipped quietly — a failed fight deals
 /// no damage, so the target can't have been defeated mid-test; this only
-/// guards against future enemy-removing commit effects. This step is also
-/// the future home of the "after an enemy attacks" reaction window (Guard
-/// Dog C5b, Roland's reaction).
-fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: bool) {
+/// guards against future enemy-removing commit effects.
+///
+/// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
+/// [`Done`]: crate::engine::EngineOutcome::Done
+/// [`EnemyAttackSource::Retaliate`]: crate::state::EnemyAttackSource::Retaliate
+fn fire_retaliate_if_any(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    succeeded: bool,
+) -> EngineOutcome {
     if succeeded {
-        return;
+        return EngineOutcome::Done;
     }
     let follow_up = cx.state.current_skill_test().map(|t| t.follow_up);
     let Some(SkillTestFollowUp::Fight { enemy, .. }) = follow_up else {
-        return;
+        return EngineOutcome::Done;
     };
     let retaliates = cx
         .state
@@ -865,7 +880,11 @@ fn fire_retaliate_if_any(cx: &mut Cx, investigator: InvestigatorId, succeeded: b
         .get(&enemy)
         .is_some_and(|e| e.retaliate && !e.exhausted);
     if retaliates {
-        super::combat::enemy_attack(cx, enemy, investigator);
+        // Route through the attack loop (#379) so the retaliate opens its cancel
+        // (Dodge) and soak (Guard Dog) windows; non-exhausting (RR p.18).
+        super::combat::drive_retaliate(cx, enemy, investigator)
+    } else {
+        EngineOutcome::Done
     }
 }
 
