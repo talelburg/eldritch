@@ -301,17 +301,27 @@ the frame to span the action, so the extension is paid for by a real need (the
 #393 promotion rule), and changing the snapshot timing is a behaviour change best
 made where it is exercised.
 
-### K5 — player damage/soak distribution (#44) + token unification (#119)
+### K5 — player damage/soak distribution (#44)
 
 Replace the fill-to-capacity `assign_attack` default (which today auto-soaks onto
 the lowest-`CardInstanceId` asset first) with a **player-choice `AwaitingInput`**
-distributing each point of damage/horror across eligible soakers + self. **Do
-with #119** (unify damage/horror/clue tokens onto `CardInPlay`) so the investigator
-and asset token storage is symmetric, rather than special-casing the investigator
-side. This also makes the multi-soak-window case (today guarded as
-unconstructible in `park_on_soak_window`) reachable, so K5 must also lift that
-single-window-per-attack guard into a real multi-window drain (coordinating with
-simultaneous-trigger ordering, #213).
+distributing each point of damage/horror across eligible soakers + self, and route
+**non-attack** damage/horror (treachery/card effects) through the same soak
+pipeline. Designed in its own spec
+([`2026-06-21-phase-7-k5-soak-distribution-design.md`](2026-06-21-phase-7-k5-soak-distribution-design.md)),
+which **revises two assumptions made here**:
+
+- **#119 is NOT done with K5.** Storage unification turned out unjustified by any
+  in-scope interaction; #119 was rescoped to a post-K5 `deal_damage`/`deal_horror`
+  helper consolidation that K5 doesn't depend on (symmetric *targeting* lives in
+  the `Assignment` layer, which already exists — not symmetric *storage*).
+- **The multi-soak-window drain is NOT reachable in scope, so it is deferred.**
+  Interactive distribution does **not** make it constructible: Guard Dog 01021 is
+  the only `EnemyAttackDamagedSelf` reactor and is a single-Ally-slot card, so an
+  attack opens ≤1 soak window regardless of how damage is spread (a second window
+  needs a second *reactor*, not a second damaged soaker). The
+  `park_on_soak_window` single-window `debug_assert` stays; the drain remains
+  guarded, reachable only via #294's avenues.
 
 ## Testing strategy
 
