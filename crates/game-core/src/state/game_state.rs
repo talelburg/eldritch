@@ -593,6 +593,18 @@ pub enum ActionResume {
         /// The ability's effect, resolved at activation, run after the `AoO` loop.
         effect: card_dsl::dsl::Effect,
     },
+    /// Complete a non-fast card play after its `AoO` loop (#378): run the card's
+    /// `OnPlay` effects and, for an asset, move it into play. The card has
+    /// already been announced (`CardPlayed`; an event has also left hand and is
+    /// stashed for discard-on-completion). `hand_index` locates an asset still
+    /// in hand (unused for an already-stashed event); `code` re-derives the
+    /// destination + `OnPlay` abilities from the registry on resume.
+    PlayCard {
+        /// The asset's hand slot (still in hand until its `OnPlay` resolves).
+        hand_index: u8,
+        /// The played card's code — re-derives destination + abilities on resume.
+        code: CardCode,
+    },
 }
 
 impl Continuation {

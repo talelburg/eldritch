@@ -527,8 +527,8 @@ pub(super) fn play_card(
 ) -> EngineOutcome {
     let super::PlayCheckResult {
         destination,
-        abilities,
-        is_fast: _,
+        abilities: _,
+        is_fast,
         card_type,
     } = match super::reaction_windows::check_play_card(cx.state, investigator, hand_index) {
         Ok(r) => r,
@@ -559,10 +559,17 @@ pub(super) fn play_card(
         .hand[idx]
         .clone();
 
-    // Mutate. An event commences being played (`CardPlayed` + leaves hand +
-    // stashed for discard-on-completion) via the shared `begin_event_play`;
-    // an asset emits `CardPlayed` now and enters play after its OnPlay effect
-    // (below).
+    // Mutate. A non-fast play costs one action (validated in `check_play_card`),
+    // spent before the card is announced — RR p.5 / the Dynamite Blast FAQ
+    // ("spend an action and pay the cost, then … attack of opportunity"). Fast
+    // plays are not actions (#378).
+    if !is_fast {
+        super::actions::spend_one_action(cx, investigator);
+    }
+    // The card is announced (`CardPlayed`): an event commences play via the
+    // shared `begin_event_play` (leaves hand, stashed for discard-on-completion);
+    // an asset emits `CardPlayed` now and enters play after its `OnPlay` effect
+    // (in `complete_play`).
     match destination {
         super::PlayDestination::Discard => begin_event_play(cx, investigator, idx),
         super::PlayDestination::InPlay => cx.events.push(Event::CardPlayed {
@@ -570,6 +577,55 @@ pub(super) fn play_card(
             code: code.clone(),
         }),
     }
+
+    // RR p.5: playing a card is an action, so a non-fast play provokes an AoO
+    // from each engaged ready enemy — fired *after* the card is announced + cost
+    // paid and *before* its effect resolves (Dynamite Blast 01024 FAQ). Park the
+    // rest of the play on an `ActionResolution` frame and drive the AoO loop
+    // (which may open the Dodge cancel / Guard Dog soak windows); `complete_play`
+    // runs on resume. Fast plays are not actions and resolve immediately. (#378.)
+    if !is_fast {
+        cx.state
+            .continuations
+            .push(crate::state::Continuation::ActionResolution {
+                investigator,
+                resume: crate::state::ActionResume::PlayCard { hand_index, code },
+            });
+        return super::combat::drive_aoo(cx, investigator);
+    }
+    complete_play(cx, investigator, idx, &code)
+}
+
+/// Run a played card's `OnPlay` effects and, for an asset, move it into play —
+/// the tail shared by the fast path (inline) and the non-fast path (parked on
+/// an [`ActionResolution`](crate::state::Continuation::ActionResolution) frame
+/// and resumed after the `AoO` loop, #378). Re-derives destination + abilities
+/// from the registry by `code` (an event has already left hand, so a live re-
+/// read is impossible; `hand_index` locates an asset still in hand). An `OnPlay`
+/// effect that suspends (Dynamite Blast's location choice) returns its outcome;
+/// its frame resumes through its own path.
+///
+/// TODO (richer mid-action invalidation, shared with `resume_activate_ability`,
+/// #361): a resumed `OnPlay` effect that returns [`EngineOutcome::Rejected`] on
+/// a lapsed precondition rolls back the *whole* play (the `AoO` damage + spent
+/// action) via `apply()`'s snapshot, rather than suppressing the primary only
+/// (the §D contract). Unreachable in scope — the only non-fast `OnPlay` cards
+/// never reject (Emergency Cache 01088's `GainResources`; Machete 01020 has no
+/// `OnPlay`); the rejecting `DiscoverClue` cards (Working a Hunch 01037,
+/// Evidence! 01022) are all Fast and never park. Give this suppress-on-lapse
+/// when a board-changing `AoO` reaction lands.
+fn complete_play(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    hand_index: usize,
+    code: &CardCode,
+) -> EngineOutcome {
+    let (destination, abilities, _is_fast, _card_type) = match resolve_play_target(code) {
+        Ok(v) => v,
+        // Unreachable post-validation (the play already resolved this code); a
+        // `Rejected` here would roll back the AoO, so surface it loudly instead.
+        Err(outcome) => return outcome,
+    };
     let eval_ctx = EvalContext::for_controller(investigator);
     for ability in abilities.iter().filter(|a| a.trigger == Trigger::OnPlay) {
         let outcome = apply_effect(cx, &ability.effect, eval_ctx);
@@ -587,7 +643,7 @@ pub(super) fn play_card(
             .get_mut(&investigator)
             .expect("checked")
             .hand
-            .remove(idx);
+            .remove(hand_index);
         let in_play = super::threat_area::new_in_play_instance(cx, played);
         let instance = in_play.instance_id;
         cx.state
@@ -613,6 +669,25 @@ pub(super) fn play_card(
         }
     }
     EngineOutcome::Done
+}
+
+/// Complete a non-fast card play after its `AoO` loop (#378). The actor-`Active`
+/// re-validation gate has already run in
+/// [`resume_action_resolution`](super::resume_action_resolution); delegates to
+/// [`complete_play`] to run the `OnPlay` effects + asset enter-play.
+///
+/// On a mid-play defeat the gate suppresses this before it runs, so the card
+/// was *announced* (`CardPlayed`, action spent) but does not resolve: an event
+/// is flushed to discard by the apply loop (it was played); an **asset** never
+/// enters play and stays in hand — correct, and swept into the removed pile by
+/// elimination cleanup (you don't gain the asset if you die paying for it).
+pub(super) fn resume_play_card(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    hand_index: u8,
+    code: &CardCode,
+) -> EngineOutcome {
+    complete_play(cx, investigator, usize::from(hand_index), code)
 }
 
 /// Commence playing an event from `investigator`'s hand at `hand_index` (RR

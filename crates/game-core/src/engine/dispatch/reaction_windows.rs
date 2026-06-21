@@ -1288,12 +1288,41 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
+    // Playing a card is an action (RR p.5), so a non-fast play needs an action
+    // point (validate-first; `play_card` spends it). Fast plays are not actions.
+    check_play_action_available(state, investigator, is_fast, &code)?;
     Ok(super::PlayCheckResult {
         destination,
         abilities,
         is_fast,
         card_type,
     })
+}
+
+/// A non-fast play is an action (RR p.5) and needs an action point; fast plays
+/// are not actions and have no such cost (#378). Returns the reject reason when
+/// a non-fast play has no action available.
+fn check_play_action_available(
+    state: &GameState,
+    investigator: InvestigatorId,
+    is_fast: bool,
+    code: &CardCode,
+) -> Result<(), Cow<'static, str>> {
+    if is_fast {
+        return Ok(());
+    }
+    let remaining = state
+        .investigators
+        .get(&investigator)
+        .map_or(0, |inv| inv.actions_remaining);
+    if remaining < 1 {
+        return Err(format!(
+            "PlayCard: playing {code} is an action and requires 1 action point; \
+             {investigator:?} has {remaining}"
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// True if `effect` initiates a Fight at its top level.
