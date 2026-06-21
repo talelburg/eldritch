@@ -50,8 +50,8 @@ one shared mechanism (mid-action park/resume), now a sub-sliced arc **K1→K5**
 (see Ordering step 4 + its design spec). **The foundation shipped:**
 - ✅ [#293](https://github.com/talelburg/eldritch/issues/293) — AoO open cancel/soak windows (Guard Dog, Dodge). **Shipped — K1, PR #413** (`ActionResolution` frame + `drive_aoo`).
 - ✅ [#379](https://github.com/talelburg/eldritch/issues/379) — Retaliate opens cancel/soak windows (Guard Dog, Dodge). **Shipped — K2, PR #414** (`drive_retaliate`; resume re-enters `drive_skill_test`).
-- [#361](https://github.com/talelburg/eldritch/issues/361) — activated abilities don't provoke AoO (First Aid, Medical Texts, Flashlight). **K3.**
-- [#378](https://github.com/talelburg/eldritch/issues/378) — action-event play doesn't provoke AoO (Dynamite Blast, Emergency Cache). **K3.**
+- ✅ [#361](https://github.com/talelburg/eldritch/issues/361) — activated abilities provoke AoO (First Aid, Flashlight, Medical Texts, Old Book of Lore; Fight weapons exempt). **Shipped — K3, PR #415** (`provokes_aoo` gate + `ActionResume::ActivateAbility`).
+- [#378](https://github.com/talelburg/eldritch/issues/378) — action-event play doesn't provoke AoO (Dynamite Blast, Emergency Cache); also adds the missing non-fast play-action charge. **K3 (remaining half).**
 
 **C. Enemy-attack-loop player agency:**
 - [#143](https://github.com/talelburg/eldritch/issues/143) — player picks attack order with 2+ engaged enemies.
@@ -81,7 +81,7 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
 4. **The keystone: mid-action suspend/resume — 🔨 in progress (K1 shipped).** Designed in its own spec ([`2026-06-20-phase-7-keystone-mid-action-park-design.md`](../superpowers/specs/2026-06-20-phase-7-keystone-mid-action-park-design.md)) — §D of #393 expanded into a sub-sliced arc **K1→K5** collapsing #293/#379/#361/#378/#143/#44 (+#119), the highest-leverage item in the phase. The action parks its *triggering action* on a `Continuation::ActionResolution` frame (above `InvestigatorTurn`) with the AoO `AttackLoop` (slice 3 / #411) as its child; on the loop's pop an `on_child_pop` re-validation gate (actor-Active + the primary's target precondition) resumes the action's primary effect, aborting cleanly on a mid-action lapse.
    - **K1 — AoO open cancel/soak windows (#293). ✅ shipped (PR #413).** `ActionResolution` frame + `drive_aoo`; the five basic actions fire AoO through `drive_attack_loop`, so Dodge cancels and Guard Dog retaliates against an AoO; `fire_attacks_of_opportunity` deleted. RR p.7 AoO-non-exhaust source-gated.
    - **K2 — Retaliate opens cancel/soak windows (#379). ✅ shipped (PR #414).** `drive_retaliate` routes the failed-Fight retaliate through `drive_attack_loop` under `EnemyAttackSource::Retaliate`; the resume re-enters `drive_skill_test` (the retaliate's park point is the existing `SkillTest` frame, not an `ActionResolution` frame).
-   - **K3 #361/#378** AoO from activated abilities + action-event play · **K4 #143** player attack-order — *also extends the enemy-phase `AttackLoop` to span the whole step 3.3 (resolving slice 3's Shape-A caveat) and settles attacker-snapshot timing* · **K5 #44 (+#119)** player damage/soak distribution. Each rides the K1 substrate.
+   - **K3 ✅ #361 (PR #415)** AoO from activated abilities (Fight-exempt by effect root; effect snapshotted on the resume frame) · **#378** action-event play (remaining; folds in the missing non-fast play-action charge) · **K4 #143** player attack-order — *also extends the enemy-phase `AttackLoop` to span the whole step 3.3 (resolving slice 3's Shape-A caveat) and settles attacker-snapshot timing* · **K5 #44 (+#119)** player damage/soak distribution. Each rides the K1 substrate.
 5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model. **Also the moment to move the skill-test path from Shape A toward end-state B:** today the intra-test sequence is an inline `FinishContinuation` cursor re-entered imperatively from `close_reaction_window_at` (see Architecture → "Skill-test control-flow shape (Shape A)"). #374/#64 insert player windows *between* those steps, so reify the steps as frames under uniform top-frame dispatch here, rather than deepening the enum with two more variants.
 6. **Roland elder-sign** (#118).
 7. **Edge correctness** (#300 after Engage, then #368, #353).
@@ -220,8 +220,12 @@ opens the cancel/soak windows too; its resume re-enters `drive_skill_test` (the
 retaliate's park point is the `SkillTest` frame). No direct-`enemy_attack` window
 bypass remains.** Exhaust rules differ by source:
 enemy-phase always exhausts (cancelled too — RR p.6/p.25); AoO never (RR p.7 —
-source-gated in `process_attacker_dealing`); Retaliate never (RR p.18). Activating an
-ability or playing an event fire no AoO yet — **K3 (#361/#378)**.
+source-gated in `process_attacker_dealing`); Retaliate never (RR p.18).
+**K3 (PR #415) added the activated-ability AoO site:** a non-fight action-cost
+activation parks its effect on an `ActionResolution` frame and fires AoO via
+`drive_aoo` (the `provokes_aoo` gate exempts `Effect::Fight` weapons; fast
+abilities never provoke). Playing an event fires no AoO yet — **#378** (the
+remaining K3 half, which also adds the missing non-fast play-action charge).
 
 **Trigger spine.** `emit_event` is the one dispatch chokepoint (two-phase
 forced-then-reaction, RR p.2). Simultaneous triggers resolve through the
