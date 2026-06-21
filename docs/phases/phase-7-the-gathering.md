@@ -82,7 +82,7 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
    - **K1 — AoO open cancel/soak windows (#293). ✅ shipped (PR #413).** `ActionResolution` frame + `drive_aoo`; the five basic actions fire AoO through `drive_attack_loop`, so Dodge cancels and Guard Dog retaliates against an AoO; `fire_attacks_of_opportunity` deleted. RR p.7 AoO-non-exhaust source-gated.
    - **K2 — Retaliate opens cancel/soak windows (#379). ✅ shipped (PR #414).** `drive_retaliate` routes the failed-Fight retaliate through `drive_attack_loop` under `EnemyAttackSource::Retaliate`; the resume re-enters `drive_skill_test` (the retaliate's park point is the existing `SkillTest` frame, not an `ActionResolution` frame).
    - **K3 #361/#378** AoO from activated abilities + action-event play · **K4 #143** player attack-order — *also extends the enemy-phase `AttackLoop` to span the whole step 3.3 (resolving slice 3's Shape-A caveat) and settles attacker-snapshot timing* · **K5 #44 (+#119)** player damage/soak distribution. Each rides the K1 substrate.
-5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model.
+5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model. **Also the moment to move the skill-test path from Shape A toward end-state B:** today the intra-test sequence is an inline `FinishContinuation` cursor re-entered imperatively from `close_reaction_window_at` (see Architecture → "Skill-test control-flow shape (Shape A)"). #374/#64 insert player windows *between* those steps, so reify the steps as frames under uniform top-frame dispatch here, rather than deepening the enum with two more variants.
 6. **Roland elder-sign** (#118).
 7. **Edge correctness** (#300 after Engage, then #368, #353).
 8. **Browser playable surface** (capstone) — once the above stabilizes; renders the enumerated actions / #205. See below.
@@ -250,6 +250,34 @@ when picked; it is window-only at the play gate (`TriggerKind::Reaction`
 exists; the ST.1/ST.2 framework player windows and the after-resolution window
 (#64) are absent — `OnCommit` / `OnSkillTestResolution` card triggers fire, but
 a player cannot play a Fast card mid-test.
+
+**Skill-test control-flow shape (Shape A — not yet end-state B).** The skill
+test conforms to the #393 model on *storage* — `InFlightSkillTest` is folded
+onto the `Continuation::SkillTest` frame (#348), no `*_pending` side-channels —
+but its *control flow* is only partly on the stack:
+- **Intra-test sequencing is an inline cursor, not a frame per step.** The
+  `FinishContinuation` enum (`AwaitingCommit → PostFollowUp → PostRetaliate →
+  PostOnResolution`) is a field on the one `SkillTest` frame, advanced by a
+  `loop` in `drive_skill_test` — Shape A, the same compression as `AttackLoop`.
+  `PostRetaliate` *can* suspend (its cancel/soak window), so it's a borderline
+  step folded into the enum rather than reified.
+- **The driver is re-entered imperatively, not by uniform top-frame dispatch.**
+  `close_reaction_window_at` reaches *down* the stack — "if a skill test is
+  mid-resolution, call `drive_skill_test`" — instead of popping the window back
+  to the main loop and letting it dispatch on `SkillTest`-on-top. (`AttackLoop`
+  does the same via `resume_enemy_attack`; codebase-wide pattern, still a
+  divergence.)
+- **The driver scans the stack to locate itself.** `drive_skill_test` does
+  `rposition(SkillTest)` + `win_idx > st` to tell a window *above* it (mid-test
+  → suspend) from a forced `Resolution` *below* it (#213 reentrancy → ignore); a
+  clean top frame never reasons about relative positions. `current_skill_test` /
+  `take_skill_test` are located-singleton reads, not `last()`.
+- **Two entry points:** commit → `finish_skill_test`; the rest →
+  `drive_skill_test` (`AwaitingCommit` is `unreachable!` there).
+
+This is the intended C-checkpoint shape, **not drift.** Moving it toward
+end-state B (each step a frame, driven by top-frame dispatch) belongs with
+#374/#64 — see Ordering step 5.
 
 **Content patterns (mostly later slices).** Card stats come from the corpus
 (`CardKind`; read via `cards::by_code` / `metadata_for`, never hand-typed) — a

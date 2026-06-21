@@ -562,10 +562,12 @@ pub struct ChoiceFrame {
 }
 
 /// Which action's primary effect a parked [`Continuation::ActionResolution`]
-/// frame runs once its attack-of-opportunity loop completes (#293). Carries
-/// only the action's *parameters*; board-dependent values (Investigate
-/// difficulty, enemy presence) are re-derived live on resume so a mid-action
-/// board change is reflected.
+/// frame runs once its attack-of-opportunity loop completes (#293). The
+/// basic-action variants carry only the action's *parameters*; board-dependent
+/// values (Investigate difficulty, enemy presence) are re-derived live on
+/// resume so a mid-action board change is reflected. The exception is
+/// [`ActivateAbility`](ActionResume::ActivateAbility), which snapshots its
+/// resolved effect (fixed at activation, not board-dependent) — see its docs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionResume {
     /// Relocate the investigator (and engaged enemies) to `destination`.
@@ -578,6 +580,19 @@ pub enum ActionResume {
     Engage { enemy: EnemyId },
     /// Draw 1 card (with the empty-deck penalty path).
     Draw,
+    /// Run the activated ability's `effect` for `instance_id`'s source (#361).
+    /// Unlike the basic actions, this snapshots the resolved `effect` rather
+    /// than re-deriving it: an ability's effect is fixed at activation (not
+    /// board-dependent), and the source may have self-discarded as a cost
+    /// (First Aid 01019 depleting its last supply), so a live re-resolution by
+    /// instance would be fragile. `instance_id` is kept only as the eval
+    /// context's source.
+    ActivateAbility {
+        /// The source card instance — the eval context's `source` on resume.
+        instance_id: CardInstanceId,
+        /// The ability's effect, resolved at activation, run after the `AoO` loop.
+        effect: card_dsl::dsl::Effect,
+    },
 }
 
 impl Continuation {
