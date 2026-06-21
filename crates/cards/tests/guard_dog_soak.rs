@@ -418,8 +418,30 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         ],
     );
 
-    // First attack soaks → suspend on the soak window.
+    // Two engaged attackers → the enemy phase first asks the player which
+    // attacks next (#143). Pick the first attacker (EnemyId 7).
     let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    state = result.state;
+    let pick_first = {
+        let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+            panic!("expected an attack-order prompt, got {:?}", result.outcome);
+        };
+        request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{first:?}"))
+            .expect("first attacker offered in the order pick")
+            .id
+    };
+
+    // The chosen first attacker attacks, soaks onto Guard Dog → suspend on the
+    // soak window.
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(pick_first),
+        }),
+    );
     state = result.state;
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
