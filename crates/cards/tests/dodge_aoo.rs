@@ -55,6 +55,21 @@ fn install_real_registry() {
     });
 }
 
+/// The soak-distribution `PickSingle` `OptionId` for the soaker asset (#44/K5b —
+/// an `AoO` against an investigator with a soaker prompts for the damage
+/// distribution before placing it).
+fn pick_soaker(outcome: &EngineOutcome) -> OptionId {
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        panic!("expected a distribution prompt, got {outcome:?}");
+    };
+    request
+        .options
+        .iter()
+        .find(|o| o.label.contains("Asset"))
+        .unwrap_or_else(|| panic!("no soaker option in {:?}", request.options))
+        .id
+}
+
 /// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
 /// `AoO` attackers are ready (not exhausted) and engaged; `max_health` lets
 /// callers ensure the attacker survives a Guard Dog retaliation.
@@ -387,12 +402,25 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
         .with_enemy(attacker)
         .build();
 
-    // Step 1: Move → AoO → damage soaks onto Guard Dog → soak window opens.
+    // Step 1: Move → AoO → distribution prompt (Guard Dog has capacity, #44/K5b).
+    // Assign both AoO damage points onto Guard Dog → soak window opens.
     let result = apply(
         state,
         Action::Player(PlayerAction::Move {
             investigator: inv_id,
             destination: dest,
+        }),
+    );
+    let result = apply(
+        result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
+        }),
+    );
+    let result = apply(
+        result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
         }),
     );
     let mut state = result.state;

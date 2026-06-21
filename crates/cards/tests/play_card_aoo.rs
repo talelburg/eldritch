@@ -52,6 +52,32 @@ fn install_real_registry() {
     });
 }
 
+/// Resolve a soak-distribution prompt (#44/K5b — an `AoO` against an investigator
+/// with a soaker prompts for the damage distribution) by assigning every point
+/// onto the soaker asset, then to the investigator once it is full. Returns the
+/// first result that is no longer a distribution prompt.
+fn soak_onto_asset(mut result: game_core::ApplyResult) -> game_core::ApplyResult {
+    while let EngineOutcome::AwaitingInput { request, .. } = &result.outcome {
+        if !request.prompt.contains("to which target") {
+            break;
+        }
+        let id = request
+            .options
+            .iter()
+            .find(|o| o.label.contains("Asset"))
+            .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
+            .expect("a distribution option")
+            .id;
+        result = apply(
+            result.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: game_core::InputResponse::PickSingle(id),
+            }),
+        );
+    }
+    result
+}
+
 /// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
 fn engaged_attacker(
     id: u32,
@@ -109,6 +135,8 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
             hand_index: 0,
         }),
     );
+    // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
+    let result = soak_onto_asset(result);
     let state = result.state;
 
     assert!(
@@ -415,6 +443,8 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
             hand_index: 0,
         }),
     );
+    // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
+    let result = soak_onto_asset(result);
     let state = result.state;
     assert!(
         result

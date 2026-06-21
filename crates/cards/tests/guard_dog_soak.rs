@@ -145,6 +145,37 @@ fn resolve_pick(state: game_core::GameState, id: game_core::engine::OptionId) ->
     )
 }
 
+/// True iff the outcome is the interactive soak-distribution per-point prompt
+/// (#44/K5b), as opposed to a soak/retaliate window or a framework prompt.
+fn is_distribution_prompt(outcome: &EngineOutcome) -> bool {
+    matches!(
+        outcome,
+        EngineOutcome::AwaitingInput { request, .. } if request.prompt.contains("to which target")
+    )
+}
+
+/// Resolve a soak distribution (#44/K5b) by assigning every point to the soaker
+/// `inst` while it has capacity, then to the investigator once it is full —
+/// reproducing the pre-K5b soak-first default. Returns the first result that is
+/// no longer a distribution prompt.
+fn distribute_onto(mut result: ApplyResult, inst: CardInstanceId) -> ApplyResult {
+    while is_distribution_prompt(&result.outcome) {
+        let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+            unreachable!()
+        };
+        let needle = format!("CardInstanceId({})", inst.0);
+        let id = request
+            .options
+            .iter()
+            .find(|o| o.label.contains(&needle))
+            .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
+            .expect("a distribution option")
+            .id;
+        result = resolve_pick(result.state, id);
+    }
+    result
+}
+
 // ---------------------------------------------------------------------
 // Case 1 — happy path
 // ---------------------------------------------------------------------
@@ -163,6 +194,8 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     );
 
     let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    // Distribute the attack: assign both points onto Guard Dog (#44/K5b).
+    let result = distribute_onto(result, dog);
     state = result.state;
 
     // The attack-loop suspended on Guard Dog's soak reaction window.
@@ -236,6 +269,7 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
     );
 
     let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = distribute_onto(result, dog);
     state = result.state;
 
     // Guard Dog left play (discarded), so no soak window suspended the loop;
@@ -303,6 +337,7 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     state.investigators.get_mut(&inv_id).unwrap().cards_in_play[0].accumulated_damage = 2;
 
     let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = distribute_onto(result, dog);
     state = result.state;
 
     assert!(
@@ -363,6 +398,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     );
 
     let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = distribute_onto(result, dog);
     state = result.state;
 
     // The surviving Guard Dog's reaction window suspended the loop.
@@ -445,12 +481,12 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // Two engaged attackers → the enemy phase first asks the player which
     // attacks next (#143). Pick the first attacker (EnemyId 7).
     let result = apply(state, Action::Player(PlayerAction::EndTurn));
-    state = result.state;
     let pick_first = order_pick(&result.outcome, first);
 
-    // The chosen first attacker attacks, soaks onto Guard Dog → suspend on the
-    // soak window.
-    let result = resolve_pick(state, pick_first);
+    // The chosen first attacker attacks: its 1 damage prompts the soak
+    // distribution (#44/K5b) — assign it to Guard Dog → suspend on the soak window.
+    let result = resolve_pick(result.state, pick_first);
+    let result = distribute_onto(result, dog);
     state = result.state;
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -485,11 +521,13 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     );
 
     // Resolve the first reaction window → the first attacker takes the
-    // retaliation, then the loop resumes the second attacker. The second
+    // retaliation, then the loop resumes the second attacker, whose 1 damage
+    // prompts its own soak distribution (assign to Guard Dog). The second
     // attack ALSO soaks onto the (surviving) Guard Dog, opening a second
     // soak window and re-suspending — a clean demonstration that the
     // resumed loop suspends again on a later attacker.
     let result = resolve_pick(state, OptionId(0));
+    let result = distribute_onto(result, dog);
     state = result.state;
 
     assert_eq!(
@@ -614,6 +652,9 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
             destination: dest,
         }),
     );
+    // The AoO prompts for the soak distribution (#44/K5b): assign both points
+    // onto Guard Dog to reproduce the soak.
+    let result = distribute_onto(result, dog);
     let mut state = result.state;
 
     // The AoO's soak window suspended the loop (the ActionResolution

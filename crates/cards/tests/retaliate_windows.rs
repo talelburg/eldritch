@@ -60,6 +60,32 @@ fn install_real_registry() {
     });
 }
 
+/// Resolve a soak-distribution prompt (#44/K5b — a retaliate attack against an
+/// investigator with a soaker prompts for the damage distribution) by assigning
+/// every point onto the soaker asset. Returns the first result that is no longer
+/// a distribution prompt.
+fn soak_onto_asset(mut result: game_core::ApplyResult) -> game_core::ApplyResult {
+    while let EngineOutcome::AwaitingInput { request, .. } = &result.outcome {
+        if !request.prompt.contains("to which target") {
+            break;
+        }
+        let id = request
+            .options
+            .iter()
+            .find(|o| o.label.contains("Asset"))
+            .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
+            .expect("a distribution option")
+            .id;
+        result = apply(
+            result.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(id),
+            }),
+        );
+    }
+    result
+}
+
 /// Build a ready retaliate enemy at `loc`, engaged with `inv`.
 /// `fight` is set high enough that the investigator (combat 1) will fail
 /// the test with a `Numeric(0)` token (1 + 0 = 1 < fight).
@@ -179,6 +205,9 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     // → Guard Dog has no cancel reaction so BeforeEnemyAttack auto-skips → damage
     // lands on Guard Dog → AfterEnemyAttackDamagedAsset window opens → suspend.
     let result = submit_empty_commit(state, inv_id, enemy_id);
+    // The retaliate's damage prompts the soak distribution (#44/K5b): assign it
+    // onto Guard Dog → soak window opens.
+    let result = soak_onto_asset(result);
     let mut state = result.state;
 
     assert!(

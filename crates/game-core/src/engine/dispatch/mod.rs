@@ -447,6 +447,11 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             reason: "ResolveInput: no input prompt is outstanding (a parked attack loop is top)"
                 .into(),
         },
+        // The interactive soak distribution's per-point prompt (#44/K5b): the
+        // `DamageAssignment` frame is the top prompt, resumed by its `PickSingle`.
+        Some(Continuation::DamageAssignment { .. }) => {
+            combat::resume_damage_assignment(cx, response)
+        }
         // A mid-action ActionResolution frame never awaits input — it is only
         // momentarily top inside `drive`. A ResolveInput here is spurious.
         Some(Continuation::ActionResolution { .. }) => EngineOutcome::Rejected {
