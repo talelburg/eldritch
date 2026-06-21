@@ -633,8 +633,19 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
             reason: format!("Native effect {tag:?}: no handler registered").into(),
         };
     };
+    let events_before = cx.events.len();
     let outcome = f(cx, &eval_ctx);
     if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+        // Standalone-contract tripwire (#334): a native that suspends for a pick
+        // must do so *before* any side effect, so re-invoking it on resume is
+        // idempotent up to the suspension. A native that emitted events then
+        // suspended would double-apply them on re-step — flag it loudly.
+        debug_assert_eq!(
+            cx.events.len(),
+            events_before,
+            "native {tag:?} pushed events before suspending for a choice; \
+             re-invocation on resume would double-apply (standalone-contract violation)",
+        );
         suspend_leaf_in_place(cx, node, eval_ctx);
     }
     outcome
