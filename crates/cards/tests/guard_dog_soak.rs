@@ -23,7 +23,7 @@
 
 use std::sync::Once;
 
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{apply, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, InvestigatorId, LocationId,
@@ -119,6 +119,30 @@ fn guard_dog_card(
         .iter()
         .find(|c| c.instance_id == inst)
         .expect("Guard Dog still in play")
+}
+
+/// From a suspended attack-order prompt (#143), the `PickSingle` `OptionId`
+/// whose label matches `enemy`'s debug repr.
+fn order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> game_core::engine::OptionId {
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        panic!("expected an attack-order prompt, got {outcome:?}");
+    };
+    request
+        .options
+        .iter()
+        .find(|o| o.label == format!("{enemy:?}"))
+        .expect("attacker offered in the order pick")
+        .id
+}
+
+/// Resume a suspended prompt/window by selecting option `id`.
+fn resolve_pick(state: game_core::GameState, id: game_core::engine::OptionId) -> ApplyResult {
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(id),
+        }),
+    )
 }
 
 // ---------------------------------------------------------------------
@@ -418,8 +442,15 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         ],
     );
 
-    // First attack soaks → suspend on the soak window.
+    // Two engaged attackers → the enemy phase first asks the player which
+    // attacks next (#143). Pick the first attacker (EnemyId 7).
     let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    state = result.state;
+    let pick_first = order_pick(&result.outcome, first);
+
+    // The chosen first attacker attacks, soaks onto Guard Dog → suspend on the
+    // soak window.
+    let result = resolve_pick(state, pick_first);
     state = result.state;
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -458,12 +489,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // attack ALSO soaks onto the (surviving) Guard Dog, opening a second
     // soak window and re-suspending — a clean demonstration that the
     // resumed loop suspends again on a later attacker.
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
-        }),
-    );
+    let result = resolve_pick(state, OptionId(0));
     state = result.state;
 
     assert_eq!(
@@ -497,12 +523,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // Resolve the second reaction window → second attacker takes the
     // retaliation, the loop drains with no attackers left, the enemy phase
     // cascades onward, and nothing remains parked.
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
-        }),
-    );
+    let result = resolve_pick(state, OptionId(0));
     state = result.state;
 
     assert_eq!(

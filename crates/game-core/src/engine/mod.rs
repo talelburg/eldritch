@@ -3193,38 +3193,84 @@ mod tests {
         assert_no_event!(result.events, Event::DamageTaken { .. });
     }
 
+    /// From a suspended `AwaitingInput` outcome, the attack-order (#143)
+    /// `PickSingle` `OptionId` whose label matches `enemy`'s debug repr.
+    fn attack_order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> crate::engine::OptionId {
+        let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+            panic!("expected an attack-order prompt, got {outcome:?}");
+        };
+        request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{enemy:?}"))
+            .unwrap_or_else(|| panic!("{enemy:?} not offered in {:?}", request.options))
+            .id
+    }
+
     #[test]
-    fn aoo_fires_in_enemy_id_order_for_multiple_attackers() {
-        // Lock in the v1 ordering contract (deterministic by EnemyId
-        // via BTreeMap iteration). Three engaged ready enemies with
-        // distinct attack_damage values; the sequence of DamageTaken
-        // amounts must match EnemyId ordering.
+    fn aoo_order_pick_resolves_attacks_in_chosen_order_for_multiple_attackers() {
+        // 3 engaged ready enemies provoke an AoO on Move; with 2+ attackers the
+        // player picks the order one at a time (#143, RR p.25 step 3.3). Pick the
+        // highest-damage enemy first to prove the pick overrides EnemyId order.
         let (inv_id, _, b, state) = move_scenario();
         let mut state = state;
+        state.investigators.get_mut(&inv_id).unwrap().max_health = 100; // survive all three
         for (id, dmg) in [(300, 1), (301, 2), (302, 4)] {
             let mut e = test_enemy(id, "");
             e.engaged_with = Some(inv_id);
             e.attack_damage = dmg;
             state.enemies.insert(EnemyId(id), e);
         }
-        let result = apply(
+        // Move provokes the AoO; 3 engaged → order pick (no attack dealt yet).
+        let r1 = apply(
             state,
             Action::Player(PlayerAction::Move {
                 investigator: inv_id,
                 destination: b,
             }),
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
-        let damages: Vec<u8> = result
+        assert!(matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }));
+        let pick_302 = attack_order_pick(&r1.outcome, EnemyId(302));
+
+        // Pick EnemyId(302) (dmg 4) first → resolves it, then re-prompts over the
+        // remaining [300, 301].
+        let r2 = apply(
+            r1.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(pick_302),
+            }),
+        );
+        assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
+        let pick_301 = attack_order_pick(&r2.outcome, EnemyId(301));
+
+        // Pick EnemyId(301) (dmg 2); EnemyId(300) (dmg 1) is then forced. The AoO
+        // loop drains and the parked Move completes.
+        let r3 = apply(
+            r2.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(pick_301),
+            }),
+        );
+        assert_eq!(r3.outcome, EngineOutcome::Done);
+
+        let damages: Vec<u8> = r1
             .events
             .iter()
+            .chain(&r2.events)
+            .chain(&r3.events)
             .filter_map(|e| match e {
                 Event::DamageTaken { amount, .. } => Some(*amount),
                 _ => None,
             })
             .collect();
-        assert_eq!(damages, vec![1, 2, 4]);
-        assert_eq!(result.state.investigators[&inv_id].damage, 7);
+        assert_eq!(
+            damages,
+            vec![4, 2, 1],
+            "chosen order: 302 (dmg4), 301 (dmg2), 300 (dmg1)"
+        );
+        assert_eq!(r3.state.investigators[&inv_id].damage, 7);
+        // The Move completed once the AoO loop drained.
+        assert_event!(r3.events, Event::InvestigatorMoved { .. });
     }
 
     #[test]
@@ -3383,8 +3429,10 @@ mod tests {
     #[test]
     fn defeated_investigator_does_not_take_further_damage() {
         // Two engaged ready enemies, both with attack_damage = 5.
-        // Investigator has max_health = 1. The first AoO defeats;
-        // the second is a no-op (apply_damage_numeric skips defeated).
+        // Investigator has max_health = 1. With 2 engaged, the Move's AoO
+        // suspends on the order pick (#143); the chosen first attacker defeats
+        // the investigator, so the active-check at the loop top early-breaks
+        // before the second attacks (no re-prompt).
         let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
         state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
         state.enemies.get_mut(&EnemyId(200)).unwrap().attack_damage = 5;
@@ -3393,21 +3441,31 @@ mod tests {
         e2.engaged_with = Some(inv_id);
         e2.attack_damage = 5;
         state.enemies.insert(EnemyId(201), e2);
-        let result = apply(
+        let r1 = apply(
             state,
             Action::Player(PlayerAction::Move {
                 investigator: inv_id,
                 destination: b,
             }),
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
-        // Exactly one DamageTaken event (from the first AoO) and one
-        // InvestigatorDefeated.
-        assert_event_count!(result.events, 1, Event::DamageTaken { .. });
-        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
-        // Damage saturates at the first AoO's amount; second AoO is
-        // skipped entirely.
-        assert_eq!(result.state.investigators[&inv_id].damage, 5);
+        assert!(matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }));
+        let pick = attack_order_pick(&r1.outcome, EnemyId(200));
+        let r2 = apply(
+            r1.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(pick),
+            }),
+        );
+        assert_eq!(r2.outcome, EngineOutcome::Done);
+        // Exactly one DamageTaken event (from the chosen first AoO) and one
+        // InvestigatorDefeated; the second enemy never attacks (early-break).
+        assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
+        assert_event_count!(r2.events, 1, Event::InvestigatorDefeated { .. });
+        // Damage saturates at the first AoO's amount; the second AoO is skipped.
+        assert_eq!(r2.state.investigators[&inv_id].damage, 5);
+        // The actor was defeated mid-action → the Move's primary effect is
+        // suppressed by the re-validation gate (#293 keystone).
+        assert_no_event!(r2.events, Event::InvestigatorMoved { .. });
     }
 
     #[test]

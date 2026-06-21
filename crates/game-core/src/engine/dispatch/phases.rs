@@ -3276,14 +3276,16 @@ mod enemy_phase_tests {
     }
 
     #[test]
-    fn resolve_attacks_for_investigator_iterates_attackers_in_enemy_id_order() {
+    fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
+        use crate::engine::OptionId;
+
         let inv_id = InvestigatorId(1);
 
-        let mut e_lower = test_enemy(2, "Lower id"); // EnemyId(2)
+        let mut e_lower = test_enemy(2, "Lower id"); // EnemyId(2), dmg 1
         e_lower.engaged_with = Some(inv_id);
         e_lower.attack_damage = 1;
 
-        let mut e_higher = test_enemy(10, "Higher id"); // EnemyId(10)
+        let mut e_higher = test_enemy(10, "Higher id"); // EnemyId(10), dmg 2
         e_higher.engaged_with = Some(inv_id);
         e_higher.attack_damage = 2;
 
@@ -3293,21 +3295,54 @@ mod enemy_phase_tests {
                 inv.max_health = 100; // survive both attacks
                 inv
             })
-            .with_enemy(e_higher) // insert in NON-id order to confirm BTreeMap ordering wins
+            .with_turn_order([inv_id])
+            .with_enemy(e_higher) // inserted non-id order: BTreeMap still snapshots 2 then 10
             .with_enemy(e_lower)
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(inv_id),
+            })
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(
+        // 2 ready engaged enemies → suspend on the order pick (#143), not EnemyId order.
+        let outcome = super::super::combat::resolve_attacks_for_investigator(
             &mut super::super::Cx {
                 state: &mut state,
                 events: &mut events,
             },
             inv_id,
         );
+        let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+            panic!("expected an attack-order prompt, got {outcome:?}");
+        };
+        // Options are the snapshotted attackers in EnemyId order: option 0 =
+        // EnemyId(2), option 1 = EnemyId(10). Pick the higher-id enemy (dmg 2) to
+        // strike FIRST, proving the player's pick overrides the deterministic order.
+        let pick = request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{:?}", EnemyId(10)))
+            .expect("EnemyId(10) offered")
+            .id;
+        assert_eq!(
+            pick,
+            OptionId(1),
+            "EnemyId(10) is option 1 in EnemyId order"
+        );
 
-        // The two DamageTaken events must appear in EnemyId(2) → EnemyId(10) order
-        // (verifiable via their amounts: 1 then 2).
+        let resumed = resolve_input(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::PickSingle(pick),
+        );
+        // Both attacks resolved; the chosen (EnemyId 10, dmg 2) struck first.
+        assert!(
+            !matches!(resumed, EngineOutcome::AwaitingInput { .. }),
+            "loop drained, got {resumed:?}"
+        );
         let damages: Vec<u8> = events
             .iter()
             .filter_map(|e| match e {
@@ -3317,9 +3352,10 @@ mod enemy_phase_tests {
             .collect();
         assert_eq!(
             damages,
-            vec![1, 2],
-            "EnemyId order: 2 (dmg 1) before 10 (dmg 2)"
+            vec![2, 1],
+            "chosen EnemyId(10) (dmg 2) attacked before EnemyId(2) (dmg 1)"
         );
+        assert!(state.enemies[&EnemyId(2)].exhausted && state.enemies[&EnemyId(10)].exhausted);
     }
 
     #[test]
@@ -3342,17 +3378,41 @@ mod enemy_phase_tests {
                 inv.max_health = 1; // e1's attack defeats
                 inv
             })
+            .with_turn_order([inv_id])
             .with_enemy(e1)
             .with_enemy(e2)
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(inv_id),
+            })
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(
+        // 2 engaged → order pick first (#143). Pick EnemyId(1) (the killer) to
+        // strike first; after it defeats the investigator, the active check at the
+        // loop top early-breaks before any re-prompt, so EnemyId(2) never attacks.
+        let outcome = super::super::combat::resolve_attacks_for_investigator(
             &mut super::super::Cx {
                 state: &mut state,
                 events: &mut events,
             },
             inv_id,
+        );
+        let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+            panic!("expected an order pick, got {outcome:?}");
+        };
+        let pick = request
+            .options
+            .iter()
+            .find(|o| o.label == format!("{:?}", EnemyId(1)))
+            .expect("EnemyId(1) offered")
+            .id;
+        let _ = resolve_input(
+            &mut super::super::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &InputResponse::PickSingle(pick),
         );
 
         // e1 attacked + exhausted.

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::engine::outcome::{InputRequest, OptionId, ResumeToken};
 use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
@@ -535,9 +536,10 @@ fn build_soakers(state: &crate::state::GameState, investigator: InvestigatorId) 
 /// `investigator`, driving them through the shared attack loop (#293) so each
 /// `AoO` opens its before-attack cancel window (Dodge 01023) and per-soaked-asset
 /// reaction window (Guard Dog 01021). Returns [`EngineOutcome::AwaitingInput`]
-/// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. Attackers
-/// resolve in deterministic [`EnemyId`] order (player-pick is #143/K4). `AoO`
-/// attackers never exhaust (RR p.7) — honored by
+/// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. With 2+
+/// engaged ready enemies the loop suspends for the player's attack-order pick
+/// (#143, RR p.25 step 3.3); a single attacker resolves inline. `AoO` attackers
+/// never exhaust (RR p.7) — honored by
 /// [`EnemyAttackSource::AttackOfOpportunity`].
 pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let attackers: Vec<EnemyId> = cx
@@ -582,11 +584,14 @@ pub(super) fn drive_retaliate(
 /// steps (early-break-on-defeat, [`enemy_attack`], exhaust) and the
 /// soak-window suspend/resume contract (C5b #237).
 ///
-/// **Attack order:** deterministic by [`EnemyId`]. Rules Reference
-/// p.25 prescribes "the order of the attacked investigator's
-/// choosing" when an investigator is engaged with multiple enemies;
-/// `TODO(#143)`: player-pick attack order, unmilestoned, covers both
-/// this site and [`drive_aoo`] (which has the same TODO).
+/// **Attack order:** player-chosen (#143). With 2+ ready engaged enemies
+/// the loop suspends on a `PickSingle` ([`AttackLoopStage::PickOrder`]) so
+/// the attacked investigator picks which strikes next (RR p.25 step 3.3:
+/// "resolve their attacks in the order of the attacked investigator's
+/// choosing"), one at a time between attacks; a single attacker resolves
+/// inline. The attacker set is snapshotted here in [`EnemyId`] order (the
+/// option order) and frozen for the sequence — the pick reorders the stored
+/// list, never re-scanning state.
 pub(super) fn resolve_attacks_for_investigator(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -801,13 +806,90 @@ fn deal_head_and_maybe_park(
     }
 }
 
+/// Resolve the head attacker: open its `BeforeEnemyAttack` cancel window (park
+/// the loop as [`AttackLoopStage::BeforeAttack`] and suspend if a cancel
+/// reaction is available, Axis D #336), otherwise deal it + maybe park on its
+/// `AfterEnemyAttackDamagedAsset` soak window (C5b #237). `Some(outcome)` =
+/// suspended (the loop is parked beneath the queued window); `None` = continue
+/// to the next attacker. Caller guarantees `attackers` is non-empty. Shared by
+/// [`drive_attack_loop`] and the order-pick resume (`resume_attack_order_pick`,
+/// #143).
+fn process_head_attacker(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    attackers: &mut Vec<EnemyId>,
+    source: EnemyAttackSource,
+) -> Option<EngineOutcome> {
+    let enemy_id = *attackers
+        .first()
+        .expect("process_head_attacker called with an empty attacker list");
+
+    // Before-attack cancel window (Axis D #336): reaction-only Before timing
+    // point. Opens iff a co-located cancel reaction is available (Dodge in hand,
+    // or an in-play reaction); `emit_event` only queues a window when the scan
+    // finds a candidate. Suspend BEFORE dealing damage, keeping the head
+    // attacker at the front of `attackers` so the `BeforeAttack` resume
+    // processes it (deal-or-cancel).
+    let _ = super::emit::emit_event(
+        cx,
+        &super::emit::TimingEvent::EnemyAttacks {
+            enemy: enemy_id,
+            investigator,
+        },
+    );
+    if !cx.state.open_windows().is_empty() {
+        park_attack_loop_beneath_window(
+            cx,
+            investigator,
+            std::mem::take(attackers),
+            source,
+            AttackLoopStage::BeforeAttack,
+        );
+        return Some(super::reaction_windows::open_queued_reaction_window(cx));
+    }
+
+    // No cancel reaction available: deal this (un-cancelled) attacker,
+    // suspending if it opens a soak window.
+    deal_head_and_maybe_park(cx, investigator, attackers, source, false)
+}
+
+/// Park the loop on its order-pick `PickSingle` (#143): push the `AttackLoop`
+/// frame as the **top** frame (no window above — it *is* the prompt) at
+/// [`AttackLoopStage::PickOrder`], and return `AwaitingInput` offering the
+/// remaining attackers (option `i` = `remaining_attackers[i]`, `EnemyId` order).
+/// `resume_attack_order_pick` resolves the `PickSingle` back. Called only with
+/// `attackers.len() >= 2`.
+fn suspend_order_pick(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    attackers: Vec<EnemyId>,
+    source: EnemyAttackSource,
+) -> EngineOutcome {
+    let prompt = format!(
+        "Investigator {investigator:?} is engaged with {} enemies: pick which attacks \
+         next (RR p.25 step 3.3)",
+        attackers.len()
+    );
+    let options = super::hunters::candidate_options(&attackers);
+    cx.state.continuations.push(Continuation::AttackLoop {
+        investigator,
+        remaining_attackers: attackers,
+        source,
+        stage: AttackLoopStage::PickOrder,
+    });
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::choice(prompt, options),
+        resume_token: ResumeToken(0),
+    }
+}
+
 fn drive_attack_loop(
     cx: &mut Cx,
     investigator: InvestigatorId,
     mut attackers: Vec<EnemyId>,
     source: EnemyAttackSource,
 ) -> EngineOutcome {
-    while let Some(&enemy_id) = attackers.first() {
+    while !attackers.is_empty() {
         // Early-break on defeat. See fn doc step 1.
         let active = cx
             .state
@@ -818,39 +900,43 @@ fn drive_attack_loop(
             break;
         }
 
-        // Before-attack cancel window (Axis D #336): reaction-only Before
-        // timing point. Opens iff a co-located cancel reaction is available
-        // (Dodge in hand, or an in-play reaction); `emit_event` only queues a
-        // window when the scan finds a candidate. Suspend BEFORE dealing
-        // damage, keeping the head attacker at the front of `attackers` so the
-        // `BeforeAttack` resume processes it (deal-or-cancel).
-        let _ = super::emit::emit_event(
-            cx,
-            &super::emit::TimingEvent::EnemyAttacks {
-                enemy: enemy_id,
-                investigator,
-            },
-        );
-        if !cx.state.open_windows().is_empty() {
-            park_attack_loop_beneath_window(
-                cx,
-                investigator,
-                attackers,
-                source,
-                AttackLoopStage::BeforeAttack,
-            );
-            return super::reaction_windows::open_queued_reaction_window(cx);
+        // Player-chosen attack order (#143, RR p.25 step 3.3): with 2+ ready
+        // attackers remaining, suspend for the order pick before resolving the
+        // head. Covers the enemy phase, AoO, and (vacuously, 1-element) retaliate
+        // — all three route through here. Single-attacker lists skip this and
+        // resolve inline, preserving prior behaviour.
+        if attackers.len() >= 2 {
+            return suspend_order_pick(cx, investigator, attackers, source);
         }
 
-        // No cancel reaction available: deal this (un-cancelled) attacker,
-        // suspending if it opens a soak window.
-        if let Some(suspended) =
-            deal_head_and_maybe_park(cx, investigator, &mut attackers, source, false)
-        {
+        if let Some(suspended) = process_head_attacker(cx, investigator, &mut attackers, source) {
             return suspended;
         }
     }
     EngineOutcome::Done
+}
+
+/// The source-keyed step that runs once an attack loop drains to
+/// [`EngineOutcome::Done`]: enemy phase advances its per-investigator cursor and
+/// opens the next window; an `AoO` returns control to the parked
+/// `ActionResolution` frame (`Done`, the `drive` loop resumes it); a retaliate
+/// re-enters the Fight's skill-test follow-up. Shared by [`resume_enemy_attack`]
+/// (window-close drain) and `resume_attack_order_pick` (order-pick drain, #143).
+fn finish_attack_loop(
+    cx: &mut Cx,
+    source: EnemyAttackSource,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    match source {
+        EnemyAttackSource::EnemyPhase => {
+            super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
+        }
+        EnemyAttackSource::AttackOfOpportunity => EngineOutcome::Done,
+        // The retaliate's window closed; the loop drained. Hand control back to the
+        // Fight's skill-test follow-up (its `SkillTest` frame is now top, cursor at
+        // `PostOnResolution`) so teardown finishes (#379).
+        EnemyAttackSource::Retaliate => super::skill_test::drive_skill_test(cx),
+    }
 }
 
 /// Re-enter a suspended enemy-attack loop after the reaction window it parked
@@ -868,15 +954,8 @@ fn drive_attack_loop(
 ///   the remaining attackers.
 ///
 /// If the loop suspends again, that [`EngineOutcome::AwaitingInput`] is returned
-/// as-is. On completion the post-loop step runs by `source`:
-///
-/// - [`EnemyAttackSource::EnemyPhase`]: advance the enemy-phase cursor and open
-///   the next window via [`after_enemy_phase_attacks`].
-/// - [`EnemyAttackSource::AttackOfOpportunity`]: return [`EngineOutcome::Done`].
-///   The `AoO` loop ([`drive_aoo`]) does open soak and cancel windows, so this
-///   arm is reachable — it fires when the mid-action park unwinds and the
-///   `AoO` loop completes (#293). Kept as a distinct arm so the source-keyed
-///   dispatch stays total (C5b #237).
+/// as-is. On completion the source-keyed post-loop step runs via
+/// [`finish_attack_loop`] (shared with the order-pick resume, #143).
 ///
 /// Called from
 /// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s
@@ -924,24 +1003,83 @@ pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
         "drive_attack_loop returned unexpected {outcome:?} (only Done / \
          AwaitingInput are possible — it never rejects)"
     );
-    match source {
-        EnemyAttackSource::EnemyPhase => {
-            super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
-        }
-        EnemyAttackSource::AttackOfOpportunity => EngineOutcome::Done,
-        // The retaliate's window closed; the loop drained. Hand control back to the
-        // Fight's skill-test follow-up (its `SkillTest` frame is now top, cursor at
-        // `PostOnResolution`) so teardown finishes (#379).
-        EnemyAttackSource::Retaliate => super::skill_test::drive_skill_test(cx),
+    finish_attack_loop(cx, source, investigator)
+}
+
+/// Resume a loop suspended on its order-pick `PickSingle` (#143). The
+/// `AttackLoop{stage: PickOrder}` frame is the top frame (no window above it),
+/// so [`resolve_input`](super::resolve_input) routes here directly (not via
+/// window-close). Validate the `PickSingle` against the stored
+/// `remaining_attackers`; on an invalid pick, reject and **leave the frame** so
+/// the client can retry (mirrors `resume_hunter_choice`). On a valid pick, move
+/// the chosen enemy to the head, resolve it via [`process_head_attacker`] (which
+/// may re-suspend on its own cancel/soak window), then drive the rest —
+/// re-prompting if 2+ still remain — and run the source-keyed tail
+/// ([`finish_attack_loop`]) on completion.
+pub(super) fn resume_attack_order_pick(
+    cx: &mut Cx,
+    response: &crate::action::InputResponse,
+) -> EngineOutcome {
+    let Some(Continuation::AttackLoop {
+        investigator,
+        remaining_attackers,
+        source,
+        stage: AttackLoopStage::PickOrder,
+    }) = cx.state.continuations.last().cloned()
+    else {
+        unreachable!(
+            "resume_attack_order_pick: top frame is not an AttackLoop{{PickOrder}}; \
+             resolve_input only routes here when it is — state-corruption invariant \
+             violation"
+        )
+    };
+    let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: attack-order pick expects InputResponse::PickSingle, got {response:?}"
+            )
+            .into(),
+        };
+    };
+    let i = *i as usize;
+    if i >= remaining_attackers.len() {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: attack-order option {i} out of range (0..{})",
+                remaining_attackers.len()
+            )
+            .into(),
+        };
     }
+
+    // Valid pick: pop the frame we validated against, then move the chosen enemy
+    // to the head (preserving the others' relative order for the next prompt).
+    cx.state.continuations.pop();
+    let mut attackers = remaining_attackers;
+    let chosen = attackers.remove(i);
+    attackers.insert(0, chosen);
+
+    if let Some(suspended) = process_head_attacker(cx, investigator, &mut attackers, source) {
+        return suspended; // the chosen head opened its own cancel/soak window
+    }
+    let outcome = drive_attack_loop(cx, investigator, attackers, source);
+    if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+        return outcome; // next order pick, or a later attacker's window
+    }
+    debug_assert!(
+        matches!(outcome, EngineOutcome::Done),
+        "drive_attack_loop returned unexpected {outcome:?}"
+    );
+    finish_attack_loop(cx, source, investigator)
 }
 
 #[cfg(test)]
 mod combat_tests {
     use super::super::Cx;
     use super::single_engaged_enemy;
+    use crate::engine::{EngineOutcome, OptionId};
     use crate::event::Event;
-    use crate::state::{EnemyId, InvestigatorId};
+    use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId, InvestigatorId};
     use crate::test_support::{test_enemy, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
@@ -1159,26 +1297,24 @@ mod combat_tests {
     }
 
     #[test]
-    fn resume_enemy_attack_drains_remaining_attackers_and_advances_cursor() {
-        // EU5 deferral: firing Guard Dog's reaction end-to-end across two
-        // attackers needs the real `cards` registry (so `trigger_matches`
-        // finds the ability and a soak window genuinely opens mid-loop) —
-        // that is the EU5 integration test. This lib-level check exercises
-        // the resume half directly: park an `AttackLoop` frame with two
-        // remaining attackers (as `drive_attack_loop` would on suspend) plus
-        // an already-open soak window, then call `resume_enemy_attack` and
-        // assert it drains both attackers (exhausting each) and advances the
-        // enemy-phase cursor past the (sole) investigator to `None`.
+    fn resume_enemy_attack_drains_remaining_attacker_and_advances_cursor() {
+        // EU5 deferral: firing Guard Dog's reaction end-to-end needs the real
+        // `cards` registry (so `trigger_matches` finds the ability and a soak
+        // window genuinely opens mid-loop) — that is the EU5 integration test.
+        // This lib-level check exercises the resume half directly: park an
+        // `AttackLoop` frame with one remaining attacker (as `drive_attack_loop`
+        // would on suspend), then call `resume_enemy_attack` and assert it drains
+        // the attacker (exhausting it) and advances the enemy-phase cursor past
+        // the (sole) investigator to `None`. One attacker, not two: with 2+
+        // remaining the drain would re-prompt for the player attack order (#143),
+        // which the order-pick tests cover.
         use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, InvestigatorId};
 
         let inv_id = InvestigatorId(1);
         let second = EnemyId(2);
-        let third = EnemyId(3);
 
         let mut e2 = test_enemy(2, "Second Attacker");
         e2.engaged_with = Some(inv_id);
-        let mut e3 = test_enemy(3, "Third Attacker");
-        e3.engaged_with = Some(inv_id);
 
         // The real resume path runs AFTER `close_reaction_window_at` popped
         // the soak window the loop suspended on, so `open_windows` is empty
@@ -1187,7 +1323,6 @@ mod combat_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(e2)
-            .with_enemy(e3)
             // EnemyPhase anchor (slice 1a): the attack-loop resume opens a
             // window whose close routes to anchor_on_child_pop.
             .with_phase_anchor(crate::state::Continuation::EnemyPhase {
@@ -1197,7 +1332,7 @@ mod combat_tests {
             .build();
         state.continuations.push(Continuation::AttackLoop {
             investigator: inv_id,
-            remaining_attackers: vec![second, third],
+            remaining_attackers: vec![second], // one remaining: drains without a re-prompt
             source: EnemyAttackSource::EnemyPhase,
             stage: AttackLoopStage::AfterSoak,
         });
@@ -1209,8 +1344,8 @@ mod combat_tests {
         };
         let outcome = super::resume_enemy_attack(&mut cx);
 
-        // Both parked attackers resolved and exhausted; the parked frame is
-        // popped. No registry → no new soak window, no re-suspend.
+        // The parked attacker resolved and exhausted; the parked frame is popped.
+        // No registry → no new soak window, no re-suspend.
         assert!(
             !state
                 .continuations
@@ -1222,9 +1357,7 @@ mod combat_tests {
             state.enemies[&second].exhausted,
             "second attacker exhausted"
         );
-        assert!(state.enemies[&third].exhausted, "third attacker exhausted");
         assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == second);
-        assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == third);
         // Loop finished → `after_enemy_phase_attacks` advanced the cursor
         // past the only investigator and opened the all-attacked window
         // (auto-skips inline with no registry), cascading the EnemyPhase anchor
@@ -1411,6 +1544,134 @@ mod combat_tests {
         // damage landed on the investigator and no exhaust event was emitted.
         assert_event!(events, Event::DamageTaken { .. });
         assert_no_event!(events, Event::EnemyExhausted { .. });
+    }
+
+    #[test]
+    fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
+        // 2 engaged ready enemies provoking an AoO → the loop suspends on the
+        // order pick, parking the AttackLoop frame as the top frame with the AoO
+        // source + PickOrder stage (so it spans the whole AoO, #143). Picking the
+        // higher-id enemy first proves the pick overrides EnemyId order; neither
+        // AoO attacker exhausts (RR p.7).
+        let inv_id = InvestigatorId(1);
+        let mut e_a = test_enemy(5, "A"); // EnemyId(5), dmg 1
+        e_a.engaged_with = Some(inv_id);
+        e_a.attack_damage = 1;
+        let mut e_b = test_enemy(6, "B"); // EnemyId(6), dmg 2
+        e_b.engaged_with = Some(inv_id);
+        e_b.attack_damage = 2;
+
+        let mut state = GameStateBuilder::new()
+            .with_investigator({
+                let mut inv = test_investigator(1);
+                inv.max_health = 100;
+                inv
+            })
+            .with_enemy(e_a)
+            .with_enemy(e_b)
+            .build();
+        let mut events = Vec::new();
+
+        let outcome = super::drive_aoo(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "2 engaged ready enemies → AoO order pick (#143)"
+        );
+        // The parked frame carries the AoO source + PickOrder stage (frame spans
+        // the whole AoO, not just a window suspension).
+        assert!(matches!(
+            state.continuations.last(),
+            Some(Continuation::AttackLoop {
+                source: EnemyAttackSource::AttackOfOpportunity,
+                stage: AttackLoopStage::PickOrder,
+                ..
+            })
+        ));
+
+        // Pick EnemyId(6) (dmg 2) first → option 1 in EnemyId order [5, 6].
+        let resumed = super::super::resolve_input(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::action::InputResponse::PickSingle(OptionId(1)),
+        );
+        assert!(matches!(resumed, EngineOutcome::Done), "AoO loop drained");
+        let damages: Vec<u8> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::DamageTaken { amount, .. } => Some(*amount),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            damages,
+            vec![2, 1],
+            "chosen EnemyId(6) (dmg 2) struck first"
+        );
+        assert!(
+            !state.enemies[&EnemyId(5)].exhausted && !state.enemies[&EnemyId(6)].exhausted,
+            "AoO attackers never exhaust (RR p.7)"
+        );
+    }
+
+    #[test]
+    fn resume_attack_order_pick_rejects_invalid_input_and_keeps_frame() {
+        // An out-of-range option id and a wrong InputResponse variant both reject,
+        // leaving the PickOrder frame on the stack for the client to retry
+        // (mirrors resume_hunter_choice).
+        let inv_id = InvestigatorId(1);
+        let mut e_a = test_enemy(5, "A");
+        e_a.engaged_with = Some(inv_id);
+        let mut e_b = test_enemy(6, "B");
+        e_b.engaged_with = Some(inv_id);
+
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_enemy(e_a)
+            .with_enemy(e_b)
+            .build();
+        let mut events = Vec::new();
+        let _ = super::drive_aoo(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
+
+        // Out-of-range option (only 0, 1 valid).
+        let rejected = super::super::resolve_input(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::action::InputResponse::PickSingle(OptionId(9)),
+        );
+        assert!(matches!(rejected, EngineOutcome::Rejected { .. }));
+        // Wrong variant.
+        let rejected2 = super::super::resolve_input(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::action::InputResponse::Skip,
+        );
+        assert!(matches!(rejected2, EngineOutcome::Rejected { .. }));
+        // The PickOrder frame survives both rejections for retry.
+        assert!(matches!(
+            state.continuations.last(),
+            Some(Continuation::AttackLoop {
+                stage: AttackLoopStage::PickOrder,
+                ..
+            })
+        ));
     }
 
     #[test]

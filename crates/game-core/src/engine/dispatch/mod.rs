@@ -434,10 +434,15 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 .into(),
         },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
-        // A parked `AttackLoop` frame (#411) never awaits input — the reaction
-        // window pushed above it is the prompt, and the frame is only ever
-        // momentarily top inside `resume_enemy_attack`. If one is somehow top, no
-        // prompt is outstanding (defensive, mirrors the EncounterCard arm).
+        // An order-pick suspension parks the `AttackLoop` frame as the top frame
+        // (it *is* the prompt) — route its `PickSingle` to the order resume
+        // (#143). Every other `AttackLoop` stage sits beneath a reaction window
+        // (the window is the prompt) and never legitimately awaits input here, so
+        // it rejects defensively (mirrors the EncounterCard arm).
+        Some(Continuation::AttackLoop {
+            stage: crate::state::AttackLoopStage::PickOrder,
+            ..
+        }) => combat::resume_attack_order_pick(cx, response),
         Some(Continuation::AttackLoop { .. }) => EngineOutcome::Rejected {
             reason: "ResolveInput: no input prompt is outstanding (a parked attack loop is top)"
                 .into(),
