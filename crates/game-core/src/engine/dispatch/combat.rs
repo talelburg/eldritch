@@ -801,13 +801,60 @@ fn deal_head_and_maybe_park(
     }
 }
 
+/// Resolve the head attacker: open its `BeforeEnemyAttack` cancel window (park
+/// the loop as [`AttackLoopStage::BeforeAttack`] and suspend if a cancel
+/// reaction is available, Axis D #336), otherwise deal it + maybe park on its
+/// `AfterEnemyAttackDamagedAsset` soak window (C5b #237). `Some(outcome)` =
+/// suspended (the loop is parked beneath the queued window); `None` = continue
+/// to the next attacker. Caller guarantees `attackers` is non-empty. Shared by
+/// [`drive_attack_loop`] and the order-pick resume (`resume_attack_order_pick`,
+/// #143).
+fn process_head_attacker(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    attackers: &mut Vec<EnemyId>,
+    source: EnemyAttackSource,
+) -> Option<EngineOutcome> {
+    let enemy_id = *attackers
+        .first()
+        .expect("process_head_attacker called with an empty attacker list");
+
+    // Before-attack cancel window (Axis D #336): reaction-only Before timing
+    // point. Opens iff a co-located cancel reaction is available (Dodge in hand,
+    // or an in-play reaction); `emit_event` only queues a window when the scan
+    // finds a candidate. Suspend BEFORE dealing damage, keeping the head
+    // attacker at the front of `attackers` so the `BeforeAttack` resume
+    // processes it (deal-or-cancel).
+    let _ = super::emit::emit_event(
+        cx,
+        &super::emit::TimingEvent::EnemyAttacks {
+            enemy: enemy_id,
+            investigator,
+        },
+    );
+    if !cx.state.open_windows().is_empty() {
+        park_attack_loop_beneath_window(
+            cx,
+            investigator,
+            std::mem::take(attackers),
+            source,
+            AttackLoopStage::BeforeAttack,
+        );
+        return Some(super::reaction_windows::open_queued_reaction_window(cx));
+    }
+
+    // No cancel reaction available: deal this (un-cancelled) attacker,
+    // suspending if it opens a soak window.
+    deal_head_and_maybe_park(cx, investigator, attackers, source, false)
+}
+
 fn drive_attack_loop(
     cx: &mut Cx,
     investigator: InvestigatorId,
     mut attackers: Vec<EnemyId>,
     source: EnemyAttackSource,
 ) -> EngineOutcome {
-    while let Some(&enemy_id) = attackers.first() {
+    while !attackers.is_empty() {
         // Early-break on defeat. See fn doc step 1.
         let active = cx
             .state
@@ -818,35 +865,7 @@ fn drive_attack_loop(
             break;
         }
 
-        // Before-attack cancel window (Axis D #336): reaction-only Before
-        // timing point. Opens iff a co-located cancel reaction is available
-        // (Dodge in hand, or an in-play reaction); `emit_event` only queues a
-        // window when the scan finds a candidate. Suspend BEFORE dealing
-        // damage, keeping the head attacker at the front of `attackers` so the
-        // `BeforeAttack` resume processes it (deal-or-cancel).
-        let _ = super::emit::emit_event(
-            cx,
-            &super::emit::TimingEvent::EnemyAttacks {
-                enemy: enemy_id,
-                investigator,
-            },
-        );
-        if !cx.state.open_windows().is_empty() {
-            park_attack_loop_beneath_window(
-                cx,
-                investigator,
-                attackers,
-                source,
-                AttackLoopStage::BeforeAttack,
-            );
-            return super::reaction_windows::open_queued_reaction_window(cx);
-        }
-
-        // No cancel reaction available: deal this (un-cancelled) attacker,
-        // suspending if it opens a soak window.
-        if let Some(suspended) =
-            deal_head_and_maybe_park(cx, investigator, &mut attackers, source, false)
-        {
+        if let Some(suspended) = process_head_attacker(cx, investigator, &mut attackers, source) {
             return suspended;
         }
     }
