@@ -409,66 +409,6 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
     lethal
 }
 
-/// Apply an enemy's attack pattern (damage + horror) to an
-/// investigator. Used by attacks of opportunity today; will be reused
-/// by the enemy-phase handler (#71) when that lands.
-///
-/// Per the Rules Reference, an enemy making an attack of opportunity
-/// does NOT exhaust. Enemy-phase attacks DO exhaust the attacker.
-/// This helper therefore does NOT touch the attacker's `exhausted`
-/// flag — callers that need exhaustion (i.e. the enemy phase) apply
-/// it separately.
-///
-/// Damage and horror are placed on the investigator **simultaneously**
-/// per Rules Reference page 7 ("Apply Damage/Horror"): *"Any assigned
-/// damage/horror that has not been prevented is now placed on each
-/// card to which it has been assigned, simultaneously. … After
-/// applying damage/horror, if an investigator has damage equal to or
-/// higher than his or her health or horror equal to or higher than
-/// his or her sanity, he or she is defeated."* So `inv.damage` and
-/// `inv.horror` BOTH update before any defeat check, even when one
-/// alone would be lethal — campaign-log accounting needs both numeric
-/// values to land. Only one [`Event::InvestigatorDefeated`] fires per
-/// attack regardless of how many stats crossed.
-///
-/// Tie-break when both stats cross simultaneously: [`DefeatCause::Damage`].
-/// Per Rules Reference page 6, an investigator simultaneously defeated
-/// by damage and horror *"chooses which type of trauma to suffer"* —
-/// physical vs. mental in the campaign log, and the corresponding
-/// in-scenario status flip follows. The engine doesn't model campaign
-/// trauma yet and has no [`AwaitingInput`] prompt for "pick trauma
-/// type," so `DefeatCause::Damage` is a deterministic placeholder for
-/// the status flip. Route the choice through `AwaitingInput` (and pick
-/// the corresponding [`Status`] variant) when trauma lands; out of
-/// scope for `#83`.
-///
-/// Returns the **damaged surviving soaker assets** (the
-/// [`place_assignment`] survivor list) so the caller can queue one
-/// [`WindowKind::AfterEnemyAttackDamagedAsset`] reaction window per
-/// survivor. This function does **not** queue the windows itself: both
-/// callers — the enemy phase ([`drive_attack_loop`]) and attacks of
-/// opportunity ([`drive_aoo`]) — queue soak windows via the same loop
-/// mechanic (#293), so neither drops the survivor list. Keeping the
-/// queueing at the call site is what lets `enemy_attack` stay stateless
-/// and avoids stranding an undriven window (C5b #237).
-///
-/// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
-pub(super) fn enemy_attack(
-    cx: &mut Cx,
-    enemy_id: EnemyId,
-    investigator: InvestigatorId,
-) -> Vec<CardInstanceId> {
-    let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
-        unreachable!(
-            "enemy_attack: enemy {enemy_id:?} is not in state.enemies; \
-             this is a state-corruption invariant violation"
-        )
-    });
-    let damage = enemy.attack_damage;
-    let horror = enemy.attack_horror;
-    soak_and_place(cx, investigator, damage, horror)
-}
-
 /// Distribute `damage` + `horror` to `investigator` across eligible soakers
 /// then self (soak-first, RR p.7), place simultaneously, and defeat overflowed
 /// assets — the shared soak entry for **both** enemy attacks and non-attack
@@ -656,11 +596,62 @@ pub(super) fn resolve_attacks_for_investigator(
 ///
 /// Returns [`EngineOutcome::Done`] when the list is exhausted with no
 /// suspension.
-/// Deal one attacker's damage (unless `cancelled`), queue its soak window(s),
-/// and exhaust it (enemy phase only). The open-window suspend check is left to
-/// the caller (so the before-cancel and soak resume paths can both reuse this
-/// body). `AoO` attacks route through here via [`drive_aoo`] but never exhaust
-/// (RR p.7) — the `source` parameter guards that branch.
+/// Place an already-computed `assignment` for one attacker, queue a soak
+/// reaction window per damaged survivor, and exhaust the attacker (enemy phase
+/// only). The deterministic tail shared by the no-prompt synchronous path
+/// ([`process_attacker_dealing`]) and the interactive
+/// [`resume_damage_assignment`] (#44/K5b). `assignment` is already built
+/// (soak-first or player-chosen); this never prompts. `AoO` / `Retaliate`
+/// sources never exhaust (RR p.7 / p.18) — the `attack_source` guards that.
+fn place_queue_exhaust(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+    attack_source: EnemyAttackSource,
+    assignment: &Assignment,
+) {
+    // Simultaneous placement + defeat (RR p.7); returns the damaged surviving
+    // soaker assets (C5b #237).
+    let damaged_survivors = place_assignment(cx, investigator, assignment);
+
+    // Queue a soak reaction window per surviving damaged asset, BEFORE the
+    // exhaust step — preserving the historical order in which the window's
+    // `WindowOpened` precedes `EnemyExhausted`. Inert unless a soaker has an
+    // `EnemyAttackDamagedSelf` reaction (Guard Dog 01021).
+    for asset in damaged_survivors {
+        let _ = super::emit::emit_event(
+            cx,
+            &super::emit::TimingEvent::EnemyAttackDamagedSelf {
+                asset,
+                enemy: enemy_id,
+                controller: investigator,
+            },
+        );
+    }
+
+    // Exhaust only on the enemy phase. AoO / Retaliate never exhaust.
+    // RR p.6: a cancelled attack is "still regarded as initiated"; RR p.25:
+    // the enemy exhausts "upon completion of dealing the attack". The attack
+    // was made; only its effect was prevented.
+    if attack_source == EnemyAttackSource::EnemyPhase {
+        let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+            unreachable!(
+                "place_queue_exhaust: snapshotted enemy {enemy_id:?} is gone from \
+                 state.enemies; this is a state-corruption invariant violation"
+            )
+        });
+        enemy.exhausted = true;
+        cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
+    }
+}
+
+/// Deal one attacker's damage (unless `cancelled`) soak-first, queue its soak
+/// window(s), and exhaust it (enemy phase only). The open-window suspend check
+/// is left to the caller. `AoO` attacks route through here but never exhaust
+/// (RR p.7) — the `source` parameter guards that branch (via
+/// [`place_queue_exhaust`]). The interactive distribution (#44/K5b-1) builds the
+/// assignment in [`deal_head_and_maybe_park`] instead; this soak-first form is
+/// the cancelled-attack path's tail.
 fn process_attacker_dealing(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -668,45 +659,22 @@ fn process_attacker_dealing(
     source: EnemyAttackSource,
     cancelled: bool,
 ) {
-    // Unless cancelled (Dodge 01023, RR p.6): damage + horror placement
-    // (simultaneous per p.7) + defeat; returns the damaged surviving soaker
-    // assets (C5b #237). On cancel, no damage/horror is dealt and no soaker
-    // can survive, so no soak window opens.
-    if !cancelled {
-        let damaged_survivors = enemy_attack(cx, enemy_id, investigator);
-
-        // Queue a soak reaction window per surviving damaged asset, BEFORE the
-        // exhaust step below — preserving the historical order in which the
-        // window's `WindowOpened` precedes `EnemyExhausted`. Inert unless a
-        // soaker has an `EnemyAttackDamagedSelf` reaction (Guard Dog 01021).
-        // Queued here, not in `enemy_attack`, so AoO (which shares
-        // `enemy_attack`) doesn't strand an undriven window (C5b #237).
-        for asset in damaged_survivors {
-            let _ = super::emit::emit_event(
-                cx,
-                &super::emit::TimingEvent::EnemyAttackDamagedSelf {
-                    asset,
-                    enemy: enemy_id,
-                    controller: investigator,
-                },
-            );
-        }
-    }
-
-    // Exhaust only on the enemy phase. AoO never exhausts (RR p.7).
-    // RR p.6: a cancelled attack is "still regarded as initiated"; RR p.25:
-    // the enemy exhausts "upon completion of dealing the attack". The attack
-    // was made; only its effect was prevented.
-    if source == EnemyAttackSource::EnemyPhase {
-        let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
+    // Cancelled (Dodge 01023, RR p.6): no damage/horror dealt; the attack is
+    // still "made", so the attacker still exhausts below. Else soak-first.
+    let assignment = if cancelled {
+        Assignment::default()
+    } else {
+        let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
             unreachable!(
                 "process_attacker_dealing: snapshotted enemy {enemy_id:?} is gone from \
                  state.enemies; this is a state-corruption invariant violation"
             )
         });
-        enemy.exhausted = true;
-        cx.events.push(Event::EnemyExhausted { enemy: enemy_id });
-    }
+        let (damage, horror) = (enemy.attack_damage, enemy.attack_horror);
+        let soakers = build_soakers(cx.state, investigator);
+        assign_attack(&soakers, damage, horror)
+    };
+    place_queue_exhaust(cx, investigator, enemy_id, source, &assignment);
 }
 
 /// Park the loop on the soak reaction window the just-dealt attack opened and
@@ -1174,30 +1142,25 @@ mod combat_tests {
     }
 
     #[test]
-    fn enemy_attack_with_no_soakers_matches_old_behavior() {
+    fn soak_and_place_with_no_soakers_matches_old_behavior() {
         // Regression guard for the assign/place/window rewrite: an attack
         // of 2 damage / 1 horror against an investigator controlling no
         // soak-bearing assets must land entirely on the investigator, just
         // as the pre-rewrite direct apply_damage/horror_numeric path did.
         let id = InvestigatorId(1);
-        let eid = EnemyId(1);
         let mut inv = test_investigator(1);
         inv.max_health = 10;
         inv.max_sanity = 10;
 
-        let mut enemy = test_enemy(1, "Ghoul");
-        enemy.attack_damage = 2;
-        enemy.attack_horror = 1;
-
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
-        state.enemies.insert(eid, enemy);
         let mut events = Vec::new();
         let mut cx = Cx {
             state: &mut state,
             events: &mut events,
         };
 
-        super::enemy_attack(&mut cx, eid, id);
+        let survivors = super::soak_and_place(&mut cx, id, 2, 1);
+        assert!(survivors.is_empty(), "no soakers → no survivors");
 
         assert_eq!(state.investigators[&id].damage, 2, "all damage on inv");
         assert_eq!(state.investigators[&id].horror, 1, "all horror on inv");
