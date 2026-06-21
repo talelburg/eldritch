@@ -165,15 +165,12 @@ pub(super) struct Soaker {
 /// Damage and horror are assigned **independently** — an asset with
 /// only health soaks damage, an asset with only sanity soaks horror.
 ///
-/// Soak-first is the deterministic stand-in for the interactive
-/// distribution choice the rules grant the defending investigator: it
-/// is the only default that makes a soak reaction (Guard Dog 01021)
-/// observable — investigator-first would render the reaction dead code.
-///
-/// TODO(#44): interactive distribution — replace this body with a parked
-/// window surfacing eligible soakers and accepting a player-chosen
-/// `{target → points}` distribution, feeding the identical placement
-/// path.
+/// Soak-first deterministic assignment, used by [`soak_and_place`] when no
+/// point is contested (no soaker with capacity) and by the **non-attack/effect**
+/// path until K5b-2. The attack path's interactive per-point distribution
+/// (#44/K5b-1) lives in [`deal_head_and_maybe_park`] /
+/// [`resume_damage_assignment`]; `TODO(#44)`: route the effect path
+/// (`take_damage`/`take_horror`) through it too (K5b-2).
 pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) -> Assignment {
     let mut assignment = Assignment::default();
     for soaker in soakers {
@@ -744,12 +741,20 @@ fn eligible_targets(
         let (cap, assigned) = if damage_point {
             (
                 s.remaining_health,
-                assignment.asset_damage.get(&s.instance).copied().unwrap_or(0),
+                assignment
+                    .asset_damage
+                    .get(&s.instance)
+                    .copied()
+                    .unwrap_or(0),
             )
         } else {
             (
                 s.remaining_sanity,
-                assignment.asset_horror.get(&s.instance).copied().unwrap_or(0),
+                assignment
+                    .asset_horror
+                    .get(&s.instance)
+                    .copied()
+                    .unwrap_or(0),
             )
         };
         if cap.saturating_sub(assigned) > 0 {
@@ -776,16 +781,18 @@ fn advance_distribution(
         if eligible_targets(soakers, assignment, true).len() > 1 {
             return None; // a damage point has a soaker option → prompt
         }
-        assignment.investigator_damage =
-            assignment.investigator_damage.saturating_add(*remaining_damage);
+        assignment.investigator_damage = assignment
+            .investigator_damage
+            .saturating_add(*remaining_damage);
         *remaining_damage = 0;
     }
     while *remaining_horror > 0 {
         if eligible_targets(soakers, assignment, false).len() > 1 {
             return None; // a horror point has a soaker option → prompt
         }
-        assignment.investigator_horror =
-            assignment.investigator_horror.saturating_add(*remaining_horror);
+        assignment.investigator_horror = assignment
+            .investigator_horror
+            .saturating_add(*remaining_horror);
         *remaining_horror = 0;
     }
     Some(())
@@ -836,7 +843,7 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
 /// Resume a soak distribution with the player's `PickSingle`: credit one point
 /// to the chosen target, decrement that counter, then advance — re-prompt if a
 /// point is still contested, else place once (simultaneous) and resume by
-/// source. Invalid pick → reject, keep the frame (the HunterMove contract).
+/// source. Invalid pick → reject, keep the frame (the `HunterMove` contract).
 /// Runs **outside** [`drive_attack_loop`], so on completion the `EnemyAttack`
 /// source re-drives the remaining attackers itself.
 pub(super) fn resume_damage_assignment(
@@ -856,8 +863,10 @@ pub(super) fn resume_damage_assignment(
     };
     let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
-            reason: format!("ResolveInput: damage distribution expects PickSingle, got {response:?}")
-                .into(),
+            reason: format!(
+                "ResolveInput: damage distribution expects PickSingle, got {response:?}"
+            )
+            .into(),
         };
     };
     let damage_point = remaining_damage > 0;
@@ -880,8 +889,13 @@ pub(super) fn resume_damage_assignment(
     } else {
         remaining_horror -= 1;
     }
-    if advance_distribution(&soakers, &mut remaining_damage, &mut remaining_horror, &mut assignment)
-        .is_none()
+    if advance_distribution(
+        &soakers,
+        &mut remaining_damage,
+        &mut remaining_horror,
+        &mut assignment,
+    )
+    .is_none()
     {
         // Still contested: re-park with the updated counters/assignment, re-prompt.
         cx.state.continuations.push(Continuation::DamageAssignment {
@@ -957,19 +971,17 @@ fn deal_head_and_maybe_park(
         let (mut rd, mut rh) = (enemy.attack_damage, enemy.attack_horror);
         let soakers = build_soakers(cx.state, investigator);
         if advance_distribution(&soakers, &mut rd, &mut rh, &mut assignment).is_none() {
-            cx.state
-                .continuations
-                .push(Continuation::DamageAssignment {
-                    investigator,
-                    remaining_damage: rd,
-                    remaining_horror: rh,
-                    assignment,
-                    source: crate::state::DamageSource::EnemyAttack {
-                        enemy: enemy_id,
-                        remaining_attackers: std::mem::take(attackers),
-                        attack_source: source,
-                    },
-                });
+            cx.state.continuations.push(Continuation::DamageAssignment {
+                investigator,
+                remaining_damage: rd,
+                remaining_horror: rh,
+                assignment,
+                source: crate::state::DamageSource::EnemyAttack {
+                    enemy: enemy_id,
+                    remaining_attackers: std::mem::take(attackers),
+                    attack_source: source,
+                },
+            });
             return Some(prompt_current_point(cx, investigator));
         }
         // Not contested: `assignment` is the complete soak-first assignment.
@@ -1404,7 +1416,11 @@ mod combat_tests {
         let mut asg2 = super::Assignment::default();
         let (mut d2, mut h2) = (2u8, 0u8);
         assert!(super::advance_distribution(&[soaker], &mut d2, &mut h2, &mut asg2).is_none());
-        assert_eq!((d2, h2), (2, 0), "nothing auto-assigned while a soaker can take the point");
+        assert_eq!(
+            (d2, h2),
+            (2, 0),
+            "nothing auto-assigned while a soaker can take the point"
+        );
     }
 
     #[test]

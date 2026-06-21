@@ -77,8 +77,13 @@ fn is_distribution_prompt(outcome: &EngineOutcome) -> bool {
 /// The `PickSingle` `OptionId` for the distribution-prompt option whose label
 /// contains `needle` ("Investigator" for self, "Asset" for a soaker).
 fn pick(outcome: &EngineOutcome, needle: &str) -> OptionId {
-    assert!(is_distribution_prompt(outcome), "expected a distribution prompt, got {outcome:?}");
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else { unreachable!() };
+    assert!(
+        is_distribution_prompt(outcome),
+        "expected a distribution prompt, got {outcome:?}"
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        unreachable!()
+    };
     request
         .options
         .iter()
@@ -134,7 +139,8 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     // Guard Dog took damage and survived → its retaliate window opens (not a
     // further distribution prompt).
     assert!(
-        matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }) && !is_distribution_prompt(&r3.outcome),
+        matches!(r3.outcome, EngineOutcome::AwaitingInput { .. })
+            && !is_distribution_prompt(&r3.outcome),
         "Guard Dog's retaliate window opens after the soak: {:?}",
         r3.outcome
     );

@@ -75,6 +75,21 @@ fn engaged_attacker(
     e
 }
 
+/// The distribution-prompt `PickSingle` `OptionId` for the soaker asset option
+/// (#44/K5b — an `AoO` against an investigator with a soaker prompts for the
+/// damage distribution before placing it).
+fn pick_soaker(outcome: &EngineOutcome) -> OptionId {
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        panic!("expected a distribution prompt, got {outcome:?}");
+    };
+    request
+        .options
+        .iter()
+        .find(|o| o.label.contains("Asset"))
+        .unwrap_or_else(|| panic!("no soaker option in {:?}", request.options))
+        .id
+}
+
 /// First Aid in play (with `supplies`) + Guard Dog in play (the soaker).
 fn first_aid_and_guard_dog(
     inv: &mut game_core::state::Investigator,
@@ -128,6 +143,20 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
             investigator: inv_id,
             instance_id: kit,
             ability_index: 0,
+        }),
+    );
+    // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
+    // K5b): assign both AoO damage points onto Guard Dog to reproduce the soak.
+    let r2 = apply(
+        result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
+        }),
+    );
+    let result = apply(
+        r2.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(pick_soaker(&r2.outcome)),
         }),
     );
     let state = result.state;
