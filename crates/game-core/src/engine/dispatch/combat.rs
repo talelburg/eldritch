@@ -1,13 +1,11 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
-use std::collections::BTreeMap;
-
 use crate::engine::outcome::{InputRequest, OptionId, ResumeToken};
 use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    AttackLoopStage, CardInstanceId, Continuation, DefeatCause, EnemyAttackSource, EnemyId,
-    GameState, InvestigatorId, Status,
+    Assignment, AttackLoopStage, CardInstanceId, Continuation, DefeatCause, EnemyAttackSource,
+    EnemyId, GameState, InvestigatorId, Status,
 };
 
 use super::Cx;
@@ -137,23 +135,10 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
     }
 }
 
-/// A computed damage/horror distribution for one enemy attack (C5b #237).
-///
-/// The product of [`assign_attack`]: how much of the attack's damage and
-/// horror lands on the defending investigator versus each soak-bearing
-/// asset. Placed simultaneously by [`place_assignment`], per Rules
-/// Reference page 7's "Apply Damage/Horror" clause.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(super) struct Assignment {
-    /// Damage absorbed by the investigator.
-    pub investigator_damage: u8,
-    /// Horror absorbed by the investigator.
-    pub investigator_horror: u8,
-    /// instance → damage soaked onto that asset.
-    pub asset_damage: BTreeMap<CardInstanceId, u8>,
-    /// instance → horror soaked onto that asset.
-    pub asset_horror: BTreeMap<CardInstanceId, u8>,
-}
+// `Assignment` (the computed damage/horror distribution) lives in
+// `crate::state` alongside the other `Continuation` payload types, since the
+// interactive distribution (#44/K5b) parks an in-progress one on a
+// `Continuation::DamageAssignment` frame. Imported above.
 
 /// One eligible soaker for [`assign_attack`] (C5b #237).
 ///

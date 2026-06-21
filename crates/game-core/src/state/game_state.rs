@@ -346,6 +346,46 @@ pub enum AttackLoopStage {
     PickOrder,
 }
 
+/// A computed damage/horror distribution for one source of harm (C5b #237).
+///
+/// How much of the harm's damage and horror lands on the defending investigator
+/// versus each soak-bearing asset. Built by `assign_attack` (soak-first) or the
+/// interactive per-point distribution (#44/K5b); placed simultaneously by
+/// `place_assignment`, per Rules Reference page 7's "Apply Damage/Horror" clause.
+/// Lives here (not in `engine`) because an in-progress one is parked on a
+/// [`Continuation::DamageAssignment`] frame.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Assignment {
+    /// Damage absorbed by the investigator.
+    pub investigator_damage: u8,
+    /// Horror absorbed by the investigator.
+    pub investigator_horror: u8,
+    /// instance → damage soaked onto that asset.
+    pub asset_damage: std::collections::BTreeMap<CardInstanceId, u8>,
+    /// instance → horror soaked onto that asset.
+    pub asset_horror: std::collections::BTreeMap<CardInstanceId, u8>,
+}
+
+/// How a [`Continuation::DamageAssignment`] resumes once the player has finished
+/// distributing the harm across soakers and themselves (#44/K5b).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DamageSource {
+    /// An enemy attack: after placement, queue soak reaction windows for the
+    /// damaged survivors, exhaust the attacker (enemy phase), and continue the
+    /// attack loop over `remaining_attackers`.
+    EnemyAttack {
+        /// The attacking enemy (for the soak window + exhaust).
+        enemy: EnemyId,
+        /// Attackers not yet resolved, in resolution order (head already removed).
+        remaining_attackers: Vec<EnemyId>,
+        /// Which loop drives this attack.
+        attack_source: EnemyAttackSource,
+    },
+    /// A card/treachery `Effect::Deal` (K5b-2): after placement, return `Done`
+    /// so the effect walk continues. Reserved here; wired in K5b-2.
+    Effect,
+}
+
 /// An active "use X in place of Y" skill substitution (Mind over Matter
 /// 01036). Round-scoped: cleared at the round boundary. While present, the
 /// owning `investigator` may make a `for_skills` test as a `use_skill` test
@@ -541,6 +581,24 @@ pub enum Continuation {
         /// Which primary effect to run when the `AoO` loop completes.
         resume: ActionResume,
     },
+    /// An in-progress player distribution of an attack's / effect's damage +
+    /// horror across eligible soakers and the investigator (#44/K5b, RR p.7).
+    /// Accumulates `assignment` via per-point `PickSingle` prompts; when both
+    /// `remaining_*` reach 0, the assignment is placed once (simultaneous) and
+    /// the loop resumes by `source`. The top frame while prompting (it *is* the
+    /// prompt); resumed via `ResolveInput` by `resume_damage_assignment`.
+    DamageAssignment {
+        /// The investigator taking the harm.
+        investigator: InvestigatorId,
+        /// Damage points still to assign.
+        remaining_damage: u8,
+        /// Horror points still to assign.
+        remaining_horror: u8,
+        /// Accumulating assignment (placed when both counters hit 0).
+        assignment: Assignment,
+        /// How to resume after placement.
+        source: DamageSource,
+    },
 }
 
 /// A controller choice paused mid-resolution (umbrella §3, Axis A).
@@ -682,6 +740,7 @@ impl Continuation {
             | Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
             | Continuation::ActionResolution { .. }
+            | Continuation::DamageAssignment { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -706,6 +765,7 @@ impl Continuation {
             | Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
             | Continuation::ActionResolution { .. }
+            | Continuation::DamageAssignment { .. }
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
@@ -2055,6 +2115,26 @@ mod enemy_attack_loop_tests {
         state.continuations.push(Continuation::EnemyPhase {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(InvestigatorId(7)),
+        });
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.continuations, state.continuations);
+    }
+
+    #[test]
+    fn damage_assignment_frame_round_trips_through_serde() {
+        use crate::state::{Assignment, Continuation, DamageSource, EnemyAttackSource, EnemyId};
+        let mut state = GameStateBuilder::new().build();
+        state.continuations.push(Continuation::DamageAssignment {
+            investigator: InvestigatorId(1),
+            remaining_damage: 2,
+            remaining_horror: 0,
+            assignment: Assignment::default(),
+            source: DamageSource::EnemyAttack {
+                enemy: EnemyId(5),
+                remaining_attackers: vec![EnemyId(6)],
+                attack_source: EnemyAttackSource::EnemyPhase,
+            },
         });
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
