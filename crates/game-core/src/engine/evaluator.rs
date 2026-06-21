@@ -1420,15 +1420,22 @@ fn deal_effect(
             reason: format!("Deal: investigator {target_id:?} is not in the state").into(),
         };
     }
-    match kind {
-        HarmKind::Damage => {
-            crate::engine::dispatch::elimination::take_damage(cx, target_id, amount);
-        }
-        HarmKind::Horror => {
-            crate::engine::dispatch::elimination::take_horror(cx, target_id, amount);
-        }
-    }
-    EngineOutcome::Done
+    // Interactive distribution across soakers + self (#44 / K5b-2): prompt when a
+    // soaker can take a contested point, else place synchronously. The harm path
+    // (soak-first + investigator defeat on a lethal share) is unchanged — only
+    // the *interactivity* is added vs. the K5a `take_damage`/`take_horror`
+    // wrappers (still used by the deferred loop sites).
+    let (damage, horror) = match kind {
+        HarmKind::Damage => (amount, 0),
+        HarmKind::Horror => (0, amount),
+    };
+    crate::engine::dispatch::combat::soak_and_distribute(
+        cx,
+        target_id,
+        damage,
+        horror,
+        crate::state::DamageSource::Effect,
+    )
 }
 
 /// Resolve [`Effect::DealDamageToEnemy`]: ground the chosen enemy (already bound

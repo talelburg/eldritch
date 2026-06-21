@@ -431,6 +431,39 @@ pub(super) fn soak_and_place(
     place_assignment(cx, investigator, &assignment)
 }
 
+/// Interactive soak entry (#44 / K5b-2): distribute `damage`/`horror` soak-first
+/// as far as deterministic; the moment a point is **contested** (a controlled
+/// soaker can take it) suspend on the player's per-point distribution prompt,
+/// parking the rest on a [`Continuation::DamageAssignment`] frame carrying
+/// `source`. Otherwise (no soaker can take any point) place synchronously and
+/// return `Done` — the uncontested path is behaviour-identical to
+/// [`soak_and_place`]. The effect/treachery `Effect::Deal` path uses this with
+/// `DamageSource::Effect`; the enemy-attack path has its own loop-aware entry
+/// (`deal_head_and_maybe_park`). Mirrors that gating exactly.
+pub(crate) fn soak_and_distribute(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    damage: u8,
+    horror: u8,
+    source: crate::state::DamageSource,
+) -> EngineOutcome {
+    let mut assignment = Assignment::default();
+    let (mut rd, mut rh) = (damage, horror);
+    let soakers = build_soakers(cx.state, investigator);
+    if advance_distribution(&soakers, &mut rd, &mut rh, &mut assignment).is_none() {
+        cx.state.continuations.push(Continuation::DamageAssignment {
+            investigator,
+            remaining_damage: rd,
+            remaining_horror: rh,
+            assignment,
+            source,
+        });
+        return prompt_current_point(cx, investigator);
+    }
+    let _ = place_assignment(cx, investigator, &assignment);
+    EngineOutcome::Done
+}
+
 /// Build the eligible soakers for an enemy attack against `investigator`
 /// (C5b #237).
 ///
@@ -932,10 +965,13 @@ pub(super) fn resume_damage_assignment(
                 super::reaction_windows::open_queued_reaction_window(cx)
             }
         }
-        // Reserved for K5b-2 (effect path): place and let the effect walk continue.
+        // K5b-2 (effect/treachery path): place this point's drained assignment,
+        // then resume the parked effect walk — the parent `ForEachPointFailed`/
+        // `Seq` frame is now on top, so the remaining iterations run (and may
+        // prompt again) with no point lost (#422 / #44).
         DamageSource::Effect => {
             let _ = place_assignment(cx, investigator, &assignment);
-            EngineOutcome::Done
+            super::choice::resume_effect_walk(cx)
         }
     }
 }

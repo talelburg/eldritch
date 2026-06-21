@@ -381,8 +381,8 @@ pub enum DamageSource {
         /// Which loop drives this attack.
         attack_source: EnemyAttackSource,
     },
-    /// A card/treachery `Effect::Deal` (K5b-2): after placement, return `Done`
-    /// so the effect walk continues. Reserved here; wired in K5b-2.
+    /// A card/treachery `Effect::Deal` (K5b-2): after placing the drained point,
+    /// resume the parked effect walk so any remaining iterations run.
     Effect,
 }
 
