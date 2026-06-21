@@ -171,20 +171,26 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 ///
 /// No-ops when `amount == 0` or the investigator is already defeated.
 ///
-/// Single-source horror application (currently the Draw-from-empty-
-/// deck penalty) funnels through this convenience wrapper. Callers
-/// that need to apply both damage AND horror from the SAME source
-/// with simultaneous-placement semantics (i.e. [`enemy_attack`](super::combat::enemy_attack) and
-/// any future card effect that deals both) compose the lower-level
-/// [`apply_damage_numeric`](super::combat::apply_damage_numeric) + [`apply_horror_numeric`](super::combat::apply_horror_numeric) +
-/// [`apply_investigator_defeat`] triple instead. The single-source-damage
-/// twin [`take_damage`] follows the same recipe for [`DefeatCause::Damage`].
+/// Single-source horror application (the Draw-from-empty-deck penalty,
+/// treachery/card `Effect::Deal` horror) funnels through this wrapper,
+/// which routes through the shared soak entry
+/// [`soak_and_place`](super::combat::soak_and_place) (#44/K5a) — so a
+/// controlled sanity-bearing asset absorbs the horror, and
+/// [`place_assignment`](super::combat::place_assignment) handles the
+/// simultaneous-placement + investigator-defeat semantics. The
+/// single-source-damage twin [`take_damage`] is symmetric for
+/// [`DefeatCause::Damage`]. Enemy attacks (which deal both damage and horror
+/// from one source) reach the same entry via
+/// [`enemy_attack`](super::combat::enemy_attack).
 ///
 /// [`Status::Insane`]: crate::state::Status::Insane
 pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
-    if super::combat::apply_horror_numeric(cx, investigator, amount) {
-        apply_investigator_defeat(cx, investigator, DefeatCause::Horror);
-    }
+    // Route through the shared soak entry (#44/K5a) so a controlled sanity-bearing
+    // asset (Beat Cop, Holy Rosary) absorbs non-attack horror; `place_assignment`
+    // applies investigator defeat (cause Horror) when the investigator's share is
+    // lethal, preserving this wrapper's prior behaviour. No soak reaction window
+    // (Effect source, not an enemy attack), so the survivor list is dropped.
+    let _ = super::combat::soak_and_place(cx, investigator, 0, amount);
 }
 
 /// Apply `amount` damage to `investigator` via the numeric helper,
@@ -196,9 +202,11 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
 /// (#276) can deal damage without re-implementing the defeat check — the
 /// first such consumer is Crypt Chill's (01167) no-asset failure branch.
 pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
-    if super::combat::apply_damage_numeric(cx, investigator, amount) {
-        apply_investigator_defeat(cx, investigator, DefeatCause::Damage);
-    }
+    // Route through the shared soak entry (#44/K5a) so a controlled health-bearing
+    // asset (Guard Dog, Beat Cop) absorbs non-attack damage; `place_assignment`
+    // applies investigator defeat (cause Damage) when the investigator's share is
+    // lethal, preserving this wrapper's prior behaviour. No soak reaction window.
+    let _ = super::combat::soak_and_place(cx, investigator, amount, 0);
 }
 
 /// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`

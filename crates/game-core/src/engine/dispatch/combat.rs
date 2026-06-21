@@ -481,12 +481,29 @@ pub(super) fn enemy_attack(
     });
     let damage = enemy.attack_damage;
     let horror = enemy.attack_horror;
+    soak_and_place(cx, investigator, damage, horror)
+}
 
-    // Soak-first assignment → simultaneous placement → defeat check
-    // (RR p.7; C5b #237). `build_soakers` returns empty when no registry
-    // is installed or the investigator controls no soak-bearing assets,
-    // so the assignment drops all damage/horror on the investigator —
-    // behavior-identical to the pre-soak direct-apply path.
+/// Distribute `damage` + `horror` to `investigator` across eligible soakers
+/// then self (soak-first, RR p.7), place simultaneously, and defeat overflowed
+/// assets — the shared soak entry for **both** enemy attacks and non-attack
+/// card/treachery harm (#44/K5a). Returns the damaged surviving soaker assets
+/// (the [`place_assignment`] survivor list) so an attack caller can queue one
+/// [`WindowKind::AfterEnemyAttackDamagedAsset`] reaction window per survivor;
+/// non-attack callers pass one of `damage`/`horror` as 0 and ignore the return
+/// (treachery harm opens no soak reaction window — Guard Dog 01021 retaliates
+/// only to enemy *attacks*).
+///
+/// `build_soakers` returns empty when no registry is installed or the
+/// investigator controls no soak-bearing asset, so the assignment then drops
+/// all damage/horror on the investigator — behavior-identical to the pre-soak
+/// direct-apply path.
+pub(super) fn soak_and_place(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    damage: u8,
+    horror: u8,
+) -> Vec<CardInstanceId> {
     let soakers = build_soakers(cx.state, investigator);
     let assignment = assign_attack(&soakers, damage, horror);
     place_assignment(cx, investigator, &assignment)
