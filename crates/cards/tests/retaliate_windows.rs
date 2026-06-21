@@ -373,8 +373,8 @@ fn dodge_cancels_retaliate_and_skill_test_ends() {
         result.events
     );
 
-    // The retaliating enemy did NOT exhaust (RR p.18 + Dodge FAQ: enemy-phase
-    // cancels exhaust; retaliate never exhausts regardless — no exhaust here).
+    // The retaliating enemy did NOT exhaust: a retaliate attacker never
+    // exhausts, regardless of a cancel (RR p.18).
     assert!(
         !state.enemies[&enemy_id].exhausted,
         "a retaliate attacker does not exhaust, even after a Dodge cancel (RR p.18)"
