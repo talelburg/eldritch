@@ -537,6 +537,24 @@ fn build_soakers(state: &crate::state::GameState, investigator: InvestigatorId) 
 /// reaction window (Guard Dog 01021). Returns [`EngineOutcome::AwaitingInput`]
 /// if a window suspends the loop, [`EngineOutcome::Done`] otherwise. Attackers
 /// resolve in deterministic [`EnemyId`] order (player-pick is #143/K4). `AoO`
+/// attackers never exhaust (RR p.7) — honored by
+/// [`EnemyAttackSource::AttackOfOpportunity`].
+pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let attackers: Vec<EnemyId> = cx
+        .state
+        .enemies
+        .iter()
+        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
+        .map(|(id, _)| *id)
+        .collect();
+    drive_attack_loop(
+        cx,
+        investigator,
+        attackers,
+        EnemyAttackSource::AttackOfOpportunity,
+    )
+}
+
 /// Fire a single Retaliate attack from `enemy` against `investigator`, driving it
 /// through the shared attack loop (#379) so it opens the before-attack cancel
 /// window (Dodge 01023) and the per-soaked-asset reaction window (Guard Dog 01021).
@@ -555,24 +573,6 @@ pub(super) fn drive_retaliate(
     investigator: InvestigatorId,
 ) -> EngineOutcome {
     drive_attack_loop(cx, investigator, vec![enemy], EnemyAttackSource::Retaliate)
-}
-
-/// attackers never exhaust (RR p.7) — honored by
-/// [`EnemyAttackSource::AttackOfOpportunity`].
-pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let attackers: Vec<EnemyId> = cx
-        .state
-        .enemies
-        .iter()
-        .filter(|(_, e)| e.engaged_with == Some(investigator) && !e.exhausted)
-        .map(|(id, _)| *id)
-        .collect();
-    drive_attack_loop(
-        cx,
-        investigator,
-        attackers,
-        EnemyAttackSource::AttackOfOpportunity,
-    )
 }
 
 /// Resolve all of one investigator's engaged ready enemies' attacks
@@ -1374,6 +1374,7 @@ mod combat_tests {
             cx.state.investigators[&inv_id].damage, 1,
             "retaliate dealt 1 damage"
         );
+        assert_event!(events, Event::DamageTaken { .. });
         assert_no_event!(events, Event::EnemyExhausted { .. });
     }
 
