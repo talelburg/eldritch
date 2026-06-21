@@ -423,10 +423,6 @@ pub enum Continuation {
     /// resolves (Axis-B T4). At most one is ever on the stack (no nesting today);
     /// [`GameState::current_skill_test`] returns the topmost one.
     SkillTest(InFlightSkillTest),
-    /// A controller choice is mid-resolution (Axis A): the effect tree is
-    /// re-run from the top on each resume, replaying `decisions` to reach
-    /// the next un-ground choice. See [`ChoiceFrame`].
-    Choice(ChoiceFrame),
     /// A suspended Hunter-movement / engagement choice (#128), migrated off the
     /// former `GameState::hunter_move_pending` field (#348). Resumed by
     /// [`resume_hunter_choice`](crate::engine) via `ResolveInput`.
@@ -599,33 +595,57 @@ pub enum Continuation {
         /// How to resume after placement.
         source: DamageSource,
     },
+    /// A node of an in-progress card-effect walk (#422). The effect evaluator is
+    /// frame-driven: each control-flow node parks here while its children
+    /// resolve; the global `drive` loop steps the top frame. Replaces the former
+    /// single-pass replay (`DecisionCursor`). A node that needs a controller pick
+    /// suspends *in place* (its `Leaf` step returns `AwaitingInput` and the frame
+    /// stays on top — it *is* the prompt), so this variant can await input
+    /// (routed in `resolve_input`, like [`Self::DamageAssignment`]). Carries its
+    /// own [`EvalContext`](crate::engine::EvalContext) snapshot (#345's grouped
+    /// bindings) so resume re-binds without replay.
+    Effect(EffectFrame),
 }
 
-/// A controller choice paused mid-resolution (umbrella §3, Axis A).
-///
-/// The frame stores the picks made so far (`decisions`), the option ids
-/// offered at the *current* suspend (`offered`, so resume validates
-/// membership), the root [`Effect`](card_dsl::dsl::Effect) being resolved,
-/// and the [`EvalContext`](crate::engine::EvalContext) ingredients to rebuild
-/// on resume (`controller` + `source`) — mirroring how [`InFlightSkillTest`]
-/// stores `investigator` + `source` rather than a non-serializable
-/// `EvalContext` (see the Axis-A spec §2).
+/// One node of a frame-driven card-effect walk (#422). See
+/// [`Continuation::Effect`]. Stepped by the evaluator's `step_effect_frame`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct ChoiceFrame {
-    /// Picks recorded so far, in choice-encounter (pre-order) order.
-    pub decisions: Vec<crate::engine::OptionId>,
-    /// Option ids offered at the current suspend; resume rejects an id not
-    /// in this set.
-    pub offered: Vec<crate::engine::OptionId>,
-    /// Root effect being (re-)resolved. A native leaf is just one node.
-    pub effect: card_dsl::dsl::Effect,
-    /// The [`EvalContext`](crate::engine::EvalContext) captured at suspend —
-    /// durable identity (`controller`/`source`) **and** any active window
-    /// bindings (e.g. an `on_fail` margin). Snapshotting the whole context (vs.
-    /// re-storing ingredient tuples) means bindings survive the suspend; resume
-    /// re-runs the effect with this exact context. (#345.)
-    pub context: crate::engine::EvalContext,
+pub enum EffectFrame {
+    /// A `Seq([..])` in progress: run `effects[next]`, advance `next` on each
+    /// child pop, complete when `next == effects.len()`.
+    Seq {
+        /// The sequence's effects.
+        effects: Vec<card_dsl::dsl::Effect>,
+        /// Index of the next child to run.
+        next: usize,
+        /// The evaluation context for this sequence.
+        ctx: crate::engine::EvalContext,
+    },
+    /// A `ForEachPointFailed(body)` in progress: run `body` `remaining` more
+    /// times, decrementing on each child pop. Holds its own count on the stack
+    /// so each iteration may suspend independently (fixes Grasping Hands).
+    ForEachPointFailed {
+        /// Iterations still to run.
+        remaining: u8,
+        /// The per-iteration body effect.
+        body: Box<card_dsl::dsl::Effect>,
+        /// The evaluation context for this loop.
+        ctx: crate::engine::EvalContext,
+    },
+    /// A single effect node to evaluate. A terminal effect runs and pops;
+    /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
+    /// `DamageAssignment` (K5b-2); `Effect::Native { tag }` runs the native fn.
+    /// **Suspends in place** for a controller pick (`ChooseOne`, a `*::Chosen`
+    /// target, a native choice): the step returns `AwaitingInput` and the frame
+    /// stays on top — it *is* the prompt. Resume re-steps it with
+    /// `ctx.chosen_option` set; the node grounds/picks (checked indexing,
+    /// validate-first) instead of suspending.
+    Leaf {
+        /// The effect node to evaluate.
+        effect: Box<card_dsl::dsl::Effect>,
+        /// The evaluation context for this node.
+        ctx: crate::engine::EvalContext,
+    },
 }
 
 /// Which action's primary effect a parked [`Continuation::ActionResolution`]
@@ -728,7 +748,6 @@ impl Continuation {
         match self {
             Continuation::Resolution(w) => Some(w),
             Continuation::SkillTest(_)
-            | Continuation::Choice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
@@ -744,7 +763,8 @@ impl Continuation {
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. } => None,
+            | Continuation::UpkeepPhase { .. }
+            | Continuation::Effect(_) => None,
         }
     }
 
@@ -753,7 +773,6 @@ impl Continuation {
         match self {
             Continuation::Resolution(w) => Some(w),
             Continuation::SkillTest(_)
-            | Continuation::Choice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
@@ -769,7 +788,8 @@ impl Continuation {
             | Continuation::MythosPhase { .. }
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. } => None,
+            | Continuation::UpkeepPhase { .. }
+            | Continuation::Effect(_) => None,
         }
     }
 }
@@ -2509,5 +2529,24 @@ mod action_resolution_frame_tests {
             !f.is_phase_anchor(),
             "a mid-action frame is not a phase anchor"
         );
+    }
+}
+
+#[cfg(test)]
+mod effect_frame_tests {
+    use crate::dsl::Effect;
+    use crate::engine::EvalContext;
+    use crate::state::{Continuation, EffectFrame, InvestigatorId};
+
+    #[test]
+    fn effect_frame_variant_roundtrips_serde() {
+        let frame = Continuation::Effect(EffectFrame::Seq {
+            effects: vec![Effect::Seq(vec![])],
+            next: 0,
+            ctx: EvalContext::for_controller(InvestigatorId(1)),
+        });
+        let json = serde_json::to_string(&frame).expect("serialize");
+        let back: Continuation = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(frame, back);
     }
 }

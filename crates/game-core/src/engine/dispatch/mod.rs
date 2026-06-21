@@ -193,6 +193,17 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other, // primary effect suspended (e.g. skill test)
                 }
             }
+            // An effect-walk frame parked across an `apply()` boundary (#422):
+            // e.g. an on-play effect that opened a reaction window now resumes
+            // after the window closed. Step it via the shared effect driver.
+            Some(Continuation::Effect(_)) => {
+                match crate::engine::evaluator::step_effect_frame(cx) {
+                    EngineOutcome::Done => {
+                        // Stepped (child pushed / frame popped); loop on.
+                    }
+                    other => return other, // suspended for a pick, or rejected
+                }
+            }
             // Open turn idle (an `InvestigatorTurn` frame on top), terminal
             // (empty), or a suspension on top (which a handler already surfaced
             // as AwaitingInput before reaching here).
@@ -418,7 +429,11 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             skill_test::resume_substitution_choice(cx, response)
         }
         Some(Continuation::Resolution(_)) => resume_window(cx, response),
-        Some(Continuation::Choice(_)) => choice::resume_choice(cx, response),
+        // An effect node suspended in place for a controller pick (#422): the
+        // top `Continuation::Effect(Leaf)` frame *is* the prompt. Route its
+        // `PickSingle` to the effect-choice resume. A non-suspending effect
+        // frame is never on top here (the drive steps it before yielding).
+        Some(Continuation::Effect(_)) => choice::resume_effect_choice(cx, response),
         Some(Continuation::HunterMove(_)) => hunters::resume_hunter_choice(cx, response),
         Some(Continuation::SpawnEngage(_)) => hunters::resume_spawn_engage(cx, response),
         Some(Continuation::HandSizeDiscard(_)) => phases::resume_hand_size_discard(cx, response),
