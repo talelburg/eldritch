@@ -954,15 +954,8 @@ fn finish_attack_loop(
 ///   the remaining attackers.
 ///
 /// If the loop suspends again, that [`EngineOutcome::AwaitingInput`] is returned
-/// as-is. On completion the post-loop step runs by `source`:
-///
-/// - [`EnemyAttackSource::EnemyPhase`]: advance the enemy-phase cursor and open
-///   the next window via [`after_enemy_phase_attacks`].
-/// - [`EnemyAttackSource::AttackOfOpportunity`]: return [`EngineOutcome::Done`].
-///   The `AoO` loop ([`drive_aoo`]) does open soak and cancel windows, so this
-///   arm is reachable — it fires when the mid-action park unwinds and the
-///   `AoO` loop completes (#293). Kept as a distinct arm so the source-keyed
-///   dispatch stays total (C5b #237).
+/// as-is. On completion the source-keyed post-loop step runs via
+/// [`finish_attack_loop`] (shared with the order-pick resume, #143).
 ///
 /// Called from
 /// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s
