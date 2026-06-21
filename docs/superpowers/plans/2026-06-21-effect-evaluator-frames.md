@@ -21,10 +21,10 @@
 
 ## File structure
 
-- `crates/game-core/src/state/game_state.rs` — add `Continuation::Effect(EffectFrame)` and the `EffectFrame` enum (Seq/ForEachPointFailed/If/Leaf/Choosing — node-in-progress + its `EvalContext`). **Delete** `Continuation::Choice` + `ChoiceFrame` (replay-era prompt object; choices now suspend in place on `EffectFrame::Choosing`; see Task 3).
+- `crates/game-core/src/state/game_state.rs` — add `Continuation::Effect(EffectFrame)` and the `EffectFrame` enum (Seq/ForEachPointFailed/If/Leaf — node-in-progress + its `EvalContext`). **Delete** `Continuation::Choice` + `ChoiceFrame` (replay-era prompt object; choices now suspend in place on their `Leaf` frame; see Task 3).
 - `crates/game-core/src/engine/evaluator.rs` — the rewrite. `apply_effect` → bounded entry; delete `DecisionCursor`, `apply_effect_with_decisions`, `apply_effect_inner`'s recursion, and the `apply_seq`/`apply_native` guards. New: `step_effect_frame` (one step of the top effect frame) + per-node helpers that push child frames.
 - `crates/game-core/src/engine/dispatch/mod.rs` — extend `drive` to step `Continuation::Effect` frames; route `Continuation::Effect` in `resolve_input` to the choice/native resume.
-- `crates/game-core/src/engine/dispatch/choice.rs` — `resume_choice` → `resume_effect_choice`: top frame is the in-place `EffectFrame::Choosing`; set `chosen_option`, re-step the node, return to `drive` (no replay, no separate prompt object). `suspend_for_choice`/`suspend_for_native_choice` stop pushing a `Continuation` — they just build the `AwaitingInput` request.
+- `crates/game-core/src/engine/dispatch/choice.rs` — `resume_choice` → `resume_effect_choice`: top frame is the in-place suspended `EffectFrame::Leaf`; set `chosen_option`, re-step the node, return to `drive` (no replay, no separate prompt object). `suspend_for_choice`/`suspend_for_native_choice` stop pushing a `Continuation` — they just build the `AwaitingInput` request.
 - `crates/game-core/src/engine/dispatch/combat.rs` — Task 8: `Effect::Deal` leaf pushes `DamageAssignment` when contested; `resume_damage_assignment`'s `DamageSource::Effect` arm resumes the effect drive.
 - `crates/cards/tests/non_attack_soak.rs` — Task 9: un-defer the interactive multi-point cases.
 - New: `crates/game-core/src/engine/dispatch/effect_frames.rs` (optional) — if `evaluator.rs` grows unwieldy, house `step_effect_frame` + `on_child_pop` here. Decide in Task 2; default to keeping it in `evaluator.rs` unless it pushes the file past ~5000 lines.
@@ -40,7 +40,7 @@ Introduces the new data types with no behavior change, so the big rewrite (Task 
 - Test: `crates/game-core/src/state/game_state.rs` (`#[cfg(test)]` module)
 
 **Interfaces:**
-- Produces: `Continuation::Effect(EffectFrame)`; `EffectFrame` enum with variants `Seq { effects: Vec<Effect>, next: usize, ctx: EvalContext }`, `ForEachPointFailed { remaining: u8, body: Box<Effect>, ctx: EvalContext }`, `If { then_: Box<Effect>, else_: Option<Box<Effect>>, took_then: bool, ctx: EvalContext }`, `Leaf { effect: Box<Effect>, ctx: EvalContext }`, `Choosing { effect: Box<Effect>, offered: Vec<OptionId>, ctx: EvalContext }`. **An effect node that needs a pick suspends *in place*** by becoming a `Choosing` frame — that frame *is* the prompt; it stays on the stack and is re-stepped on resume. So `Continuation::Effect` is itself an input-awaiting variant (exactly parallel to `DamageAssignment`), routed in `resolve_input`. The former top-level `Continuation::Choice`/`ChoiceFrame` are **deleted** in Task 3 (replay-era residue — the node's own frame already holds it; no separate prompt object, no node duplication). A suspending Native folds in: its `Leaf { effect: Native{tag} }` becomes `Choosing`.
+- Produces: `Continuation::Effect(EffectFrame)`; `EffectFrame` enum with variants `Seq { effects: Vec<Effect>, next: usize, ctx: EvalContext }`, `ForEachPointFailed { remaining: u8, body: Box<Effect>, ctx: EvalContext }`, `If { then_: Box<Effect>, else_: Option<Box<Effect>>, took_then: bool, ctx: EvalContext }`, `Leaf { effect: Box<Effect>, ctx: EvalContext }`. **An effect node that needs a pick suspends *in place*** — its `Leaf` step returns `AwaitingInput` and the frame stays on top; that frame *is* the prompt. So `Continuation::Effect` is itself an input-awaiting variant (exactly parallel to `DamageAssignment`), routed in `resolve_input`; resume sets `ctx.chosen_option` and re-steps. No separate prompt frame and no stored `offered` (resume re-derives + checked-indexes, like `resume_damage_assignment`). The former top-level `Continuation::Choice`/`ChoiceFrame` are **deleted** in Task 3 (replay-era residue). A suspending Native folds in: its `Leaf { effect: Native{tag} }` step returns `AwaitingInput` and stays.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -112,29 +112,23 @@ pub enum EffectFrame {
         took_then: bool,
         ctx: crate::engine::EvalContext,
     },
-    /// A leaf effect (no child frames): apply synchronously when stepped, pop.
-    /// Includes `Effect::Native { tag }` (the leaf step runs the native fn). If a
-    /// leaf needs a controller pick (`ChooseOne`, a `*::Chosen` target, a native
-    /// choice) it transitions to `Choosing` instead. `Effect::Deal` may instead
-    /// push a `DamageAssignment` (K5b-2, Task 8).
+    /// A single effect node to evaluate. A terminal effect runs and pops;
+    /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
+    /// `DamageAssignment` (K5b-2, Task 8); `Effect::Native { tag }` runs the
+    /// native fn. **Suspends in place** for a controller pick (`ChooseOne`, a
+    /// `*::Chosen` target, a native choice): the step returns `AwaitingInput`
+    /// and the frame stays on top — it *is* the prompt. Resume re-steps it with
+    /// `ctx.chosen_option` set; the node grounds/picks (checked indexing,
+    /// validate-first) instead of suspending. Replaces the deleted top-level
+    /// `Continuation::Choice`/`ChoiceFrame`.
     Leaf {
         effect: Box<card_dsl::dsl::Effect>,
-        ctx: crate::engine::EvalContext,
-    },
-    /// An effect node suspended in place for a controller pick (#422). The frame
-    /// *is* the prompt: it stays on top, awaits a `PickSingle`, and is re-stepped
-    /// on resume with `ctx.chosen_option` set (the node then grounds/picks
-    /// instead of suspending). `offered` validates the resume pick. Replaces the
-    /// deleted top-level `Continuation::Choice`/`ChoiceFrame`.
-    Choosing {
-        effect: Box<card_dsl::dsl::Effect>,
-        offered: Vec<crate::engine::OptionId>,
         ctx: crate::engine::EvalContext,
     },
 }
 ```
 
-(There is no separate choice `Continuation` variant — the node's own frame holds the suspension. Task 3 deletes `Continuation::Choice`/`ChoiceFrame`.)
+(No separate choice frame and no stored `offered` — a suspended `Leaf` is the prompt; resume re-derives + checked-indexes, exactly like `resume_damage_assignment`. Task 3 deletes `Continuation::Choice`/`ChoiceFrame`.)
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -178,12 +172,12 @@ The classic recursive walk (`apply_effect_inner`) is replaced by a **push-down s
 - **`Seq(effects)`**: push `EffectFrame::Seq { effects, next: 0, ctx }`. When stepped with `next < len`, push a child frame for `frame_of(&effects[next], ctx)` and increment `next` *in place* (mutate the frame, then push child above it). When `next == len`, pop. (`on_child_pop` is implicit: stepping the Seq again after a child pops sees the advanced `next`.)
 - **`ForEachPointFailed(body)`**: at frame creation `remaining = ctx.failed_by().unwrap_or(0)`. When stepped with `remaining > 0`, decrement in place and push a child frame `frame_of(body, ctx)`. When `remaining == 0`, pop. **This is the K5b-2 fix** — the count survives on the stack across a child suspension.
 - **`If { condition, then, else_ }`**: evaluate `condition` synchronously at frame creation (conditions are pure reads — confirm via `apply_if`'s current body), push `EffectFrame::If` with the chosen branch already determined, and push that branch's child frame; the `If` frame pops when the child pops. (Simpler: skip an `If` frame entirely — evaluate the condition and directly push the chosen branch's frame. Prefer this unless a condition needs post-branch work; current `apply_if` does not.)
-All choice kinds **suspend in place** by transitioning the node's frame to `EffectFrame::Choosing { effect, offered, ctx }` (stays on top, returns `AwaitingInput`). On resume `resume_effect_choice` (Task 3) sets `ctx.chosen_option = picked` and re-steps the node, which grounds/picks instead of suspending. There is **no separate choice frame and no node copy** — the suspended frame is the node's own frame. Each choice-consuming step must **read-and-consume `ctx.chosen_option`** when present instead of suspending (replacing today's `cursor.take()`); the node has ≤1 choice point, so one transient pick per re-step suffices and the parent `Seq`/loop frame below resumes automatically when the node pops.
+All choice kinds **suspend in place**: the `Leaf` step returns `AwaitingInput` without popping, so the node's own frame stays on top as the prompt. On resume `resume_effect_choice` (Task 3) sets `ctx.chosen_option = picked` and re-steps the same `Leaf`, which grounds/picks instead of suspending. There is **no separate choice frame, no node copy, no stored `offered`** — the suspended frame is the node's own frame; validation is re-derive + checked-index on re-step. Each choice-consuming step must **read-and-consume `ctx.chosen_option`** when present instead of suspending (replacing today's `cursor.take()`); the node has ≤1 choice point, so one transient pick per re-step suffices and the parent `Seq`/loop frame below resumes automatically when the node pops.
 
-- **`ChooseOne(branches)`**: apply `resolve_choice_count(branches.len())`. `Empty` → reject. If `ctx.chosen_option` is `Some(i)` (resume) or `Auto(i)` → push `frame_of(&branches[i], ctx)` and pop the ChooseOne frame. Else (`Suspend`, no pick) → transition to `Choosing { effect: ChooseOne(branches), offered: 0..len, ctx }` + `AwaitingInput`.
-- **`*::Chosen` grounding** (`ground_chosen_targets` + `ground_investigator_choice`/`location`/`enemy`): enumerate candidates; if `ctx.chosen_option` is `Some(i)` → bind `candidates[i]` into `ctx`, clear `chosen_option`, proceed to the handler; else on 2+ candidates → transition to `Choosing { effect: effect.clone(), offered, ctx }` + `AwaitingInput`. The grounding dispatches on the effect's target type, so investigator/location/enemy need no separate handling.
-- **`SearchDeck`**: currently cursor-driven. Inspect `apply_search_deck` and confirm its choice is a **single pick (≤1 choice point)**; if so it maps to the same `Choosing` shape. If it is a multi-select or has a second internal choice, it needs its own frame split — flag and handle explicitly, don't assume.
-- **`Native { tag }`** (handled as `Leaf { effect: Native{tag} }`): the leaf step calls the native fn (reused). If it returns `AwaitingInput`, transition the frame to `Choosing { effect: Native(tag), offered, ctx }` (the native supplies `offered`). On resume the re-step re-invokes the native with `chosen_option` set. The re-invoke must be **idempotent up to its suspension** (choice-before-side-effect, standalone — its existing contract); document this at the leaf-Native arm.
+- **`ChooseOne(branches)`**: apply `resolve_choice_count(branches.len())`. `Empty` → reject. If `ctx.chosen_option` is `Some(i)` (resume) or `Auto(i)` → `branches.get(i)` checked (reject if out of range), then push `frame_of(&branches[i], ctx)` and pop the `Leaf`. Else (`Suspend`, no pick) → return `AwaitingInput` (frame stays).
+- **`*::Chosen` grounding** (`ground_chosen_targets` + `ground_investigator_choice`/`location`/`enemy`): enumerate candidates; if `ctx.chosen_option` is `Some(i)` → `candidates.get(i)` checked (reject if out of range), bind into `ctx`, clear `chosen_option`, proceed to the handler; else on 2+ candidates → return `AwaitingInput` (frame stays). The grounding dispatches on the effect's target type, so investigator/location/enemy need no separate handling.
+- **`SearchDeck`**: currently cursor-driven. Inspect `apply_search_deck` and confirm its choice is a **single pick (≤1 choice point)**; if so it suspends in place like the others. If it is a multi-select or has a second internal choice, it needs its own frame split — flag and handle explicitly, don't assume.
+- **`Native { tag }`** (handled as `Leaf { effect: Native{tag} }`): the leaf step calls the native fn (reused). If it returns `AwaitingInput`, leave the frame on the stack. On resume the re-step re-invokes the native with `chosen_option` set; the native does its own checked indexing. The re-invoke must be **idempotent up to its suspension** (choice-before-side-effect, standalone — its existing contract); document this at the leaf-Native arm.
 
 `frame_of(effect, ctx) -> EffectFrame` is a small constructor: control nodes → their frame; everything else → `Leaf`.
 
@@ -257,19 +251,19 @@ git commit -m "engine: frame-driven effect evaluator core; retire DecisionCursor
 
 ---
 
-## Task 3: Delete `Continuation::Choice`; resume the in-place `Choosing` frame
+## Task 3: Delete `Continuation::Choice`; resume the in-place suspended `Leaf`
 
-Effect choices suspend in place on `EffectFrame::Choosing` (Task 1/2). So the top-level `Continuation::Choice` + `ChoiceFrame` (replay-era prompt object) are deleted, and `resolve_input` resumes the `Choosing` frame directly.
+Effect choices suspend in place on their `Leaf` frame (Task 1/2). So the top-level `Continuation::Choice` + `ChoiceFrame` (replay-era prompt object) are deleted, and `resolve_input` resumes the suspended `Leaf` directly.
 
 **Files:**
 - Modify: `crates/game-core/src/state/game_state.rs` (delete `Continuation::Choice` ~429 + `ChoiceFrame` ~615; remove from the two classifier matches ~731/756)
 - Modify: `crates/game-core/src/engine/dispatch/choice.rs` (`resume_choice` ~101 → `resume_effect_choice`; `suspend_for_choice` ~43 / `suspend_for_native_choice` ~80 → return the `AwaitingInput` request, no push)
-- Modify: `crates/game-core/src/engine/dispatch/mod.rs` (`resolve_input` ~421 — replace the `Continuation::Choice` arm with a `Continuation::Effect(EffectFrame::Choosing{..})` arm)
-- Modify: `crates/game-core/src/engine/evaluator.rs` (the suspend sites in `apply_choose_one` + the three `ground_*` fns + the native leaf — transition to `Choosing`; read-and-consume `ctx.chosen_option`)
+- Modify: `crates/game-core/src/engine/dispatch/mod.rs` (`resolve_input` ~421 — replace the `Continuation::Choice` arm with a `Continuation::Effect(_)` arm)
+- Modify: `crates/game-core/src/engine/evaluator.rs` (the suspend sites in `apply_choose_one` + the three `ground_*` fns + the native leaf — return `AwaitingInput` and leave the frame; read-and-consume `ctx.chosen_option`)
 
 **Interfaces:**
-- Produces: `resume_effect_choice(cx, response)` — top frame is `Continuation::Effect(EffectFrame::Choosing { effect, offered, ctx })`; validate `PickSingle` ∈ `offered`; set `ctx.chosen_option = Some(OptionId(picked))`; replace the `Choosing` frame with `frame_of(&effect, ctx)` (the re-step); run the effect drive to base; keep the existing post-`Done` re-entry into `drive_skill_test` / `advance_resolution` (choice.rs:131–144) — that seam is the bounded-entry boundary for the not-yet-migrated callers.
-- `resolve_input` routes `Some(Continuation::Effect(EffectFrame::Choosing{..})) => resume_effect_choice`. A non-`Choosing` `Continuation::Effect` on top during `resolve_input` is spurious (drive would have stepped it) → reject defensively (mirror the `AttackLoop`/anchor arms).
+- Produces: `resume_effect_choice(cx, response)` — top frame is the suspended `Continuation::Effect(EffectFrame::Leaf { ctx, .. })`; require `PickSingle(OptionId(i))`; set the top frame's `ctx.chosen_option = Some(OptionId(i))` *in place*; re-step it via the effect drive to base (the step does the checked-index validation — an out-of-range `i` rejects with the frame intact, à la `resume_damage_assignment`); keep the existing post-`Done` re-entry into `drive_skill_test` / `advance_resolution` (choice.rs:131–144) — that seam is the bounded-entry boundary for the not-yet-migrated callers.
+- `resolve_input` routes `Some(Continuation::Effect(_)) => resume_effect_choice`. (Only a suspended `Leaf` is ever on top here — `drive` steps every other effect frame before returning control — so the arm assumes a suspended choice; a stray non-suspending node re-steps harmlessly.)
 - Requires: `EvalContext::chosen_option` is read-and-consumed by `apply_choose_one`, `ground_chosen_targets`, and the native leaf (replacing `cursor.take()`); a step that fails to consume it would re-suspend forever (loud, detectable).
 
 - [ ] **Step 1: Run the resume-path tests as the gate** (these exist and must stay green)
@@ -278,13 +272,13 @@ Run: `cargo test -p game-core engine::dispatch::choice`
 Run: `cargo test -p cards --test play_card`  (Research Librarian 01032 SearchDeck choice; Crypt Chill 01167 on_fail)
 Expected after implementation: PASS.
 
-- [ ] **Step 2: Delete `Continuation::Choice` + `ChoiceFrame`** in game_state.rs; remove the variant from the two classifier matches (~731/756). The only producers were `suspend_for_choice`/`suspend_for_native_choice` (grep-confirmed evaluator-internal), now reshaped in Step 3.
+- [ ] **Step 2: Delete `Continuation::Choice` + `ChoiceFrame`** in game_state.rs; remove the variant from the two classifier matches (~731/756). The only producers were `suspend_for_choice`/`suspend_for_native_choice` (grep-confirmed evaluator-internal), reshaped in Step 3.
 
-- [ ] **Step 3: Reshape the suspend helpers + evaluator suspend sites.** `suspend_for_choice`/`suspend_for_native_choice` now just build the `AwaitingInput { request, .. }` (no `Continuation` push). The evaluator suspend sites (`apply_choose_one`, `ground_investigator_choice`/`location`/`enemy`, the native leaf) transition the current frame to `EffectFrame::Choosing { effect, offered, ctx }` and return that `AwaitingInput`; and they **read-and-consume `ctx.chosen_option`** (replacing `cursor.take()`) so a resume binds/picks instead of re-suspending.
+- [ ] **Step 3: Reshape the suspend helpers + evaluator suspend sites.** `suspend_for_choice`/`suspend_for_native_choice` now just build the `AwaitingInput { request, .. }` (no `Continuation` push). The evaluator suspend sites (`apply_choose_one`, `ground_investigator_choice`/`location`/`enemy`, the native leaf) return that `AwaitingInput` and leave their `Leaf` frame on the stack; and they **read-and-consume `ctx.chosen_option`** (replacing `cursor.take()`) so a resume binds/picks instead of re-suspending.
 
 - [ ] **Step 4: Write `resume_effect_choice`** (per the Interfaces block) and wire the `resolve_input` arm.
 
-- [ ] **Step 5: Rewrite the replay-asserting tests.** The ~6 evaluator tests asserting `frame.decisions` (evaluator.rs:3049, 3342, 3382, 3499, 3611, 3751) encode the old replay recording; rewrite each to assert the new shape (the top `EffectFrame::Choosing`'s `offered`, or simply that the right branch ran after the pick). Update `choice_frame_snapshots_active_skill_test_binding` (choice.rs:168) to assert the snapshotted `ctx.failed_by()` on the `Choosing` frame.
+- [ ] **Step 5: Rewrite the replay-asserting tests.** The ~6 evaluator tests asserting `frame.decisions` (evaluator.rs:3049, 3342, 3382, 3499, 3611, 3751) encode the old replay recording; rewrite each to assert the new shape (the top suspended `EffectFrame::Leaf`, or simply that the right branch ran after the pick). Update `choice_frame_snapshots_active_skill_test_binding` (choice.rs:168) to assert the snapshotted `ctx.failed_by()` on the suspended `Leaf` frame.
 
 - [ ] **Step 6: Run the gate**
 
@@ -521,7 +515,7 @@ PR body: design-decisions paragraph; `Closes #422.` (and notes the K5b-2 part of
 **Spec coverage:**
 - Evaluator core → frames (Seq/ForEachPointFailed/If/ChooseOne/Chosen-grounding/SearchDeck/Native/leaves): Task 2. ✓
 - Retire `DecisionCursor` + #346/#334 guards: Task 2. ✓
-- Global drive handles effect frames: Task 2 (drive arm); choices suspend in place on `EffectFrame::Choosing` (Task 3) routed by a `Continuation::Effect` `resolve_input` arm — `Continuation::Choice`/`ChoiceFrame` deleted; `Continuation::Effect` joins `DamageAssignment` as a work-and-prompt variant. ✓
+- Global drive handles effect frames: Task 2 (drive arm); choices suspend in place on their `EffectFrame::Leaf` (Task 3) routed by a `Continuation::Effect` `resolve_input` arm — `Continuation::Choice`/`ChoiceFrame` deleted; `Continuation::Effect` joins `DamageAssignment` as a work-and-prompt variant. ✓
 - `apply_effect` = bounded entry: Task 2. ✓
 - Migrate all-but-skill-test sites: Tasks 5–6 (right-sized; residuals annotated). ✓
 - Skill-test cluster keeps bounded entry + TODO(#374): Global Constraints + Task 5/6 notes. ✓
