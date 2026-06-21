@@ -872,6 +872,29 @@ fn drive_attack_loop(
     EngineOutcome::Done
 }
 
+/// The source-keyed step that runs once an attack loop drains to
+/// [`EngineOutcome::Done`]: enemy phase advances its per-investigator cursor and
+/// opens the next window; an AoO returns control to the parked
+/// `ActionResolution` frame (`Done`, the `drive` loop resumes it); a retaliate
+/// re-enters the Fight's skill-test follow-up. Shared by [`resume_enemy_attack`]
+/// (window-close drain) and `resume_attack_order_pick` (order-pick drain, #143).
+fn finish_attack_loop(
+    cx: &mut Cx,
+    source: EnemyAttackSource,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    match source {
+        EnemyAttackSource::EnemyPhase => {
+            super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
+        }
+        EnemyAttackSource::AttackOfOpportunity => EngineOutcome::Done,
+        // The retaliate's window closed; the loop drained. Hand control back to the
+        // Fight's skill-test follow-up (its `SkillTest` frame is now top, cursor at
+        // `PostOnResolution`) so teardown finishes (#379).
+        EnemyAttackSource::Retaliate => super::skill_test::drive_skill_test(cx),
+    }
+}
+
 /// Re-enter a suspended enemy-attack loop after the reaction window it parked
 /// on closed. Mirror of the other pending-resume drivers (`resume_end_turn` /
 /// spawn-engage). Pops the parked [`Continuation::AttackLoop`] frame (the top
@@ -943,16 +966,7 @@ pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
         "drive_attack_loop returned unexpected {outcome:?} (only Done / \
          AwaitingInput are possible — it never rejects)"
     );
-    match source {
-        EnemyAttackSource::EnemyPhase => {
-            super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
-        }
-        EnemyAttackSource::AttackOfOpportunity => EngineOutcome::Done,
-        // The retaliate's window closed; the loop drained. Hand control back to the
-        // Fight's skill-test follow-up (its `SkillTest` frame is now top, cursor at
-        // `PostOnResolution`) so teardown finishes (#379).
-        EnemyAttackSource::Retaliate => super::skill_test::drive_skill_test(cx),
-    }
+    finish_attack_loop(cx, source, investigator)
 }
 
 #[cfg(test)]
