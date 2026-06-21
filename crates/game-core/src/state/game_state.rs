@@ -335,6 +335,15 @@ pub enum AttackLoopStage {
     /// the head attacker dealt + exhausted. Resume drains the rest (the
     /// pre-Axis-D behavior).
     AfterSoak,
+    /// Suspended on the player's attack-order `PickSingle` (#143/K4): 2+
+    /// attackers remain and none has dealt this iteration. The `AttackLoop`
+    /// frame is the **top** frame (no reaction window above it) and *is* the
+    /// prompt. Resume reorders `remaining_attackers` to put the picked enemy at
+    /// the head, deals it, then continues. Unlike the window stages — which park
+    /// *beneath* a reaction window and resume on window-close via
+    /// [`resume_enemy_attack`](crate::engine) — this stage resumes on
+    /// `ResolveInput` via `resume_attack_order_pick`.
+    PickOrder,
 }
 
 /// An active "use X in place of Y" skill substitution (Mind over Matter
@@ -2061,6 +2070,21 @@ mod enemy_attack_loop_tests {
             remaining_attackers: vec![EnemyId(2), EnemyId(3)],
             source: EnemyAttackSource::EnemyPhase,
             stage: AttackLoopStage::AfterSoak,
+        });
+        let json = serde_json::to_string(&state).expect("serialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.continuations, state.continuations);
+    }
+
+    #[test]
+    fn attack_loop_pick_order_stage_round_trips_through_serde() {
+        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId};
+        let mut state = GameStateBuilder::new().build();
+        state.continuations.push(Continuation::AttackLoop {
+            investigator: InvestigatorId(1),
+            remaining_attackers: vec![EnemyId(2), EnemyId(3)],
+            source: EnemyAttackSource::EnemyPhase,
+            stage: AttackLoopStage::PickOrder,
         });
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
