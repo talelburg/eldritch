@@ -1080,8 +1080,11 @@ pub(super) fn resume_attack_order_pick(
 mod combat_tests {
     use super::super::Cx;
     use super::single_engaged_enemy;
+    use crate::engine::{EngineOutcome, OptionId};
     use crate::event::Event;
-    use crate::state::{EnemyId, InvestigatorId};
+    use crate::state::{
+        AttackLoopStage, Continuation, EnemyAttackSource, EnemyId, InvestigatorId,
+    };
     use crate::test_support::{test_enemy, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
@@ -1546,6 +1549,130 @@ mod combat_tests {
         // damage landed on the investigator and no exhaust event was emitted.
         assert_event!(events, Event::DamageTaken { .. });
         assert_no_event!(events, Event::EnemyExhausted { .. });
+    }
+
+    #[test]
+    fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
+        // 2 engaged ready enemies provoking an AoO → the loop suspends on the
+        // order pick, parking the AttackLoop frame as the top frame with the AoO
+        // source + PickOrder stage (so it spans the whole AoO, #143). Picking the
+        // higher-id enemy first proves the pick overrides EnemyId order; neither
+        // AoO attacker exhausts (RR p.7).
+        let inv_id = InvestigatorId(1);
+        let mut e_a = test_enemy(5, "A"); // EnemyId(5), dmg 1
+        e_a.engaged_with = Some(inv_id);
+        e_a.attack_damage = 1;
+        let mut e_b = test_enemy(6, "B"); // EnemyId(6), dmg 2
+        e_b.engaged_with = Some(inv_id);
+        e_b.attack_damage = 2;
+
+        let mut state = GameStateBuilder::new()
+            .with_investigator({
+                let mut inv = test_investigator(1);
+                inv.max_health = 100;
+                inv
+            })
+            .with_enemy(e_a)
+            .with_enemy(e_b)
+            .build();
+        let mut events = Vec::new();
+
+        let outcome = super::drive_aoo(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+            "2 engaged ready enemies → AoO order pick (#143)"
+        );
+        // The parked frame carries the AoO source + PickOrder stage (frame spans
+        // the whole AoO, not just a window suspension).
+        assert!(matches!(
+            state.continuations.last(),
+            Some(Continuation::AttackLoop {
+                source: EnemyAttackSource::AttackOfOpportunity,
+                stage: AttackLoopStage::PickOrder,
+                ..
+            })
+        ));
+
+        // Pick EnemyId(6) (dmg 2) first → option 1 in EnemyId order [5, 6].
+        let resumed = super::super::resolve_input(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::action::InputResponse::PickSingle(OptionId(1)),
+        );
+        assert!(matches!(resumed, EngineOutcome::Done), "AoO loop drained");
+        let damages: Vec<u8> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::DamageTaken { amount, .. } => Some(*amount),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(damages, vec![2, 1], "chosen EnemyId(6) (dmg 2) struck first");
+        assert!(
+            !state.enemies[&EnemyId(5)].exhausted && !state.enemies[&EnemyId(6)].exhausted,
+            "AoO attackers never exhaust (RR p.7)"
+        );
+    }
+
+    #[test]
+    fn resume_attack_order_pick_rejects_invalid_input_and_keeps_frame() {
+        // An out-of-range option id and a wrong InputResponse variant both reject,
+        // leaving the PickOrder frame on the stack for the client to retry
+        // (mirrors resume_hunter_choice).
+        let inv_id = InvestigatorId(1);
+        let mut e_a = test_enemy(5, "A");
+        e_a.engaged_with = Some(inv_id);
+        let mut e_b = test_enemy(6, "B");
+        e_b.engaged_with = Some(inv_id);
+
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_enemy(e_a)
+            .with_enemy(e_b)
+            .build();
+        let mut events = Vec::new();
+        let _ = super::drive_aoo(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            inv_id,
+        );
+
+        // Out-of-range option (only 0, 1 valid).
+        let rejected = super::super::resolve_input(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::action::InputResponse::PickSingle(OptionId(9)),
+        );
+        assert!(matches!(rejected, EngineOutcome::Rejected { .. }));
+        // Wrong variant.
+        let rejected2 = super::super::resolve_input(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::action::InputResponse::Skip,
+        );
+        assert!(matches!(rejected2, EngineOutcome::Rejected { .. }));
+        // The PickOrder frame survives both rejections for retry.
+        assert!(matches!(
+            state.continuations.last(),
+            Some(Continuation::AttackLoop {
+                stage: AttackLoopStage::PickOrder,
+                ..
+            })
+        ));
     }
 
     #[test]
