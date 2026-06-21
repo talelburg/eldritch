@@ -24,7 +24,7 @@
 - `crates/game-core/src/state/game_state.rs` — add `Continuation::Effect(EffectFrame)` and the `EffectFrame` enum (frame data: the node-in-progress + its `EvalContext`). Remove `DecisionCursor`-coupled doc text from `Continuation::Choice` (the `Choice` variant stays, but its frame becomes suspend-only — no `decisions`/`effect` replay payload; see Task 3).
 - `crates/game-core/src/engine/evaluator.rs` — the rewrite. `apply_effect` → bounded entry; delete `DecisionCursor`, `apply_effect_with_decisions`, `apply_effect_inner`'s recursion, and the `apply_seq`/`apply_native` guards. New: `step_effect_frame` (one step of the top effect frame) + per-node helpers that push child frames.
 - `crates/game-core/src/engine/dispatch/mod.rs` — extend `drive` to step `Continuation::Effect` frames; route `Continuation::Effect` in `resolve_input` to the choice/native resume.
-- `crates/game-core/src/engine/dispatch/choice.rs` — `resume_choice` becomes "pop the suspended `Effect` choice frame, push the chosen branch's frame, return to `drive`" (no replay).
+- `crates/game-core/src/engine/dispatch/choice.rs` — `resume_choice` becomes "pop the `Continuation::Choice` frame, push the chosen child effect frame per its `ChoiceResume`, return to `drive`" (no replay). `ChoiceFrame` reshaped (drop `decisions`/root `effect`; add `resume: ChoiceResume`); `Continuation::Choice` + its `resolve_input` routing stay.
 - `crates/game-core/src/engine/dispatch/combat.rs` — Task 8: `Effect::Deal` leaf pushes `DamageAssignment` when contested; `resume_damage_assignment`'s `DamageSource::Effect` arm resumes the effect drive.
 - `crates/cards/tests/non_attack_soak.rs` — Task 9: un-defer the interactive multi-point cases.
 - New: `crates/game-core/src/engine/dispatch/effect_frames.rs` (optional) — if `evaluator.rs` grows unwieldy, house `step_effect_frame` + `on_child_pop` here. Decide in Task 2; default to keeping it in `evaluator.rs` unless it pushes the file past ~5000 lines.
@@ -40,7 +40,7 @@ Introduces the new data types with no behavior change, so the big rewrite (Task 
 - Test: `crates/game-core/src/state/game_state.rs` (`#[cfg(test)]` module)
 
 **Interfaces:**
-- Produces: `Continuation::Effect(EffectFrame)`; `EffectFrame` enum with variants `Seq { effects: Vec<Effect>, next: usize, ctx: EvalContext }`, `ForEachPointFailed { remaining: u8, body: Box<Effect>, ctx: EvalContext }`, `If { then_: Box<Effect>, else_: Option<Box<Effect>>, took_then: bool, ctx: EvalContext }`, `Leaf { effect: Box<Effect>, ctx: EvalContext }`, `Choice { branches: Vec<Effect>, offered: Vec<OptionId>, ctx: EvalContext }`, `Native { tag: String, ctx: EvalContext }`. (`If`/`Choice`/`Native` fields refined in Task 2 as their stepping is written; this is the starting shape.)
+- Produces: `Continuation::Effect(EffectFrame)`; `EffectFrame` enum with variants `Seq { effects: Vec<Effect>, next: usize, ctx: EvalContext }`, `ForEachPointFailed { remaining: u8, body: Box<Effect>, ctx: EvalContext }`, `If { then_: Box<Effect>, else_: Option<Box<Effect>>, took_then: bool, ctx: EvalContext }`, `Leaf { effect: Box<Effect>, ctx: EvalContext }`. **`EffectFrame` holds only non-input sequencing nodes** — never awaits input, stepped only by `drive`. Effect *choices* (ChooseOne / `*::Chosen` grounding / Native pick) suspend on the existing top-level `Continuation::Choice(ChoiceFrame)`, reshaped in Task 3 — consistent with how every other input suspension (`DamageAssignment`, `HunterMove`, …) is a top-level `Continuation` variant routed in `resolve_input`. A suspending Native is just a `Leaf { effect: Native{tag} }` that pushes a `Continuation::Choice`; there is no `EffectFrame::Choice`/`EffectFrame::Native`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -113,27 +113,17 @@ pub enum EffectFrame {
         ctx: crate::engine::EvalContext,
     },
     /// A leaf effect (no child frames): apply synchronously when stepped, pop.
-    /// `Effect::Deal` may instead push a `DamageAssignment` (K5b-2, Task 8).
+    /// Includes `Effect::Native { tag }` (the leaf step runs the native fn; if it
+    /// suspends for a choice it pushes a `Continuation::Choice`). `Effect::Deal`
+    /// may instead push a `DamageAssignment` (K5b-2, Task 8).
     Leaf {
         effect: Box<card_dsl::dsl::Effect>,
         ctx: crate::engine::EvalContext,
     },
-    /// A `ChooseOne(branches)` suspended for a controller pick. On resume, push
-    /// the chosen branch's frame. No replay of the root.
-    Choice {
-        branches: Vec<card_dsl::dsl::Effect>,
-        offered: Vec<crate::engine::OptionId>,
-        ctx: crate::engine::EvalContext,
-    },
-    /// A `Native` leaf that may suspend once (choice-before-side-effect,
-    /// standalone — its existing contract). On resume the native is re-invoked
-    /// with the chosen option threaded via `EvalContext::chosen_option`.
-    Native {
-        tag: String,
-        ctx: crate::engine::EvalContext,
-    },
 }
 ```
+
+(Effect choices live on `Continuation::Choice(ChoiceFrame)`, reshaped in Task 3 — *not* in `EffectFrame`.)
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -177,10 +167,10 @@ The classic recursive walk (`apply_effect_inner`) is replaced by a **push-down s
 - **`Seq(effects)`**: push `EffectFrame::Seq { effects, next: 0, ctx }`. When stepped with `next < len`, push a child frame for `frame_of(&effects[next], ctx)` and increment `next` *in place* (mutate the frame, then push child above it). When `next == len`, pop. (`on_child_pop` is implicit: stepping the Seq again after a child pops sees the advanced `next`.)
 - **`ForEachPointFailed(body)`**: at frame creation `remaining = ctx.failed_by().unwrap_or(0)`. When stepped with `remaining > 0`, decrement in place and push a child frame `frame_of(body, ctx)`. When `remaining == 0`, pop. **This is the K5b-2 fix** — the count survives on the stack across a child suspension.
 - **`If { condition, then, else_ }`**: evaluate `condition` synchronously at frame creation (conditions are pure reads — confirm via `apply_if`'s current body), push `EffectFrame::If` with the chosen branch already determined, and push that branch's child frame; the `If` frame pops when the child pops. (Simpler: skip an `If` frame entirely — evaluate the condition and directly push the chosen branch's frame. Prefer this unless a condition needs post-branch work; current `apply_if` does not.)
-- **`ChooseOne(branches)`**: apply `resolve_choice_count(branches.len())`. `Empty` → reject. `Auto(i)` → push `frame_of(&branches[i], ctx)`. `Suspend` → push `EffectFrame::Choice { branches, offered, ctx }` and return `AwaitingInput` with `InputRequest::choice`. **No `decisions` payload.**
-- **`*::Chosen` grounding** (`ground_chosen_targets` + `ground_investigator_choice`/`location`/`enemy`): same convention, but on `Suspend` push `EffectFrame::Choice` whose resume binds the chosen entity into `ctx` then pushes the *effect's own* `frame_of`. Implementation: a `Choice` variant needs to distinguish "branch pick" from "target-binding pick". Add a field `kind: ChoiceKind` to `EffectFrame::Choice` where `ChoiceKind` ∈ `{ Branch, BindInvestigator(Box<Effect>), BindLocation(Box<Effect>), BindEnemy(Box<Effect>) }`. On resume, `Branch` pushes `branches[i]`; the `Bind*` kinds set the chosen entity on `ctx` and push the carried effect. (Refine the Task 1 `Choice` shape accordingly.)
-- **`SearchDeck`**: currently cursor-driven. Convert its choice point to push an `EffectFrame::Choice { kind: Branch-like }`, or — if `apply_search_deck`'s choice is a single standalone pick — keep it as a `Native`-style leaf that suspends once. Inspect `apply_search_deck` and pick the minimal mapping; document the choice inline.
-- **`Native { tag }`**: push `EffectFrame::Native { tag, ctx }`. When stepped, call the native fn (reused). If it returns `AwaitingInput`, leave the `Native` frame on the stack (resume re-invokes with the chosen option) and return `AwaitingInput`; else pop. The native re-invoke must be **idempotent up to its suspension** (choice-before-side-effect) — document this contract at the `Native` arm and the resume.
+- **`ChooseOne(branches)`**: apply `resolve_choice_count(branches.len())`. `Empty` → reject. `Auto(i)` → push `frame_of(&branches[i], ctx)`. `Suspend` → push `Continuation::Choice(ChoiceFrame { offered, context: ctx, resume: ChoiceResume::Branch(branches) })` and return `AwaitingInput` with `InputRequest::choice`. **No `decisions`/root-`effect` payload** (Task 3 reshapes `ChoiceFrame`; if Tasks 2+3 land together, define the reshaped struct now). The popped `EffectFrame` (Seq/loop) parent stays on the stack beneath the `Choice`.
+- **`*::Chosen` grounding** (`ground_chosen_targets` + `ground_investigator_choice`/`location`/`enemy`): same convention, but on `Suspend` push `Continuation::Choice` with `resume: ChoiceResume::BindInvestigator(Box::new(effect.clone()))` (or `BindLocation`/`BindEnemy`). On resume (Task 3), the `Bind*` arm re-enumerates candidates from the carried effect's scope (deterministic BTreeMap order — same as today's replay), binds `candidates[picked]` into `ctx`, and pushes `frame_of(effect, ctx)`.
+- **`SearchDeck`**: currently cursor-driven. Inspect `apply_search_deck`: if its choice is a single standalone pick, map it to a `Continuation::Choice` with an appropriate `ChoiceResume` (a dedicated arm if it needs to push a follow-up, else treat like a Native-style standalone pick). Pick the minimal mapping; document inline.
+- **`Native { tag }`**: handled as a `Leaf { effect: Native{tag}, ctx }`. The leaf step calls the native fn (reused). If it returns `AwaitingInput`, the native itself pushed a `Continuation::Choice` (via `suspend_for_native_choice` → `resume: ChoiceResume::Native(tag)`); leave it and return `AwaitingInput`. The native re-invoke on resume must be **idempotent up to its suspension** (choice-before-side-effect, standalone — its existing contract) — document this at the leaf-Native arm and the `ChoiceResume::Native` resume. No `EffectFrame::Native` variant.
 
 `frame_of(effect, ctx) -> EffectFrame` is a small constructor: control nodes → their frame; everything else → `Leaf`.
 
@@ -254,43 +244,44 @@ git commit -m "engine: frame-driven effect evaluator core; retire DecisionCursor
 
 ---
 
-## Task 3: `resume_choice` resumes by pushing the chosen branch frame (no replay)
+## Task 3: Reshape `ChoiceFrame` for frame resume (no replay)
+
+Keep `Continuation::Choice` as the single input-suspension for effect choices (consistent with every other input suspension being a top-level `Continuation` variant routed in `resolve_input`); reshape its frame to drop the replay payload and carry what to push on resume.
 
 **Files:**
-- Modify: `crates/game-core/src/engine/dispatch/choice.rs` (`resume_choice` ~101; `suspend_for_choice`/`ChoiceFrame` usage)
-- Modify: `crates/game-core/src/engine/dispatch/mod.rs` (`resolve_input` route `Continuation::Effect` choice ~421)
-- Modify: `crates/game-core/src/state/game_state.rs` (`ChoiceFrame` — drop `decisions`/`effect` replay fields, or remove `Continuation::Choice` entirely in favor of `Continuation::Effect(EffectFrame::Choice)`)
+- Modify: `crates/game-core/src/state/game_state.rs` (`ChoiceFrame` ~615 — drop `decisions` + root `effect`; add `resume: ChoiceResume`; define `ChoiceResume`)
+- Modify: `crates/game-core/src/engine/dispatch/choice.rs` (`resume_choice` ~101; `suspend_for_choice` ~43; `suspend_for_native_choice` ~80)
+- Modify: `crates/game-core/src/engine/evaluator.rs` (the `suspend_for_choice(..)` call sites in `apply_choose_one` + the three `ground_*` fns — pass the right `ChoiceResume` instead of `decisions`/`root`)
 
 **Interfaces:**
-- Decide: **remove `Continuation::Choice`** and route choices solely through `Continuation::Effect(EffectFrame::Choice)`. This is cleaner (one choice representation). Confirm no non-evaluator code pushes `Continuation::Choice` (grep `Continuation::Choice`); the only producers are `suspend_for_choice` (evaluator-internal) and the native suspend. If true, delete the variant + `ChoiceFrame`.
-- Produces: `resume_choice(cx, response)` — validate `PickSingle` ∈ `offered`; pop the `EffectFrame::Choice`; per `ChoiceKind`, push the chosen branch frame or bind+push; return `drive_effect_to_base`-style continuation. Keep the existing post-`Done` re-entry into `drive_skill_test` / `advance_resolution` (choice.rs:131–144) — that seam is the bounded-entry boundary for the not-yet-migrated callers.
+- Produces: reshaped `pub struct ChoiceFrame { pub offered: Vec<OptionId>, pub context: EvalContext, pub resume: ChoiceResume }` and `pub enum ChoiceResume { Branch(Vec<Effect>), BindInvestigator(Box<Effect>), BindLocation(Box<Effect>), BindEnemy(Box<Effect>), Native(String) }`.
+- Produces: `resume_choice(cx, response)` — validate `PickSingle` ∈ `offered`; pop the `Continuation::Choice`; dispatch on `resume`: `Branch(branches)` → push `frame_of(&branches[picked])`; `Bind*` → re-enumerate candidates from the carried effect's scope, set the picked entity on `ctx`, push `frame_of(effect)`; `Native(tag)` → set `ctx.chosen_option = OptionId(picked)`, push `Leaf{Native(tag)}`. Then run the effect drive to base and keep the existing post-`Done` re-entry into `drive_skill_test` / `advance_resolution` (choice.rs:131–144) — that seam is the bounded-entry boundary for the not-yet-migrated callers.
+- `resolve_input` routing is **unchanged** (`Some(Continuation::Choice(_)) => resume_choice`).
 
-- [ ] **Step 1: Run the resume-path tests as the gate** (these already exist and must stay green)
+- [ ] **Step 1: Run the resume-path tests as the gate** (these exist and must stay green)
 
 Run: `cargo test -p game-core engine::dispatch::choice`
 Run: `cargo test -p cards --test play_card`  (Research Librarian 01032 SearchDeck choice; Crypt Chill 01167 on_fail)
 Expected after implementation: PASS.
 
-- [ ] **Step 2: Rewrite `resume_choice`**
+- [ ] **Step 2: Reshape `ChoiceFrame` + add `ChoiceResume`** in game_state.rs (drop `decisions` + root `effect`). Update the `#[non_exhaustive]` struct's doc to describe the frame model, not replay.
 
-Replace the body so it pops `Continuation::Effect(EffectFrame::Choice { branches, offered, ctx, kind })`, validates the pick, pushes the resolved child frame (or binds the entity and pushes the carried effect), then runs the effect drive to base and applies the existing skill-test / reaction-window re-entry on `Done`.
+- [ ] **Step 3: Update `suspend_for_choice` / `suspend_for_native_choice`** to take a `ChoiceResume` (replacing the `decisions: Vec<OptionId>` + `effect: Effect` params); update the evaluator call sites (`apply_choose_one`, `ground_investigator_choice`/`location`/`enemy`) to pass `ChoiceResume::Branch` / `Bind*`, and `suspend_for_native_choice` to pass `ChoiceResume::Native(tag)`.
 
-- [ ] **Step 3: Update `resolve_input` routing**
+- [ ] **Step 4: Rewrite `resume_choice`** to pop `Continuation::Choice(ChoiceFrame { offered, context, resume })`, validate the pick, dispatch on `resume` (per the Interfaces block), drive to base, and apply the existing skill-test / reaction-window re-entry on `Done`.
 
-In mod.rs `resolve_input`, replace `Some(Continuation::Choice(_)) => choice::resume_choice(..)` with `Some(Continuation::Effect(EffectFrame::Choice { .. })) => choice::resume_choice(..)`. A non-choice `Continuation::Effect` on top during `resolve_input` is spurious → reject defensively (mirror the `AttackLoop`/anchor arms).
+- [ ] **Step 5: Rewrite the replay-asserting tests.** The ~6 evaluator tests asserting `frame.decisions` (evaluator.rs:3049, 3342, 3382, 3499, 3611, 3751) encode the old replay recording; rewrite each to assert the new resume shape (the `Continuation::Choice` frame's `offered` + `resume`, or simply that the right branch ran after the pick). Update `choice_frame_snapshots_active_skill_test_binding` (choice.rs:168) to assert the snapshotted `frame.context.failed_by()` on the reshaped frame.
 
-- [ ] **Step 4: Delete `Continuation::Choice` + `ChoiceFrame`** (if Step-1 grep confirmed no external producers). Update the `choice_frame_snapshots_active_skill_test_binding` test to assert on the new `EffectFrame::Choice` carrying the snapshotted `ctx.failed_by()`.
-
-- [ ] **Step 5: Run the gate**
+- [ ] **Step 6: Run the gate**
 
 Run: `cargo test -p game-core engine::dispatch::choice` and `cargo test -p cards --test play_card`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add crates/game-core/src/engine/dispatch/choice.rs crates/game-core/src/engine/dispatch/mod.rs crates/game-core/src/state/game_state.rs
-git commit -m "engine: resume choices by pushing the chosen branch frame; drop replay ChoiceFrame (#422)"
+git add crates/game-core/src/engine/dispatch/choice.rs crates/game-core/src/engine/evaluator.rs crates/game-core/src/state/game_state.rs
+git commit -m "engine: resume choices via reshaped ChoiceFrame (drop replay payload) (#422)"
 ```
 
 ---
@@ -516,7 +507,7 @@ PR body: design-decisions paragraph; `Closes #422.` (and notes the K5b-2 part of
 **Spec coverage:**
 - Evaluator core → frames (Seq/ForEachPointFailed/If/ChooseOne/Chosen-grounding/SearchDeck/Native/leaves): Task 2. ✓
 - Retire `DecisionCursor` + #346/#334 guards: Task 2. ✓
-- Global drive handles effect frames: Task 2 (drive arm) + Task 3 (resolve_input route). ✓
+- Global drive handles effect frames: Task 2 (drive arm); choices stay on the top-level `Continuation::Choice` (reshaped, Task 3) routed by the existing `resolve_input` arm — consistent with all other input suspensions. ✓
 - `apply_effect` = bounded entry: Task 2. ✓
 - Migrate all-but-skill-test sites: Tasks 5–6 (right-sized; residuals annotated). ✓
 - Skill-test cluster keeps bounded entry + TODO(#374): Global Constraints + Task 5/6 notes. ✓
