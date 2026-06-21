@@ -605,8 +605,9 @@ pub(super) fn play_card(
 /// effect that suspends (Dynamite Blast's location choice) returns its outcome;
 /// its frame resumes through its own path.
 ///
-/// TODO (richer mid-action invalidation, shared with `resume_activate_ability`,
-/// #361): a resumed `OnPlay` effect that returns [`EngineOutcome::Rejected`] on
+/// TODO(#417) (richer mid-action invalidation, shared with
+/// `resume_activate_ability`, #361): a resumed `OnPlay` effect that returns
+/// [`EngineOutcome::Rejected`] on
 /// a lapsed precondition rolls back the *whole* play (the `AoO` damage + spent
 /// action) via `apply()`'s snapshot, rather than suppressing the primary only
 /// (the §D contract). Unreachable in scope — the only non-fast `OnPlay` cards

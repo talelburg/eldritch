@@ -146,7 +146,7 @@ fn provokes_aoo(action_cost: u8, effect: &crate::dsl::Effect) -> bool {
 /// re-resolution by instance), with `instance_id` only seeding the eval
 /// context's source.
 ///
-/// TODO (richer mid-action invalidation): unlike the basic-action resumes
+/// TODO(#417) (richer mid-action invalidation): unlike the basic-action resumes
 /// (`investigate_primary_effect` etc., which return `Done` to *suppress*
 /// gracefully when their target precondition has lapsed), this delegates
 /// straight to `apply_effect`. Some effects (`Effect::Investigate` on
