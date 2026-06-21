@@ -306,6 +306,15 @@ impl EvalContext {
 /// authors expect the whole sequence or nothing — but it means
 /// gluing implemented + stubbed effects together still blocks on
 /// the stubs.
+///
+/// Frame-driven (#422): pushes the effect's root
+/// [`EffectFrame`](crate::state::EffectFrame) and drives it via
+/// [`step_effect_frame`] to completion (`Done`) or a controller-pick suspension
+/// (`AwaitingInput`). This is a **thin bounded entry** into the single global
+/// drive (it reuses [`step_effect_frame`], not a second loop), keeping the
+/// synchronous `-> EngineOutcome` boundary for its callers. Migrating every call
+/// site off this wrapper to pure top-frame dispatch (push root + `on_child_pop`)
+/// is the #393 end-state — deferred to land with item 5: `TODO(#423)`.
 pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
     let base = cx.state.continuations.len();
     cx.state
