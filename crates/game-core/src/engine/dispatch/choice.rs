@@ -1,18 +1,15 @@
-//! Interactive-choice resolution (Axis A, #334): the
-//! [`Continuation::Choice`](crate::state::Continuation::Choice) frame's
-//! suspend/resume and the uniform `0 ⇒ reject · 1 ⇒ auto · 2+ ⇒ suspend`
-//! resolver (umbrella §3.4 / spec §5).
-//!
-//! A choice suspends by pushing a [`ChoiceFrame`] holding the picks made so
-//! far (`decisions`), the offered option ids, and the root effect being
-//! resolved. On resume, [`resume_choice`] validates the pick, appends it, and
-//! re-runs the effect from the top — the evaluator replays `decisions` to
-//! reach the next un-ground choice (single-pass suspend-and-replay).
+//! Interactive-choice resolution (#422): effect nodes that need a controller
+//! pick **suspend in place** — the evaluator leaves the node's
+//! [`EffectFrame::Leaf`](crate::state::EffectFrame::Leaf) on top of the
+//! continuation stack as the prompt. [`resume_effect_choice`] sets the pick on
+//! that frame and re-steps it. The `0 ⇒ reject · 1 ⇒ auto · 2+ ⇒ suspend`
+//! resolver ([`resolve_choice_count`]) is shared by the evaluator and
+//! card-local natives. No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
-use crate::engine::evaluator::{apply_effect_with_decisions, EvalContext};
+use crate::engine::evaluator::drive_effect_to_base;
 use crate::engine::{ChoiceOption, Cx, EngineOutcome, InputRequest, OptionId, ResumeToken};
-use crate::state::{ChoiceFrame, Continuation};
+use crate::state::{Continuation, EffectFrame};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
 /// options (umbrella §3.4 / spec §5). `pub` so card-local natives can apply
@@ -22,7 +19,7 @@ pub enum ChoiceResolution {
     Empty,
     /// Exactly one — auto-bind this index, no input.
     Auto(usize),
-    /// Two or more — suspend with a [`Continuation::Choice`] frame.
+    /// Two or more — suspend for a controller pick.
     Suspend,
 }
 
@@ -35,19 +32,12 @@ pub fn resolve_choice_count(n: usize) -> ChoiceResolution {
     }
 }
 
-/// Push a [`Continuation::Choice`] frame and return the matching
-/// `AwaitingInput`. `labels` provides one render label per offered option, in
-/// offered order; `OptionId(i)` is the index. `decisions` carries the picks
-/// already made before this suspend (so resume replays them); `effect` is the
-/// root effect being resolved.
-pub(crate) fn suspend_for_choice(
-    cx: &mut Cx,
-    prompt: impl Into<String>,
-    labels: Vec<String>,
-    decisions: Vec<OptionId>,
-    effect: card_dsl::dsl::Effect,
-    eval_ctx: EvalContext,
-) -> EngineOutcome {
+/// Build the `AwaitingInput` for a controller choice from one render label per
+/// offered option, in offered order (`OptionId(i)` is the index). Pushes
+/// **nothing** — the suspending effect node's own `Leaf` frame stays on the
+/// stack as the prompt (#422); resume re-derives the option set and validates
+/// the pick by checked indexing.
+pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
     let options: Vec<ChoiceOption> = labels
         .into_iter()
         .enumerate()
@@ -56,88 +46,68 @@ pub(crate) fn suspend_for_choice(
             label,
         })
         .collect();
-    let offered: Vec<OptionId> = options.iter().map(|o| o.id).collect();
-    cx.state
-        .continuations
-        .push(Continuation::Choice(ChoiceFrame {
-            decisions,
-            offered,
-            effect,
-            context: eval_ctx,
-        }));
     EngineOutcome::AwaitingInput {
         request: InputRequest::choice(prompt, options),
         resume_token: ResumeToken(0),
     }
 }
 
-/// Suspend a card-local native leaf for a controller pick (Axis A): the frame
-/// records the native effect itself as its root, so resume re-invokes the
-/// native with the pick threaded via [`EvalContext::chosen_option`]. `decisions`
-/// is empty — a native pick must be standalone (the native-standalone guard in
-/// the evaluator enforces this). The native re-enumerates its candidates and
-/// indexes by the picked [`OptionId`].
+/// Suspend a card-local native leaf for a controller pick (#422): build the
+/// `AwaitingInput` from `labels`. The native's `Leaf` frame stays on the stack;
+/// resume re-invokes the native with the pick threaded via
+/// [`EvalContext::chosen_option`](crate::engine::EvalContext::chosen_option).
+/// The native re-enumerates its candidates and indexes by the picked
+/// [`OptionId`]. (`cx`/`tag`/`ctx` are accepted for call-site compatibility; the
+/// frame management lives in the evaluator's native step.)
 pub fn suspend_for_native_choice(
-    cx: &mut Cx,
+    _cx: &mut Cx,
     prompt: impl Into<String>,
     labels: Vec<String>,
-    tag: &str,
-    ctx: &EvalContext,
+    _tag: &str,
+    _ctx: &crate::engine::EvalContext,
 ) -> EngineOutcome {
-    suspend_for_choice(
-        cx,
-        prompt,
-        labels,
-        Vec::new(),
-        card_dsl::dsl::native(tag),
-        *ctx,
-    )
+    awaiting_choice(prompt, labels)
 }
 
-/// Resume a [`Continuation::Choice`]: validate the pick is in the offered
-/// set, append it to `decisions`, pop the frame, restore the snapshotted
-/// [`EvalContext`] (durable identity + any active window bindings), and re-run
-/// the effect from the top (the evaluator replays `decisions`).
-pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+/// Resume an effect node suspended in place for a controller pick (#422): the
+/// top frame is the suspended [`EffectFrame::Leaf`]. Set its `chosen_option` and
+/// re-step it via the effect drive — the node grounds/picks (checked indexing,
+/// validate-first) instead of suspending. On completion, re-enter the enclosing
+/// driver (skill test / reaction window), mirroring the former replay resume.
+pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let InputResponse::PickSingle(picked) = response else {
         return EngineOutcome::Rejected {
             reason: "ResolveInput: a choice is open; expected InputResponse::PickSingle".into(),
         };
     };
-    let Some(Continuation::Choice(frame)) = cx.state.continuations.last() else {
-        return EngineOutcome::Rejected {
-            reason: "resume_choice: no Choice frame on top of the stack".into(),
-        };
-    };
-    if !frame.offered.contains(picked) {
-        return EngineOutcome::Rejected {
-            reason: format!("ResolveInput: PickSingle({picked:?}) not in the offered set").into(),
-        };
+    match cx.state.continuations.last_mut() {
+        Some(Continuation::Effect(EffectFrame::Leaf { ctx, .. })) => {
+            ctx.set_chosen_option(Some(*picked));
+        }
+        _ => {
+            return EngineOutcome::Rejected {
+                reason: "resume_effect_choice: top frame is not a suspended effect leaf".into(),
+            }
+        }
     }
-    // Pop the frame; carry forward the recorded decisions + the just-made pick.
-    let Some(Continuation::Choice(frame)) = cx.state.continuations.pop() else {
-        unreachable!("checked Choice on top immediately above");
-    };
-    let mut decisions = frame.decisions;
-    decisions.push(*picked);
-    let eval_ctx = frame.context;
-    let outcome = apply_effect_with_decisions(cx, &frame.effect, eval_ctx, decisions);
+    // Drive the contiguous run of effect frames on top (the resumed walk) until
+    // it completes or suspends again. `base` is the depth just below that run.
+    let base = cx
+        .state
+        .continuations
+        .iter()
+        .rposition(|c| !matches!(c, Continuation::Effect(_)))
+        .map_or(0, |i| i + 1);
+    let outcome = drive_effect_to_base(cx, base);
 
-    // If the choice completed an effect that was suspended *inside* a skill
-    // test (Crypt Chill 01167's on_fail discard), re-enter the driver to run
-    // the test's teardown — its continuation is parked at `PostFollowUp`.
-    // Same reentrancy as the before-discover window's resume. A still-suspended
-    // outcome (a further nested choice) returns as-is.
+    // If the walk completed inside a skill test (e.g. Crypt Chill 01167's
+    // on_fail discard) or a reaction window (Research Librarian 01032's
+    // SearchDeck), re-enter that driver so it advances / tears down — mirroring
+    // the former replay resume. A still-suspended outcome returns as-is.
     if matches!(outcome, EngineOutcome::Done) {
         if cx.state.has_skill_test_in_flight() {
             return super::skill_test::drive_skill_test(cx);
         }
-        // A choice fired from inside a reaction window (Research Librarian
-        // 01032's SearchDeck suspending on 2+ eligible Tomes) leaves the window
-        // frame on the stack below; re-drive it so it closes / advances to the
-        // next pending trigger. Mirrors the skill-test reentrancy above. (Old
-        // Book of Lore's choice is fired from an activated ability — no window
-        // frame — and falls through to `outcome`.)
         if let Some(idx) = cx.state.top_reaction_window_index() {
             return super::reaction_windows::advance_resolution(cx, idx);
         }
@@ -148,6 +118,8 @@ pub(crate) fn resume_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::Effect;
+    use crate::engine::evaluator::{apply_effect, EvalContext};
 
     #[test]
     fn resolve_zero_options_is_reject() {
@@ -165,36 +137,39 @@ mod tests {
     }
 
     #[test]
-    fn choice_frame_snapshots_active_skill_test_binding() {
+    fn suspended_leaf_snapshots_active_skill_test_binding() {
         use crate::state::InvestigatorId;
         use crate::test_support::GameStateBuilder;
 
-        // A context carrying an active on_fail margin when a choice suspends.
+        // A context carrying an active on_fail margin when a ChooseOne suspends.
         let mut ctx = EvalContext::for_controller(InvestigatorId(1));
         ctx.set_failed_by(2);
 
+        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![]), Effect::Seq(vec![])]);
         let mut state = GameStateBuilder::default().build();
         let mut events = Vec::new();
-        let _ = suspend_for_choice(
+        let out = apply_effect(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            "pick",
-            vec!["a".into(), "b".into()],
-            Vec::new(),
-            crate::dsl::Effect::Seq(vec![]),
+            &effect,
             ctx,
         );
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "a 2-branch ChooseOne suspends for a pick",
+        );
 
-        let Some(Continuation::Choice(frame)) = state.continuations.last() else {
-            panic!("expected a Choice frame on the stack");
+        let Some(Continuation::Effect(EffectFrame::Leaf { ctx, .. })) = state.continuations.last()
+        else {
+            panic!("expected a suspended effect Leaf frame on the stack");
         };
         assert_eq!(
-            frame.context.failed_by(),
+            ctx.failed_by(),
             Some(2),
-            "the active skill-test margin must be snapshotted onto the ChoiceFrame, \
-             not dropped at suspend",
+            "the active skill-test margin must ride the suspended Leaf frame's context, \
+             not be dropped at suspend",
         );
     }
 }

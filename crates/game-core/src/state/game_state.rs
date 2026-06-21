@@ -423,10 +423,6 @@ pub enum Continuation {
     /// resolves (Axis-B T4). At most one is ever on the stack (no nesting today);
     /// [`GameState::current_skill_test`] returns the topmost one.
     SkillTest(InFlightSkillTest),
-    /// A controller choice is mid-resolution (Axis A): the effect tree is
-    /// re-run from the top on each resume, replaying `decisions` to reach
-    /// the next un-ground choice. See [`ChoiceFrame`].
-    Choice(ChoiceFrame),
     /// A suspended Hunter-movement / engagement choice (#128), migrated off the
     /// former `GameState::hunter_move_pending` field (#348). Resumed by
     /// [`resume_hunter_choice`](crate::engine) via `ResolveInput`.
@@ -636,19 +632,6 @@ pub enum EffectFrame {
         /// The evaluation context for this loop.
         ctx: crate::engine::EvalContext,
     },
-    /// An `If` whose condition has been evaluated and chosen branch pushed; this
-    /// frame completes when that child pops. (`If` may instead be resolved
-    /// inline by pushing the chosen branch directly — see the evaluator.)
-    If {
-        /// The `then` branch.
-        then_: Box<card_dsl::dsl::Effect>,
-        /// The optional `else` branch.
-        else_: Option<Box<card_dsl::dsl::Effect>>,
-        /// Whether the `then` branch was taken.
-        took_then: bool,
-        /// The evaluation context for this conditional.
-        ctx: crate::engine::EvalContext,
-    },
     /// A single effect node to evaluate. A terminal effect runs and pops;
     /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
     /// `DamageAssignment` (K5b-2); `Effect::Native { tag }` runs the native fn.
@@ -663,33 +646,6 @@ pub enum EffectFrame {
         /// The evaluation context for this node.
         ctx: crate::engine::EvalContext,
     },
-}
-
-/// A controller choice paused mid-resolution (umbrella §3, Axis A).
-///
-/// The frame stores the picks made so far (`decisions`), the option ids
-/// offered at the *current* suspend (`offered`, so resume validates
-/// membership), the root [`Effect`](card_dsl::dsl::Effect) being resolved,
-/// and the [`EvalContext`](crate::engine::EvalContext) ingredients to rebuild
-/// on resume (`controller` + `source`) — mirroring how [`InFlightSkillTest`]
-/// stores `investigator` + `source` rather than a non-serializable
-/// `EvalContext` (see the Axis-A spec §2).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct ChoiceFrame {
-    /// Picks recorded so far, in choice-encounter (pre-order) order.
-    pub decisions: Vec<crate::engine::OptionId>,
-    /// Option ids offered at the current suspend; resume rejects an id not
-    /// in this set.
-    pub offered: Vec<crate::engine::OptionId>,
-    /// Root effect being (re-)resolved. A native leaf is just one node.
-    pub effect: card_dsl::dsl::Effect,
-    /// The [`EvalContext`](crate::engine::EvalContext) captured at suspend —
-    /// durable identity (`controller`/`source`) **and** any active window
-    /// bindings (e.g. an `on_fail` margin). Snapshotting the whole context (vs.
-    /// re-storing ingredient tuples) means bindings survive the suspend; resume
-    /// re-runs the effect with this exact context. (#345.)
-    pub context: crate::engine::EvalContext,
 }
 
 /// Which action's primary effect a parked [`Continuation::ActionResolution`]
@@ -792,7 +748,6 @@ impl Continuation {
         match self {
             Continuation::Resolution(w) => Some(w),
             Continuation::SkillTest(_)
-            | Continuation::Choice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
@@ -818,7 +773,6 @@ impl Continuation {
         match self {
             Continuation::Resolution(w) => Some(w),
             Continuation::SkillTest(_)
-            | Continuation::Choice(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
