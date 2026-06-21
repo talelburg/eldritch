@@ -46,11 +46,12 @@ by card/location abilities, so they live with the optional content in
 Lita's Parley), **not** the gate. #77 stays open for its Parley half.
 
 **B. Attacks of opportunity + non-enemy-phase attack windows** — one cluster,
-one shared mechanism (mid-action park/resume; see the keystone note):
-- [#361](https://github.com/talelburg/eldritch/issues/361) — activated abilities don't provoke AoO (First Aid, Medical Texts, Flashlight).
-- [#378](https://github.com/talelburg/eldritch/issues/378) — action-event play doesn't provoke AoO (Dynamite Blast, Emergency Cache).
-- [#293](https://github.com/talelburg/eldritch/issues/293) — AoO opens no soak/cancel window (Guard Dog, Dodge).
-- [#379](https://github.com/talelburg/eldritch/issues/379) — Retaliate opens no soak/cancel window (Guard Dog, Dodge).
+one shared mechanism (mid-action park/resume), now a sub-sliced arc **K1→K5**
+(see Ordering step 4 + its design spec). **The foundation shipped:**
+- ✅ [#293](https://github.com/talelburg/eldritch/issues/293) — AoO open cancel/soak windows (Guard Dog, Dodge). **Shipped — K1, PR #413** (`ActionResolution` frame + `drive_aoo`).
+- [#379](https://github.com/talelburg/eldritch/issues/379) — Retaliate opens no soak/cancel window (Guard Dog, Dodge). **K2.**
+- [#361](https://github.com/talelburg/eldritch/issues/361) — activated abilities don't provoke AoO (First Aid, Medical Texts, Flashlight). **K3.**
+- [#378](https://github.com/talelburg/eldritch/issues/378) — action-event play doesn't provoke AoO (Dynamite Blast, Emergency Cache). **K3.**
 
 **C. Enemy-attack-loop player agency:**
 - [#143](https://github.com/talelburg/eldritch/issues/143) — player picks attack order with 2+ engaged enemies.
@@ -77,7 +78,9 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
 2. **§1 continuation-stack cleanup — ✅ done.** #345 (PR #385) + #348 via parts 2a–2c + #380 (PRs #386–#392). The last piece, **#347** (token-routed resume / stale-submit rejection), **folds into #393** rather than landing standalone: the literal "token on `ResolveInput`, validated in the engine" is a ~145-site churn that #393 would rework, and stale-submit rejection is properly a *session* concern — the engine emits deterministic token *values*, the **server** rejects stale client echoes at the network boundary (the engine's `apply`/action-log stays token-free for replay). So token-routing is designed on #393's unified resume channel, at the right layer. (#348/#347 closed → #393.)
 3. **Unified control-flow model (#393) — the foundation arc, before the rest of Tier-1. ✅ designed** ([`2026-06-20-unified-control-flow-model-design.md`](../superpowers/specs/2026-06-20-unified-control-flow-model-design.md)). Reify *every* step of control flow as a continuation frame (phases, turns, the open-action choice), so the main loop collapses to a single rule: **handle the top frame.** The `InvestigatorTurn` frame re-emits the player's legal actions as `OptionId`s while actions remain — so the stack is never empty during play (empty only at bootstrap and the terminal resolution). The spec scopes a **C checkpoint** (a step is a frame *iff* it suspends or loops; net-new surface = four per-phase anchors + `InvestigatorTurn` + `AttackLoop`) and three sequenced post-C **end-states**: **B** (every step a frame, reached content-driven), **2b** (eliminate typed `PlayerAction` → gameplay is `ResolveInput(OptionId)` only; committed for UX/#205), and the **EmitEvent-frame** (the `when/at/after × forced/reaction` ordering axis as nested frames; #212 successor). It **subsumes** the keystone's substrate, the three framework cursors (`enemy_attack_pending` / `pending_end_turn` / `pending_enemy_attack`), #384's engine half (#384 closed → #393), and **token-routing / stale-submit rejection (#347, folded in → server-side)**. The engine emits `OptionId`s + keeps the id→action map internal; option metadata / browser rendering is #205 at the capstone. Build the model **before** the rest of Tier-1 so each item lands on the final engine shape.
    - **Slice 3 — `AttackLoop` frame (cursor lift). ✅ shipped (PR #412, closes #411).** Lifted the last two framework cursors onto the stack: the parked enemy-attack loop is now a `Continuation::AttackLoop` frame (inserted *beneath* the reaction window it suspends on), and the per-investigator cursor is the `EnemyPhase` anchor's `attacking: Option<InvestigatorId>` field. Behaviour-preserving. **Deliberately Shape A:** the `AttackLoop` frame spans only the *parked suspension*, not the whole per-investigator step 3.3 — see the keystone caveat below.
-4. **The keystone: mid-action suspend/resume** — designed as §D of the #393 spec (its riskiest slice). Tier-1 B **and** C all hinge on the attack loop parking the *triggering action*, opening a window, and resuming — built on the `AttackLoop` frame (slice 3 / #411) above the action's sub-resolution (the model's first and hardest consumer), **not** a new cursor; an `on_child_pop` re-validation gate handles actor-eliminated-mid-action. **Caveat from slice 3:** today the `AttackLoop` frame is pushed only when a loop parks on a window and popped on resume — it does *not* yet span the whole per-investigator step 3.3, and the attacker list is still snapshotted when the `BeforeInvestigatorAttacked` window closes (after Fast plays). Extending the frame to span the action (and deciding the attacker-snapshot timing) is the keystone's job; do it here, not earlier, since changing it is a behaviour change. #293/#379/#361/#378/#143/#44 collapse into a single attack-loop arc — the highest-leverage item in the phase. Fold #119 in for #44's soak (symmetric token storage).
+4. **The keystone: mid-action suspend/resume — 🔨 in progress (K1 shipped).** Designed in its own spec ([`2026-06-20-phase-7-keystone-mid-action-park-design.md`](../superpowers/specs/2026-06-20-phase-7-keystone-mid-action-park-design.md)) — §D of #393 expanded into a sub-sliced arc **K1→K5** collapsing #293/#379/#361/#378/#143/#44 (+#119), the highest-leverage item in the phase. The action parks its *triggering action* on a `Continuation::ActionResolution` frame (above `InvestigatorTurn`) with the AoO `AttackLoop` (slice 3 / #411) as its child; on the loop's pop an `on_child_pop` re-validation gate (actor-Active + the primary's target precondition) resumes the action's primary effect, aborting cleanly on a mid-action lapse.
+   - **K1 — AoO open cancel/soak windows (#293). ✅ shipped (PR #413).** `ActionResolution` frame + `drive_aoo`; the five basic actions fire AoO through `drive_attack_loop`, so Dodge cancels and Guard Dog retaliates against an AoO; `fire_attacks_of_opportunity` deleted. RR p.7 AoO-non-exhaust source-gated.
+   - **K2 #379** retaliate windows · **K3 #361/#378** AoO from activated abilities + action-event play · **K4 #143** player attack-order — *also extends the enemy-phase `AttackLoop` to span the whole step 3.3 (resolving slice 3's Shape-A caveat) and settles attacker-snapshot timing* · **K5 #44 (+#119)** player damage/soak distribution. Each rides the K1 substrate.
 5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model.
 6. **Roland elder-sign** (#118).
 7. **Edge correctness** (#300 after Engage, then #368, #353).
@@ -202,18 +205,19 @@ window-queuing lives in the caller `drive_attack_loop`, which parks remaining
 attackers as a `Continuation::AttackLoop` frame *beneath* the window (#411) and
 returns `AwaitingInput`, resuming via `resume_enemy_attack` (which pops the frame;
 the per-investigator cursor is the `EnemyPhase` anchor's `attacking` field,
-advanced once via `after_enemy_phase_attacks`). The frame currently exists only
-while parked (Shape A) — the keystone extends it to span the action (see Ordering
-step 4). **Both `fire_attacks_of_opportunity` (called
-from the Move/Investigate handlers) and `fire_retaliate_if_any` call
-`enemy_attack` directly, bypassing the loop — so they open no windows;
-`EnemyAttackSource::AttackOfOpportunity` is the reserved-unconstructed variant
-the fix wires up.** Exhaust rules differ by source: enemy-phase always
-exhausts (cancelled too — RR p.6/p.25); AoO never (RR p.7); Retaliate never
-(RR p.18). **Every non-exempt basic action — Draw, Resource, Move, Investigate,
-Engage (PR #383) — already calls `fire_attacks_of_opportunity` (window-less),
-so the keystone's window-upgrade must cover all of them uniformly**; activating
-an ability or playing an event fire no AoO yet (#361/#378).
+advanced once via `after_enemy_phase_attacks`). The enemy-phase frame still exists
+only while parked (Shape A) — K4 (#143) extends it to span the action (see Ordering
+step 4). **K1 (PR #413) shipped the AoO half:** `fire_attacks_of_opportunity` is
+gone; the five basic actions (Draw, Resource, Move, Investigate, Engage) now run as
+a `Continuation::ActionResolution` frame and fire AoO via **`drive_aoo`** →
+`drive_attack_loop` (so `EnemyAttackSource::AttackOfOpportunity` is now live), opening
+the cancel (Dodge) and soak (Guard Dog) windows; on the loop's pop the `drive` loop
+resumes the action frame under an actor-Active + target re-validation gate.
+**`fire_retaliate_if_any` still calls `enemy_attack` directly, bypassing the loop —
+K2 (#379) routes it through the same mechanism.** Exhaust rules differ by source:
+enemy-phase always exhausts (cancelled too — RR p.6/p.25); AoO never (RR p.7 —
+source-gated in `process_attacker_dealing`); Retaliate never (RR p.18). Activating an
+ability or playing an event fire no AoO yet — **K3 (#361/#378)**.
 
 **Trigger spine.** `emit_event` is the one dispatch chokepoint (two-phase
 forced-then-reaction, RR p.2). Simultaneous triggers resolve through the

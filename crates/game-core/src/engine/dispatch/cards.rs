@@ -6,7 +6,7 @@ use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
-use crate::state::{CardCode, InvestigatorId, Status, Zone};
+use crate::state::{CardCode, InvestigatorId, Zone};
 
 use super::super::evaluator::{apply_effect, EvalContext};
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
@@ -243,31 +243,38 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
 ///   is rare enough in practice (only high-cycle decks burn through
 ///   both zones) that the difference is mostly theoretical.
 ///
-/// The draw logic itself is delegated to [`draw_one_with_deckout`].
+/// The draw logic itself is delegated to [`draw_primary_effect`] after
+/// the attack-of-opportunity loop runs as an
+/// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame (#293).
 pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     if let Err(rejection) = super::actions::validate_basic_action(cx.state, "Draw", investigator) {
         return rejection;
     }
 
-    // Mutate.
+    // Mutate-second: spend the action, then park the draw over its
+    // attack-of-opportunity loop (#293). Push the resume frame, then
+    // drive the AoO. Draw is NOT on the AoO-exempt list (only Fight,
+    // Evade, Parley, Resign are), so each ready engaged enemy attacks
+    // before the card is drawn (RR p.5).
     super::actions::spend_one_action(cx, investigator);
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::ActionResolution {
+            investigator,
+            resume: crate::state::ActionResume::Draw,
+        });
+    super::combat::drive_aoo(cx, investigator)
+}
 
-    // Draw is NOT on the AoO-exempt list (only Fight, Evade, Parley,
-    // Resign are), so each ready engaged enemy attacks before the card
-    // is drawn (RR p.5).
-    super::combat::fire_attacks_of_opportunity(cx, investigator);
-
-    // If the AoO eliminated the investigator, suppress the draw (the
-    // spent action + AoO events stay), mirroring `investigate`.
-    let still_active = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .is_some_and(|inv| inv.status == Status::Active);
-    if !still_active {
-        return EngineOutcome::Done;
-    }
-
+/// The draw half of a Draw action, run after its `AoO` loop (#293).
+///
+/// Draw has no target precondition (unlike Move or Investigate), so
+/// there is no secondary precondition re-check here. The `resume_action_resolution`
+/// `Status::Active` gate upstream already guarantees the investigator is
+/// present and Active; a missing map entry here is therefore a
+/// state-corruption invariant violation — it must panic (via
+/// `draw_one_with_deckout`'s `expect`), never silently return `Done`.
+pub(super) fn draw_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     draw_one_with_deckout(cx, investigator);
     EngineOutcome::Done
 }
