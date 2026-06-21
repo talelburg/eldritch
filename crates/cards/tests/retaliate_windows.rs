@@ -163,8 +163,6 @@ fn submit_empty_commit(
 /// cleanly (`SkillTestEnded` emitted, no `SkillTest` frame on the stack).
 #[test]
 fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
-    install_real_registry();
-
     let dog = CardInstanceId(1);
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
@@ -212,7 +210,7 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
         state.investigators[&inv_id].damage, 0,
         "investigator took no damage from the retaliate (Guard Dog soaked it)"
     );
-    // Enemy has not retaliated back yet.
+    // Guard Dog has not yet dealt its retaliate damage to the enemy.
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
     // The SkillTest frame must still be present while the soak window is open
@@ -293,8 +291,6 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
 /// cleanly (`SkillTestEnded` emitted, no `SkillTest` frame left).
 #[test]
 fn dodge_cancels_retaliate_and_skill_test_ends() {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let enemy_id = EnemyId(7);
