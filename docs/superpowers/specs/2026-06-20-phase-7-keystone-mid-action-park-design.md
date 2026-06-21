@@ -252,6 +252,38 @@ play-card action cost is charged** — `play_card` does not call `spend_one_acti
 in its body today (the cost handling is not visible there); the AoO must fire
 after the action cost is paid, so this is a prerequisite to verify, not assume.
 
+#### K3 refinements (from the 2026-06-21 implementation survey)
+
+Verified against the corpus + dispatch before implementing; settles the two K3
+open items above and splits the slice into two PRs.
+
+**Activated-ability exemption (#361) — classify by effect root.** Fight/Evade
+*basic actions* are separate handlers (`actions::fight` / `actions::evade`) that
+never touch the AoO path. **Weapons are activated `Effect::Fight` abilities**
+(Machete 01020, .45 Automatic, Roland's .38 Special 01006, Knife 01086 — all
+`activated(1, …, fight(…))`, bare `Effect::Fight` at the root), so they *do* go
+through `activate_ability` and must be exempted there. The gate is therefore:
+fire AoO iff `action_cost > 0 && !matches!(effect, Effect::Fight {..} |
+Effect::Evade {..})`. In-scope provokers: First Aid 01019 (`choose_one` heal),
+Flashlight 01087 (`investigate`), Medical Texts 01035 (`skill_test`), Old Book of
+Lore 01031 (`search_deck`). No activated Evade/Parley/Resign in scope — the
+`Evade` arm is a correct-by-construction hook. `activate_ability` already charges
+the action in `pay_activation_costs`, so AoO fires there (after costs, before
+`apply_effect`) with no new charging — #361 is the clean half.
+
+**Play-action charge (#378) — entirely missing, folded in.** Stronger than the
+spec assumed: `play_card` / `check_play_card` / `begin_event_play` never call
+`spend_one_action` nor validate `actions_remaining` (only the Draw handler does).
+Non-fast plays — **assets and events** — cost **zero actions** today. So #378
+*adds* the non-fast play-action charge (validate ≥1 action + spend 1, gated
+`!is_fast`), then fires AoO after it and before the OnPlay effect — matching the
+Dynamite Blast 01024 FAQ. Both the charge and the AoO key on `!is_fast`, so they
+cover non-fast **assets** too, not only events.
+
+**Two PRs.** **PR-A** = #361 (clean) + this spec note + the phase-7 skill-test
+Shape-A doc note. **PR-B** = #378 (+ the play-action charge). Splits the clean
+change from the higher-blast-radius one.
+
 ### K4 — player attack-order (#143) + enemy-phase frame extension
 
 When an investigator is engaged with **2+ ready enemies**, offer an order choice

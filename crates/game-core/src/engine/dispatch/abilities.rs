@@ -18,6 +18,12 @@ use super::Cx;
 /// (emitting cost events per primitive), emits [`Event::AbilityActivated`],
 /// and dispatches the ability's effect through the DSL evaluator.
 ///
+/// An action-cost, non-fight ability provokes an attack of opportunity (RR
+/// p.5) from each engaged ready enemy, fired after costs and before the effect
+/// — see [`provokes_aoo`]; the effect is parked on an `ActionResolution` frame
+/// and run on resume ([`resume_activate_ability`]). Fight and fast abilities
+/// resolve their effect synchronously.
+///
 /// # Timing gate
 ///
 /// The gate branches on `action_cost` from `Trigger::Activated`:
@@ -94,8 +100,74 @@ pub(super) fn activate_ability(
         ability_index,
     });
 
+    // RR p.5 "Attack of Opportunity": activating an action-cost ability while
+    // engaged with a ready enemy provokes one AoO from each — *unless* it is a
+    // fight/evade/parley/resign ability. The action cost is already spent
+    // (`pay_activation_costs`), so we park the effect on an `ActionResolution`
+    // frame and drive the AoO loop (which may open a Dodge cancel / Guard Dog
+    // soak window), then run the effect on resume. (#361, K3.)
+    if provokes_aoo(action_cost, &effect) {
+        cx.state
+            .continuations
+            .push(crate::state::Continuation::ActionResolution {
+                investigator,
+                resume: crate::state::ActionResume::ActivateAbility {
+                    instance_id,
+                    effect,
+                },
+            });
+        return super::combat::drive_aoo(cx, investigator);
+    }
+
+    // Fast (not an action), or an AoO-exempt Fight ability: resolve synchronously.
     let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
     apply_effect(cx, &effect, eval_ctx)
+}
+
+/// Whether activating an ability with this `action_cost` and `effect` provokes
+/// an attack of opportunity (RR p.5).
+///
+/// True iff it is an **action** (`action_cost > 0`) that is **not** a
+/// fight/evade/parley/resign ability. In this engine weapons are activated
+/// `Effect::Fight` abilities (Machete 01020, .45 Automatic, Roland's .38
+/// Special, Knife), so those are exempt by an effect-root match. There is no
+/// `Effect::Evade` and no activated parley/resign card in scope, so Fight is
+/// the only exemptible activated kind — extend this (and add the variant) if a
+/// `Seq`-wrapped weapon ability or an activated evade lands. Fast abilities
+/// (`action_cost == 0`) are not actions and never provoke (RR p.11).
+fn provokes_aoo(action_cost: u8, effect: &crate::dsl::Effect) -> bool {
+    action_cost > 0 && !matches!(effect, crate::dsl::Effect::Fight { .. })
+}
+
+/// Run a parked activated ability's `effect` after its `AoO` loop completes
+/// (#361). The actor-`Active` re-validation gate has already run in
+/// [`resume_action_resolution`](super::resume_action_resolution); the source
+/// may have self-discarded as a cost (so we run the snapshotted `effect`, not a
+/// re-resolution by instance), with `instance_id` only seeding the eval
+/// context's source.
+///
+/// TODO (richer mid-action invalidation): unlike the basic-action resumes
+/// (`investigate_primary_effect` etc., which return `Done` to *suppress*
+/// gracefully when their target precondition has lapsed), this delegates
+/// straight to `apply_effect`. Some effects (`Effect::Investigate` on
+/// Flashlight 01087, `Effect::Heal` on First Aid 01019) return
+/// [`EngineOutcome::Rejected`] on a lapsed precondition, which `apply()`
+/// snapshot-restores — rolling back the *whole* activation (the `AoO` damage +
+/// the spent cost) rather than suppressing the primary only (the §D contract).
+/// Unreachable in scope: for the actor to survive the `Active` gate yet have a
+/// lapsed precondition, an `AoO` reaction would have to relocate it / unreveal
+/// the location without defeating it, and no in-scope reaction (Dodge cancel,
+/// Guard Dog soak) does that. Give this the basic actions' suppress-on-lapse
+/// shape when a board-changing `AoO` reaction lands (pairs with the §D
+/// "richer mid-action invalidation" hook in the keystone spec).
+pub(super) fn resume_activate_ability(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+    effect: &crate::dsl::Effect,
+) -> EngineOutcome {
+    let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
+    apply_effect(cx, effect, eval_ctx)
 }
 
 /// Pay the action cost and every payment cost of an activated
@@ -331,6 +403,24 @@ pub(super) fn check_cost_payable(
 mod tests {
     use super::*;
     use crate::test_support::fixtures::test_investigator;
+
+    #[test]
+    fn provokes_aoo_classifies_action_cost_and_fight_exemption() {
+        use crate::dsl::{Effect, IntExpr};
+        let fight = Effect::Fight {
+            combat_modifier: IntExpr::Lit(0),
+            extra_damage: 0,
+        };
+        let non_fight = Effect::Native { tag: "heal".into() };
+
+        // Action-cost non-fight ability → provokes.
+        assert!(provokes_aoo(1, &non_fight));
+        // Action-cost Fight ability → exempt (RR p.5).
+        assert!(!provokes_aoo(1, &fight));
+        // Fast ability (action_cost 0) → not an action, never provokes.
+        assert!(!provokes_aoo(0, &non_fight));
+        assert!(!provokes_aoo(0, &fight));
+    }
 
     #[test]
     fn spend_uses_payable_only_with_enough_of_the_named_kind() {

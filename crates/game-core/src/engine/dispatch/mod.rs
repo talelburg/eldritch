@@ -233,6 +233,10 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         ActionResume::Resource => actions::resource_primary_effect(cx, investigator),
         ActionResume::Engage { enemy } => actions::engage_primary_effect(cx, investigator, enemy),
         ActionResume::Draw => cards::draw_primary_effect(cx, investigator),
+        ActionResume::ActivateAbility {
+            instance_id,
+            effect,
+        } => abilities::resume_activate_ability(cx, investigator, instance_id, &effect),
     }
 }
 
