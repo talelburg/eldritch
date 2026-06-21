@@ -90,8 +90,17 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
             }
         }
     }
-    // Drive the contiguous run of effect frames on top (the resumed walk) until
-    // it completes or suspends again. `base` is the depth just below that run.
+    resume_effect_walk(cx)
+}
+
+/// Drive the contiguous run of effect frames on top of the stack (a resumed
+/// effect walk) to completion or its next suspension, then — on completion —
+/// re-enter the enclosing driver (skill test / reaction window) so it advances
+/// or tears down. Shared by [`resume_effect_choice`] and the effect-path arm of
+/// `resume_damage_assignment` (K5b-2): both resume a parked effect walk after a
+/// player input (#422). A still-suspended outcome returns as-is.
+pub(crate) fn resume_effect_walk(cx: &mut Cx) -> EngineOutcome {
+    // `base` is the depth just below the contiguous top run of effect frames.
     let base = cx
         .state
         .continuations
@@ -100,10 +109,6 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
         .map_or(0, |i| i + 1);
     let outcome = drive_effect_to_base(cx, base);
 
-    // If the walk completed inside a skill test (e.g. Crypt Chill 01167's
-    // on_fail discard) or a reaction window (Research Librarian 01032's
-    // SearchDeck), re-enter that driver so it advances / tears down — mirroring
-    // the former replay resume. A still-suspended outcome returns as-is.
     if matches!(outcome, EngineOutcome::Done) {
         if cx.state.has_skill_test_in_flight() {
             return super::skill_test::drive_skill_test(cx);
