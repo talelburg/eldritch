@@ -338,7 +338,7 @@ pub(super) fn place_assignment(
 ///
 /// Does NOT flip [`Status`] or emit [`Event::InvestigatorDefeated`] —
 /// the caller composes the defeat step via [`apply_investigator_defeat`]
-/// when the return is `true`. This split exists so [`enemy_attack`]
+/// when the return is `true`. This split exists so [`place_assignment`]
 /// can place damage AND horror on the investigator before either
 /// triggers defeat detection, matching the Rules Reference page 7
 /// "Apply Damage/Horror" clause: *"Any assigned damage/horror that
@@ -520,7 +520,7 @@ pub(super) fn drive_retaliate(
 /// (Rules Reference p.25 step 3.3 inner body). Snapshot the attacker
 /// list in [`EnemyId`] order (`BTreeMap` iteration is sorted), then
 /// delegate to [`drive_attack_loop`] — which owns the per-attacker
-/// steps (early-break-on-defeat, [`enemy_attack`], exhaust) and the
+/// steps (early-break-on-defeat, [`place_assignment`], exhaust) and the
 /// soak-window suspend/resume contract (C5b #237).
 ///
 /// **Attack order:** player-chosen (#143). With 2+ ready engaged enemies
@@ -570,7 +570,7 @@ pub(super) fn resolve_attacks_for_investigator(
 ///    the simpler, local form so the loop body stays self-evidently
 ///    correct without cross-referencing the elimination flow.
 ///
-/// 2. Call [`enemy_attack`] (places damage + horror simultaneously per
+/// 2. Call [`place_assignment`] (places damage + horror simultaneously per
 ///    p.7, fires [`super::elimination::apply_investigator_defeat`] if
 ///    either crosses) and queue a soak window per damaged surviving asset
 ///    it returns. The queueing lives here, not in `enemy_attack`, so the
@@ -586,7 +586,7 @@ pub(super) fn resolve_attacks_for_investigator(
 ///    after-reactions RR nuance is out of scope.
 ///
 /// 4. If the attack left an open reaction window
-///    ([`enemy_attack`] queued one for a soaked asset), park the
+///    ([`place_queue_exhaust`] queued one for a soaked asset), park the
 ///    remaining attackers on a [`Continuation::AttackLoop`] frame
 ///    and return [`EngineOutcome::AwaitingInput`] for the queued window.
 ///    [`resume_enemy_attack`] re-enters here when the window closes.
@@ -596,7 +596,7 @@ pub(super) fn resolve_attacks_for_investigator(
 /// Place an already-computed `assignment` for one attacker, queue a soak
 /// reaction window per damaged survivor, and exhaust the attacker (enemy phase
 /// only). The deterministic tail shared by the no-prompt synchronous path
-/// ([`process_attacker_dealing`]) and the interactive
+/// ([`deal_head_and_maybe_park`]) and the interactive
 /// [`resume_damage_assignment`] (#44/K5b). `assignment` is already built
 /// (soak-first or player-chosen); this never prompts. `AoO` / `Retaliate`
 /// sources never exhaust (RR p.7 / p.18) — the `attack_source` guards that.
@@ -1144,7 +1144,7 @@ fn finish_attack_loop(
 /// - [`AttackLoopStage::BeforeAttack`] (Axis D #336): the before-attack cancel
 ///   window closed. Read-and-clear `pending_cancellation`, then deal-or-skip
 ///   the head attacker (still at the front of `remaining_attackers`) via
-///   [`process_attacker_dealing`] and exhaust it. If *that* attack opens a soak
+///   [`deal_head_and_maybe_park`] and exhaust it. If *that* attack opens a soak
 ///   window, re-park as `AfterSoak`; otherwise drain the rest.
 /// - [`AttackLoopStage::AfterSoak`] (C5b #237): the soak window closed; drain
 ///   the remaining attackers.
@@ -1420,6 +1420,53 @@ mod combat_tests {
             (d2, h2),
             (2, 0),
             "nothing auto-assigned while a soaker can take the point"
+        );
+    }
+
+    #[test]
+    fn resume_damage_assignment_rejects_invalid_pick_and_keeps_frame() {
+        use crate::state::{Continuation, DamageSource, EnemyAttackSource, EnemyId};
+        let inv_id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        // Park a DamageAssignment frame directly (2 damage to assign).
+        state.continuations.push(Continuation::DamageAssignment {
+            investigator: inv_id,
+            remaining_damage: 2,
+            remaining_horror: 0,
+            assignment: super::Assignment::default(),
+            source: DamageSource::EnemyAttack {
+                enemy: EnemyId(7),
+                remaining_attackers: vec![],
+                attack_source: EnemyAttackSource::EnemyPhase,
+            },
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        // Wrong response variant → reject, frame untouched.
+        let wrong = super::resume_damage_assignment(&mut cx, &crate::action::InputResponse::Skip);
+        assert!(matches!(wrong, EngineOutcome::Rejected { .. }));
+
+        // Out-of-range option (no soakers → only the investigator is eligible,
+        // so any index ≥ 1 is invalid) → reject, frame untouched.
+        let oob = super::resume_damage_assignment(
+            &mut cx,
+            &crate::action::InputResponse::PickSingle(crate::engine::OptionId(5)),
+        );
+        assert!(matches!(oob, EngineOutcome::Rejected { .. }));
+
+        // The frame survives both rejections for the client to retry.
+        assert!(
+            matches!(
+                state.continuations.last(),
+                Some(Continuation::DamageAssignment { .. })
+            ),
+            "DamageAssignment frame retained after invalid picks"
         );
     }
 
