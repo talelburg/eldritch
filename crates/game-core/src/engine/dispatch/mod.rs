@@ -237,6 +237,9 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
             instance_id,
             effect,
         } => abilities::resume_activate_ability(cx, investigator, instance_id, &effect),
+        ActionResume::PlayCard { hand_index, code } => {
+            cards::resume_play_card(cx, investigator, hand_index, &code)
+        }
     }
 }
 
