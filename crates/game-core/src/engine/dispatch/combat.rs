@@ -645,38 +645,6 @@ fn place_queue_exhaust(
     }
 }
 
-/// Deal one attacker's damage (unless `cancelled`) soak-first, queue its soak
-/// window(s), and exhaust it (enemy phase only). The open-window suspend check
-/// is left to the caller. `AoO` attacks route through here but never exhaust
-/// (RR p.7) — the `source` parameter guards that branch (via
-/// [`place_queue_exhaust`]). The interactive distribution (#44/K5b-1) builds the
-/// assignment in [`deal_head_and_maybe_park`] instead; this soak-first form is
-/// the cancelled-attack path's tail.
-fn process_attacker_dealing(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    enemy_id: EnemyId,
-    source: EnemyAttackSource,
-    cancelled: bool,
-) {
-    // Cancelled (Dodge 01023, RR p.6): no damage/horror dealt; the attack is
-    // still "made", so the attacker still exhausts below. Else soak-first.
-    let assignment = if cancelled {
-        Assignment::default()
-    } else {
-        let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
-            unreachable!(
-                "process_attacker_dealing: snapshotted enemy {enemy_id:?} is gone from \
-                 state.enemies; this is a state-corruption invariant violation"
-            )
-        });
-        let (damage, horror) = (enemy.attack_damage, enemy.attack_horror);
-        let soakers = build_soakers(cx.state, investigator);
-        assign_attack(&soakers, damage, horror)
-    };
-    place_queue_exhaust(cx, investigator, enemy_id, source, &assignment);
-}
-
 /// Park the loop on the soak reaction window the just-dealt attack opened and
 /// surface it (C5b #237). Called only when `open_windows()` is non-empty.
 fn park_on_soak_window(
@@ -748,6 +716,216 @@ fn park_attack_loop_beneath_window(
     );
 }
 
+// ---------------------------------------------------------------------------
+// Interactive soak distribution (#44/K5b): the defending player assigns each
+// point of damage/horror across themselves and eligible soakers (RR p.7), one
+// point at a time. Gated to prompt only when a soaker can take the point.
+// ---------------------------------------------------------------------------
+
+/// A target for one point of soak distribution (#44/K5b): the investigator
+/// itself, or a controlled soaker asset instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DistributionTarget {
+    Investigator,
+    Asset(CardInstanceId),
+}
+
+/// The eligible targets for one point of `damage_point` (else horror), given the
+/// soakers and the assignment-so-far: always the investigator, plus each soaker
+/// with remaining capacity for that harm type (printed remaining − already
+/// assigned in `assignment`).
+fn eligible_targets(
+    soakers: &[Soaker],
+    assignment: &Assignment,
+    damage_point: bool,
+) -> Vec<DistributionTarget> {
+    let mut targets = vec![DistributionTarget::Investigator];
+    for s in soakers {
+        let (cap, assigned) = if damage_point {
+            (
+                s.remaining_health,
+                assignment.asset_damage.get(&s.instance).copied().unwrap_or(0),
+            )
+        } else {
+            (
+                s.remaining_sanity,
+                assignment.asset_horror.get(&s.instance).copied().unwrap_or(0),
+            )
+        };
+        if cap.saturating_sub(assigned) > 0 {
+            targets.push(DistributionTarget::Asset(s.instance));
+        }
+    }
+    targets
+}
+
+/// Advance the distribution deterministically as far as possible, keeping the
+/// `remaining_*` counters and `assignment` in lockstep (decrementing a counter
+/// as it auto-assigns that point). Returns `Some(())` when both counters drain
+/// with no choice left, or `None` the moment a point has a soaker option (2+
+/// eligible targets) — the caller then prompts. Damage points first, then
+/// horror; a point with only the investigator eligible is auto-assigned to the
+/// investigator (no soaker can take it), no prompt.
+fn advance_distribution(
+    soakers: &[Soaker],
+    remaining_damage: &mut u8,
+    remaining_horror: &mut u8,
+    assignment: &mut Assignment,
+) -> Option<()> {
+    while *remaining_damage > 0 {
+        if eligible_targets(soakers, assignment, true).len() > 1 {
+            return None; // a damage point has a soaker option → prompt
+        }
+        assignment.investigator_damage =
+            assignment.investigator_damage.saturating_add(*remaining_damage);
+        *remaining_damage = 0;
+    }
+    while *remaining_horror > 0 {
+        if eligible_targets(soakers, assignment, false).len() > 1 {
+            return None; // a horror point has a soaker option → prompt
+        }
+        assignment.investigator_horror =
+            assignment.investigator_horror.saturating_add(*remaining_horror);
+        *remaining_horror = 0;
+    }
+    Some(())
+}
+
+/// Credit one assigned point of `damage_point` (else horror) to `target`.
+fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_point: bool) {
+    match (target, damage_point) {
+        (DistributionTarget::Investigator, true) => assignment.investigator_damage += 1,
+        (DistributionTarget::Investigator, false) => assignment.investigator_horror += 1,
+        (DistributionTarget::Asset(id), true) => {
+            *assignment.asset_damage.entry(id).or_insert(0) += 1;
+        }
+        (DistributionTarget::Asset(id), false) => {
+            *assignment.asset_horror.entry(id).or_insert(0) += 1;
+        }
+    }
+}
+
+/// Build the `PickSingle` over the eligible targets for the next point (the top
+/// `DamageAssignment` frame must already be in place). Damage points precede horror.
+fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let Some(Continuation::DamageAssignment {
+        remaining_damage,
+        remaining_horror,
+        assignment,
+        ..
+    }) = cx.state.continuations.last()
+    else {
+        unreachable!("prompt_current_point: top frame is not DamageAssignment");
+    };
+    let (rd, rh) = (*remaining_damage, *remaining_horror);
+    let assignment = assignment.clone();
+    let soakers = build_soakers(cx.state, investigator);
+    let damage_point = rd > 0;
+    let targets = eligible_targets(&soakers, &assignment, damage_point);
+    let kind = if damage_point { "damage" } else { "horror" };
+    let prompt = format!(
+        "Investigator {investigator:?}: assign 1 {kind} to which target? \
+         ({rd} damage / {rh} horror left)"
+    );
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::choice(prompt, super::hunters::candidate_options(&targets)),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume a soak distribution with the player's `PickSingle`: credit one point
+/// to the chosen target, decrement that counter, then advance — re-prompt if a
+/// point is still contested, else place once (simultaneous) and resume by
+/// source. Invalid pick → reject, keep the frame (the HunterMove contract).
+/// Runs **outside** [`drive_attack_loop`], so on completion the `EnemyAttack`
+/// source re-drives the remaining attackers itself.
+pub(super) fn resume_damage_assignment(
+    cx: &mut Cx,
+    response: &crate::action::InputResponse,
+) -> EngineOutcome {
+    use crate::state::DamageSource;
+    let Some(Continuation::DamageAssignment {
+        investigator,
+        mut remaining_damage,
+        mut remaining_horror,
+        mut assignment,
+        source,
+    }) = cx.state.continuations.last().cloned()
+    else {
+        unreachable!("resume_damage_assignment: top frame is not DamageAssignment");
+    };
+    let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!("ResolveInput: damage distribution expects PickSingle, got {response:?}")
+                .into(),
+        };
+    };
+    let damage_point = remaining_damage > 0;
+    let soakers = build_soakers(cx.state, investigator);
+    let targets = eligible_targets(&soakers, &assignment, damage_point);
+    let Some(target) = targets.get(*i as usize).copied() else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: distribution option {i} out of range (0..{})",
+                targets.len()
+            )
+            .into(),
+        };
+    };
+    // Valid: pop the frame we validated against, credit the point, advance.
+    cx.state.continuations.pop();
+    credit_point(&mut assignment, target, damage_point);
+    if damage_point {
+        remaining_damage -= 1;
+    } else {
+        remaining_horror -= 1;
+    }
+    if advance_distribution(&soakers, &mut remaining_damage, &mut remaining_horror, &mut assignment)
+        .is_none()
+    {
+        // Still contested: re-park with the updated counters/assignment, re-prompt.
+        cx.state.continuations.push(Continuation::DamageAssignment {
+            investigator,
+            remaining_damage,
+            remaining_horror,
+            assignment,
+            source,
+        });
+        return prompt_current_point(cx, investigator);
+    }
+    // Drained → place once, then resume by source.
+    match source {
+        DamageSource::EnemyAttack {
+            enemy,
+            remaining_attackers,
+            attack_source,
+        } => {
+            place_queue_exhaust(cx, investigator, enemy, attack_source, &assignment);
+            if cx.state.open_windows().is_empty() {
+                let out = drive_attack_loop(cx, investigator, remaining_attackers, attack_source);
+                if matches!(out, EngineOutcome::AwaitingInput { .. }) {
+                    return out;
+                }
+                finish_attack_loop(cx, attack_source, investigator)
+            } else {
+                park_attack_loop_beneath_window(
+                    cx,
+                    investigator,
+                    remaining_attackers,
+                    attack_source,
+                    AttackLoopStage::AfterSoak,
+                );
+                super::reaction_windows::open_queued_reaction_window(cx)
+            }
+        }
+        // Reserved for K5b-2 (effect path): place and let the effect walk continue.
+        DamageSource::Effect => {
+            let _ = place_assignment(cx, investigator, &assignment);
+            EngineOutcome::Done
+        }
+    }
+}
+
 /// Resolve the head attacker: remove it from `attackers`, deal-or-skip its
 /// attack (per `cancelled`) and exhaust it, then — if the attack opened a soak
 /// reaction window — park the loop on it (`AfterSoak`) and return the suspend.
@@ -763,7 +941,43 @@ fn deal_head_and_maybe_park(
     cancelled: bool,
 ) -> Option<EngineOutcome> {
     let enemy_id = attackers.remove(0);
-    process_attacker_dealing(cx, investigator, enemy_id, source, cancelled);
+
+    // Build the assignment. Cancelled → empty (no harm dealt, still exhausts).
+    // Else distribute soak-first as far as deterministic; if a point is contested
+    // (a soaker can take it), suspend on the player's distribution prompt,
+    // parking the rest of the loop on the `DamageAssignment` frame (#44/K5b).
+    let mut assignment = Assignment::default();
+    if !cancelled {
+        let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
+            unreachable!(
+                "deal_head_and_maybe_park: snapshotted enemy {enemy_id:?} is gone from \
+                 state.enemies; state-corruption invariant violation"
+            )
+        });
+        let (mut rd, mut rh) = (enemy.attack_damage, enemy.attack_horror);
+        let soakers = build_soakers(cx.state, investigator);
+        if advance_distribution(&soakers, &mut rd, &mut rh, &mut assignment).is_none() {
+            cx.state
+                .continuations
+                .push(Continuation::DamageAssignment {
+                    investigator,
+                    remaining_damage: rd,
+                    remaining_horror: rh,
+                    assignment,
+                    source: crate::state::DamageSource::EnemyAttack {
+                        enemy: enemy_id,
+                        remaining_attackers: std::mem::take(attackers),
+                        attack_source: source,
+                    },
+                });
+            return Some(prompt_current_point(cx, investigator));
+        }
+        // Not contested: `assignment` is the complete soak-first assignment.
+    }
+
+    // Synchronous (no prompt): place + queue windows + exhaust, then the existing
+    // window-check — `attackers` left intact for the outer `drive_attack_loop`.
+    place_queue_exhaust(cx, investigator, enemy_id, source, &assignment);
     if cx.state.open_windows().is_empty() {
         None
     } else {
@@ -1170,6 +1384,27 @@ mod combat_tests {
             state.open_windows().is_empty(),
             "no soak window without soakers"
         );
+    }
+
+    #[test]
+    fn advance_distribution_drains_without_soakers_and_prompts_with_one() {
+        // No soaker → fully deterministic: all damage to the investigator, drained.
+        let mut asg = super::Assignment::default();
+        let (mut d, mut h) = (2u8, 0u8);
+        assert!(super::advance_distribution(&[], &mut d, &mut h, &mut asg).is_some());
+        assert_eq!((d, h, asg.investigator_damage), (0, 0, 2));
+
+        // A soaker with capacity → a damage point is contested → prompt (None),
+        // and the counters still show the un-assigned points.
+        let soaker = super::Soaker {
+            instance: crate::state::CardInstanceId(1),
+            remaining_health: 3,
+            remaining_sanity: 0,
+        };
+        let mut asg2 = super::Assignment::default();
+        let (mut d2, mut h2) = (2u8, 0u8);
+        assert!(super::advance_distribution(&[soaker], &mut d2, &mut h2, &mut asg2).is_none());
+        assert_eq!((d2, h2), (2, 0), "nothing auto-assigned while a soaker can take the point");
     }
 
     #[test]
