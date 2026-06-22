@@ -42,19 +42,34 @@ bespoke threading.
 ## Scope
 
 **In:** reify `drive_skill_test` into a single driver `advance(cx)` on the
-existing `SkillTest` frame; fold commit emission and the teardown tail into that
-driver; add a `drive`-loop `SkillTest` arm for the commit→resolution transition.
-Behaviour-preserving.
+existing `SkillTest` frame; emit the commit prompt from `advance`'s
+`AwaitingCommit` arm (the frame's `awaiting()`); fold the resolution body
+(`Resolving`) and the teardown tail into that driver. Behaviour-preserving.
+
+**No `drive`-loop `SkillTest` arm (correction during implementation).** An
+earlier draft routed the commit→resolution transition through a new `drive`-loop
+arm (commit resume returns `Done`, the loop drives `advance`). That **breaks
+encounter-card disposal (#380)**, the same coupling that keeps the re-entry sites
+synchronous (below): a treachery-Revelation test parks an `EncounterCard` frame
+beneath its `SkillTest`; with the loop arm, the commit resume returns `Done`,
+`resolve_input` runs `teardown_encounter_card_if_top` *while the `SkillTest` is
+still on top* (no-op), then the loop drives `advance` to teardown — and the
+loop's `_ => Done` arm never disposes the now-top `EncounterCard`, stranding it.
+So the commit resume **keeps driving `advance` synchronously** (via
+`finish_skill_test`), exactly as the five re-entry sites do, so the test tears
+down *before* `resolve_input`'s disposal check. The `SkillTest` frame is never
+left on top mid-resolution for the loop to pick up, so no loop arm is needed.
+(Backstopped by `revelation_treacheries` — Crypt Chill / Grasping Hands — staying
+green.)
 
 **Deliberately kept (not deleted):** the five imperative re-entry sites stay,
 calling `advance` (the rename of `drive_skill_test`). Converting them to
-"return `Done`, let the loop re-drive" is **out of scope** — it couples to
-encounter-card disposal (#380): today a resume handler resumes + tears down the
-test *before* returning `Done`, and only then does `resolve_input` run
-`teardown_encounter_card_if_top`; moving resumption into the loop would tear the
-test down *after* that disposal check, and the loop's `_ => Done` arm doesn't
-dispose `EncounterCard` frames — stranding a treachery-Revelation test's card.
-That generalization is the EmitEvent-frame slice's job, not this substrate's.
+"return `Done`, let the loop re-drive" is **out of scope** for the same #380
+reason: a resume handler resumes + tears down the test *before* returning `Done`,
+and only then does `resolve_input` run `teardown_encounter_card_if_top`; moving
+resumption into the loop would tear the test down *after* that disposal check,
+stranding a treachery-Revelation test's card. That generalization is the
+EmitEvent-frame slice's job, not this substrate's.
 The substrate still fully enables #374/#64, which insert windows at *cursor-step
 boundaries inside `advance`*, not at the re-entry sites.
 
@@ -111,26 +126,18 @@ the resolution body" state.
      any sub-step that can suspend (existing invariant).
    - `PostOnResolution` → teardown + the relocated tail (see below).
 
-### Loop integration
+### No loop integration arm
 
-One new arm in `drive` (dispatch/mod.rs), mirroring the `ActionResolution` /
-`Effect` arms:
-
-```rust
-Some(Continuation::SkillTest(_)) => match skill_test::advance(cx) {
-    EngineOutcome::Done => { /* torn down; loop on to the frame beneath */ }
-    other => return other,   // commit prompt, mid-test window, or Rejected
-}
-```
-
-This arm is exercised mainly by the **commit→resolution transition**:
-`resume_skill_test_commit` validates + stores indices, sets `step = Resolving`,
-returns `Done`, and `apply_player_action`'s `drive` then drives `advance` at
-`Resolving`. The five kept re-entry sites continue to call `advance` **directly**
-(they already sit at the right point and return its outcome up the call stack);
-the loop arm does not replace them. There is no double-drive risk: `advance`
-either tears the test down (the frame is gone, so the loop moves on) or suspends
-(`AwaitingInput` short-circuits the loop).
+`advance` is driven **synchronously** by its callers — `start_skill_test` /
+`resume_substitution_choice` (entry), the five re-entry sites, and the commit
+resume (`resume_skill_test_commit` → `finish_skill_test`). Each call returns
+`advance`'s outcome up the call stack: `AwaitingInput` (commit prompt or mid-test
+window) short-circuits, or `Done` (torn down) lets the caller's normal flow
+continue. The `SkillTest` frame is therefore **never left on top mid-resolution**
+for the `drive` loop to pick up — so the `drive` loop gets **no** `SkillTest`
+arm, and its existing `_ => Done` catch-all (treating a top `SkillTest` parked at
+`AwaitingCommit` as an already-surfaced suspension) is correct unchanged. See the
+Scope correction for why a loop arm would break #380 encounter-card disposal.
 
 ## Entry, commit, substitution
 
@@ -270,13 +277,17 @@ event-assertion macros; registry-gated cases in `crates/cards/tests/`):
 1. A mid-test reaction window (e.g. `AfterEnemyDefeated` from a Fight follow-up's
    `damage_enemy`) closes and the test still resumes and tears down correctly
    (the re-entry site now calls `advance`).
-2. The commit→resolution transition runs through the `drive` `SkillTest` arm
-   (commit resume sets `Resolving` + returns `Done`; the loop drives `advance`).
-3. The #213 two-Frozen-in-Fear forced-run sibling still fires after the first
+2. The commit prompt is emitted by `advance`'s `AwaitingCommit` arm and the test
+   then commits and tears down cleanly through the synchronous driver
+   (`commit_emits_then_resolves_through_advance`, skill_test.rs unit test).
+3. Treachery-Revelation tests (`revelation_treacheries` — Crypt Chill / Grasping
+   Hands) still dispose their `EncounterCard` after commit (the #380 backstop for
+   the no-loop-arm decision).
+4. The #213 two-Frozen-in-Fear forced-run sibling still fires after the first
    test tears down (the relocated tail's `is_forced` branch).
-4. `InvestigatorTurn { ending: true }` still resumes `end_turn` after an
+5. `InvestigatorTurn { ending: true }` still resumes `end_turn` after an
    end-of-turn test (the tail's other branch).
-5. Mind-over-Matter substitution → commit still flows (entry funnels through
+6. Mind-over-Matter substitution → commit still flows (entry funnels through
    `advance`; the substitution prompt suspension is unchanged).
 
 ## PR slicing
@@ -288,16 +299,16 @@ demands it, along this fault line:
 - **PR-1** — rename `FinishContinuation` → `SkillTestStep` and
   `drive_skill_test` → `advance` (mechanical), then relocate the teardown tail
   into `PostOnResolution`. Behaviour-preserving; driver still entered as today.
-- **PR-2** — add the `Resolving` step + `advance`'s `AwaitingCommit` arm + the
-  `drive` `SkillTest` arm; move commit emission into `advance` (`open_commit_window`
-  deleted; `start_skill_test` / `resume_substitution_choice` funnel through
-  `advance`).
+- **PR-2** — add the `Resolving` step + `advance`'s `AwaitingCommit` arm; move
+  commit emission into `advance` (`open_commit_window` deleted; `start_skill_test`
+  / `resume_substitution_choice` funnel through `advance`).
 
 ## What "done" looks like
 
-- `SkillTest` is a loop-driven frame: `drive` has a `SkillTest` arm; `advance` is
-  the single driver; the commit prompt is emitted by `advance`'s `AwaitingCommit`
-  arm.
+- `advance` is the single skill-test driver, entered synchronously from the
+  entry points + the five re-entry sites + the commit resume; the commit prompt
+  is emitted by its `AwaitingCommit` arm. No `drive`-loop `SkillTest` arm (see
+  Scope correction).
 - `open_commit_window` and the `resume_skill_test_commit` teardown tail are gone
   (tail relocated to `PostOnResolution`). The five imperative re-entry sites
   remain, renamed to call `advance`.
