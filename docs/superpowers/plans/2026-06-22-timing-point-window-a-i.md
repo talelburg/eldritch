@@ -86,59 +86,46 @@ PR1 — branch `engine/timing-point-window` (already created; the planning-docs 
 
 ---
 
-## Task 2: Migrate the forced run to `TimingPointWindow { mode: Forced }`
+## Task 2: Migrate event windows + forced run to `TimingPointWindow` (+ tests)
 
-PR2 — branch `engine/timing-point-forced` (off `main` after PR1 merges, or off PR1's branch if stacked). Self-contained: the forced run has no Fast plays and no per-`WindowKind` continuation — only a `ForcedContinuation`.
+PR2 — branch `engine/timing-point-forced`. **Re-cut from the original Task 2/Task 3 split:** the forced run and event reaction windows share one driver (`open_forced_resolution` calls `open_queued_reaction_window`, the same path reaction windows use; `advance_resolution` / `fire_pending_trigger` / `close_reaction_window_at` / `build_resolution_options` all key on `as_resolution()`, differing only by `kind: Window | Forced`). Splitting them would rework that driver twice, so they migrate together. The framework player windows (`WindowKind::PlayerWindow` / `SkillTestPlayerWindow`) are the genuinely separable piece and **stay on `Resolution`** until Slice A-ii — so the driver dual-handles `Resolution` (framework only) + `TimingPointWindow` (event + forced) for the duration of A-i.
 
-**Files:**
-- Modify: `crates/game-core/src/engine/dispatch/reaction_windows.rs` — `open_forced_resolution` (constructs `Resolution{Forced}`), `close_reaction_window_at` (the `forced_continuation()` branch → `resume_forced_continuation`), `advance_resolution`, `resume_window`/`resume_reaction_window`, and the forced-run reader in `skill_test::advance`'s teardown tail (`Some(Continuation::Resolution(f)) if f.is_forced()`).
-- Modify: `crates/game-core/src/engine/dispatch/mod.rs` — `resolve_input` routes the forced `TimingPointWindow` (replace the Task-1 stub for `mode: Forced`).
-- Test: `crates/cards/tests/retaliate_windows.rs` and any forced-run engine unit tests asserting on `Resolution{Forced}`.
-
-**Interfaces:**
-- Consumes: `Continuation::TimingPointWindow { event, mode: TimingMode::Forced(continuation), candidates }` from Task 1.
-- Produces: `open_forced_resolution(cx, event: TimingEvent, candidates, continuation)` — signature gains the `event` (the emit's `&TimingEvent`, cloned) so the frame carries it. Callers in `emit_event` pass the in-flight event.
-
-- [ ] **Step 1: Write/adjust the failing test.** In an engine unit test (or extend an existing forced-run test), assert that a 2+-simultaneous-forced emit parks a `Continuation::TimingPointWindow { mode: TimingMode::Forced(_), .. }` (not `Resolution`). Use the `TestGame` builder + a board producing 2 forced hits at one point (mirror the existing `open_forced_resolution` test setup — locate via `grep -rn 'open_forced_resolution\|is_forced' crates/game-core/src`).
-- [ ] **Step 2: Run it — verify it fails** (`Resolution` still constructed). Run the specific test; expect FAIL on the variant assertion.
-- [ ] **Step 3: Flip `open_forced_resolution`** to push `TimingPointWindow { event, mode: Forced(continuation), candidates }`. Thread `event: TimingEvent` from `emit_event` (it has `event: &TimingEvent`; clone it).
-- [ ] **Step 4: Flip the close/resume path.** `close_reaction_window_at` (and/or a new `TimingPointWindow`-aware close) reads `mode: Forced(continuation)` → `resume_forced_continuation(cx, continuation)`. Update `is_forced()` readers (`skill_test::advance` teardown tail, any `as_resolution().is_forced()`) to also recognise `TimingPointWindow { mode: Forced(..), .. }`. Introduce a small helper `fn top_forced_continuation(cx) -> Option<ForcedContinuation>` if the pattern repeats.
-- [ ] **Step 5: Route `resolve_input`.** Replace Task-1's `mode: Forced` stub: forced runs are not player-prompted for *which* (order only when 2+), so route to the existing forced resolve/advance logic — match the current `Resolution{Forced}` routing.
-- [ ] **Step 6: Run the failing test — verify PASS.**
-- [ ] **Step 7: Update broken tests** asserting `Resolution{Forced}` → `TimingPointWindow{Forced}`. Re-run `retaliate_windows.rs` + forced-run unit tests.
-- [ ] **Step 8: Full suite green** (`RUSTFLAGS="-D warnings" cargo test --all --all-features`) + clippy + fmt + doc.
-- [ ] **Step 9: Commit + CI gauntlet + push + PR** (`engine: migrate forced run to TimingPointWindow (Slice A-i task 2). Part of #433.`). **Checkpoint: stop for review before Task 3.**
-
----
-
-## Task 3: Migrate event reaction windows to `TimingPointWindow { mode: Reaction }` (+ tests)
-
-PR3 — branch `engine/timing-point-reaction-windows`. The larger of the three: flips the event-window queue + the `WindowKind`-keyed `eval_ctx` binding and continuation to key off `TimingEvent`. Framework `PlayerWindow`/`SkillTestPlayerWindow` stay on `Resolution`.
+**Strategy:** introduce a frame-agnostic accessor pair so the shared driver reads candidates + mode uniformly across both representations, then flip *construction* (forced + event) to `TimingPointWindow`. Keep `WindowOpened`/`WindowClosed { kind }` event payloads byte-identical (derive the `WindowKind` from the `TimingEvent` via `reaction_window()` at the emit/close site) so behaviour is preserved.
 
 **Files:**
-- Modify: `crates/game-core/src/engine/dispatch/emit.rs` — `emit_event` (line 302-329): `queue_reaction_window(cx, kind: WindowKind)` becomes pushing a `TimingPointWindow { event, mode: Reaction }`. `reaction_window()` currently maps `TimingEvent → WindowKind`; the migrated frame stores the `TimingEvent` itself, so the `Some(kind)` guard becomes a `if event.opens_reaction_window()` boolean check (add that predicate, or reuse `reaction_window().is_some()`).
 - Modify: `crates/game-core/src/engine/dispatch/reaction_windows.rs`:
-  - `queue_reaction_window` / `open_queued_reaction_window` — construct/emit the `TimingPointWindow` (event windows) while still handling `Resolution` (framework windows).
-  - `fire_pending_trigger` — the `eval_ctx` binding `match …kind() { AfterEnemyAttackDamagedAsset{enemy,..} => set_attacking_enemy, BeforeDiscoverClues{count,..} => set_clue_discovery_count }` re-keys off `TimingEvent::{EnemyAttackDamagedSelf{enemy,..}, WouldDiscoverClues{count,..}}`.
-  - `run_window_continuation(kind: WindowKind)` — for event windows, the per-kind close continuation (e.g. `BeforeDiscoverClues` → discover, `BeforeEnemyAttack` → proceed) keys off `TimingEvent` instead. `AfterEnemyDefeated`/`AfterSuccessfulInvestigate`/`AfterEnteredPlay`/`AfterEnemyAttackDamagedAsset` "simply pop" — confirm via the current arms.
-  - `build_resolution_options` / `advance_resolution` / `close_reaction_window_at` — handle both frame types (the `WindowClosed { kind }` event still needs a `WindowKind`; derive it from the `TimingEvent` via `reaction_window()` for the event so observability is unchanged).
-- Modify: `crates/game-core/src/engine/dispatch/mod.rs` — `resolve_input` routes the reaction `TimingPointWindow` to `resume_window`.
-- Test: `crates/cards/tests/{evidence,dodge,dodge_aoo,guard_dog_soak,roland_banks,play_card_aoo,fast_play,mind_over_matter,activate_ability_aoo}.rs` — update any `WindowKind::*` event-window assertions; the `Event::WindowOpened/Closed { kind }` payloads should stay identical (behaviour-preserving), so most assertions on *events* are unchanged — only assertions reaching into the *continuation stack* shape change.
+  - `open_forced_resolution(cx, event, candidates, continuation)` — gains `event: TimingEvent`; pushes `TimingPointWindow { event, mode: Forced(continuation), candidates }`.
+  - `queue_reaction_window` / `open_queued_reaction_window` — event windows push `TimingPointWindow { event, mode: Reaction, candidates }`; framework windows keep pushing `Resolution`.
+  - The shared driver (`advance_resolution`, `fire_pending_trigger`, `close_reaction_window_at`, `build_resolution_options`, `resume_window`/`resume_reaction_window`) reads through new accessors that handle both frames (see Interfaces).
+  - `fire_pending_trigger` `eval_ctx` binding — re-key off `TimingEvent::{EnemyAttackDamagedSelf{enemy,..}, EnemyAttacks{enemy,..}, WouldDiscoverClues{count,..}}` instead of the `WindowKind` fields.
+  - `run_window_continuation` — for event windows the per-event close continuation (`WouldDiscoverClues` → discover, `EnemyAttacks` → proceed-with-attack; the `After*` events just pop) keys off `TimingEvent`. The forced run's close path (`mode: Forced`) → `resume_forced_continuation(cx, continuation)`.
+- Modify: `crates/game-core/src/engine/dispatch/emit.rs` — `emit_event` (lines 302-329): `queue_reaction_window(cx, event.reaction_window())` becomes pushing the `TimingPointWindow{Reaction}` when `event.reaction_window().is_some()` (keep the `WindowKind` only to gate "does this open a window" + to fill the `WindowOpened` payload); `open_forced_resolution` gains the `event` arg (clone the in-flight `&TimingEvent`).
+- Modify: `crates/game-core/src/engine/dispatch/skill_test.rs` — the teardown-tail forced reader `Some(Continuation::Resolution(f)) if f.is_forced()` (line ~556) also recognises `TimingPointWindow { mode: Forced(..), .. }`.
+- Modify: `crates/game-core/src/engine/dispatch/mod.rs` — `resolve_input` routes both modes of `TimingPointWindow` to `resume_window` (replacing the Task-1 reject stub). Forced runs aren't prompted for *which* (order-only when 2+); reaction windows route exactly as `Resolution{Window}` does today.
+- Test: engine unit tests + `crates/cards/tests/{evidence,dodge,dodge_aoo,guard_dog_soak,roland_banks,play_card_aoo,fast_play,mind_over_matter,activate_ability_aoo,retaliate_windows}.rs` — update any assertions reaching into the *continuation-stack shape* (`Resolution{..}` → `TimingPointWindow{..}`). Event-payload assertions (`WindowOpened/Closed { kind }`) stay unchanged (payloads preserved).
 
 **Interfaces:**
-- Consumes: Task 1's `TimingPointWindow`, Task 2's forced migration (the close/route helpers now also serve reaction mode).
-- Produces: event reaction windows live as `TimingPointWindow { event, mode: Reaction, candidates }`. `WindowKind` is now constructed **only** for framework `PlayerWindow`/`SkillTestPlayerWindow` (+ derived transiently for the `WindowOpened/Closed` event payload). This is what Slice A-ii (FastWindow) and A-iii (delete `WindowKind`) build on.
+- Consumes: Task 1's `Continuation::TimingPointWindow { event, mode, candidates }` + `TimingMode`.
+- Produces: new accessors on `Continuation` (game_state.rs) so the driver is representation-agnostic, e.g.
+  ```rust
+  /// Candidates of an open window/run, whether `Resolution` (framework) or
+  /// `TimingPointWindow` (event/forced).
+  fn pending_candidates_mut(&mut self) -> Option<&mut Vec<ResolutionCandidate>>;
+  /// `Some(continuation)` iff this is a forced run (either representation).
+  fn forced_continuation(&self) -> Option<ForcedContinuation>;
+  fn is_forced(&self) -> bool;
+  ```
+  After this task `WindowKind` is constructed only for framework windows (+ derived transiently for `WindowOpened/Closed`). Forced runs + event windows live as `TimingPointWindow`. This is what A-ii (FastWindow) and A-iii (delete `WindowKind`) build on.
 
-- [ ] **Step 1: Write the failing test.** Engine unit test: a `SuccessfullyInvestigated` emit (Dr. Milan-style after-investigate window) parks a `Continuation::TimingPointWindow { event: TimingEvent::SuccessfullyInvestigated{..}, mode: TimingMode::Reaction, .. }`. Assert the firing behaviour (the reaction fires, `eval_ctx` bound) is unchanged via the event-assertion macros.
-- [ ] **Step 2: Run it — verify it fails** (still `Resolution{Window}`).
-- [ ] **Step 3: Flip the queue path.** `emit_event` + `queue_reaction_window` push `TimingPointWindow{event, mode: Reaction}` for event windows; framework windows untouched.
-- [ ] **Step 4: Re-key the `eval_ctx` binding** in `fire_pending_trigger` off `TimingEvent` (enemy from `EnemyAttackDamagedSelf`/`EnemyAttacks`, count from `WouldDiscoverClues`).
-- [ ] **Step 5: Re-key `run_window_continuation`** off `TimingEvent`; preserve the `WindowClosed { kind }` event payload by deriving `WindowKind` from the event (`event.reaction_window()`).
-- [ ] **Step 6: Route `resolve_input`** reaction `TimingPointWindow` → `resume_window`.
-- [ ] **Step 7: Run the failing test — verify PASS.**
-- [ ] **Step 8: Update broken card/unit tests** (enumerated above). Re-run each touched `crates/cards/tests/*.rs`.
-- [ ] **Step 9: Full suite green** + clippy + fmt + doc + wasm jobs.
-- [ ] **Step 10: Commit + CI gauntlet + push + PR** (`engine: migrate event reaction windows to TimingPointWindow (Slice A-i task 3). Part of #433.`). **Checkpoint: Slice A-i complete; reassess A-ii.**
+- [ ] **Step 1: Add the frame-agnostic accessors** (`pending_candidates`/`_mut`, `forced_continuation`, `is_forced`) on `Continuation`, handling both `Resolution` and `TimingPointWindow`. Behaviour-preserving (nothing constructs `TimingPointWindow` yet). Build green.
+- [ ] **Step 2: Route the shared driver through the accessors.** Replace direct `as_resolution()`/`is_forced()`/`forced_continuation()` reads in `advance_resolution`, `fire_pending_trigger`, `close_reaction_window_at`, `build_resolution_options`, `resume_window`, and `skill_test::advance`'s teardown tail. Still all on `Resolution` — full suite green (pure refactor checkpoint).
+- [ ] **Step 3: Write the failing tests.** (a) a 2+-simultaneous-forced emit parks `TimingPointWindow { mode: Forced(_), .. }`; (b) a `SuccessfullyInvestigated` emit parks `TimingPointWindow { event: SuccessfullyInvestigated{..}, mode: Reaction, .. }`. Assert firing behaviour unchanged via the event-assertion macros. Run — verify FAIL.
+- [ ] **Step 4: Flip construction.** `open_forced_resolution` → `TimingPointWindow{Forced}`; `queue_reaction_window`/`emit_event` → `TimingPointWindow{Reaction}` for event windows. Re-key the `eval_ctx` binding + `run_window_continuation` off `TimingEvent`; preserve `WindowOpened/Closed { kind }` via `event.reaction_window()`.
+- [ ] **Step 5: Route `resolve_input`** both `TimingPointWindow` modes → `resume_window` (replace Task-1 stub).
+- [ ] **Step 6: Run the new tests — verify PASS.**
+- [ ] **Step 7: Update broken stack-shape assertions** in the enumerated tests. Re-run each.
+- [ ] **Step 8: Full strict gauntlet green** (`RUSTFLAGS="-D warnings" cargo test --all --all-features`, host + wasm clippy, fmt, doc, wasm build).
+- [ ] **Step 9: Commit + CI gauntlet + push + PR** (`engine: migrate event windows + forced run to TimingPointWindow (Slice A-i task 2). Part of #433.`). **Checkpoint: Slice A-i nearly done — only A-iii (delete the now-unused `ResolutionKind::Forced` arm + dead WindowKind event variants) + A-ii (framework → FastWindow) remain.**
 
 ---
 
@@ -146,7 +133,7 @@ PR3 — branch `engine/timing-point-reaction-windows`. The larger of the three: 
 
 **Spec coverage (against `2026-06-22-emitevent-frame-arc-decomposition-design.md` §"Slice A detail" A-i):**
 - "TimingPointWindow replaces event windows + forced run" → Tasks 2 (forced) + 3 (event). ✓
-- "map event WindowKind → emit::TimingEvent" → Task 3 stores `TimingEvent` directly; mapping via existing `reaction_window()`. ✓
+- "map event WindowKind → emit::TimingEvent" → Task 2 stores `TimingEvent` directly; mapping via existing `reaction_window()`. ✓
 - "ForcedContinuation rides the mode: Forced close path" → Task 2 step 4. ✓
 - "imperative driving preserved (no drive arm yet)" → no `drive`-loop arm added; `resolve_input` + `advance_resolution`/`close_reaction_window_at` keep imperative re-entry. ✓
 - "framework windows stay on Resolution" → Tasks explicitly leave `PlayerWindow`/`SkillTestPlayerWindow` on `Resolution`. ✓
@@ -154,8 +141,8 @@ PR3 — branch `engine/timing-point-reaction-windows`. The larger of the three: 
 
 **Surfaced design decision (not in the spec, decided here):** `TimingEvent` must gain `Serialize`/`Deserialize` (Continuation serializes). It does **not** need to relocate to `state` — `Continuation::Effect`/`EffectFrame` already holds `crate::engine::EvalContext` (#345), so a `state` variant referencing the in-`engine` `TimingEvent` is established precedent. Reference-in-place avoids 59 sites of relocation churn. Folded into Task 1.
 
-**Placeholder scan:** none — every step names exact files/sites/commands. The per-site `eval_ctx`/continuation arms are enumerated by their existing `WindowKind` variants (Task 3 lists them); exact arm bodies are read from the current code at execution time (inline execution).
+**Placeholder scan:** none — every step names exact files/sites/commands. The per-site `eval_ctx`/continuation arms are enumerated by their existing `WindowKind` variants (Task 2 lists them); exact arm bodies are read from the current code at execution time (inline execution).
 
 **Type consistency:** `TimingEvent` (state), `TimingMode { Reaction, Forced(ForcedContinuation) }`, `TimingPointWindow { event, mode, candidates }` used consistently across tasks. `open_forced_resolution` gains `event: TimingEvent` (Task 2) consistent with the frame field.
 
-**Risk note:** Task 3's `run_window_continuation` re-key is the subtle step — the `Before*` windows (`BeforeDiscoverClues`, `BeforeEnemyAttack`) have real close continuations (discover / proceed-with-attack), unlike the `After*` windows that just pop. Verify each arm against the current `run_window_continuation` body before flipping, and keep a unit test per `Before*` window.
+**Risk note:** Task 2's `run_window_continuation` re-key is the subtle step — the `Before*` windows (`BeforeDiscoverClues`, `BeforeEnemyAttack`) have real close continuations (discover / proceed-with-attack), unlike the `After*` windows that just pop. Verify each arm against the current `run_window_continuation` body before flipping, and keep a unit test per `Before*` window.
