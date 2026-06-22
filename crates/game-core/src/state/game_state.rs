@@ -813,6 +813,55 @@ impl Continuation {
             | Continuation::Effect(_) => None,
         }
     }
+
+    /// The resolution candidates of an open window/run on the stack —
+    /// whether a legacy [`Resolution`](Self::Resolution) frame (framework
+    /// windows during EmitEvent-frame Slice A-i, #433) or a
+    /// [`TimingPointWindow`](Self::TimingPointWindow) (event windows + the
+    /// #213 forced run). Lets the shared resolution driver read candidates
+    /// without caring which representation it is. `None` for any other frame.
+    #[must_use]
+    pub fn pending_candidates(&self) -> Option<&Vec<ResolutionCandidate>> {
+        match self {
+            Continuation::Resolution(w) => Some(&w.pending_triggers),
+            Continuation::TimingPointWindow { candidates, .. } => Some(candidates),
+            _ => None,
+        }
+    }
+
+    /// Mutable counterpart to [`Self::pending_candidates`].
+    pub fn pending_candidates_mut(&mut self) -> Option<&mut Vec<ResolutionCandidate>> {
+        match self {
+            Continuation::Resolution(w) => Some(&mut w.pending_triggers),
+            Continuation::TimingPointWindow { candidates, .. } => Some(candidates),
+            _ => None,
+        }
+    }
+
+    /// Whether the frame is the mandatory #213 forced run, in either
+    /// representation. `false` for reaction windows and non-window frames.
+    #[must_use]
+    pub fn is_forced(&self) -> bool {
+        match self {
+            Continuation::Resolution(w) => w.is_forced(),
+            Continuation::TimingPointWindow { mode, .. } => matches!(mode, TimingMode::Forced(_)),
+            _ => false,
+        }
+    }
+
+    /// The [`ForcedContinuation`] if this frame is the forced run, in either
+    /// representation; `None` for a reaction window or non-window frame.
+    #[must_use]
+    pub fn forced_continuation(&self) -> Option<ForcedContinuation> {
+        match self {
+            Continuation::Resolution(w) => w.forced_continuation(),
+            Continuation::TimingPointWindow {
+                mode: TimingMode::Forced(c),
+                ..
+            } => Some(*c),
+            _ => None,
+        }
+    }
 }
 
 /// The Mythos-phase child-pop boundary an anchor resumes at (slice 1a, #393).
