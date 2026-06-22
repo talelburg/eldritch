@@ -402,6 +402,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             skill_test::resume_substitution_choice(cx, response)
         }
         Some(Continuation::Resolution(_)) => resume_window(cx, response),
+        // Slice A-i: nothing constructs `TimingPointWindow` until task 2/3, so a
+        // ResolveInput here is unreachable today. Reject loudly rather than
+        // silently no-op (the event-window/forced routing lands in task 2/3).
+        Some(Continuation::TimingPointWindow { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: TimingPointWindow routing not yet wired (Slice A-i task 2/3)"
+                .into(),
+        },
         // An effect node suspended in place for a controller pick (#422): the
         // top `Continuation::Effect(Leaf)` frame *is* the prompt. Route its
         // `PickSingle` to the effect-choice resume. A non-suspending effect
