@@ -161,9 +161,15 @@ it. Sub-slice it; each sub-slice is independently green.
   **Keep `WindowKind`** as the pure `Event::WindowOpened/Closed` observability descriptor,
   derived from `TimingPointWindow`'s `TimingEvent` (`reaction_window()`) + `FastWindow`'s
   `FastWindowKind`. Behaviour-preserving — event log byte-identical.
-- **A-iv — `drive`-loop arms.** Add top-frame-dispatch resume for `TimingPointWindow`
-  + `FastWindow`; retire the window-side imperative re-entry that doesn't entangle
-  skill-test. (The skill-test/encounter re-entry is Slice C.)
+- **A-iv — `drive`-loop arms → folded into Slice C (#431).** Giving the `drive`
+  loop top-frame-dispatch arms for `TimingPointWindow` / `FastWindow` (retiring the
+  window-side imperative re-entry) is the same concern as Slice C's loop-driving (the
+  `SkillTest` drive arm + retiring the five synchronous re-entry sites + the
+  encounter-card disposal seam). Rather than split the imperative re-entry across two
+  slices, **A-iv moves to Slice C.** So **Slice A (#433) = A-i/A-ii/A-iii** — the
+  taxonomy rework — and closes when A-iii lands; the windows stay imperatively driven
+  (via `advance_resolution` / `close_reaction_window_at`) until Slice C makes the loop
+  drive everything.
 
 **WindowKind's two roles — and the deferral into Slice B (load-bearing reference for the
 EmitEvent-frame / coordinator work).** `WindowKind` is load-bearing in *two independent*
@@ -180,14 +186,14 @@ EmitEvent-frame coordinator work:** delete `WindowKind` outright and redesign
 implementing Slice B, this is the place that change lands — it is *not* done in Slice A.
 
 **Acceptance (Slice A):**
-- [ ] `Continuation::Resolution`, `ResolutionFrame`, `ResolutionKind`, `WindowBinding` are
+- [x] `Continuation::Resolution`, `ResolutionFrame`, `ResolutionKind`, `WindowBinding` are
   gone; windows are `FastWindow` + `TimingPointWindow{event, mode}`. `WindowKind` survives
   **only** as the `Event::WindowOpened/Closed` descriptor (its deletion is Slice B).
-- [ ] The `drive` loop dispatches `FastWindow` + `TimingPointWindow` (window resumption
-  after a child pops is top-frame dispatch, not imperative re-entry — except the
-  skill-test seam, deferred to C).
-- [ ] Behaviour-preserving throughout — **event log byte-identical at every sub-slice
+- [x] Behaviour-preserving throughout — **event log byte-identical at every sub-slice
   boundary** (no `WindowOpened/Closed` payload change in Slice A).
+
+**Slice A is complete (A-i/A-ii/A-iii shipped: PRs #436, #437, #438, #439).** The `drive`-loop
+arms for the window frames (former A-iv) moved to **Slice C** — see below.
 
 ## Slice B / C / D scope (sketches; each gets its own plan when started)
 
@@ -210,8 +216,13 @@ implementing Slice B, this is the place that change lands — it is *not* done i
   `SkillTest` arm, retire the five synchronous skill-test re-entry sites
   (`close_reaction_window_at`, `resume_before_discover_window`, `resume_effect_walk`,
   the `finish_attack_loop` Retaliate path, the commit hop). Backstopped by
-  `crates/cards/tests/revelation_treacheries.rs` (Crypt Chill / Grasping Hands). Issue
-  acceptance already crisp.
+  `crates/cards/tests/revelation_treacheries.rs` (Crypt Chill / Grasping Hands).
+  **Folded in from Slice A (former A-iv):** give the `drive` loop top-frame-dispatch
+  arms for `TimingPointWindow` / `FastWindow` and retire the window-side imperative
+  re-entry (`advance_resolution` / `close_reaction_window_at` reaching down the stack)
+  — the same "make the loop drive every frame" concern as the `SkillTest` arm, so it
+  belongs here rather than split across Slice A. Slice A left the windows imperatively
+  driven; C makes them top-frame-dispatched.
 - **D — [#423](https://github.com/talelburg/eldritch/issues/423).** With `TimingPointWindow`
   (A) and `SkillTest` (C) drive-dispatched, migrate every `apply_effect` site to push a
   root `Effect` frame + move post-effect logic into the parent frame's `on_child_pop`;
