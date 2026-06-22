@@ -24,7 +24,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    InvestigatorId, LocationId, Phase, PhaseStep, ResolutionFrame, TokenModifiers, WindowKind,
+    InvestigatorId, LocationId, Phase, PhaseStep, TokenModifiers, WindowKind,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -1045,12 +1045,11 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
     paused
         .state
         .continuations
-        .push(game_core::state::Continuation::Resolution(
-            ResolutionFrame::new_empty(
-                WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
-                FastActorScope::Any,
-            ),
-        ));
+        .push(game_core::state::Continuation::FastWindow {
+            candidates: Vec::new(),
+            fast_actors: FastActorScope::Any,
+            kind: game_core::state::FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+        });
     assert_eq!(
         paused.state.open_windows().len(),
         2,

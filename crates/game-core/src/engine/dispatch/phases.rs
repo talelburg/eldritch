@@ -237,10 +237,11 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     match end_of_turn {
         EngineOutcome::Done => resume_end_turn(cx, active_id),
         EngineOutcome::AwaitingInput { .. } => {
-            let forced_run_open = matches!(
-                cx.state.continuations.last(),
-                Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
-            );
+            let forced_run_open = cx
+                .state
+                .continuations
+                .last()
+                .is_some_and(crate::state::Continuation::is_forced);
             if !forced_run_open {
                 // The skill test sits above the InvestigatorTurn frame; find it
                 // and set `ending` so the commit-resume triggers rotation.

@@ -2318,17 +2318,16 @@ mod tests {
 
     #[test]
     fn cancel_effect_sets_pending_cancellation() {
-        use crate::state::{Continuation, ForcedContinuation, ResolutionFrame, ResolutionKind};
+        use crate::state::{Continuation, FastActorScope, FastWindowKind, PhaseStep};
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        // Effect::Cancel asserts a resolution frame is open; push a minimal one.
-        state
-            .continuations
-            .push(Continuation::Resolution(ResolutionFrame {
-                pending_triggers: Vec::new(),
-                kind: ResolutionKind::Forced(ForcedContinuation::Terminal),
-            }));
+        // Effect::Cancel asserts an open window frame is present; push a minimal one.
+        state.continuations.push(Continuation::FastWindow {
+            candidates: Vec::new(),
+            fast_actors: FastActorScope::Any,
+            kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+        });
         assert!(!state.pending_cancellation);
         let mut events = Vec::new();
         let outcome = apply_effect(

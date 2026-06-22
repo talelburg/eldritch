@@ -82,7 +82,7 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEv
 }
 
 /// Open the forced-resolution run (Axis-B T5b / #213): push a
-/// [`Forced`](ResolutionKind::Forced) [`ResolutionFrame`] holding the 2+
+/// `TimingPointWindow { mode: Forced }` holding the 2+
 /// simultaneous forced `candidates`, and present the lead investigator's
 /// order choice. The forced run is mandatory (cannot be skipped) and admits
 /// no Fast plays. `continuation` names the framework flow to resume when the
@@ -1084,8 +1084,9 @@ pub(super) fn after_enemy_phase_attacks(
 /// Open a printed Fast-play window of the given kind. Always emits
 /// [`Event::WindowOpened`] for observability. Then either:
 ///
-/// - Pushes the [`ResolutionFrame`] onto [`GameState::open_windows`] if any
-///   pending reaction triggers or Fast-eligible plays are detected. The
+/// - Pushes the [`FastWindow`](crate::state::Continuation::FastWindow) onto the
+///   continuation stack if any pending reaction triggers or Fast-eligible plays
+///   are detected. The
 ///   apply loop's existing "pending reactions → `AwaitingInput`" path
 ///   then surfaces the wait at the dispatch tail.
 /// - Or emits [`Event::WindowClosed`] immediately, pops the transiently
