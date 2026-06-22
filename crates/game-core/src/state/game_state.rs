@@ -417,6 +417,25 @@ pub enum Continuation {
     /// player resolves its `pending_triggers` one at a time; see
     /// [`ResolutionFrame`].
     Resolution(ResolutionFrame),
+    /// An event reaction window or the #213 forced run, keyed by the
+    /// [`TimingEvent`](crate::engine::TimingEvent) that opened it. Replaces the
+    /// event-window and forced-run uses of [`Resolution`](Self::Resolution)
+    /// (EmitEvent-frame Slice A-i, #433); framework player windows
+    /// (`WindowKind::PlayerWindow` / `SkillTestPlayerWindow`) stay on
+    /// `Resolution` until Slice A-ii. The [`mode`](TimingMode) distinguishes a
+    /// skippable reaction window from the mandatory forced run (which carries
+    /// its [`ForcedContinuation`]). Referenced in place rather than relocated —
+    /// [`Effect`](Self::Effect) already holds a `crate::engine` type
+    /// ([`EvalContext`](crate::engine::EvalContext), #345).
+    TimingPointWindow {
+        /// The timing event that opened this window/run.
+        event: crate::engine::TimingEvent,
+        /// Reaction window vs. forced run.
+        mode: TimingMode,
+        /// Candidates in resolution order (lead-ordered for the forced run;
+        /// active-investigator-first for a reaction window).
+        candidates: Vec<ResolutionCandidate>,
+    },
     /// A skill test is mid-resolution. Carries the in-flight test's data
     /// directly (the former `GameState::in_flight_skill_test` singleton, folded
     /// onto the frame — #348). Pushed at test start; popped when the test fully
@@ -764,6 +783,7 @@ impl Continuation {
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
             | Continuation::UpkeepPhase { .. }
+            | Continuation::TimingPointWindow { .. }
             | Continuation::Effect(_) => None,
         }
     }
@@ -789,6 +809,7 @@ impl Continuation {
             | Continuation::InvestigationPhase { .. }
             | Continuation::EnemyPhase { .. }
             | Continuation::UpkeepPhase { .. }
+            | Continuation::TimingPointWindow { .. }
             | Continuation::Effect(_) => None,
         }
     }
@@ -1200,6 +1221,20 @@ pub enum ForcedContinuation {
         /// The investigator whose turn ended.
         investigator: InvestigatorId,
     },
+}
+
+/// Whether a [`TimingPointWindow`](Continuation::TimingPointWindow) is a
+/// skippable reaction window or the mandatory #213 forced run. Collapses the
+/// old `ResolutionKind::{Window | Forced}` split onto the one frame: a forced
+/// run admits no Fast plays, drains all candidates, and on close resumes the
+/// framework flow named by its [`ForcedContinuation`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimingMode {
+    /// A reaction/fast window: skippable, admits Fast plays.
+    Reaction,
+    /// The forced run (#213): mandatory, no Fast plays; resumes the framework
+    /// flow named by the continuation on close.
+    Forced(ForcedContinuation),
 }
 
 /// The window-specific part of a [`ResolutionFrame`]: which kind of window

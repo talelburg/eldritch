@@ -22,6 +22,8 @@ use crate::state::{
     WindowKind,
 };
 
+use serde::{Deserialize, Serialize};
+
 use super::super::outcome::EngineOutcome;
 use super::forced_triggers::{collect_forced_hits, fire_forced_triggers, ForcedTriggerPoint};
 use super::Cx;
@@ -29,10 +31,10 @@ use super::Cx;
 /// A game/framework timing point at which forced and/or reaction triggers
 /// may fire, with the binding context the fired effects need.
 ///
-/// The union of [`ForcedTriggerPoint`] (the forced dispatch key) and the
+/// The union of `ForcedTriggerPoint` (the forced dispatch key) and the
 /// event-driven [`WindowKind`] variants (the reaction dispatch key). Each
-/// variant maps to an optional forced point ([`Self::forced_point`]) and an
-/// optional reaction window ([`Self::reaction_window`]); `EnemyDefeated` and
+/// variant maps to an optional forced point (`forced_point`) and an
+/// optional reaction window (`reaction_window`); `EnemyDefeated` and
 /// `SuccessfullyInvestigated` are **dual** (both forced and reaction at the
 /// same point).
 ///
@@ -43,8 +45,8 @@ use super::Cx;
 /// `emit_event` restores forced-before-reaction. Framework
 /// `PlayerWindow(PhaseStep)` windows are *not* timing events — they have no
 /// `EventPattern` and stay on explicit `open_fast_window` calls.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TimingEvent {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimingEvent {
     /// An investigator entered a location (forced only).
     EnteredLocation {
         investigator: InvestigatorId,
