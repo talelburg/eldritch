@@ -17,9 +17,9 @@ use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
-    CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FinishContinuation,
-    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, ResolutionFrame,
-    ResolutionKind, Status, WindowBinding, WindowKind,
+    CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, ForcedContinuation,
+    GameState, InvestigatorId, Phase, ResolutionCandidate, ResolutionFrame, ResolutionKind,
+    SkillTestStep, Status, WindowBinding, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -929,7 +929,7 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     // non-skill-test action queues a window — `Done` is the right
     // terminal outcome.
     if let Some(in_flight) = cx.state.current_skill_test() {
-        if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
+        if !matches!(in_flight.continuation, SkillTestStep::AwaitingCommit) {
             return super::skill_test::drive_skill_test(cx);
         }
     }

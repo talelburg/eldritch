@@ -914,13 +914,13 @@ pub struct InFlightSkillTest {
     pub source: Option<CardInstanceId>,
     /// Where the resolution driver should resume on the next call to
     /// `drive_skill_test`. Initialized to
-    /// [`FinishContinuation::AwaitingCommit`] at
+    /// [`SkillTestStep::AwaitingCommit`] at
     /// `start_skill_test`; advanced in lock-step as the resolution
     /// sequence runs. Post-commit variants carry the test's outcome
-    /// as a `succeeded` payload (see [`FinishContinuation`]) so the
+    /// as a `succeeded` payload (see [`SkillTestStep`]) so the
     /// invariant "outcome is known iff the test is past the commit
     /// window" is structural.
-    pub continuation: FinishContinuation,
+    pub continuation: SkillTestStep,
     /// A flat modifier applied to the test total, snapshotted by the
     /// effect that initiated the test (`Effect::Fight`'s combat
     /// modifier). `0` for player-action tests, which take their
@@ -991,7 +991,7 @@ pub struct InFlightSkillTest {
 ///   The next driver iteration runs step 4 (terminal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
-pub enum FinishContinuation {
+pub enum SkillTestStep {
     /// Initial state: waiting on the commit-window
     /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput).
     AwaitingCommit,

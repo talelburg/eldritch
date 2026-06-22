@@ -11,8 +11,8 @@ use crate::card_registry;
 use crate::dsl::{discover_clue, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, ChaosToken, FinishContinuation, GameState, InFlightSkillTest,
-    InvestigatorId, SkillKind, SkillTestFollowUp, Status, TokenResolution, Zone,
+    resolve_token, CardCode, ChaosToken, GameState, InFlightSkillTest, InvestigatorId, SkillKind,
+    SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
 };
 
 use super::super::evaluator::{
@@ -101,7 +101,7 @@ pub(in crate::engine) fn start_skill_test(
             on_fail,
             on_success,
             source,
-            continuation: FinishContinuation::AwaitingCommit,
+            continuation: SkillTestStep::AwaitingCommit,
             test_modifier,
             bonus_attack_damage: 0,
         }));
@@ -234,7 +234,7 @@ pub(in crate::engine) fn resume_substitution_choice(
 /// `damage_enemy` emitting [`EnemyDefeated`](crate::Event::EnemyDefeated)
 /// queues an [`AfterEnemyDefeated`](crate::state::WindowKind::AfterEnemyDefeated)
 /// window) suspends correctly: this entry advances the continuation
-/// to [`FinishContinuation::PostFollowUp`] before delegating, so a
+/// to [`SkillTestStep::PostFollowUp`] before delegating, so a
 /// resume from `close_reaction_window_at` re-enters the driver and picks
 /// up at the `OnSkillTestResolution` step.
 ///
@@ -252,7 +252,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
             reason: "skill-test commit: no in-flight skill test to resume".into(),
         };
     };
-    if !matches!(in_flight.continuation, FinishContinuation::AwaitingCommit) {
+    if !matches!(in_flight.continuation, SkillTestStep::AwaitingCommit) {
         return EngineOutcome::Rejected {
             reason: format!(
                 "skill-test commit: commit window already closed (continuation {:?}); \
@@ -315,7 +315,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .continuation = FinishContinuation::PostFollowUp { succeeded };
+        .continuation = SkillTestStep::PostFollowUp { succeeded };
 
     if succeeded {
         let outcome = apply_skill_test_follow_up(cx, investigator, follow_up);
@@ -368,7 +368,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 }
 
 /// Walk the skill-test resolution sequence from the current
-/// [`FinishContinuation`] onward, suspending if a reaction window
+/// [`SkillTestStep`] onward, suspending if a reaction window
 /// queues mid-step.
 ///
 /// Each loop iteration starts by checking for a queued reaction
@@ -380,13 +380,13 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 ///
 /// Step → next-continuation mapping (current Phase-3 set; #64 will
 /// add the post-`SkillTestEnded` window between
-/// [`PostOnResolution`](FinishContinuation::PostOnResolution) and
+/// [`PostOnResolution`](SkillTestStep::PostOnResolution) and
 /// teardown):
 ///
-/// - [`PostFollowUp`](FinishContinuation::PostFollowUp) → fire
+/// - [`PostFollowUp`](SkillTestStep::PostFollowUp) → fire
 ///   `OnSkillTestResolution` triggers; advance to
-///   [`PostOnResolution`](FinishContinuation::PostOnResolution).
-/// - [`PostOnResolution`](FinishContinuation::PostOnResolution) →
+///   [`PostOnResolution`](SkillTestStep::PostOnResolution).
+/// - [`PostOnResolution`](SkillTestStep::PostOnResolution) →
 ///   discard committed cards, emit
 ///   [`SkillTestEnded`](crate::Event::SkillTestEnded), drain pending
 ///   modifiers, clear in-flight, return `Done`.
@@ -426,33 +426,33 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
         };
 
         match continuation {
-            FinishContinuation::AwaitingCommit => {
+            SkillTestStep::AwaitingCommit => {
                 unreachable!(
                     "drive_skill_test: entered with AwaitingCommit; the commit-stage entry \
                      (finish_skill_test) advances past this before delegating"
                 );
             }
-            FinishContinuation::PostFollowUp { succeeded } => {
+            SkillTestStep::PostFollowUp { succeeded } => {
                 fire_on_skill_test_resolution(cx, investigator, &indices_u8, succeeded);
                 cx.state
                     .current_skill_test_mut()
                     .expect("the SkillTest frame must persist across driver steps")
-                    .continuation = FinishContinuation::PostRetaliate { succeeded };
+                    .continuation = SkillTestStep::PostRetaliate { succeeded };
             }
-            FinishContinuation::PostRetaliate { succeeded } => {
+            SkillTestStep::PostRetaliate { succeeded } => {
                 // Advance the cursor first: a retaliate that suspends on its
                 // cancel/soak window resumes here at PostOnResolution (the retaliate
                 // already happened; only its window is being resolved).
                 cx.state
                     .current_skill_test_mut()
                     .expect("the SkillTest frame must persist across driver steps")
-                    .continuation = FinishContinuation::PostOnResolution { succeeded };
+                    .continuation = SkillTestStep::PostOnResolution { succeeded };
                 let outcome = fire_retaliate_if_any(cx, investigator, succeeded);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome; // parked on the retaliate's window; resume via drive_skill_test
                 }
             }
-            FinishContinuation::PostOnResolution { succeeded: _ } => {
+            SkillTestStep::PostOnResolution { succeeded: _ } => {
                 // "After you successfully investigate" (Obscuring Fog forced +
                 // Dr. Milan reaction) already fired at the PostFollowUp step,
                 // via the Investigate follow-up's `emit_event`
@@ -1130,7 +1130,7 @@ mod tests {
                 on_fail: None,
                 on_success: None,
                 source: None,
-                continuation: FinishContinuation::AwaitingCommit,
+                continuation: SkillTestStep::AwaitingCommit,
                 test_modifier: 0,
                 bonus_attack_damage: 2,
             }));

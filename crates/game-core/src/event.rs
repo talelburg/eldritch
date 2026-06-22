@@ -501,7 +501,7 @@ pub enum Event {
     ///
     /// After this fires, the surrounding action's driver resumes
     /// (e.g. the skill-test driver advances from
-    /// [`FinishContinuation::PostFollowUp`](crate::state::FinishContinuation::PostFollowUp)
+    /// [`SkillTestStep::PostFollowUp`](crate::state::SkillTestStep::PostFollowUp)
     /// to the `OnSkillTestResolution` step).
     ///
     /// [`WindowOpened`]: Self::WindowOpened
