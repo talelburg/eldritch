@@ -320,7 +320,7 @@ pub enum EventPattern {
     AfterLocationInvestigated,
     /// An investigator is about to discover one or more clues. Matched
     /// **only** by the clue-discovery interrupt seam in `discover_clue`
-    /// (paired with [`EventTiming::Before`]), never by the general
+    /// (paired with [`EventTiming::When`]), never by the general
     /// reaction-window pipeline — `trigger_matches` returns `false` for
     /// it, like the forced-only patterns above. First consumer: Cover Up
     /// 01007's "`[reaction]` When you would discover 1 or more clues at your
@@ -398,19 +398,20 @@ pub enum Phase {
     Upkeep,
 }
 
-/// When an [`Trigger::OnEvent`] ability fires relative to the
-/// triggering event finalizing.
+/// When an [`Trigger::OnEvent`] ability fires relative to the triggering
+/// event finalizing — the RR "when → at → after" timing axis (the order
+/// simultaneous abilities sharing a triggering condition resolve in).
 ///
-/// Most reaction cards use [`After`](Self::After) ("After you defeat
-/// an enemy …"). [`Before`](Self::Before) is the "Forced — when …
-/// would …" timing that lets an effect interpose on an in-progress
-/// event; no card uses it in the Phase-3 scope yet, but the variant
-/// is included so #52's reaction-window machinery can hang both
-/// windows off the same trigger surface.
+/// - [`When`](Self::When) — the "Forced — when … would …" interrupt timing
+///   that lets an effect interpose on an in-progress event (Dodge 01023's
+///   cancel, Cover Up 01007's replacement).
+/// - [`After`](Self::After) — most reaction cards ("After you defeat an
+///   enemy …").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EventTiming {
-    /// Resolves before the triggering event finalizes.
-    Before,
+    /// Resolves as the triggering event would finalize (interrupt /
+    /// replacement timing — "when … would …").
+    When,
     /// Resolves after the triggering event has finalized.
     After,
 }
@@ -1978,31 +1979,31 @@ mod tests {
             timing: EventTiming::After,
             kind: TriggerKind::Reaction,
         };
-        let before_controller = Trigger::OnEvent {
+        let when_controller = Trigger::OnEvent {
             pattern: EventPattern::EnemyDefeated {
                 by_controller: true,
                 code: None,
             },
-            timing: EventTiming::Before,
+            timing: EventTiming::When,
             kind: TriggerKind::Reaction,
         };
         assert_ne!(after_any, Trigger::Constant);
         assert_ne!(after_any, Trigger::OnPlay);
         assert_ne!(after_any, Trigger::OnCommit);
         assert_ne!(after_any, after_controller);
-        assert_ne!(after_controller, before_controller);
+        assert_ne!(after_controller, when_controller);
     }
 
     /// An `OnEvent`-triggered ability round-trips through `serde_json`
     /// — struct-variant × serde derive can surprise; pin the wire
     /// shape now so #52's persistence doesn't re-discover problems
-    /// later. Both [`EventTiming`] variants (`After` and `Before`) are
+    /// later. Both [`EventTiming`] variants (`When` and `After`) are
     /// exercised independently since unit-variant × serde can fail on
     /// either alone (very rare, but the test rationale explicitly
     /// covers this surface).
     #[test]
     fn on_event_ability_round_trips_through_serde_json() {
-        for timing in [EventTiming::After, EventTiming::Before] {
+        for timing in [EventTiming::When, EventTiming::After] {
             let original = on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,

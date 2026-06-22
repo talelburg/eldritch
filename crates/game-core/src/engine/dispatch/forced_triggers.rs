@@ -373,9 +373,10 @@ fn push_matching(
             pattern, timing, ..
         } = &ability.trigger
         {
-            // Only `After` timing is handled in this slice; no in-scope
-            // Forced card uses `Before` ("when X would Y") timing.
-            // Revisit when such a card lands.
+            // Only `After` timing is handled in this slice; no in-scope Forced
+            // card uses `When` ("when X would Y") timing, and `At`-timed forced
+            // abilities don't exist until Slice B-iii routes them through the
+            // EmitEvent coordinator. Revisit the filter there.
             if *timing == EventTiming::After && want(pattern) {
                 out.push(ResolutionCandidate {
                     code: code.clone(),

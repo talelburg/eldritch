@@ -30,7 +30,7 @@ pub const CODE: &str = "01023";
 pub fn abilities() -> Vec<Ability> {
     vec![reaction_on_event(
         EventPattern::EnemyAttacks,
-        EventTiming::Before,
+        EventTiming::When,
         Effect::Cancel,
     )]
 }
@@ -47,7 +47,7 @@ mod tests {
             abilities[0].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::EnemyAttacks,
-                timing: EventTiming::Before,
+                timing: EventTiming::When,
                 kind: TriggerKind::Reaction,
             },
         );

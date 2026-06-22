@@ -38,7 +38,7 @@ pub fn abilities() -> Vec<Ability> {
         revelation(put_into_threat_area_with_clues(CODE, 3)),
         reaction_on_event(
             EventPattern::WouldDiscoverClues,
-            EventTiming::Before,
+            EventTiming::When,
             // "Discard that many clues from Cover Up instead": run the discard,
             // then cancel the discovery — cancel = degenerate replacement
             // (Axis D #336). The before-discover window's continuation skips
@@ -135,7 +135,7 @@ mod tests {
             abilities[1].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::WouldDiscoverClues,
-                timing: EventTiming::Before,
+                timing: EventTiming::When,
                 ..
             }
         ));
