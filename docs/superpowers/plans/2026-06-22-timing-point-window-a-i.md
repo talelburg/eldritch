@@ -25,8 +25,9 @@ PR1 — branch `engine/timing-point-window` (already created; the planning-docs 
 **No relocation needed.** `TimingEvent` stays in `engine::dispatch::emit`; the new `state` variant references it in place. Precedent: `EffectFrame` (state, `game_state.rs:622`) already holds `ctx: crate::engine::EvalContext`, so `Continuation` referencing an `engine` type is established (#345). This avoids the 59-site import churn a relocation would cost.
 
 **Files:**
-- Modify: `crates/game-core/src/engine/dispatch/emit.rs` — add `Serialize, Deserialize` to `TimingEvent`'s derive (line 46). Its fields (`InvestigatorId`, `LocationId`, `Phase`, `CardCode`, `EnemyId`, `CardInstanceId`, `u8`) all already derive serde via their use in `Event` (event.rs) — confirm with a build.
-- Modify: `crates/game-core/src/state/game_state.rs` — add `enum TimingMode` and the `Continuation::TimingPointWindow` variant (referencing `crate::engine::dispatch::emit::TimingEvent`).
+- Modify: `crates/game-core/src/engine/dispatch/emit.rs` — add `Serialize, Deserialize` to `TimingEvent`'s derive **and change `pub(crate) enum` → `pub enum`** (it becomes a field of the `pub` `Continuation`, so `private_interfaces` requires `pub` — matches `WindowKind`/`ResolutionFrame`/`EvalContext`). Its fields (`InvestigatorId`, `LocationId`, `Phase`, `CardCode`, `EnemyId`, `CardInstanceId`, `u8`) all already derive serde via their use in `Event` (event.rs). The type-level doc must **de-link** its intra-doc refs to private items (`ForcedTriggerPoint`, `Self::forced_point`, `Self::reaction_window`) to plain code spans, else `RUSTDOCFLAGS="-D warnings"` fails once the type is `pub`.
+- Modify: `crates/game-core/src/engine/mod.rs` — split the re-export (line 46) so `TimingEvent` is `pub use` (matching `EvalContext`) while `emit_event` stays `pub(crate) use`.
+- Modify: `crates/game-core/src/state/game_state.rs` — add `enum TimingMode` and the `Continuation::TimingPointWindow` variant (referencing `crate::engine::TimingEvent`, the re-export).
 - Modify: every `match continuation` / `match top` site that must now be exhaustive over the new variant — stub arms.
 
 **Interfaces:**
@@ -47,16 +48,16 @@ PR1 — branch `engine/timing-point-window` (already created; the planning-docs 
   /// `TimingEvent` that opened it. Replaces `Resolution{Window(event) | Forced}`
   /// (Slice A-i). Framework player windows stay on `Resolution` until A-ii.
   TimingPointWindow {
-      event: crate::engine::dispatch::emit::TimingEvent,
+      event: crate::engine::TimingEvent,
       mode: TimingMode,
       candidates: Vec<ResolutionCandidate>,
   },
   ```
-- `TimingEvent`'s mapping methods (`forced_point`/`reaction_window`/`forced_continuation`) stay in `emit.rs` unchanged.
+- `TimingEvent`'s mapping methods (`forced_point`/`reaction_window`/`forced_continuation`) stay in `emit.rs` unchanged (only its derive, visibility, and type-level doc links change).
 
-- [ ] **Step 1: Add serde to `TimingEvent`.** Change its derive (emit.rs:46) to `#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]`; add the `use serde::{Serialize, Deserialize};` import if not present in `emit.rs`.
+- [ ] **Step 1: Make `TimingEvent` serializable + `pub`.** Change its derive (emit.rs:46) to `#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]` and `pub(crate) enum` → `pub enum`; add `use serde::{Deserialize, Serialize};` to `emit.rs`. De-link the type-level doc's refs to private items (`ForcedTriggerPoint`/`Self::forced_point`/`Self::reaction_window`) to plain code spans. Split the `engine/mod.rs:46` re-export so `TimingEvent` is `pub use`.
 
-- [ ] **Step 2: Build — serde only.** Run `cargo build -p game-core`. Expected: compiles. If a field type lacks `Deserialize`, surface it (none expected — all appear in `Event`).
+- [ ] **Step 2: Build.** Run `cargo build -p game-core`. Expected: compiles, no `private_interfaces` or doc warnings. (Field types all derive serde via `Event`.)
 
 - [ ] **Step 3: Add `TimingMode` + the `Continuation::TimingPointWindow` variant.** Insert both into `game_state.rs` as in Interfaces.
 
