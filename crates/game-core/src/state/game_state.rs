@@ -995,6 +995,11 @@ pub enum SkillTestStep {
     /// Initial state: waiting on the commit-window
     /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput).
     AwaitingCommit,
+    /// Commit submitted: the next driver iteration runs the resolution
+    /// body (sum committed icons, fire `OnCommit`, resolve the chaos
+    /// token, run the action follow-up + `on_success` / `on_fail`), then
+    /// pre-advances to [`PostFollowUp`](Self::PostFollowUp).
+    Resolving,
     /// Steps 1–2 are complete (chaos token + action follow-up).
     /// The next driver iteration runs `OnSkillTestResolution` triggers.
     PostFollowUp {

@@ -263,13 +263,6 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         };
     }
     let investigator = in_flight.investigator;
-    let skill = in_flight.skill;
-    let kind = in_flight.kind;
-    let difficulty = in_flight.difficulty;
-    let follow_up = in_flight.follow_up;
-    let on_fail = in_flight.on_fail.clone();
-    let on_success = in_flight.on_success.clone();
-    let source = in_flight.source;
 
     // Validate the commit indices against the resolving
     // investigator's hand. On Err, state is untouched and the engine
@@ -279,39 +272,69 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         Err(rejected) => return rejected,
     };
 
-    let skill_value = sum_skill_value(cx.state, investigator, skill, kind, &indices_u8);
-
-    // Persist the committed indices into the in-flight record for
-    // replay clarity. Safe to expect: we read `in_flight_skill_test`
-    // immediately above and nothing has cleared it since.
-    cx.state
+    // Persist the committed indices and advance to `Resolving`; the driver
+    // runs the resolution body from there (its loop snapshot reads
+    // `committed_by_active`).
+    let t = cx
+        .state
         .current_skill_test_mut()
-        .expect("the SkillTest frame was present immediately above")
-        .committed_by_active
-        .clone_from(&indices_u8);
+        .expect("the SkillTest frame was present immediately above");
+    t.committed_by_active = indices_u8;
+    t.continuation = SkillTestStep::Resolving;
+    advance(cx)
+}
 
-    // Fire committed cards' OnCommit effects (Vicious Blow's attack buff)
-    // before the test resolves — the commit step precedes resolution, and
-    // a Fight follow-up's damage reads the accumulator they populate.
-    fire_on_commit(cx, investigator, &indices_u8);
+/// Run the `Resolving` step of a skill test: sum the committed icons, fire
+/// `OnCommit` buffs, resolve the chaos token (emitting
+/// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
+/// [`SkillTestFailed`](crate::Event::SkillTestFailed)), then run the action
+/// follow-up plus the success/failure card effect. Pre-advances the cursor to
+/// [`PostFollowUp`](SkillTestStep::PostFollowUp) **before** the follow-up so a
+/// suspending sub-step resumes at the next step rather than re-running this one.
+///
+/// Returns [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) if the
+/// follow-up or `on_fail` suspends; otherwise `Done` and the driver continues
+/// to `PostFollowUp`.
+fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) -> EngineOutcome {
+    let (skill, kind, difficulty, follow_up, on_fail, on_success, source) = {
+        let t = cx
+            .state
+            .current_skill_test()
+            .expect("run_resolution: the SkillTest frame must exist");
+        (
+            t.skill,
+            t.kind,
+            t.difficulty,
+            t.follow_up,
+            t.on_fail.clone(),
+            t.on_success.clone(),
+            t.source,
+        )
+    };
+
+    let skill_value = sum_skill_value(cx.state, investigator, skill, kind, indices_u8);
+
+    // Fire committed cards' OnCommit effects (Vicious Blow's attack buff) before
+    // the test resolves — the commit step precedes resolution, and a Fight
+    // follow-up's damage reads the accumulator they populate.
+    fire_on_commit(cx, investigator, indices_u8);
 
     let (succeeded, failed_by) =
         resolve_chaos_token_and_emit(cx, investigator, skill, difficulty, skill_value);
 
-    // Build the eval context for the success/failure card effects,
-    // threading the firing instance (`source`) so `Effect::DiscardSelf`
-    // can find itself across the suspend/resume boundary.
+    // Build the eval context for the success/failure card effects, threading the
+    // firing instance (`source`) so `Effect::DiscardSelf` can find itself across
+    // the suspend/resume boundary.
     let card_ctx = |investigator: InvestigatorId| {
         EvalContext::for_controller_with_optional_source(investigator, source)
     };
 
-    // Pre-advance the continuation to PostFollowUp BEFORE running the
-    // follow-up, so a follow-up that suspends on a clue-discovery interrupt
-    // (Cover Up 01007) resumes at PostFollowUp rather than re-running the
-    // follow-up. `on_success` never co-occurs with a suspending follow-up
-    // in scope (Investigate sets on_success=None; SkillTest-effect tests
-    // set follow_up=None), so running on_success after the follow-up is
-    // safe. (C5a #236.)
+    // Pre-advance to PostFollowUp BEFORE running the follow-up, so a follow-up
+    // that suspends on a clue-discovery interrupt (Cover Up 01007) resumes at
+    // PostFollowUp rather than re-running the follow-up. `on_success` never
+    // co-occurs with a suspending follow-up in scope (Investigate sets
+    // on_success=None; SkillTest-effect tests set follow_up=None), so running
+    // on_success after the follow-up is safe. (C5a #236.)
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
@@ -321,9 +344,9 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         let outcome = apply_skill_test_follow_up(cx, investigator, follow_up);
         if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
             // The follow-up suspended (clue-discovery interrupt). The
-            // continuation is already PostFollowUp; resume re-enters the
-            // driver there. Don't run on_success now — it doesn't co-occur
-            // with a suspending follow-up in scope.
+            // continuation is already PostFollowUp; resume re-enters the driver
+            // there. Don't run on_success now — it doesn't co-occur with a
+            // suspending follow-up in scope.
             return outcome;
         }
         debug_assert!(
@@ -331,10 +354,9 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
             "skill-test follow-up must resolve to Done or AwaitingInput: {outcome:?}"
         );
         if let Some(effect) = &on_success {
-            // Success-side card effect (Frozen in Fear 01164 discards
-            // itself on a successful end-of-turn willpower test). In-scope
-            // effects run to completion; a future suspending on_success is
-            // #212 reentrancy work.
+            // Success-side card effect (Frozen in Fear 01164 discards itself on a
+            // successful end-of-turn willpower test). In-scope effects run to
+            // completion; a future suspending on_success is #212 reentrancy work.
             let outcome = apply_effect(cx, effect, card_ctx(investigator));
             debug_assert!(
                 matches!(outcome, EngineOutcome::Done),
@@ -344,18 +366,18 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     } else if let Some(effect) = &on_fail {
         // Margin-keyed failure branch of a treachery-Revelation test
         // (`Effect::SkillTest`). The failure margin is threaded so
-        // `Effect::ForEachPointFailed` can scale. In-scope on_fail
-        // effects (Deal / Native) run to completion;
-        // a future suspending on_fail is #212 reentrancy work.
+        // `Effect::ForEachPointFailed` can scale. In-scope on_fail effects (Deal
+        // / Native) run to completion; a future suspending on_fail is #212
+        // reentrancy work.
         let mut ctx = card_ctx(investigator);
         ctx.set_failed_by(failed_by);
         let outcome = apply_effect(cx, effect, ctx);
         if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
             // on_fail suspended on a controller choice (Crypt Chill 01167's
             // "choose an asset to discard", Axis A #334). The continuation is
-            // already `PostFollowUp` (pre-advanced above), so resuming the
-            // choice re-enters `advance` at teardown — `on_fail`
-            // does not re-run. Mirrors the follow-up-suspend path above.
+            // already `PostFollowUp` (pre-advanced above), so resuming the choice
+            // re-enters `advance` at teardown — `on_fail` does not re-run.
+            // Mirrors the follow-up-suspend path above.
             return outcome;
         }
         debug_assert!(
@@ -363,8 +385,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
             "revelation on_fail must resolve to Done or AwaitingInput: {outcome:?}"
         );
     }
-
-    advance(cx)
+    EngineOutcome::Done
 }
 
 /// Walk the skill-test resolution sequence from the current
@@ -431,6 +452,16 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     "advance: entered with AwaitingCommit; the commit-stage entry \
                      (finish_skill_test) advances past this before delegating"
                 );
+            }
+            SkillTestStep::Resolving => {
+                // Commit submitted: run the resolution body (sum icons, OnCommit,
+                // chaos token, follow-up + on_success/on_fail). It pre-advances
+                // the cursor to PostFollowUp and returns `AwaitingInput` if a
+                // sub-step suspends; otherwise the loop reads PostFollowUp next.
+                let outcome = run_resolution(cx, investigator, &indices_u8);
+                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                    return outcome;
+                }
             }
             SkillTestStep::PostFollowUp { succeeded } => {
                 fire_on_skill_test_resolution(cx, investigator, &indices_u8, succeeded);
