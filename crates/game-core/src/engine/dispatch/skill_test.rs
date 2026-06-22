@@ -101,7 +101,7 @@ pub(in crate::engine) fn start_skill_test(
             on_fail,
             on_success,
             source,
-            continuation: SkillTestStep::AwaitingCommit,
+            continuation: SkillTestStep::PreCommitWindow,
             test_modifier,
             bonus_attack_damage: 0,
         }));
@@ -191,8 +191,10 @@ pub(in crate::engine) fn resume_substitution_choice(
         t.skill = SkillKind::Intellect;
         t.test_modifier = 0;
     }
-    // Drive the test; `advance` parks at `AwaitingCommit`, emitting the commit
-    // prompt (reading the now-possibly-rewritten skill).
+    // Drive the test from `PreCommitWindow`: `advance` opens the ST.1 player
+    // window (#374) first, then — on auto-skip — parks at `AwaitingCommit` and
+    // emits the commit prompt (reading the now-possibly-rewritten skill). With a
+    // Fast play available it parks at the window instead.
     advance(cx)
 }
 
@@ -242,7 +244,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above");
     t.committed_by_active = indices_u8;
-    t.continuation = SkillTestStep::Resolving;
+    t.continuation = SkillTestStep::PreTokenWindow;
     advance(cx)
 }
 
@@ -358,6 +360,56 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
     EngineOutcome::Done
 }
 
+/// Emit the commit-window prompt (the `AwaitingCommit` step's `awaiting()`). The
+/// test parks here for the active investigator's commit; a Resolution frame
+/// pushed *above* it is a mid-test window. Reached from `start_skill_test` and
+/// `resume_substitution_choice` (which call `advance`), so the commit
+/// `AwaitingInput` propagates up the call stack, halting any enclosing forced run
+/// (the commit `ResolveInput` resumes via `finish_skill_test`).
+fn emit_commit_window(cx: &Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let (skill, difficulty) = {
+        let t = cx
+            .state
+            .current_skill_test()
+            .expect("emit_commit_window: in-flight test must exist");
+        (t.skill, t.difficulty)
+    };
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::prompt(format!(
+            "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
+             (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
+             hand indices as option ids. Empty selection commits no cards.",
+        )),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Open one of the RR p.26 skill-test framework player windows (#374) and return
+/// `open_fast_window`'s outcome directly. Pre-advances the cursor to `next`
+/// **before** opening (the suspend/resume invariant), so a resume — whether the
+/// auto-skip inline `run_window_continuation -> advance` or a wait-then-close —
+/// picks up at `next`, not by re-opening this window.
+///
+/// The caller must **return** this outcome, never fall through: `open_fast_window`
+/// returns `Done` both on auto-skip (continuation already ran) and when it parks
+/// a pure-Fast window on top (which emits no `AwaitingInput` and is invisible to
+/// the `advance` loop's `top_reaction_window_index` check — falling through would
+/// emit the next step's prompt *over* the parked window).
+fn open_skill_test_player_window(
+    cx: &mut Cx,
+    next: SkillTestStep,
+    before_token: bool,
+) -> EngineOutcome {
+    cx.state
+        .current_skill_test_mut()
+        .expect("open_skill_test_player_window: the SkillTest frame must exist")
+        .continuation = next;
+    super::reaction_windows::open_fast_window(
+        cx,
+        crate::state::WindowKind::SkillTestPlayerWindow { before_token },
+    )
+}
+
 /// Walk the skill-test resolution sequence from the current
 /// [`SkillTestStep`] onward, suspending if a reaction window
 /// queues mid-step.
@@ -417,30 +469,18 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         };
 
         match continuation {
+            SkillTestStep::PreCommitWindow => {
+                // RR p.26 player window after ST.1. (#374.)
+                return open_skill_test_player_window(cx, SkillTestStep::AwaitingCommit, false);
+            }
             SkillTestStep::AwaitingCommit => {
-                // The frame's `awaiting()`: the test parks here for the active
-                // investigator's commit. Resolution (reaction/fast) frames push
-                // *above* this frame when a window opens mid-test; the test is
-                // popped at teardown. Reached from `start_skill_test` and
-                // `resume_substitution_choice` (which call `advance`); the commit
-                // `AwaitingInput` propagates up the call stack, halting any
-                // enclosing forced run (the commit `ResolveInput` resumes via
-                // `finish_skill_test`).
-                let (skill, difficulty) = {
-                    let t = cx
-                        .state
-                        .current_skill_test()
-                        .expect("advance(AwaitingCommit): in-flight test must exist");
-                    (t.skill, t.difficulty)
-                };
-                return EngineOutcome::AwaitingInput {
-                    request: InputRequest::prompt(format!(
-                        "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
-                         (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
-                         hand indices as option ids. Empty selection commits no cards.",
-                    )),
-                    resume_token: ResumeToken(0),
-                };
+                // The frame's `awaiting()`: emit the commit prompt. (See
+                // `emit_commit_window` for the propagation rationale.)
+                return emit_commit_window(cx, investigator);
+            }
+            SkillTestStep::PreTokenWindow => {
+                // RR p.26 player window after ST.2. (#374.)
+                return open_skill_test_player_window(cx, SkillTestStep::Resolving, true);
             }
             SkillTestStep::Resolving => {
                 // Commit submitted: run the resolution body (sum icons, OnCommit,
@@ -1322,6 +1362,138 @@ mod tests {
         assert_eq!(
             state.investigators[&inv].horror, 1,
             "on_success effect ran on the passing draw",
+        );
+    }
+
+    /// Both ST.1/ST.2 player windows open and auto-skip (no registry / nothing
+    /// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
+    #[test]
+    fn skill_test_opens_and_auto_skips_both_player_windows() {
+        use crate::state::{ChaosToken, WindowKind};
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        // start -> PreCommitWindow auto-skips window 1 -> parks at AwaitingCommit.
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            None,
+            None,
+            None,
+            0,
+        );
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit prompt"
+        );
+        // `cx` still borrows `events` here; read through `cx.events`.
+        assert!(
+            cx.events.iter().any(|e| matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::SkillTestPlayerWindow {
+                        before_token: false
+                    }
+                }
+            )) && cx.events.iter().any(|e| matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::SkillTestPlayerWindow {
+                        before_token: false
+                    }
+                }
+            )),
+            "window 1 (before commit) opened and auto-skipped",
+        );
+
+        // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
+        let out = finish_skill_test(&mut cx, &[]);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::WindowOpened {
+                    kind: WindowKind::SkillTestPlayerWindow { before_token: true }
+                }
+            )) && events.iter().any(|e| matches!(
+                e,
+                Event::WindowClosed {
+                    kind: WindowKind::SkillTestPlayerWindow { before_token: true }
+                }
+            )),
+            "window 2 (before token) opened and auto-skipped: {events:?}",
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            "the test resolved to the end: {events:?}",
+        );
+    }
+
+    /// Closing a skill-test player window re-enters `advance` at the
+    /// pre-advanced cursor (the `run_window_continuation` arm), not just via the
+    /// auto-skip path. Here window 1 is "about to close" — the cursor is already
+    /// `AwaitingCommit` — so `run_window_continuation` must re-enter `advance` and
+    /// emit the commit prompt. (#374.)
+    #[test]
+    fn closing_a_skill_test_player_window_re_enters_advance() {
+        use crate::state::{ChaosToken, Continuation, InFlightSkillTest, WindowKind};
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        // A SkillTest pre-advanced to AwaitingCommit, as if window 1 just opened.
+        state
+            .continuations
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                investigator: inv,
+                skill: SkillKind::Willpower,
+                kind: SkillTestKind::Plain,
+                difficulty: 2,
+                committed_by_active: Vec::new(),
+                tested_location: None,
+                follow_up: SkillTestFollowUp::None,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                test_modifier: 0,
+                bonus_attack_damage: 0,
+            }));
+        let mut events = Vec::new();
+        let out = super::super::reaction_windows::run_window_continuation(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            WindowKind::SkillTestPlayerWindow {
+                before_token: false,
+            },
+        );
+        let EngineOutcome::AwaitingInput { request, .. } = &out else {
+            panic!("expected the commit prompt after the window closed, got {out:?}");
+        };
+        assert!(
+            request.prompt.contains("Commit cards"),
+            "re-entered advance at AwaitingCommit: {request:?}",
         );
     }
 

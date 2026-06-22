@@ -978,12 +978,15 @@ pub struct InFlightSkillTest {
 ///
 /// Variants:
 ///
-/// - [`AwaitingCommit`](Self::AwaitingCommit) — initial state at
-///   skill-test start. `advance`'s `AwaitingCommit` arm emits the
-///   commit-window
+/// - [`PreCommitWindow`](Self::PreCommitWindow) — initial state; `advance` opens
+///   the ST.1→ST.2 player window, then pre-advances to `AwaitingCommit`.
+/// - [`AwaitingCommit`](Self::AwaitingCommit) — `advance`'s `AwaitingCommit` arm
+///   emits the commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
 ///   prompt with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
 ///   response (each `OptionId` a hand index).
+/// - [`PreTokenWindow`](Self::PreTokenWindow) — set after the commit; `advance`
+///   opens the ST.2→ST.3 player window, then pre-advances to `Resolving`.
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
 ///   commit is validated and stored. The next driver iteration runs steps 1–2
 ///   (`run_resolution`) and pre-advances to [`PostFollowUp`](Self::PostFollowUp).
@@ -994,9 +997,19 @@ pub struct InFlightSkillTest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SkillTestStep {
+    /// The RR p.26 player window after ST.1 (skill determined) and before ST.2
+    /// (commit). The initial state at skill-test start. `advance` opens the
+    /// window here, pre-advancing to [`AwaitingCommit`](Self::AwaitingCommit).
+    /// (#374.)
+    PreCommitWindow,
     /// Initial state: waiting on the commit-window
     /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput).
     AwaitingCommit,
+    /// The RR p.26 player window after ST.2 (commit) and before ST.3 (reveal
+    /// chaos token). Set by `finish_skill_test` once the commit is stored;
+    /// `advance` opens the window here, pre-advancing to
+    /// [`Resolving`](Self::Resolving). (#374.)
+    PreTokenWindow,
     /// Commit submitted: the next driver iteration runs the resolution
     /// body (sum committed icons, fire `OnCommit`, resolve the chaos
     /// token, run the action follow-up + `on_success` / `on_fail`), then
@@ -1344,6 +1357,23 @@ pub enum WindowKind {
         instance: CardInstanceId,
         /// The investigator who controls it.
         controller: InvestigatorId,
+    },
+    /// A framework player window during a skill test (RR p.26): after ST.1
+    /// (before commit) when `before_token` is `false`, after ST.2 (before the
+    /// chaos token) when `true`. Carries no event payload — it gates Fast plays
+    /// / reactions, it is not an after-event reaction window. Opened by the
+    /// skill-test driver (`advance`) at the `PreCommitWindow` / `PreTokenWindow`
+    /// cursor steps; its close re-enters `advance`.
+    ///
+    /// `before_token` feeds `WindowOpened` / `WindowClosed` observability only;
+    /// both windows share one continuation (re-enter `advance`, which resumes at
+    /// the pre-advanced cursor). Transitional: the EmitEvent-frame slice (#431)
+    /// dissolves this into the generic `FastWindow`, where "which window" is read
+    /// from the [`SkillTest`](Continuation::SkillTest) frame's cursor beneath it,
+    /// not stored here.
+    SkillTestPlayerWindow {
+        /// `false` = the ST.1→ST.2 window; `true` = the ST.2→ST.3 window.
+        before_token: bool,
     },
 }
 
