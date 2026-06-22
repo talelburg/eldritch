@@ -270,6 +270,13 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
 /// so we decline (Skip) the window and continue. (For callers with no Fast
 /// eligibility — the vast majority — the windows auto-skip and this is identical
 /// to the plain commit-nothing drive.)
+///
+/// **Assumes every `AwaitingInput` is the commit prompt** (answers each with an
+/// empty `PickMultiple`). A caller whose action drives a *reaction* window (a
+/// real `PickSingle`) must script it via [`drive`] instead — here it would be
+/// fed an empty `PickMultiple` and rejected. No current caller does this; the
+/// skill-test ST.1/ST.2 windows never surface a reaction prompt (they carry no
+/// `Trigger::OnEvent` candidates).
 pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
     // Drive to a terminal outcome, committing no cards and *declining* every
     // framework Fast player window (Skip). Most actions never open one, so this
@@ -278,14 +285,23 @@ pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
     // stack, no `AwaitingInput`) whenever a Fast card/ability is available, and a
     // plain `drive` would mistake that idle for the terminal outcome. So skip a
     // parked window explicitly and continue.
+    const MAX_ITERATIONS: u32 = 1024;
     let mut state = state;
     let mut events = Vec::new();
     let mut next = action;
+    let mut iterations = 0u32;
     loop {
+        iterations += 1;
+        assert!(
+            iterations <= MAX_ITERATIONS,
+            "apply_no_commits: exceeded {MAX_ITERATIONS} iterations without a terminal \
+             outcome; the engine appears to be cycling (re-parking a window?)",
+        );
         let r = apply(state, next);
         state = r.state;
         events.extend(r.events);
-        // The only `AwaitingInput` in a no-commits drive is a commit window.
+        // The only `AwaitingInput` in a no-commits drive is a commit window
+        // (see the doc-comment's assumption).
         if matches!(r.outcome, EngineOutcome::AwaitingInput { .. }) {
             next = Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple {

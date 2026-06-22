@@ -191,8 +191,10 @@ pub(in crate::engine) fn resume_substitution_choice(
         t.skill = SkillKind::Intellect;
         t.test_modifier = 0;
     }
-    // Drive the test; `advance` parks at `AwaitingCommit`, emitting the commit
-    // prompt (reading the now-possibly-rewritten skill).
+    // Drive the test from `PreCommitWindow`: `advance` opens the ST.1 player
+    // window (#374) first, then — on auto-skip — parks at `AwaitingCommit` and
+    // emits the commit prompt (reading the now-possibly-rewritten skill). With a
+    // Fast play available it parks at the window instead.
     advance(cx)
 }
 

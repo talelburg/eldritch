@@ -1075,8 +1075,16 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
             kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
         } if *e == enemy_id
     );
-    // B must still be open — no second WindowClosed.
-    assert_event_count!(resumed.events, 1, Event::WindowClosed { .. });
+    // B must still be open — exactly one AfterEnemyDefeated close (window R), no
+    // second. (Scoped to the reaction kind so #374's framework windows, which
+    // close in a prior apply, don't perturb the count.)
+    assert_event_count!(
+        resumed.events,
+        1,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
 }
 
 #[test]
