@@ -405,6 +405,9 @@ pub enum Phase {
 /// - [`When`](Self::When) — the "Forced — when … would …" interrupt timing
 ///   that lets an effect interpose on an in-progress event (Dodge 01023's
 ///   cancel, Cover Up 01007's replacement).
+/// - [`At`](Self::At) — "at the …" timing, resolving between `when` and
+///   `after` abilities sharing a triggering condition. Dormant: no ability
+///   is tagged `At` until Slice B-iii.
 /// - [`After`](Self::After) — most reaction cards ("After you defeat an
 ///   enemy …").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -412,6 +415,10 @@ pub enum EventTiming {
     /// Resolves as the triggering event would finalize (interrupt /
     /// replacement timing — "when … would …").
     When,
+    /// Resolves between `when` and `after` abilities with the same
+    /// triggering condition ("at the …"). Dormant until Slice B-iii
+    /// re-tags the round-end doom onto it.
+    At,
     /// Resolves after the triggering event has finalized.
     After,
 }
@@ -1997,13 +2004,13 @@ mod tests {
     /// An `OnEvent`-triggered ability round-trips through `serde_json`
     /// — struct-variant × serde derive can surprise; pin the wire
     /// shape now so #52's persistence doesn't re-discover problems
-    /// later. Both [`EventTiming`] variants (`When` and `After`) are
-    /// exercised independently since unit-variant × serde can fail on
-    /// either alone (very rare, but the test rationale explicitly
-    /// covers this surface).
+    /// later. All three [`EventTiming`] variants (`When`, `At`, `After`)
+    /// are exercised independently since unit-variant × serde can fail on
+    /// any alone (very rare, but the test rationale explicitly covers this
+    /// surface).
     #[test]
     fn on_event_ability_round_trips_through_serde_json() {
-        for timing in [EventTiming::When, EventTiming::After] {
+        for timing in [EventTiming::When, EventTiming::At, EventTiming::After] {
             let original = on_event(
                 EventPattern::EnemyDefeated {
                     by_controller: true,

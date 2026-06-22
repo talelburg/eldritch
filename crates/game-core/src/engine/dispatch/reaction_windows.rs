@@ -346,7 +346,9 @@ fn trigger_matches(
                 )
             );
         }
-        EventTiming::After => {}
+        // No `At`-timed reaction exists until Slice B-iii; treat it like
+        // `After` (fall through to pattern matching). Dormant.
+        EventTiming::At | EventTiming::After => {}
     }
     match (kind, pattern) {
         (
