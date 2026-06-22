@@ -1443,6 +1443,58 @@ mod tests {
         );
     }
 
+    /// Closing a skill-test player window re-enters `advance` at the
+    /// pre-advanced cursor (the `run_window_continuation` arm), not just via the
+    /// auto-skip path. Here window 1 is "about to close" — the cursor is already
+    /// `AwaitingCommit` — so `run_window_continuation` must re-enter `advance` and
+    /// emit the commit prompt. (#374.)
+    #[test]
+    fn closing_a_skill_test_player_window_re_enters_advance() {
+        use crate::state::{ChaosToken, Continuation, InFlightSkillTest, WindowKind};
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        // A SkillTest pre-advanced to AwaitingCommit, as if window 1 just opened.
+        state
+            .continuations
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                investigator: inv,
+                skill: SkillKind::Willpower,
+                kind: SkillTestKind::Plain,
+                difficulty: 2,
+                committed_by_active: Vec::new(),
+                tested_location: None,
+                follow_up: SkillTestFollowUp::None,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                test_modifier: 0,
+                bonus_attack_damage: 0,
+            }));
+        let mut events = Vec::new();
+        let out = super::super::reaction_windows::run_window_continuation(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            WindowKind::SkillTestPlayerWindow {
+                before_token: false,
+            },
+        );
+        let EngineOutcome::AwaitingInput { request, .. } = &out else {
+            panic!("expected the commit prompt after the window closed, got {out:?}");
+        };
+        assert!(
+            request.prompt.contains("Commit cards"),
+            "re-entered advance at AwaitingCommit: {request:?}",
+        );
+    }
+
     /// The reified driver: `start_skill_test` parks at `AwaitingCommit` via
     /// `advance` (emitting the commit prompt), and committing drives the test to
     /// teardown — `SkillTestStarted` then `SkillTestEnded`, no frame left behind.
