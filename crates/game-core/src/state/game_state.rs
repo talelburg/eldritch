@@ -940,8 +940,8 @@ pub struct InFlightSkillTest {
 /// Where the skill-test resolution driver should resume on the next
 /// call to `advance`.
 ///
-/// The driver walks a fixed sequence of steps inside
-/// `finish_skill_test`:
+/// The driver (`advance`, with the resolution body in `run_resolution`)
+/// walks a fixed sequence of steps:
 ///
 /// 1. Validate commits + draw chaos token + emit
 ///    [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
@@ -979,14 +979,16 @@ pub struct InFlightSkillTest {
 /// Variants:
 ///
 /// - [`AwaitingCommit`](Self::AwaitingCommit) — initial state at
-///   skill-test start. No resume; the next dispatch step is the
+///   skill-test start. `advance`'s `AwaitingCommit` arm emits the
 ///   commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
-///   with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
+///   prompt with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
 ///   response (each `OptionId` a hand index).
-/// - [`PostFollowUp`](Self::PostFollowUp) — set by the commit-stage
-///   entry once steps 1–2 have run. The next driver iteration runs
-///   step 3.
+/// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
+///   commit is validated and stored. The next driver iteration runs steps 1–2
+///   (`run_resolution`) and pre-advances to [`PostFollowUp`](Self::PostFollowUp).
+/// - [`PostFollowUp`](Self::PostFollowUp) — set once steps 1–2 have run.
+///   The next driver iteration runs step 3.
 /// - [`PostOnResolution`](Self::PostOnResolution) — set after step 3.
 ///   The next driver iteration runs step 4 (terminal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

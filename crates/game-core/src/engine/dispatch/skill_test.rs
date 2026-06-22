@@ -196,34 +196,19 @@ pub(in crate::engine) fn resume_substitution_choice(
     advance(cx)
 }
 
-/// Commit-stage entry to the skill-test resolution driver. Handles
-/// the response to the
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine
-/// emitted at the commit window: validate the supplied indices, sum
-/// the committed cards' icon contribution (matching skill + wild),
-/// draw a chaos token, emit the success/failure events, apply the
-/// action-specific [`SkillTestFollowUp`] on success, then hand off to
-/// [`advance`] for the remaining steps.
+/// Commit-stage entry to the skill-test resolution driver. Handles the
+/// response to the
+/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine emitted at
+/// the commit window: validate the supplied indices, persist them onto the
+/// in-flight record, advance the cursor to [`SkillTestStep::Resolving`], and
+/// hand off to [`advance`], which runs the resolution body
+/// ([`run_resolution`]) and the remaining steps.
 ///
-/// The split between this entry and [`advance`] exists so
-/// that a reaction window opening *inside*
-/// [`apply_skill_test_follow_up`] (the canonical case:
-/// `damage_enemy` emitting [`EnemyDefeated`](crate::Event::EnemyDefeated)
-/// queues an [`AfterEnemyDefeated`](crate::state::WindowKind::AfterEnemyDefeated)
-/// window) suspends correctly: this entry advances the continuation
-/// to [`SkillTestStep::PostFollowUp`] before delegating, so a
-/// resume from `close_reaction_window_at` re-enters the driver and picks
-/// up at the `OnSkillTestResolution` step.
-///
-/// On invalid input (no in-flight test, malformed indices, or
-/// continuation already advanced) returns [`EngineOutcome::Rejected`]
-/// with no state change and no events pushed — the engine stays
-/// paused so the caller can submit a fixed-up response.
-///
-/// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
+/// On invalid input (no in-flight test, malformed indices, or continuation
+/// already advanced) returns [`EngineOutcome::Rejected`] with no state change
+/// and no events pushed — the engine stays paused so the caller can submit a
+/// fixed-up response.
 pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
-    // Snapshot the in-flight record (Copy-able primitives only) so
-    // later mutation paths can re-borrow state freely.
     let Some(in_flight) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
             reason: "skill-test commit: no in-flight skill test to resume".into(),
@@ -272,6 +257,14 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 /// Returns [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) if the
 /// follow-up or `on_fail` suspends; otherwise `Done` and the driver continues
 /// to `PostFollowUp`.
+///
+/// The pre-advance is what lets a reaction window opening *inside*
+/// [`apply_skill_test_follow_up`] (the canonical case: `damage_enemy` emitting
+/// [`EnemyDefeated`](crate::Event::EnemyDefeated) queues an
+/// [`AfterEnemyDefeated`](crate::state::WindowKind::AfterEnemyDefeated) window)
+/// suspend correctly: the cursor already reads `PostFollowUp`, so a resume from
+/// `close_reaction_window_at` re-enters `advance` at the `OnSkillTestResolution`
+/// step rather than re-running the follow-up.
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) -> EngineOutcome {
     let (skill, kind, difficulty, follow_up, on_fail, on_success, source) = {
         let t = cx
@@ -397,7 +390,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         // *below* it is a forced run that fired this test as one of its
         // candidates (#213 reentrancy: two Frozen in Fear copies); it must
         // not be mistaken for a mid-test window — it resumes only once this
-        // test fully tears down (via `resume_skill_test_commit`).
+        // test fully tears down (via the teardown tail in `PostOnResolution`).
         let skill_test_pos = cx
             .state
             .continuations
