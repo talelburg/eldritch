@@ -43,7 +43,7 @@ use super::Cx;
 /// it rather than firing an in-play ability.
 ///
 /// The window suspends the surrounding driver
-/// (today, [`drive_skill_test`]) at its next step boundary: after the
+/// (today, [`advance`]) at its next step boundary: after the
 /// emit here the driver sees a non-empty `open_windows` stack and
 /// returns [`EngineOutcome::AwaitingInput`] so the player can act.
 ///
@@ -468,7 +468,7 @@ fn build_resolution_options(frame: &ResolutionFrame) -> Vec<ChoiceOption> {
 }
 
 /// Return [`AwaitingInput`] for the already-open reaction window at
-/// the top of [`GameState::open_windows`]. Called by [`drive_skill_test`]
+/// the top of [`GameState::open_windows`]. Called by [`advance`]
 /// at a step boundary when an earlier step queued a window via
 /// [`queue_reaction_window`].
 ///
@@ -930,7 +930,7 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     // terminal outcome.
     if let Some(in_flight) = cx.state.current_skill_test() {
         if !matches!(in_flight.continuation, SkillTestStep::AwaitingCommit) {
-            return super::skill_test::drive_skill_test(cx);
+            return super::skill_test::advance(cx);
         }
     }
 
@@ -1019,7 +1019,7 @@ fn resume_before_discover_window(
         crate::engine::evaluator::perform_discovery(cx, location, count, investigator);
     }
     if cx.state.has_skill_test_in_flight() {
-        super::skill_test::drive_skill_test(cx)
+        super::skill_test::advance(cx)
     } else {
         EngineOutcome::Done
     }

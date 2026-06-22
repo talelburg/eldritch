@@ -16,7 +16,7 @@
 //! `Effect::SkillTest` initiated from an *activated* ability (every prior
 //! caller is a Revelation/forced effect); `activate_ability` ends in
 //! `apply_effect`, so the test suspends at the commit window and resumes
-//! through the same `drive_skill_test` path regardless of origin.
+//! through the same `advance` path regardless of origin.
 //!
 //! # The target is chosen *inside* the post-test branch — exact in solo
 //!

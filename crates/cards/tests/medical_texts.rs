@@ -5,7 +5,7 @@
 //!
 //! Exercises the first `Effect::SkillTest` initiated from an *activated*
 //! ability: the test suspends at the commit window (driven by
-//! `apply_no_commits`) and resumes through `drive_skill_test`, then the
+//! `apply_no_commits`) and resumes through `advance`, then the
 //! outcome branch heals or deals 1 damage to the chosen co-located
 //! investigator. In solo the choice auto-binds to the controller (one
 //! candidate at the location), so no choice suspend occurs.

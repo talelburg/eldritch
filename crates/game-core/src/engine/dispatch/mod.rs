@@ -132,7 +132,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
     // investigator has mulliganed. No outer-boundary kickoff remains here.
 
     // Reaction windows open at the step boundary inside the handler
-    // that queued them (see `drive_skill_test`), not at this outer
+    // that queued them (see `advance`), not at this outer
     // boundary — the Rules Reference clause "after… may be used
     // immediately after that triggering condition's impact upon the
     // game state has resolved" is mid-action, not post-action. Any
@@ -402,7 +402,7 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// reaction case: the skill-test driver is parked at a step boundary
 /// waiting for the reaction window to close before continuing. The
 /// reaction window takes routing priority; once it closes,
-/// [`close_reaction_window_at`] re-enters [`drive_skill_test`] to finish
+/// [`close_reaction_window_at`] re-enters [`advance`] to finish
 /// the test.
 ///
 /// # Pure-Fast window closing

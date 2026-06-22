@@ -2,7 +2,7 @@
 //!
 //! Contains the full skill-test lifecycle: starting a test
 //! ([`start_skill_test`]), the commit-stage entry ([`finish_skill_test`]),
-//! the resolution driver ([`drive_skill_test`]), and all supporting
+//! the resolution driver ([`advance`]), and all supporting
 //! helpers.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -226,9 +226,9 @@ pub(in crate::engine) fn resume_substitution_choice(
 /// the committed cards' icon contribution (matching skill + wild),
 /// draw a chaos token, emit the success/failure events, apply the
 /// action-specific [`SkillTestFollowUp`] on success, then hand off to
-/// [`drive_skill_test`] for the remaining steps.
+/// [`advance`] for the remaining steps.
 ///
-/// The split between this entry and [`drive_skill_test`] exists so
+/// The split between this entry and [`advance`] exists so
 /// that a reaction window opening *inside*
 /// [`apply_skill_test_follow_up`] (the canonical case:
 /// `damage_enemy` emitting [`EnemyDefeated`](crate::Event::EnemyDefeated)
@@ -354,7 +354,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
             // on_fail suspended on a controller choice (Crypt Chill 01167's
             // "choose an asset to discard", Axis A #334). The continuation is
             // already `PostFollowUp` (pre-advanced above), so resuming the
-            // choice re-enters `drive_skill_test` at teardown — `on_fail`
+            // choice re-enters `advance` at teardown — `on_fail`
             // does not re-run. Mirrors the follow-up-suspend path above.
             return outcome;
         }
@@ -364,7 +364,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         );
     }
 
-    drive_skill_test(cx)
+    advance(cx)
 }
 
 /// Walk the skill-test resolution sequence from the current
@@ -392,7 +392,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 ///   modifiers, clear in-flight, return `Done`.
 ///
 /// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
-pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
+pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
         // Suspend only for a reaction window opened *during* this test — one
         // pushed *above* this test's `SkillTest` frame. A Resolution frame
@@ -414,7 +414,7 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
         let (continuation, investigator, indices_u8) = {
             let in_flight = cx.state.current_skill_test().unwrap_or_else(|| {
                 unreachable!(
-                    "drive_skill_test: the SkillTest frame must exist while driver is active; \
+                    "advance: the SkillTest frame must exist while driver is active; \
                      state-corruption invariant violation"
                 )
             });
@@ -428,7 +428,7 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
         match continuation {
             SkillTestStep::AwaitingCommit => {
                 unreachable!(
-                    "drive_skill_test: entered with AwaitingCommit; the commit-stage entry \
+                    "advance: entered with AwaitingCommit; the commit-stage entry \
                      (finish_skill_test) advances past this before delegating"
                 );
             }
@@ -449,7 +449,7 @@ pub(super) fn drive_skill_test(cx: &mut Cx) -> EngineOutcome {
                     .continuation = SkillTestStep::PostOnResolution { succeeded };
                 let outcome = fire_retaliate_if_any(cx, investigator, succeeded);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-                    return outcome; // parked on the retaliate's window; resume via drive_skill_test
+                    return outcome; // parked on the retaliate's window; resume via advance
                 }
             }
             SkillTestStep::PostOnResolution { succeeded: _ } => {

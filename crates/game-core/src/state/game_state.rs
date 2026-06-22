@@ -913,7 +913,7 @@ pub struct InFlightSkillTest {
     /// no originating instance.
     pub source: Option<CardInstanceId>,
     /// Where the resolution driver should resume on the next call to
-    /// `drive_skill_test`. Initialized to
+    /// `advance`. Initialized to
     /// [`SkillTestStep::AwaitingCommit`] at
     /// `start_skill_test`; advanced in lock-step as the resolution
     /// sequence runs. Post-commit variants carry the test's outcome
@@ -938,7 +938,7 @@ pub struct InFlightSkillTest {
 }
 
 /// Where the skill-test resolution driver should resume on the next
-/// call to `drive_skill_test`.
+/// call to `advance`.
 ///
 /// The driver walks a fixed sequence of steps inside
 /// `finish_skill_test`:
