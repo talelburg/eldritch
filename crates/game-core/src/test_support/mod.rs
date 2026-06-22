@@ -40,6 +40,7 @@ pub fn fire_forced_on_enter(
             investigator,
             location,
         },
+        crate::dsl::EventTiming::After,
     )
 }
 
@@ -55,6 +56,7 @@ pub fn fire_forced_on_phase_end(
     crate::engine::fire_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::PhaseEnded { phase },
+        crate::dsl::EventTiming::After,
     )
 }
 
@@ -66,7 +68,11 @@ pub fn fire_forced_on_round_end(
     events: &mut Vec<crate::event::Event>,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    crate::engine::fire_forced_triggers(&mut cx, &crate::engine::ForcedTriggerPoint::RoundEnded)
+    crate::engine::fire_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::RoundEnded,
+        crate::dsl::EventTiming::After,
+    )
 }
 
 /// Test helper: run the Upkeep step-4.6 round-end sequence
@@ -103,6 +109,7 @@ pub fn fire_forced_on_act_advance(
     crate::engine::fire_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::ActAdvanced { code },
+        crate::dsl::EventTiming::After,
     )
 }
 
@@ -118,6 +125,7 @@ pub fn fire_forced_on_agenda_advance(
     crate::engine::fire_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::AgendaAdvanced { code },
+        crate::dsl::EventTiming::After,
     )
 }
 
@@ -132,6 +140,7 @@ pub fn fire_forced_on_enemy_defeat(
     crate::engine::fire_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::EnemyDefeated { code },
+        crate::dsl::EventTiming::After,
     )
 }
 
@@ -147,6 +156,7 @@ pub fn fire_forced_at_end_of_turn(
     crate::engine::fire_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::EndOfTurn { investigator },
+        crate::dsl::EventTiming::After,
     )
 }
 
@@ -166,5 +176,6 @@ pub fn fire_forced_after_location_investigated(
             investigator,
             location,
         },
+        crate::dsl::EventTiming::After,
     )
 }

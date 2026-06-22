@@ -311,7 +311,7 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     // Forced phase. When 2+ forced abilities resolve at this timing point,
     // the lead investigator orders them (#213): open the forced-resolution
     // run and suspend for the choice. 0 or 1 resolve synchronously, as before.
-    let candidates = collect_forced_hits(cx.state, &point);
+    let candidates = collect_forced_hits(cx.state, &point, crate::dsl::EventTiming::After);
     if candidates.len() >= 2 {
         // 2+ simultaneous forced: the lead orders them (#213). Resume the
         // framework flow this site suspended via its forced continuation; a
@@ -326,6 +326,6 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
         });
         super::reaction_windows::open_forced_resolution(cx, event, candidates, continuation)
     } else {
-        fire_forced_triggers(cx, &point)
+        fire_forced_triggers(cx, &point, crate::dsl::EventTiming::After)
     }
 }
