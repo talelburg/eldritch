@@ -481,6 +481,31 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     taken.is_some(),
                     "skill-test teardown: no SkillTest frame on the continuation stack",
                 );
+                // Teardown tail (relocated from `resume_skill_test_commit`). The
+                // test is fully torn down; resume whatever it was nested within,
+                // so the tail fires regardless of which resume re-entered the
+                // driver. A forced run beneath (2+ simultaneous `EndOfTurn`
+                // forced — two Frozen in Fear copies, #213): fire its remaining
+                // siblings / close it. An `InvestigatorTurn { ending }` beneath:
+                // a single suspending `EndOfTurn` forced stranded `end_turn`
+                // before rotation; resume it now (C4c, #235). A forced run owns
+                // its own post-run continuation and never flags the turn frame,
+                // so it is checked first.
+                if matches!(
+                    cx.state.continuations.last(),
+                    Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
+                ) {
+                    let idx = cx.state.continuations.len() - 1;
+                    return super::reaction_windows::advance_resolution(cx, idx);
+                }
+                if let Some(crate::state::Continuation::InvestigatorTurn {
+                    investigator,
+                    ending: true,
+                }) = cx.state.continuations.last()
+                {
+                    let active_id = *investigator;
+                    return super::phases::resume_end_turn(cx, active_id);
+                }
                 return EngineOutcome::Done;
             }
         }

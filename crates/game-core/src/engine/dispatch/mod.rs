@@ -347,38 +347,11 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     match response {
         InputResponse::PickMultiple { selected } => {
             let indices: Vec<u32> = selected.iter().map(|o| o.0).collect();
-            let outcome = skill_test::finish_skill_test(cx, &indices);
-            if matches!(outcome, EngineOutcome::Done) {
-                // The resolved test was a sibling fired by a forced run (2+
-                // simultaneous `EndOfTurn` forced — two Frozen in Fear copies,
-                // #213). The run's frame is now back on top; re-enter it to
-                // fire the remaining siblings, or close it (running its
-                // continuation, e.g. end-of-turn rotation). Checked before the
-                // `ending` frame: a forced run owns its own post-run
-                // continuation and never flags the `InvestigatorTurn` frame.
-                if matches!(
-                    cx.state.continuations.last(),
-                    Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
-                ) {
-                    let idx = cx.state.continuations.len() - 1;
-                    return reaction_windows::advance_resolution(cx, idx);
-                }
-                // Otherwise: a single suspending `EndOfTurn` forced effect
-                // (one Frozen in Fear) stranded `end_turn` before rotation. The
-                // SkillTest has popped, so the `InvestigatorTurn` frame is back
-                // on top; if its `ending` flag is set, resume rotation now that
-                // the test is fully done (C4c, #235; slice 2a-i absorbs
-                // `pending_end_turn`). `resume_end_turn` pops the frame.
-                if let Some(crate::state::Continuation::InvestigatorTurn {
-                    investigator,
-                    ending: true,
-                }) = cx.state.continuations.last()
-                {
-                    let active_id = *investigator;
-                    return phases::resume_end_turn(cx, active_id);
-                }
-            }
-            outcome
+            // The teardown tail (forced-run-sibling re-drive / end-of-turn
+            // resume) now lives in `advance`'s `PostOnResolution` arm, so it
+            // fires from teardown regardless of which resume re-entered the
+            // driver.
+            skill_test::finish_skill_test(cx, &indices)
         }
         other => EngineOutcome::Rejected {
             reason: format!(
