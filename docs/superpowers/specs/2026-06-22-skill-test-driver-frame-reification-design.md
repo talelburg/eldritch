@@ -14,9 +14,13 @@ rather than through the uniform top-frame `drive` loop. Today:
 - The post-commit resolution sequence is an inline `FinishContinuation` cursor
   (`AwaitingCommit → PostFollowUp → PostRetaliate → PostOnResolution`), advanced
   inside `drive_skill_test`'s own loop.
-- A reaction window opening mid-test is re-entered **imperatively** from
-  `close_reaction_window_at` (reaction_windows.rs:931–935: *"if a skill test is
-  mid-resolution, call `drive_skill_test`"*).
+- A parked test is re-entered **imperatively** from **five** sites that share the
+  shape `if has_skill_test_in_flight() { drive_skill_test(cx) }`: a mid-test
+  reaction window closing (`close_reaction_window_at`, reaction_windows.rs:933),
+  the BeforeDiscoverClues window closing (`resume_before_discover_window`,
+  reaction_windows.rs:1022), an effect-choice resume (`resume_effect_walk`,
+  choice.rs:114), a retaliate window draining (`finish_attack_loop` Retaliate,
+  combat.rs:1170), and the internal commit→resolution hop (skill_test.rs:367).
 - A teardown **tail** is bolted onto the commit-resume handler
   (`resume_skill_test_commit`, mod.rs:351–380): after a test torn down by
   `finish_skill_test`, it re-drives a forced-run sibling (#213) or an
@@ -37,9 +41,22 @@ bespoke threading.
 
 ## Scope
 
-**In:** reify `drive_skill_test` into a single loop-driven `advance(cx)` on the
+**In:** reify `drive_skill_test` into a single driver `advance(cx)` on the
 existing `SkillTest` frame; fold commit emission and the teardown tail into that
-driver; delete the imperative re-entry points. Behaviour-preserving.
+driver; add a `drive`-loop `SkillTest` arm for the commit→resolution transition.
+Behaviour-preserving.
+
+**Deliberately kept (not deleted):** the five imperative re-entry sites stay,
+calling `advance` (the rename of `drive_skill_test`). Converting them to
+"return `Done`, let the loop re-drive" is **out of scope** — it couples to
+encounter-card disposal (#380): today a resume handler resumes + tears down the
+test *before* returning `Done`, and only then does `resolve_input` run
+`teardown_encounter_card_if_top`; moving resumption into the loop would tear the
+test down *after* that disposal check, and the loop's `_ => Done` arm doesn't
+dispose `EncounterCard` frames — stranding a treachery-Revelation test's card.
+That generalization is the EmitEvent-frame slice's job, not this substrate's.
+The substrate still fully enables #374/#64, which insert windows at *cursor-step
+boundaries inside `advance`*, not at the re-entry sites.
 
 **Out (each its own later spec):**
 
@@ -106,6 +123,15 @@ Some(Continuation::SkillTest(_)) => match skill_test::advance(cx) {
 }
 ```
 
+This arm is exercised mainly by the **commit→resolution transition**:
+`resume_skill_test_commit` validates + stores indices, sets `step = Resolving`,
+returns `Done`, and `apply_player_action`'s `drive` then drives `advance` at
+`Resolving`. The five kept re-entry sites continue to call `advance` **directly**
+(they already sit at the right point and return its outcome up the call stack);
+the loop arm does not replace them. There is no double-drive risk: `advance`
+either tears the test down (the frame is gone, so the loop moves on) or suspends
+(`AwaitingInput` short-circuits the loop).
+
 ## Entry, commit, substitution
 
 ### Entry funnels through `advance` — not `Done`
@@ -133,7 +159,7 @@ real suspension; the loop never reaches the `SkillTest` because
 
 One driver, two call paths: `advance` is reached **from the entry** (returns
 `AwaitingInput` up the call stack — halting any enclosing forced run) and **from
-the loop's `SkillTest` arm** (re-driving after a mid-test window closes). Both
+the loop's `SkillTest` arm** (driving the commit→resolution transition). Both
 emit the commit prompt identically.
 
 ### Commit resume shrinks
@@ -164,18 +190,21 @@ moved verbatim:
 
 Behaviour-identical: the same tail, triggered at the same moment (test fully torn
 down), relocated from the commit-resume handler into the teardown step so it
-fires regardless of *which* resume re-entered the driver (commit submit, or a
-mid-test window close).
+fires regardless of *which* resume re-entered the driver. Note this also makes
+the tail fire on teardown paths that today reach `PostOnResolution` *without*
+going through `resume_skill_test_commit` (e.g. a forced-run test that tore down
+after a mid-test window closed). That is either unreachable in the Core+Dunwich
+corpus (no observable change) or a latent-edge-case fix; the existing suite plus
+the targeted tests below are the backstop — **if any existing test changes,
+investigate before assuming it's an improvement.**
 
-**Deletions:**
+**Deletions / renames:**
 
-- `close_reaction_window_at`'s skill-test special-case (reaction_windows.rs:931–935).
-  Window close just pops the child `Resolution` frame and returns `Done`; the loop
-  re-drives the `SkillTest` beneath via `advance`.
 - `open_commit_window` — folded into `advance`'s `AwaitingCommit` arm.
 - The `resume_skill_test_commit` tail — relocated to `PostOnResolution`.
-- `finish_skill_test` as a separate public entry — its body becomes the
-  `Resolving` arm. (`drive_skill_test` becomes `advance`.)
+- `finish_skill_test`'s body becomes the `Resolving` arm; `drive_skill_test`
+  becomes `advance`. The five re-entry sites are **renamed** to call `advance`,
+  not deleted (see Scope).
 
 Net new surface: zero `Continuation` variants; the loop gains one `SkillTest`
 arm.
@@ -239,13 +268,15 @@ unit coverage for the relocations (`game-core` engine tests, `TestGame` builder 
 event-assertion macros; registry-gated cases in `crates/cards/tests/`):
 
 1. A mid-test reaction window (e.g. `AfterEnemyDefeated` from a Fight follow-up's
-   `damage_enemy`) closes and the test resumes through the **loop** (`advance`),
-   not `close_reaction_window_at`.
-2. The #213 two-Frozen-in-Fear forced-run sibling still fires after the first
+   `damage_enemy`) closes and the test still resumes and tears down correctly
+   (the re-entry site now calls `advance`).
+2. The commit→resolution transition runs through the `drive` `SkillTest` arm
+   (commit resume sets `Resolving` + returns `Done`; the loop drives `advance`).
+3. The #213 two-Frozen-in-Fear forced-run sibling still fires after the first
    test tears down (the relocated tail's `is_forced` branch).
-3. `InvestigatorTurn { ending: true }` still resumes `end_turn` after an
+4. `InvestigatorTurn { ending: true }` still resumes `end_turn` after an
    end-of-turn test (the tail's other branch).
-4. Mind-over-Matter substitution → commit still flows (entry funnels through
+5. Mind-over-Matter substitution → commit still flows (entry funnels through
    `advance`; the substitution prompt suspension is unchanged).
 
 ## PR slicing
@@ -254,21 +285,22 @@ One cohesive substrate; default to a **single PR** (smaller than any K-arc PR,
 and splitting leaves a half-wired loop mid-slice). Fall back only if review
 demands it, along this fault line:
 
-- **PR-1** — relocate the teardown tail into `PostOnResolution` + delete the
-  `close_reaction_window_at` special-case. Driver still entered imperatively, but
-  re-entry-source-independent.
-- **PR-2** — add the `drive` `SkillTest` arm + move commit emission into
-  `advance` (`open_commit_window` deleted; `start_skill_test` /
-  `resume_substitution_choice` funnel through `advance`).
+- **PR-1** — rename `FinishContinuation` → `SkillTestStep` and
+  `drive_skill_test` → `advance` (mechanical), then relocate the teardown tail
+  into `PostOnResolution`. Behaviour-preserving; driver still entered as today.
+- **PR-2** — add the `Resolving` step + `advance`'s `AwaitingCommit` arm + the
+  `drive` `SkillTest` arm; move commit emission into `advance` (`open_commit_window`
+  deleted; `start_skill_test` / `resume_substitution_choice` funnel through
+  `advance`).
 
 ## What "done" looks like
 
 - `SkillTest` is a loop-driven frame: `drive` has a `SkillTest` arm; `advance` is
   the single driver; the commit prompt is emitted by `advance`'s `AwaitingCommit`
   arm.
-- `open_commit_window`, the `close_reaction_window_at` skill-test special-case,
-  and the `resume_skill_test_commit` teardown tail are gone (tail relocated to
-  `PostOnResolution`).
+- `open_commit_window` and the `resume_skill_test_commit` teardown tail are gone
+  (tail relocated to `PostOnResolution`). The five imperative re-entry sites
+  remain, renamed to call `advance`.
 - Zero new `Continuation` variants; `apply_effect` sub-calls unchanged (#423
   out of scope).
 - Full CI gauntlet green; the Gathering plays end-to-end unchanged.
