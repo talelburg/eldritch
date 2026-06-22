@@ -17,9 +17,9 @@ use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::event::Event;
 use crate::state::{
-    CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, ForcedContinuation,
-    GameState, InvestigatorId, Phase, ResolutionCandidate, ResolutionFrame, ResolutionKind,
-    SkillTestStep, Status, WindowBinding, WindowKind,
+    CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
+    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, SkillTestStep,
+    Status, WindowKind,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -1117,16 +1117,25 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
 
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
-    let pending_triggers = scan_pending_triggers(cx.state, kind);
-    cx.state
-        .continuations
-        .push(Continuation::Resolution(ResolutionFrame {
-            pending_triggers,
-            kind: ResolutionKind::Window(WindowBinding {
-                kind,
-                fast_actors: FastActorScope::Any,
-            }),
-        }));
+    // Framework windows are `FastWindow` (#433 A-ii); the `FastWindowKind`
+    // discriminant reproduces `kind` for the WindowClosed payload + routes the
+    // close continuation. Reaction windows admit any investigator's Fast plays.
+    let candidates = scan_pending_triggers(cx.state, kind);
+    let fast_kind = match kind {
+        WindowKind::PlayerWindow(step) => FastWindowKind::Phase(step),
+        WindowKind::SkillTestPlayerWindow { before_token } => {
+            FastWindowKind::SkillTest { before_token }
+        }
+        other => unreachable!(
+            "open_fast_window: only framework PlayerWindow / SkillTestPlayerWindow kinds \
+             open a fast window, got {other:?}"
+        ),
+    };
+    cx.state.continuations.push(Continuation::FastWindow {
+        candidates,
+        fast_actors: FastActorScope::Any,
+        kind: fast_kind,
+    });
 
     let has_pending = !cx
         .state

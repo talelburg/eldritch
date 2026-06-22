@@ -401,13 +401,15 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::SubstitutionPrompt { .. }) => {
             skill_test::resume_substitution_choice(cx, response)
         }
-        // Both an event reaction window and the forced run (now
-        // `TimingPointWindow`, #433) resolve through the same window driver as
-        // the legacy framework `Resolution` windows — the driver reads
-        // candidates/mode through the frame-agnostic accessors.
-        Some(Continuation::Resolution(_) | Continuation::TimingPointWindow { .. }) => {
-            resume_window(cx, response)
-        }
+        // Event reaction windows + the forced run (`TimingPointWindow`) and the
+        // framework player windows (`FastWindow`, #433 A-ii) all resolve through
+        // the same window driver as the legacy `Resolution` windows — the driver
+        // reads candidates/mode through the frame-agnostic accessors.
+        Some(
+            Continuation::Resolution(_)
+            | Continuation::TimingPointWindow { .. }
+            | Continuation::FastWindow { .. },
+        ) => resume_window(cx, response),
         // An effect node suspended in place for a controller pick (#422): the
         // top `Continuation::Effect(Leaf)` frame *is* the prompt. Route its
         // `PickSingle` to the effect-choice resume. A non-suspending effect

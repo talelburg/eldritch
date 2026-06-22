@@ -436,6 +436,25 @@ pub enum Continuation {
         /// active-investigator-first for a reaction window).
         candidates: Vec<ResolutionCandidate>,
     },
+    /// A framework "red-box" player window — a Rules-Reference timing step
+    /// that gates Fast actions and runs a per-step continuation on close
+    /// (EmitEvent-frame Slice A-ii, #433). Replaces the framework-window uses
+    /// of [`Resolution`](Self::Resolution) (`WindowKind::PlayerWindow` /
+    /// `SkillTestPlayerWindow`). The [`FastWindowKind`] discriminant reproduces
+    /// the exact [`WindowKind`] for the `WindowOpened`/`WindowClosed` event
+    /// payload and routes the close continuation (`Phase` → the `*Phase`
+    /// anchor's `on_child_pop`; `SkillTest` → the skill-test driver). Carries no
+    /// `TimingEvent` — framework windows are not event-driven.
+    FastWindow {
+        /// Fast-play candidates (hand Fast events admitted at this window).
+        /// Usually empty (a pure Fast-gate) — non-empty only for an
+        /// Axis-C hand play offered at a framework step.
+        candidates: Vec<ResolutionCandidate>,
+        /// Which investigators may submit Fast actions here.
+        fast_actors: FastActorScope,
+        /// The framework step this window gates (and its event-payload kind).
+        kind: FastWindowKind,
+    },
     /// A skill test is mid-resolution. Carries the in-flight test's data
     /// directly (the former `GameState::in_flight_skill_test` singleton, folded
     /// onto the frame — #348). Pushed at test start; popped when the test fully
@@ -747,7 +766,16 @@ impl Continuation {
     #[must_use]
     pub fn awaits_input(&self) -> bool {
         match self {
-            Continuation::Resolution(f) => !f.pending_triggers.is_empty(),
+            // A window/run awaits a mandatory `ResolveInput` iff it has
+            // candidates to resolve. An empty framework Fast-gate window
+            // (`FastWindow` / legacy `Resolution` with no pending plays) is
+            // *permissive* — the player may act but is not required to, so it
+            // does not block other actions.
+            Continuation::Resolution(_)
+            | Continuation::TimingPointWindow { .. }
+            | Continuation::FastWindow { .. } => {
+                self.pending_candidates().is_some_and(|c| !c.is_empty())
+            }
             // Neither is a mandatory ResolveInput prompt. The open turn takes
             // typed actions (Move/Investigate/Fight/…), not ResolveInput (slice
             // 2a-i, #393). The parked attack loop is internal sequencing: the
@@ -784,6 +812,7 @@ impl Continuation {
             | Continuation::EnemyPhase { .. }
             | Continuation::UpkeepPhase { .. }
             | Continuation::TimingPointWindow { .. }
+            | Continuation::FastWindow { .. }
             | Continuation::Effect(_) => None,
         }
     }
@@ -810,6 +839,7 @@ impl Continuation {
             | Continuation::EnemyPhase { .. }
             | Continuation::UpkeepPhase { .. }
             | Continuation::TimingPointWindow { .. }
+            | Continuation::FastWindow { .. }
             | Continuation::Effect(_) => None,
         }
     }
@@ -824,7 +854,8 @@ impl Continuation {
     pub fn pending_candidates(&self) -> Option<&Vec<ResolutionCandidate>> {
         match self {
             Continuation::Resolution(w) => Some(&w.pending_triggers),
-            Continuation::TimingPointWindow { candidates, .. } => Some(candidates),
+            Continuation::TimingPointWindow { candidates, .. }
+            | Continuation::FastWindow { candidates, .. } => Some(candidates),
             _ => None,
         }
     }
@@ -833,7 +864,8 @@ impl Continuation {
     pub fn pending_candidates_mut(&mut self) -> Option<&mut Vec<ResolutionCandidate>> {
         match self {
             Continuation::Resolution(w) => Some(&mut w.pending_triggers),
-            Continuation::TimingPointWindow { candidates, .. } => Some(candidates),
+            Continuation::TimingPointWindow { candidates, .. }
+            | Continuation::FastWindow { candidates, .. } => Some(candidates),
             _ => None,
         }
     }
@@ -893,6 +925,7 @@ impl Continuation {
                 mode: TimingMode::Reaction,
                 ..
             } => event.reaction_window(),
+            Continuation::FastWindow { kind, .. } => Some(kind.window_kind()),
             _ => None,
         }
     }
@@ -910,6 +943,7 @@ impl Continuation {
             Continuation::Resolution(w) => {
                 w.fast_actors().is_some_and(|fa| fa.permits(investigator))
             }
+            Continuation::FastWindow { fast_actors, .. } => fast_actors.permits(investigator),
             Continuation::TimingPointWindow {
                 mode: TimingMode::Reaction,
                 ..
@@ -1232,6 +1266,43 @@ pub enum FastActorScope {
     /// or Phase-4 site constructs this variant yet; the variant
     /// exists so future cards can grow it without engine churn.
     Specific(std::collections::BTreeSet<InvestigatorId>),
+}
+
+/// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
+/// discriminant that survived the #433 migration off [`WindowKind`]'s
+/// `PlayerWindow` / `SkillTestPlayerWindow` variants. Routes the close
+/// continuation and reproduces the exact `WindowKind` for the
+/// `WindowOpened`/`WindowClosed` event payload (Slice A keeps `WindowKind` as
+/// the pure event descriptor; its deletion is Slice B).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FastWindowKind {
+    /// A Rules-Reference timing-step player window
+    /// ([`WindowKind::PlayerWindow`]). Close routes to the `*Phase` anchor
+    /// beneath via `anchor_on_child_pop`; the [`PhaseStep`] is retained only to
+    /// reproduce the event payload (the anchor's `resume` is the real
+    /// continuation key, slice 1a #393).
+    Phase(PhaseStep),
+    /// A skill-test player window (#374,
+    /// [`WindowKind::SkillTestPlayerWindow`]). Close re-enters the skill-test
+    /// driver.
+    SkillTest {
+        /// ST.1 (pre-commit) vs ST.2 (pre-token) — carried for the event payload.
+        before_token: bool,
+    },
+}
+
+impl FastWindowKind {
+    /// The [`WindowKind`] this framework window reports in its
+    /// `WindowOpened`/`WindowClosed` events.
+    #[must_use]
+    pub fn window_kind(self) -> WindowKind {
+        match self {
+            FastWindowKind::Phase(step) => WindowKind::PlayerWindow(step),
+            FastWindowKind::SkillTest { before_token } => {
+                WindowKind::SkillTestPlayerWindow { before_token }
+            }
+        }
+    }
 }
 
 impl FastActorScope {
@@ -2232,9 +2303,9 @@ mod continuation_stack_tests {
     }
 
     #[test]
-    fn open_window_lives_on_the_continuation_stack_as_a_resolution_frame() {
-        // Axis-B T3: a window is a `Continuation::Resolution` frame on the
-        // one stack — there is no separate `open_windows` Vec.
+    fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
+        // A framework window is a `Continuation::FastWindow` frame on the one
+        // stack (#433 A-ii) — there is no separate `open_windows` Vec.
         let state = GameStateBuilder::new()
             .with_open_window(
                 WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
@@ -2244,14 +2315,12 @@ mod continuation_stack_tests {
         assert_eq!(state.continuations.len(), 1);
         assert!(matches!(
             state.continuations[0],
-            Continuation::Resolution(_)
+            Continuation::FastWindow { .. }
         ));
         // The read accessor surfaces it as the former `open_windows` view.
         assert_eq!(state.open_windows().len(), 1);
         assert_eq!(
-            state.open_windows()[0]
-                .as_resolution()
-                .and_then(ResolutionFrame::kind),
+            state.open_windows()[0].window_kind(),
             Some(WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)),
         );
     }
