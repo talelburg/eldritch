@@ -328,7 +328,7 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         SYNTH_COVER_UP_CODE => Some(vec![
             reaction_on_event(
                 EventPattern::WouldDiscoverClues,
-                EventTiming::Before,
+                EventTiming::When,
                 // Discard from self, then cancel the discovery (Axis D #336) —
                 // mirrors the real Cover Up 01007 (`cover_up`).
                 Effect::Seq(vec![native(SYNTH_COVER_UP_DISCARD_TAG), Effect::Cancel]),
@@ -411,7 +411,7 @@ mod tests {
             abilities[0].trigger,
             game_core::dsl::Trigger::OnEvent {
                 pattern: game_core::dsl::EventPattern::WouldDiscoverClues,
-                timing: game_core::dsl::EventTiming::Before,
+                timing: game_core::dsl::EventTiming::When,
                 ..
             }
         ));

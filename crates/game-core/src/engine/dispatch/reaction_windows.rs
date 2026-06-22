@@ -322,19 +322,19 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
 ///   [`EventTiming::After`]. The `by_controller` qualifier narrows to
 ///   defeats credited to this ability's controller.
 ///
-/// `EventTiming::Before` doesn't fire on these windows yet — the
-/// "Forced — when X would Y" timing needs a separate pre-event
-/// scanning hook when the first such card lands.
+/// `EventTiming::When` interrupt timing ("Forced — when X would Y") fires
+/// only on the Before-windows matched below; the general after-event
+/// reaction pipeline ignores it.
 fn trigger_matches(
     kind: WindowKind,
     pattern: &EventPattern,
     timing: EventTiming,
     controller: InvestigatorId,
 ) -> bool {
-    // Before-timing windows fire only for their exact pattern pairing (Axis D
+    // When-timing windows fire only for their exact pattern pairing (Axis D
     // #336); the "at your location" / eligibility scoping lives in the scans.
     match timing {
-        EventTiming::Before => {
+        EventTiming::When => {
             return matches!(
                 (kind, pattern),
                 (
@@ -346,7 +346,9 @@ fn trigger_matches(
                 )
             );
         }
-        EventTiming::After => {}
+        // No `At`-timed reaction exists until Slice B-iii; treat it like
+        // `After` (fall through to pattern matching). Dormant.
+        EventTiming::At | EventTiming::After => {}
     }
     match (kind, pattern) {
         (
@@ -1661,7 +1663,7 @@ mod trigger_matches_tests {
                 investigator: inv
             },
             &EventPattern::EnemyAttacks,
-            EventTiming::Before,
+            EventTiming::When,
             inv,
         ));
         assert!(trigger_matches(
@@ -1671,7 +1673,7 @@ mod trigger_matches_tests {
                 count: 1
             },
             &EventPattern::WouldDiscoverClues,
-            EventTiming::Before,
+            EventTiming::When,
             inv,
         ));
         // Wrong timing for the pairing → no match.
@@ -1691,7 +1693,7 @@ mod trigger_matches_tests {
                 investigator: inv
             },
             &EventPattern::WouldDiscoverClues,
-            EventTiming::Before,
+            EventTiming::When,
             inv,
         ));
     }
@@ -1759,7 +1761,7 @@ mod trigger_matches_tests {
             !trigger_matches(
                 kind,
                 &EventPattern::EnemyAttackDamagedSelf,
-                EventTiming::Before,
+                EventTiming::When,
                 controller
             ),
             "Before timing must never match this After-only window/pattern pair"
