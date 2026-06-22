@@ -208,8 +208,21 @@ fn no_in_play_reaction_means_no_window_opens() {
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
     );
-    assert_no_event!(result.events, Event::WindowOpened { .. });
-    assert_no_event!(result.events, Event::WindowClosed { .. });
+    // No AfterEnemyDefeated reaction window (none in play). The Fight's skill
+    // test still opens its #374 ST.1/ST.2 framework windows (auto-skipped), so
+    // scope these to the reaction window kind.
+    assert_no_event!(
+        result.events,
+        Event::WindowOpened {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
+    assert_no_event!(
+        result.events,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
     assert!(result.state.top_reaction_window().is_none());
 }
 
@@ -240,8 +253,14 @@ fn matching_reaction_opens_window_and_suspends() {
             kind: WindowKind::AfterEnemyDefeated { enemy: e, by: Some(by) },
         } if *e == enemy_id && *by == inv_id
     );
-    // WindowClosed must NOT fire yet — the window is open.
-    assert_no_event!(result.events, Event::WindowClosed { .. });
+    // The AfterEnemyDefeated window must NOT close yet — it's open and suspended.
+    // (The Fight's #374 ST.1/ST.2 windows already opened and auto-skipped.)
+    assert_no_event!(
+        result.events,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
 
     let window = result
         .state
@@ -373,7 +392,14 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     let result = apply_no_commits(state, fight_action(attacker, enemy_id));
 
     assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_no_event!(result.events, Event::WindowOpened { .. });
+    // No AfterEnemyDefeated window for the unrelated investigator (the Fight's
+    // #374 ST.1/ST.2 windows auto-skip); scope to the reaction window kind.
+    assert_no_event!(
+        result.events,
+        Event::WindowOpened {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
     assert!(result.state.top_reaction_window().is_none());
 }
 
@@ -650,8 +676,22 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
         closed < ended,
         "WindowClosed precedes SkillTestEnded — the rules-correct mid-action shape"
     );
-    assert_event_count!(events, 1, Event::WindowOpened { .. });
-    assert_event_count!(events, 1, Event::WindowClosed { .. });
+    // Exactly one AfterEnemyDefeated reaction window. (The Fight's #374 ST.1/ST.2
+    // framework windows also open+close, auto-skipped, so count the reaction kind.)
+    assert_event_count!(
+        events,
+        1,
+        Event::WindowOpened {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
+    assert_event_count!(
+        events,
+        1,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
 }
 
 #[test]
@@ -1214,5 +1254,13 @@ fn after_successful_investigate_no_window_without_reaction() {
     );
     assert_eq!(resolved.state.investigators[&id].clues, 1);
     assert_eq!(resolved.state.locations[&loc].clues, 0);
-    assert_no_event!(resolved.events, Event::WindowOpened { .. });
+    // No AfterSuccessfulInvestigate reaction window (none in play). The Investigate
+    // skill test still opens its #374 ST.1/ST.2 framework windows (auto-skipped),
+    // so scope to the reaction window kind.
+    assert_no_event!(
+        resolved.events,
+        Event::WindowOpened {
+            kind: WindowKind::AfterSuccessfulInvestigate { .. }
+        }
+    );
 }

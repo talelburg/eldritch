@@ -262,14 +262,51 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
 /// post-commit resolution chain; `outcome` is the terminal
 /// [`Done`](EngineOutcome::Done) or [`Rejected`](EngineOutcome::Rejected).
 ///
-/// Equivalent to:
-/// ```ignore
-/// drive(state, action, { let mut r = ScriptedResolver::new(); r.commit_cards(&[]); r })
-/// ```
+/// Like `drive(state, action, ScriptedResolver::commit_cards(&[]))`, with one
+/// addition: it also `Skip`s any framework Fast player window the action *parks*.
+/// The skill-test ST.1/ST.2 windows (#374) return `Done`-idle (no
+/// `AwaitingInput`) with the window on the stack whenever a Fast card/ability is
+/// available; a plain `drive` would mistake that idle for the terminal outcome,
+/// so we decline (Skip) the window and continue. (For callers with no Fast
+/// eligibility — the vast majority — the windows auto-skip and this is identical
+/// to the plain commit-nothing drive.)
 pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    drive(state, action, resolver)
+    // Drive to a terminal outcome, committing no cards and *declining* every
+    // framework Fast player window (Skip). Most actions never open one, so this
+    // is identical to a plain commit-nothing drive — but the skill-test ST.1/ST.2
+    // player windows (#374) *park* (return `Done`-idle with the window on the
+    // stack, no `AwaitingInput`) whenever a Fast card/ability is available, and a
+    // plain `drive` would mistake that idle for the terminal outcome. So skip a
+    // parked window explicitly and continue.
+    let mut state = state;
+    let mut events = Vec::new();
+    let mut next = action;
+    loop {
+        let r = apply(state, next);
+        state = r.state;
+        events.extend(r.events);
+        // The only `AwaitingInput` in a no-commits drive is a commit window.
+        if matches!(r.outcome, EngineOutcome::AwaitingInput { .. }) {
+            next = Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple {
+                    selected: Vec::new(),
+                },
+            });
+            continue;
+        }
+        // A parked Fast player window (Done-idle): decline it.
+        if matches!(r.outcome, EngineOutcome::Done) && !state.open_windows().is_empty() {
+            next = Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            });
+            continue;
+        }
+        return ApplyResult {
+            state,
+            events,
+            outcome: r.outcome,
+        };
+    }
 }
 
 /// Run `action` against `state`, draining

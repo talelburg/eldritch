@@ -174,10 +174,22 @@ fn once_per_round_limit_blocks_second_reaction_in_same_round() {
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
     );
-    // But the reaction window does NOT open — no triggers were pending
-    // after the limit check filtered Roland's ability out.
-    assert_no_event!(result.events, Event::WindowOpened { .. });
-    assert_no_event!(result.events, Event::WindowClosed { .. });
+    // But Roland's reaction window does NOT open — no triggers were pending
+    // after the limit check filtered his ability out. (The Fight's skill test
+    // still opens its ST.1/ST.2 framework player windows, #374, which auto-skip;
+    // scope the assertion to the AfterEnemyDefeated reaction window.)
+    assert_no_event!(
+        result.events,
+        Event::WindowOpened {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
+    assert_no_event!(
+        result.events,
+        Event::WindowClosed {
+            kind: WindowKind::AfterEnemyDefeated { .. }
+        }
+    );
     assert_no_event!(result.events, Event::CluePlaced { .. });
     // Clue counts unchanged at the location and on Roland.
     assert_eq!(result.state.locations[&loc_id].clues, 2);
