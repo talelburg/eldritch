@@ -149,22 +149,45 @@ it. Sub-slice it; each sub-slice is independently green.
   driving preserved** (no `drive` arm yet) — pure data-structure swap, behaviour-
   preserving. Largest mechanical PR. **This is the first chunk to start.**
 - **A-ii — `FastWindow` replaces framework player windows.** `WindowKind::PlayerWindow`
-  + `SkillTestPlayerWindow` → anchor-pushed `FastWindow`; drop `PhaseStep`. (Confirm
-  nothing binds to `PhaseStep` — the spec asserts no `EventPattern` matches one.)
-- **A-iii — delete the old taxonomy.** Remove `Continuation::Resolution`,
-  `ResolutionFrame`, `ResolutionKind`, `WindowKind`, `WindowBinding` once A-i/A-ii
-  cover every case.
+  + `SkillTestPlayerWindow` → `Continuation::FastWindow { candidates, fast_actors, kind:
+  FastWindowKind }`, where `FastWindowKind = Phase(PhaseStep) | SkillTest { before_token }`.
+  **Re-sliced (see "WindowKind's two roles" below): the discriminant is kept, not
+  dropped.** It reproduces the exact `WindowKind` for the `Event::WindowOpened/Closed`
+  payload (so the event log is byte-identical) and routes the close continuation
+  (`Phase → anchor_on_child_pop`, `SkillTest → skill_test::advance`). Behaviour-preserving.
+  After A-ii, `Continuation::Resolution` is unused.
+- **A-iii — delete the frame-level legacy taxonomy.** Remove `Continuation::Resolution`,
+  `ResolutionFrame`, `ResolutionKind`, `WindowBinding` once A-i/A-ii cover every case.
+  **Keep `WindowKind`** as the pure `Event::WindowOpened/Closed` observability descriptor,
+  derived from `TimingPointWindow`'s `TimingEvent` (`reaction_window()`) + `FastWindow`'s
+  `FastWindowKind`. Behaviour-preserving — event log byte-identical.
 - **A-iv — `drive`-loop arms.** Add top-frame-dispatch resume for `TimingPointWindow`
   + `FastWindow`; retire the window-side imperative re-entry that doesn't entangle
   skill-test. (The skill-test/encounter re-entry is Slice C.)
 
+**WindowKind's two roles — and the deferral into Slice B (load-bearing reference for the
+EmitEvent-frame / coordinator work).** `WindowKind` is load-bearing in *two independent*
+roles: (1) the **frame representation** (`Resolution{Window(WindowBinding{kind})}`, which
+A-i/A-ii migrate off), and (2) the **`Event::WindowOpened/Closed` descriptor** (observability;
+~46 test assertions depend on it, e.g. `phases.rs` asserts `PlayerWindow(PhaseStep::…)`).
+The #393 end-state deletes `WindowKind` entirely and has `WindowOpened/Closed` observability
+*read flow-position from the anchor's `resume`* rather than carry a kind — **but that changes
+the observable event log**, the only genuine *behaviour* change in the taxonomy rework. To
+keep all of Slice A behaviour-preserving, **Slice A deletes only the frame-level taxonomy and
+keeps `WindowKind` alive as the event descriptor.** **Deferred to Slice B (#434) / the
+EmitEvent-frame coordinator work:** delete `WindowKind` outright and redesign
+`Event::WindowOpened/Closed` off it (read-from-anchor observability, drop `PhaseStep`). When
+implementing Slice B, this is the place that change lands — it is *not* done in Slice A.
+
 **Acceptance (Slice A):**
-- [ ] `Continuation::Resolution`, `ResolutionFrame`, `ResolutionKind`, `WindowKind`,
-  `WindowBinding` are gone; replaced by `FastWindow` + `TimingPointWindow{event, mode}`.
+- [ ] `Continuation::Resolution`, `ResolutionFrame`, `ResolutionKind`, `WindowBinding` are
+  gone; windows are `FastWindow` + `TimingPointWindow{event, mode}`. `WindowKind` survives
+  **only** as the `Event::WindowOpened/Closed` descriptor (its deletion is Slice B).
 - [ ] The `drive` loop dispatches `FastWindow` + `TimingPointWindow` (window resumption
   after a child pops is top-frame dispatch, not imperative re-entry — except the
   skill-test seam, deferred to C).
-- [ ] Behaviour-preserving; full suite green at each sub-slice boundary.
+- [ ] Behaviour-preserving throughout — **event log byte-identical at every sub-slice
+  boundary** (no `WindowOpened/Closed` payload change in Slice A).
 
 ## Slice B / C / D scope (sketches; each gets its own plan when started)
 
@@ -174,6 +197,14 @@ it. Sub-slice it; each sub-slice is independently green.
   reaction` with **per-cell eligibility re-scan**. New regression tests for the
   ordering (the §G class). Acceptance: the `when/at/after` axis is frame-driven, not
   hand-threaded per site; a `when`-reaction-changes-an-`at`-forced case is covered.
+  **Inherited from Slice A (see "WindowKind's two roles"):** Slice A deliberately kept
+  `WindowKind` alive as the `Event::WindowOpened/Closed` descriptor. **Slice B owns its
+  deletion** + the observability redesign — `WindowOpened/Closed` reads flow-position
+  from the anchor's `resume` / the `TimingEvent`, drops `PhaseStep`, and stops carrying
+  `WindowKind`. This is the one event-log *behaviour* change of the taxonomy rework; it
+  rides Slice B's coordinator work (the `EmitEvent`/`TimingPoint` frames are where the
+  window's timing context already lives), not Slice A. Touches the ~46 `WindowOpened/Closed`
+  test assertions.
 - **C — [#431](https://github.com/talelburg/eldritch/issues/431).** Make `EncounterCard`
   disposal loop/frame-driven (retire the `resolve_input` chokepoint), add the `drive`-loop
   `SkillTest` arm, retire the five synchronous skill-test re-entry sites
