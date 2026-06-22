@@ -284,10 +284,13 @@ is a Fast event carried on the reaction window's candidate list and *played*
 when picked; it is window-only at the play gate (`TriggerKind::Reaction`
 `OnEvent`).
 
-**Skill-test player windows are NOT modeled (#374).** Only the commit window
-exists; the ST.1/ST.2 framework player windows and the after-resolution window
-(#64) are absent — `OnCommit` / `OnSkillTestResolution` card triggers fire, but
-a player cannot play a Fast card mid-test.
+**Skill-test player windows — ST.1/ST.2 modeled (#374, PR #432); after-resolution
+(#64) deferred.** The two RR p.26 framework player windows ship via
+`WindowKind::SkillTestPlayerWindow` (`PreCommitWindow`/`PreTokenWindow` in
+`advance`), so a player *can* play a Fast card before commit / before the token
+reveal (Hyperawareness, Magnifying Glass). The after-resolution reaction window
+(#64) is still absent — deferred (first consumer Rabbit's Foot 01075).
+`OnCommit` / `OnSkillTestResolution` card triggers fire regardless.
 
 **Skill-test control-flow shape (Shape A — not yet end-state B).** The skill
 test conforms to the #393 model on *storage* — `InFlightSkillTest` is folded
