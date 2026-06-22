@@ -1320,8 +1320,8 @@ fn discover_clue(
     if matches!(
         cx.state
             .top_reaction_window()
-            .and_then(crate::state::ResolutionFrame::kind),
-        Some(crate::state::WindowKind::BeforeDiscoverClues { .. })
+            .and_then(crate::state::Continuation::window_timing_event),
+        Some(crate::engine::TimingEvent::WouldDiscoverClues { .. })
     ) {
         return crate::engine::dispatch::reaction_windows::open_queued_reaction_window(cx);
     }
@@ -1343,7 +1343,7 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
         cx.state
             .continuations
             .iter()
-            .any(|c| matches!(c, crate::state::Continuation::Resolution(_))),
+            .any(|c| c.pending_candidates().is_some()),
         "Effect::Cancel evaluated with no open resolution window — a card \
          cancelled outside a Before-timing window (TODO(#367) covers nesting; \
          a malformed card otherwise)"

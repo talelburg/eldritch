@@ -53,29 +53,32 @@ use super::Cx;
 /// doesn't arise; the overwrite is a loud-on-debug placeholder
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
-pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
-    let mut pending_triggers = scan_pending_triggers(cx.state, kind);
+pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEvent) {
+    let kind = event
+        .reaction_window()
+        .expect("queue_reaction_window: caller checks the event opens a reaction window");
+    let mut candidates = scan_pending_triggers(cx.state, kind);
     // Axis C (#335): the window also opens for a matching Fast event in hand,
     // so a defeat with Evidence! in hand (and no in-play reaction) still opens
     // the after-defeat window. Hand plays are offered after the in-play
     // triggers.
-    pending_triggers.extend(scan_hand_fast_events(cx.state, kind));
-    if pending_triggers.is_empty() {
+    candidates.extend(scan_hand_fast_events(cx.state, kind));
+    if candidates.is_empty() {
         return;
     }
+    // `WindowOpened` carries the derived `WindowKind` so the observable event
+    // is byte-identical to the pre-#433 payload.
     cx.events.push(Event::WindowOpened { kind });
-    // Reaction windows admit any investigator's Fast actions
-    // (Rules Reference: Fast may be played at any player window).
-    // Multi-window nesting is now structural — push twice is valid.
+    // Reaction windows admit any investigator's Fast actions (RR: Fast may be
+    // played at any player window) — encoded by `mode: Reaction` (the former
+    // `FastActorScope::Any` binding). Multi-window nesting is structural.
     cx.state
         .continuations
-        .push(Continuation::Resolution(ResolutionFrame {
-            pending_triggers,
-            kind: ResolutionKind::Window(WindowBinding {
-                kind,
-                fast_actors: FastActorScope::Any,
-            }),
-        }));
+        .push(Continuation::TimingPointWindow {
+            event: event.clone(),
+            mode: crate::state::TimingMode::Reaction,
+            candidates,
+        });
 }
 
 /// Open the forced-resolution run (Axis-B T5b / #213): push a
@@ -87,15 +90,17 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, kind: WindowKind) {
 /// ([`super::emit::emit_event`]) returns the resulting `AwaitingInput`.
 pub(super) fn open_forced_resolution(
     cx: &mut Cx,
+    event: &crate::engine::TimingEvent,
     candidates: Vec<ResolutionCandidate>,
     continuation: ForcedContinuation,
 ) -> EngineOutcome {
     cx.state
         .continuations
-        .push(Continuation::Resolution(ResolutionFrame {
-            pending_triggers: candidates,
-            kind: ResolutionKind::Forced(continuation),
-        }));
+        .push(Continuation::TimingPointWindow {
+            event: event.clone(),
+            mode: crate::state::TimingMode::Forced(continuation),
+            candidates,
+        });
     open_queued_reaction_window(cx)
 }
 
@@ -448,9 +453,8 @@ fn trigger_matches(
 /// `OptionId(i)` is the index into the returned list — the Axis-A convention
 /// shared with [`super::choice`]. The label distinguishes a hand Fast-event
 /// play ([`CandidateSource::Hand`]) from an in-play reaction.
-fn build_resolution_options(frame: &ResolutionFrame) -> Vec<ChoiceOption> {
-    frame
-        .pending_triggers
+fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOption> {
+    candidates
         .iter()
         .enumerate()
         .map(|(i, cand)| {
@@ -486,7 +490,11 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
-    let options = build_resolution_options(window);
+    let options = build_resolution_options(
+        window
+            .pending_candidates()
+            .expect("open_queued_reaction_window: top window has candidates"),
+    );
     EngineOutcome::AwaitingInput {
         request: InputRequest::choice(
             format!(
@@ -532,12 +540,9 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
                 .state
                 .top_reaction_window_index()
                 .expect("resume_reaction_window: caller checked is_some");
-            // Forced abilities are mandatory — the forced run (`window: None`)
-            // cannot be skipped (RR p.2 / #213). The lead must pick one.
-            if cx.state.continuations[idx]
-                .as_resolution()
-                .is_some_and(ResolutionFrame::is_forced)
-            {
+            // Forced abilities are mandatory — the forced run cannot be
+            // skipped (RR p.2 / #213). The lead must pick one.
+            if cx.state.continuations[idx].is_forced() {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput::Skip: forced abilities are mandatory; submit \
                              InputResponse::PickSingle(OptionId) to resolve one (the lead \
@@ -574,23 +579,23 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: caller checked is_some");
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
-        let window = cx.state.continuations[window_idx]
-            .as_resolution()
-            .expect("fire_pending_trigger: top_reaction_window_index points at a Resolution frame");
+        let candidates = cx.state.continuations[window_idx]
+            .pending_candidates()
+            .expect("fire_pending_trigger: top_reaction_window_index points at an open window/run");
         let idx = match usize::try_from(i) {
-            Ok(idx) if idx < window.pending_triggers.len() => idx,
+            Ok(idx) if idx < candidates.len() => idx,
             _ => {
                 return EngineOutcome::Rejected {
                     reason: format!(
                         "ResolveInput: reaction-window PickSingle(OptionId({i})) out of bounds \
                          (pending size {})",
-                        window.pending_triggers.len(),
+                        candidates.len(),
                     )
                     .into(),
                 };
             }
         };
-        (window.pending_triggers[idx].clone(), idx)
+        (candidates[idx].clone(), idx)
     };
 
     // Axis C (#335): a hand candidate is *played*, not fired in place. Remove
@@ -598,12 +603,10 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // siblings, not this one again — mirrors the in-play path below), then
     // play it.
     if trigger.source == CandidateSource::Hand {
-        {
-            let window = cx.state.continuations[window_idx]
-                .as_resolution_mut()
-                .expect("fire_pending_trigger: window_idx is a Resolution frame");
-            window.pending_triggers.remove(pending_idx);
-        }
+        cx.state.continuations[window_idx]
+            .pending_candidates_mut()
+            .expect("fire_pending_trigger: window_idx is an open window/run")
+            .remove(pending_idx);
         return play_fast_event(cx, window_idx, &trigger);
     }
 
@@ -651,19 +654,16 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
     // `clue_discovery_count`. `None` for all other window kinds. (C5b
     // #237.)
-    match cx.state.continuations[window_idx]
-        .as_resolution()
-        .and_then(ResolutionFrame::kind)
-    {
-        Some(WindowKind::AfterEnemyAttackDamagedAsset { enemy, .. }) => {
-            eval_ctx.set_attacking_enemy(enemy);
+    match cx.state.continuations[window_idx].window_timing_event() {
+        Some(crate::engine::TimingEvent::EnemyAttackDamagedSelf { enemy, .. }) => {
+            eval_ctx.set_attacking_enemy(*enemy);
         }
-        // For `BeforeDiscoverClues`, bind the would-be discovery count so the
+        // For `WouldDiscoverClues`, bind the would-be discovery count so the
         // replacement effect (Cover Up's "discard that many") discards the
         // right number. Mirrors `attacking_enemy`. TODO(#368): `count` is the
         // requested, not the capped, count.
-        Some(WindowKind::BeforeDiscoverClues { count, .. }) => {
-            eval_ctx.set_clue_discovery_count(count);
+        Some(crate::engine::TimingEvent::WouldDiscoverClues { count, .. }) => {
+            eval_ctx.set_clue_discovery_count(*count);
         }
         _ => {}
     }
@@ -674,12 +674,10 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Fear 01164), the entry must already be consumed so the resume drives
     // the *remaining* siblings, not this one again. `apply_effect` does not
     // push/pop continuations, so `window_idx` stays valid across it.
-    {
-        let window = cx.state.continuations[window_idx]
-            .as_resolution_mut()
-            .expect("fire_pending_trigger: window_idx is a Resolution frame");
-        window.pending_triggers.remove(pending_idx);
-    }
+    cx.state.continuations[window_idx]
+        .pending_candidates_mut()
+        .expect("fire_pending_trigger: window_idx is an open window/run")
+        .remove(pending_idx);
 
     let result = apply_effect(cx, &ability.effect, eval_ctx);
     match result {
@@ -794,13 +792,14 @@ fn play_fast_event(
 /// commit-resume path ([`super::resume_skill_test_commit`]) — the latter
 /// re-enters a forced run parked beneath a sibling's now-resolved skill test.
 pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcome {
-    let window = cx.state.continuations[window_idx]
-        .as_resolution()
-        .expect("advance_resolution: window_idx is a Resolution frame");
+    let window = &cx.state.continuations[window_idx];
+    let candidates = window
+        .pending_candidates()
+        .expect("advance_resolution: window_idx is an open window/run");
     // Close when no candidate remains. Hand Fast-event plays (Axis C) ride
-    // `pending_triggers` alongside in-play triggers, so this single check
+    // the candidate list alongside in-play triggers, so this single check
     // keeps a window with only a remaining hand play open.
-    if window.pending_triggers.is_empty() {
+    if candidates.is_empty() {
         return close_reaction_window_at(cx, window_idx);
     }
     let skip_hint = if window.is_forced() {
@@ -808,7 +807,7 @@ pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcom
     } else {
         ", or InputResponse::Skip to close"
     };
-    let options = build_resolution_options(window);
+    let options = build_resolution_options(candidates);
     EngineOutcome::AwaitingInput {
         request: InputRequest::choice(
             format!(
@@ -893,23 +892,24 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     // "forced abilities are mandatory" rule lives in the forced resolution
     // run (its frame is `window: None` — Axis-B T5b), not here.
     let removed = cx.state.continuations.remove(idx);
-    let frame = removed
-        .as_resolution()
-        .expect("close_reaction_window_at: removed frame must be a Resolution frame");
 
     // A window emits `WindowClosed` and runs its kind-specific continuation
-    // (e.g. MythosAfterDraws → mythos_phase_end). The forced run (#213) is
-    // not a window: no event; instead it resumes the framework flow it
-    // suspended via its `ForcedContinuation`. Either may suspend (e.g. the
-    // upkeep act round-end advance window), so propagate the outcome.
-    let continuation = if let Some(kind) = frame.kind() {
+    // (e.g. MythosAfterDraws → mythos_phase_end). Its `WindowKind` comes from
+    // the legacy `Resolution` frame (framework windows) or is derived from the
+    // `TimingEvent` of a `TimingPointWindow` reaction window (#433) — so the
+    // `WindowClosed` payload + continuation are byte-identical across the
+    // migration. The forced run (#213) is not a window: no event; instead it
+    // resumes the framework flow it suspended via its `ForcedContinuation`.
+    // Either may suspend (e.g. the upkeep act round-end advance window), so
+    // propagate the outcome.
+    let continuation = if let Some(kind) = removed.window_kind() {
         cx.events.push(Event::WindowClosed { kind });
         run_window_continuation(cx, kind)
     } else {
-        let cont = frame.forced_continuation().unwrap_or_else(|| {
+        let cont = removed.forced_continuation().unwrap_or_else(|| {
             unreachable!(
-                "close_reaction_window_at: a non-window Resolution frame is the forced \
-                 run and must carry a ForcedContinuation"
+                "close_reaction_window_at: a non-window frame is the forced run \
+                 and must carry a ForcedContinuation"
             )
         });
         resume_forced_continuation(cx, cont)
@@ -1132,7 +1132,8 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
         .state
         .top_window()
         .expect("just pushed; cannot be empty")
-        .pending_triggers
+        .pending_candidates()
+        .expect("top_window is an open window/run")
         .is_empty();
     let has_fast_eligible = any_fast_play_eligible(cx.state);
 
@@ -1241,7 +1242,7 @@ pub(crate) fn check_play_card(
     let owner_is_active = state.active_investigator == Some(investigator);
     let permissive_window = state
         .top_window()
-        .is_some_and(|w| w.fast_actors().is_some_and(|fa| fa.permits(investigator)));
+        .is_some_and(|w| w.permits_fast(investigator));
     // "Play only during your turn" (Mind over Matter 01036, Working a Hunch
     // 01037, …): a Fast card with this clause is restricted to the active
     // investigator's Investigation turn — never an out-of-turn permissive Fast
@@ -1481,7 +1482,7 @@ pub(crate) fn check_activate_ability(
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
     let in_permissive_window = state
         .top_window()
-        .is_some_and(|w| w.fast_actors().is_some_and(|fa| fa.permits(investigator)));
+        .is_some_and(|w| w.permits_fast(investigator));
     if action_cost > 0 {
         // Action-cost ability: requires Investigation phase + active investigator.
         if !active_during_investigation {

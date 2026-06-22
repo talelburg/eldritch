@@ -862,6 +862,61 @@ impl Continuation {
             _ => None,
         }
     }
+
+    /// The [`TimingEvent`](crate::engine::TimingEvent) that opened this frame,
+    /// if it is a [`TimingPointWindow`](Self::TimingPointWindow) (event window
+    /// or forced run). `None` for legacy [`Resolution`](Self::Resolution)
+    /// framework windows (no timing event) and non-window frames. Lets the
+    /// driver bind event-specific `EvalContext` (the attacking enemy, the
+    /// would-be discovery count) without a `WindowKind` round-trip (#433).
+    #[must_use]
+    pub fn window_timing_event(&self) -> Option<&crate::engine::TimingEvent> {
+        match self {
+            Continuation::TimingPointWindow { event, .. } => Some(event),
+            _ => None,
+        }
+    }
+
+    /// The [`WindowKind`] of this open frame, for either representation: a
+    /// legacy [`Resolution`](Self::Resolution) framework window returns its
+    /// stored kind; a [`TimingPointWindow`](Self::TimingPointWindow) reaction
+    /// window derives it from the [`TimingEvent`](crate::engine::TimingEvent)
+    /// (so `WindowOpened`/`WindowClosed` payloads are byte-identical across the
+    /// #433 migration). `None` for the forced run (no window) and non-window
+    /// frames.
+    #[must_use]
+    pub fn window_kind(&self) -> Option<WindowKind> {
+        match self {
+            Continuation::Resolution(w) => w.kind(),
+            Continuation::TimingPointWindow {
+                event,
+                mode: TimingMode::Reaction,
+                ..
+            } => event.reaction_window(),
+            _ => None,
+        }
+    }
+
+    /// Whether `investigator` may submit a Fast action into this open
+    /// window, in either representation. A legacy [`Resolution`](Self::Resolution)
+    /// window delegates to its [`FastActorScope`]; a
+    /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window admits
+    /// any investigator (the constant `FastActorScope::Any` the legacy
+    /// reaction-window binding carried). Forced runs and non-window frames
+    /// admit none.
+    #[must_use]
+    pub fn permits_fast(&self, investigator: InvestigatorId) -> bool {
+        match self {
+            Continuation::Resolution(w) => {
+                w.fast_actors().is_some_and(|fa| fa.permits(investigator))
+            }
+            Continuation::TimingPointWindow {
+                mode: TimingMode::Reaction,
+                ..
+            } => true,
+            _ => false,
+        }
+    }
 }
 
 /// The Mythos-phase child-pop boundary an anchor resumes at (slice 1a, #393).
@@ -1720,21 +1775,21 @@ impl GameState {
     /// `pending_triggers`. Pure Fast-gating framework windows (empty
     /// `pending_triggers`) are skipped — they don't block dispatch.
     #[must_use]
-    pub fn top_reaction_window(&self) -> Option<&ResolutionFrame> {
-        self.windows()
+    pub fn top_reaction_window(&self) -> Option<&Continuation> {
+        self.continuations
+            .iter()
             .rev()
-            .find(|w| !w.pending_triggers.is_empty())
+            .find(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
     }
 
     /// Mutable counterpart to `top_reaction_window`. Same skip rule
-    /// applies: windows with empty `pending_triggers` are skipped —
+    /// applies: windows with empty candidate lists are skipped —
     /// phase-gate-only windows are not exposed as reaction-work.
-    pub fn top_reaction_window_mut(&mut self) -> Option<&mut ResolutionFrame> {
+    pub fn top_reaction_window_mut(&mut self) -> Option<&mut Continuation> {
         self.continuations
             .iter_mut()
             .rev()
-            .filter_map(Continuation::as_resolution_mut)
-            .find(|w| !w.pending_triggers.is_empty())
+            .find(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
     }
 
     /// The skill test currently in flight, if any; `None` outside a test. Reads
@@ -1812,17 +1867,22 @@ impl GameState {
     /// Iterator over the open windows on the continuation stack, in stack
     /// order (bottom to top). The windows are `Continuation::Resolution`
     /// frames; non-window frames (Task 4+) are skipped.
-    fn windows(&self) -> impl DoubleEndedIterator<Item = &ResolutionFrame> {
+    /// Every open window/run frame on the stack, in stack order — legacy
+    /// [`Resolution`](Continuation::Resolution) framework windows **and**
+    /// [`TimingPointWindow`](Continuation::TimingPointWindow) event windows /
+    /// forced runs (#433). A frame is a window/run iff it carries a candidate
+    /// list ([`Continuation::pending_candidates`]).
+    fn windows(&self) -> impl DoubleEndedIterator<Item = &Continuation> {
         self.continuations
             .iter()
-            .filter_map(Continuation::as_resolution)
+            .filter(|c| c.pending_candidates().is_some())
     }
 
     /// The open windows as a `Vec` of references, in stack order. Read
     /// accessor for callers (and tests) that inspect the window stack the
     /// way they used to read the former `open_windows` field.
     #[must_use]
-    pub fn open_windows(&self) -> Vec<&ResolutionFrame> {
+    pub fn open_windows(&self) -> Vec<&Continuation> {
         self.windows().collect()
     }
 
@@ -1831,7 +1891,7 @@ impl GameState {
     /// timing gate. Distinct from [`Self::top_reaction_window`], which
     /// skips empty-`pending_triggers` (pure-Fast) windows.
     #[must_use]
-    pub fn top_window(&self) -> Option<&ResolutionFrame> {
+    pub fn top_window(&self) -> Option<&Continuation> {
         self.windows().next_back()
     }
 
@@ -1854,10 +1914,9 @@ impl GameState {
     /// window, by construction, has no forced triggers to guard against.
     #[must_use]
     pub fn top_reaction_window_index(&self) -> Option<usize> {
-        self.continuations.iter().rposition(|c| {
-            c.as_resolution()
-                .is_some_and(|w| !w.pending_triggers.is_empty())
-        })
+        self.continuations
+            .iter()
+            .rposition(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
     }
 
     /// Build a [`Location`] from its card `metadata`, minting a fresh id.
@@ -2190,7 +2249,9 @@ mod continuation_stack_tests {
         // The read accessor surfaces it as the former `open_windows` view.
         assert_eq!(state.open_windows().len(), 1);
         assert_eq!(
-            state.open_windows()[0].kind(),
+            state.open_windows()[0]
+                .as_resolution()
+                .and_then(ResolutionFrame::kind),
             Some(WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)),
         );
     }

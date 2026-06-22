@@ -551,10 +551,12 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // before rotation; resume it now (C4c, #235). A forced run owns
                 // its own post-run continuation and never flags the turn frame,
                 // so it is checked first.
-                if matches!(
-                    cx.state.continuations.last(),
-                    Some(crate::state::Continuation::Resolution(f)) if f.is_forced()
-                ) {
+                if cx
+                    .state
+                    .continuations
+                    .last()
+                    .is_some_and(crate::state::Continuation::is_forced)
+                {
                     let idx = cx.state.continuations.len() - 1;
                     return super::reaction_windows::advance_resolution(cx, idx);
                 }

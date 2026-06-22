@@ -427,7 +427,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     let soak_windows: Vec<_> = state
         .open_windows()
         .iter()
-        .filter_map(|w| match w.kind() {
+        .filter_map(|w| match w.window_kind() {
             Some(game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { asset, .. }) => {
                 Some(asset)
             }
