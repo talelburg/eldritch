@@ -142,7 +142,9 @@ pub(in crate::engine) fn start_skill_test(
             resume_token: ResumeToken(0),
         };
     }
-    open_commit_window(cx)
+    // No substitution: drive the test. `advance` parks at `AwaitingCommit`,
+    // emitting the commit prompt (which propagates up to here).
+    advance(cx)
 }
 
 /// Whether `investigator` has an active round-scoped substitution covering a
@@ -152,33 +154,6 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
         .skill_substitutions
         .iter()
         .any(|s| s.investigator == investigator && s.for_skills.contains(&skill))
-}
-
-/// Push the skill-test resume frame and return the commit-window
-/// `AwaitingInput` for the in-flight test. Shared by `start_skill_test` (the
-/// no-substitution path) and `resume_substitution_choice` (after the Mind over
-/// Matter prompt). Reads the (possibly rewritten) skill off the in-flight
-/// record so the prompt message matches.
-fn open_commit_window(cx: &mut Cx) -> EngineOutcome {
-    let (investigator, skill, difficulty) = {
-        let t = cx
-            .state
-            .current_skill_test()
-            .expect("open_commit_window: in-flight test must exist");
-        (t.investigator, t.skill, t.difficulty)
-    };
-    // The SkillTest frame (Axis-B T4) was already pushed at test start (#348);
-    // the test parks at its commit window. Resolution (reaction/fast) frames
-    // push *above* it when a window opens mid-test; it is popped when the test
-    // fully resolves.
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
-            "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
-             (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
-             hand indices as option ids. Empty selection commits no cards.",
-        )),
-        resume_token: ResumeToken(0),
-    }
 }
 
 /// Resume the Mind over Matter substitution prompt (#322): `PickSingle(0)`
@@ -216,7 +191,9 @@ pub(in crate::engine) fn resume_substitution_choice(
         t.skill = SkillKind::Intellect;
         t.test_modifier = 0;
     }
-    open_commit_window(cx)
+    // Drive the test; `advance` parks at `AwaitingCommit`, emitting the commit
+    // prompt (reading the now-possibly-rewritten skill).
+    advance(cx)
 }
 
 /// Commit-stage entry to the skill-test resolution driver. Handles
@@ -448,10 +425,29 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
 
         match continuation {
             SkillTestStep::AwaitingCommit => {
-                unreachable!(
-                    "advance: entered with AwaitingCommit; the commit-stage entry \
-                     (finish_skill_test) advances past this before delegating"
-                );
+                // The frame's `awaiting()`: the test parks here for the active
+                // investigator's commit. Resolution (reaction/fast) frames push
+                // *above* this frame when a window opens mid-test; the test is
+                // popped at teardown. Reached from `start_skill_test` and
+                // `resume_substitution_choice` (which call `advance`); the commit
+                // `AwaitingInput` propagates up the call stack, halting any
+                // enclosing forced run (the commit `ResolveInput` resumes via
+                // `finish_skill_test`).
+                let (skill, difficulty) = {
+                    let t = cx
+                        .state
+                        .current_skill_test()
+                        .expect("advance(AwaitingCommit): in-flight test must exist");
+                    (t.skill, t.difficulty)
+                };
+                return EngineOutcome::AwaitingInput {
+                    request: InputRequest::prompt(format!(
+                        "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
+                         (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
+                         hand indices as option ids. Empty selection commits no cards.",
+                    )),
+                    resume_token: ResumeToken(0),
+                };
             }
             SkillTestStep::Resolving => {
                 // Commit submitted: run the resolution body (sum icons, OnCommit,
@@ -1333,6 +1329,71 @@ mod tests {
         assert_eq!(
             state.investigators[&inv].horror, 1,
             "on_success effect ran on the passing draw",
+        );
+    }
+
+    /// The reified driver: `start_skill_test` parks at `AwaitingCommit` via
+    /// `advance` (emitting the commit prompt), and committing drives the test to
+    /// teardown — `SkillTestStarted` then `SkillTestEnded`, no frame left behind.
+    #[test]
+    fn commit_emits_then_resolves_through_advance() {
+        use crate::state::{ChaosToken, Continuation};
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            None,
+            None,
+            None,
+            0,
+        );
+        // advance parked at AwaitingCommit and emitted the commit prompt.
+        let EngineOutcome::AwaitingInput { request, .. } = &out else {
+            panic!("expected the commit prompt, got {out:?}");
+        };
+        assert!(
+            request.prompt.contains("Commit cards"),
+            "the AwaitingCommit arm emits the commit prompt: {request:?}",
+        );
+        assert!(matches!(
+            cx.state.continuations.last(),
+            Some(Continuation::SkillTest(_))
+        ));
+
+        // Commit nothing → the driver resolves the test to teardown.
+        let out = finish_skill_test(&mut cx, &[]);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestStarted { .. }))
+                && events
+                    .iter()
+                    .any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            "the test ran start-to-end: {events:?}",
+        );
+        assert!(
+            !state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, Continuation::SkillTest(_))),
+            "the SkillTest frame was torn down",
         );
     }
 
