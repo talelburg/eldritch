@@ -111,7 +111,7 @@ pub(crate) fn resume_effect_walk(cx: &mut Cx) -> EngineOutcome {
 
     if matches!(outcome, EngineOutcome::Done) {
         if cx.state.has_skill_test_in_flight() {
-            return super::skill_test::drive_skill_test(cx);
+            return super::skill_test::advance(cx);
         }
         if let Some(idx) = cx.state.top_reaction_window_index() {
             return super::reaction_windows::advance_resolution(cx, idx);

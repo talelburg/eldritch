@@ -1167,7 +1167,7 @@ fn finish_attack_loop(
         // The retaliate's window closed; the loop drained. Hand control back to the
         // Fight's skill-test follow-up (its `SkillTest` frame is now top, cursor at
         // `PostOnResolution`) so teardown finishes (#379).
-        EnemyAttackSource::Retaliate => super::skill_test::drive_skill_test(cx),
+        EnemyAttackSource::Retaliate => super::skill_test::advance(cx),
     }
 }
 

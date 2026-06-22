@@ -913,14 +913,14 @@ pub struct InFlightSkillTest {
     /// no originating instance.
     pub source: Option<CardInstanceId>,
     /// Where the resolution driver should resume on the next call to
-    /// `drive_skill_test`. Initialized to
-    /// [`FinishContinuation::AwaitingCommit`] at
+    /// `advance`. Initialized to
+    /// [`SkillTestStep::AwaitingCommit`] at
     /// `start_skill_test`; advanced in lock-step as the resolution
     /// sequence runs. Post-commit variants carry the test's outcome
-    /// as a `succeeded` payload (see [`FinishContinuation`]) so the
+    /// as a `succeeded` payload (see [`SkillTestStep`]) so the
     /// invariant "outcome is known iff the test is past the commit
     /// window" is structural.
-    pub continuation: FinishContinuation,
+    pub continuation: SkillTestStep,
     /// A flat modifier applied to the test total, snapshotted by the
     /// effect that initiated the test (`Effect::Fight`'s combat
     /// modifier). `0` for player-action tests, which take their
@@ -938,10 +938,10 @@ pub struct InFlightSkillTest {
 }
 
 /// Where the skill-test resolution driver should resume on the next
-/// call to `drive_skill_test`.
+/// call to `advance`.
 ///
-/// The driver walks a fixed sequence of steps inside
-/// `finish_skill_test`:
+/// The driver (`advance`, with the resolution body in `run_resolution`)
+/// walks a fixed sequence of steps:
 ///
 /// 1. Validate commits + draw chaos token + emit
 ///    [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
@@ -979,22 +979,29 @@ pub struct InFlightSkillTest {
 /// Variants:
 ///
 /// - [`AwaitingCommit`](Self::AwaitingCommit) — initial state at
-///   skill-test start. No resume; the next dispatch step is the
+///   skill-test start. `advance`'s `AwaitingCommit` arm emits the
 ///   commit-window
 ///   [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
-///   with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
+///   prompt with a [`PickMultiple`](crate::action::InputResponse::PickMultiple)
 ///   response (each `OptionId` a hand index).
-/// - [`PostFollowUp`](Self::PostFollowUp) — set by the commit-stage
-///   entry once steps 1–2 have run. The next driver iteration runs
-///   step 3.
+/// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
+///   commit is validated and stored. The next driver iteration runs steps 1–2
+///   (`run_resolution`) and pre-advances to [`PostFollowUp`](Self::PostFollowUp).
+/// - [`PostFollowUp`](Self::PostFollowUp) — set once steps 1–2 have run.
+///   The next driver iteration runs step 3.
 /// - [`PostOnResolution`](Self::PostOnResolution) — set after step 3.
 ///   The next driver iteration runs step 4 (terminal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
-pub enum FinishContinuation {
+pub enum SkillTestStep {
     /// Initial state: waiting on the commit-window
     /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput).
     AwaitingCommit,
+    /// Commit submitted: the next driver iteration runs the resolution
+    /// body (sum committed icons, fire `OnCommit`, resolve the chaos
+    /// token, run the action follow-up + `on_success` / `on_fail`), then
+    /// pre-advances to [`PostFollowUp`](Self::PostFollowUp).
+    Resolving,
     /// Steps 1–2 are complete (chaos token + action follow-up).
     /// The next driver iteration runs `OnSkillTestResolution` triggers.
     PostFollowUp {
