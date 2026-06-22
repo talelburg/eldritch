@@ -416,6 +416,7 @@ fn trigger_matches(
         (
             WindowKind::PlayerWindow(_)
             | WindowKind::AfterEnemyDefeated { .. }
+            | WindowKind::SkillTestPlayerWindow { .. }
             | WindowKind::AfterEnemyAttackDamagedAsset { .. }
             | WindowKind::AfterSuccessfulInvestigate { .. }
             | WindowKind::AfterEnteredPlay { .. }
@@ -967,6 +968,12 @@ pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOu
         // the Mythos/Investigation transitions. The `PhaseStep` is no longer the
         // continuation key; the anchor's `resume` is.
         WindowKind::PlayerWindow(_) => super::phases::anchor_on_child_pop(cx),
+        // A skill-test player window (#374) closed: re-enter the skill-test
+        // driver. The cursor was pre-advanced before the window opened, so
+        // `advance` resumes at the next step (AwaitingCommit after window 1,
+        // Resolving after window 2). Reached on both the auto-skip inline path
+        // and the wait-then-close path.
+        WindowKind::SkillTestPlayerWindow { .. } => super::skill_test::advance(cx),
         // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
         // work. The skill-test driver (which queued the window mid-resolution)
         // resumes via `close_reaction_window_at`'s in-flight re-entry.

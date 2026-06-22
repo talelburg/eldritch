@@ -1345,6 +1345,23 @@ pub enum WindowKind {
         /// The investigator who controls it.
         controller: InvestigatorId,
     },
+    /// A framework player window during a skill test (RR p.26): after ST.1
+    /// (before commit) when `before_token` is `false`, after ST.2 (before the
+    /// chaos token) when `true`. Carries no event payload — it gates Fast plays
+    /// / reactions, it is not an after-event reaction window. Opened by the
+    /// skill-test driver (`advance`) at the `PreCommitWindow` / `PreTokenWindow`
+    /// cursor steps; its close re-enters `advance`.
+    ///
+    /// `before_token` feeds `WindowOpened` / `WindowClosed` observability only;
+    /// both windows share one continuation (re-enter `advance`, which resumes at
+    /// the pre-advanced cursor). Transitional: the EmitEvent-frame slice (#431)
+    /// dissolves this into the generic `FastWindow`, where "which window" is read
+    /// from the [`SkillTest`](Continuation::SkillTest) frame's cursor beneath it,
+    /// not stored here.
+    SkillTestPlayerWindow {
+        /// `false` = the ST.1→ST.2 window; `true` = the ST.2→ST.3 window.
+        before_token: bool,
+    },
 }
 
 /// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits
