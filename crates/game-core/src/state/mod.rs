@@ -29,7 +29,7 @@ pub use game_state::{
     ForcedContinuation, GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest,
     InvestigationResume, MythosResume, PendingSkillModifier, PhaseStep, ResolutionCandidate,
     ResolutionFrame, ResolutionKind, RoundEndAdvance, SkillSubstitution, SkillTestFollowUp,
-    SkillTestStep, SpawnEngagePending, UpkeepResume, WindowBinding, WindowKind,
+    SkillTestStep, SpawnEngagePending, TimingMode, UpkeepResume, WindowBinding, WindowKind,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};

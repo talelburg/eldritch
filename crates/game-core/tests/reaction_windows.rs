@@ -267,19 +267,19 @@ fn matching_reaction_opens_window_and_suspends() {
         .top_reaction_window()
         .expect("reaction window must be populated while suspended");
     assert_eq!(
-        window.kind(),
+        window.window_kind(),
         Some(WindowKind::AfterEnemyDefeated {
             enemy: enemy_id,
             by: Some(inv_id),
         }),
     );
-    assert_eq!(window.pending_triggers.len(), 1);
-    assert_eq!(window.pending_triggers[0].controller, inv_id);
+    assert_eq!(window.pending_candidates().unwrap().len(), 1);
+    assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
     assert_eq!(
-        window.pending_triggers[0].source,
+        window.pending_candidates().unwrap()[0].source,
         game_core::state::CandidateSource::InPlay(CardInstanceId(1))
     );
-    assert_eq!(window.pending_triggers[0].ability_index, 0);
+    assert_eq!(window.pending_candidates().unwrap()[0].ability_index, 0);
 }
 
 #[test]
@@ -452,8 +452,11 @@ fn unqualified_pattern_matches_any_defeat() {
         .state
         .top_reaction_window()
         .expect("window must open for an unqualified pattern");
-    assert_eq!(window.pending_triggers.len(), 1);
-    assert_eq!(window.pending_triggers[0].controller, bystander);
+    assert_eq!(window.pending_candidates().unwrap().len(), 1);
+    assert_eq!(
+        window.pending_candidates().unwrap()[0].controller,
+        bystander
+    );
 
     let resumed = game_core::engine::apply(
         paused.state,
@@ -543,7 +546,8 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
             .state
             .top_reaction_window()
             .expect("window populated")
-            .pending_triggers
+            .pending_candidates()
+            .unwrap()
             .len(),
         2,
     );
@@ -568,7 +572,8 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
             .state
             .top_reaction_window()
             .expect("window still populated")
-            .pending_triggers
+            .pending_candidates()
+            .unwrap()
             .len(),
         1,
     );
@@ -870,21 +875,23 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         .top_reaction_window()
         .expect("window must populate when both investigators carry triggers");
 
-    assert_eq!(window.pending_triggers.len(), 2);
+    assert_eq!(window.pending_candidates().unwrap().len(), 2);
     assert_eq!(
-        window.pending_triggers[0].controller, active,
+        window.pending_candidates().unwrap()[0].controller,
+        active,
         "active investigator's trigger must come first",
     );
     assert_eq!(
-        window.pending_triggers[0].source,
+        window.pending_candidates().unwrap()[0].source,
         game_core::state::CandidateSource::InPlay(CardInstanceId(1))
     );
     assert_eq!(
-        window.pending_triggers[1].controller, other,
+        window.pending_candidates().unwrap()[1].controller,
+        other,
         "non-active investigator's trigger comes after, in turn order",
     );
     assert_eq!(
-        window.pending_triggers[1].source,
+        window.pending_candidates().unwrap()[1].source,
         game_core::state::CandidateSource::InPlay(CardInstanceId(2))
     );
 }
@@ -906,7 +913,8 @@ fn skip_after_firing_one_drops_remaining_optionals() {
             .state
             .top_reaction_window()
             .expect("window populated")
-            .pending_triggers
+            .pending_candidates()
+            .unwrap()
             .len(),
         2,
     );
@@ -997,10 +1005,10 @@ fn reaction_trigger_in_threat_area_opens_window() {
         .state
         .top_reaction_window()
         .expect("threat-area reaction must populate the window");
-    assert_eq!(window.pending_triggers.len(), 1);
-    assert_eq!(window.pending_triggers[0].controller, inv_id);
+    assert_eq!(window.pending_candidates().unwrap().len(), 1);
+    assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
     assert_eq!(
-        window.pending_triggers[0].source,
+        window.pending_candidates().unwrap()[0].source,
         game_core::state::CandidateSource::InPlay(CardInstanceId(7))
     );
 }
@@ -1027,7 +1035,10 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
     // Confirm the stack before the injection: one reaction window with
     // one pending trigger.
     assert_eq!(paused.state.open_windows().len(), 1);
-    assert!(!paused.state.open_windows()[0].pending_triggers.is_empty());
+    assert!(!paused.state.open_windows()[0]
+        .pending_candidates()
+        .unwrap()
+        .is_empty());
 
     // Inject an empty player-window gate on top to create the
     // [R (pending), B (empty)] shape.
@@ -1064,7 +1075,7 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
         resumed.state.open_windows(),
     );
     assert_eq!(
-        resumed.state.open_windows()[0].kind(),
+        resumed.state.open_windows()[0].window_kind(),
         Some(WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)),
         "the surviving window must be the player-window gate, not the reaction window",
     );

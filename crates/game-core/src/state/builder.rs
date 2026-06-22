@@ -414,10 +414,15 @@ mod with_open_window_tests {
             .build();
         assert_eq!(state.open_windows().len(), 1);
         assert_eq!(
-            state.open_windows()[0].fast_actors(),
+            state.open_windows()[0]
+                .as_resolution()
+                .and_then(ResolutionFrame::fast_actors),
             Some(&FastActorScope::Any)
         );
-        assert!(state.open_windows()[0].pending_triggers.is_empty());
+        assert!(state.open_windows()[0]
+            .pending_candidates()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -435,7 +440,7 @@ mod with_open_window_tests {
             .build();
         assert_eq!(state.open_windows().len(), 2);
         assert!(matches!(
-            state.open_windows()[1].kind(),
+            state.open_windows()[1].window_kind(),
             Some(WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins))
         ));
     }

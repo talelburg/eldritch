@@ -738,7 +738,7 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
     assert!(
         matches!(
             result.state.open_windows().last(),
-            Some(w) if w.kind() == Some(WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws))
+            Some(w) if w.window_kind() == Some(WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws))
         ),
         "top open window must be MythosAfterDraws; got {:?}",
         result.state.open_windows().last()
@@ -836,9 +836,12 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
          MythosAfterDraws must be gone"
     );
     assert!(
-        skip_result.state.open_windows().last().is_some_and(
-            |w| w.kind() == Some(WindowKind::PlayerWindow(PhaseStep::InvestigationBegins))
-        ),
+        skip_result
+            .state
+            .open_windows()
+            .last()
+            .is_some_and(|w| w.window_kind()
+                == Some(WindowKind::PlayerWindow(PhaseStep::InvestigationBegins))),
         "top window must be InvestigationBegins; got {:?}",
         skip_result.state.open_windows().last()
     );

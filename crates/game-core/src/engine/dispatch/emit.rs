@@ -172,7 +172,7 @@ impl TimingEvent {
 
     /// The reaction window this timing event opens, if any. `Some` only for
     /// the reaction-capable points.
-    fn reaction_window(&self) -> Option<WindowKind> {
+    pub(crate) fn reaction_window(&self) -> Option<WindowKind> {
         match self {
             TimingEvent::EnemyDefeated { enemy, by, .. } => Some(WindowKind::AfterEnemyDefeated {
                 enemy: *enemy,
@@ -302,8 +302,8 @@ impl TimingEvent {
 /// suspends or rejects). T5b replaces the forced phase's internals with the
 /// iterative ordering loop.
 pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    if let Some(kind) = event.reaction_window() {
-        super::reaction_windows::queue_reaction_window(cx, kind);
+    if event.reaction_window().is_some() {
+        super::reaction_windows::queue_reaction_window(cx, event);
     }
     let Some(point) = event.forced_point() else {
         return EngineOutcome::Done;
@@ -324,7 +324,7 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
                  variant + a TimingEvent::forced_continuation arm",
             )
         });
-        super::reaction_windows::open_forced_resolution(cx, candidates, continuation)
+        super::reaction_windows::open_forced_resolution(cx, event, candidates, continuation)
     } else {
         fire_forced_triggers(cx, &point)
     }

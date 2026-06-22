@@ -401,14 +401,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::SubstitutionPrompt { .. }) => {
             skill_test::resume_substitution_choice(cx, response)
         }
-        Some(Continuation::Resolution(_)) => resume_window(cx, response),
-        // Slice A-i: nothing constructs `TimingPointWindow` until task 2/3, so a
-        // ResolveInput here is unreachable today. Reject loudly rather than
-        // silently no-op (the event-window/forced routing lands in task 2/3).
-        Some(Continuation::TimingPointWindow { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: TimingPointWindow routing not yet wired (Slice A-i task 2/3)"
-                .into(),
-        },
+        // Both an event reaction window and the forced run (now
+        // `TimingPointWindow`, #433) resolve through the same window driver as
+        // the legacy framework `Resolution` windows — the driver reads
+        // candidates/mode through the frame-agnostic accessors.
+        Some(Continuation::Resolution(_) | Continuation::TimingPointWindow { .. }) => {
+            resume_window(cx, response)
+        }
         // An effect node suspended in place for a controller pick (#422): the
         // top `Continuation::Effect(Leaf)` frame *is* the prompt. Route its
         // `PickSingle` to the effect-choice resume. A non-suspending effect

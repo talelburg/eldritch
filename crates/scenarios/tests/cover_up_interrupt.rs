@@ -14,8 +14,7 @@ use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
     Act, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    FastActorScope, GameState, InvestigatorId, LocationId, Phase, ResolutionCandidate,
-    ResolutionFrame, WindowKind,
+    GameState, InvestigatorId, LocationId, Phase, ResolutionCandidate,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 use game_core::{Action, InputResponse, PlayerAction};
@@ -180,25 +179,24 @@ fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .build();
-    // Mirror what `emit_event(WouldDiscoverClues)` builds: a reaction window
-    // offering Cover Up's first (reaction) ability. Built via the cross-crate
-    // constructors (`new_empty` + `ResolutionCandidate::new`) since the frame /
-    // candidate structs are `#[non_exhaustive]`.
-    let mut frame = ResolutionFrame::new_empty(
-        WindowKind::BeforeDiscoverClues {
+    // Mirror what `emit_event(WouldDiscoverClues)` builds (#433): a
+    // `TimingPointWindow` reaction window keyed by the `WouldDiscoverClues`
+    // timing event, offering Cover Up's first (reaction) ability. The candidate
+    // is built via `ResolutionCandidate::new` (the struct is `#[non_exhaustive]`).
+    state.continuations.push(Continuation::TimingPointWindow {
+        event: game_core::engine::TimingEvent::WouldDiscoverClues {
             investigator: INV,
             location: LOC,
             count,
         },
-        FastActorScope::Any,
-    );
-    frame.pending_triggers.push(ResolutionCandidate::new(
-        CardCode(SYNTH_COVER_UP_CODE.into()),
-        INV,
-        0,
-        CandidateSource::InPlay(CardInstanceId(1)),
-    ));
-    state.continuations.push(Continuation::Resolution(frame));
+        mode: game_core::state::TimingMode::Reaction,
+        candidates: vec![ResolutionCandidate::new(
+            CardCode(SYNTH_COVER_UP_CODE.into()),
+            INV,
+            0,
+            CandidateSource::InPlay(CardInstanceId(1)),
+        )],
+    });
     state
 }
 
