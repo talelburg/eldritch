@@ -134,7 +134,7 @@ pub struct GameState {
     /// The single suspend/resume stack (umbrella §1 / Axis-B): the top
     /// frame is resumed by `resolve_input`, taking priority over the
     /// legacy `pending_*` modes. Open reaction/fast windows live here as
-    /// [`Continuation::Resolution`] frames (the former `open_windows` Vec,
+    /// `TimingPointWindow` / `FastWindow` frames (the former `open_windows` Vec,
     /// absorbed into the one stack). `#[serde(default)]` so pre-field
     /// states still load. Inspect windows via [`Self::open_windows`] /
     /// [`Self::top_reaction_window`] / [`Self::top_window`].
@@ -404,29 +404,21 @@ pub struct SkillSubstitution {
 /// (umbrella §1 / Axis-B): a typed resume point, not a closure, so it
 /// serializes for replay/persistence like every other state field.
 ///
-/// Task 3 adds the first variant (`Resolution`, an open reaction/fast
-/// window — see [`ResolutionFrame`]); Task 4 adds `SkillTest`, and Axis A adds
-/// `Choice`. The reaction window is just "paused, the player may act here,
-/// resume on act/pass," so it is a continuation frame: this absorbs the
+/// Open windows live here as [`TimingPointWindow`](Self::TimingPointWindow)
+/// (event windows + the #213 forced run) and [`FastWindow`](Self::FastWindow)
+/// (framework player windows). A window is just "paused, the player may act
+/// here, resume on act/pass," so it is a continuation frame: this absorbs the
 /// former `open_windows` Vec into the one stack (umbrella §1 — no separate
 /// window structure to keep in sync).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Continuation {
-    /// One iterative resolution run on the stack: a reaction / fast /
-    /// framework window, **or** the forced run (`window: None`). The lead/
-    /// player resolves its `pending_triggers` one at a time; see
-    /// [`ResolutionFrame`].
-    Resolution(ResolutionFrame),
     /// An event reaction window or the #213 forced run, keyed by the
-    /// [`TimingEvent`](crate::engine::TimingEvent) that opened it. Replaces the
-    /// event-window and forced-run uses of [`Resolution`](Self::Resolution)
-    /// (EmitEvent-frame Slice A-i, #433); framework player windows
-    /// (`WindowKind::PlayerWindow` / `SkillTestPlayerWindow`) stay on
-    /// `Resolution` until Slice A-ii. The [`mode`](TimingMode) distinguishes a
-    /// skippable reaction window from the mandatory forced run (which carries
-    /// its [`ForcedContinuation`]). Referenced in place rather than relocated —
-    /// [`Effect`](Self::Effect) already holds a `crate::engine` type
-    /// ([`EvalContext`](crate::engine::EvalContext), #345).
+    /// [`TimingEvent`](crate::engine::TimingEvent) that opened it (EmitEvent-frame
+    /// Slice A, #433). The [`mode`](TimingMode) distinguishes a skippable
+    /// reaction window from the mandatory forced run (which carries its
+    /// [`ForcedContinuation`]). The `TimingEvent` is referenced in place rather
+    /// than relocated — [`Effect`](Self::Effect) already holds a `crate::engine`
+    /// type ([`EvalContext`](crate::engine::EvalContext), #345).
     TimingPointWindow {
         /// The timing event that opened this window/run.
         event: crate::engine::TimingEvent,
@@ -438,8 +430,7 @@ pub enum Continuation {
     },
     /// A framework "red-box" player window — a Rules-Reference timing step
     /// that gates Fast actions and runs a per-step continuation on close
-    /// (EmitEvent-frame Slice A-ii, #433). Replaces the framework-window uses
-    /// of [`Resolution`](Self::Resolution) (`WindowKind::PlayerWindow` /
+    /// (EmitEvent-frame Slice A, #433; was `WindowKind::PlayerWindow` /
     /// `SkillTestPlayerWindow`). The [`FastWindowKind`] discriminant reproduces
     /// the exact [`WindowKind`] for the `WindowOpened`/`WindowClosed` event
     /// payload and routes the close continuation (`Phase` → the `*Phase`
@@ -754,8 +745,8 @@ impl Continuation {
     ///
     /// Two exceptions return `false` — the engine accepts other actions:
     /// - **`*Phase` anchors** are inert / the open turn, so typed actions run.
-    /// - a **Fast-play window** — a [`Continuation::Resolution`] with *no*
-    ///   pending triggers — is a play *opportunity*, not a mandatory prompt:
+    /// - a **Fast-play window** — a [`FastWindow`](Continuation::FastWindow) with
+    ///   *no* pending candidates — is a play *opportunity*, not a mandatory prompt:
     ///   Fast `PlayCard`/`ActivateAbility` are allowed (the handlers gate
     ///   eligibility) and `ResolveInput::Skip` closes it. A window *with* pending
     ///   triggers (reaction or forced) does await `ResolveInput`. This mirrors
@@ -768,12 +759,9 @@ impl Continuation {
         match self {
             // A window/run awaits a mandatory `ResolveInput` iff it has
             // candidates to resolve. An empty framework Fast-gate window
-            // (`FastWindow` / legacy `Resolution` with no pending plays) is
-            // *permissive* — the player may act but is not required to, so it
-            // does not block other actions.
-            Continuation::Resolution(_)
-            | Continuation::TimingPointWindow { .. }
-            | Continuation::FastWindow { .. } => {
+            // (`FastWindow` with no pending plays) is *permissive* — the player
+            // may act but is not required to, so it does not block other actions.
+            Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. } => {
                 self.pending_candidates().is_some_and(|c| !c.is_empty())
             }
             // Neither is a mandatory ResolveInput prompt. The open turn takes
@@ -789,71 +777,14 @@ impl Continuation {
         }
     }
 
-    /// The window payload if this frame is a [`Continuation::Resolution`].
-    #[must_use]
-    pub fn as_resolution(&self) -> Option<&ResolutionFrame> {
-        match self {
-            Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_)
-            | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_)
-            | Continuation::HandSizeDiscard(_)
-            | Continuation::ActRoundEnd(_)
-            | Continuation::SubstitutionPrompt { .. }
-            | Continuation::Mulligan { .. }
-            | Continuation::EncounterDraw { .. }
-            | Continuation::EncounterCard { .. }
-            | Continuation::InvestigatorTurn { .. }
-            | Continuation::AttackLoop { .. }
-            | Continuation::ActionResolution { .. }
-            | Continuation::DamageAssignment { .. }
-            | Continuation::MythosPhase { .. }
-            | Continuation::InvestigationPhase { .. }
-            | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. }
-            | Continuation::TimingPointWindow { .. }
-            | Continuation::FastWindow { .. }
-            | Continuation::Effect(_) => None,
-        }
-    }
-
-    /// Mutable counterpart to [`Self::as_resolution`].
-    pub fn as_resolution_mut(&mut self) -> Option<&mut ResolutionFrame> {
-        match self {
-            Continuation::Resolution(w) => Some(w),
-            Continuation::SkillTest(_)
-            | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_)
-            | Continuation::HandSizeDiscard(_)
-            | Continuation::ActRoundEnd(_)
-            | Continuation::SubstitutionPrompt { .. }
-            | Continuation::Mulligan { .. }
-            | Continuation::EncounterDraw { .. }
-            | Continuation::EncounterCard { .. }
-            | Continuation::InvestigatorTurn { .. }
-            | Continuation::AttackLoop { .. }
-            | Continuation::ActionResolution { .. }
-            | Continuation::DamageAssignment { .. }
-            | Continuation::MythosPhase { .. }
-            | Continuation::InvestigationPhase { .. }
-            | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. }
-            | Continuation::TimingPointWindow { .. }
-            | Continuation::FastWindow { .. }
-            | Continuation::Effect(_) => None,
-        }
-    }
-
     /// The resolution candidates of an open window/run on the stack —
-    /// whether a legacy [`Resolution`](Self::Resolution) frame (framework
-    /// windows during EmitEvent-frame Slice A-i, #433) or a
-    /// [`TimingPointWindow`](Self::TimingPointWindow) (event windows + the
-    /// #213 forced run). Lets the shared resolution driver read candidates
-    /// without caring which representation it is. `None` for any other frame.
+    /// a [`TimingPointWindow`](Self::TimingPointWindow) (event windows + the
+    /// #213 forced run) or a [`FastWindow`](Self::FastWindow) (framework
+    /// windows). Lets the shared resolution driver read candidates without
+    /// caring which window frame it is. `None` for any other frame.
     #[must_use]
     pub fn pending_candidates(&self) -> Option<&Vec<ResolutionCandidate>> {
         match self {
-            Continuation::Resolution(w) => Some(&w.pending_triggers),
             Continuation::TimingPointWindow { candidates, .. }
             | Continuation::FastWindow { candidates, .. } => Some(candidates),
             _ => None,
@@ -863,7 +794,6 @@ impl Continuation {
     /// Mutable counterpart to [`Self::pending_candidates`].
     pub fn pending_candidates_mut(&mut self) -> Option<&mut Vec<ResolutionCandidate>> {
         match self {
-            Continuation::Resolution(w) => Some(&mut w.pending_triggers),
             Continuation::TimingPointWindow { candidates, .. }
             | Continuation::FastWindow { candidates, .. } => Some(candidates),
             _ => None,
@@ -875,7 +805,6 @@ impl Continuation {
     #[must_use]
     pub fn is_forced(&self) -> bool {
         match self {
-            Continuation::Resolution(w) => w.is_forced(),
             Continuation::TimingPointWindow { mode, .. } => matches!(mode, TimingMode::Forced(_)),
             _ => false,
         }
@@ -886,7 +815,6 @@ impl Continuation {
     #[must_use]
     pub fn forced_continuation(&self) -> Option<ForcedContinuation> {
         match self {
-            Continuation::Resolution(w) => w.forced_continuation(),
             Continuation::TimingPointWindow {
                 mode: TimingMode::Forced(c),
                 ..
@@ -897,10 +825,10 @@ impl Continuation {
 
     /// The [`TimingEvent`](crate::engine::TimingEvent) that opened this frame,
     /// if it is a [`TimingPointWindow`](Self::TimingPointWindow) (event window
-    /// or forced run). `None` for legacy [`Resolution`](Self::Resolution)
-    /// framework windows (no timing event) and non-window frames. Lets the
-    /// driver bind event-specific `EvalContext` (the attacking enemy, the
-    /// would-be discovery count) without a `WindowKind` round-trip (#433).
+    /// or forced run). `None` for [`FastWindow`](Self::FastWindow) framework
+    /// windows (no timing event) and non-window frames. Lets the driver bind
+    /// event-specific `EvalContext` (the attacking enemy, the would-be discovery
+    /// count) without a `WindowKind` round-trip (#433).
     #[must_use]
     pub fn window_timing_event(&self) -> Option<&crate::engine::TimingEvent> {
         match self {
@@ -909,17 +837,15 @@ impl Continuation {
         }
     }
 
-    /// The [`WindowKind`] of this open frame, for either representation: a
-    /// legacy [`Resolution`](Self::Resolution) framework window returns its
-    /// stored kind; a [`TimingPointWindow`](Self::TimingPointWindow) reaction
-    /// window derives it from the [`TimingEvent`](crate::engine::TimingEvent)
-    /// (so `WindowOpened`/`WindowClosed` payloads are byte-identical across the
-    /// #433 migration). `None` for the forced run (no window) and non-window
-    /// frames.
+    /// The [`WindowKind`] of this open frame, the pure event descriptor (#433
+    /// keeps `WindowKind` only for `WindowOpened`/`WindowClosed` observability):
+    /// a [`FastWindow`](Self::FastWindow) returns its [`FastWindowKind`]'s kind;
+    /// a [`TimingPointWindow`](Self::TimingPointWindow) reaction window derives it
+    /// from the [`TimingEvent`](crate::engine::TimingEvent). `None` for the forced
+    /// run (no window) and non-window frames.
     #[must_use]
     pub fn window_kind(&self) -> Option<WindowKind> {
         match self {
-            Continuation::Resolution(w) => w.kind(),
             Continuation::TimingPointWindow {
                 event,
                 mode: TimingMode::Reaction,
@@ -930,19 +856,14 @@ impl Continuation {
         }
     }
 
-    /// Whether `investigator` may submit a Fast action into this open
-    /// window, in either representation. A legacy [`Resolution`](Self::Resolution)
-    /// window delegates to its [`FastActorScope`]; a
-    /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window admits
-    /// any investigator (the constant `FastActorScope::Any` the legacy
-    /// reaction-window binding carried). Forced runs and non-window frames
-    /// admit none.
+    /// Whether `investigator` may submit a Fast action into this open window. A
+    /// [`FastWindow`](Self::FastWindow) delegates to its [`FastActorScope`]; a
+    /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window admits any
+    /// investigator (reaction windows carried `FastActorScope::Any`). Forced
+    /// runs and non-window frames admit none.
     #[must_use]
     pub fn permits_fast(&self, investigator: InvestigatorId) -> bool {
         match self {
-            Continuation::Resolution(w) => {
-                w.fast_actors().is_some_and(|fa| fa.permits(investigator))
-            }
             Continuation::FastWindow { fast_actors, .. } => fast_actors.permits(investigator),
             Continuation::TimingPointWindow {
                 mode: TimingMode::Reaction,
@@ -1240,7 +1161,7 @@ pub enum SkillTestFollowUp {
 }
 
 /// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
-/// actions while a [`ResolutionFrame`] is the top of the window stack.
+/// actions while a window frame is the top of the window stack.
 ///
 /// Modeled per Rules Reference: a reaction window allows any
 /// investigator to fire a triggered reaction or play a Fast card.
@@ -1318,60 +1239,7 @@ impl FastActorScope {
     }
 }
 
-/// A currently-open window on the action stack.
-///
-/// Replaces the older single-slot `in_flight_reaction_window: Option<ReactionWindow>` shape;
-/// reaction-window machinery now operates on this stack via
-/// `GameState::top_reaction_window()` and `top_reaction_window_mut()`.
-///
-/// Each window carries (a) what kind it is and which IDs the
-/// triggering event/phase-transition named, (b) the queue of
-/// `Trigger::OnEvent` reactions waiting to fire, and (c) which
-/// investigators may submit Fast `PlayCard` / `ActivateAbility`
-/// actions while this window is the top of `GameState::open_windows`.
-///
-/// Windows nest: a reaction firing inside another window may itself
-/// trigger sub-reactions that open further windows on top of this
-/// one. The dispatcher always reads / mutates the top of the stack
-/// (`open_windows.last_mut()` / `open_windows.pop()`); closing a
-/// window simply pops the top.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct ResolutionFrame {
-    /// Candidates in resolution order. For a reaction window: active
-    /// investigator's matching reactions first, then others in turn
-    /// order. For the forced run: the simultaneous forced abilities the
-    /// lead orders. Empty is permitted — framework windows opened for
-    /// phase/timing reasons gate Fast actions with no pending candidates.
-    pub pending_triggers: Vec<ResolutionCandidate>,
-    /// What this resolution run *is*: either a reaction / fast / framework
-    /// [`Window`](ResolutionKind::Window) (carrying its kind + Fast-action
-    /// scope), or the mandatory **forced run**
-    /// ([`Forced`](ResolutionKind::Forced), Axis-B T5b / #213) — which
-    /// cannot be skipped, admits no Fast plays, and on close resumes the
-    /// framework flow it suspended via its [`ForcedContinuation`].
-    pub kind: ResolutionKind,
-}
-
-/// What a [`ResolutionFrame`] is resolving: a reaction/fast/framework
-/// window, or the mandatory forced run.
-///
-/// The two arms differ in close behavior. A [`Window`](Self::Window) runs
-/// its per-kind window continuation (or simply pops, for after-event
-/// reaction windows). The [`Forced`](Self::Forced) run instead resumes the
-/// framework flow that opened it — see [`ForcedContinuation`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ResolutionKind {
-    /// A reaction / fast / framework window: skippable, admits Fast plays
-    /// from its [`fast_actors`](WindowBinding::fast_actors) scope, and runs
-    /// a per-kind continuation on close.
-    Window(WindowBinding),
-    /// The forced run (#213): mandatory, no Fast plays, and on close
-    /// resumes the framework flow named by the [`ForcedContinuation`].
-    Forced(ForcedContinuation),
-}
-
-/// How a [`Forced`](ResolutionKind::Forced) run resumes the framework flow
+/// How a forced run ([`TimingMode::Forced`]) resumes the framework flow
 /// it suspended when 2+ simultaneous forced abilities forced a lead-ordered
 /// choice (#213).
 ///
@@ -1412,75 +1280,7 @@ pub enum TimingMode {
     Forced(ForcedContinuation),
 }
 
-/// The window-specific part of a [`ResolutionFrame`]: which kind of window
-/// is open and which investigators may submit Fast actions while it is the
-/// top of the stack. Absent for the forced run.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WindowBinding {
-    /// What kind of window is open; carries the IDs the triggering event
-    /// named (defeated enemy + attacker, phase transition, etc.) so
-    /// pending triggers' effects can resolve against the same payload.
-    pub kind: WindowKind,
-    /// Which investigators may submit Fast `PlayCard` / `ActivateAbility`
-    /// actions while this window is the top of the stack.
-    pub fast_actors: FastActorScope,
-}
-
-impl ResolutionFrame {
-    /// Construct an empty [`ResolutionFrame`] (no pending triggers) for the
-    /// given `kind` and `fast_actors` scope.
-    ///
-    /// Provided so integration tests outside the crate (where the
-    /// `#[non_exhaustive]` attribute blocks struct-literal construction)
-    /// can inject a window directly onto
-    /// [`GameState::open_windows`] for stack-shape regression tests.
-    #[must_use]
-    pub fn new_empty(kind: WindowKind, fast_actors: FastActorScope) -> Self {
-        Self {
-            pending_triggers: Vec::new(),
-            kind: ResolutionKind::Window(WindowBinding { kind, fast_actors }),
-        }
-    }
-
-    /// The [`WindowKind`] if this frame is a window; `None` for the forced
-    /// run.
-    #[must_use]
-    pub fn kind(&self) -> Option<WindowKind> {
-        match &self.kind {
-            ResolutionKind::Window(w) => Some(w.kind),
-            ResolutionKind::Forced(_) => None,
-        }
-    }
-
-    /// The Fast-action scope if this frame is a window; `None` for the
-    /// forced run (no Fast plays).
-    #[must_use]
-    pub fn fast_actors(&self) -> Option<&FastActorScope> {
-        match &self.kind {
-            ResolutionKind::Window(w) => Some(&w.fast_actors),
-            ResolutionKind::Forced(_) => None,
-        }
-    }
-
-    /// The [`ForcedContinuation`] if this is the forced run; `None` for a
-    /// window. Read on close to resume the suspended framework flow.
-    #[must_use]
-    pub fn forced_continuation(&self) -> Option<ForcedContinuation> {
-        match &self.kind {
-            ResolutionKind::Forced(c) => Some(*c),
-            ResolutionKind::Window(_) => None,
-        }
-    }
-
-    /// Whether this is the forced-resolution run (mandatory, no window).
-    /// The complement of being a reaction / fast / framework window.
-    #[must_use]
-    pub fn is_forced(&self) -> bool {
-        matches!(self.kind, ResolutionKind::Forced(_))
-    }
-}
-
-/// Discriminant of an open `ResolutionFrame`.
+/// Discriminant of an open window.
 ///
 /// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
 /// pattern: when the engine emits a matching
@@ -1765,7 +1565,7 @@ impl CandidateSource {
 }
 
 /// A single pending ability/play waiting to resolve in a
-/// [`Continuation::Resolution`] frame.
+/// window frame.
 ///
 /// The **unified candidate** for the forced run, a reaction window's in-play
 /// triggers, *and* (Axis C) a Fast event playable from hand: abilities resolve
@@ -1794,8 +1594,7 @@ pub struct ResolutionCandidate {
 impl ResolutionCandidate {
     /// Construct a [`ResolutionCandidate`]. Provided so integration tests
     /// outside the crate (where `#[non_exhaustive]` blocks struct-literal
-    /// construction) can build a window's pending triggers directly — the same
-    /// rationale as [`ResolutionFrame::new_empty`].
+    /// construction) can build a window's pending candidates directly.
     #[must_use]
     pub fn new(
         code: CardCode,
@@ -1936,10 +1735,10 @@ impl GameState {
     }
 
     /// Iterator over the open windows on the continuation stack, in stack
-    /// order (bottom to top). The windows are `Continuation::Resolution`
-    /// frames; non-window frames (Task 4+) are skipped.
+    /// order (bottom to top). The windows are `TimingPointWindow` / `FastWindow`
+    /// frames; non-window frames are skipped.
     /// Every open window/run frame on the stack, in stack order — legacy
-    /// [`Resolution`](Continuation::Resolution) framework windows **and**
+    /// [`FastWindow`](Continuation::FastWindow) framework windows **and**
     /// [`TimingPointWindow`](Continuation::TimingPointWindow) event windows /
     /// forced runs (#433). A frame is a window/run iff it carries a candidate
     /// list ([`Continuation::pending_candidates`]).
@@ -2087,18 +1886,15 @@ mod open_window_tests {
 
     #[test]
     fn open_window_serde_roundtrip() {
-        let window = ResolutionFrame {
-            pending_triggers: Vec::new(),
-            kind: ResolutionKind::Window(WindowBinding {
-                kind: WindowKind::AfterEnemyDefeated {
-                    enemy: EnemyId(7),
-                    by: Some(InvestigatorId(1)),
-                },
-                fast_actors: FastActorScope::Any,
-            }),
+        // A framework window is a `FastWindow` frame on the stack (#433); the
+        // whole `Continuation` serializes for replay.
+        let window = Continuation::FastWindow {
+            candidates: Vec::new(),
+            fast_actors: FastActorScope::Any,
+            kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         };
         let json = serde_json::to_string(&window).expect("serialize");
-        let back: ResolutionFrame = serde_json::from_str(&json).expect("deserialize");
+        let back: Continuation = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, window);
     }
 
@@ -2210,12 +2006,13 @@ mod continuation_stack_tests {
             resume: MythosResume::Entry,
         }
         .awaits_input());
-        // A Fast-play window (Resolution with no pending triggers) is a play
-        // opportunity, not a mandatory prompt — Fast plays stay allowed.
-        assert!(!Continuation::Resolution(ResolutionFrame::new_empty(
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
-            FastActorScope::Any,
-        ))
+        // A Fast-play window (a `FastWindow` with no pending candidates) is a
+        // play opportunity, not a mandatory prompt — Fast plays stay allowed.
+        assert!(!Continuation::FastWindow {
+            candidates: Vec::new(),
+            fast_actors: FastActorScope::Any,
+            kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+        }
         .awaits_input());
         // Every other suspension hits the `_ => true` arm and awaits
         // ResolveInput. This includes a `Choice` (e.g. a `ChooseOne` OnPlay
@@ -2241,8 +2038,8 @@ mod continuation_stack_tests {
         // ...and it does NOT await ResolveInput — typed actions (Move, Fight, …)
         // run against it, exactly as they ran against the TurnBegins anchor.
         assert!(!frame.awaits_input());
-        // It carries no resolution payload.
-        assert!(frame.as_resolution().is_none());
+        // It carries no window candidates.
+        assert!(frame.pending_candidates().is_none());
     }
 
     #[test]
@@ -2279,7 +2076,7 @@ mod continuation_stack_tests {
         ];
         for a in anchors {
             // Anchors are framework frames, never reaction windows.
-            assert!(a.as_resolution().is_none());
+            assert!(a.pending_candidates().is_none());
             // Serializable like every other frame.
             let json = serde_json::to_string(&a).unwrap();
             let back: Continuation = serde_json::from_str(&json).unwrap();
