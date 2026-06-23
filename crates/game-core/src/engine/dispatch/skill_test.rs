@@ -160,7 +160,8 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
 /// rewrites the in-flight test to an Intellect test (dropping any weapon combat
 /// bonus per the FAQ "ignore bonuses to Combat or Agility"); `PickSingle(1)`
 /// keeps the printed skill (a genuine "may" — a player may decline to fail on
-/// purpose). Either way, opens the commit window.
+/// purpose). Either way, parks for the `drive` loop, which opens the next window
+/// (the ST.1 player window, or the commit prompt on auto-skip).
 pub(in crate::engine) fn resume_substitution_choice(
     cx: &mut Cx,
     response: &InputResponse,
@@ -191,20 +192,23 @@ pub(in crate::engine) fn resume_substitution_choice(
         t.skill = SkillKind::Intellect;
         t.test_modifier = 0;
     }
-    // Drive the test from `PreCommitWindow`: `advance` opens the ST.1 player
-    // window (#374) first, then — on auto-skip — parks at `AwaitingCommit` and
-    // emits the commit prompt (reading the now-possibly-rewritten skill). With a
-    // Fast play available it parks at the window instead.
-    advance(cx)
+    // Park: return `Done` so the `drive` loop's `SkillTest` arm drives the test
+    // from its pre-commit cursor — opening the ST.1 player window (#374), then
+    // (on auto-skip) the commit prompt reading the now-possibly-rewritten skill,
+    // or parking at the window if a Fast play is available. The frame is on top
+    // and `resolve_input`'s caller drives it. Slice C, #431 — the
+    // substitution-resume `advance` reach-down is retired.
+    EngineOutcome::Done
 }
 
 /// Commit-stage entry to the skill-test resolution driver. Handles the
 /// response to the
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine emitted at
 /// the commit window: validate the supplied indices, persist them onto the
-/// in-flight record, advance the cursor to [`SkillTestStep::Resolving`], and
-/// hand off to [`advance`], which runs the resolution body
-/// ([`run_resolution`]) and the remaining steps.
+/// in-flight record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`],
+/// and return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
+/// the resolution body ([`run_resolution`]) and the remaining steps. (Slice C,
+/// #431 — the commit-hop `advance` reach-down is retired.)
 ///
 /// On invalid input (no in-flight test, malformed indices, or continuation
 /// already advanced) returns [`EngineOutcome::Rejected`] with no state change
@@ -236,16 +240,19 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         Err(rejected) => return rejected,
     };
 
-    // Persist the committed indices and advance to `Resolving`; the driver
-    // runs the resolution body from there (its loop snapshot reads
-    // `committed_by_active`).
+    // Persist the committed indices and pre-advance the cursor to
+    // `PreTokenWindow`, then park: return `Done` so the `drive` loop's
+    // `SkillTest` arm (dispatch/mod.rs) runs the resolution body from there.
+    // The frame stays on top and `resolve_input`'s caller drives it
+    // (apply_player_action runs `drive` after this returns). Slice C, #431 —
+    // the commit-hop `advance` reach-down is retired.
     let t = cx
         .state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above");
     t.committed_by_active = indices_u8;
     t.continuation = SkillTestStep::PreTokenWindow;
-    advance(cx)
+    EngineOutcome::Done
 }
 
 /// Run the `Resolving` step of a skill test: sum the committed icons, fire
@@ -1303,6 +1310,7 @@ mod tests {
         let out = perform_skill_test(&mut cx, inv, SkillKind::Intellect, 1);
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
+        let out = super::super::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(state.encounter_discard.is_empty());
     }
@@ -1340,6 +1348,7 @@ mod tests {
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
+        let out = super::super::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(
             state.investigators[&inv].horror, 1,
@@ -1385,6 +1394,7 @@ mod tests {
 
         // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
         let out = finish_skill_test(&mut cx, &[]);
+        let out = super::super::drive(&mut cx, out);
         assert_eq!(
             out,
             EngineOutcome::Done,
@@ -1494,8 +1504,9 @@ mod tests {
             Some(Continuation::SkillTest(_))
         ));
 
-        // Commit nothing → the driver resolves the test to teardown.
+        // Commit nothing → the hop parks; the loop drives to teardown.
         let out = finish_skill_test(&mut cx, &[]);
+        let out = super::super::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             events
@@ -1512,6 +1523,77 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, Continuation::SkillTest(_))),
             "the SkillTest frame was torn down",
+        );
+    }
+
+    /// The commit hop parks the resolution for the loop rather than driving it
+    /// itself: `finish_skill_test` returns `Done` with the `SkillTest` frame on
+    /// top at `PreTokenWindow` and emits no `SkillTestEnded`; the `drive` loop's
+    /// `SkillTest` arm then resolves it to teardown. (Slice C, #431 — commit-hop
+    /// re-entry retired.)
+    #[test]
+    fn finish_skill_test_parks_the_resolution_for_the_loop() {
+        use crate::state::{ChaosToken, Continuation, SkillTestStep};
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        // Park at AwaitingCommit (the commit prompt).
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            None,
+            None,
+            None,
+            0,
+        );
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
+
+        // Commit nothing: the hop PARKS — it must not itself resolve the test.
+        let out = finish_skill_test(&mut cx, &[]);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            matches!(
+                cx.state.continuations.last(),
+                Some(Continuation::SkillTest(t)) if matches!(t.continuation, SkillTestStep::PreTokenWindow)
+            ),
+            "the commit hop parks the SkillTest at PreTokenWindow for the loop to drive",
+        );
+        assert!(
+            !cx.events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            "the hop itself does not resolve the test to teardown",
+        );
+
+        // The loop's SkillTest arm drives the parked frame the rest of the way.
+        let out = super::super::drive(&mut cx, out);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            cx.events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            "the loop resolved the test to teardown",
+        );
+        assert!(
+            !cx.state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, Continuation::SkillTest(_))),
+            "the SkillTest frame was torn down by the loop",
         );
     }
 
@@ -1565,6 +1647,13 @@ mod tests {
                 events: &mut events,
             };
             resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
+        };
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            super::super::drive(&mut cx, out)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -1657,6 +1746,13 @@ mod tests {
             };
             resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(1)))
         };
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            super::super::drive(&mut cx, out)
+        };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
             "commit window"
@@ -1665,6 +1761,86 @@ mod tests {
             state.current_skill_test().unwrap().skill,
             SkillKind::Agility,
             "declined — keeps the printed skill",
+        );
+    }
+
+    /// The substitution resume parks the test for the loop rather than driving to
+    /// the commit window itself: choosing the substitution pops the
+    /// `SubstitutionPrompt`, rewrites the skill, and returns `Done` with the
+    /// `SkillTest` on top; the `drive` loop then opens the commit window. (Slice C,
+    /// #431 — substitution-resume re-entry retired.)
+    #[test]
+    fn resume_substitution_choice_parks_for_the_loop() {
+        use crate::state::Continuation;
+
+        let inv = InvestigatorId(1);
+        let mut state = substitution_state(inv);
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            start_skill_test(
+                &mut cx,
+                inv,
+                SkillKind::Combat,
+                SkillTestKind::Fight,
+                3,
+                SkillTestFollowUp::None,
+                None,
+                None,
+                None,
+                2,
+            )
+        };
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "substitution prompt"
+        );
+
+        // Choose the substitution: the resume PARKS — it does not itself open the
+        // commit window.
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
+        };
+        assert_eq!(
+            out,
+            EngineOutcome::Done,
+            "the substitution resume parks for the loop"
+        );
+        assert!(
+            !matches!(
+                state.continuations.last(),
+                Some(Continuation::SubstitutionPrompt { .. })
+            ),
+            "the SubstitutionPrompt was consumed",
+        );
+        assert!(
+            matches!(state.continuations.last(), Some(Continuation::SkillTest(_))),
+            "the SkillTest frame is parked on top for the loop to drive",
+        );
+        assert_eq!(
+            state.current_skill_test().unwrap().skill,
+            SkillKind::Intellect,
+            "the substitution rewrote the skill before parking",
+        );
+
+        // The loop drives the parked test to its commit window.
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            super::super::drive(&mut cx, out)
+        };
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit window"
         );
     }
 
