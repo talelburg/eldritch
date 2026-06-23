@@ -236,7 +236,7 @@ arms for the window frames (former A-iv) moved to **Slice C** — see below.
 | A + B umbrella | [#435](https://github.com/talelburg/eldritch/issues/435) "EmitEvent-frame end-state" | filed |
 | A | [#433](https://github.com/talelburg/eldritch/issues/433) "EmitEvent-frame A: window-taxonomy rework" | filed |
 | B | [#434](https://github.com/talelburg/eldritch/issues/434) "EmitEvent-frame B: coordinators" | filed |
-| C | [#431](https://github.com/talelburg/eldritch/issues/431) | open, keep as-is |
+| C | [#431](https://github.com/talelburg/eldritch/issues/431) | ✅ done — re-entry retirement complete (commit hop + substitution resume); A-iv window arms + encounter disposal landed in C-plumbing |
 | D | [#423](https://github.com/talelburg/eldritch/issues/423) | open, keep as-is |
 
 ## Testing strategy
