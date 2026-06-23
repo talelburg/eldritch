@@ -28,11 +28,15 @@ gate idles (permissive, awaits `Skip`).
 >    Revelation effect walk skip its commit prompt (caught by `non_attack_soak.rs`). The
 >    genuine reach-down removed was the *separate* skill-test seam in
 >    `close_reaction_window_at`.
-> 2. **The locate/presence accessors are kept** (Step 7 narrowed). Only `advance`'s
->    `win_idx > st` self-location was deleted; `top_reaction_window*` stay as
->    resolve-path locate queries (not reach-downs).
-> 3. **No test rewrite** (Step 8 dropped). The `awaits_input()`-guarded window arm idles
->    on the synthetic empty gate, so the gate-above-reaction test passes unchanged.
+> 2. **Dispatch + window drivers operate on the top frame** (`last()`/`last_mut()`/
+>    `pop()`, no `idx`/`window_idx`); `advance`'s `win_idx > st` self-location and the
+>    `top_reaction_window_index`/`_mut` accessors are deleted. `top_reaction_window`
+>    survives only as a test-inspection accessor; `current_skill_test` stays as nesting
+>    context. (`advance_resolution`/`close_reaction_window` lost their `idx` params;
+>    `close_reaction_window_at` → `close_reaction_window`.)
+> 3. **The synthetic gate-above-reaction test is replaced** by a positive invariant test
+>    (`active_reaction_window_is_the_top_continuation_frame`) — the old test manufactured
+>    a stack the invariant forbids, and with top-frame dispatch a `Skip` acts on the top.
 
 ## Global Constraints
 

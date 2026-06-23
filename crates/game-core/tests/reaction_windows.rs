@@ -23,8 +23,8 @@ use game_core::dsl::{
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    InvestigatorId, LocationId, Phase, PhaseStep, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -938,77 +938,33 @@ fn reaction_trigger_in_threat_area_opens_window() {
 }
 
 #[test]
-fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top() {
-    // Regression for the structural fix in a3958c6: when the stack is
-    //   [AfterEnemyDefeated R (with pending triggers), PlayerWindow B (empty)]
-    // a naive open_windows.pop() would remove B (the top), leaving R
-    // unresolved and leaking. close_reaction_window_at takes an explicit
-    // index so it removes R and leaves B intact.
-    //
-    // Setup: drive a Fight to the reaction-window AwaitingInput, then
-    // manually push an empty player-window gate on top of the stack to
-    // replicate the stack shape Phase-4 phase-content PRs (#69/#70/#71)
-    // produce in production paths.
+fn active_reaction_window_is_the_top_continuation_frame() {
+    // Invariant the loop-driven dispatch relies on (Slice C-plumbing, #431): the
+    // continuation stack is the resolution order, so an *active* reaction window
+    // (one with pending candidates) is always `continuations.last()` — never
+    // stranded beneath another frame. The engine dispatches the top frame and
+    // operates on it directly (no `top_reaction_window_index` reach-down); this
+    // pins the property that makes that correct. (Replaces the former
+    // `close_reaction_window_at_removes_..._phase_gate_on_top` regression, which
+    // hand-injected an empty gate *above* a pending reaction window — a shape the
+    // framework never produces, because a pending window's `awaits_input()` gates
+    // the framework from advancing to open one.)
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let mut paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "Fight must suspend at the reaction window, got {:?}",
         paused.outcome,
     );
-    // Confirm the stack before the injection: one reaction window with
-    // one pending trigger.
-    assert_eq!(paused.state.open_windows().len(), 1);
-    assert!(!paused.state.open_windows()[0]
-        .pending_candidates()
-        .unwrap()
-        .is_empty());
-
-    // Inject an empty player-window gate on top to create the
-    // [R (pending), B (empty)] shape.
-    paused
+    let top = paused
         .state
         .continuations
-        .push(game_core::state::Continuation::FastWindow {
-            candidates: Vec::new(),
-            fast_actors: FastActorScope::Any,
-            kind: game_core::state::FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-        });
-    assert_eq!(
-        paused.state.open_windows().len(),
-        2,
-        "stack is [R, B] after injection"
-    );
-
-    // Skip the reaction window. close_reaction_window_at must remove R
-    // (the reaction window that has pending triggers) and leave B intact.
-    let resumed = game_core::engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
-
-    // The player-window gate (B) must still be on the stack.
-    assert_eq!(
-        resumed.state.open_windows().len(),
-        1,
-        "after closing R the stack must contain exactly one window (B), \
-         got {:?}",
-        resumed.state.open_windows(),
-    );
+        .last()
+        .expect("a reaction window is open");
     assert!(
-        matches!(
-            resumed.state.open_windows()[0],
-            game_core::state::Continuation::FastWindow {
-                kind: game_core::state::FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-                ..
-            }
-        ),
-        "the surviving window must be the player-window gate, not the reaction window",
+        top.pending_candidates().is_some_and(|c| !c.is_empty()),
+        "the active reaction window must be the top frame, got {top:?}",
     );
-    // Reaction window R closed (it is no longer on the stack) while the
-    // player-window gate B survives — verified by the stack contents above.
 }
 
 #[test]

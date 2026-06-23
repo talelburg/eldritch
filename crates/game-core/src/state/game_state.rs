@@ -1017,12 +1017,12 @@ pub struct InFlightSkillTest {
 ///    [`SkillTestEnded`](crate::Event::SkillTestEnded) + drain
 ///    pending modifiers
 ///
-/// After each step that *can* queue a reaction window, the driver
-/// checks `state.open_windows` via `GameState::top_reaction_window()`; if a window is
-/// pending it suspends with
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). On resume
-/// (via `close_reaction_window_at`) the driver reads this field and
-/// jumps to the matching step. This is the rules-correct shape per
+/// After each step that *can* queue a reaction window, the driver checks
+/// whether that window is now the top frame; if so it suspends with
+/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) and yields to the
+/// `drive` loop, which dispatches the window. On the window's close the loop
+/// re-dispatches this `SkillTest` frame, which reads its cursor and jumps to
+/// the matching step (Slice C-plumbing). This is the rules-correct shape per
 /// the Rules Reference's "after… initiates immediately after that
 /// triggering condition's impact has resolved" clause: the reaction
 /// fires between steps 2 and 3, not after the entire action ends.
@@ -1506,16 +1506,6 @@ impl GameState {
             .find(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
     }
 
-    /// Mutable counterpart to `top_reaction_window`. Same skip rule
-    /// applies: windows with empty candidate lists are skipped —
-    /// phase-gate-only windows are not exposed as reaction-work.
-    pub fn top_reaction_window_mut(&mut self) -> Option<&mut Continuation> {
-        self.continuations
-            .iter_mut()
-            .rev()
-            .find(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
-    }
-
     /// The skill test currently in flight, if any; `None` outside a test. Reads
     /// the topmost `Continuation::SkillTest` frame — the continuation stack is
     /// the single source of truth for "a test is mid-resolution" (#348). Topmost
@@ -1617,30 +1607,6 @@ impl GameState {
     #[must_use]
     pub fn top_window(&self) -> Option<&Continuation> {
         self.windows().next_back()
-    }
-
-    /// Index into [`Self::open_windows`] of the topmost window with
-    /// non-empty `pending_triggers`, matching the window that
-    /// [`Self::top_reaction_window`] / [`Self::top_reaction_window_mut`]
-    /// resolve to.
-    ///
-    /// Callers driving the reaction window pass this index to
-    /// `close_reaction_window_at` so the close path removes the same
-    /// entry the driver was operating on, rather than blindly popping
-    /// the top of the stack — a `PlayerWindow` gate with empty
-    /// `pending_triggers` can sit above an active reaction window,
-    /// which would corrupt the stack on naive `pop()`.
-    ///
-    /// Note: the `Skip` path in `resolve_input` also handles **pure-Fast
-    /// windows** (empty `pending_triggers`, pushed by `open_fast_window`)
-    /// by closing the literal top-of-stack index directly rather than
-    /// going through this helper. That path is safe because a pure-Fast
-    /// window, by construction, has no forced triggers to guard against.
-    #[must_use]
-    pub fn top_reaction_window_index(&self) -> Option<usize> {
-        self.continuations
-            .iter()
-            .rposition(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
     }
 
     /// Build a [`Location`] from its card `metadata`, minting a fresh id.

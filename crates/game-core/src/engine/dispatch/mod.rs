@@ -214,8 +214,7 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
             Some(
                 ref c @ (Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. }),
             ) if matches!(c, Continuation::TimingPointWindow { .. }) || c.awaits_input() => {
-                let idx = cx.state.continuations.len() - 1;
-                match reaction_windows::advance_resolution(cx, idx) {
+                match reaction_windows::advance_resolution(cx) {
                     EngineOutcome::Done => {} // closed; loop on to the exposed frame
                     other => return other,    // re-prompt, or a suspended continuation
                 }
@@ -351,15 +350,21 @@ pub(super) struct ActivateCheckResult {
 /// Resume the open window at the top of the stack: drive its reaction
 /// triggers if any are pending, else close the pure-Fast window on `Skip`.
 fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    // If the window has pending reaction triggers, drive the reaction
-    // window; otherwise it is a pure-Fast window (empty `pending_triggers`)
+    // The top frame is the window the player is acting on (resolve_input routed
+    // here for a `TimingPointWindow`/`FastWindow` on top). If it has pending
+    // candidates, drive it; otherwise it is a pure-Fast gate (empty candidates)
     // that `Skip` closes.
-    if cx.state.top_reaction_window().is_some() {
+    let has_candidates = cx
+        .state
+        .continuations
+        .last()
+        .and_then(crate::state::Continuation::pending_candidates)
+        .is_some_and(|c| !c.is_empty());
+    if has_candidates {
         return reaction_windows::resume_reaction_window(cx, response);
     }
     if matches!(response, InputResponse::Skip) {
-        let idx = cx.state.continuations.len() - 1;
-        return reaction_windows::close_reaction_window_at(cx, idx);
+        return reaction_windows::close_reaction_window(cx);
     }
     EngineOutcome::Rejected {
         reason: format!(
@@ -405,7 +410,7 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// reaction case: the skill-test driver is parked at a step boundary
 /// waiting for the reaction window to close before continuing. The
 /// reaction window takes routing priority; once it closes,
-/// [`close_reaction_window_at`] re-enters [`advance`] to finish
+/// [`close_reaction_window`] re-enters [`advance`] to finish
 /// the test.
 ///
 /// # Pure-Fast window closing
@@ -415,7 +420,7 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// because that helper filters out empty-`pending_triggers` windows.
 /// When such a window is the only entry on the stack (no
 /// reaction-driven window below it), `InputResponse::Skip` closes it
-/// directly via [`close_reaction_window_at`] on the literal top-of-stack
+/// directly via [`close_reaction_window`] on the literal top-of-stack
 /// index. This covers the `MythosAfterDraws` window after all Fast
 /// plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {

@@ -1319,7 +1319,8 @@ fn discover_clue(
     // for a queued before-discover window.
     if matches!(
         cx.state
-            .top_reaction_window()
+            .continuations
+            .last()
             .and_then(crate::state::Continuation::window_timing_event),
         Some(crate::engine::TimingEvent::WouldDiscoverClues { .. })
     ) {

@@ -1615,7 +1615,7 @@ mod combat_tests {
         let mut e2 = test_enemy(2, "Second Attacker");
         e2.engaged_with = Some(inv_id);
 
-        // The real resume path runs AFTER `close_reaction_window_at` popped
+        // The real resume path runs AFTER `close_reaction_window` popped
         // the soak window the loop suspended on, so `open_windows` is empty
         // when `resume_enemy_attack` re-enters `drive_attack_loop`.
         let mut state = GameStateBuilder::new()

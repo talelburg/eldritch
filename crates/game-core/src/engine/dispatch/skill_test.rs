@@ -265,7 +265,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 /// [`EnemyDefeated`](crate::Event::EnemyDefeated) queues an
 /// an after-enemy-defeated reaction window)
 /// suspend correctly: the cursor already reads `PostFollowUp`, so a resume from
-/// `close_reaction_window_at` re-enters `advance` at the `OnSkillTestResolution`
+/// `close_reaction_window` re-enters `advance` at the `OnSkillTestResolution`
 /// step rather than re-running the follow-up.
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) -> EngineOutcome {
     let (skill, kind, difficulty, follow_up, on_fail, on_success, source) = {
@@ -392,9 +392,9 @@ fn emit_commit_window(cx: &Cx, investigator: InvestigatorId) -> EngineOutcome {
 ///
 /// The caller must **return** this outcome, never fall through: `open_fast_window`
 /// returns `Done` both on auto-skip (continuation already ran) and when it parks
-/// a pure-Fast window on top (which emits no `AwaitingInput` and is invisible to
-/// the `advance` loop's `top_reaction_window_index` check — falling through would
-/// emit the next step's prompt *over* the parked window).
+/// a pure-Fast window on top (an empty `FastWindow` gate the `advance` loop does
+/// not re-dispatch — falling through would emit the next step's prompt *over* the
+/// parked window).
 fn open_skill_test_player_window(
     cx: &mut Cx,
     next: SkillTestStep,
@@ -417,7 +417,7 @@ fn open_skill_test_player_window(
 /// Each loop iteration starts by checking for a queued reaction
 /// window: if one is pending, the driver opens it and returns
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
-/// close path ([`close_reaction_window_at`]) re-enters this driver on
+/// close path ([`close_reaction_window`]) re-enters this driver on
 /// resume.
 ///
 /// Step → next-continuation mapping (current Phase-3 set; #64 will
@@ -433,7 +433,7 @@ fn open_skill_test_player_window(
 ///   [`SkillTestEnded`](crate::Event::SkillTestEnded), drain pending
 ///   modifiers, clear in-flight, return `Done`.
 ///
-/// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
+/// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
         // A reaction window queued by the previous step now sits *above* this

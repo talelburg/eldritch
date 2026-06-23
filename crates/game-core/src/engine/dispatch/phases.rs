@@ -716,7 +716,7 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// Called after the post-1.4 window closes. Emits 1.5's
 /// `PhaseEnded(Mythos)` marker, then transitions to Investigation.
 /// Rotation is owned by `investigation_phase` (step 2.2), not by
-/// `mythos_phase_end`. Invoked from `close_reaction_window_at`'s
+/// `mythos_phase_end`. Invoked from `close_reaction_window`'s
 /// kind-aware tail when a `MythosAfterDraws` window pops, and from
 /// `open_fast_window`'s auto-skip path inline.
 pub(super) fn mythos_phase_end(cx: &mut Cx) {
@@ -3706,7 +3706,7 @@ mod enemy_phase_tests {
         //
         // Submitting PlayerAction::ResolveInput(InputResponse::Skip)
         // routes through resolve_input's "open_windows non-empty +
-        // no reaction triggers" branch → close_reaction_window_at →
+        // no reaction triggers" branch → close_reaction_window →
         // anchor_on_child_pop's BeforeInvestigatorAttacked arm →
         // resolve_attacks_for_investigator → cursor advance to None →
         // open AfterAllInvestigatorsAttacked → auto-skip continuation
