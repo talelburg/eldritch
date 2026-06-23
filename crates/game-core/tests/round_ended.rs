@@ -28,13 +28,13 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     if code.as_str() == AGENDA {
         Some(vec![forced_on_event(
             EventPattern::RoundEnded,
-            EventTiming::After,
+            EventTiming::At,
             native("test:set-doom"),
         )])
     } else if code.as_str() == DISSONANT {
         Some(vec![forced_on_event(
             EventPattern::RoundEnded,
-            EventTiming::After,
+            EventTiming::At,
             deal_horror(InvestigatorTarget::You, 1),
         )])
     } else {

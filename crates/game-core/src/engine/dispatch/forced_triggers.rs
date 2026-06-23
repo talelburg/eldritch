@@ -129,8 +129,12 @@ pub(crate) enum ForcedTriggerPoint {
 /// since it carries no "Limit 1", two copies on one investigator would
 /// drop the second copy's test at end of turn — a known #212/#213
 /// limitation, not a single-hit guarantee.
-pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> EngineOutcome {
-    let hits = collect_forced_hits(cx.state, point);
+pub(crate) fn fire_forced_triggers(
+    cx: &mut Cx,
+    point: &ForcedTriggerPoint,
+    bucket: EventTiming,
+) -> EngineOutcome {
+    let hits = collect_forced_hits(cx.state, point, bucket);
     for hit in &hits {
         match resolve_one(cx, hit) {
             EngineOutcome::Done => {}
@@ -145,6 +149,7 @@ pub(crate) fn fire_forced_triggers(cx: &mut Cx, point: &ForcedTriggerPoint) -> E
 pub(super) fn collect_forced_hits(
     state: &crate::state::GameState,
     point: &ForcedTriggerPoint,
+    bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
@@ -158,9 +163,15 @@ pub(super) fn collect_forced_hits(
             let Some(loc) = state.locations.get(location) else {
                 return hits;
             };
-            push_matching(reg, &loc.code, *investigator, None, &mut hits, |p| {
-                matches!(p, EventPattern::EnteredLocation)
-            });
+            push_matching(
+                reg,
+                &loc.code,
+                *investigator,
+                None,
+                &mut hits,
+                bucket,
+                |p| matches!(p, EventPattern::EnteredLocation),
+            );
         }
         ForcedTriggerPoint::PhaseEnded { phase } => {
             let want_phase = dsl_phase(*phase);
@@ -176,6 +187,7 @@ pub(super) fn collect_forced_hits(
                     lead,
                     None,
                     &mut hits,
+                    bucket,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
             }
@@ -186,6 +198,7 @@ pub(super) fn collect_forced_hits(
                     lead,
                     None,
                     &mut hits,
+                    bucket,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
                 );
             }
@@ -194,7 +207,7 @@ pub(super) fn collect_forced_hits(
             let Some(lead) = state.turn_order.first().copied() else {
                 return hits;
             };
-            push_matching(reg, code, lead, None, &mut hits, |p| {
+            push_matching(reg, code, lead, None, &mut hits, bucket, |p| {
                 matches!(p, EventPattern::ActAdvanced)
             });
         }
@@ -202,7 +215,7 @@ pub(super) fn collect_forced_hits(
             let Some(lead) = state.turn_order.first().copied() else {
                 return hits;
             };
-            push_matching(reg, code, lead, None, &mut hits, |p| {
+            push_matching(reg, code, lead, None, &mut hits, bucket, |p| {
                 matches!(p, EventPattern::AgendaAdvanced)
             });
         }
@@ -211,7 +224,7 @@ pub(super) fn collect_forced_hits(
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(reg, &act.code, lead, None, &mut hits, |p| {
+                push_matching(reg, &act.code, lead, None, &mut hits, bucket, |p| {
                     matches!(
                         p,
                         EventPattern::EnemyDefeated { code: narrow, .. }
@@ -225,12 +238,12 @@ pub(super) fn collect_forced_hits(
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(reg, &act.code, lead, None, &mut hits, |p| {
+                push_matching(reg, &act.code, lead, None, &mut hits, bucket, |p| {
                     matches!(p, EventPattern::RoundEnded)
                 });
             }
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-                push_matching(reg, &agenda.code, lead, None, &mut hits, |p| {
+                push_matching(reg, &agenda.code, lead, None, &mut hits, bucket, |p| {
                     matches!(p, EventPattern::RoundEnded)
                 });
             }
@@ -246,6 +259,7 @@ pub(super) fn collect_forced_hits(
                         *inv_id,
                         Some(card.instance_id),
                         &mut hits,
+                        bucket,
                         |p| matches!(p, EventPattern::RoundEnded),
                     );
                 }
@@ -266,6 +280,7 @@ pub(super) fn collect_forced_hits(
                     *investigator,
                     Some(card.instance_id),
                     &mut hits,
+                    bucket,
                     |p| matches!(p, EventPattern::EndOfTurn),
                 );
             }
@@ -289,6 +304,7 @@ pub(super) fn collect_forced_hits(
                     *investigator,
                     Some(card.instance_id),
                     &mut hits,
+                    bucket,
                     |p| matches!(p, EventPattern::AfterLocationInvestigated),
                 );
             }
@@ -300,6 +316,7 @@ pub(super) fn collect_forced_hits(
                         *investigator,
                         Some(att.instance_id),
                         &mut hits,
+                        bucket,
                         |p| matches!(p, EventPattern::AfterLocationInvestigated),
                     );
                 }
@@ -318,6 +335,7 @@ pub(super) fn collect_forced_hits(
                         *inv_id,
                         Some(card.instance_id),
                         &mut hits,
+                        bucket,
                         |p| matches!(p, EventPattern::GameEnd),
                     );
                 }
@@ -337,6 +355,7 @@ pub(super) fn collect_forced_hits(
                         *investigator,
                         Some(att.instance_id),
                         &mut hits,
+                        bucket,
                         |p| matches!(p, EventPattern::LeftLocation),
                     );
                 }
@@ -363,6 +382,7 @@ fn push_matching(
     controller: InvestigatorId,
     source: Option<CardInstanceId>,
     out: &mut Vec<ResolutionCandidate>,
+    bucket: EventTiming,
     want: impl Fn(&EventPattern) -> bool,
 ) {
     let Some(abilities) = (reg.abilities_for)(code) else {
@@ -373,11 +393,10 @@ fn push_matching(
             pattern, timing, ..
         } = &ability.trigger
         {
-            // Only `After` timing is handled in this slice; no in-scope Forced
-            // card uses `When` ("when X would Y") timing, and `At`-timed forced
-            // abilities don't exist until Slice B-iii routes them through the
-            // EmitEvent coordinator. Revisit the filter there.
-            if *timing == EventTiming::After && want(pattern) {
+            // Scan only the bucket being resolved (the EmitEvent coordinator's
+            // current cell). Today every site passes `After` except the round-end
+            // `At` cell (agenda 01107 doom, Dissonant Voices 01165).
+            if *timing == bucket && want(pattern) {
                 out.push(ResolutionCandidate {
                     code: code.clone(),
                     controller,

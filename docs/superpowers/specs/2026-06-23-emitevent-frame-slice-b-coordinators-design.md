@@ -57,11 +57,12 @@ bucket, so there is no ordering to thread.
 
 ## Goal
 
-Reify the `when → at → after × forced → reaction` matrix as two `drive`-dispatched
-coordinator frames, with the bucket made first-class at the ability level so the coordinator
-scans every cell uniformly. Behaviour-preserving except for: (a) the per-cell eligibility
-re-scan (new ordering correctness, only changes outcomes in cases no in-scope card hits —
-synthetic regression test), and (b) the deliberate `WindowKind` event-log change (B-iv).
+Reify the `when → at → after × forced → reaction` matrix as two coordinator frames, with the
+bucket made first-class at the ability level so the coordinator scans every cell uniformly.
+(The frames are introduced here but driven imperatively; their `drive`-loop dispatch is
+Slice C.) Behaviour-preserving except for: (a) the per-cell eligibility re-scan (new ordering
+correctness, only changes outcomes in cases no in-scope card hits — synthetic regression
+test), and (b) the deliberate `WindowKind` event-log change (B-iii).
 
 ## Why the DSL rework (`EventTiming::{When, At, After}`)
 
@@ -121,7 +122,16 @@ Continuation::TimingPoint { event: TimingEvent, bucket: EventTiming, sub: Timing
 **`TimingPoint` dispatch:** runs `sub: Forced` (scan abilities of `EventTiming == bucket` +
 the #213 lead-ordering run for 2+), then `sub: Reaction` (the `TimingPointWindow` from
 Slice A, scanning reactions of `EventTiming == bucket`), then pops — "exactly what T5a's
-`emit_event` does today, made frame-resumable" and parameterized by bucket.
+`emit_event` does today" parameterized by bucket.
+
+**Driving (this slice): imperative, not `drive`-loop.** Like Slice A's windows, the
+coordinators are introduced as frames but resumed by the existing imperative entry points
+(`open_queued_reaction_window` / `close_reaction_window_at`), **not** by a `drive`-loop arm —
+that dispatch is Slice C. Critically, `emit_event`'s forced/reaction *internals* are
+preserved verbatim: the reaction window is still **queued** (logging `WindowOpened`) before
+forced abilities resolve, and **opened later** at the existing deferred sites. The
+coordinators wrap the *bucket iteration* around that unchanged core, so the event log is
+byte-identical for every single-bucket event.
 
 **Bucket population** is `forced_point(bucket)` / `reaction_window(bucket)` (today's
 functions gain a bucket parameter, filtering scanned abilities by `EventTiming`). Every
@@ -185,31 +195,56 @@ consumers — hence its own sub-slice.
 
 ## Sub-slicing (each independently green)
 
-- **B-i — DSL timing rework.** `EventTiming::Before → When` (rename, ~15 sites); add `At`
-  (variant present, not yet assigned to any ability). Generalize the forced scanner's
-  `timing == After` filter to be bucket-passed (still only `After` is populated, so
-  behaviour-preserving). Pure rename + dormant variant.
-- **B-ii — `TimingPoint` frame.** Reify `emit_event`'s forced→reaction into the
-  frame-resumable `TimingPoint`; `emit_event` pushes a lone `TimingPoint` for the event's
-  single bucket. `EmitEvent` not yet introduced. Behaviour-preserving. Largest mechanical PR.
-- **B-iii — `EmitEvent` coordinator + round-end remodel + re-scan + §G test.** Introduce
-  `EmitEvent`; make `forced_point`/`reaction_window` bucket-parameterized; remodel act 01109
-  as a `When` reaction ability + re-tag the round-end doom abilities to `At` (deleting
-  `round_end_advance` / `ActRoundEnd`); per-cell re-scan; the synthetic §G regression test.
-  The new-behaviour PR.
-- **B-iv — `WindowKind` deletion + observability redesign.** Delete `WindowKind`; redesign
+> **Re-sliced 2026-06-23 (after reading the real emit/window machinery).** An earlier draft
+> split the coordinators into a standalone `TimingPoint`-frame PR (old B-ii) ahead of
+> `EmitEvent` (old B-iii). That boundary does **not** hold: reaction-window *opening* is
+> deliberately deferred across ~6 framework sites (`open_queued_reaction_window` in
+> `combat.rs` / `skill_test.rs` / `cards.rs` / `evaluator.rs`), and `WindowOpened` is logged
+> at *queue* time **before** forced abilities resolve (`emit_event` doc: *"WindowOpened is
+> emitted before the forced effects' events"*) — both load-bearing for the event log. A
+> `TimingPoint` that genuinely owns "forced *then* reaction" would have to own reaction-window
+> opening, which is entangled with the loop-driving **Slice C** owns; a naive
+> `Forced`-sub→`Reaction`-sub frame would emit forced events before `WindowOpened`, changing
+> the log. So the coordinators land **together** (restoring the arc decomposition's original
+> "EmitEvent + TimingPoint = one slice" grouping), keeping `emit_event`'s forced/reaction
+> internals — queue-then-defer-open, `WindowOpened`-at-queue — **exactly as today**.
+
+- **B-i — DSL timing rework.** ✅ shipped (PR #440). `EventTiming::Before → When` (rename, 14
+  sites) + dormant `At` variant. Behaviour-preserving.
+- **B-ii — the round-end remodel (bucket-aware forced scan + 01109 as a registry ability).**
+  **Re-scoped 2026-06-23 (implementation):** the `EmitEvent`/`TimingPoint` *stack frames* are
+  deferred to Slice C alongside the drive-loop dispatch — building them as imperatively-driven
+  scaffolding now is premature and high-risk in `emit_event` (the engine's highest-blast-radius
+  fn). B-ii instead delivers the **user-visible goal** — 01109's advance *logic* out of the
+  framework and into the registry — with far less machinery:
+  - the forced scan is bucket-parameterized (T1, shipped);
+  - act 01109 gains a `When`-`RoundEnded` reaction ability whose native does the group
+    clue-spend + advance (T2, shipped);
+  - the upkeep round-end flow **fires that registry ability** (via `apply_effect`) on the
+    player's Confirm, instead of the old inline spend; the doom abilities re-tag `After → At`
+    and the `at` step fires the `At` bucket; `Act.round_end_advance` / `RoundEndAdvance` /
+    `ActRoundEnd` are deleted.
+  - **Affordability gate dropped** (it needed the contributor location as a framework field):
+    the round-end advance is now offered whenever the current act exposes the `When` ability —
+    which is *more* RR-accurate ("investigators **may** … spend") — and the native no-ops when
+    the group can't afford. `when→at` order preserved by the upkeep flow's structure.
+  The reified `EmitEvent`/`TimingPoint` frames + per-cell re-scan + the §G test move to Slice C
+  (where the loop drives them); B-ii's §G coverage is the existing round-end ordering tests.
+- **B-iii — `WindowKind` deletion + observability redesign.** Delete `WindowKind`; redesign
   `WindowOpened/Closed` (read-from-anchor, drop `PhaseStep`); update the ~46 assertions. The
   event-log-change PR.
 
 ## Testing strategy
 
-- **B-i / B-ii / B-iv: behaviour-preserving** (B-iv changes window *payload*, no game
-  outcome). Full engine + integration suite green at each boundary.
-- **B-iii: new behaviour** in the §G re-scan only — covered by the synthetic act/agenda
-  fixture. The 01109 remodel is behaviour-preserving (same group spend, same `when→at`
-  order), backstopped by `crates/game-core/tests/act_round_end.rs`,
-  `crates/cards/tests/act_advancement.rs`, `crates/cards/tests/the_barrier.rs`, and
-  `crates/scenarios/tests/the_gathering*.rs`.
+- **B-i / B-iii: behaviour-preserving** (B-iii changes window *payload*, no game outcome).
+  Full engine + integration suite green at each boundary.
+- **B-ii: new behaviour** in the §G re-scan only — covered by the synthetic act/agenda
+  fixture. The bucket-iteration wrapper and the 01109 remodel are behaviour-preserving (same
+  group spend, same `when→at` order, byte-identical event log for single-bucket events),
+  backstopped by `crates/game-core/tests/act_round_end.rs`,
+  `crates/cards/tests/act_advancement.rs`, `crates/cards/tests/the_barrier.rs`,
+  `crates/game-core/tests/reaction_windows.rs`, `crates/game-core/tests/forced_triggers.rs`,
+  and `crates/scenarios/tests/the_gathering*.rs`.
 - Match the full CI gauntlet (fmt / clippy / test / doc / wasm) before each push.
 
 ## What "done" looks like

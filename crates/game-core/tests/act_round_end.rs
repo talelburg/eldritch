@@ -2,13 +2,55 @@
 //! guard blocks non-`ResolveInput` actions while a window is pending, and
 //! `ResolveInput` routes to the resume (Confirm spends + advances).
 
+use std::sync::OnceLock;
+
+use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
 use game_core::action::{InputResponse, PlayerAction};
+use game_core::card_data::CardMetadata;
+use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::state::{
     Act, ActRoundEndPending, CardCode, GameState, InvestigatorId, Location, LocationId, Phase,
     RoundEndAdvance,
 };
 use game_core::test_support::{test_investigator, GameStateBuilder};
-use game_core::{apply, Action, EngineOutcome};
+use game_core::{apply, round_end_advance, Action, Cx, EngineOutcome, EvalContext};
+
+/// The advance logic now lives in the registry (01109's `When`-`RoundEnded`
+/// reaction native), so the resume fires it through the effect evaluator. A
+/// minimal mock registry stands in for `cards`: act 01109 exposes the `When`
+/// advance reaction whose native delegates to the engine's group clue-spend.
+fn advance_native(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
+    round_end_advance(cx, "01112") // the Hallway
+}
+
+fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+    (code.as_str() == "01109").then(|| {
+        vec![reaction_on_event(
+            EventPattern::RoundEnded,
+            EventTiming::When,
+            native("test:advance"),
+        )]
+    })
+}
+
+fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
+    (tag == "test:advance").then_some(advance_native as NativeEffectFn)
+}
+
+fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
+    None
+}
+
+fn install() {
+    static INSTALL: OnceLock<()> = OnceLock::new();
+    INSTALL.get_or_init(|| {
+        let _ = card_registry::install(CardRegistry {
+            metadata_for: mock_metadata_for,
+            abilities_for: mock_abilities_for,
+            native_effect_for: mock_native_for,
+        });
+    });
+}
 
 /// Act 2 current, a Hallway investigator with `clues`, and the round-end
 /// window already parked (so we test the guard + routing, not the phase
@@ -81,6 +123,7 @@ fn pending_window_blocks_non_resolve_actions() {
 
 #[test]
 fn resolve_confirm_routes_to_resume_and_advances() {
+    install();
     let state = parked_window_state(3);
     let r = apply(
         state,

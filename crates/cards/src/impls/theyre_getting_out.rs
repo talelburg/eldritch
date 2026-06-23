@@ -51,7 +51,7 @@ pub fn abilities() -> Vec<Ability> {
         ),
         forced_on_event(
             EventPattern::RoundEnded,
-            EventTiming::After,
+            EventTiming::At,
             native(ROUND_END_DOOM),
         ),
     ]
@@ -195,7 +195,7 @@ mod tests {
             abilities[1].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::RoundEnded,
-                timing: EventTiming::After,
+                timing: EventTiming::At,
                 kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
