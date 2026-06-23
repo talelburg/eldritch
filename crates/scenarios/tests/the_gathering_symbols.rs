@@ -188,7 +188,6 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::G
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
         resolution: Some(Resolution::Won { id: "R1".into() }),
-        round_end_advance: None,
     }];
     state
 }
@@ -264,7 +263,6 @@ fn two_cleared_victory_locations_both_enter_display() {
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
         resolution: Some(Resolution::Won { id: "R1".into() }),
-        round_end_advance: None,
     }];
     let r = advance_to_resolution(state);
     assert!(

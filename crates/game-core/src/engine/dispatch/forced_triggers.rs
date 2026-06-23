@@ -6,7 +6,7 @@
 //! player-chosen ordering, #212 the universal `emit_event` chokepoint.
 
 use crate::card_registry;
-use crate::dsl::{EventPattern, EventTiming, Trigger};
+use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, InvestigatorId, LocationId, Phase,
     ResolutionCandidate,
@@ -390,13 +390,19 @@ fn push_matching(
     };
     for (idx, ability) in abilities.iter().enumerate() {
         if let Trigger::OnEvent {
-            pattern, timing, ..
+            pattern,
+            timing,
+            kind,
         } = &ability.trigger
         {
+            // Forced abilities only. The coordinator scans the *same*
+            // (event, bucket) for both forced and reaction (#434) — e.g. act
+            // 01109 carries a `When`-`RoundEnded` *reaction* the forced scan must
+            // not collect — so `kind` filtering is load-bearing, not cosmetic.
             // Scan only the bucket being resolved (the EmitEvent coordinator's
             // current cell). Today every site passes `After` except the round-end
             // `At` cell (agenda 01107 doom, Dissonant Voices 01165).
-            if *timing == bucket && want(pattern) {
+            if *kind == TriggerKind::Forced && *timing == bucket && want(pattern) {
                 out.push(ResolutionCandidate {
                     code: code.clone(),
                     controller,

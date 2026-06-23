@@ -48,7 +48,10 @@ pub use dispatch::emit::TimingEvent;
 // Round-end driver + act-window resume, exposed for `test_support`'s
 // `run_upkeep_round_end` / `resume_round_end_window` (the `when→at` ordering
 // regression in `crates/cards/tests/theyre_getting_out.rs` drives them end-to-end).
-pub(crate) use dispatch::phases::{resume_act_round_end_advance, upkeep_phase_end};
+pub(crate) use dispatch::phases::upkeep_phase_end;
+// `pub(crate)` for `test_support` round-end helpers: drive the coordinator the
+// real loop drives (#434), and resume a window via the player-action entry.
+pub(crate) use dispatch::{apply_player_action, drive};
 
 use crate::action::Action;
 use crate::event::Event;
@@ -4932,7 +4935,6 @@ mod tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 1,
             resolution: Some(Resolution::Won { id: "test".into() }),
-            round_end_advance: None,
         }];
         state
     }

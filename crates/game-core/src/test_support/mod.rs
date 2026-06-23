@@ -75,27 +75,36 @@ pub fn fire_forced_on_round_end(
     )
 }
 
-/// Test helper: run the Upkeep step-4.6 round-end sequence
-/// (`upkeep_phase_end`), returning the `EngineOutcome`. Suspends on act
-/// 01109's "when the round ends" clue-spend window when affordable; resume it
-/// with [`resume_round_end_window`].
+/// Test helper: run the Upkeep step-4.6 round-end sequence — `upkeep_phase_end`
+/// then the `drive` loop that walks the `RoundEnded` coordinator (#434) —
+/// returning the `EngineOutcome`. Suspends on act 01109's "when the round ends"
+/// clue-spend reaction window when affordable; resume it with
+/// [`resume_round_end_window`]. Requires the `UpkeepPhase` anchor on the stack
+/// (the coordinator's teardown pops it).
 pub fn run_upkeep_round_end(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    crate::engine::upkeep_phase_end(&mut cx)
+    let out = crate::engine::upkeep_phase_end(&mut cx);
+    crate::engine::drive(&mut cx, out)
 }
 
-/// Test helper: resume a parked act round-end clue-spend window
-/// (`resume_act_round_end_advance`) with `response`.
+/// Test helper: resume the round-end `when` act-advance reaction window (#434)
+/// with `response` (`PickSingle`/`Skip`), driving the coordinator through to its
+/// next suspension or completion via the player-action entry.
 pub fn resume_round_end_window(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,
     response: &crate::action::InputResponse,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    crate::engine::resume_act_round_end_advance(&mut cx, response)
+    crate::engine::apply_player_action(
+        &mut cx,
+        &crate::action::PlayerAction::ResolveInput {
+            response: response.clone(),
+        },
+    )
 }
 
 /// Test helper: fire forced triggers for an act advancing, returning the

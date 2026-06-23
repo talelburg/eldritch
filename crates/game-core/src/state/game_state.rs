@@ -280,36 +280,6 @@ pub struct Act {
     /// The printed resolution point on this act's reverse. `Some` on a
     /// terminal act; `None` otherwise.
     pub resolution: Option<crate::scenario::Resolution>,
-    /// When `Some`, this act offers a round-end clue-spend objective
-    /// instead of an Investigation-phase `AdvanceAct` (see [`RoundEndAdvance`]).
-    /// `None` for acts that advance by the normal action or a forced trigger.
-    pub round_end_advance: Option<RoundEndAdvance>,
-}
-
-/// A round-end "may spend clues to advance" objective (Rules Reference:
-/// act objectives). 01109 "The Barrier": investigators in the Hallway may,
-/// as a group, spend the act's `clue_threshold` clues to advance when the
-/// round ends. Generic mechanics — only the contributor location is
-/// card-specific, so it is set by content (`the_gathering.rs`), not parsed
-/// from the corpus (no structured `ArkhamDB` field exists for it; single
-/// consumer). See issue #275.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RoundEndAdvance {
-    /// Only investigators at this in-play location (by printed code) may
-    /// contribute clues — 01109: the Hallway `01112`.
-    pub contributor_location: CardCode,
-}
-
-/// A parked act round-end clue-spend window (see [`RoundEndAdvance`]). The
-/// decision context is snapshotted at park time; resolved via
-/// `resume_act_round_end_advance`. `Some` on [`GameState`] only while
-/// awaiting the group's Confirm/Skip at the end of the round.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActRoundEndPending {
-    /// In-play location whose investigators may contribute clues.
-    pub contributor_location: LocationId,
-    /// Clues to spend to advance (the act's `clue_threshold`).
-    pub threshold: u8,
 }
 
 /// Which driver to resume after a mid-attack reaction window closes.
@@ -415,9 +385,10 @@ pub enum Continuation {
     /// An event reaction window or the #213 forced run, keyed by the
     /// [`TimingEvent`](crate::engine::TimingEvent) that opened it (EmitEvent-frame
     /// Slice A, #433). The [`mode`](TimingMode) distinguishes a skippable
-    /// reaction window from the mandatory forced run (which carries its
-    /// [`ForcedContinuation`]). The `TimingEvent` is referenced in place rather
-    /// than relocated — [`Effect`](Self::Effect) already holds a `crate::engine`
+    /// reaction window from the mandatory forced run (which carries no resume
+    /// continuation — on close the `drive` loop re-dispatches the exposed parent
+    /// frame, #434). The `TimingEvent` is referenced in place rather than
+    /// relocated — [`Effect`](Self::Effect) already holds a `crate::engine`
     /// type ([`EvalContext`](crate::engine::EvalContext), #345).
     TimingPointWindow {
         /// The timing event that opened this window/run.
@@ -460,9 +431,30 @@ pub enum Continuation {
     /// A suspended upkeep hand-size discard (#111), migrated off the former
     /// `GameState::hand_size_discard_pending` field (#348).
     HandSizeDiscard(HandSizeDiscard),
-    /// A suspended act round-end clue-spend window (#275), migrated off the
-    /// former `GameState::act_round_end_pending` field (#348).
-    ActRoundEnd(ActRoundEndPending),
+    /// Coordinator: walk the RR timing buckets `When → At → After` for one game
+    /// event (EmitEvent-frame C-coordinators, #434). `bucket` is the cursor.
+    /// Pushed by `emit_event` for the only multi-bucket event (`RoundEnded`);
+    /// the `drive` loop dispatches it, pushing a [`TimingPoint`](Self::TimingPoint)
+    /// per populated bucket and re-scanning each cell fresh. Suspends at the
+    /// round-end `when` act-advance window.
+    EmitEvent {
+        /// The game event whose timing buckets are being walked.
+        event: crate::engine::TimingEvent,
+        /// The bucket cursor (`When` → `At` → `After`).
+        bucket: crate::dsl::EventTiming,
+    },
+    /// Coordinator: one timing bucket of an [`EmitEvent`](Self::EmitEvent) walk,
+    /// running forced then reaction (`sub` cursor). What single-bucket
+    /// `emit_event` does today, parameterized by bucket and made frame-resumable
+    /// (#434). Child of an `EmitEvent` frame.
+    TimingPoint {
+        /// The game event (carried for the forced/reaction scans).
+        event: crate::engine::TimingEvent,
+        /// Which bucket this point resolves.
+        bucket: crate::dsl::EventTiming,
+        /// The forced-then-reaction sub-cursor.
+        sub: TimingSub,
+    },
     /// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
     /// at initiation (#322), migrated off the former
     /// `GameState::pending_substitution_prompt` field (#348). Pushed *above* the
@@ -797,27 +789,17 @@ impl Continuation {
         }
     }
 
-    /// Whether the frame is the mandatory #213 forced run, in either
-    /// representation. `false` for reaction windows and non-window frames.
+    /// Whether the frame is the mandatory #213 forced run. `false` for reaction
+    /// windows and non-window frames.
     #[must_use]
     pub fn is_forced(&self) -> bool {
-        match self {
-            Continuation::TimingPointWindow { mode, .. } => matches!(mode, TimingMode::Forced(_)),
-            _ => false,
-        }
-    }
-
-    /// The [`ForcedContinuation`] if this frame is the forced run, in either
-    /// representation; `None` for a reaction window or non-window frame.
-    #[must_use]
-    pub fn forced_continuation(&self) -> Option<ForcedContinuation> {
-        match self {
+        matches!(
+            self,
             Continuation::TimingPointWindow {
-                mode: TimingMode::Forced(c),
+                mode: TimingMode::Forced,
                 ..
-            } => Some(*c),
-            _ => None,
-        }
+            }
+        )
     }
 
     /// The [`TimingEvent`](crate::engine::TimingEvent) that opened this frame,
@@ -895,6 +877,25 @@ pub enum UpkeepResume {
     Entry,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
+    /// The round-end `EmitEvent` coordinator (the `when` act advance + the `at`
+    /// doom) popped; run `upkeep_round_end_teardown` (expire until-end-of-round
+    /// effects, Upkeep → Mythos). Set by `upkeep_phase_end` before it cedes to
+    /// the coordinator (#434 — subsumes `ForcedContinuation::UpkeepAfterRoundEnded`).
+    AfterRoundEnd,
+}
+
+/// The forced-then-reaction sub-cursor of a [`Continuation::TimingPoint`]
+/// (#434). `Forced` fires the bucket's forced abilities (0/1 inline, 2+ via the
+/// lead-ordered run), `Reaction` opens the bucket's reaction window, `Done`
+/// finishes the bucket (advance the parent `EmitEvent`'s cursor + pop).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimingSub {
+    /// Fire the bucket's forced abilities.
+    Forced,
+    /// Open the bucket's reaction window.
+    Reaction,
+    /// Bucket resolved; advance the parent `EmitEvent` cursor and pop.
+    Done,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -1199,45 +1200,23 @@ impl FastActorScope {
     }
 }
 
-/// How a forced run ([`TimingMode::Forced`]) resumes the framework flow
-/// it suspended when 2+ simultaneous forced abilities forced a lead-ordered
-/// choice (#213).
-///
-/// Most emit sites are *terminal*: nothing in the framework runs after the
-/// forced abilities resolve, so the run closes to [`Terminal`](Self::Terminal)
-/// and control returns to the caller. Sites with framework work *after* the
-/// emit (e.g. the upkeep step continues after `RoundEnded`) carry a dedicated
-/// variant naming that tail, so the suspended flow is resumed exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum ForcedContinuation {
-    /// No framework work follows the forced run; closing returns control to
-    /// the emit site's caller.
-    Terminal,
-    /// Resume the upkeep step's tail after `RoundEnded`'s forced abilities
-    /// resolve: open the act round-end advance window, then step the phase.
-    UpkeepAfterRoundEnded,
-    /// Resume the end-of-turn step (RR p.24 2.2.2) after a turn-ending
-    /// investigator's `EndOfTurn` forced abilities resolve: rotate to the
-    /// next active investigator, or end the Investigation phase.
-    EndOfTurnAfterForced {
-        /// The investigator whose turn ended.
-        investigator: InvestigatorId,
-    },
-}
-
 /// Whether a [`TimingPointWindow`](Continuation::TimingPointWindow) is a
 /// skippable reaction window or the mandatory #213 forced run. Collapses the
 /// old `ResolutionKind::{Window | Forced}` split onto the one frame: a forced
-/// run admits no Fast plays, drains all candidates, and on close resumes the
-/// framework flow named by its [`ForcedContinuation`].
+/// run admits no Fast plays and drains all candidates. It carries **no** resume
+/// continuation (#434): on close it returns `Done` and the `drive` loop
+/// re-dispatches whatever frame is exposed beneath it (the coordinator's
+/// `TimingPoint`, the `InvestigatorTurn { ending }` frame, the move's
+/// `ActionResolution`, …). The invariant is that any emit site capable of a
+/// 2+-forced run resumes via its own frame — see the deleted
+/// `ForcedContinuation`'s former call sites (#434).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimingMode {
     /// A reaction/fast window: skippable, admits Fast plays.
     Reaction,
-    /// The forced run (#213): mandatory, no Fast plays; resumes the framework
-    /// flow named by the continuation on close.
-    Forced(ForcedContinuation),
+    /// The forced run (#213): mandatory, no Fast plays. Carries no resume
+    /// continuation; the loop re-dispatches the exposed parent frame on close.
+    Forced,
 }
 
 /// The Rules-Reference timing step a [`FastWindowKind::Phase`] window sits
@@ -2137,7 +2116,6 @@ mod act_agenda_code_tests {
             code: CardCode("01108".into()),
             clue_threshold: 2,
             resolution: None,
-            round_end_advance: None,
         };
         let agenda = Agenda {
             code: CardCode("01105".into()),

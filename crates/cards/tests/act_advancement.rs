@@ -4,10 +4,11 @@
 //! with the real registry. End-to-end defeat->Won via a real Fight is
 //! C7b (#245).
 
-use game_core::engine::EngineOutcome;
+use game_core::action::{Action, PlayerAction};
+use game_core::engine::{apply, EngineOutcome};
 use game_core::scenario::Resolution;
-use game_core::state::{Act, CardCode, InvestigatorId};
-use game_core::test_support::GameStateBuilder;
+use game_core::state::{Act, CardCode, InvestigatorId, Phase};
+use game_core::test_support::{test_investigator, GameStateBuilder};
 
 fn act3_state() -> game_core::state::GameState {
     let _ = game_core::card_registry::install(cards::REGISTRY);
@@ -18,7 +19,6 @@ fn act3_state() -> game_core::state::GameState {
         code: CardCode("01110".into()),
         clue_threshold: 0,
         resolution: Some(Resolution::Won { id: "R1".into() }),
-        round_end_advance: None,
     }];
     state
 }
@@ -53,4 +53,35 @@ fn defeating_other_enemy_does_not_advance_act_3() {
         state.resolution.is_none(),
         "only the Ghoul Priest's defeat advances Act 3"
     );
+}
+
+/// Act 01109 ("The Barrier") advances only at the end of the round (its
+/// `When`-`RoundEnded` group objective), so the `AdvanceAct` *action* is rejected.
+/// Registry-based detection (`act_advances_at_round_end`, #434) — needs the real
+/// registry, so it lives here rather than as a game-core lib unit test.
+#[test]
+fn advance_act_rejected_for_round_end_advance_act() {
+    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let inv = InvestigatorId(1);
+    let mut investigator = test_investigator(1);
+    investigator.clues = 9; // plenty — reject must be the objective, not affordability
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(investigator)
+        .with_active_investigator(inv)
+        .with_turn_order([inv])
+        .build();
+    state.act_deck = vec![Act {
+        code: CardCode("01109".into()),
+        clue_threshold: 3,
+        resolution: None,
+    }];
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+    );
+    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    assert_eq!(result.state.act_index, 0, "act did not advance");
+    assert_eq!(result.state.investigators[&inv].clues, 9, "no clues spent");
 }

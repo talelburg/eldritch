@@ -265,7 +265,6 @@ mod tests {
             code: CardCode("_test_act".into()),
             clue_threshold: threshold,
             resolution: None,
-            round_end_advance: None,
         }];
         state
     }
@@ -675,13 +674,11 @@ mod tests {
                 code: crate::state::CardCode("_act1".into()),
                 clue_threshold: 2,
                 resolution: None,
-                round_end_advance: None,
             },
             crate::state::Act {
                 code: crate::state::CardCode("_act2".into()),
                 clue_threshold: 99,
                 resolution: None,
-                round_end_advance: None,
             },
         ];
 
