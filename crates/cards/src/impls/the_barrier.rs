@@ -36,10 +36,13 @@
 //! single-trigger forced-advance path until #213/#212; consistent with
 //! the rest of Slice 1's solo-first scope.
 
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{
+    forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
+};
 use game_core::card_registry::NativeEffectFn;
 use game_core::{
-    location_id_by_code, reveal_location, spawn_set_aside_enemy, Cx, EngineOutcome, EvalContext,
+    location_id_by_code, reveal_location, round_end_advance, spawn_set_aside_enemy, Cx,
+    EngineOutcome, EvalContext,
 };
 
 /// `ArkhamDB` code for Act 2, "The Barrier".
@@ -48,25 +51,56 @@ pub const CODE: &str = "01109";
 /// Native-effect tag for this act's reverse.
 const REVERSE: &str = "01109:reverse";
 
+/// Native-effect tag for the front objective's round-end group clue-spend
+/// advance ("When the round ends, investigators in the hallway may, as a group,
+/// spend the requisite number of clues to advance").
+pub(crate) const ROUND_END_ADVANCE: &str = "01109:round_end_advance";
+
 /// Printed codes the reverse touches.
 const GHOUL_PRIEST: &str = "01116";
 const HALLWAY: &str = "01112";
 const PARLOR: &str = "01115";
 
-/// 01109's Forced on-advance reverse: reveal the Parlor + spawn the Priest.
+/// 01109's two abilities:
+/// - the **front objective** — "When the round ends, investigators in the
+///   Hallway may, as a group, spend the requisite number of clues to advance":
+///   a `When`-timed `RoundEnded` reaction. The round-end `When` window offers
+///   this as a single candidate (PickSingle = advance, Skip = decline); the
+///   native spends + advances. Affordability is gated in the reaction scan.
+/// - the **reverse** — a Forced on-advance ability (reveal the Parlor + spawn
+///   the Priest) that fires when the act advances.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![forced_on_event(
-        EventPattern::ActAdvanced,
-        EventTiming::After,
-        native(REVERSE),
-    )]
+    vec![
+        forced_on_event(
+            EventPattern::ActAdvanced,
+            EventTiming::After,
+            native(REVERSE),
+        ),
+        reaction_on_event(
+            EventPattern::RoundEnded,
+            EventTiming::When,
+            native(ROUND_END_ADVANCE),
+        ),
+    ]
 }
 
-/// Resolve [`REVERSE`] if `tag` matches. Wired into the crate registry's
+/// Resolve 01109's native tags. Wired into the crate registry's
 /// `native_effect_for`.
 pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == REVERSE).then_some(reverse as NativeEffectFn)
+    match tag {
+        REVERSE => Some(reverse as NativeEffectFn),
+        ROUND_END_ADVANCE => Some(advance_via_clue_spend as NativeEffectFn),
+        _ => None,
+    }
+}
+
+/// Front-objective native: spend the act's `clue_threshold` from Hallway
+/// (01112) investigators, then advance the act. Synchronous — the player's
+/// choice was the round-end `When` window's PickSingle. Delegates to the
+/// engine's generic group-spend entry, passing the printed contributor location.
+fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
+    round_end_advance(cx, HALLWAY)
 }
 
 /// Reveal the Parlor (01115) and spawn the set-aside Ghoul Priest (01116)
@@ -92,18 +126,19 @@ fn reverse(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger, TriggerKind};
 
     #[test]
-    fn abilities_are_one_forced_on_advance_native_reverse() {
+    fn abilities_are_forced_reverse_then_when_round_end_advance() {
         let abilities = super::abilities();
-        assert_eq!(abilities.len(), 1);
+        assert_eq!(abilities.len(), 2);
+        // [0] the reverse: Forced on-advance native.
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::ActAdvanced,
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         assert!(
@@ -111,11 +146,26 @@ mod tests {
             "the reverse is a card-local native effect, got {:?}",
             abilities[0].effect
         );
+        // [1] the front objective: a When-timed RoundEnded reaction → native.
+        assert_eq!(
+            abilities[1].trigger,
+            Trigger::OnEvent {
+                pattern: EventPattern::RoundEnded,
+                timing: EventTiming::When,
+                kind: TriggerKind::Reaction,
+            }
+        );
+        assert!(
+            matches!(&abilities[1].effect, Effect::Native { tag } if tag == "01109:round_end_advance"),
+            "the round-end advance is a card-local native effect, got {:?}",
+            abilities[1].effect
+        );
     }
 
     #[test]
-    fn native_effect_for_resolves_only_the_reverse_tag() {
+    fn native_effect_for_resolves_both_tags_only() {
         assert!(super::native_effect_for("01109:reverse").is_some());
+        assert!(super::native_effect_for("01109:round_end_advance").is_some());
         assert!(super::native_effect_for("01109:other").is_none());
     }
 }

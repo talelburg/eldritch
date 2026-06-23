@@ -231,6 +231,39 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
     debug_assert_eq!(remaining, 0, "spend_clues_from called without enough clues");
 }
 
+/// Round-end group clue-spend act advance — the generic mechanics behind act
+/// 01109's "investigators in the Hallway may, as a group, spend the requisite
+/// number of clues to advance" (the only card-specific datum is the contributor
+/// location, passed in). Resolves `contributor_location_code` to its in-play
+/// location and, if the investigators there hold at least the **current act's**
+/// `clue_threshold`, spends it from them (turn order) and advances the act.
+///
+/// Affordability is gated by the round-end `When` reaction scan (the candidate
+/// is offered only when affordable), so the insufficient-clues branch is a
+/// defensive reject. Exposed for the `cards` registry's 01109 native handler.
+pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
+    let Some(act) = cx.state.act_deck.get(cx.state.act_index) else {
+        return EngineOutcome::Rejected {
+            reason: "round_end_advance: no current act".into(),
+        };
+    };
+    let threshold = act.clue_threshold;
+    let Some(loc) = crate::engine::location_id_by_code(cx.state, contributor_location_code) else {
+        return EngineOutcome::Rejected {
+            reason: "round_end_advance: contributor location not in play".into(),
+        };
+    };
+    let contributors = investigators_at(cx.state, loc);
+    if clues_held(cx.state, &contributors) < u32::from(threshold) {
+        return EngineOutcome::Rejected {
+            reason: "round_end_advance: contributors no longer hold enough clues".into(),
+        };
+    }
+    spend_clues_from(cx.state, &contributors, threshold);
+    advance_act(cx);
+    EngineOutcome::Done
+}
+
 /// Advance the act deck one step: emit [`Event::ActAdvanced`], fire the
 /// leaving act's Forced on-advance reverse effect via the registry, then
 /// move the cursor. Only called for a non-terminal act; the
