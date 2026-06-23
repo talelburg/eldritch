@@ -17,9 +17,7 @@
 //! logged [`Event`](crate::event::Event) — call sites still emit their own
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
-use crate::state::{
-    CardCode, CardInstanceId, EnemyId, ForcedContinuation, InvestigatorId, LocationId, Phase,
-};
+use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase};
 
 use serde::{Deserialize, Serialize};
 
@@ -200,74 +198,6 @@ impl TimingEvent {
                 | TimingEvent::EnteredPlay { .. }
         )
     }
-
-    /// How a *forced run* opened at this timing point resumes the framework
-    /// flow on close (#213). Read only when 2+ simultaneous forced abilities
-    /// fire and the lead must order them — see [`emit_event`].
-    ///
-    /// - `Some(ForcedContinuation::Terminal)` — the emit site is genuinely
-    ///   terminal: nothing in the framework runs after the forced abilities,
-    ///   so the run closes to `Done`.
-    /// - `Some(ForcedContinuation::…)` — the site has framework work after
-    ///   the emit; the named variant resumes exactly that tail.
-    /// - `None` — the site *has* a tail but its resume continuation is **not
-    ///   wired**. Safe today because no such site can produce 2+ forced in
-    ///   the current card pool; `emit_event` turns a 2+ hit here into a loud
-    ///   `unreachable!` rather than silently dropping the tail.
-    ///
-    /// The match is exhaustive over [`TimingEvent`] (and over [`Phase`] for
-    /// `PhaseEnded`) so adding a variant forces a deliberate decision here.
-    fn forced_continuation(&self) -> Option<ForcedContinuation> {
-        match self {
-            // `Terminal` — nothing framework-level follows the forced run; the
-            // `drive` loop re-dispatches whatever frame is exposed beneath it.
-            //   - `EnteredLocation`: a move completes once "when you enter"
-            //     forced abilities resolve.
-            //   - `EndOfTurn` (RR p.24 2.2.2): a 2+ `EndOfTurn` forced run closes
-            //     to `Done`; the loop then re-dispatches the re-exposed
-            //     `InvestigatorTurn { ending: true }` frame (flagged by
-            //     `end_turn`), which runs `resume_end_turn` (rotate / end the
-            //     phase) — #434, unified with the single-suspend path (was
-            //     `EndOfTurnAfterForced`).
-            TimingEvent::EnteredLocation { .. } | TimingEvent::EndOfTurn { .. } => {
-                Some(ForcedContinuation::Terminal)
-            }
-            // Non-terminal sites with no wired resume continuation. None can
-            // produce 2+ forced in the current card pool; if one ever does,
-            // emit_event's 2+ branch fires its loud guard rather than
-            // dropping the tail. Add a ForcedContinuation variant + arm then.
-            //
-            // `RoundEnded` lives here too (#434): it no longer reaches this
-            // forced path — `emit_event`'s `RoundEnded` branch pushes the
-            // `EmitEvent` coordinator and returns, so `forced_continuation()` is
-            // never consulted for it (its `at`-cell forced run resumes the
-            // coordinator's `TimingPoint`, not a framework tail).
-            //
-            // Extra care for the **dual** sites (`EnemyDefeated`,
-            // `SuccessfullyInvestigated`): emit_event queues their reaction
-            // window *before* pushing the forced run on top, so wiring a
-            // continuation here must also re-surface that queued window after
-            // the forced run closes — otherwise it is left stranded below the
-            // forced frame (the apply loop has no post-dispatch window sweep).
-            TimingEvent::PhaseEnded { .. }
-            | TimingEvent::ActAdvanced { .. }
-            | TimingEvent::AgendaAdvanced { .. }
-            | TimingEvent::EnemyDefeated { .. }
-            | TimingEvent::RoundEnded
-            | TimingEvent::GameEnd
-            | TimingEvent::EnemyAttackDamagedSelf { .. }
-            | TimingEvent::SuccessfullyInvestigated { .. }
-            // Non-terminal forced-only site (the move continues to
-            // EnteredLocation); no in-scope card produces 2+ forced here, so
-            // the loud guard is correct (Barricade 01038's single self-discard).
-            | TimingEvent::LeftLocation { .. }
-            // Reaction-only Before-timing points: no forced phase (Axis D).
-            | TimingEvent::EnemyAttacks { .. }
-            // Reaction-only After point: no forced phase (Research Librarian).
-            | TimingEvent::EnteredPlay { .. }
-            | TimingEvent::WouldDiscoverClues { .. } => None,
-        }
-    }
 }
 
 /// Dispatch a timing event: queue its reaction window (phase 2), then fire
@@ -312,18 +242,13 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     // run and suspend for the choice. 0 or 1 resolve synchronously, as before.
     let candidates = collect_forced_hits(cx.state, &point, crate::dsl::EventTiming::After);
     if candidates.len() >= 2 {
-        // 2+ simultaneous forced: the lead orders them (#213). Resume the
-        // framework flow this site suspended via its forced continuation; a
-        // non-terminal site with no wired continuation is a loud bug, not a
-        // silent dropped tail.
-        let continuation = event.forced_continuation().unwrap_or_else(|| {
-            unreachable!(
-                "emit_event: 2+ simultaneous forced abilities at {event:?}, but its \
-                 resume continuation isn't wired (#213) — add a ForcedContinuation \
-                 variant + a TimingEvent::forced_continuation arm",
-            )
-        });
-        super::reaction_windows::open_forced_resolution(cx, event, candidates, continuation)
+        // 2+ simultaneous forced: the lead orders them (#213). The run carries
+        // no continuation (#434) — on close the `drive` loop re-dispatches the
+        // exposed parent frame. Any single-bucket emit site capable of a 2+ run
+        // must therefore resume via its own frame (none does in scope — the
+        // callers that *can* 2+, EndOfTurn / round-end, are frame-resumed; the
+        // rest `debug_assert!(Done)`, which fires loudly if a future card 2+s).
+        super::reaction_windows::open_forced_resolution(cx, event, candidates)
     } else {
         fire_forced_triggers(cx, &point, crate::dsl::EventTiming::After)
     }

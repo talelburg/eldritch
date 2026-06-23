@@ -78,18 +78,10 @@ pub(super) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
             };
             let candidates = super::forced_triggers::collect_forced_hits(cx.state, &point, bucket);
             if candidates.len() >= 2 {
-                // 2+ forced: the lead orders them (#213). Inside a coordinator
-                // there is no framework tail — the parent `TimingPoint` (now at
-                // `Reaction`) resumes when the run closes — so the run carries
-                // `Terminal` (a no-op resume; the loop re-dispatches the parent).
-                // `ForcedContinuation` is deleted in the follow-up slice (#434
-                // Task 4), at which point the run carries no continuation at all.
-                super::reaction_windows::open_forced_resolution(
-                    cx,
-                    &event,
-                    candidates,
-                    crate::state::ForcedContinuation::Terminal,
-                )
+                // 2+ forced: the lead orders them (#213). The run carries no
+                // continuation (#434) — when it closes the loop re-dispatches the
+                // parent `TimingPoint` (now at `Reaction`).
+                super::reaction_windows::open_forced_resolution(cx, &event, candidates)
             } else {
                 super::forced_triggers::fire_forced_triggers(cx, &point, bucket)
             }

@@ -385,9 +385,10 @@ pub enum Continuation {
     /// An event reaction window or the #213 forced run, keyed by the
     /// [`TimingEvent`](crate::engine::TimingEvent) that opened it (EmitEvent-frame
     /// Slice A, #433). The [`mode`](TimingMode) distinguishes a skippable
-    /// reaction window from the mandatory forced run (which carries its
-    /// [`ForcedContinuation`]). The `TimingEvent` is referenced in place rather
-    /// than relocated — [`Effect`](Self::Effect) already holds a `crate::engine`
+    /// reaction window from the mandatory forced run (which carries no resume
+    /// continuation — on close the `drive` loop re-dispatches the exposed parent
+    /// frame, #434). The `TimingEvent` is referenced in place rather than
+    /// relocated — [`Effect`](Self::Effect) already holds a `crate::engine`
     /// type ([`EvalContext`](crate::engine::EvalContext), #345).
     TimingPointWindow {
         /// The timing event that opened this window/run.
@@ -788,27 +789,17 @@ impl Continuation {
         }
     }
 
-    /// Whether the frame is the mandatory #213 forced run, in either
-    /// representation. `false` for reaction windows and non-window frames.
+    /// Whether the frame is the mandatory #213 forced run. `false` for reaction
+    /// windows and non-window frames.
     #[must_use]
     pub fn is_forced(&self) -> bool {
-        match self {
-            Continuation::TimingPointWindow { mode, .. } => matches!(mode, TimingMode::Forced(_)),
-            _ => false,
-        }
-    }
-
-    /// The [`ForcedContinuation`] if this frame is the forced run, in either
-    /// representation; `None` for a reaction window or non-window frame.
-    #[must_use]
-    pub fn forced_continuation(&self) -> Option<ForcedContinuation> {
-        match self {
+        matches!(
+            self,
             Continuation::TimingPointWindow {
-                mode: TimingMode::Forced(c),
+                mode: TimingMode::Forced,
                 ..
-            } => Some(*c),
-            _ => None,
-        }
+            }
+        )
     }
 
     /// The [`TimingEvent`](crate::engine::TimingEvent) that opened this frame,
@@ -1209,38 +1200,23 @@ impl FastActorScope {
     }
 }
 
-/// How a forced run ([`TimingMode::Forced`]) resumes the framework flow
-/// it suspended when 2+ simultaneous forced abilities forced a lead-ordered
-/// choice (#213).
-///
-/// Most emit sites are *terminal*: nothing in the framework runs after the
-/// forced abilities resolve, so the run closes to [`Terminal`](Self::Terminal)
-/// and control returns to the caller. Sites with framework work *after* the
-/// emit (e.g. the upkeep step continues after `RoundEnded`) carry a dedicated
-/// variant naming that tail, so the suspended flow is resumed exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum ForcedContinuation {
-    /// No framework work follows the forced run; closing returns control to
-    /// the emit site's caller.
-    Terminal,
-    /// Resume the upkeep step's tail after `RoundEnded`'s forced abilities
-    /// resolve: open the act round-end advance window, then step the phase.
-    UpkeepAfterRoundEnded,
-}
-
 /// Whether a [`TimingPointWindow`](Continuation::TimingPointWindow) is a
 /// skippable reaction window or the mandatory #213 forced run. Collapses the
 /// old `ResolutionKind::{Window | Forced}` split onto the one frame: a forced
-/// run admits no Fast plays, drains all candidates, and on close resumes the
-/// framework flow named by its [`ForcedContinuation`].
+/// run admits no Fast plays and drains all candidates. It carries **no** resume
+/// continuation (#434): on close it returns `Done` and the `drive` loop
+/// re-dispatches whatever frame is exposed beneath it (the coordinator's
+/// `TimingPoint`, the `InvestigatorTurn { ending }` frame, the move's
+/// `ActionResolution`, …). The invariant is that any emit site capable of a
+/// 2+-forced run resumes via its own frame — see the deleted
+/// `ForcedContinuation`'s former call sites (#434).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimingMode {
     /// A reaction/fast window: skippable, admits Fast plays.
     Reaction,
-    /// The forced run (#213): mandatory, no Fast plays; resumes the framework
-    /// flow named by the continuation on close.
-    Forced(ForcedContinuation),
+    /// The forced run (#213): mandatory, no Fast plays. Carries no resume
+    /// continuation; the loop re-dispatches the exposed parent frame on close.
+    Forced,
 }
 
 /// The Rules-Reference timing step a [`FastWindowKind::Phase`] window sits

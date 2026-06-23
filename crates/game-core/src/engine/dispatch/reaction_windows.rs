@@ -19,7 +19,7 @@ use crate::engine::TimingEvent;
 use crate::state::TimingMode;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
-    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
+    GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -114,23 +114,21 @@ pub(super) fn open_reaction_run(
 }
 
 /// Open the forced-resolution run (Axis-B T5b / #213): push a
-/// `TimingPointWindow { mode: Forced }` holding the 2+
-/// simultaneous forced `candidates`, and present the lead investigator's
-/// order choice. The forced run is mandatory (cannot be skipped) and admits
-/// no Fast plays. `continuation` names the framework flow to resume when the
-/// run closes (see [`ForcedContinuation`]). The caller
-/// ([`super::emit::emit_event`]) returns the resulting `AwaitingInput`.
+/// `TimingPointWindow { mode: Forced }` holding the 2+ simultaneous forced
+/// `candidates`, and present the lead investigator's order choice. The forced
+/// run is mandatory (cannot be skipped) and admits no Fast plays. It carries no
+/// resume continuation (#434): on close it returns `Done` and the `drive` loop
+/// re-dispatches the exposed parent frame. The caller returns the `AwaitingInput`.
 pub(super) fn open_forced_resolution(
     cx: &mut Cx,
     event: &crate::engine::TimingEvent,
     candidates: Vec<ResolutionCandidate>,
-    continuation: ForcedContinuation,
 ) -> EngineOutcome {
     cx.state
         .continuations
         .push(Continuation::TimingPointWindow {
             event: event.clone(),
-            mode: crate::state::TimingMode::Forced(continuation),
+            mode: crate::state::TimingMode::Forced,
             candidates,
         });
     open_queued_reaction_window(cx)
@@ -973,11 +971,11 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // A window runs its kind-specific continuation
     // (e.g. MythosAfterDraws → mythos_phase_end). A framework window keys its
     // continuation off its `FastWindowKind`; a `TimingPointWindow` reaction
-    // window keys off its `TimingEvent` (#433). The forced run (#213) is not a
-    // window; instead it
-    // resumes the framework flow it suspended via its `ForcedContinuation`.
-    // Either may suspend (e.g. the upkeep act round-end advance window), so
-    // propagate the outcome.
+    // window keys off its `TimingEvent` (#433). The forced run (#213) carries no
+    // continuation (#434): it returns `Done` and the `drive` loop re-dispatches
+    // the exposed parent frame (the coordinator's `TimingPoint`, the
+    // `InvestigatorTurn { ending }` frame, …). A reaction continuation may itself
+    // suspend (e.g. an Enemy soak window), so propagate the outcome.
     let continuation = match &removed {
         Continuation::TimingPointWindow {
             event,
@@ -988,15 +986,9 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
             run_reaction_continuation(cx, &event)
         }
         Continuation::FastWindow { kind, .. } => run_fast_continuation(cx, *kind),
-        _ => {
-            let cont = removed.forced_continuation().unwrap_or_else(|| {
-                unreachable!(
-                    "close_reaction_window: a non-window frame is the forced run \
-                     and must carry a ForcedContinuation"
-                )
-            });
-            resume_forced_continuation(cx, cont)
-        }
+        // The forced run (`mode: Forced`): no continuation — the loop drives the
+        // exposed frame next.
+        _ => EngineOutcome::Done,
     };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
         return continuation;
@@ -1102,29 +1094,6 @@ fn resume_before_discover_window(
     // discovery), the `drive` loop dispatches it once this returns — no reach-down
     // into `skill_test::advance` (Slice C-plumbing).
     EngineOutcome::Done
-}
-
-/// Resume the framework flow a closed forced run (#213) suspended.
-///
-/// The forced run opens only when 2+ simultaneous forced abilities fire at a
-/// timing point and the lead must order them. Once they all resolve, control
-/// returns here to run whatever framework work followed the emit site, named
-/// by the [`ForcedContinuation`] the run carried (see
-/// [`super::emit::TimingEvent`]'s `forced_continuation`). May itself suspend
-/// (the upkeep tail opens the act round-end advance window), so propagate.
-fn resume_forced_continuation(cx: &mut Cx, continuation: ForcedContinuation) -> EngineOutcome {
-    match continuation {
-        // Genuinely terminal emit site (e.g. a move's "when you enter"
-        // forced abilities) — nothing follows.
-        ForcedContinuation::Terminal => EngineOutcome::Done,
-        // "Upkeep phase ends. Round ends." — run the upkeep teardown
-        // (expire until-end-of-round effects, then Upkeep→Mythos). The act's
-        // `when the round ends` window already resolved before the `at` forced
-        // run that scheduled this continuation.
-        ForcedContinuation::UpkeepAfterRoundEnded => super::phases::upkeep_round_end_teardown(cx),
-        // End of turn — run the end-of-turn tail (rotate to the next active
-        // investigator, or end the Investigation phase).
-    }
 }
 
 /// Advance the enemy-phase cursor past `investigator` and open the next
