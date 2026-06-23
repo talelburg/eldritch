@@ -24,14 +24,12 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    InvestigatorId, LocationId, Phase, PhaseStep, TokenModifiers, WindowKind,
+    InvestigatorId, LocationId, Phase, PhaseStep, TokenModifiers,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{
-    assert_event, assert_event_count, assert_no_event, Action, InputResponse, PlayerAction,
-};
+use game_core::{assert_event, assert_no_event, Action, InputResponse, PlayerAction};
 
 /// Mock: optional reaction "after you defeat an enemy, discover 1 clue
 /// at your location" — the Roland-shape canonical `OnEvent` test card.
@@ -198,8 +196,8 @@ fn fight_through_commit_window(state: game_core::GameState, action: Action) -> D
 #[test]
 fn no_in_play_reaction_means_no_window_opens() {
     // No cards in play → no triggers → no window. The Fight resolves
-    // to Done with no WindowOpened / WindowClosed pair on the event
-    // log. Sanity check that the in-play scan is the gate.
+    // to Done and never suspends on a reaction window. Sanity check that
+    // the in-play scan is the gate.
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[]);
     let result = apply_no_commits(state, fight_action(inv_id, enemy_id));
 
@@ -208,21 +206,8 @@ fn no_in_play_reaction_means_no_window_opens() {
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
     );
-    // No AfterEnemyDefeated reaction window (none in play). The Fight's skill
-    // test still opens its #374 ST.1/ST.2 framework windows (auto-skipped), so
-    // scope these to the reaction window kind.
-    assert_no_event!(
-        result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
-    assert_no_event!(
-        result.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
+    // No AfterEnemyDefeated reaction window (none in play) — no reaction window
+    // is left on the stack.
     assert!(result.state.top_reaction_window().is_none());
 }
 
@@ -247,31 +232,20 @@ fn matching_reaction_opens_window_and_suspends() {
         result.events,
         Event::EnemyDefeated { enemy: e, .. } if *e == enemy_id
     );
-    assert_event!(
-        result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, by: Some(by) },
-        } if *e == enemy_id && *by == inv_id
-    );
-    // The AfterEnemyDefeated window must NOT close yet — it's open and suspended.
-    // (The Fight's #374 ST.1/ST.2 windows already opened and auto-skipped.)
-    assert_no_event!(
-        result.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
-
+    // The window opened and is still open + suspended — verified via the
+    // AwaitingInput outcome above and the populated reaction window below.
     let window = result
         .state
         .top_reaction_window()
         .expect("reaction window must be populated while suspended");
-    assert_eq!(
-        window.window_kind(),
-        Some(WindowKind::AfterEnemyDefeated {
-            enemy: enemy_id,
-            by: Some(inv_id),
-        }),
+    assert!(
+        matches!(
+            window.window_timing_event(),
+            Some(game_core::engine::TimingEvent::EnemyDefeated { enemy, by: Some(by), .. })
+                if *enemy == enemy_id && *by == inv_id
+        ),
+        "reaction window must be after the enemy defeat: {:?}",
+        window.window_timing_event(),
     );
     assert_eq!(window.pending_candidates().unwrap().len(), 1);
     assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
@@ -306,14 +280,9 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
         resumed.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
     );
-    assert_event!(
-        resumed.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
-    );
     assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
     assert_eq!(resumed.state.locations[&loc_id].clues, 2);
+    // The window closed: no reaction window left on the stack.
     assert!(resumed.state.top_reaction_window().is_none());
 }
 
@@ -337,14 +306,9 @@ fn skip_closes_an_optional_only_window_without_firing() {
 
     assert_eq!(resumed.outcome, EngineOutcome::Done);
     assert_no_event!(resumed.events, Event::CluePlaced { .. });
-    assert_event!(
-        resumed.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
-    );
     assert_eq!(resumed.state.investigators[&inv_id].clues, 0);
     assert_eq!(resumed.state.locations[&loc_id].clues, 3);
+    // The window closed without firing: no reaction window left on the stack.
     assert!(resumed.state.top_reaction_window().is_none());
 }
 
@@ -392,14 +356,8 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     let result = apply_no_commits(state, fight_action(attacker, enemy_id));
 
     assert_eq!(result.outcome, EngineOutcome::Done);
-    // No AfterEnemyDefeated window for the unrelated investigator (the Fight's
-    // #374 ST.1/ST.2 windows auto-skip); scope to the reaction window kind.
-    assert_no_event!(
-        result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
+    // No AfterEnemyDefeated window for the unrelated investigator — resolution
+    // ran straight to Done with no reaction window left on the stack.
     assert!(result.state.top_reaction_window().is_none());
 }
 
@@ -566,7 +524,6 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
         after_first.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
     );
-    assert_no_event!(after_first.events, Event::WindowClosed { .. });
     assert_eq!(
         after_first
             .state
@@ -590,12 +547,6 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
         after_second.events,
         Event::ResourcesGained { investigator, amount: 1 } if *investigator == inv_id
     );
-    assert_event!(
-        after_second.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
     assert_eq!(after_second.state.locations[&loc_id].clues, 2);
     assert_eq!(
         after_second.state.investigators[&inv_id].resources,
@@ -612,18 +563,18 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     // that defeats an enemy with Roland-shaped reaction in play, the
     // canonical event order is:
     //   SkillTestSucceeded → EnemyDamaged → EnemyDefeated
-    //     → WindowOpened (AfterEnemyDefeated)
+    //     → [AfterEnemyDefeated reaction window]
     //       → CluePlaced (Roland's clue)
     //       → LocationCluesChanged
-    //     → WindowClosed
     //     → [OnSkillTestResolution events if any committed]
     //     → CardDiscarded × committed
     //     → SkillTestEnded
     //
-    // This pin protects the ordering: any future refactor that moves
-    // the window back to a post-action position (the rules-incorrect
-    // "deferred" design that landed initially) requires an intentional
-    // decision (and an update here).
+    // This pin protects the ordering: the reaction effect (CluePlaced) must
+    // fire AFTER EnemyDefeated but BEFORE SkillTestEnded — i.e. mid-action.
+    // Any future refactor that moves the reaction back to a post-action
+    // position (the rules-incorrect "deferred" design that landed initially)
+    // requires an intentional decision (and an update here).
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
     let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
     assert!(
@@ -645,57 +596,33 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     let mut events = paused.events;
     events.extend(resumed.events);
 
-    // Walk the event list and assert ordering of the milestones.
+    // Walk the event list and assert ordering of the milestones. The reaction
+    // effect (CluePlaced) fires between EnemyDefeated and SkillTestEnded — the
+    // window opening/closing itself is observed via the suspend (the
+    // `paused.outcome` AwaitingInput above), not a discrete event.
     let mut defeated_idx: Option<usize> = None;
-    let mut opened_idx: Option<usize> = None;
     let mut clue_idx: Option<usize> = None;
-    let mut closed_idx: Option<usize> = None;
     let mut ended_idx: Option<usize> = None;
     for (i, ev) in events.iter().enumerate() {
         match ev {
             Event::EnemyDefeated { enemy: e, .. } if *e == enemy_id => defeated_idx = Some(i),
-            Event::WindowOpened {
-                kind: WindowKind::AfterEnemyDefeated { .. },
-            } => opened_idx = Some(i),
             Event::CluePlaced { .. } => clue_idx = Some(i),
-            Event::WindowClosed {
-                kind: WindowKind::AfterEnemyDefeated { .. },
-            } => closed_idx = Some(i),
             Event::SkillTestEnded { .. } => ended_idx = Some(i),
             _ => {}
         }
     }
     let defeated = defeated_idx.expect("EnemyDefeated must fire");
-    let opened = opened_idx.expect("WindowOpened must fire");
     let clue = clue_idx.expect("CluePlaced must fire (Roland's reaction)");
-    let closed = closed_idx.expect("WindowClosed must fire");
     let ended = ended_idx.expect("SkillTestEnded must fire");
 
-    assert!(defeated < opened, "EnemyDefeated precedes WindowOpened");
     assert!(
-        opened < clue,
-        "CluePlaced (reaction effect) fires inside the open window"
+        defeated < clue,
+        "CluePlaced (reaction effect) fires after the EnemyDefeated it reacts to"
     );
-    assert!(clue < closed, "CluePlaced precedes WindowClosed");
     assert!(
-        closed < ended,
-        "WindowClosed precedes SkillTestEnded — the rules-correct mid-action shape"
-    );
-    // Exactly one AfterEnemyDefeated reaction window. (The Fight's #374 ST.1/ST.2
-    // framework windows also open+close, auto-skipped, so count the reaction kind.)
-    assert_event_count!(
-        events,
-        1,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
-    assert_event_count!(
-        events,
-        1,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
+        clue < ended,
+        "CluePlaced precedes SkillTestEnded — the rules-correct mid-action shape \
+         (the reaction resolves before the test ends)"
     );
 }
 
@@ -703,7 +630,8 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
 fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // A Fight that both defeats an enemy AND has a committed
     // `OnSkillTestResolution` card pins the cross-step ordering:
-    //   EnemyDefeated → WindowOpened → [Roland fires] → WindowClosed
+    //   EnemyDefeated → [reaction window opens] → [Roland fires]
+    //     → [reaction window closes]
     //     → OnSkillTestResolution effect events
     //     → CardDiscarded (committed) → SkillTestEnded
     //
@@ -785,26 +713,28 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     );
     assert_eq!(resumed.outcome, EngineOutcome::Done);
 
-    // Verify the final event order from the resumed phase: it
-    // begins with WindowClosed, then proceeds with CardDiscarded
-    // (for the committed card) and SkillTestEnded.
-    let mut closed_idx: Option<usize> = None;
+    // Verify the final event order from the resumed phase: the reaction effect
+    // (CluePlaced, fired inside the now-closing window) precedes the
+    // OnSkillTestResolution/discard step, which precedes SkillTestEnded. The
+    // window closing itself is no longer a discrete event — the reaction
+    // resolving before the discard is the observable mid-action shape.
+    let mut clue_idx: Option<usize> = None;
     let mut discarded_idx: Option<usize> = None;
     let mut ended_idx: Option<usize> = None;
     for (i, ev) in resumed.events.iter().enumerate() {
         match ev {
-            Event::WindowClosed { .. } => closed_idx = Some(i),
+            Event::CluePlaced { .. } => clue_idx = Some(i),
             Event::CardDiscarded { .. } => discarded_idx = Some(i),
             Event::SkillTestEnded { .. } => ended_idx = Some(i),
             _ => {}
         }
     }
-    let closed = closed_idx.expect("WindowClosed must fire on resume");
+    let clue = clue_idx.expect("CluePlaced must fire (Roland's reaction on resume)");
     let discarded = discarded_idx.expect("CardDiscarded must fire (committed card)");
     let ended = ended_idx.expect("SkillTestEnded must fire");
     assert!(
-        closed < discarded,
-        "WindowClosed precedes CardDiscarded (reaction window closes before discard step)",
+        clue < discarded,
+        "the reaction effect resolves before the discard step (window closes before discard)",
     );
     assert!(
         discarded < ended,
@@ -938,12 +868,6 @@ fn skip_after_firing_one_drops_remaining_optionals() {
         }),
     );
     assert_eq!(skipped.outcome, EngineOutcome::Done);
-    assert_event!(
-        skipped.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
     // The skipped optional was the resource-gain — its effect didn't fire.
     assert_eq!(
         skipped.state.investigators[&inv_id].resources, resources_after_first,
@@ -1073,28 +997,18 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
          got {:?}",
         resumed.state.open_windows(),
     );
-    assert_eq!(
-        resumed.state.open_windows()[0].window_kind(),
-        Some(WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)),
+    assert!(
+        matches!(
+            resumed.state.open_windows()[0],
+            game_core::state::Continuation::FastWindow {
+                kind: game_core::state::FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+                ..
+            }
+        ),
         "the surviving window must be the player-window gate, not the reaction window",
     );
-    // R must have emitted WindowClosed.
-    assert_event!(
-        resumed.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
-    );
-    // B must still be open — exactly one AfterEnemyDefeated close (window R), no
-    // second. (Scoped to the reaction kind so #374's framework windows, which
-    // close in a prior apply, don't perturb the count.)
-    assert_event_count!(
-        resumed.events,
-        1,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
+    // Reaction window R closed (it is no longer on the stack) while the
+    // player-window gate B survives — verified by the stack contents above.
 }
 
 #[test]
@@ -1153,14 +1067,9 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
         resumed.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
     );
-    assert_event!(
-        resumed.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
-    );
     assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
     assert_eq!(resumed.state.locations[&loc_id].clues, 2);
+    // The window closed: no reaction window left on the stack.
     assert!(resumed.state.top_reaction_window().is_none());
 }
 
@@ -1272,13 +1181,6 @@ fn after_successful_investigate_no_window_without_reaction() {
     );
     assert_eq!(resolved.state.investigators[&id].clues, 1);
     assert_eq!(resolved.state.locations[&loc].clues, 0);
-    // No AfterSuccessfulInvestigate reaction window (none in play). The Investigate
-    // skill test still opens its #374 ST.1/ST.2 framework windows (auto-skipped),
-    // so scope to the reaction window kind.
-    assert_no_event!(
-        resolved.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterSuccessfulInvestigate { .. }
-        }
-    );
+    // No AfterSuccessfulInvestigate reaction window (none in play): resolution
+    // ran straight to Done above in a single apply, never suspending.
 }

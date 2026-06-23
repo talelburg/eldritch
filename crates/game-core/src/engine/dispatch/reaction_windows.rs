@@ -5,7 +5,7 @@
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
 //! [`bump_usage_counter`], [`close_reaction_window_at`],
-//! [`run_window_continuation`]) and the fast-window eligibility checks
+//! [`run_reaction_continuation`]) and the fast-window eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
@@ -15,11 +15,12 @@ use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
-use crate::event::Event;
+use crate::engine::TimingEvent;
+use crate::state::TimingMode;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
     ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, SkillTestStep,
-    Status, WindowKind,
+    Status,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -31,11 +32,9 @@ use super::Cx;
 /// #335) a Fast event in hand whose play-instruction matches. No-op when the
 /// registry isn't installed or nothing matches.
 ///
-/// Emits [`Event::WindowOpened`] before pushing onto
-/// [`GameState::open_windows`] so reaction-window observability is
-/// symmetric with the Fast-window path ([`open_fast_window`]).
-/// If no candidate matches the function returns early without
-/// emitting anything — the window never opens.
+/// Pushes the window onto [`GameState::open_windows`], symmetric with the
+/// Fast-window path ([`open_fast_window`]). If no candidate matches the
+/// function returns early without pushing — the window never opens.
 ///
 /// The hand events are appended *after* the in-play triggers in the single
 /// `pending_triggers` list, so they are offered as options after the
@@ -54,21 +53,15 @@ use super::Cx;
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
 pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEvent) {
-    let kind = event
-        .reaction_window()
-        .expect("queue_reaction_window: caller checks the event opens a reaction window");
-    let mut candidates = scan_pending_triggers(cx.state, kind);
+    let mut candidates = scan_pending_triggers(cx.state, event);
     // Axis C (#335): the window also opens for a matching Fast event in hand,
     // so a defeat with Evidence! in hand (and no in-play reaction) still opens
     // the after-defeat window. Hand plays are offered after the in-play
     // triggers.
-    candidates.extend(scan_hand_fast_events(cx.state, kind));
+    candidates.extend(scan_hand_fast_events(cx.state, event));
     if candidates.is_empty() {
         return;
     }
-    // `WindowOpened` carries the derived `WindowKind` so the observable event
-    // is byte-identical to the pre-#433 payload.
-    cx.events.push(Event::WindowOpened { kind });
     // Reaction windows admit any investigator's Fast actions (RR: Fast may be
     // played at any player window) — encoded by `mode: Reaction` (the former
     // `FastActorScope::Any` binding). Multi-window nesting is structural.
@@ -124,7 +117,7 @@ fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> boo
 ///
 /// Returns an empty vec when the registry isn't installed (tests that
 /// don't touch card data) or no cards match.
-fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionCandidate> {
+fn scan_pending_triggers(state: &GameState, event: &TimingEvent) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -150,10 +143,10 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         };
         // "at your location" scoping for the before-attack cancel window
         // (Dodge 01023, Axis D #336): a candidate's controller must be
-        // co-located with the attacked investigator. Other window kinds pass
-        // all controllers through.
-        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
-            if !same_location(state, id, investigator) {
+        // co-located with the attacked investigator. Other events pass all
+        // controllers through.
+        if let TimingEvent::EnemyAttacks { investigator, .. } = event {
+            if !same_location(state, id, *investigator) {
                 continue;
             }
         }
@@ -161,39 +154,38 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         // #336): the reaction's controller is the discoverer and must be at the
         // discovery location. (The per-card `clues > 0` potential gate is in the
         // card loop below.)
-        if let WindowKind::BeforeDiscoverClues {
+        if let TimingEvent::WouldDiscoverClues {
             investigator,
             location,
             ..
-        } = kind
+        } = event
         {
-            if id != investigator
+            if id != *investigator
                 || state
                     .investigators
                     .get(&id)
                     .and_then(|i| i.current_location)
-                    != Some(location)
+                    != Some(*location)
             {
                 continue;
             }
         }
         for card in inv.controlled_card_instances() {
-            // Self-binding: for `AfterEnemyAttackDamagedAsset` only the
-            // soaked asset instance may trigger `EnemyAttackDamagedSelf`.
-            // All other instances are skipped here — the pattern match in
-            // `trigger_matches` handles the pattern-kind pairing; this
-            // filter enforces the "self = the soaked asset" scoping. (C5b
-            // #237.) Other window kinds pass all instances through unchanged.
-            if let WindowKind::AfterEnemyAttackDamagedAsset { asset, .. } = kind {
-                if card.instance_id != asset {
+            // Self-binding: for `EnemyAttackDamagedSelf` only the soaked asset
+            // instance may trigger. All other instances are skipped here — the
+            // pattern match in `trigger_matches` handles the pattern pairing;
+            // this filter enforces the "self = the soaked asset" scoping (Guard
+            // Dog 01021, C5b #237). Other events pass all instances through.
+            if let TimingEvent::EnemyAttackDamagedSelf { asset, .. } = event {
+                if card.instance_id != *asset {
                     continue;
                 }
             }
-            // Self-binding: `AfterEnteredPlay` fires only for the instance that
+            // Self-binding: `EnteredPlay` fires only for the instance that
             // entered play (Research Librarian 01032). Mirrors the soaked-asset
             // filter above.
-            if let WindowKind::AfterEnteredPlay { instance, .. } = kind {
-                if card.instance_id != instance {
+            if let TimingEvent::EnteredPlay { instance, .. } = event {
+                if card.instance_id != *instance {
                     continue;
                 }
             }
@@ -201,7 +193,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
             // initiate if its effect won't change the game state"; TODO(#368)):
             // only a source still holding clues to discard can replace the
             // discovery — an emptied Cover Up would otherwise prompt forever.
-            if matches!(kind, WindowKind::BeforeDiscoverClues { .. }) && card.clues == 0 {
+            if matches!(event, TimingEvent::WouldDiscoverClues { .. }) && card.clues == 0 {
                 continue;
             }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
@@ -214,7 +206,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                 else {
                     continue;
                 };
-                if !trigger_matches(kind, pattern, *timing, id) {
+                if !trigger_matches(event, pattern, *timing, id) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -249,7 +241,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
 /// Returns [`CandidateSource::Hand`] candidates in active-investigator-first
 /// / turn-order order, like [`scan_pending_triggers`]. Empty when the registry
 /// isn't installed (tests that don't touch card data) or nothing matches.
-fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionCandidate> {
+fn scan_hand_fast_events(state: &GameState, event: &TimingEvent) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -270,8 +262,8 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         };
         // "at your location" scoping for the before-attack cancel window —
         // mirrors `scan_pending_triggers` (Dodge 01023, Axis D #336).
-        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
-            if !same_location(state, id, investigator) {
+        if let TimingEvent::EnemyAttacks { investigator, .. } = event {
+            if !same_location(state, id, *investigator) {
                 continue;
             }
         }
@@ -292,7 +284,7 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                 else {
                     continue;
                 };
-                if !trigger_matches(kind, pattern, *timing, id) {
+                if !trigger_matches(event, pattern, *timing, id) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -317,7 +309,8 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
 /// the given `kind`.
 ///
 /// Phase-3 mapping:
-/// - [`WindowKind::AfterEnemyDefeated`] matches
+/// - the after-enemy-defeated reaction window
+///   ([`TimingEvent::EnemyDefeated`]) matches
 ///   [`EventPattern::EnemyDefeated`] with
 ///   [`EventTiming::After`]. The `by_controller` qualifier narrows to
 ///   defeats credited to this ability's controller.
@@ -326,127 +319,67 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
 /// only on the Before-windows matched below; the general after-event
 /// reaction pipeline ignores it.
 fn trigger_matches(
-    kind: WindowKind,
+    event: &TimingEvent,
     pattern: &EventPattern,
     timing: EventTiming,
     controller: InvestigatorId,
 ) -> bool {
-    // When-timing windows fire only for their exact pattern pairing (Axis D
-    // #336); the "at your location" / eligibility scoping lives in the scans.
+    // When-timing windows fire only for their exact event/pattern pairing (Axis
+    // D #336); the "at your location" / eligibility scoping lives in the scans.
     match timing {
         EventTiming::When => {
             return matches!(
-                (kind, pattern),
-                (
-                    WindowKind::BeforeEnemyAttack { .. },
-                    EventPattern::EnemyAttacks
-                ) | (
-                    WindowKind::BeforeDiscoverClues { .. },
-                    EventPattern::WouldDiscoverClues
-                )
+                (event, pattern),
+                (TimingEvent::EnemyAttacks { .. }, EventPattern::EnemyAttacks)
+                    | (
+                        TimingEvent::WouldDiscoverClues { .. },
+                        EventPattern::WouldDiscoverClues
+                    )
             );
         }
-        // No `At`-timed reaction exists until Slice B-iii; treat it like
-        // `After` (fall through to pattern matching). Dormant.
+        // No `At`-timed reaction exists yet; treat it like `After` (fall through
+        // to pattern matching). Dormant.
         EventTiming::At | EventTiming::After => {}
     }
-    match (kind, pattern) {
+    match (event, pattern) {
         (
-            WindowKind::AfterEnemyDefeated { by, .. },
+            TimingEvent::EnemyDefeated { by, .. },
             EventPattern::EnemyDefeated {
                 by_controller,
                 code: _,
             },
         ) => {
             if *by_controller {
-                by == Some(controller)
+                *by == Some(controller)
             } else {
                 true
             }
         }
-        // `AfterEnemyAttackDamagedAsset` matches `EnemyAttackDamagedSelf`
-        // only. The soaked-asset self-binding is enforced by the instance
-        // filter in `scan_pending_triggers` (only the `asset` instance
-        // reaches `trigger_matches` for this window kind). Sole consumer:
-        // Guard Dog 01021's "deal 1 damage to the attacking enemy"
-        // reaction. (C5b #237.)
-        (WindowKind::AfterEnemyAttackDamagedAsset { .. }, EventPattern::EnemyAttackDamagedSelf) => {
-            true
-        }
-        // `AfterSuccessfulInvestigate` matches `SuccessfullyInvestigated`,
-        // scoped to the controller's own investigation ("after **you**
+        // The soaked-asset self-binding is enforced by the instance filter in
+        // `scan_pending_triggers` (only the `asset` instance reaches here). Sole
+        // consumer: Guard Dog 01021's retaliate reaction. (C5b #237.)
+        (TimingEvent::EnemyAttackDamagedSelf { .. }, EventPattern::EnemyAttackDamagedSelf) => true,
+        // Scoped to the controller's own investigation ("after **you**
         // investigate" — Dr. Milan 01033). (C6a #241.)
         (
-            WindowKind::AfterSuccessfulInvestigate { investigator },
+            TimingEvent::SuccessfullyInvestigated { investigator, .. },
             EventPattern::SuccessfullyInvestigated,
-        ) => investigator == controller,
-        // `AfterEnteredPlay` matches `EnteredPlay`, scoped to the controller
-        // (the entered card's owner). The self-instance scoping is in the scan
-        // (`scan_pending_triggers` filters to the entered instance).
+        ) => *investigator == controller,
+        // Scoped to the entered card's owner; the self-instance scoping is in
+        // the scan (Research Librarian 01032).
         (
-            WindowKind::AfterEnteredPlay {
+            TimingEvent::EnteredPlay {
                 controller: window_controller,
                 ..
             },
             EventPattern::EnteredPlay,
-        ) => window_controller == controller,
-        // PlayerWindow steps open for timing reasons; no
-        // Trigger::OnEvent pattern matches them — those windows gate
-        // Fast actions, not after-event reactions. AfterEnemyDefeated
-        // windows only match EnemyDefeated patterns (handled above);
-        // encounter-reveal patterns return false.
-        //
-        // EnemySpawned: no WindowKind opens specifically for "enemy
-        // spawned" in Phase 4. A future PR (likely Phase-7+) that wants
-        // to react to spawns will add the corresponding WindowKind
-        // variant and update this arm.
-        // EnteredLocation is matched by the forced auto-fire path in
-        // `engine::dispatch::forced_triggers` (fired from `move_action`),
-        // not by reaction windows.
-        // PhaseEnded is matched only by the forced dispatch path
-        // (`engine::dispatch::forced_triggers`), never by player reaction
-        // windows.
-        // ActAdvanced is matched only by the forced dispatch path
-        // (`ForcedTriggerPoint::ActAdvanced`), never by player reaction
-        // windows.
-        // EndOfTurn and AfterLocationInvestigated are likewise forced-only
-        // (`ForcedTriggerPoint::EndOfTurn` / `AfterLocationInvestigated`).
-        // WouldDiscoverClues is matched only by the `discover_clue`
-        // interrupt seam, and GameEnd only by `ForcedTriggerPoint::GameEnd`
-        // — both seam/forced-only, never player windows (C5a #236).
-        // `AfterSuccessfulInvestigate` matches only `SuccessfullyInvestigated`
-        // (handled above); `AfterLocationInvestigated` is the forced twin,
-        // never matched by a reaction window.
-        // The Before-timing window kinds never reach here (the `Before`
-        // branch returned above); listed for exhaustiveness, and the
-        // `EnemyAttacks` pattern is likewise Before-only (Axis D #336).
-        (
-            WindowKind::PlayerWindow(_)
-            | WindowKind::AfterEnemyDefeated { .. }
-            | WindowKind::SkillTestPlayerWindow { .. }
-            | WindowKind::AfterEnemyAttackDamagedAsset { .. }
-            | WindowKind::AfterSuccessfulInvestigate { .. }
-            | WindowKind::AfterEnteredPlay { .. }
-            | WindowKind::BeforeEnemyAttack { .. }
-            | WindowKind::BeforeDiscoverClues { .. },
-            EventPattern::EnemyDefeated { .. }
-            | EventPattern::CardRevealed { .. }
-            | EventPattern::EnemySpawned
-            | EventPattern::EnteredLocation
-            | EventPattern::PhaseEnded { .. }
-            | EventPattern::ActAdvanced
-            | EventPattern::AgendaAdvanced
-            | EventPattern::RoundEnded
-            | EventPattern::EndOfTurn
-            | EventPattern::AfterLocationInvestigated
-            | EventPattern::WouldDiscoverClues
-            | EventPattern::GameEnd
-            | EventPattern::EnemyAttackDamagedSelf
-            | EventPattern::SuccessfullyInvestigated
-            | EventPattern::EnemyAttacks
-            | EventPattern::EnteredPlay
-            | EventPattern::LeftLocation,
-        ) => false,
+        ) => *window_controller == controller,
+        // Every other (event, pattern) pairing opens no reaction. The
+        // forced-only events (PhaseEnded / ActAdvanced / AgendaAdvanced /
+        // RoundEnded / EndOfTurn / GameEnd / EnteredLocation / LeftLocation /
+        // EnteredLocation) never open a reaction window; the `When`-timing
+        // events (EnemyAttacks / WouldDiscoverClues) returned above.
+        _ => false,
     }
 }
 
@@ -479,9 +412,8 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
 /// at a step boundary when an earlier step queued a window via
 /// [`queue_reaction_window`].
 ///
-/// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
-/// (not here) so the event appears at queue time and is symmetric with
-/// the [`open_fast_window`] path.
+/// The window is pushed onto the stack by [`queue_reaction_window`]
+/// (not here), at queue time, symmetric with the [`open_fast_window`] path.
 pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
@@ -523,9 +455,8 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
 ///   triggers remain. Rejects when forced triggers are still pending.
 /// - Other variants reject; the window stays open.
 ///
-/// Closing the window emits [`Event::WindowClosed`] with the same
-/// kind, pops the top entry from [`GameState::open_windows`], and
-/// returns [`Done`].
+/// Closing the window pops the top entry from
+/// [`GameState::open_windows`] and returns [`Done`].
 pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
         // `OptionId(i)` indexes the single `pending_triggers` list (see
@@ -709,7 +640,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// Play the hand Fast-event `candidate` from the resolution run at
 /// `window_idx` (Axis C, #335) — the [`CandidateSource::Hand`] resolution of
 /// [`fire_pending_trigger`]. Commences the play via the shared
-/// [`super::cards::begin_event_play`] (emit [`Event::CardPlayed`], leave hand,
+/// [`super::cards::begin_event_play`] (emit [`crate::Event::CardPlayed`], leave hand,
 /// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), runs
 /// the matched `OnEvent` ability's effect, then advances the run. The apply
 /// loop flushes the event to discard on completion (step 4) — the
@@ -874,8 +805,8 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
 
 /// Close the reaction window at `idx` in [`GameState::open_windows`].
 /// Rejects when any forced trigger is still pending (player must fire
-/// them first). On success emits [`Event::WindowClosed`], removes the
-/// window at the specified index (not necessarily the top of the
+/// them first). On success removes the window at the specified index
+/// (not necessarily the top of the
 /// stack), and either resumes a paused skill-test driver (if one was
 /// mid-resolution when the window opened) or returns [`Done`].
 ///
@@ -895,26 +826,33 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     // run (its frame is `window: None` — Axis-B T5b), not here.
     let removed = cx.state.continuations.remove(idx);
 
-    // A window emits `WindowClosed` and runs its kind-specific continuation
-    // (e.g. MythosAfterDraws → mythos_phase_end). Its `WindowKind` comes from
-    // the legacy `Resolution` frame (framework windows) or is derived from the
-    // `TimingEvent` of a `TimingPointWindow` reaction window (#433) — so the
-    // `WindowClosed` payload + continuation are byte-identical across the
-    // migration. The forced run (#213) is not a window: no event; instead it
+    // A window runs its kind-specific continuation
+    // (e.g. MythosAfterDraws → mythos_phase_end). A framework window keys its
+    // continuation off its `FastWindowKind`; a `TimingPointWindow` reaction
+    // window keys off its `TimingEvent` (#433). The forced run (#213) is not a
+    // window; instead it
     // resumes the framework flow it suspended via its `ForcedContinuation`.
     // Either may suspend (e.g. the upkeep act round-end advance window), so
     // propagate the outcome.
-    let continuation = if let Some(kind) = removed.window_kind() {
-        cx.events.push(Event::WindowClosed { kind });
-        run_window_continuation(cx, kind)
-    } else {
-        let cont = removed.forced_continuation().unwrap_or_else(|| {
-            unreachable!(
-                "close_reaction_window_at: a non-window frame is the forced run \
-                 and must carry a ForcedContinuation"
-            )
-        });
-        resume_forced_continuation(cx, cont)
+    let continuation = match &removed {
+        Continuation::TimingPointWindow {
+            event,
+            mode: TimingMode::Reaction,
+            ..
+        } => {
+            let event = event.clone();
+            run_reaction_continuation(cx, &event)
+        }
+        Continuation::FastWindow { kind, .. } => run_fast_continuation(cx, *kind),
+        _ => {
+            let cont = removed.forced_continuation().unwrap_or_else(|| {
+                unreachable!(
+                    "close_reaction_window_at: a non-window frame is the forced run \
+                     and must carry a ForcedContinuation"
+                )
+            });
+            resume_forced_continuation(cx, cont)
+        }
     };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
         return continuation;
@@ -940,77 +878,55 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     EngineOutcome::Done
 }
 
-/// Kind-aware continuation called when a window closes (whether inline via
-/// [`open_fast_window`]'s auto-skip path or via the [`close_reaction_window_at`]
-/// pop path).
-///
-/// Every framework [`WindowKind::PlayerWindow`] close routes to the `*Phase`
-/// anchor beneath it via
-/// [`anchor_on_child_pop`](super::phases::anchor_on_child_pop) (slice 1a, #393):
-/// the anchor's `resume` — not the [`PhaseStep`] — selects the relocated body
-/// (the Mythos/Investigation transitions, the Enemy attack-loop step incl. its
-/// mid-loop soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6
-/// cascade). The card/ability-reaction kinds run inline here: soak / before-
-/// attack ([`WindowKind::AfterEnemyAttackDamagedAsset`] /
-/// [`WindowKind::BeforeEnemyAttack`]) re-enter the attack loop via
-/// [`resume_enemy_attack`](super::combat::resume_enemy_attack);
-/// [`WindowKind::BeforeDiscoverClues`] performs the deferred discovery;
-/// [`WindowKind::AfterEnemyDefeated`] / [`WindowKind::AfterSuccessfulInvestigate`]
-/// / [`WindowKind::AfterEnteredPlay`] have no continuation work.
-///
-/// Returns the continuation's [`EngineOutcome`] — `Done`, or `AwaitingInput`
-/// when a body suspends (an Enemy soak window, the Upkeep step-4.5 hand-size
-/// discard, …).
-pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
-    match kind {
-        // Every framework `PlayerWindow(PhaseStep)` close routes to the `*Phase`
-        // anchor beneath it (slice 1a, #393): the anchor's `resume` selects the
-        // relocated body — the skill-test-in-flight guards, the Enemy
-        // soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6 cascade,
-        // the Mythos/Investigation transitions. The `PhaseStep` is no longer the
-        // continuation key; the anchor's `resume` is.
-        WindowKind::PlayerWindow(_) => super::phases::anchor_on_child_pop(cx),
-        // A skill-test player window (#374) closed: re-enter the skill-test
-        // driver. The cursor was pre-advanced before the window opened, so
-        // `advance` resumes at the next step (AwaitingCommit after window 1,
-        // Resolving after window 2). Reached on both the auto-skip inline path
-        // and the wait-then-close path.
-        WindowKind::SkillTestPlayerWindow { .. } => super::skill_test::advance(cx),
-        // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
-        // work. The skill-test driver (which queued the window mid-resolution)
-        // resumes via `close_reaction_window_at`'s in-flight re-entry.
-        WindowKind::AfterEnemyDefeated { .. } | WindowKind::AfterSuccessfulInvestigate { .. } => {
-            EngineOutcome::Done
-        }
-        // AfterEnteredPlay (Research Librarian 01032): no continuation work —
-        // the asset entered play before the window opened, so closing the
-        // window just finishes the play action.
-        WindowKind::AfterEnteredPlay { .. } => EngineOutcome::Done,
-        // AfterEnemyAttackDamagedAsset (soak, C5b #237) + BeforeEnemyAttack
-        // (cancel, Axis D #336): re-enter the enemy-attack loop the window
-        // suspended. `resume_enemy_attack` reads its parked phase to either
-        // honor the cancel + deal the head attacker (BeforeAttack) or drain
-        // the remaining attackers (AfterSoak), then for the enemy phase runs
-        // `after_enemy_phase_attacks` once the loop finishes.
-        WindowKind::AfterEnemyAttackDamagedAsset { .. } | WindowKind::BeforeEnemyAttack { .. } => {
+/// Continuation when a **reaction** window ([`Continuation::TimingPointWindow`])
+/// closes, keyed on its [`TimingEvent`]. Called from [`close_reaction_window_at`]'s
+/// pop path. Returns `Done`, or `AwaitingInput` when a body suspends (an Enemy
+/// soak window, …).
+fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    match event {
+        // Soak (C5b #237) + before-attack cancel (Axis D #336): re-enter the
+        // enemy-attack loop the window suspended. `resume_enemy_attack` reads
+        // its parked phase to either honour the cancel + deal the head attacker
+        // (BeforeAttack) or drain the remaining attackers (AfterSoak).
+        TimingEvent::EnemyAttackDamagedSelf { .. } | TimingEvent::EnemyAttacks { .. } => {
             super::combat::resume_enemy_attack(cx)
         }
-        // BeforeDiscoverClues (Cover Up 01007, Axis D #336): the before-discover
-        // window closed. If a reaction cancelled the discovery (Cover Up played
-        // its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
-        // discovery. Then, if a skill test is in flight (the dominant path:
-        // Investigate's follow-up discovery), re-enter its driver — its
-        // continuation was pre-advanced to `PostFollowUp` by `finish_skill_test`
-        // before the follow-up suspended, so this picks up at teardown.
-        WindowKind::BeforeDiscoverClues {
+        // Before-discover (Cover Up 01007, Axis D #336): perform the deferred
+        // discovery unless a reaction cancelled it, then re-enter the in-flight
+        // skill-test driver if any (Investigate's follow-up).
+        TimingEvent::WouldDiscoverClues {
             investigator,
             location,
             count,
-        } => resume_before_discover_window(cx, investigator, location, count),
+        } => resume_before_discover_window(cx, *investigator, *location, *count),
+        // After-defeat / after-investigate / entered-play: no continuation work.
+        // The skill-test driver (which queued the window mid-resolution) resumes
+        // via `close_reaction_window_at`'s in-flight re-entry.
+        TimingEvent::EnemyDefeated { .. }
+        | TimingEvent::SuccessfullyInvestigated { .. }
+        | TimingEvent::EnteredPlay { .. } => EngineOutcome::Done,
+        other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),
     }
 }
 
-/// Resume after a [`WindowKind::BeforeDiscoverClues`] window closes (Cover Up
+/// Continuation when a framework **fast** window ([`Continuation::FastWindow`])
+/// closes, keyed on its [`FastWindowKind`]. Called from the auto-skip path in
+/// [`open_fast_window`] and from [`close_reaction_window_at`].
+///
+/// A phase window routes to the `*Phase` anchor beneath it (slice 1a, #393): the
+/// anchor's `resume` — not the [`PhaseStep`] — selects the relocated body (the
+/// Mythos/Investigation transitions, the Enemy attack-loop step, the Upkeep
+/// 4.2–4.6 cascade). A skill-test window (#374) re-enters the skill-test driver;
+/// its cursor was pre-advanced before the window opened. Returns `Done` or
+/// `AwaitingInput` when a body suspends.
+pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
+    match kind {
+        FastWindowKind::Phase(_) => super::phases::anchor_on_child_pop(cx),
+        FastWindowKind::SkillTest { .. } => super::skill_test::advance(cx),
+    }
+}
+
+/// Resume after a before-discover-clues window closes (Cover Up
 /// 01007, Axis D #336). If a reaction cancelled the discovery (Cover Up played
 /// its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
 /// discovery. Then, if a skill test is in flight (the dominant path:
@@ -1083,16 +999,15 @@ pub(super) fn after_enemy_phase_attacks(
     super::phases::open_attack_window(cx, next)
 }
 
-/// Open a printed Fast-play window of the given kind. Always emits
-/// [`Event::WindowOpened`] for observability. Then either:
+/// Open a printed Fast-play window of the given kind. Then either:
 ///
 /// - Pushes the [`FastWindow`](crate::state::Continuation::FastWindow) onto the
 ///   continuation stack if any pending reaction triggers or Fast-eligible plays
 ///   are detected. The
 ///   apply loop's existing "pending reactions → `AwaitingInput`" path
 ///   then surfaces the wait at the dispatch tail.
-/// - Or emits [`Event::WindowClosed`] immediately, pops the transiently
-///   pushed window, and runs [`run_window_continuation`] inline. This
+/// - Or closes the window immediately, pops the transiently
+///   pushed window, and runs [`run_fast_continuation`] inline. This
 ///   **auto-skip** path saves a UI round-trip when nobody can act.
 ///
 /// # Push-then-scan ordering
@@ -1115,29 +1030,20 @@ pub(super) fn after_enemy_phase_attacks(
 /// [`EngineOutcome::Done`]; propagates [`EngineOutcome::AwaitingInput`] once
 /// #111 step 4.5 can suspend); returns [`EngineOutcome::Done`] immediately on
 /// the wait path (window left on the stack).
-pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
-    cx.events.push(Event::WindowOpened { kind });
-
+pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
     // Framework windows are `FastWindow` (#433 A-ii); the `FastWindowKind`
-    // discriminant reproduces `kind` for the WindowClosed payload + routes the
-    // close continuation. Reaction windows admit any investigator's Fast plays.
-    let candidates = scan_pending_triggers(cx.state, kind);
-    let fast_kind = match kind {
-        WindowKind::PlayerWindow(step) => FastWindowKind::Phase(step),
-        WindowKind::SkillTestPlayerWindow { before_token } => {
-            FastWindowKind::SkillTest { before_token }
-        }
-        other => unreachable!(
-            "open_fast_window: only framework PlayerWindow / SkillTestPlayerWindow kinds \
-             open a fast window, got {other:?}"
-        ),
-    };
+    // discriminant reproduces `kind` and routes the
+    // close continuation. Fast windows carry no reaction candidates — they are
+    // pure Fast-gates (no `TimingEvent` reaction matches a framework window), so
+    // the candidate list is always empty; the Fast-play opportunity is gated by
+    // `any_fast_play_eligible` below.
+    let candidates = Vec::new();
     cx.state.continuations.push(Continuation::FastWindow {
         candidates,
         fast_actors: FastActorScope::Any,
-        kind: fast_kind,
+        kind,
     });
 
     let has_pending = !cx
@@ -1150,12 +1056,11 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     let has_fast_eligible = any_fast_play_eligible(cx.state);
 
     if !has_pending && !has_fast_eligible {
-        // Auto-skip: nothing to do. Pop the window we just pushed,
-        // emit WindowClosed, and run the continuation inline, so the
-        // net effect on the continuation stack is the same as before.
+        // Auto-skip: nothing to do. Pop the window we just pushed and run the
+        // continuation inline, so the net effect on the continuation stack is
+        // the same as before.
         let _ = cx.state.continuations.pop();
-        cx.events.push(Event::WindowClosed { kind });
-        return run_window_continuation(cx, kind);
+        return run_fast_continuation(cx, kind);
     }
     // Otherwise the window stays on the stack. The guard at the top of
     // apply() and resume_reaction_window / resolve_input handle the
@@ -1638,159 +1543,103 @@ mod check_play_card_tests {
 #[cfg(test)]
 mod trigger_matches_tests {
     use super::*;
-    use crate::state::{EnemyId, PhaseStep};
+    use crate::state::{EnemyId, LocationId};
 
-    #[test]
-    fn would_discover_clues_never_matches_a_player_window() {
-        // The before-timing clue-discovery interrupt (Cover Up 01007) is
-        // matched only by the `discover_clue` seam, never a player reaction
-        // window — even with After timing. (C5a #236.)
-        assert!(!trigger_matches(
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
-            &EventPattern::WouldDiscoverClues,
-            EventTiming::After,
-            InvestigatorId(1),
-        ));
+    fn enemy_attacks(inv: InvestigatorId) -> TimingEvent {
+        TimingEvent::EnemyAttacks {
+            enemy: EnemyId(1),
+            investigator: inv,
+        }
     }
 
     #[test]
-    fn trigger_matches_before_pairs() {
-        use crate::state::LocationId;
+    fn before_pairs_match_only_their_own_when_event() {
         let inv = InvestigatorId(1);
+        let would_discover = TimingEvent::WouldDiscoverClues {
+            investigator: inv,
+            location: LocationId(2),
+            count: 1,
+        };
+        // EnemyAttacks ↔ EnemyAttacks (When) — Dodge 01023.
         assert!(trigger_matches(
-            WindowKind::BeforeEnemyAttack {
-                enemy: EnemyId(1),
-                investigator: inv
-            },
+            &enemy_attacks(inv),
             &EventPattern::EnemyAttacks,
             EventTiming::When,
             inv,
         ));
+        // WouldDiscoverClues ↔ WouldDiscoverClues (When) — Cover Up 01007.
         assert!(trigger_matches(
-            WindowKind::BeforeDiscoverClues {
-                investigator: inv,
-                location: LocationId(2),
-                count: 1
-            },
+            &would_discover,
             &EventPattern::WouldDiscoverClues,
             EventTiming::When,
             inv,
         ));
         // Wrong timing for the pairing → no match.
         assert!(!trigger_matches(
-            WindowKind::BeforeEnemyAttack {
-                enemy: EnemyId(1),
-                investigator: inv
-            },
+            &enemy_attacks(inv),
             &EventPattern::EnemyAttacks,
             EventTiming::After,
             inv,
         ));
-        // A Before window only matches its own pattern.
+        // A When event only matches its own pattern.
         assert!(!trigger_matches(
-            WindowKind::BeforeEnemyAttack {
-                enemy: EnemyId(1),
-                investigator: inv
-            },
+            &enemy_attacks(inv),
             &EventPattern::WouldDiscoverClues,
             EventTiming::When,
             inv,
         ));
     }
 
+    /// Direct `trigger_matches` coverage for the `EnemyAttackDamagedSelf` soak
+    /// pairing (Guard Dog 01021, C5b #237). The instance-level scoping (only the
+    /// soaked `asset` instance fires) is enforced one layer up in
+    /// `scan_pending_triggers` and exercised end-to-end in
+    /// `crates/cards/tests/guard_dog_soak.rs` (which installs the real registry).
     #[test]
-    fn game_end_never_matches_a_player_window() {
-        // GameEnd is forced-only (`ForcedTriggerPoint::GameEnd`).
-        assert!(!trigger_matches(
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
-            &EventPattern::GameEnd,
-            EventTiming::After,
-            InvestigatorId(1),
-        ));
-    }
-
-    /// `soak_window_matches_only_self_instance` — direct `trigger_matches`
-    /// coverage for the `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf`
-    /// true arm added in Task 8 (C5b #237).
-    ///
-    /// The instance-level scoping (only the soaked `asset` instance fires, not
-    /// every controlled card) is enforced by the filter in `scan_pending_triggers`
-    /// one layer up; that filter is exercised end-to-end in the EU5 Guard Dog
-    /// integration test (`crates/cards/tests/guard_dog_soak.rs`), which installs
-    /// the real `cards::REGISTRY` in an isolated process. Testing it here would
-    /// require a global `card_registry::install`, which is `OnceLock`-guarded
-    /// and cannot be reset between tests. So this unit test asserts the
-    /// `trigger_matches` contract directly:
-    ///  - `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf` → `true`
-    ///  - `AfterEnemyAttackDamagedAsset` + any other pattern → `false`
-    #[test]
-    fn soak_window_matches_only_self_instance() {
-        let asset = CardInstanceId(7);
-        let enemy = EnemyId(1);
+    fn soak_event_matches_only_the_self_soak_pattern() {
         let controller = InvestigatorId(1);
-        let kind = WindowKind::AfterEnemyAttackDamagedAsset {
-            asset,
-            enemy,
+        let soak = TimingEvent::EnemyAttackDamagedSelf {
+            asset: CardInstanceId(7),
+            enemy: EnemyId(1),
             controller,
         };
-
-        // The soak-self pattern must match the soak window. (C5b #237.)
-        assert!(
-            trigger_matches(
-                kind,
-                &EventPattern::EnemyAttackDamagedSelf,
-                EventTiming::After,
-                controller
-            ),
-            "AfterEnemyAttackDamagedAsset must match EnemyAttackDamagedSelf"
-        );
-        // No other pattern matches this window kind.
-        assert!(
-            !trigger_matches(
-                kind,
-                &EventPattern::EnemyDefeated {
-                    by_controller: false,
-                    code: None
-                },
-                EventTiming::After,
-                controller
-            ),
-            "AfterEnemyAttackDamagedAsset must not match EnemyDefeated"
-        );
-        assert!(
-            !trigger_matches(
-                kind,
-                &EventPattern::EnemyAttackDamagedSelf,
-                EventTiming::When,
-                controller
-            ),
-            "Before timing must never match this After-only window/pattern pair"
-        );
-        // The soak-self pattern must NOT match any other window kind — guards
-        // the match-arm ordering (the `=> true` arm is scoped to this kind;
-        // these pairings must fall through to the `false` catch-all). (C5b #237.)
-        for other_kind in [
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
-            WindowKind::AfterEnemyDefeated {
-                enemy,
-                by: Some(controller),
+        // The soak-self pattern matches the soak event. (C5b #237.)
+        assert!(trigger_matches(
+            &soak,
+            &EventPattern::EnemyAttackDamagedSelf,
+            EventTiming::After,
+            controller,
+        ));
+        // No other pattern matches the soak event.
+        assert!(!trigger_matches(
+            &soak,
+            &EventPattern::EnemyDefeated {
+                by_controller: false,
+                code: None,
             },
-        ] {
-            assert!(
-                !trigger_matches(
-                    other_kind,
-                    &EventPattern::EnemyAttackDamagedSelf,
-                    EventTiming::After,
-                    controller
-                ),
-                "{other_kind:?} must not match EnemyAttackDamagedSelf"
-            );
-        }
-        // Instance-filter (only the keyed `asset` instance fires, not every
-        // controlled card) is asserted in the EU5 Guard Dog integration test
-        // (`crates/cards/tests/guard_dog_soak.rs`) which can install the real
-        // registry. The `scan_pending_triggers` `continue` on `instance_id !=
-        // asset` is the load-bearing line; grep it if this note becomes stale.
+            EventTiming::After,
+            controller,
+        ));
+        // Before timing never matches this After-only pairing.
+        assert!(!trigger_matches(
+            &soak,
+            &EventPattern::EnemyAttackDamagedSelf,
+            EventTiming::When,
+            controller,
+        ));
+        // The soak pattern must NOT match a different event (guards the
+        // arm ordering — the `=> true` arm is scoped to the soak event).
+        let defeat = TimingEvent::EnemyDefeated {
+            enemy: EnemyId(1),
+            by: Some(controller),
+            code: CardCode("01000".into()),
+        };
+        assert!(!trigger_matches(
+            &defeat,
+            &EventPattern::EnemyAttackDamagedSelf,
+            EventTiming::After,
+            controller,
+        ));
     }
 }
 
@@ -1848,12 +1697,11 @@ mod any_fast_play_eligible_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::event::Event;
-    use crate::state::{EnemyId, PhaseStep, WindowKind};
+    use crate::state::{EnemyId, FastWindowKind, PhaseStep};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
-    fn open_fast_window_with_no_eligibility_emits_open_then_close_inline() {
+    fn open_fast_window_with_no_eligibility_auto_skips_inline() {
         // No reactions, no Fast-eligible cards → auto-skip: window
         // opens and closes without ever landing on state.open_windows.
         let mut state = GameStateBuilder::default()
@@ -1870,54 +1718,36 @@ mod open_fast_window_tests {
                 state: &mut state,
                 events: &mut events,
             },
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         );
 
         assert!(
             state.open_windows().is_empty(),
             "auto-skip must not leave the window on the stack"
         );
-        assert!(
-            matches!(
-                events.first(),
-                Some(Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-                })
-            ),
-            "first event must be WindowOpened; got {:?}",
-            events.first()
-        );
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-                }
-            )),
-            "must emit WindowClosed for MythosAfterDraws; events = {events:?}"
-        );
     }
 
     #[test]
-    fn run_window_continuation_for_no_continuation_kind_does_nothing() {
-        // AfterEnemyDefeated has no continuation. Calling it must be a
-        // no-op (no events, no state change).
+    fn run_reaction_continuation_for_no_continuation_kind_does_nothing() {
+        // EnemyDefeated's reaction window has no continuation work. Closing it
+        // must be a no-op (no events, no state change).
         let mut state = GameStateBuilder::default().build();
         let mut events = Vec::new();
-        let result = run_window_continuation(
+        let result = run_reaction_continuation(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            WindowKind::AfterEnemyDefeated {
+            &TimingEvent::EnemyDefeated {
                 enemy: EnemyId(1),
                 by: None,
+                code: crate::state::CardCode::new("01000"),
             },
         );
         assert_eq!(result, EngineOutcome::Done);
         assert!(
             events.is_empty(),
-            "AfterEnemyDefeated continuation must be a no-op; events = {events:?}"
+            "EnemyDefeated continuation must be a no-op; events = {events:?}"
         );
     }
 }

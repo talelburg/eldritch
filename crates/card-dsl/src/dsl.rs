@@ -344,7 +344,7 @@ pub enum EventPattern {
     /// `Trigger::Forced`: the engine routes by pattern, firing
     /// `AfterLocationInvestigated` through the forced auto-fire path and
     /// `SuccessfullyInvestigated` through a player reaction window
-    /// (`WindowKind::AfterSuccessfulInvestigate`). Unifying forced +
+    /// (the after-successful-investigate window). Unifying forced +
     /// reaction at one window is the #212/#213 trigger-dispatch work; until
     /// then the split pattern keeps a forced ability from auto-firing a
     /// reaction (and vice versa).
@@ -354,7 +354,7 @@ pub enum EventPattern {
     /// asset instance from the firing window context, the way
     /// [`EnteredLocation`](Self::EnteredLocation) / [`EndOfTurn`](Self::EndOfTurn)
     /// bind theirs. Matched **only** by
-    /// `WindowKind::AfterEnemyAttackDamagedAsset` in the reaction
+    /// the after-enemy-attack-damaged-asset reaction window in the reaction
     /// pipeline; `trigger_matches` binds the attacking enemy into the
     /// `EvalContext`. First (and only) consumer: Guard Dog 01021's
     /// "\[reaction\] When an enemy attack deals damage to Guard Dog: Deal 1

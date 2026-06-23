@@ -31,7 +31,7 @@ use std::sync::Once;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, LocationId, Phase, WindowKind,
+    CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::{Action, PlayerAction};
@@ -143,15 +143,6 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "the AoO soak window must suspend the play: {:?}",
         result.outcome
-    );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "playing a non-fast event provokes an AoO that soaks onto Guard Dog: {:?}",
-        result.events
     );
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
@@ -309,15 +300,12 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     );
     let state = result.state;
 
+    // A fast event provokes no AoO: the play resolves without ever suspending
+    // on an AoO window (a window would have surfaced as AwaitingInput).
     assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }
-                          | WindowKind::BeforeEnemyAttack { .. }))),
-        "a fast event provokes no AoO — no AoO window should open: {:?}",
-        result.events
+        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "a fast event provokes no AoO — the play must not suspend on a window: {:?}",
+        result.outcome
     );
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
@@ -446,15 +434,6 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
     let result = soak_onto_asset(result);
     let state = result.state;
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "playing a non-fast asset provokes an AoO: {:?}",
-        result.events
-    );
     assert_eq!(
         state.investigators[&inv_id].actions_remaining, 2,
         "playing the asset spent one action before the AoO"

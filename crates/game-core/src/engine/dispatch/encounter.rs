@@ -6,8 +6,8 @@ use crate::card_registry;
 use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Continuation, Enemy, InvestigatorId, LocationId, PhaseStep, SpawnEngagePending,
-    Status, WindowKind,
+    CardCode, Continuation, Enemy, FastWindowKind, InvestigatorId, LocationId, PhaseStep,
+    SpawnEngagePending, Status,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -815,7 +815,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
         cx.state.continuations.remove(pos); // pop the drained frame
         let outcome = super::reaction_windows::open_fast_window(
             cx,
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         );
         debug_assert_eq!(
             outcome,

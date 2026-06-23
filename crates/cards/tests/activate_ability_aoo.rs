@@ -33,7 +33,7 @@ use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, InvestigatorId,
-    LocationId, Phase, UseKind, WindowKind,
+    LocationId, Phase, UseKind,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::{Action, InputResponse, PlayerAction};
@@ -166,15 +166,6 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         "the AoO soak window must suspend the activation: {:?}",
         result.outcome
     );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "activating a non-fight action ability provokes an AoO that soaks onto Guard Dog: {:?}",
-        result.events
-    );
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
         .iter()
@@ -249,17 +240,6 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
     );
     let state = result.state;
 
-    // No AoO window of any kind opened.
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }
-                          | WindowKind::BeforeEnemyAttack { .. }))),
-        "a Fight ability provokes no AoO — no AoO window should open: {:?}",
-        result.events
-    );
     // Guard Dog soaked nothing; the investigator took no AoO damage.
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
@@ -334,16 +314,6 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         "the fast ability resolves without suspending on an AoO window: {:?}",
         result.outcome
     );
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }
-                          | WindowKind::BeforeEnemyAttack { .. }))),
-        "a fast ability provokes no AoO — no AoO window should open: {:?}",
-        result.events
-    );
     assert_eq!(
         state.investigators[&inv_id].damage, 0,
         "no AoO damage to the investigator"
@@ -405,15 +375,6 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
         }),
     );
     let state = result.state;
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::BeforeEnemyAttack { .. }))),
-        "the activation's AoO opened a cancel window: {:?}",
-        result.events
-    );
 
     // Play Dodge (the single candidate) → cancel the AoO.
     let result = apply(

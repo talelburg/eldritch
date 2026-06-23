@@ -21,7 +21,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    InvestigatorId, LocationId, Phase, TokenModifiers, WindowKind,
+    InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
     apply_no_commits, drive, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -115,19 +115,7 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
     );
     assert_event!(
         result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
-    );
-    assert_event!(
-        result.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
-    );
-    assert_event!(
-        result.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
     );
 
     // 1 of 2 clues stayed at the location; Roland is carrying 1.
@@ -174,22 +162,10 @@ fn once_per_round_limit_blocks_second_reaction_in_same_round() {
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
     );
-    // But Roland's reaction window does NOT open — no triggers were pending
-    // after the limit check filtered his ability out. (The Fight's skill test
-    // still opens its ST.1/ST.2 framework player windows, #374, which auto-skip;
-    // scope the assertion to the AfterEnemyDefeated reaction window.)
-    assert_no_event!(
-        result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
-    assert_no_event!(
-        result.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { .. }
-        }
-    );
+    // But Roland's reaction does NOT fire — no triggers were pending after the
+    // limit check filtered his ability out, so the window never offered the
+    // reaction and resolution went straight through (Done above) with no clue
+    // discovered.
     assert_no_event!(result.events, Event::CluePlaced { .. });
     // Clue counts unchanged at the location and on Roland.
     assert_eq!(result.state.locations[&loc_id].clues, 2);
@@ -224,12 +200,6 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
-    );
-    assert_event!(
-        result.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
     );
 
@@ -260,13 +230,8 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     let result = drive(state, fight_action(inv_id, enemy_id), resolver);
 
     assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_event!(
-        result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
-    );
-    // Window closed without firing → no clue moved.
+    // The window opened (the resolver's scripted Skip was consumed by it) but
+    // closed without firing → no clue moved.
     assert_no_event!(result.events, Event::CluePlaced { .. });
     assert_eq!(result.state.locations[&loc_id].clues, 2);
     assert_eq!(result.state.investigators[&inv_id].clues, 0);

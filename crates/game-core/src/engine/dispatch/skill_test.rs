@@ -263,7 +263,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 /// The pre-advance is what lets a reaction window opening *inside*
 /// [`apply_skill_test_follow_up`] (the canonical case: `damage_enemy` emitting
 /// [`EnemyDefeated`](crate::Event::EnemyDefeated) queues an
-/// [`AfterEnemyDefeated`](crate::state::WindowKind::AfterEnemyDefeated) window)
+/// an after-enemy-defeated reaction window)
 /// suspend correctly: the cursor already reads `PostFollowUp`, so a resume from
 /// `close_reaction_window_at` re-enters `advance` at the `OnSkillTestResolution`
 /// step rather than re-running the follow-up.
@@ -387,7 +387,7 @@ fn emit_commit_window(cx: &Cx, investigator: InvestigatorId) -> EngineOutcome {
 /// Open one of the RR p.26 skill-test framework player windows (#374) and return
 /// `open_fast_window`'s outcome directly. Pre-advances the cursor to `next`
 /// **before** opening (the suspend/resume invariant), so a resume — whether the
-/// auto-skip inline `run_window_continuation -> advance` or a wait-then-close —
+/// auto-skip inline `run_fast_continuation -> advance` or a wait-then-close —
 /// picks up at `next`, not by re-opening this window.
 ///
 /// The caller must **return** this outcome, never fall through: `open_fast_window`
@@ -406,7 +406,7 @@ fn open_skill_test_player_window(
         .continuation = next;
     super::reaction_windows::open_fast_window(
         cx,
-        crate::state::WindowKind::SkillTestPlayerWindow { before_token },
+        crate::state::FastWindowKind::SkillTest { before_token },
     )
 }
 
@@ -415,8 +415,7 @@ fn open_skill_test_player_window(
 /// queues mid-step.
 ///
 /// Each loop iteration starts by checking for a queued reaction
-/// window: if one is pending, the driver emits
-/// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
+/// window: if one is pending, the driver opens it and returns
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
 /// close path ([`close_reaction_window_at`]) re-enters this driver on
 /// resume.
@@ -1371,7 +1370,7 @@ mod tests {
     /// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
     #[test]
     fn skill_test_opens_and_auto_skips_both_player_windows() {
-        use crate::state::{ChaosToken, WindowKind};
+        use crate::state::ChaosToken;
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
@@ -1400,44 +1399,15 @@ mod tests {
         );
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit prompt"
-        );
-        // `cx` still borrows `events` here; read through `cx.events`.
-        assert!(
-            cx.events.iter().any(|e| matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::SkillTestPlayerWindow {
-                        before_token: false
-                    }
-                }
-            )) && cx.events.iter().any(|e| matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::SkillTestPlayerWindow {
-                        before_token: false
-                    }
-                }
-            )),
-            "window 1 (before commit) opened and auto-skipped",
+            "commit prompt (window 1 before commit opened and auto-skipped to it)"
         );
 
         // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
         let out = finish_skill_test(&mut cx, &[]);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::SkillTestPlayerWindow { before_token: true }
-                }
-            )) && events.iter().any(|e| matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::SkillTestPlayerWindow { before_token: true }
-                }
-            )),
-            "window 2 (before token) opened and auto-skipped: {events:?}",
+        assert_eq!(
+            out,
+            EngineOutcome::Done,
+            "window 2 (before token) opened and auto-skipped, then resolved",
         );
         assert!(
             events
@@ -1448,13 +1418,13 @@ mod tests {
     }
 
     /// Closing a skill-test player window re-enters `advance` at the
-    /// pre-advanced cursor (the `run_window_continuation` arm), not just via the
+    /// pre-advanced cursor (the `run_fast_continuation` arm), not just via the
     /// auto-skip path. Here window 1 is "about to close" — the cursor is already
-    /// `AwaitingCommit` — so `run_window_continuation` must re-enter `advance` and
+    /// `AwaitingCommit` — so `run_fast_continuation` must re-enter `advance` and
     /// emit the commit prompt. (#374.)
     #[test]
     fn closing_a_skill_test_player_window_re_enters_advance() {
-        use crate::state::{ChaosToken, Continuation, InFlightSkillTest, WindowKind};
+        use crate::state::{ChaosToken, Continuation, FastWindowKind, InFlightSkillTest};
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
@@ -1481,12 +1451,12 @@ mod tests {
                 bonus_attack_damage: 0,
             }));
         let mut events = Vec::new();
-        let out = super::super::reaction_windows::run_window_continuation(
+        let out = super::super::reaction_windows::run_fast_continuation(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            WindowKind::SkillTestPlayerWindow {
+            FastWindowKind::SkillTest {
                 before_token: false,
             },
         );

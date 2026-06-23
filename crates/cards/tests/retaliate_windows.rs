@@ -42,7 +42,7 @@ use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
-    InvestigatorId, LocationId, Phase, TokenModifiers, WindowKind,
+    InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::{Action, InputResponse, PlayerAction};
@@ -215,15 +215,6 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
         "Guard Dog soak window must suspend after the failed Fight: {:?}",
         result.outcome
     );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-                if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "AfterEnemyAttackDamagedAsset window opened for the retaliate: {:?}",
-        result.events
-    );
 
     // Guard Dog soaked the retaliate's 1 damage; investigator took none.
     let dog_in_play = state.investigators[&inv_id]
@@ -339,15 +330,6 @@ fn dodge_cancels_retaliate_and_skill_test_ends() {
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "BeforeEnemyAttack window must suspend after the failed Fight: {:?}",
         result.outcome
-    );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-                if matches!(kind, WindowKind::BeforeEnemyAttack { .. }))),
-        "BeforeEnemyAttack window opened for the retaliate: {:?}",
-        result.events
     );
 
     // No damage yet; Dodge still in hand.

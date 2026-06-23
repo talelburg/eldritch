@@ -24,7 +24,9 @@ use std::sync::Once;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase, PhaseStep, WindowKind};
+use game_core::state::{
+    CardCode, Continuation, FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
+};
 use game_core::{assert_event, assert_event_sequence, Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_FAST_EVENT_CODE, SYNTH_SURGE_TREACHERY_CODE, SYNTH_TREACHERY_CODE,
@@ -694,8 +696,8 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
 ///
 /// This test puts a synthetic Fast event in inv1's hand, drives
 /// `DrawEncounterCard` to trigger `open_fast_window`, and asserts that
-/// the window STAYS OPEN (not auto-skipped): `WindowOpened` is emitted
-/// but `WindowClosed` is NOT, and the window is on `state.open_windows`.
+/// the window STAYS OPEN (not auto-skipped): it remains on
+/// `state.open_windows` and the phase has not yet advanced.
 #[test]
 fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
     install_test_registry();
@@ -738,38 +740,22 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
     assert!(
         matches!(
             result.state.open_windows().last(),
-            Some(w) if w.window_kind() == Some(WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws))
+            Some(Continuation::FastWindow {
+                kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+                ..
+            })
         ),
         "top open window must be MythosAfterDraws; got {:?}",
         result.state.open_windows().last()
     );
 
     // Phase must still be Mythos — the window continuation (mythos_phase_end)
-    // has NOT fired yet.
+    // has NOT fired yet. (The window staying open + the phase not advancing is
+    // the observable signal that it was not auto-skipped.)
     assert_eq!(
         result.state.phase,
         Phase::Mythos,
         "phase must still be Mythos while MythosAfterDraws window is open"
-    );
-
-    // WindowOpened must be in the event stream.
-    assert_event!(
-        result.events,
-        Event::WindowOpened {
-            kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-        }
-    );
-
-    // WindowClosed must NOT be in the event stream — the window is still open.
-    assert!(
-        !result.events.iter().any(|e| matches!(
-            e,
-            Event::WindowClosed {
-                kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-            }
-        )),
-        "WindowClosed(MythosAfterDraws) must not fire while window is open; \
-         pre-fix this would have been emitted (window incorrectly auto-skipped)"
     );
 }
 
@@ -836,12 +822,13 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
          MythosAfterDraws must be gone"
     );
     assert!(
-        skip_result
-            .state
-            .open_windows()
-            .last()
-            .is_some_and(|w| w.window_kind()
-                == Some(WindowKind::PlayerWindow(PhaseStep::InvestigationBegins))),
+        matches!(
+            skip_result.state.open_windows().last(),
+            Some(Continuation::FastWindow {
+                kind: FastWindowKind::Phase(PhaseStep::InvestigationBegins),
+                ..
+            })
+        ),
         "top window must be InvestigationBegins; got {:?}",
         skip_result.state.open_windows().last()
     );
@@ -862,19 +849,6 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
         skip_result.state.round, 2,
         "round stays 2 — it bumped on Mythos entry"
     );
-
-    // WindowClosed event for MythosAfterDraws must be in the stream.
-    assert_event!(
-        skip_result.events,
-        Event::WindowClosed {
-            kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-        }
-    );
-    // WindowOpened event for InvestigationBegins must also be present.
-    assert_event!(
-        skip_result.events,
-        Event::WindowOpened {
-            kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
-        }
-    );
+    // MythosAfterDraws closed and InvestigationBegins opened — both observable
+    // via the open-window stack + phase transition asserted above.
 }

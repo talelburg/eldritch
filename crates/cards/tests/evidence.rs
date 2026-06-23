@@ -11,11 +11,12 @@
 
 use std::sync::Once;
 
+use game_core::action::InputResponse;
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
-    WindowKind, Zone,
+    Zone,
 };
 use game_core::test_support::{
     drive, test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
@@ -84,22 +85,33 @@ fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
 fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
     let (inv_id, enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(2);
 
-    // Commit nothing to the Fight test, then SKIP the reaction window (the
-    // option is offered here; playing it is exercised in the next test).
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).skip();
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
-
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    // The window opens even though no in-play card reacts — the hand match
-    // alone opens it.
-    assert_event!(
-        result.events,
-        Event::WindowOpened {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
+    // Apply the Fight, then commit nothing to the resulting skill-test prompt;
+    // the engine must then SUSPEND on the after-defeat reaction window — that
+    // suspend is how "a window opened" is observed (the dedicated WindowOpened
+    // event was removed as redundant with the AwaitingInput channel). The
+    // window opens even though no in-play card reacts: the hand match alone
+    // opens it, observable as the offered "Play <Evidence> from hand" option.
+    let after_fight = apply(state, fight_action(inv_id, enemy_id));
+    let EngineOutcome::AwaitingInput { .. } = &after_fight.outcome else {
+        panic!("Fight must suspend on the commit window; got {after_fight:?}");
+    };
+    let result = apply(
+        after_fight.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
     );
-    // Skipped → no clue discovered, Evidence! still in hand.
+
+    match &result.outcome {
+        EngineOutcome::AwaitingInput { request, .. } => {
+            assert!(
+                request.options.iter().any(|o| o.label.contains(EVIDENCE)),
+                "after-defeat window must offer the Evidence! hand play; request = {request:?}",
+            );
+        }
+        other => panic!("after-defeat window must open (AwaitingInput); got {other:?}"),
+    }
+    // The window is still open: no clue discovered yet, Evidence! still in hand.
     assert_no_event!(result.events, Event::CluePlaced { .. });
     assert_eq!(result.state.locations[&loc_id].clues, 2);
     assert!(result.state.investigators[&inv_id]
@@ -165,12 +177,6 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
         result.events,
         Event::CardDiscarded { investigator, code, from: Zone::Hand }
             if *investigator == inv_id && code.as_str() == EVIDENCE
-    );
-    assert_event!(
-        result.events,
-        Event::WindowClosed {
-            kind: WindowKind::AfterEnemyDefeated { enemy: e, .. },
-        } if *e == enemy_id
     );
 
     // 1 clue moved from the Study to the investigator; Evidence! is in discard.

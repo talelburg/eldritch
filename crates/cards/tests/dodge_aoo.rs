@@ -37,7 +37,6 @@ use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase,
-    WindowKind,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location};
 use game_core::{Action, InputResponse, PlayerAction};
@@ -150,15 +149,6 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "BeforeEnemyAttack window must suspend the AoO loop: {:?}",
         result.outcome
-    );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-                if matches!(kind, WindowKind::BeforeEnemyAttack { .. }))),
-        "BeforeEnemyAttack window opened: {:?}",
-        result.events
     );
     // No damage yet; move not yet completed.
     assert_eq!(state.investigators[&inv_id].damage, 0);
@@ -429,15 +419,6 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "Guard Dog soak window must suspend the AoO loop: {:?}",
         result.outcome
-    );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-                if matches!(kind, WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "AfterEnemyAttackDamagedAsset window opened: {:?}",
-        result.events
     );
     // Guard Dog soaked the damage; investigator took none.
     let dog_in_play = state.investigators[&inv_id]

@@ -14,7 +14,7 @@ use std::sync::Once;
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::{CardCode, Enemy, EnemyId, InvestigatorId, LocationId, Phase, WindowKind};
+use game_core::state::{CardCode, Enemy, EnemyId, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{test_enemy, test_investigator, test_location};
 use game_core::{Action, GameState, InputResponse, PlayerAction};
 
@@ -92,15 +92,6 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "the before-attack cancel window suspends the loop: {:?}",
         result.outcome
-    );
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, WindowKind::BeforeEnemyAttack { .. }))),
-        "BeforeEnemyAttack window opened: {:?}",
-        result.events
     );
     // No damage dealt yet (the attack hasn't resolved).
     assert_eq!(state.investigators[&inv_id].damage, 0);

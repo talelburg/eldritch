@@ -115,7 +115,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         }
         // Enemy defeated: dispatch the timing point through the unified
         // chokepoint (Axis-B T5a). `emit_event` queues the after-defeat
-        // reaction window (Roland 01001 — `Event::WindowOpened` emitted now;
+        // reaction window (Roland 01001 — the window opens now;
         // the skill-test driver suspends at its next step boundary so the
         // player can react) and then fires the forced act objectives (Act 3's
         // advance-on-Ghoul-Priest-defeat). `()`/debug_assert guards the
@@ -284,7 +284,7 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 /// attack that damaged it has left play before the reaction would
 /// resolve, so it does **not** get a reaction window (Guard Dog 01021
 /// does not retaliate on the attack that kills it). Only survivors are
-/// returned for the [`WindowKind::AfterEnemyAttackDamagedAsset`] queue.
+/// returned for the after-enemy-attack-damaged-asset reaction window queue.
 pub(super) fn place_assignment(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -411,7 +411,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// assets — the shared soak entry for **both** enemy attacks and non-attack
 /// card/treachery harm (#44/K5a). Returns the damaged surviving soaker assets
 /// (the [`place_assignment`] survivor list) so an attack caller can queue one
-/// [`WindowKind::AfterEnemyAttackDamagedAsset`] reaction window per survivor;
+/// after-enemy-attack-damaged-asset reaction window per survivor;
 /// non-attack callers pass one of `damage`/`horror` as 0 and ignore the return
 /// (treachery harm opens no soak reaction window — Guard Dog 01021 retaliates
 /// only to enemy *attacks*).
@@ -645,8 +645,8 @@ fn place_queue_exhaust(
     let damaged_survivors = place_assignment(cx, investigator, assignment);
 
     // Queue a soak reaction window per surviving damaged asset, BEFORE the
-    // exhaust step — preserving the historical order in which the window's
-    // `WindowOpened` precedes `EnemyExhausted`. Inert unless a soaker has an
+    // exhaust step — preserving the historical order in which the window
+    // opens before `EnemyExhausted`. Inert unless a soaker has an
     // `EnemyAttackDamagedSelf` reaction (Guard Dog 01021).
     for asset in damaged_survivors {
         let _ = super::emit::emit_event(
@@ -1189,10 +1189,8 @@ fn finish_attack_loop(
 /// as-is. On completion the source-keyed post-loop step runs via
 /// [`finish_attack_loop`] (shared with the order-pick resume, #143).
 ///
-/// Called from
-/// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s
-/// [`WindowKind::AfterEnemyAttackDamagedAsset`] / [`WindowKind::BeforeEnemyAttack`]
-/// arm on window close.
+/// Called from `run_reaction_continuation`'s
+/// `EnemyAttackDamagedSelf` / `EnemyAttacks` arm on window close.
 pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
     let Some(Continuation::AttackLoop {
         investigator,
