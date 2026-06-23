@@ -896,9 +896,14 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
             location,
             count,
         } => resume_before_discover_window(cx, *investigator, *location, *count),
-        // After-defeat / after-investigate / entered-play: no continuation work.
-        // The skill-test driver (which queued the window mid-resolution) resumes
-        // via `close_reaction_window`'s in-flight re-entry.
+        // After-defeat / after-investigate / entered-play: no continuation work
+        // here. Return `Done` so the `drive` loop dispatches the now-top frame —
+        // a mid-resolution `SkillTest` resumes by being re-dispatched, *not* by an
+        // inline `advance` call. (Contrast `run_fast_continuation`'s `SkillTest`
+        // arm, which *does* call `advance` inline: that window's continuation *is*
+        // the pre-advanced skill-test step, whereas a reaction window sits above a
+        // separate `SkillTest` frame the loop owns. The asymmetry is intentional —
+        // see `run_fast_continuation`.)
         TimingEvent::EnemyDefeated { .. }
         | TimingEvent::SuccessfullyInvestigated { .. }
         | TimingEvent::EnteredPlay { .. } => EngineOutcome::Done,

@@ -211,6 +211,13 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
             // `FastWindow` is a permissive Fast-gate awaiting `Skip` and is left to
             // idle below. Operates on the top frame — the invariant is that
             // `last()` is what resolves next, so no reach-down index.
+            //
+            // The guard: `TimingPointWindow` matches the first disjunct (always
+            // dispatched). A `FastWindow`'s candidates are empty today (it is a
+            // pure Fast-gate — `open_fast_window` pushes `Vec::new()`), so
+            // `awaits_input()` is false and it idles; the `|| awaits_input()` arm
+            // is the (currently dormant) path that would dispatch a candidate-
+            // bearing framework window if one is ever added.
             Some(
                 ref c @ (Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. }),
             ) if matches!(c, Continuation::TimingPointWindow { .. }) || c.awaits_input() => {
