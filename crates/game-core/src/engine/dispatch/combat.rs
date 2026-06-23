@@ -1163,11 +1163,13 @@ fn finish_attack_loop(
         EnemyAttackSource::EnemyPhase => {
             super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
         }
-        EnemyAttackSource::AttackOfOpportunity => EngineOutcome::Done,
-        // The retaliate's window closed; the loop drained. Hand control back to the
-        // Fight's skill-test follow-up (its `SkillTest` frame is now top, cursor at
-        // `PostOnResolution`) so teardown finishes (#379).
-        EnemyAttackSource::Retaliate => super::skill_test::advance(cx),
+        // AoO: nothing follows the drain. Retaliate (#379): the Fight's `SkillTest`
+        // frame is now top (cursor at `PostOnResolution`); returning `Done` lets the
+        // `drive` loop dispatch it to finish teardown (Slice C-plumbing — formerly a
+        // direct `skill_test::advance` reach-down here).
+        EnemyAttackSource::AttackOfOpportunity | EnemyAttackSource::Retaliate => {
+            EngineOutcome::Done
+        }
     }
 }
 

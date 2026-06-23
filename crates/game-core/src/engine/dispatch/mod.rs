@@ -204,9 +204,39 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other, // suspended for a pick, or rejected
                 }
             }
-            // Open turn idle (an `InvestigatorTurn` frame on top), terminal
-            // (empty), or a suspension on top (which a handler already surfaced
-            // as AwaitingInput before reaching here).
+            // A window on top (Slice C-plumbing): advance one resume step —
+            // re-prompt the next candidate, or (empty) close + run its
+            // continuation. A `TimingPointWindow` is always dispatched (its
+            // candidates are exhausted only by firing, so empty ⇒ close); an empty
+            // `FastWindow` is a permissive Fast-gate awaiting `Skip` and is left to
+            // idle below. Operates on the top frame — the invariant is that
+            // `last()` is what resolves next, so no reach-down index.
+            Some(
+                ref c @ (Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. }),
+            ) if matches!(c, Continuation::TimingPointWindow { .. }) || c.awaits_input() => {
+                let idx = cx.state.continuations.len() - 1;
+                match reaction_windows::advance_resolution(cx, idx) {
+                    EngineOutcome::Done => {} // closed; loop on to the exposed frame
+                    other => return other,    // re-prompt, or a suspended continuation
+                }
+            }
+            // A skill test re-exposed on top (a mid-test window/effect closed):
+            // step its driver. By the invariant it is top — no `rposition` /
+            // `win_idx > st` self-location.
+            Some(Continuation::SkillTest(_)) => match skill_test::advance(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
+            // An encounter-treachery frame re-exposed after its Revelation's
+            // sub-resolution completed: dispose of the card + pop (the former
+            // `resolve_input` chokepoint, now loop-driven). `teardown_…` pops the
+            // frame, so the top changes and the loop makes progress.
+            Some(Continuation::EncounterCard { .. }) => {
+                encounter::teardown_encounter_card_if_top(cx);
+            }
+            // Idle: the open turn (an `InvestigatorTurn` frame), an empty
+            // `FastWindow` permissive gate, terminal (empty), or a suspension on
+            // top (which a handler already surfaced as AwaitingInput).
             _ => return EngineOutcome::Done,
         }
     }
@@ -478,11 +508,9 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         },
     };
     // A treachery Revelation that suspended parks its `EncounterCard` frame
-    // beneath the suspension (#380); once that sub-resolution completes (`Done`)
-    // the frame is top again, so dispose of the card here — one generic site,
-    // no resume handler aware of treacheries.
-    if matches!(outcome, EngineOutcome::Done) {
-        return encounter::teardown_encounter_card_if_top(cx);
-    }
+    // beneath the suspension (#380); once that sub-resolution completes the frame
+    // is top again and the `drive` loop's `EncounterCard` arm disposes of it
+    // (Slice C-plumbing — no `resolve_input` chokepoint). `apply_player_action`
+    // runs `drive(cx, outcome)` after this returns.
     outcome
 }

@@ -108,15 +108,9 @@ pub(crate) fn resume_effect_walk(cx: &mut Cx) -> EngineOutcome {
         .rposition(|c| !matches!(c, Continuation::Effect(_)))
         .map_or(0, |i| i + 1);
     let outcome = drive_effect_to_base(cx, base);
-
-    if matches!(outcome, EngineOutcome::Done) {
-        if cx.state.has_skill_test_in_flight() {
-            return super::skill_test::advance(cx);
-        }
-        if let Some(idx) = cx.state.top_reaction_window_index() {
-            return super::reaction_windows::advance_resolution(cx, idx);
-        }
-    }
+    // On completion the effect frames are popped; the `drive` loop dispatches
+    // whatever frame the walk was nested within — a `SkillTest` mid-resolution or
+    // a window with remaining candidates. No reach-down (Slice C-plumbing).
     outcome
 }
 

@@ -20,6 +20,20 @@ gate idles (permissive, awaits `Skip`).
 
 **Tech Stack:** Rust, `cargo test`/`clippy`/`fmt`/`doc`, the `game-core` engine crate.
 
+> **Implementation outcome (shipped 2026-06-23).** Executed with three divergences
+> from the steps below — captured in the design spec's revised sections:
+> 1. **`run_fast_continuation` stays inline** (Step 5 reverted). It is the window's own
+>    continuation; the open-time auto-skip relies on it advancing synchronously to reach
+>    the next suspending step. Returning `Done` made a skill test starting inside a
+>    Revelation effect walk skip its commit prompt (caught by `non_attack_soak.rs`). The
+>    genuine reach-down removed was the *separate* skill-test seam in
+>    `close_reaction_window_at`.
+> 2. **The locate/presence accessors are kept** (Step 7 narrowed). Only `advance`'s
+>    `win_idx > st` self-location was deleted; `top_reaction_window*` stay as
+>    resolve-path locate queries (not reach-downs).
+> 3. **No test rewrite** (Step 8 dropped). The `awaits_input()`-guarded window arm idles
+>    on the synthetic empty gate, so the gate-above-reaction test passes unchanged.
+
 ## Global Constraints
 
 - **Behaviour-preserving — event log byte-identical**, modulo exactly one rewritten

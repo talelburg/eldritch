@@ -19,8 +19,7 @@ use crate::engine::TimingEvent;
 use crate::state::TimingMode;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
-    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, SkillTestStep,
-    Status,
+    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -540,7 +539,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             .pending_candidates_mut()
             .expect("fire_pending_trigger: window_idx is an open window/run")
             .remove(pending_idx);
-        return play_fast_event(cx, window_idx, &trigger);
+        return play_fast_event(cx, &trigger);
     }
 
     // Look up the ability fresh from the registry. The card may have
@@ -632,29 +631,29 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             if usage_limit.is_some() {
                 bump_usage_counter(cx.state, &trigger);
             }
-            advance_resolution(cx, window_idx)
+            // The window frame stays on top with its remaining candidates; the
+            // `drive` loop's window arm re-dispatches it (re-prompt or close).
+            // Slice C-plumbing.
+            EngineOutcome::Done
         }
     }
 }
 
-/// Play the hand Fast-event `candidate` from the resolution run at
-/// `window_idx` (Axis C, #335) — the [`CandidateSource::Hand`] resolution of
-/// [`fire_pending_trigger`]. Commences the play via the shared
+/// Play the hand Fast-event `candidate` from the open resolution run (Axis C,
+/// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
+/// Commences the play via the shared
 /// [`super::cards::begin_event_play`] (emit [`crate::Event::CardPlayed`], leave hand,
-/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), runs
-/// the matched `OnEvent` ability's effect, then advances the run. The apply
-/// loop flushes the event to discard on completion (step 4) — the
-/// suspending-event path Dynamite Blast 01024 uses.
+/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), then runs
+/// the matched `OnEvent` ability's effect. On synchronous completion it returns
+/// [`EngineOutcome::Done`], leaving the window frame on top for the `drive` loop to
+/// re-dispatch (Slice C-plumbing); the apply loop flushes the event to discard on
+/// completion (step 4) — the suspending-event path Dynamite Blast 01024 uses.
 ///
 /// Charges no resource cost, matching [`super::cards::play_card`] (Slice 1
 /// does not model play-cost resources). The caller has already removed the
 /// candidate from the run, so a suspending effect's resume drives the
 /// remaining siblings, not this play again.
-fn play_fast_event(
-    cx: &mut Cx,
-    window_idx: usize,
-    candidate: &ResolutionCandidate,
-) -> EngineOutcome {
+fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcome {
     let controller = candidate.controller;
     // Find the event in the controller's hand by code (first match — copies
     // are fungible; resolving by code avoids stale indices after a prior play).
@@ -713,7 +712,8 @@ fn play_fast_event(
             // A no-op if the effect already disposed of the card (e.g. an event
             // that becomes an asset clears `pending_played_event` itself).
             super::cards::flush_pending_played_event(cx);
-            advance_resolution(cx, window_idx)
+            // Window stays on top; the drive loop re-dispatches it. Slice C-plumbing.
+            EngineOutcome::Done
         }
     }
 }
@@ -863,18 +863,11 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
          (expected Done or AwaitingInput)",
     );
 
-    // If a skill test was mid-resolution when this window opened,
-    // hand control back to its driver to run the remaining steps.
-    // `AwaitingCommit` means the test is parked at the commit
-    // window (no driver state to resume); this happens when a future
-    // non-skill-test action queues a window — `Done` is the right
-    // terminal outcome.
-    if let Some(in_flight) = cx.state.current_skill_test() {
-        if !matches!(in_flight.continuation, SkillTestStep::AwaitingCommit) {
-            return super::skill_test::advance(cx);
-        }
-    }
-
+    // The window is closed and its continuation ran to `Done`. Return to the
+    // `drive` loop, which dispatches whatever frame is now top — a `SkillTest`
+    // mid-resolution (its driver picks up the remaining steps), an `EncounterCard`
+    // to dispose, a forced run, or idle. No reach-down into `skill_test::advance`
+    // (Slice C-plumbing).
     EngineOutcome::Done
 }
 
@@ -920,6 +913,13 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
 /// its cursor was pre-advanced before the window opened. Returns `Done` or
 /// `AwaitingInput` when a body suspends.
 pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
+    // This is the window's *own* continuation, run inline on close — including
+    // the open-time auto-skip path in `open_fast_window`, which relies on it
+    // advancing the phase / skill-test driver **synchronously** to reach the next
+    // suspending step (the commit prompt, the next phase window). It is not a
+    // driver-to-driver reach-down, so it stays imperative (the genuine reach-down
+    // — the redundant `skill_test::advance` *after* this in `close_reaction_window_at`
+    // — was removed in Slice C-plumbing).
     match kind {
         FastWindowKind::Phase(_) => super::phases::anchor_on_child_pop(cx),
         FastWindowKind::SkillTest { .. } => super::skill_test::advance(cx),
@@ -943,11 +943,10 @@ fn resume_before_discover_window(
     if !cancelled {
         crate::engine::evaluator::perform_discovery(cx, location, count, investigator);
     }
-    if cx.state.has_skill_test_in_flight() {
-        super::skill_test::advance(cx)
-    } else {
-        EngineOutcome::Done
-    }
+    // If a skill test is mid-flight (the dominant path: Investigate's follow-up
+    // discovery), the `drive` loop dispatches it once this returns — no reach-down
+    // into `skill_test::advance` (Slice C-plumbing).
+    EngineOutcome::Done
 }
 
 /// Resume the framework flow a closed forced run (#213) suspended.

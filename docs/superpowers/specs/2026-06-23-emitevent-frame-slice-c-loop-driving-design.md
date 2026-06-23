@@ -60,14 +60,19 @@ So the loop rule is: dispatch `last()`; advance it if it is a phase-anchor /
 `ActionResolution` / `Effect` / `SkillTest` / window-with-candidates; **idle** (return
 `Done`) if it is `InvestigatorTurn` / an empty-`FastWindow` gate / the empty stack.
 
-**Why the reach-down accessors disappear.** Today `top_reaction_window_index`
-(`game_state.rs:1640`, `rposition` skipping empty gates) and `advance`'s
-`rposition(SkillTest)` + `win_idx > st` self-location exist *only* because the
-imperative drivers reach *down* the stack to find "the window I was driving" /
-"am I a window above the test or a forced run below it." With every driver returning
-to the loop and the loop dispatching `last()`, those reads collapse to `last()`. The
-two genuinely-stacked cases stay correct because they are **already in resolution
-order**:
+**What disappears — and what stays (revised at implementation).** The genuine
+*driver self-location* — `advance`'s `rposition(SkillTest)` + `win_idx > st`, which
+asked "am I a window above the test or a forced run below it" so a driver could reach
+*down* and call the next driver — **disappears**: every driver now returns `Done` and
+the loop dispatches `last()`. **But `top_reaction_window` / `top_reaction_window_index`
+stay** as *locate/presence queries* in the resolve-input and Fast-play-eligibility
+paths (`resume_reaction_window`/`fire_pending_trigger` locate the window the player is
+acting on; `resume_window`/`cards`/`evaluator` ask "is a reaction window open"). They
+are not driver reach-downs — they read the active window, which under the invariant is
+the top, *robustly skipping a permissive empty gate above it*. Keeping them (rather than
+forcing `last()`) is what lets the loop stay correct in the one stacked edge below
+**without** asserting that edge can never be represented. The two genuinely-stacked
+cases stay correct because they are **already in resolution order**:
 
 - *Forced/reaction ability starts a skill test* (Frozen in Fear 01164):
   `[forced-run(siblings), SkillTest, ST.1-gate]` — top-first dispatch resolves ST.1 →
@@ -77,15 +82,18 @@ order**:
   preserved (the forced skill test, on top, resolves before the queued reaction
   window beneath it opens).
 
-The one shape that *would* break top dispatch — an empty gate sitting **above** a
-still-pending mandatory window (`[reaction(pending), gate(empty)]`) — **cannot arise**
-under the invariant: a pending mandatory window has `awaits_input() == true`, which
-gates the framework from advancing at all (`apply`'s guard, `mod.rs:72`), so the
-reaction is always resolved-and-popped before any phase gate opens. The existing
-regression test `close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top`
-builds that shape **synthetically** (it hand-`push`es the gate) to defend the old
-reach-down close path; it tests a shape the new invariant forbids and is rewritten
-(see Testing).
+The one shape that *would* break a naive `len-1` top dispatch — an empty gate sitting
+**above** a still-pending mandatory window (`[reaction(pending), gate(empty)]`) — is
+handled two ways, belt-and-suspenders: (1) the framework never *produces* it in
+play, because a pending mandatory window has `awaits_input() == true`, which gates the
+framework from advancing at all (`apply`'s guard, `mod.rs:72`); and (2) even when the
+existing regression test
+`close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top` builds
+it **synthetically** (hand-`push`ing the gate), the conversion handles it gracefully —
+the loop's window arm is **guarded by `awaits_input()`** so it *idles* on the empty
+gate (never drains it), and the kept `top_reaction_window_index` locate-query closes
+the correct window beneath on `Skip`. So that test **passes unchanged** (see Testing) —
+no rewrite was needed.
 
 ## Sub-slice decomposition
 
@@ -137,63 +145,78 @@ every driver to return-to-loop and deletes the reach-down accessors in the same 
 
 **Goal:** establish the stack invariant (above) and make the `drive` loop dispatch
 **every** frame by uniform top-frame dispatch — windows, skill tests, and
-encounter-card disposal — deleting the reach-down accessors, the five synchronous
-skill-test re-entry sites, and the `resolve_input` disposal chokepoint.
-**Behaviour-preserving** (modulo the one synthetic test, rewritten). This unblocks #423.
+encounter-card disposal — removing the genuine driver self-location/reach-downs, the
+five synchronous skill-test re-entry sites, and the `resolve_input` disposal
+chokepoint. **Behaviour-preserving** — full suite green, the synthetic gate-above-
+reaction test passes unchanged. This unblocks #423.
 
 **The loop (`drive`) gains arms** for `Continuation::TimingPointWindow`,
-`FastWindow`, `SkillTest`, and `EncounterCard`, dispatched off `last()` per the loop
-rule (advance vs. idle keyed on `awaits_input()` / non-empty candidates):
+`FastWindow`, `SkillTest`, and `EncounterCard`, dispatched off `last()`:
 
-- **window arm** (`TimingPointWindow` / `FastWindow` with candidates): run one resume
-  step — fire the picked candidate's effect (already done by `resume_window` before
-  the loop re-enters) then re-prompt the next, or close + run the continuation. An
-  empty `FastWindow` gate is **not** dispatched (it is the idle/permissive case).
-- **`SkillTest` arm**: dispatch `skill_test::advance` (now "I am top" — no
-  `rposition`/`win_idx > st`).
-- **`EncounterCard` arm**: the body of `teardown_encounter_card_if_top` (one-shot →
+- **window arm** (one merged arm): a `TimingPointWindow` is **always** dispatched
+  (its candidates are exhausted only by firing, so empty ⇒ close); a `FastWindow`
+  **only when `awaits_input()`** (non-empty). The arm calls `advance_resolution(cx,
+  len-1)` — re-prompt the next candidate, or (empty) close + run the continuation. An
+  empty `FastWindow` gate falls through to **idle** (the permissive case). *This guard
+  is load-bearing*: it is what lets the loop leave a synthetically-stacked empty gate
+  alone (see the invariant section).
+- **`SkillTest` arm**: dispatch `skill_test::advance` (now "I am top" — the
+  `rposition(SkillTest)` + `win_idx > st` self-location is deleted; its top-of-loop
+  check becomes "is `last()` a non-empty window? → return `Done`, let the loop open
+  it").
+- **`EncounterCard` arm**: `teardown_encounter_card_if_top` (one-shot →
   `encounter_discard`; persistent → skip) + pop.
 
-**`resolve_input`** dispatches the top frame to its one-step resume, then returns
-through `drive(cx, outcome)`. The handlers **step once and return `Done`** instead of
-running the cascade in place:
+**`resolve_input`** dispatches the top frame to its one-step resume; `apply` already
+runs `drive(cx, outcome)` after it. The handlers **step once and return `Done`**
+instead of running the cascade in place:
 
 - `fire_pending_trigger` / `play_fast_event`: fire the effect, return `Done` (the loop
-  re-dispatches the window — re-prompt or close).
-- `close_reaction_window_at`: remove the window, run its non-driver continuation
-  (combat soak re-entry stays as-is — `AttackLoop` is not yet a loop arm), return
-  `Done`. **The skill-test seam (the `current_skill_test` → `skill_test::advance` hop,
+  re-dispatches the window). `play_fast_event` loses its now-unused `window_idx` param.
+- `close_reaction_window_at`: remove the window, run its continuation, return `Done`.
+  **The skill-test seam (the `current_skill_test` → `skill_test::advance` hop,
   `reaction_windows.rs:872-876`) is deleted** — the loop dispatches the now-top
-  `SkillTest`.
-- `run_fast_continuation`: `SkillTest` path returns `Done` (loop dispatches
-  `SkillTest`); `Phase` path returns `Done` (loop dispatches the `*Phase` anchor —
-  already a loop arm). **Auto-skip caveat:** `open_fast_window`'s auto-skip
-  (`reaction_windows.rs:1058-1063`) runs `run_fast_continuation` *inline*; with the
-  Phase path now returning `Done`, the anchor must be re-dispatched by the loop, so
-  confirm `anchor_on_child_pop`'s resume cursor is advanced before the gate opens (or
-  have the auto-skip path return `Done` to the loop rather than calling the
-  continuation inline). This is part of this slice's holistic conversion, not a
-  deferral.
+  `SkillTest`. The combat soak re-entry (`run_reaction_continuation` →
+  `resume_enemy_attack`) stays as-is (`AttackLoop` not yet a loop arm).
 
-**Delete the reach-down accessors and chokepoint:**
-- `GameState::top_reaction_window_index` and the empty-skipping `top_reaction_window` /
-  `top_reaction_window_mut` reads, replaced by `last()`-based dispatch. (`top_window`
-  for the Fast-play `permissive_window` timing gate stays — that is a legitimate
-  "what window am I gated by" read, not a driver reach-down.)
-- `advance`'s `rposition(SkillTest)` + `win_idx > st` self-location.
+**`run_fast_continuation` stays inline (revised at implementation — do NOT flip it).**
+It is the window's **own** continuation, run inline on close *including the open-time
+auto-skip path*, which relies on it advancing the phase / skill-test driver
+**synchronously** to reach the next suspending step (the commit prompt, the next phase
+window). Returning `Done` there makes a skill test that *starts* deep inside a
+Revelation effect walk return `Done` prematurely — it never emits its commit prompt
+(this regressed the treachery soak-distribution tests). So both arms stay
+(`Phase → anchor_on_child_pop`, `SkillTest → skill_test::advance`); it is not a
+driver-to-driver reach-down. The genuine reach-down was the *separate* `skill_test::advance`
+in `close_reaction_window_at` *after* this continuation, which is removed.
+
+**Removed driver self-location + chokepoint:**
+- `advance`'s `rposition(SkillTest)` + `win_idx > st` self-location (above).
 - The `resolve_input` tail chokepoint (`mod.rs:484-486`); `resolve_encounter_card`'s
-  synchronous disposal collapses to "push frame, return to loop."
+  synchronous disposal (its own `teardown_encounter_card_if_top` call) stays for the
+  no-suspend path; the suspend path now disposes via the loop's `EncounterCard` arm.
+
+**Kept (revised at implementation — locate/presence queries, not reach-downs):**
+`top_reaction_window` / `top_reaction_window_index` / `top_reaction_window_mut` and
+`top_window`. They read the *active* window in the resolve-input / Fast-eligibility
+paths (`resume_reaction_window`/`fire_pending_trigger` locate the window the player
+acts on; `resume_window`/`cards`/`evaluator` presence-check). Under the invariant the
+active window is the top; the empty-skipping behaviour is the belt-and-suspenders that
+keeps `Skip` closing the right window even in the synthetic stacked edge.
 
 **Flip the remaining re-entry sites** to return `Done`:
 `resume_before_discover_window` (`reaction_windows.rs:947`), `resume_effect_walk`
-(`choice.rs:114`), the `fire_retaliate_if_any` → `drive_retaliate` Retaliate tail
-(`combat.rs:1170`); plus the commit hop (`resume_skill_test_commit`,
-`mod.rs:354/430`). The implementation plan pins the exact set.
+(`choice.rs:114`), the `finish_attack_loop` Retaliate tail (`combat.rs:1170`), and the
+`advance` `PostOnResolution` teardown's forced-run re-drive (the
+`advance_resolution(idx)` for a forced run beneath — the loop's `TimingPointWindow`
+arm now dispatches it; the `InvestigatorTurn { ending }` turn-frame resume stays, #235).
+**The commit hop is *not* a reach-down** (`finish_skill_test → advance` runs while
+`SkillTest` is top — legitimate top-frame resume; unchanged).
 
 **Out of scope (stays imperative):** the combat re-entry
 `run_reaction_continuation` → `resume_enemy_attack` (`AttackLoop` is not yet a loop
-arm — #411 Shape A) and the `top_window` Fast-play timing gate. These re-enter or read
-frames the loop does not yet own; converting them is not required to unblock #423.
+arm — #411 Shape A); `run_fast_continuation` (the window's own inline continuation).
+Converting these is not required to unblock #423.
 
 **Behaviour-preserving claim + backstop.** Event log byte-identical (modulo the one
 synthetic test). `crates/cards/tests/revelation_treacheries.rs` (Crypt Chill /
@@ -291,15 +314,15 @@ re-derived here. D may proceed in parallel with C-coordinators.
 ## Testing strategy
 
 - **C-plumbing / D: behaviour-preserving.** Full engine + integration suite green at
-  the PR boundary; these change structure, not rules. Event log byte-identical. Named
-  backstops: `crates/cards/tests/revelation_treacheries.rs` (the `EncounterCard`
-  disposal seam) and `crates/game-core/tests/{reaction_windows,forced_triggers}.rs`
-  (window / forced-run / Frozen-in-Fear reentrancy dispatch). **The one expected test
-  delta:** `close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top`
-  is rewritten — it asserts the old reach-down close on a synthetic out-of-order stack
-  the new invariant forbids; it becomes an assertion that a pending window is never
-  stranded beneath a permissive gate (or is removed if it adds nothing the invariant
-  doesn't already guarantee).
+  the PR boundary; these change structure, not rules. Event log byte-identical, and
+  **no test changes** — including `close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top`,
+  which passes unchanged (the `awaits_input()`-guarded window arm idles on the synthetic
+  empty gate; the kept locate-query closes the right window beneath). Named backstops:
+  `crates/cards/tests/revelation_treacheries.rs` (the `EncounterCard` disposal seam),
+  `crates/cards/tests/non_attack_soak.rs` (multi-point treachery soak distribution — the
+  case that caught the `run_fast_continuation` auto-skip regression during
+  implementation), and `crates/game-core/tests/{reaction_windows,forced_triggers}.rs`
+  (window / forced-run / Frozen-in-Fear reentrancy dispatch).
 - **C-coordinators: the only new behaviour.** Single-bucket events byte-identical
   (degenerate one-cell iteration); the per-cell re-scan **and** the reaction-after-forced
   scan are covered by the §G synthetic act/agenda fixture. Round-end ordering stays
@@ -313,10 +336,9 @@ re-derived here. D may proceed in parallel with C-coordinators.
 
 | Risk | Mitigation |
 |---|---|
-| The holistic flip strands a revelation card | `revelation_treacheries` backstop; the `EncounterCard` loop arm is `teardown_encounter_card_if_top`'s body relocated 1:1 |
-| A driver still reaches down after the flip (half-conversion) | The conversion is one PR; grep that no `top_reaction_window_index` / `win_idx > st` reads remain; `forced_triggers` (Frozen-in-Fear) is the reentrancy backstop |
-| `open_fast_window` auto-skip stalls when the Phase continuation returns `Done` | Verify `anchor_on_child_pop`'s resume cursor is advanced before the gate opens, or have auto-skip return `Done` to the loop; the phase suites + `the_gathering*` playthrough guard it |
-| The synthetic gate-above-reaction test fails | Expected — it encodes a forbidden shape; rewrite it to assert the invariant (see Testing) |
+| The holistic flip strands a revelation card | `revelation_treacheries` backstop; the loop's `EncounterCard` arm is `teardown_encounter_card_if_top` relocated 1:1 |
+| A driver still reaches down after the flip (half-conversion) | The conversion is one PR; `forced_triggers` (Frozen-in-Fear) is the reentrancy backstop. Note: `top_reaction_window*` stays as a *locate/presence* query (not a reach-down — see "What disappears, what stays") |
+| Flipping a window's *own inline continuation* (`run_fast_continuation`) breaks the open-time auto-skip | **Realized during implementation:** returning `Done` made a skill test that starts inside a Revelation effect walk skip its commit prompt. Mitigation: `run_fast_continuation` stays inline; `non_attack_soak.rs` is the backstop |
 | C-coordinators' reaction-after-forced scan regresses an in-scope candidate set | No in-scope card hits forced-changes-reaction-eligibility at one emit; §G synthetic fixture + round-end suites guard it |
 
 ## What "done" looks like
