@@ -400,29 +400,15 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 
 /// Dispatch a [`PlayerAction::ResolveInput`].
 ///
-/// Routes to the right resume handler based on which suspension is
-/// outstanding: an open reaction window ([`resume_reaction_window`])
-/// or the skill-test commit window ([`finish_skill_test`]). Rejects
-/// when nothing is outstanding.
+/// Routes on the **top** continuation frame — the prompt awaiting input — and
+/// returns through [`drive`] (Slice C-plumbing). A window on top resolves via
+/// [`resume_window`]; a mid-test reaction window closes, returns `Done`, and the
+/// loop re-dispatches the now-top `SkillTest`. Rejects when nothing is outstanding.
 ///
-/// A reaction window on `state.open_windows` and `in_flight_skill_test`
-/// may both be present simultaneously — that's the mid-skill-test
-/// reaction case: the skill-test driver is parked at a step boundary
-/// waiting for the reaction window to close before continuing. The
-/// reaction window takes routing priority; once it closes,
-/// [`close_reaction_window`] re-enters [`advance`] to finish
-/// the test.
-///
-/// # Pure-Fast window closing
-///
-/// A pure-Fast window (pushed by [`open_fast_window`], empty
-/// `pending_triggers`) is **not** returned by [`GameState::top_reaction_window`]
-/// because that helper filters out empty-`pending_triggers` windows.
-/// When such a window is the only entry on the stack (no
-/// reaction-driven window below it), `InputResponse::Skip` closes it
-/// directly via [`close_reaction_window`] on the literal top-of-stack
-/// index. This covers the `MythosAfterDraws` window after all Fast
-/// plays have been made and the player is done.
+/// A pure-Fast window (pushed by [`open_fast_window`], empty `pending_triggers`)
+/// on top is a play *opportunity*: `InputResponse::Skip` closes it via
+/// [`close_reaction_window`]. This covers the `MythosAfterDraws` window after all
+/// Fast plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     // Top-frame dispatch (umbrella §1 / #348): every suspension is a
     // `Continuation` frame, and the frame awaiting input is always the top of

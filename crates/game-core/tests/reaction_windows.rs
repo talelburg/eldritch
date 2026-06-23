@@ -23,8 +23,8 @@ use game_core::dsl::{
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, InvestigatorId,
-    LocationId, Phase, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
+    InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -208,7 +208,12 @@ fn no_in_play_reaction_means_no_window_opens() {
     );
     // No AfterEnemyDefeated reaction window (none in play) — no reaction window
     // is left on the stack.
-    assert!(result.state.top_reaction_window().is_none());
+    assert!(result
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 #[test]
@@ -236,7 +241,9 @@ fn matching_reaction_opens_window_and_suspends() {
     // AwaitingInput outcome above and the populated reaction window below.
     let window = result
         .state
-        .top_reaction_window()
+        .continuations
+        .last()
+        .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
         .expect("reaction window must be populated while suspended");
     assert!(
         matches!(
@@ -283,7 +290,12 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
     assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
     assert_eq!(resumed.state.locations[&loc_id].clues, 2);
     // The window closed: no reaction window left on the stack.
-    assert!(resumed.state.top_reaction_window().is_none());
+    assert!(resumed
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 #[test]
@@ -309,7 +321,12 @@ fn skip_closes_an_optional_only_window_without_firing() {
     assert_eq!(resumed.state.investigators[&inv_id].clues, 0);
     assert_eq!(resumed.state.locations[&loc_id].clues, 3);
     // The window closed without firing: no reaction window left on the stack.
-    assert!(resumed.state.top_reaction_window().is_none());
+    assert!(resumed
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 #[test]
@@ -358,7 +375,12 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     // No AfterEnemyDefeated window for the unrelated investigator — resolution
     // ran straight to Done with no reaction window left on the stack.
-    assert!(result.state.top_reaction_window().is_none());
+    assert!(result
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 #[test]
@@ -408,7 +430,9 @@ fn unqualified_pattern_matches_any_defeat() {
     ));
     let window = paused
         .state
-        .top_reaction_window()
+        .continuations
+        .last()
+        .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
         .expect("window must open for an unqualified pattern");
     assert_eq!(window.pending_candidates().unwrap().len(), 1);
     assert_eq!(
@@ -456,7 +480,11 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
         other => panic!("expected Rejected, got {other:?}"),
     }
     assert!(
-        bad.state.top_reaction_window().is_some(),
+        bad.state
+            .continuations
+            .last()
+            .and_then(Continuation::pending_candidates)
+            .is_some_and(|p| !p.is_empty()),
         "window must survive a rejected pick so the client can retry"
     );
 }
@@ -484,7 +512,12 @@ fn non_resolve_input_action_rejects_while_window_open() {
         }
         other => panic!("expected Rejected, got {other:?}"),
     }
-    assert!(rejected.state.top_reaction_window().is_some());
+    assert!(rejected
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_some_and(|p| !p.is_empty()));
 }
 
 #[test]
@@ -502,7 +535,9 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     assert_eq!(
         paused
             .state
-            .top_reaction_window()
+            .continuations
+            .last()
+            .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
             .expect("window populated")
             .pending_candidates()
             .unwrap()
@@ -527,7 +562,9 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     assert_eq!(
         after_first
             .state
-            .top_reaction_window()
+            .continuations
+            .last()
+            .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
             .expect("window still populated")
             .pending_candidates()
             .unwrap()
@@ -552,7 +589,12 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
         after_second.state.investigators[&inv_id].resources,
         resources_before + 1,
     );
-    assert!(after_second.state.top_reaction_window().is_none());
+    assert!(after_second
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 #[test]
@@ -802,7 +844,9 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     ));
     let window = paused
         .state
-        .top_reaction_window()
+        .continuations
+        .last()
+        .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
         .expect("window must populate when both investigators carry triggers");
 
     assert_eq!(window.pending_candidates().unwrap().len(), 2);
@@ -841,7 +885,9 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     assert_eq!(
         paused
             .state
-            .top_reaction_window()
+            .continuations
+            .last()
+            .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
             .expect("window populated")
             .pending_candidates()
             .unwrap()
@@ -878,7 +924,12 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     // controller's location).
     assert_eq!(skipped.state.locations[&loc_id].clues, 2);
     assert_eq!(skipped.state.investigators[&inv_id].clues, 1);
-    assert!(skipped.state.top_reaction_window().is_none());
+    assert!(skipped
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 #[test]
@@ -927,7 +978,9 @@ fn reaction_trigger_in_threat_area_opens_window() {
     );
     let window = result
         .state
-        .top_reaction_window()
+        .continuations
+        .last()
+        .filter(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
         .expect("threat-area reaction must populate the window");
     assert_eq!(window.pending_candidates().unwrap().len(), 1);
     assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
@@ -1026,7 +1079,12 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     assert_eq!(resumed.state.investigators[&inv_id].clues, 1);
     assert_eq!(resumed.state.locations[&loc_id].clues, 2);
     // The window closed: no reaction window left on the stack.
-    assert!(resumed.state.top_reaction_window().is_none());
+    assert!(resumed
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 // ------------------------------------------------------------------
@@ -1114,7 +1172,12 @@ fn after_successful_investigate_fires_in_play_reaction() {
         resumed.state.locations[&loc].clues, 0,
         "clue was discovered"
     );
-    assert!(resumed.state.top_reaction_window().is_none());
+    assert!(resumed
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .is_none_or(Vec::is_empty));
 }
 
 /// With no after-investigate reaction in play, a successful Investigate

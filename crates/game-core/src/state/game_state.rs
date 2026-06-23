@@ -137,7 +137,7 @@ pub struct GameState {
     /// `TimingPointWindow` / `FastWindow` frames (the former `open_windows` Vec,
     /// absorbed into the one stack). `#[serde(default)]` so pre-field
     /// states still load. Inspect windows via [`Self::open_windows`] /
-    /// [`Self::top_reaction_window`] / [`Self::top_window`].
+    /// [`Self::top_window`].
     #[serde(default)]
     pub continuations: Vec<Continuation>,
     /// Identifier of the scenario this state belongs to, if any.
@@ -747,8 +747,7 @@ impl Continuation {
     ///   *no* pending candidates — is a play *opportunity*, not a mandatory prompt:
     ///   Fast `PlayCard`/`ActivateAbility` are allowed (the handlers gate
     ///   eligibility) and `ResolveInput::Skip` closes it. A window *with* pending
-    ///   triggers (reaction or forced) does await `ResolveInput`. This mirrors
-    ///   [`GameState::top_reaction_window`], which skips empty-trigger windows.
+    ///   triggers (reaction or forced) does await `ResolveInput`.
     ///
     /// (`EncounterCard` is framework-internal and never sits on top at an action
     /// boundary, so its `true` here is moot.)
@@ -1493,19 +1492,6 @@ pub struct PendingSkillModifier {
 }
 
 impl GameState {
-    /// The topmost open window that has unresolved candidates, if any. Used
-    /// by the dispatcher's "is reaction work pending?" guards. A candidate is
-    /// an in-play trigger *or* a hand Fast-event play (Axis C) — both ride
-    /// `pending_triggers`. Pure Fast-gating framework windows (empty
-    /// `pending_triggers`) are skipped — they don't block dispatch.
-    #[must_use]
-    pub fn top_reaction_window(&self) -> Option<&Continuation> {
-        self.continuations
-            .iter()
-            .rev()
-            .find(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
-    }
-
     /// The skill test currently in flight, if any; `None` outside a test. Reads
     /// the topmost `Continuation::SkillTest` frame — the continuation stack is
     /// the single source of truth for "a test is mid-resolution" (#348). Topmost
@@ -1602,8 +1588,7 @@ impl GameState {
 
     /// The topmost open window regardless of pending triggers (the former
     /// `open_windows.last()`), e.g. for the Fast-play `permissive_window`
-    /// timing gate. Distinct from [`Self::top_reaction_window`], which
-    /// skips empty-`pending_triggers` (pure-Fast) windows.
+    /// timing gate — including a pure-Fast gate with empty `pending_triggers`.
     #[must_use]
     pub fn top_window(&self) -> Option<&Continuation> {
         self.windows().next_back()
