@@ -15,6 +15,7 @@ use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
+use crate::engine::TimingEvent;
 use crate::event::Event;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
@@ -57,12 +58,12 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEv
     let kind = event
         .reaction_window()
         .expect("queue_reaction_window: caller checks the event opens a reaction window");
-    let mut candidates = scan_pending_triggers(cx.state, kind);
+    let mut candidates = scan_pending_triggers(cx.state, event);
     // Axis C (#335): the window also opens for a matching Fast event in hand,
     // so a defeat with Evidence! in hand (and no in-play reaction) still opens
     // the after-defeat window. Hand plays are offered after the in-play
     // triggers.
-    candidates.extend(scan_hand_fast_events(cx.state, kind));
+    candidates.extend(scan_hand_fast_events(cx.state, event));
     if candidates.is_empty() {
         return;
     }
@@ -124,7 +125,7 @@ fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> boo
 ///
 /// Returns an empty vec when the registry isn't installed (tests that
 /// don't touch card data) or no cards match.
-fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionCandidate> {
+fn scan_pending_triggers(state: &GameState, event: &TimingEvent) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -150,10 +151,10 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         };
         // "at your location" scoping for the before-attack cancel window
         // (Dodge 01023, Axis D #336): a candidate's controller must be
-        // co-located with the attacked investigator. Other window kinds pass
-        // all controllers through.
-        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
-            if !same_location(state, id, investigator) {
+        // co-located with the attacked investigator. Other events pass all
+        // controllers through.
+        if let TimingEvent::EnemyAttacks { investigator, .. } = event {
+            if !same_location(state, id, *investigator) {
                 continue;
             }
         }
@@ -161,39 +162,38 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         // #336): the reaction's controller is the discoverer and must be at the
         // discovery location. (The per-card `clues > 0` potential gate is in the
         // card loop below.)
-        if let WindowKind::BeforeDiscoverClues {
+        if let TimingEvent::WouldDiscoverClues {
             investigator,
             location,
             ..
-        } = kind
+        } = event
         {
-            if id != investigator
+            if id != *investigator
                 || state
                     .investigators
                     .get(&id)
                     .and_then(|i| i.current_location)
-                    != Some(location)
+                    != Some(*location)
             {
                 continue;
             }
         }
         for card in inv.controlled_card_instances() {
-            // Self-binding: for `AfterEnemyAttackDamagedAsset` only the
-            // soaked asset instance may trigger `EnemyAttackDamagedSelf`.
-            // All other instances are skipped here — the pattern match in
-            // `trigger_matches` handles the pattern-kind pairing; this
-            // filter enforces the "self = the soaked asset" scoping. (C5b
-            // #237.) Other window kinds pass all instances through unchanged.
-            if let WindowKind::AfterEnemyAttackDamagedAsset { asset, .. } = kind {
-                if card.instance_id != asset {
+            // Self-binding: for `EnemyAttackDamagedSelf` only the soaked asset
+            // instance may trigger. All other instances are skipped here — the
+            // pattern match in `trigger_matches` handles the pattern pairing;
+            // this filter enforces the "self = the soaked asset" scoping (Guard
+            // Dog 01021, C5b #237). Other events pass all instances through.
+            if let TimingEvent::EnemyAttackDamagedSelf { asset, .. } = event {
+                if card.instance_id != *asset {
                     continue;
                 }
             }
-            // Self-binding: `AfterEnteredPlay` fires only for the instance that
+            // Self-binding: `EnteredPlay` fires only for the instance that
             // entered play (Research Librarian 01032). Mirrors the soaked-asset
             // filter above.
-            if let WindowKind::AfterEnteredPlay { instance, .. } = kind {
-                if card.instance_id != instance {
+            if let TimingEvent::EnteredPlay { instance, .. } = event {
+                if card.instance_id != *instance {
                     continue;
                 }
             }
@@ -201,7 +201,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
             // initiate if its effect won't change the game state"; TODO(#368)):
             // only a source still holding clues to discard can replace the
             // discovery — an emptied Cover Up would otherwise prompt forever.
-            if matches!(kind, WindowKind::BeforeDiscoverClues { .. }) && card.clues == 0 {
+            if matches!(event, TimingEvent::WouldDiscoverClues { .. }) && card.clues == 0 {
                 continue;
             }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
@@ -214,7 +214,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                 else {
                     continue;
                 };
-                if !trigger_matches(kind, pattern, *timing, id) {
+                if !trigger_matches(event, pattern, *timing, id) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -249,7 +249,7 @@ fn scan_pending_triggers(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
 /// Returns [`CandidateSource::Hand`] candidates in active-investigator-first
 /// / turn-order order, like [`scan_pending_triggers`]. Empty when the registry
 /// isn't installed (tests that don't touch card data) or nothing matches.
-fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionCandidate> {
+fn scan_hand_fast_events(state: &GameState, event: &TimingEvent) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -270,8 +270,8 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
         };
         // "at your location" scoping for the before-attack cancel window —
         // mirrors `scan_pending_triggers` (Dodge 01023, Axis D #336).
-        if let WindowKind::BeforeEnemyAttack { investigator, .. } = kind {
-            if !same_location(state, id, investigator) {
+        if let TimingEvent::EnemyAttacks { investigator, .. } = event {
+            if !same_location(state, id, *investigator) {
                 continue;
             }
         }
@@ -292,7 +292,7 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
                 else {
                     continue;
                 };
-                if !trigger_matches(kind, pattern, *timing, id) {
+                if !trigger_matches(event, pattern, *timing, id) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -326,127 +326,67 @@ fn scan_hand_fast_events(state: &GameState, kind: WindowKind) -> Vec<ResolutionC
 /// only on the Before-windows matched below; the general after-event
 /// reaction pipeline ignores it.
 fn trigger_matches(
-    kind: WindowKind,
+    event: &TimingEvent,
     pattern: &EventPattern,
     timing: EventTiming,
     controller: InvestigatorId,
 ) -> bool {
-    // When-timing windows fire only for their exact pattern pairing (Axis D
-    // #336); the "at your location" / eligibility scoping lives in the scans.
+    // When-timing windows fire only for their exact event/pattern pairing (Axis
+    // D #336); the "at your location" / eligibility scoping lives in the scans.
     match timing {
         EventTiming::When => {
             return matches!(
-                (kind, pattern),
-                (
-                    WindowKind::BeforeEnemyAttack { .. },
-                    EventPattern::EnemyAttacks
-                ) | (
-                    WindowKind::BeforeDiscoverClues { .. },
-                    EventPattern::WouldDiscoverClues
-                )
+                (event, pattern),
+                (TimingEvent::EnemyAttacks { .. }, EventPattern::EnemyAttacks)
+                    | (
+                        TimingEvent::WouldDiscoverClues { .. },
+                        EventPattern::WouldDiscoverClues
+                    )
             );
         }
-        // No `At`-timed reaction exists until Slice B-iii; treat it like
-        // `After` (fall through to pattern matching). Dormant.
+        // No `At`-timed reaction exists yet; treat it like `After` (fall through
+        // to pattern matching). Dormant.
         EventTiming::At | EventTiming::After => {}
     }
-    match (kind, pattern) {
+    match (event, pattern) {
         (
-            WindowKind::AfterEnemyDefeated { by, .. },
+            TimingEvent::EnemyDefeated { by, .. },
             EventPattern::EnemyDefeated {
                 by_controller,
                 code: _,
             },
         ) => {
             if *by_controller {
-                by == Some(controller)
+                *by == Some(controller)
             } else {
                 true
             }
         }
-        // `AfterEnemyAttackDamagedAsset` matches `EnemyAttackDamagedSelf`
-        // only. The soaked-asset self-binding is enforced by the instance
-        // filter in `scan_pending_triggers` (only the `asset` instance
-        // reaches `trigger_matches` for this window kind). Sole consumer:
-        // Guard Dog 01021's "deal 1 damage to the attacking enemy"
-        // reaction. (C5b #237.)
-        (WindowKind::AfterEnemyAttackDamagedAsset { .. }, EventPattern::EnemyAttackDamagedSelf) => {
-            true
-        }
-        // `AfterSuccessfulInvestigate` matches `SuccessfullyInvestigated`,
-        // scoped to the controller's own investigation ("after **you**
+        // The soaked-asset self-binding is enforced by the instance filter in
+        // `scan_pending_triggers` (only the `asset` instance reaches here). Sole
+        // consumer: Guard Dog 01021's retaliate reaction. (C5b #237.)
+        (TimingEvent::EnemyAttackDamagedSelf { .. }, EventPattern::EnemyAttackDamagedSelf) => true,
+        // Scoped to the controller's own investigation ("after **you**
         // investigate" — Dr. Milan 01033). (C6a #241.)
         (
-            WindowKind::AfterSuccessfulInvestigate { investigator },
+            TimingEvent::SuccessfullyInvestigated { investigator, .. },
             EventPattern::SuccessfullyInvestigated,
-        ) => investigator == controller,
-        // `AfterEnteredPlay` matches `EnteredPlay`, scoped to the controller
-        // (the entered card's owner). The self-instance scoping is in the scan
-        // (`scan_pending_triggers` filters to the entered instance).
+        ) => *investigator == controller,
+        // Scoped to the entered card's owner; the self-instance scoping is in
+        // the scan (Research Librarian 01032).
         (
-            WindowKind::AfterEnteredPlay {
+            TimingEvent::EnteredPlay {
                 controller: window_controller,
                 ..
             },
             EventPattern::EnteredPlay,
-        ) => window_controller == controller,
-        // PlayerWindow steps open for timing reasons; no
-        // Trigger::OnEvent pattern matches them — those windows gate
-        // Fast actions, not after-event reactions. AfterEnemyDefeated
-        // windows only match EnemyDefeated patterns (handled above);
-        // encounter-reveal patterns return false.
-        //
-        // EnemySpawned: no WindowKind opens specifically for "enemy
-        // spawned" in Phase 4. A future PR (likely Phase-7+) that wants
-        // to react to spawns will add the corresponding WindowKind
-        // variant and update this arm.
-        // EnteredLocation is matched by the forced auto-fire path in
-        // `engine::dispatch::forced_triggers` (fired from `move_action`),
-        // not by reaction windows.
-        // PhaseEnded is matched only by the forced dispatch path
-        // (`engine::dispatch::forced_triggers`), never by player reaction
-        // windows.
-        // ActAdvanced is matched only by the forced dispatch path
-        // (`ForcedTriggerPoint::ActAdvanced`), never by player reaction
-        // windows.
-        // EndOfTurn and AfterLocationInvestigated are likewise forced-only
-        // (`ForcedTriggerPoint::EndOfTurn` / `AfterLocationInvestigated`).
-        // WouldDiscoverClues is matched only by the `discover_clue`
-        // interrupt seam, and GameEnd only by `ForcedTriggerPoint::GameEnd`
-        // — both seam/forced-only, never player windows (C5a #236).
-        // `AfterSuccessfulInvestigate` matches only `SuccessfullyInvestigated`
-        // (handled above); `AfterLocationInvestigated` is the forced twin,
-        // never matched by a reaction window.
-        // The Before-timing window kinds never reach here (the `Before`
-        // branch returned above); listed for exhaustiveness, and the
-        // `EnemyAttacks` pattern is likewise Before-only (Axis D #336).
-        (
-            WindowKind::PlayerWindow(_)
-            | WindowKind::AfterEnemyDefeated { .. }
-            | WindowKind::SkillTestPlayerWindow { .. }
-            | WindowKind::AfterEnemyAttackDamagedAsset { .. }
-            | WindowKind::AfterSuccessfulInvestigate { .. }
-            | WindowKind::AfterEnteredPlay { .. }
-            | WindowKind::BeforeEnemyAttack { .. }
-            | WindowKind::BeforeDiscoverClues { .. },
-            EventPattern::EnemyDefeated { .. }
-            | EventPattern::CardRevealed { .. }
-            | EventPattern::EnemySpawned
-            | EventPattern::EnteredLocation
-            | EventPattern::PhaseEnded { .. }
-            | EventPattern::ActAdvanced
-            | EventPattern::AgendaAdvanced
-            | EventPattern::RoundEnded
-            | EventPattern::EndOfTurn
-            | EventPattern::AfterLocationInvestigated
-            | EventPattern::WouldDiscoverClues
-            | EventPattern::GameEnd
-            | EventPattern::EnemyAttackDamagedSelf
-            | EventPattern::SuccessfullyInvestigated
-            | EventPattern::EnemyAttacks
-            | EventPattern::EnteredPlay
-            | EventPattern::LeftLocation,
-        ) => false,
+        ) => *window_controller == controller,
+        // Every other (event, pattern) pairing opens no reaction. The
+        // forced-only events (PhaseEnded / ActAdvanced / AgendaAdvanced /
+        // RoundEnded / EndOfTurn / GameEnd / EnteredLocation / LeftLocation /
+        // EnteredLocation) never open a reaction window; the `When`-timing
+        // events (EnemyAttacks / WouldDiscoverClues) returned above.
+        _ => false,
     }
 }
 
@@ -1122,8 +1062,11 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     // this window in state.open_windows when evaluating permissive_window.
     // Framework windows are `FastWindow` (#433 A-ii); the `FastWindowKind`
     // discriminant reproduces `kind` for the WindowClosed payload + routes the
-    // close continuation. Reaction windows admit any investigator's Fast plays.
-    let candidates = scan_pending_triggers(cx.state, kind);
+    // close continuation. Fast windows carry no reaction candidates — they are
+    // pure Fast-gates (no `TimingEvent` reaction matches a framework window), so
+    // the candidate list is always empty; the Fast-play opportunity is gated by
+    // `any_fast_play_eligible` below.
+    let candidates = Vec::new();
     let fast_kind = match kind {
         WindowKind::PlayerWindow(step) => FastWindowKind::Phase(step),
         WindowKind::SkillTestPlayerWindow { before_token } => {
@@ -1638,159 +1581,103 @@ mod check_play_card_tests {
 #[cfg(test)]
 mod trigger_matches_tests {
     use super::*;
-    use crate::state::{EnemyId, PhaseStep};
+    use crate::state::{EnemyId, LocationId};
 
-    #[test]
-    fn would_discover_clues_never_matches_a_player_window() {
-        // The before-timing clue-discovery interrupt (Cover Up 01007) is
-        // matched only by the `discover_clue` seam, never a player reaction
-        // window — even with After timing. (C5a #236.)
-        assert!(!trigger_matches(
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
-            &EventPattern::WouldDiscoverClues,
-            EventTiming::After,
-            InvestigatorId(1),
-        ));
+    fn enemy_attacks(inv: InvestigatorId) -> TimingEvent {
+        TimingEvent::EnemyAttacks {
+            enemy: EnemyId(1),
+            investigator: inv,
+        }
     }
 
     #[test]
-    fn trigger_matches_before_pairs() {
-        use crate::state::LocationId;
+    fn before_pairs_match_only_their_own_when_event() {
         let inv = InvestigatorId(1);
+        let would_discover = TimingEvent::WouldDiscoverClues {
+            investigator: inv,
+            location: LocationId(2),
+            count: 1,
+        };
+        // EnemyAttacks ↔ EnemyAttacks (When) — Dodge 01023.
         assert!(trigger_matches(
-            WindowKind::BeforeEnemyAttack {
-                enemy: EnemyId(1),
-                investigator: inv
-            },
+            &enemy_attacks(inv),
             &EventPattern::EnemyAttacks,
             EventTiming::When,
             inv,
         ));
+        // WouldDiscoverClues ↔ WouldDiscoverClues (When) — Cover Up 01007.
         assert!(trigger_matches(
-            WindowKind::BeforeDiscoverClues {
-                investigator: inv,
-                location: LocationId(2),
-                count: 1
-            },
+            &would_discover,
             &EventPattern::WouldDiscoverClues,
             EventTiming::When,
             inv,
         ));
         // Wrong timing for the pairing → no match.
         assert!(!trigger_matches(
-            WindowKind::BeforeEnemyAttack {
-                enemy: EnemyId(1),
-                investigator: inv
-            },
+            &enemy_attacks(inv),
             &EventPattern::EnemyAttacks,
             EventTiming::After,
             inv,
         ));
-        // A Before window only matches its own pattern.
+        // A When event only matches its own pattern.
         assert!(!trigger_matches(
-            WindowKind::BeforeEnemyAttack {
-                enemy: EnemyId(1),
-                investigator: inv
-            },
+            &enemy_attacks(inv),
             &EventPattern::WouldDiscoverClues,
             EventTiming::When,
             inv,
         ));
     }
 
+    /// Direct `trigger_matches` coverage for the `EnemyAttackDamagedSelf` soak
+    /// pairing (Guard Dog 01021, C5b #237). The instance-level scoping (only the
+    /// soaked `asset` instance fires) is enforced one layer up in
+    /// `scan_pending_triggers` and exercised end-to-end in
+    /// `crates/cards/tests/guard_dog_soak.rs` (which installs the real registry).
     #[test]
-    fn game_end_never_matches_a_player_window() {
-        // GameEnd is forced-only (`ForcedTriggerPoint::GameEnd`).
-        assert!(!trigger_matches(
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
-            &EventPattern::GameEnd,
-            EventTiming::After,
-            InvestigatorId(1),
-        ));
-    }
-
-    /// `soak_window_matches_only_self_instance` — direct `trigger_matches`
-    /// coverage for the `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf`
-    /// true arm added in Task 8 (C5b #237).
-    ///
-    /// The instance-level scoping (only the soaked `asset` instance fires, not
-    /// every controlled card) is enforced by the filter in `scan_pending_triggers`
-    /// one layer up; that filter is exercised end-to-end in the EU5 Guard Dog
-    /// integration test (`crates/cards/tests/guard_dog_soak.rs`), which installs
-    /// the real `cards::REGISTRY` in an isolated process. Testing it here would
-    /// require a global `card_registry::install`, which is `OnceLock`-guarded
-    /// and cannot be reset between tests. So this unit test asserts the
-    /// `trigger_matches` contract directly:
-    ///  - `AfterEnemyAttackDamagedAsset` + `EnemyAttackDamagedSelf` → `true`
-    ///  - `AfterEnemyAttackDamagedAsset` + any other pattern → `false`
-    #[test]
-    fn soak_window_matches_only_self_instance() {
-        let asset = CardInstanceId(7);
-        let enemy = EnemyId(1);
+    fn soak_event_matches_only_the_self_soak_pattern() {
         let controller = InvestigatorId(1);
-        let kind = WindowKind::AfterEnemyAttackDamagedAsset {
-            asset,
-            enemy,
+        let soak = TimingEvent::EnemyAttackDamagedSelf {
+            asset: CardInstanceId(7),
+            enemy: EnemyId(1),
             controller,
         };
-
-        // The soak-self pattern must match the soak window. (C5b #237.)
-        assert!(
-            trigger_matches(
-                kind,
-                &EventPattern::EnemyAttackDamagedSelf,
-                EventTiming::After,
-                controller
-            ),
-            "AfterEnemyAttackDamagedAsset must match EnemyAttackDamagedSelf"
-        );
-        // No other pattern matches this window kind.
-        assert!(
-            !trigger_matches(
-                kind,
-                &EventPattern::EnemyDefeated {
-                    by_controller: false,
-                    code: None
-                },
-                EventTiming::After,
-                controller
-            ),
-            "AfterEnemyAttackDamagedAsset must not match EnemyDefeated"
-        );
-        assert!(
-            !trigger_matches(
-                kind,
-                &EventPattern::EnemyAttackDamagedSelf,
-                EventTiming::When,
-                controller
-            ),
-            "Before timing must never match this After-only window/pattern pair"
-        );
-        // The soak-self pattern must NOT match any other window kind — guards
-        // the match-arm ordering (the `=> true` arm is scoped to this kind;
-        // these pairings must fall through to the `false` catch-all). (C5b #237.)
-        for other_kind in [
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
-            WindowKind::AfterEnemyDefeated {
-                enemy,
-                by: Some(controller),
+        // The soak-self pattern matches the soak event. (C5b #237.)
+        assert!(trigger_matches(
+            &soak,
+            &EventPattern::EnemyAttackDamagedSelf,
+            EventTiming::After,
+            controller,
+        ));
+        // No other pattern matches the soak event.
+        assert!(!trigger_matches(
+            &soak,
+            &EventPattern::EnemyDefeated {
+                by_controller: false,
+                code: None,
             },
-        ] {
-            assert!(
-                !trigger_matches(
-                    other_kind,
-                    &EventPattern::EnemyAttackDamagedSelf,
-                    EventTiming::After,
-                    controller
-                ),
-                "{other_kind:?} must not match EnemyAttackDamagedSelf"
-            );
-        }
-        // Instance-filter (only the keyed `asset` instance fires, not every
-        // controlled card) is asserted in the EU5 Guard Dog integration test
-        // (`crates/cards/tests/guard_dog_soak.rs`) which can install the real
-        // registry. The `scan_pending_triggers` `continue` on `instance_id !=
-        // asset` is the load-bearing line; grep it if this note becomes stale.
+            EventTiming::After,
+            controller,
+        ));
+        // Before timing never matches this After-only pairing.
+        assert!(!trigger_matches(
+            &soak,
+            &EventPattern::EnemyAttackDamagedSelf,
+            EventTiming::When,
+            controller,
+        ));
+        // The soak pattern must NOT match a different event (guards the
+        // arm ordering — the `=> true` arm is scoped to the soak event).
+        let defeat = TimingEvent::EnemyDefeated {
+            enemy: EnemyId(1),
+            by: Some(controller),
+            code: CardCode("01000".into()),
+        };
+        assert!(!trigger_matches(
+            &defeat,
+            &EventPattern::EnemyAttackDamagedSelf,
+            EventTiming::After,
+            controller,
+        ));
     }
 }
 
