@@ -39,7 +39,6 @@ use crate::scenario::ScenarioId;
 use crate::state::{
     ChaosBag, Continuation, Counter, Enemy, EnemyId, FastActorScope, FastWindowKind, GameState,
     HandSizeDiscard, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
-    WindowKind,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -264,24 +263,14 @@ impl GameStateBuilder {
     /// The pushed window has no pending candidates (test paths that
     /// also need a reaction queue should manipulate `state` after
     /// `build()` rather than complicate this builder).
-    pub fn with_open_window(mut self, kind: WindowKind, fast_actors: FastActorScope) -> Self {
+    pub fn with_open_window(mut self, kind: FastWindowKind, fast_actors: FastActorScope) -> Self {
         // Framework player windows are `FastWindow` (#433 A-ii). The builder
         // only constructs framework windows; event windows / the forced run
         // (`TimingPointWindow`) are produced by the engine, not seeded here.
-        let fast_kind = match kind {
-            WindowKind::PlayerWindow(step) => FastWindowKind::Phase(step),
-            WindowKind::SkillTestPlayerWindow { before_token } => {
-                FastWindowKind::SkillTest { before_token }
-            }
-            other => panic!(
-                "with_open_window: only framework PlayerWindow / SkillTestPlayerWindow kinds \
-                 are supported, got {other:?}"
-            ),
-        };
         self.open_windows.push(Continuation::FastWindow {
             candidates: Vec::new(),
             fast_actors,
-            kind: fast_kind,
+            kind,
         });
         self
     }
@@ -424,7 +413,7 @@ mod with_open_window_tests {
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_open_window(
-                WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+                FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::Any,
             )
             .build();
@@ -447,18 +436,21 @@ mod with_open_window_tests {
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_open_window(
-                WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+                FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
                 FastActorScope::Any,
             )
             .with_open_window(
-                WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+                FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::ActiveInvestigator(InvestigatorId(1)),
             )
             .build();
         assert_eq!(state.open_windows().len(), 2);
         assert!(matches!(
-            state.open_windows()[1].window_kind(),
-            Some(WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins))
+            state.open_windows()[1],
+            Continuation::FastWindow {
+                kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+                ..
+            }
         ));
     }
 }

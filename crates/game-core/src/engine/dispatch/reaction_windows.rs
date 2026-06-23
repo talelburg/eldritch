@@ -5,7 +5,7 @@
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
 //! [`bump_usage_counter`], [`close_reaction_window_at`],
-//! [`run_window_continuation`]) and the fast-window eligibility checks
+//! [`run_reaction_continuation`]) and the fast-window eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
@@ -16,10 +16,11 @@ use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::engine::TimingEvent;
+use crate::state::TimingMode;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
     ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, SkillTestStep,
-    Status, WindowKind,
+    Status,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -308,7 +309,8 @@ fn scan_hand_fast_events(state: &GameState, event: &TimingEvent) -> Vec<Resoluti
 /// the given `kind`.
 ///
 /// Phase-3 mapping:
-/// - [`WindowKind::AfterEnemyDefeated`] matches
+/// - the after-enemy-defeated reaction window
+///   ([`TimingEvent::EnemyDefeated`]) matches
 ///   [`EventPattern::EnemyDefeated`] with
 ///   [`EventTiming::After`]. The `by_controller` qualifier narrows to
 ///   defeats credited to this ability's controller.
@@ -825,24 +827,32 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     let removed = cx.state.continuations.remove(idx);
 
     // A window runs its kind-specific continuation
-    // (e.g. MythosAfterDraws → mythos_phase_end). Its `WindowKind` comes from
-    // the legacy `Resolution` frame (framework windows) or is derived from the
-    // `TimingEvent` of a `TimingPointWindow` reaction window (#433) — so the
-    // continuation is byte-identical across the
-    // migration. The forced run (#213) is not a window; instead it
+    // (e.g. MythosAfterDraws → mythos_phase_end). A framework window keys its
+    // continuation off its `FastWindowKind`; a `TimingPointWindow` reaction
+    // window keys off its `TimingEvent` (#433). The forced run (#213) is not a
+    // window; instead it
     // resumes the framework flow it suspended via its `ForcedContinuation`.
     // Either may suspend (e.g. the upkeep act round-end advance window), so
     // propagate the outcome.
-    let continuation = if let Some(kind) = removed.window_kind() {
-        run_window_continuation(cx, kind)
-    } else {
-        let cont = removed.forced_continuation().unwrap_or_else(|| {
-            unreachable!(
-                "close_reaction_window_at: a non-window frame is the forced run \
-                 and must carry a ForcedContinuation"
-            )
-        });
-        resume_forced_continuation(cx, cont)
+    let continuation = match &removed {
+        Continuation::TimingPointWindow {
+            event,
+            mode: TimingMode::Reaction,
+            ..
+        } => {
+            let event = event.clone();
+            run_reaction_continuation(cx, &event)
+        }
+        Continuation::FastWindow { kind, .. } => run_fast_continuation(cx, *kind),
+        _ => {
+            let cont = removed.forced_continuation().unwrap_or_else(|| {
+                unreachable!(
+                    "close_reaction_window_at: a non-window frame is the forced run \
+                     and must carry a ForcedContinuation"
+                )
+            });
+            resume_forced_continuation(cx, cont)
+        }
     };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
         return continuation;
@@ -868,77 +878,55 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     EngineOutcome::Done
 }
 
-/// Kind-aware continuation called when a window closes (whether inline via
-/// [`open_fast_window`]'s auto-skip path or via the [`close_reaction_window_at`]
-/// pop path).
-///
-/// Every framework [`WindowKind::PlayerWindow`] close routes to the `*Phase`
-/// anchor beneath it via
-/// [`anchor_on_child_pop`](super::phases::anchor_on_child_pop) (slice 1a, #393):
-/// the anchor's `resume` — not the [`PhaseStep`] — selects the relocated body
-/// (the Mythos/Investigation transitions, the Enemy attack-loop step incl. its
-/// mid-loop soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6
-/// cascade). The card/ability-reaction kinds run inline here: soak / before-
-/// attack ([`WindowKind::AfterEnemyAttackDamagedAsset`] /
-/// [`WindowKind::BeforeEnemyAttack`]) re-enter the attack loop via
-/// [`resume_enemy_attack`](super::combat::resume_enemy_attack);
-/// [`WindowKind::BeforeDiscoverClues`] performs the deferred discovery;
-/// [`WindowKind::AfterEnemyDefeated`] / [`WindowKind::AfterSuccessfulInvestigate`]
-/// / [`WindowKind::AfterEnteredPlay`] have no continuation work.
-///
-/// Returns the continuation's [`EngineOutcome`] — `Done`, or `AwaitingInput`
-/// when a body suspends (an Enemy soak window, the Upkeep step-4.5 hand-size
-/// discard, …).
-pub(super) fn run_window_continuation(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
-    match kind {
-        // Every framework `PlayerWindow(PhaseStep)` close routes to the `*Phase`
-        // anchor beneath it (slice 1a, #393): the anchor's `resume` selects the
-        // relocated body — the skill-test-in-flight guards, the Enemy
-        // soak-window `AwaitingInput` propagation, the Upkeep 4.2–4.6 cascade,
-        // the Mythos/Investigation transitions. The `PhaseStep` is no longer the
-        // continuation key; the anchor's `resume` is.
-        WindowKind::PlayerWindow(_) => super::phases::anchor_on_child_pop(cx),
-        // A skill-test player window (#374) closed: re-enter the skill-test
-        // driver. The cursor was pre-advanced before the window opened, so
-        // `advance` resumes at the next step (AwaitingCommit after window 1,
-        // Resolving after window 2). Reached on both the auto-skip inline path
-        // and the wait-then-close path.
-        WindowKind::SkillTestPlayerWindow { .. } => super::skill_test::advance(cx),
-        // AfterEnemyDefeated / AfterSuccessfulInvestigate: no continuation
-        // work. The skill-test driver (which queued the window mid-resolution)
-        // resumes via `close_reaction_window_at`'s in-flight re-entry.
-        WindowKind::AfterEnemyDefeated { .. } | WindowKind::AfterSuccessfulInvestigate { .. } => {
-            EngineOutcome::Done
-        }
-        // AfterEnteredPlay (Research Librarian 01032): no continuation work —
-        // the asset entered play before the window opened, so closing the
-        // window just finishes the play action.
-        WindowKind::AfterEnteredPlay { .. } => EngineOutcome::Done,
-        // AfterEnemyAttackDamagedAsset (soak, C5b #237) + BeforeEnemyAttack
-        // (cancel, Axis D #336): re-enter the enemy-attack loop the window
-        // suspended. `resume_enemy_attack` reads its parked phase to either
-        // honor the cancel + deal the head attacker (BeforeAttack) or drain
-        // the remaining attackers (AfterSoak), then for the enemy phase runs
-        // `after_enemy_phase_attacks` once the loop finishes.
-        WindowKind::AfterEnemyAttackDamagedAsset { .. } | WindowKind::BeforeEnemyAttack { .. } => {
+/// Continuation when a **reaction** window ([`Continuation::TimingPointWindow`])
+/// closes, keyed on its [`TimingEvent`]. Called from [`close_reaction_window_at`]'s
+/// pop path. Returns `Done`, or `AwaitingInput` when a body suspends (an Enemy
+/// soak window, …).
+fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    match event {
+        // Soak (C5b #237) + before-attack cancel (Axis D #336): re-enter the
+        // enemy-attack loop the window suspended. `resume_enemy_attack` reads
+        // its parked phase to either honour the cancel + deal the head attacker
+        // (BeforeAttack) or drain the remaining attackers (AfterSoak).
+        TimingEvent::EnemyAttackDamagedSelf { .. } | TimingEvent::EnemyAttacks { .. } => {
             super::combat::resume_enemy_attack(cx)
         }
-        // BeforeDiscoverClues (Cover Up 01007, Axis D #336): the before-discover
-        // window closed. If a reaction cancelled the discovery (Cover Up played
-        // its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
-        // discovery. Then, if a skill test is in flight (the dominant path:
-        // Investigate's follow-up discovery), re-enter its driver — its
-        // continuation was pre-advanced to `PostFollowUp` by `finish_skill_test`
-        // before the follow-up suspended, so this picks up at teardown.
-        WindowKind::BeforeDiscoverClues {
+        // Before-discover (Cover Up 01007, Axis D #336): perform the deferred
+        // discovery unless a reaction cancelled it, then re-enter the in-flight
+        // skill-test driver if any (Investigate's follow-up).
+        TimingEvent::WouldDiscoverClues {
             investigator,
             location,
             count,
-        } => resume_before_discover_window(cx, investigator, location, count),
+        } => resume_before_discover_window(cx, *investigator, *location, *count),
+        // After-defeat / after-investigate / entered-play: no continuation work.
+        // The skill-test driver (which queued the window mid-resolution) resumes
+        // via `close_reaction_window_at`'s in-flight re-entry.
+        TimingEvent::EnemyDefeated { .. }
+        | TimingEvent::SuccessfullyInvestigated { .. }
+        | TimingEvent::EnteredPlay { .. } => EngineOutcome::Done,
+        other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),
     }
 }
 
-/// Resume after a [`WindowKind::BeforeDiscoverClues`] window closes (Cover Up
+/// Continuation when a framework **fast** window ([`Continuation::FastWindow`])
+/// closes, keyed on its [`FastWindowKind`]. Called from the auto-skip path in
+/// [`open_fast_window`] and from [`close_reaction_window_at`].
+///
+/// A phase window routes to the `*Phase` anchor beneath it (slice 1a, #393): the
+/// anchor's `resume` — not the [`PhaseStep`] — selects the relocated body (the
+/// Mythos/Investigation transitions, the Enemy attack-loop step, the Upkeep
+/// 4.2–4.6 cascade). A skill-test window (#374) re-enters the skill-test driver;
+/// its cursor was pre-advanced before the window opened. Returns `Done` or
+/// `AwaitingInput` when a body suspends.
+pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
+    match kind {
+        FastWindowKind::Phase(_) => super::phases::anchor_on_child_pop(cx),
+        FastWindowKind::SkillTest { .. } => super::skill_test::advance(cx),
+    }
+}
+
+/// Resume after a before-discover-clues window closes (Cover Up
 /// 01007, Axis D #336). If a reaction cancelled the discovery (Cover Up played
 /// its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
 /// discovery. Then, if a skill test is in flight (the dominant path:
@@ -1019,7 +1007,7 @@ pub(super) fn after_enemy_phase_attacks(
 ///   apply loop's existing "pending reactions → `AwaitingInput`" path
 ///   then surfaces the wait at the dispatch tail.
 /// - Or closes the window immediately, pops the transiently
-///   pushed window, and runs [`run_window_continuation`] inline. This
+///   pushed window, and runs [`run_fast_continuation`] inline. This
 ///   **auto-skip** path saves a UI round-trip when nobody can act.
 ///
 /// # Push-then-scan ordering
@@ -1042,7 +1030,7 @@ pub(super) fn after_enemy_phase_attacks(
 /// [`EngineOutcome::Done`]; propagates [`EngineOutcome::AwaitingInput`] once
 /// #111 step 4.5 can suspend); returns [`EngineOutcome::Done`] immediately on
 /// the wait path (window left on the stack).
-pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
+pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
     // Framework windows are `FastWindow` (#433 A-ii); the `FastWindowKind`
@@ -1052,20 +1040,10 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     // the candidate list is always empty; the Fast-play opportunity is gated by
     // `any_fast_play_eligible` below.
     let candidates = Vec::new();
-    let fast_kind = match kind {
-        WindowKind::PlayerWindow(step) => FastWindowKind::Phase(step),
-        WindowKind::SkillTestPlayerWindow { before_token } => {
-            FastWindowKind::SkillTest { before_token }
-        }
-        other => unreachable!(
-            "open_fast_window: only framework PlayerWindow / SkillTestPlayerWindow kinds \
-             open a fast window, got {other:?}"
-        ),
-    };
     cx.state.continuations.push(Continuation::FastWindow {
         candidates,
         fast_actors: FastActorScope::Any,
-        kind: fast_kind,
+        kind,
     });
 
     let has_pending = !cx
@@ -1082,7 +1060,7 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
         // continuation inline, so the net effect on the continuation stack is
         // the same as before.
         let _ = cx.state.continuations.pop();
-        return run_window_continuation(cx, kind);
+        return run_fast_continuation(cx, kind);
     }
     // Otherwise the window stays on the stack. The guard at the top of
     // apply() and resume_reaction_window / resolve_input handle the
@@ -1719,7 +1697,7 @@ mod any_fast_play_eligible_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::state::{EnemyId, PhaseStep, WindowKind};
+    use crate::state::{EnemyId, FastWindowKind, PhaseStep};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
@@ -1740,7 +1718,7 @@ mod open_fast_window_tests {
                 state: &mut state,
                 events: &mut events,
             },
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         );
 
         assert!(
@@ -1750,25 +1728,26 @@ mod open_fast_window_tests {
     }
 
     #[test]
-    fn run_window_continuation_for_no_continuation_kind_does_nothing() {
-        // AfterEnemyDefeated has no continuation. Calling it must be a
-        // no-op (no events, no state change).
+    fn run_reaction_continuation_for_no_continuation_kind_does_nothing() {
+        // EnemyDefeated's reaction window has no continuation work. Closing it
+        // must be a no-op (no events, no state change).
         let mut state = GameStateBuilder::default().build();
         let mut events = Vec::new();
-        let result = run_window_continuation(
+        let result = run_reaction_continuation(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            WindowKind::AfterEnemyDefeated {
+            &TimingEvent::EnemyDefeated {
                 enemy: EnemyId(1),
                 by: None,
+                code: crate::state::CardCode::new("01000"),
             },
         );
         assert_eq!(result, EngineOutcome::Done);
         assert!(
             events.is_empty(),
-            "AfterEnemyDefeated continuation must be a no-op; events = {events:?}"
+            "EnemyDefeated continuation must be a no-op; events = {events:?}"
         );
     }
 }

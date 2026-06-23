@@ -70,7 +70,7 @@ pub(super) fn first_active_investigator(state: &GameState) -> Option<Investigato
 ///
 /// Used by per-investigator phase loops to advance their cursor:
 /// `advance_mythos_draw_pending` after a draw chain completes, and
-/// `run_window_continuation`'s `BeforeInvestigatorAttacked` arm after
+/// `anchor_on_child_pop`'s `BeforeInvestigatorAttacked` arm after
 /// one investigator's engaged-enemy attacks resolve.
 ///
 /// Notable: `current` may itself be non-Active (e.g. defeated mid-loop

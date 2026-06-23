@@ -24,7 +24,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    InvestigatorId, LocationId, Phase, PhaseStep, TokenModifiers, WindowKind,
+    InvestigatorId, LocationId, Phase, PhaseStep, TokenModifiers,
 };
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -238,12 +238,14 @@ fn matching_reaction_opens_window_and_suspends() {
         .state
         .top_reaction_window()
         .expect("reaction window must be populated while suspended");
-    assert_eq!(
-        window.window_kind(),
-        Some(WindowKind::AfterEnemyDefeated {
-            enemy: enemy_id,
-            by: Some(inv_id),
-        }),
+    assert!(
+        matches!(
+            window.window_timing_event(),
+            Some(game_core::engine::TimingEvent::EnemyDefeated { enemy, by: Some(by), .. })
+                if *enemy == enemy_id && *by == inv_id
+        ),
+        "reaction window must be after the enemy defeat: {:?}",
+        window.window_timing_event(),
     );
     assert_eq!(window.pending_candidates().unwrap().len(), 1);
     assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
@@ -995,9 +997,14 @@ fn close_reaction_window_at_removes_reaction_window_not_empty_phase_gate_on_top(
          got {:?}",
         resumed.state.open_windows(),
     );
-    assert_eq!(
-        resumed.state.open_windows()[0].window_kind(),
-        Some(WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)),
+    assert!(
+        matches!(
+            resumed.state.open_windows()[0],
+            game_core::state::Continuation::FastWindow {
+                kind: game_core::state::FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+                ..
+            }
+        ),
         "the surviving window must be the player-window gate, not the reaction window",
     );
     // Reaction window R closed (it is no longer on the stack) while the

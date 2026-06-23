@@ -12,14 +12,13 @@
 //!
 //! `TimingEvent` is the merge of the engine's two pre-existing
 //! binding-carrying dispatch keys: [`ForcedTriggerPoint`] (forced) and the
-//! event-driven [`WindowKind`] variants (reaction). T5a is a behavior-
+//! event-driven reaction-window points (reaction). T5a is a behavior-
 //! preserving facade that delegates to those; it does **not** push the
 //! logged [`Event`](crate::event::Event) — call sites still emit their own
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
 use crate::state::{
     CardCode, CardInstanceId, EnemyId, ForcedContinuation, InvestigatorId, LocationId, Phase,
-    WindowKind,
 };
 
 use serde::{Deserialize, Serialize};
@@ -32,9 +31,9 @@ use super::Cx;
 /// may fire, with the binding context the fired effects need.
 ///
 /// The union of `ForcedTriggerPoint` (the forced dispatch key) and the
-/// event-driven [`WindowKind`] variants (the reaction dispatch key). Each
-/// variant maps to an optional forced point (`forced_point`) and an
-/// optional reaction window (`reaction_window`); `EnemyDefeated` and
+/// event-driven reaction-window points (the reaction dispatch key). Each
+/// variant maps to an optional forced point (`forced_point`) and to whether
+/// it opens a reaction window (`opens_reaction_window`); `EnemyDefeated` and
 /// `SuccessfullyInvestigated` are **dual** (both forced and reaction at the
 /// same point).
 ///
@@ -170,53 +169,18 @@ impl TimingEvent {
         }
     }
 
-    /// The reaction window this timing event opens, if any. `Some` only for
-    /// the reaction-capable points.
-    pub(crate) fn reaction_window(&self) -> Option<WindowKind> {
-        match self {
-            TimingEvent::EnemyDefeated { enemy, by, .. } => Some(WindowKind::AfterEnemyDefeated {
-                enemy: *enemy,
-                by: *by,
-            }),
-            TimingEvent::EnemyAttackDamagedSelf {
-                asset,
-                enemy,
-                controller,
-            } => Some(WindowKind::AfterEnemyAttackDamagedAsset {
-                asset: *asset,
-                enemy: *enemy,
-                controller: *controller,
-            }),
-            TimingEvent::SuccessfullyInvestigated { investigator, .. } => {
-                Some(WindowKind::AfterSuccessfulInvestigate {
-                    investigator: *investigator,
-                })
-            }
-            TimingEvent::EnemyAttacks {
-                enemy,
-                investigator,
-            } => Some(WindowKind::BeforeEnemyAttack {
-                enemy: *enemy,
-                investigator: *investigator,
-            }),
-            TimingEvent::WouldDiscoverClues {
-                investigator,
-                location,
-                count,
-            } => Some(WindowKind::BeforeDiscoverClues {
-                investigator: *investigator,
-                location: *location,
-                count: *count,
-            }),
-            TimingEvent::EnteredPlay {
-                instance,
-                controller,
-            } => Some(WindowKind::AfterEnteredPlay {
-                instance: *instance,
-                controller: *controller,
-            }),
-            _ => None,
-        }
+    /// Whether this timing event opens a reaction window. `true` only for the
+    /// reaction-capable points.
+    pub(crate) fn opens_reaction_window(&self) -> bool {
+        matches!(
+            self,
+            TimingEvent::EnemyDefeated { .. }
+                | TimingEvent::EnemyAttackDamagedSelf { .. }
+                | TimingEvent::SuccessfullyInvestigated { .. }
+                | TimingEvent::EnemyAttacks { .. }
+                | TimingEvent::WouldDiscoverClues { .. }
+                | TimingEvent::EnteredPlay { .. }
+        )
     }
 
     /// How a *forced run* opened at this timing point resumes the framework
@@ -302,7 +266,7 @@ impl TimingEvent {
 /// suspends or rejects). T5b replaces the forced phase's internals with the
 /// iterative ordering loop.
 pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    if event.reaction_window().is_some() {
+    if event.opens_reaction_window() {
         super::reaction_windows::queue_reaction_window(cx, event);
     }
     let Some(point) = event.forced_point() else {

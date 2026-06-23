@@ -430,9 +430,8 @@ pub enum Continuation {
     },
     /// A framework "red-box" player window — a Rules-Reference timing step
     /// that gates Fast actions and runs a per-step continuation on close
-    /// (EmitEvent-frame Slice A, #433; was `WindowKind::PlayerWindow` /
-    /// `SkillTestPlayerWindow`). The [`FastWindowKind`] discriminant reproduces
-    /// the exact [`WindowKind`] and routes the close continuation (`Phase` → the `*Phase`
+    /// (EmitEvent-frame Slice A, #433). The [`FastWindowKind`] discriminant
+    /// routes the close continuation (`Phase` → the `*Phase`
     /// anchor's `on_child_pop`; `SkillTest` → the skill-test driver). Carries no
     /// `TimingEvent` — framework windows are not event-driven.
     FastWindow {
@@ -827,30 +826,11 @@ impl Continuation {
     /// or forced run). `None` for [`FastWindow`](Self::FastWindow) framework
     /// windows (no timing event) and non-window frames. Lets the driver bind
     /// event-specific `EvalContext` (the attacking enemy, the would-be discovery
-    /// count) without a `WindowKind` round-trip (#433).
+    /// count) directly from the timing event (#433).
     #[must_use]
     pub fn window_timing_event(&self) -> Option<&crate::engine::TimingEvent> {
         match self {
             Continuation::TimingPointWindow { event, .. } => Some(event),
-            _ => None,
-        }
-    }
-
-    /// The [`WindowKind`] of this open frame, the pure window descriptor (#433
-    /// keeps `WindowKind` to route the close continuation):
-    /// a [`FastWindow`](Self::FastWindow) returns its [`FastWindowKind`]'s kind;
-    /// a [`TimingPointWindow`](Self::TimingPointWindow) reaction window derives it
-    /// from the [`TimingEvent`](crate::engine::TimingEvent). `None` for the forced
-    /// run (no window) and non-window frames.
-    #[must_use]
-    pub fn window_kind(&self) -> Option<WindowKind> {
-        match self {
-            Continuation::TimingPointWindow {
-                event,
-                mode: TimingMode::Reaction,
-                ..
-            } => event.reaction_window(),
-            Continuation::FastWindow { kind, .. } => Some(kind.window_kind()),
             _ => None,
         }
     }
@@ -1029,7 +1009,7 @@ pub struct InFlightSkillTest {
 ///    [`SkillTestFollowUp`] (Investigate / Fight / Evade / None) —
 ///    this is where `damage_enemy` may emit
 ///    [`EnemyDefeated`](crate::Event::EnemyDefeated) and queue an
-///    [`AfterEnemyDefeated`](WindowKind::AfterEnemyDefeated) window
+///    an after-enemy-defeated reaction window
 /// 3. Fire
 ///    [`OnSkillTestResolution`](crate::dsl::Trigger::OnSkillTestResolution)
 ///    triggers on committed cards
@@ -1189,38 +1169,22 @@ pub enum FastActorScope {
 }
 
 /// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
-/// discriminant that survived the #433 migration off [`WindowKind`]'s
-/// `PlayerWindow` / `SkillTestPlayerWindow` variants. Routes the close
-/// continuation and reproduces the exact `WindowKind` (Slice A keeps
-/// `WindowKind` as the pure window descriptor; its deletion is Slice B).
+/// discriminant for the engine's framework player windows. Routes the close
+/// continuation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FastWindowKind {
-    /// A Rules-Reference timing-step player window
-    /// ([`WindowKind::PlayerWindow`]). Close routes to the `*Phase` anchor
-    /// beneath via `anchor_on_child_pop`; the [`PhaseStep`] is retained only to
-    /// reproduce the [`WindowKind`] (the anchor's `resume` is the real
-    /// continuation key, slice 1a #393).
+    /// A Rules-Reference timing-step player window. Close routes to the
+    /// `*Phase` anchor beneath via `anchor_on_child_pop`; the [`PhaseStep`]
+    /// names the timing point (the anchor's `resume` is the real continuation
+    /// key, slice 1a #393).
     Phase(PhaseStep),
-    /// A skill-test player window (#374,
-    /// [`WindowKind::SkillTestPlayerWindow`]). Close re-enters the skill-test
+    /// A skill-test player window (#374). Close re-enters the skill-test
     /// driver.
     SkillTest {
-        /// ST.1 (pre-commit) vs ST.2 (pre-token) — carried for the [`WindowKind`].
+        /// ST.1 (pre-commit) vs ST.2 (pre-token) — distinguishes the two
+        /// skill-test windows for routing.
         before_token: bool,
     },
-}
-
-impl FastWindowKind {
-    /// The [`WindowKind`] this framework window corresponds to.
-    #[must_use]
-    pub fn window_kind(self) -> WindowKind {
-        match self {
-            FastWindowKind::Phase(step) => WindowKind::PlayerWindow(step),
-            FastWindowKind::SkillTest { before_token } => {
-                WindowKind::SkillTestPlayerWindow { before_token }
-            }
-        }
-    }
 }
 
 impl FastActorScope {
@@ -1277,114 +1241,7 @@ pub enum TimingMode {
     Forced(ForcedContinuation),
 }
 
-/// Discriminant of an open window.
-///
-/// Each variant pairs with a [`Trigger::OnEvent`](crate::dsl::Trigger::OnEvent)
-/// pattern: when the engine emits a matching
-/// [`Event`](crate::Event), it queues a window of the corresponding
-/// kind. Phase-3 starts with one variant; later cards add
-/// patterns and the engine queues their matching window kind. The
-/// after-skill-test reactive window
-/// ([#64](https://github.com/talelburg/eldritch/issues/64)) is the
-/// next planned variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
-pub enum WindowKind {
-    /// Fires after an enemy was defeated. Pairs with
-    /// [`EventPattern::EnemyDefeated`](crate::dsl::EventPattern::EnemyDefeated)
-    /// with [`EventTiming::After`](crate::dsl::EventTiming::After).
-    AfterEnemyDefeated {
-        /// The defeated enemy. Carried so trigger effects keying on
-        /// "the defeated enemy" can route against the right id even
-        /// after `state.enemies` has dropped the entry.
-        enemy: EnemyId,
-        /// Who defeated it, if attributable. Mirrors the
-        /// [`Event::EnemyDefeated`](crate::Event::EnemyDefeated)
-        /// `by` field. `None` for non-investigator-attributed defeats.
-        by: Option<InvestigatorId>,
-    },
-    /// A printed player window at a Rules-Reference timing step. Carries
-    /// no event payload — these windows gate Fast actions (and run a
-    /// per-step continuation when they close), they are not after-event
-    /// reaction windows. The specific timing point is the [`PhaseStep`].
-    PlayerWindow(PhaseStep),
-    /// An enemy attack placed damage on a controlled asset (soak). Opens
-    /// after placement so the soaked asset's `EnemyAttackDamagedSelf`
-    /// reaction (Guard Dog 01021) can fire. `asset` is the soaked
-    /// instance, `enemy` the attacker (threaded into the reaction's
-    /// `EvalContext.attacking_enemy`), `controller` the asset's owner.
-    /// (C5b #237.)
-    AfterEnemyAttackDamagedAsset {
-        /// The card instance that absorbed the damage.
-        asset: CardInstanceId,
-        /// The enemy whose attack caused the damage.
-        enemy: EnemyId,
-        /// The investigator who controls the soaked asset.
-        controller: InvestigatorId,
-    },
-    /// Fires after an investigator successfully investigated. Pairs with
-    /// [`EventPattern::SuccessfullyInvestigated`](crate::dsl::EventPattern::SuccessfullyInvestigated)
-    /// with [`EventTiming::After`](crate::dsl::EventTiming::After). Queued
-    /// from the Investigate skill-test follow-up (success-only by
-    /// construction). `investigator` is who investigated; a reaction only
-    /// fires for its own controller's investigation ("after **you**
-    /// investigate" — Dr. Milan Christopher 01033). (C6a #241.)
-    AfterSuccessfulInvestigate {
-        /// The investigator who successfully investigated.
-        investigator: InvestigatorId,
-    },
-    /// Before-timing window: an enemy is about to attack `investigator` (RR
-    /// p.25 step 3.3). Opens *before* damage is dealt so a co-located cancel
-    /// reaction (Dodge 01023) can cancel the attack. (Axis D #336.)
-    BeforeEnemyAttack {
-        /// The attacking enemy.
-        enemy: EnemyId,
-        /// The investigator being attacked.
-        investigator: InvestigatorId,
-    },
-    /// Before-timing window: `investigator` is about to discover `count`
-    /// clues at `location`. Opens *before* the discovery so a replacement
-    /// reaction (Cover Up 01007) can discard-instead and cancel it. (Axis D
-    /// #336; migrated from the C5a `clue_interrupt` seam.)
-    BeforeDiscoverClues {
-        /// The discovering investigator.
-        investigator: InvestigatorId,
-        /// The location the clues would come from.
-        location: LocationId,
-        /// The number of clues that would be discovered.
-        count: u8,
-    },
-    /// Fires after a card entered play, scanning only the entered instance's
-    /// own `EnteredPlay` reactions (Research Librarian 01032). Pairs with
-    /// [`EventPattern::EnteredPlay`](crate::dsl::EventPattern::EnteredPlay) /
-    /// [`EventTiming::After`](crate::dsl::EventTiming::After). `instance` is the
-    /// entered card; `controller` its owner.
-    AfterEnteredPlay {
-        /// The card instance that just entered play (self-binding scope).
-        instance: CardInstanceId,
-        /// The investigator who controls it.
-        controller: InvestigatorId,
-    },
-    /// A framework player window during a skill test (RR p.26): after ST.1
-    /// (before commit) when `before_token` is `false`, after ST.2 (before the
-    /// chaos token) when `true`. Carries no event payload — it gates Fast plays
-    /// / reactions, it is not an after-event reaction window. Opened by the
-    /// skill-test driver (`advance`) at the `PreCommitWindow` / `PreTokenWindow`
-    /// cursor steps; its close re-enters `advance`.
-    ///
-    /// `before_token` distinguishes the two windows for routing only;
-    /// both windows share one continuation (re-enter `advance`, which resumes at
-    /// the pre-advanced cursor). Transitional: the EmitEvent-frame slice (#431)
-    /// dissolves this into the generic `FastWindow`, where "which window" is read
-    /// from the [`SkillTest`](Continuation::SkillTest) frame's cursor beneath it,
-    /// not stored here.
-    SkillTestPlayerWindow {
-        /// `false` = the ST.1→ST.2 window; `true` = the ST.2→ST.3 window.
-        before_token: bool,
-    },
-}
-
-/// The Rules-Reference timing step a [`WindowKind::PlayerWindow`] sits
+/// The Rules-Reference timing step a [`FastWindowKind::Phase`] window sits
 /// at. Each step uniquely determines its phase, so the phase is not
 /// carried separately (the engine reads [`GameState::phase`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1412,7 +1269,7 @@ pub enum PhaseStep {
     /// encounter-draw loop's analog lives on the
     /// [`EncounterDraw`](Continuation::EncounterDraw) frame).
     ///
-    /// Continuation (in `run_window_continuation`): read the cursor,
+    /// Continuation (in `anchor_on_child_pop`): read the cursor,
     /// resolve the pending investigator's engaged ready enemies in
     /// [`EnemyId`] order, exhaust each, advance the cursor to the next
     /// Active investigator in [`turn_order`] (or `None`), open the next
@@ -1896,14 +1753,6 @@ mod open_window_tests {
     }
 
     #[test]
-    fn player_window_kind_serde_roundtrip() {
-        let kind = WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws);
-        let json = serde_json::to_string(&kind).expect("serialize");
-        let back: WindowKind = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, kind);
-    }
-
-    #[test]
     fn hand_candidate_serde_round_trips() {
         // A Fast event playable from hand (Axis C) rides ResolutionCandidate
         // with a `Hand` source — distinct from a board card's `None`/`Board`.
@@ -2102,7 +1951,7 @@ mod continuation_stack_tests {
         // stack (#433 A-ii) — there is no separate `open_windows` Vec.
         let state = GameStateBuilder::new()
             .with_open_window(
-                WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+                FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
                 FastActorScope::Any,
             )
             .build();
@@ -2113,10 +1962,13 @@ mod continuation_stack_tests {
         ));
         // The read accessor surfaces it as the former `open_windows` view.
         assert_eq!(state.open_windows().len(), 1);
-        assert_eq!(
-            state.open_windows()[0].window_kind(),
-            Some(WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)),
-        );
+        assert!(matches!(
+            state.open_windows()[0],
+            Continuation::FastWindow {
+                kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+                ..
+            }
+        ));
     }
 }
 

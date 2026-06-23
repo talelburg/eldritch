@@ -11,7 +11,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    InvestigatorId, LocationId, Phase, PhaseStep, WindowKind,
+    FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
@@ -189,7 +189,7 @@ fn mind_over_matter_rejected_outside_your_turn() {
         .with_location(test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_open_window(
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
             FastActorScope::Any,
         )
         .build();

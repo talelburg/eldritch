@@ -24,7 +24,9 @@ use std::sync::Once;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase, PhaseStep, WindowKind};
+use game_core::state::{
+    CardCode, Continuation, FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
+};
 use game_core::{assert_event, assert_event_sequence, Action, InputResponse, PlayerAction};
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_FAST_EVENT_CODE, SYNTH_SURGE_TREACHERY_CODE, SYNTH_TREACHERY_CODE,
@@ -738,7 +740,10 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
     assert!(
         matches!(
             result.state.open_windows().last(),
-            Some(w) if w.window_kind() == Some(WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws))
+            Some(Continuation::FastWindow {
+                kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+                ..
+            })
         ),
         "top open window must be MythosAfterDraws; got {:?}",
         result.state.open_windows().last()
@@ -817,12 +822,13 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
          MythosAfterDraws must be gone"
     );
     assert!(
-        skip_result
-            .state
-            .open_windows()
-            .last()
-            .is_some_and(|w| w.window_kind()
-                == Some(WindowKind::PlayerWindow(PhaseStep::InvestigationBegins))),
+        matches!(
+            skip_result.state.open_windows().last(),
+            Some(Continuation::FastWindow {
+                kind: FastWindowKind::Phase(PhaseStep::InvestigationBegins),
+                ..
+            })
+        ),
         "top window must be InvestigationBegins; got {:?}",
         skip_result.state.open_windows().last()
     );

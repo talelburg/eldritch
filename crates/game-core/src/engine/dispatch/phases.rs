@@ -5,8 +5,8 @@ use crate::action::InputResponse;
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::event::Event;
 use crate::state::{
-    ActRoundEndPending, CardCode, EnemyId, GameState, HandSizeDiscard, InvestigatorId, Phase,
-    PhaseStep, WindowKind, Zone,
+    ActRoundEndPending, CardCode, EnemyId, FastWindowKind, GameState, HandSizeDiscard,
+    InvestigatorId, Phase, PhaseStep, Zone,
 };
 
 use crate::action::RosterEntry;
@@ -338,13 +338,13 @@ pub(super) fn investigation_phase(cx: &mut Cx) {
         });
     // PLAYER WINDOW (post-2.1). Rotation to the first investigator
     // (step 2.2) runs in this window's continuation
-    // (`run_window_continuation` → `InvestigationBegins`), so the printed
+    // (`anchor_on_child_pop` → `InvestigationBegins`), so the printed
     // order 2.1 → window → 2.2 holds. Auto-skips inline when nothing is
     // Fast-eligible, so single-investigator entry still lands the lead
     // active within the same apply() call.
     let outcome = super::reaction_windows::open_fast_window(
         cx,
-        WindowKind::PlayerWindow(PhaseStep::InvestigationBegins),
+        FastWindowKind::Phase(PhaseStep::InvestigationBegins),
     );
     debug_assert_eq!(
         outcome,
@@ -381,7 +381,7 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     }
     let outcome = super::reaction_windows::open_fast_window(
         cx,
-        WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+        FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
     );
     debug_assert_eq!(
         outcome,
@@ -485,7 +485,7 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
         // Investigation. All in this same apply.
         let outcome = super::reaction_windows::open_fast_window(
             cx,
-            WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         );
         debug_assert_eq!(
             outcome,
@@ -559,7 +559,7 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// Eliminated investigators (Killed / Insane / Resigned) are skipped per
 /// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
 /// the shared helper used by Mythos 1.4 (#69) for the same semantics.
-/// The loop body runs in [`run_window_continuation`]'s arms.
+/// The loop body runs in [`anchor_on_child_pop`]'s arms.
 ///
 /// Returns the opened window's [`EngineOutcome`]. The no-active-investigator
 /// path opens `AfterAllInvestigatorsAttacked`, whose continuation cascades
@@ -597,7 +597,7 @@ pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>)
         ),
     };
     set_enemy_anchor(cx, resume, attacking);
-    super::reaction_windows::open_fast_window(cx, WindowKind::PlayerWindow(step))
+    super::reaction_windows::open_fast_window(cx, FastWindowKind::Phase(step))
 }
 
 /// Set the Enemy phase anchor's `resume` and `attacking` cursor together (slice
@@ -668,7 +668,7 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     enemy_attack_kickoff(cx)
 }
 
-/// Called from [`run_window_continuation`]'s
+/// Called from [`anchor_on_child_pop`]'s
 /// [`PhaseStep::AfterAllInvestigatorsAttacked`] arm. Emits step
 /// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
 /// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
@@ -889,7 +889,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             }
             // None branch: no active investigator can take a turn — the
             // cascade-breaker park (the loss already resolved at the defeat
-            // site). See the former run_window_continuation arm.
+            // site). See the former anchor_on_child_pop arm.
             EngineOutcome::Done
         }
         Some(Continuation::InvestigationPhase {
@@ -954,7 +954,7 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
         });
     // PLAYER WINDOW (post-4.1). Auto-skips inline (running upkeep_resume
     // via the anchor's on_child_pop) when nothing is Fast-eligible.
-    super::reaction_windows::open_fast_window(cx, WindowKind::PlayerWindow(PhaseStep::UpkeepBegins))
+    super::reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::UpkeepBegins))
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
@@ -2974,9 +2974,7 @@ mod enemy_phase_tests {
     use crate::assert_event;
     use crate::engine::dispatch::resolve_input;
     use crate::engine::{apply, EngineOutcome};
-    use crate::state::{
-        EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, Status, WindowKind,
-    };
+    use crate::state::{EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, Status};
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
@@ -3709,7 +3707,7 @@ mod enemy_phase_tests {
         // Submitting PlayerAction::ResolveInput(InputResponse::Skip)
         // routes through resolve_input's "open_windows non-empty +
         // no reaction triggers" branch → close_reaction_window_at →
-        // run_window_continuation's BeforeInvestigatorAttacked arm →
+        // anchor_on_child_pop's BeforeInvestigatorAttacked arm →
         // resolve_attacks_for_investigator → cursor advance to None →
         // open AfterAllInvestigatorsAttacked → auto-skip continuation
         // → enemy_phase_end → cascade Upkeep → Mythos.
@@ -3738,7 +3736,7 @@ mod enemy_phase_tests {
                 attacking: Some(inv_id),
             })
             .with_open_window(
-                WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked),
+                FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked),
                 FastActorScope::Any,
             )
             .build();

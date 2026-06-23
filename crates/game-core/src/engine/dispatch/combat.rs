@@ -284,7 +284,7 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 /// attack that damaged it has left play before the reaction would
 /// resolve, so it does **not** get a reaction window (Guard Dog 01021
 /// does not retaliate on the attack that kills it). Only survivors are
-/// returned for the [`WindowKind::AfterEnemyAttackDamagedAsset`] queue.
+/// returned for the after-enemy-attack-damaged-asset reaction window queue.
 pub(super) fn place_assignment(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -411,7 +411,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// assets — the shared soak entry for **both** enemy attacks and non-attack
 /// card/treachery harm (#44/K5a). Returns the damaged surviving soaker assets
 /// (the [`place_assignment`] survivor list) so an attack caller can queue one
-/// [`WindowKind::AfterEnemyAttackDamagedAsset`] reaction window per survivor;
+/// after-enemy-attack-damaged-asset reaction window per survivor;
 /// non-attack callers pass one of `damage`/`horror` as 0 and ignore the return
 /// (treachery harm opens no soak reaction window — Guard Dog 01021 retaliates
 /// only to enemy *attacks*).
@@ -1189,10 +1189,8 @@ fn finish_attack_loop(
 /// as-is. On completion the source-keyed post-loop step runs via
 /// [`finish_attack_loop`] (shared with the order-pick resume, #143).
 ///
-/// Called from
-/// [`run_window_continuation`](super::reaction_windows::run_window_continuation)'s
-/// [`WindowKind::AfterEnemyAttackDamagedAsset`] / [`WindowKind::BeforeEnemyAttack`]
-/// arm on window close.
+/// Called from `run_reaction_continuation`'s
+/// `EnemyAttackDamagedSelf` / `EnemyAttacks` arm on window close.
 pub(super) fn resume_enemy_attack(cx: &mut Cx) -> EngineOutcome {
     let Some(Continuation::AttackLoop {
         investigator,

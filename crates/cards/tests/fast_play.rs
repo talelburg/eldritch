@@ -34,8 +34,8 @@ use std::sync::Once;
 use game_core::action::{Action, PlayerAction};
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, FastActorScope, InvestigatorId, LocationId, Phase,
-    PhaseStep, WindowKind,
+    CardCode, CardInPlay, CardInstanceId, FastActorScope, FastWindowKind, InvestigatorId,
+    LocationId, Phase, PhaseStep,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 
@@ -63,7 +63,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -102,7 +102,7 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -142,7 +142,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -212,7 +212,7 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -291,7 +291,7 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();
@@ -339,7 +339,7 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_open_window(
-            WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
             FastActorScope::Any,
         )
         .build();

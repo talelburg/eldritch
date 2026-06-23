@@ -15,7 +15,7 @@
 //! handler rather than a shared `Effect` variant: it names the attacking
 //! enemy, which only exists in the firing window's context. It keys off
 //! `EventPattern::EnemyAttackDamagedSelf`, matched **only** by
-//! `WindowKind::AfterEnemyAttackDamagedAsset` (scoped to this one soaked
+//! the after-enemy-attack-damaged-asset reaction window (scoped to this one soaked
 //! instance), and reads the attacker from `EvalContext.attacking_enemy`,
 //! which the soak window binds. (C5b #237.)
 
