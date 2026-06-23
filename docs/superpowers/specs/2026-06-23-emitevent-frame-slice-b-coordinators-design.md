@@ -175,23 +175,42 @@ exercises a *cross-bucket suppression at one round-end emit*, so this is covered
 an `at`-cell forced ability's eligibility, asserting the `at` forced does *not* fire after
 the `when` cell changes its precondition. Does not wait on a corpus card.
 
-## `WindowKind` deletion + observability redesign (inherited from Slice A)
+## `WindowKind` + `WindowOpened`/`WindowClosed` deletion (inherited from Slice A)
 
-Slice A kept `WindowKind` alive *only* as the `Event::WindowOpened/Closed` descriptor
-(deleting it changes the observable event log — the one genuine behaviour change of the
-taxonomy rework, deferred here). Slice B owns it:
+Slice A kept `WindowKind` alive *only* as the `Event::WindowOpened/Closed` descriptor. The
+original plan was to redesign that payload (read-from-anchor, drop `PhaseStep`). **Re-scoped
+2026-06-23 (design): delete the `WindowOpened`/`WindowClosed` events outright** — redesigning
+the payload is moot because the events themselves earn nothing:
 
-- **Event windows** → `WindowOpened/Closed` carries the `TimingEvent` (+ `mode`/bucket),
-  which the `TimingPoint` frame already holds; the per-window payload (which enemy /
-  investigator / count) is derivable from it.
-- **Fast windows** → flow-position read from the anchor beneath; **`PhaseStep` dropped** from
-  the payload.
-- `WindowKind` is deleted outright.
+- **No consumer reads them.** `web` / `server` / `protocol` don't reference them; no engine
+  logic reads them back. Every occurrence is an emit (`cx.events.push`) or a test assertion —
+  pure output.
+- **They are 1:1 redundant with the `AwaitingInput` channel.** A window emits `WindowOpened`
+  only when it has candidates, and a window with candidates *always suspends for player
+  input*. So every `WindowOpened` corresponds exactly to an `AwaitingInput` suspend (whose
+  `InputRequest` carries the offered options), and every `WindowClosed` to the resolving
+  `ResolveInput`. The "a window opened here, offering these choices" fact lives in the
+  engine's primary player-facing channel already. Even a window opened-then-skipped (no
+  effect fired) is covered: the opening `apply` returned `AwaitingInput`; the `Skip` is a
+  `ResolveInput` with its own continuation.
 
-**Deliberate event-log fidelity change** (accepted): the log loses the explicit per-step
-fast-window label (`PlayerWindow(MythosAfterDraws)` etc.); it becomes derivable-from-anchor.
-Touches the ~46 `WindowOpened/Closed` test assertions. Irreversible-ish for replay
-consumers — hence its own sub-slice.
+So B-iii is a **deletion**, in three parts:
+
+1. **Delete `Event::WindowOpened` / `WindowClosed`** + every `cx.events.push` site.
+2. **`WindowKind` is not purely the event payload — it also feeds the scan.** Migrate the
+   eligibility scoping (`scan_pending_triggers` / `scan_hand_fast_events` / `trigger_matches`,
+   which take a `WindowKind` for co-location / "you + your location" / instance-binding /
+   `clues==0` checks) off `WindowKind` onto the **`TimingEvent`** (near-isomorphic —
+   `TimingEvent::EnemyAttacks{enemy,investigator}` carries what `WindowKind::BeforeEnemyAttack`
+   did, and the `TimingPointWindow` frame already holds it). One source of truth.
+3. **Delete `WindowKind`** + `TimingEvent::reaction_window()` (the `→WindowKind` derivation) +
+   `FastWindowKind::window_kind()`.
+
+**Test migration:** assertions that used `WindowOpened/Closed` as *sequence anchors* drop them
+(mechanical); the few that *primarily* assert "a window opened" (Dodge / skip cases) rewrite to
+assert `AwaitingInput` + the offered options — testing real behaviour, not a log marker.
+Skipped (no consumer, no functional dependency): a Reaction-vs-Fast discriminant, and any
+bucket/sub-bucket event (coordinator/Slice-C territory if ever).
 
 ## Sub-slicing (each independently green)
 
@@ -230,9 +249,12 @@ consumers — hence its own sub-slice.
     the group can't afford. `when→at` order preserved by the upkeep flow's structure.
   The reified `EmitEvent`/`TimingPoint` frames + per-cell re-scan + the §G test move to Slice C
   (where the loop drives them); B-ii's §G coverage is the existing round-end ordering tests.
-- **B-iii — `WindowKind` deletion + observability redesign.** Delete `WindowKind`; redesign
-  `WindowOpened/Closed` (read-from-anchor, drop `PhaseStep`); update the ~46 assertions. The
-  event-log-change PR.
+- **B-iii — delete `WindowOpened`/`WindowClosed` + `WindowKind`.** The events are pure output,
+  no consumer, 1:1 redundant with the `AwaitingInput` channel — so delete them outright rather
+  than redesign their payload. Migrate the scan eligibility scoping off `WindowKind` onto the
+  `TimingEvent` (one source of truth), then delete `WindowKind` + `reaction_window()` +
+  `FastWindowKind::window_kind()`. Test migration: drop the sequence anchors; rewrite the few
+  window-presence/skip tests to assert `AwaitingInput` + options.
 
 ## Testing strategy
 
