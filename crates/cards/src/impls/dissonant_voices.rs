@@ -30,7 +30,7 @@ pub fn abilities() -> Vec<Ability> {
         revelation(put_into_threat_area(CODE)),
         constant(restrict(Restriction::CannotPlay(CardType::Asset))),
         constant(restrict(Restriction::CannotPlay(CardType::Event))),
-        forced_on_event(EventPattern::RoundEnded, EventTiming::After, discard_self()),
+        forced_on_event(EventPattern::RoundEnded, EventTiming::At, discard_self()),
     ]
 }
 
@@ -63,7 +63,7 @@ mod tests {
             &abilities[3].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::RoundEnded,
-                timing: EventTiming::After,
+                timing: EventTiming::At,
                 ..
             }
         ));

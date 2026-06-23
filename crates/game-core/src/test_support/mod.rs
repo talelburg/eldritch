@@ -71,7 +71,7 @@ pub fn fire_forced_on_round_end(
     crate::engine::fire_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::RoundEnded,
-        crate::dsl::EventTiming::After,
+        crate::dsl::EventTiming::At,
     )
 }
 

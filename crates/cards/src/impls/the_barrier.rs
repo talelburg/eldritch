@@ -10,10 +10,16 @@
 //!   Spawn the set-aside Ghoul Priest in the Hallway.
 //! ```
 //!
-//! The front objective (the round-end clue-spend window) is a kernel
-//! `Act.round_end_advance` field, set in `the_gathering::setup()` (C3d).
-//! This module implements the **reverse**: a Forced on-advance ability
-//! that fires via `ForcedTriggerPoint::ActAdvanced` when the act advances
+//! This module implements **both** of 01109's abilities. The **front
+//! objective** (the round-end clue-spend advance) is a `When`-`RoundEnded`
+//! reaction whose native does the group clue-spend + `advance_act` (Slice B-ii):
+//! the upkeep round-end flow offers a Confirm/Skip and fires this ability on
+//! Confirm. The contributor location (the Hallway) stays a kernel
+//! `Act.round_end_advance` data field (set in `the_gathering::setup()`, C3d) for
+//! the affordability gate — only the *logic* lives here, in the registry.
+//!
+//! The **reverse** is a Forced on-advance ability that fires via
+//! `ForcedTriggerPoint::ActAdvanced` when the act advances
 //! (Rules Reference p.3: flip the card, follow the reverse). It reveals
 //! the Parlor (01115) and spawns the set-aside Ghoul Priest (01116) in the
 //! Hallway (01112), making act 3's "If the Ghoul Priest is Defeated,
@@ -65,7 +71,7 @@ const PARLOR: &str = "01115";
 /// - the **front objective** — "When the round ends, investigators in the
 ///   Hallway may, as a group, spend the requisite number of clues to advance":
 ///   a `When`-timed `RoundEnded` reaction. The round-end `When` window offers
-///   this as a single candidate (PickSingle = advance, Skip = decline); the
+///   this as a single candidate (`PickSingle` = advance, Skip = decline); the
 ///   native spends + advances. Affordability is gated in the reaction scan.
 /// - the **reverse** — a Forced on-advance ability (reveal the Parlor + spawn
 ///   the Priest) that fires when the act advances.
@@ -97,7 +103,7 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 
 /// Front-objective native: spend the act's `clue_threshold` from Hallway
 /// (01112) investigators, then advance the act. Synchronous — the player's
-/// choice was the round-end `When` window's PickSingle. Delegates to the
+/// choice was the round-end `When` window's `PickSingle`. Delegates to the
 /// engine's generic group-spend entry, passing the printed contributor location.
 fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     round_end_advance(cx, HALLWAY)

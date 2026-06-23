@@ -211,14 +211,25 @@ consumers — hence its own sub-slice.
 
 - **B-i — DSL timing rework.** ✅ shipped (PR #440). `EventTiming::Before → When` (rename, 14
   sites) + dormant `At` variant. Behaviour-preserving.
-- **B-ii — the coordinators + round-end remodel.** Introduce `Continuation::EmitEvent` +
-  `Continuation::TimingPoint` (the bucket axis), **driven imperatively** — like Slice A left
-  its windows; the `drive`-loop dispatch of `TimingPoint`/windows stays in Slice C. Make
-  `forced_point`/`reaction_window` bucket-parameterized; remodel act 01109 as a `When`
-  reaction ability + re-tag the round-end doom abilities to `At` (deleting
-  `round_end_advance` / `ActRoundEnd`); per-cell re-scan; the synthetic §G regression test.
-  `emit_event`'s forced/reaction internals (queue-then-defer-open, `WindowOpened`-at-queue)
-  are unchanged. Behaviour-preserving **except** the §G re-scan (new ordering correctness).
+- **B-ii — the round-end remodel (bucket-aware forced scan + 01109 as a registry ability).**
+  **Re-scoped 2026-06-23 (implementation):** the `EmitEvent`/`TimingPoint` *stack frames* are
+  deferred to Slice C alongside the drive-loop dispatch — building them as imperatively-driven
+  scaffolding now is premature and high-risk in `emit_event` (the engine's highest-blast-radius
+  fn). B-ii instead delivers the **user-visible goal** — 01109's advance *logic* out of the
+  framework and into the registry — with far less machinery:
+  - the forced scan is bucket-parameterized (T1, shipped);
+  - act 01109 gains a `When`-`RoundEnded` reaction ability whose native does the group
+    clue-spend + advance (T2, shipped);
+  - the upkeep round-end flow **fires that registry ability** (via `apply_effect`) on the
+    player's Confirm, instead of the old inline spend; the doom abilities re-tag `After → At`
+    and the `at` step fires the `At` bucket; `Act.round_end_advance` / `RoundEndAdvance` /
+    `ActRoundEnd` are deleted.
+  - **Affordability gate dropped** (it needed the contributor location as a framework field):
+    the round-end advance is now offered whenever the current act exposes the `When` ability —
+    which is *more* RR-accurate ("investigators **may** … spend") — and the native no-ops when
+    the group can't afford. `when→at` order preserved by the upkeep flow's structure.
+  The reified `EmitEvent`/`TimingPoint` frames + per-cell re-scan + the §G test move to Slice C
+  (where the loop drives them); B-ii's §G coverage is the existing round-end ordering tests.
 - **B-iii — `WindowKind` deletion + observability redesign.** Delete `WindowKind`; redesign
   `WindowOpened/Closed` (read-from-anchor, drop `PhaseStep`); update the ~46 assertions. The
   event-log-change PR.
