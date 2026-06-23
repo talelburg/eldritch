@@ -214,18 +214,14 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // Frozen in Fear 01164's willpower test) fire for the investigator whose
     // turn just ended, before the turn passes on (first consumer: C4c, #235).
     //
-    // A forced effect that initiates a skill test suspends here
-    // (`AwaitingInput`), stranding `end_turn` before rotation. Two cases:
-    //
-    // - **2+ simultaneous** `EndOfTurn` forced (two Frozen in Fear copies)
-    //   open a forced run (#213) that carries its own
-    //   `ForcedContinuation::EndOfTurnAfterForced` — it resumes rotation on
-    //   close, so `end_turn` must *not* also flag the frame.
-    // - **a single** suspending hit has no run frame; flag the
-    //   `InvestigatorTurn` frame (below the skill test) as `ending` so the
-    //   skill-test commit-resume path re-enters [`resume_end_turn`] once the
-    //   test resolves (C4c, #235; slice 2a-i absorbs the former
-    //   `pending_end_turn` — mirrors the SpawnEngage frame).
+    // A forced effect that initiates a skill test, or a 2+ simultaneous forced
+    // run (#213, two Frozen in Fear copies), suspends here (`AwaitingInput`),
+    // stranding `end_turn` before rotation. Both cases are handled uniformly
+    // (#434): flag the `InvestigatorTurn { ending: true }` frame (beneath the
+    // suspension); the `drive` loop re-dispatches it once the suspension
+    // resolves and runs [`resume_end_turn`]. The 2+ forced run closes to `Done`
+    // (its `Terminal` continuation), so it no longer carries a bespoke
+    // `EndOfTurnAfterForced` — the turn frame is the single resume path.
     //
     // A `Rejected` propagates as-is.
     let end_of_turn = super::emit::emit_event(
@@ -237,33 +233,32 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     match end_of_turn {
         EngineOutcome::Done => resume_end_turn(cx, active_id),
         EngineOutcome::AwaitingInput { .. } => {
-            let forced_run_open = cx
+            // A suspending `EndOfTurn` forced stranded rotation — either a single
+            // skill test (above the `InvestigatorTurn` frame) or a 2+ forced run
+            // (above it too). Either way, flag the frame; the `drive` loop
+            // re-dispatches it as `ending: true` once the suspension resolves,
+            // running `resume_end_turn`. Unified path (#434) — no `is_forced`
+            // special-case: the 2+ forced run no longer carries
+            // `EndOfTurnAfterForced`, it closes to `Done` and the loop drives the
+            // re-exposed turn frame.
+            let ending = cx
                 .state
                 .continuations
-                .last()
-                .is_some_and(crate::state::Continuation::is_forced);
-            if !forced_run_open {
-                // The skill test sits above the InvestigatorTurn frame; find it
-                // and set `ending` so the commit-resume triggers rotation.
-                let ending = cx
-                    .state
-                    .continuations
-                    .iter_mut()
-                    .rev()
-                    .find_map(|c| match c {
-                        crate::state::Continuation::InvestigatorTurn {
-                            investigator,
-                            ending,
-                        } if *investigator == active_id => Some(ending),
-                        _ => None,
-                    })
-                    .unwrap_or_else(|| {
-                        unreachable!(
-                            "end_turn stranded with no InvestigatorTurn({active_id:?}) on the stack"
-                        )
-                    });
-                *ending = true;
-            }
+                .iter_mut()
+                .rev()
+                .find_map(|c| match c {
+                    crate::state::Continuation::InvestigatorTurn {
+                        investigator,
+                        ending,
+                    } if *investigator == active_id => Some(ending),
+                    _ => None,
+                })
+                .unwrap_or_else(|| {
+                    unreachable!(
+                        "end_turn stranded with no InvestigatorTurn({active_id:?}) on the stack"
+                    )
+                });
+            *ending = true;
             end_of_turn
         }
         EngineOutcome::Rejected { .. } => end_of_turn,

@@ -240,9 +240,23 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
             Some(Continuation::EncounterCard { .. }) => {
                 encounter::teardown_encounter_card_if_top(cx);
             }
-            // Idle: the open turn (an `InvestigatorTurn` frame), an empty
-            // `FastWindow` permissive gate, terminal (empty), or a suspension on
-            // top (which a handler already surfaced as AwaitingInput).
+            // The open turn is ending: a suspending `EndOfTurn` forced (a single
+            // skill test, or a 2+ forced run) stranded `end_turn` before rotation
+            // and flagged this frame. Re-exposed on top now that the suspension
+            // resolved, drive the rotation tail. `ending: false` stays the idle
+            // open-turn sentinel (the `_` arm below). Unifies the former two
+            // resume paths (the skill-test reach-down + `EndOfTurnAfterForced`).
+            Some(Continuation::InvestigatorTurn {
+                investigator,
+                ending: true,
+            }) => match phases::resume_end_turn(cx, investigator) {
+                EngineOutcome::Done => {} // rotated / phase ended; loop on
+                other => return other,
+            },
+            // Idle: the open turn (an `InvestigatorTurn { ending: false }`
+            // frame), an empty `FastWindow` permissive gate, terminal (empty), or
+            // a suspension on top (which a handler already surfaced as
+            // AwaitingInput).
             _ => return EngineOutcome::Done,
         }
     }

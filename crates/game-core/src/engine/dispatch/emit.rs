@@ -201,23 +201,25 @@ impl TimingEvent {
     /// `PhaseEnded`) so adding a variant forces a deliberate decision here.
     fn forced_continuation(&self) -> Option<ForcedContinuation> {
         match self {
-            // A move completes once "when you enter" forced abilities
-            // resolve — nothing in the framework follows.
-            TimingEvent::EnteredLocation { .. } => Some(ForcedContinuation::Terminal),
+            // `Terminal` — nothing framework-level follows the forced run; the
+            // `drive` loop re-dispatches whatever frame is exposed beneath it.
+            //   - `EnteredLocation`: a move completes once "when you enter"
+            //     forced abilities resolve.
+            //   - `EndOfTurn` (RR p.24 2.2.2): a 2+ `EndOfTurn` forced run closes
+            //     to `Done`; the loop then re-dispatches the re-exposed
+            //     `InvestigatorTurn { ending: true }` frame (flagged by
+            //     `end_turn`), which runs `resume_end_turn` (rotate / end the
+            //     phase) — #434, unified with the single-suspend path (was
+            //     `EndOfTurnAfterForced`).
+            TimingEvent::EnteredLocation { .. } | TimingEvent::EndOfTurn { .. } => {
+                Some(ForcedContinuation::Terminal)
+            }
             // "Upkeep phase ends. Round ends." (RR p.24): after the round-end
             // `at` forced abilities resolve, the upkeep step expires
             // until-end-of-round effects and steps to Mythos. The act's `when
             // the round ends` window already resolved upstream (RR `when` ->
             // `at`), so it is not part of this continuation.
             TimingEvent::RoundEnded => Some(ForcedContinuation::UpkeepAfterRoundEnded),
-            // End of turn (RR p.24 2.2.2): after the turn-ending investigator's
-            // forced abilities resolve, rotate to the next active investigator
-            // or end the Investigation phase.
-            TimingEvent::EndOfTurn { investigator } => {
-                Some(ForcedContinuation::EndOfTurnAfterForced {
-                    investigator: *investigator,
-                })
-            }
             // Non-terminal sites with no wired resume continuation. None can
             // produce 2+ forced in the current card pool; if one ever does,
             // emit_event's 2+ branch fires its loud guard rather than

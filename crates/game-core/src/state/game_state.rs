@@ -1217,13 +1217,6 @@ pub enum ForcedContinuation {
     /// Resume the upkeep step's tail after `RoundEnded`'s forced abilities
     /// resolve: open the act round-end advance window, then step the phase.
     UpkeepAfterRoundEnded,
-    /// Resume the end-of-turn step (RR p.24 2.2.2) after a turn-ending
-    /// investigator's `EndOfTurn` forced abilities resolve: rotate to the
-    /// next active investigator, or end the Investigation phase.
-    EndOfTurnAfterForced {
-        /// The investigator whose turn ended.
-        investigator: InvestigatorId,
-    },
 }
 
 /// Whether a [`TimingPointWindow`](Continuation::TimingPointWindow) is a

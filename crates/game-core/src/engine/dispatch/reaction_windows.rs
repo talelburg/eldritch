@@ -978,9 +978,6 @@ fn resume_forced_continuation(cx: &mut Cx, continuation: ForcedContinuation) -> 
         ForcedContinuation::UpkeepAfterRoundEnded => super::phases::upkeep_round_end_teardown(cx),
         // End of turn — run the end-of-turn tail (rotate to the next active
         // investigator, or end the Investigation phase).
-        ForcedContinuation::EndOfTurnAfterForced { investigator } => {
-            super::phases::resume_end_turn(cx, investigator)
-        }
     }
 }
 

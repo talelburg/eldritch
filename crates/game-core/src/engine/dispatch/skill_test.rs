@@ -540,24 +540,14 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     taken.is_some(),
                     "skill-test teardown: no SkillTest frame on the continuation stack",
                 );
-                // Teardown tail. The test is fully torn down; the `drive` loop
-                // resumes whatever it was nested within. A forced run beneath (2+
-                // simultaneous `EndOfTurn` forced — two Frozen in Fear copies,
-                // #213) is now the top frame; the loop dispatches it
-                // (`TimingPointWindow { mode: Forced }`). An
-                // `InvestigatorTurn { ending }` beneath — a single suspending
-                // `EndOfTurn` forced stranded `end_turn` before rotation — is *not*
-                // yet a loop-driven frame (#235), so resume it here. The forced run,
-                // when present, is on top, so this check correctly fires only when
-                // the turn frame is the immediate parent.
-                if let Some(crate::state::Continuation::InvestigatorTurn {
-                    investigator,
-                    ending: true,
-                }) = cx.state.continuations.last()
-                {
-                    let active_id = *investigator;
-                    return super::phases::resume_end_turn(cx, active_id);
-                }
+                // Teardown tail. The test is fully torn down; cede to the `drive`
+                // loop, which re-dispatches whatever it was nested within. A
+                // suspending `EndOfTurn` forced stranded `end_turn` before
+                // rotation and flagged the `InvestigatorTurn { ending: true }`
+                // frame beneath (a single Frozen in Fear, or a 2+ forced run);
+                // the loop's `InvestigatorTurn { ending: true }` arm runs
+                // `resume_end_turn` once this returns — no reach-down here
+                // (#434, unified with the former 2+ `EndOfTurnAfterForced` path).
                 return EngineOutcome::Done;
             }
         }
