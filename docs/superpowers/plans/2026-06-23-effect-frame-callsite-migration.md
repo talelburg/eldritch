@@ -12,7 +12,7 @@
 
 - **Behaviour-preserving at the `apply` boundary.** A dispatch handler returns to `apply_player_action`, which runs `drive(cx, outcome)`; pushing the effect root and returning `Done` hands the same work to the same loop. The card tests (`crates/cards/src/impls/*`) and integration tests (`crates/cards/tests/*`) go through real `apply`/`drive` and MUST stay green **untouched** — they are the behaviour-preservation net.
 - **Load-bearing cards** (verify each stays green at the relevant task): Dynamite Blast 01024 (suspending OnPlay + suspending Fast event), Crypt Chill 01167 (suspending on_fail), Frozen in Fear 01164 (forced/reaction + on_success effects that initiate a skill test), Research Librarian 01032 (after-enters-play reaction window), Grasping Hands / Crypt Chill in `revelation_treacheries`.
-- **`apply_effect` and `drive_effect_to_base` are DELETED in the final task** — not demoted to test-only. `frame_of`, `step_effect_frame`, and the drive loop's `Continuation::Effect(_)` arm stay (production internals).
+- **`apply_effect` and `drive_effect_to_base` are DELETED in the final task** — not demoted to test-only. The forced run is **frame-driven** (Task 1): `fire_forced_triggers` pushes the forced effect frames and the global loop drives them; `end_turn` arms the `InvestigatorTurn { ending }` resumption before emitting (the loop rotates after the forced frames pop); the `GameEnd` resolution hook (genuinely outside the main loop, holds the registry) and the 8 forced test helpers drive the pushed frames via the real `drive`. So nothing uses the synchronous bounded driver. `frame_of`, `step_effect_frame`, and the drive loop's `Continuation::Effect(_)` arm stay (production internals).
 - Match CI's strict flags before declaring any task done: `RUSTFLAGS="-D warnings" cargo test --all --all-features`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features`, plus `cargo build -p web --target wasm32-unknown-unknown` and the wasm clippy.
 - One PR; each task is its own commit and keeps the full strict gauntlet green and bisectable.
 
@@ -471,7 +471,7 @@ Claude-Session: https://claude.ai/code/session_0174FjCFBQR8ZiSSTpHaUjyB"
 - [ ] **Step 1: Confirm no production caller remains**
 
 Run: `grep -rn "apply_effect\|drive_effect_to_base" crates/game-core/src --include=*.rs | grep -v "fn apply_effect\|fn drive_effect_to_base"`
-Expected: every hit is inside a `#[cfg(test)] mod tests` block (evaluator.rs ≈2154+, choice.rs:121/150). If any production hit remains, stop — an earlier task missed a site.
+Expected: every hit is inside a `#[cfg(test)] mod tests` block (evaluator.rs ≈2154+, choice.rs:121/150). If any production hit remains, stop — an earlier task missed a site. (The frame-driven forced run in Task 1 removed `drive_effect_to_base`'s last production use.)
 
 - [ ] **Step 2: Add the test-only `run` helper**
 
@@ -485,9 +485,9 @@ Replace each `apply_effect(cx, &effect, ctx)` / `apply_effect(\n …)` in the te
 
 Replace the `apply_effect` test call in `choice.rs`'s test module with the same `push_effect` + `drive` shape (inline, or a local `run` helper). Update its `use crate::engine::evaluator::{apply_effect, EvalContext}` import to `{push_effect, EvalContext}`.
 
-- [ ] **Step 5: Delete the wrapper**
+- [ ] **Step 5: Delete the wrappers**
 
-In `evaluator.rs`, delete `apply_effect` (lines 318-326) and `drive_effect_to_base` (lines 357-370). Keep `frame_of`, `step_effect_frame`, `suspend_leaf_in_place`. Fix any now-unused imports.
+In `evaluator.rs`, delete `apply_effect` and `drive_effect_to_base`. **Keep** `frame_of`, `step_effect_frame`, `suspend_leaf_in_place`, `push_effect`. Fix any now-unused imports.
 
 - [ ] **Step 6: Verify deletion + run evaluator/choice tests**
 
