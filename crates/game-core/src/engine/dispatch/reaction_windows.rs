@@ -52,12 +52,15 @@ use super::Cx;
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
 pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEvent) {
-    let mut candidates = scan_pending_triggers(cx.state, event);
+    // Single-bucket events open their window at their natural timing; the
+    // coordinator opens per-cell windows directly (#434, Task 3).
+    let bucket = event.reaction_bucket();
+    let mut candidates = scan_pending_triggers(cx.state, event, bucket);
     // Axis C (#335): the window also opens for a matching Fast event in hand,
     // so a defeat with Evidence! in hand (and no in-play reaction) still opens
     // the after-defeat window. Hand plays are offered after the in-play
     // triggers.
-    candidates.extend(scan_hand_fast_events(cx.state, event));
+    candidates.extend(scan_hand_fast_events(cx.state, event, bucket));
     if candidates.is_empty() {
         return;
     }
@@ -109,14 +112,26 @@ fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> boo
     loc(a).is_some_and(|la| loc(b) == Some(la))
 }
 
-/// Scan every investigator's `cards_in_play` for
-/// `Trigger::OnEvent` abilities matching `kind`, building a pending-
-/// trigger list in active-investigator-first / turn-order resolution
-/// order.
+/// Scan every investigator's `cards_in_play` **and the current act/agenda** for
+/// `Trigger::OnEvent` reaction abilities matching `event` whose `EventTiming`
+/// equals `bucket`, building a pending-trigger list in active-investigator-first
+/// / turn-order resolution order (act/agenda board candidates, controlled by the
+/// lead, appended last).
+///
+/// The `bucket` filter is what lets the round-end coordinator scan one timing
+/// cell at a time (#434): `When` surfaces act 01109's group advance; `At`/`After`
+/// surface nothing for `RoundEnded` (its doom is *forced*, not a reaction). For
+/// single-bucket events the caller passes the event's [`reaction_bucket`] — the
+/// abilities that pass `bucket` are exactly those that matched before, so it is
+/// behaviour-preserving.
 ///
 /// Returns an empty vec when the registry isn't installed (tests that
 /// don't touch card data) or no cards match.
-fn scan_pending_triggers(state: &GameState, event: &TimingEvent) -> Vec<ResolutionCandidate> {
+fn scan_pending_triggers(
+    state: &GameState,
+    event: &TimingEvent,
+    bucket: EventTiming,
+) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -205,6 +220,12 @@ fn scan_pending_triggers(state: &GameState, event: &TimingEvent) -> Vec<Resoluti
                 else {
                     continue;
                 };
+                // Per-bucket scan (#434): only abilities timed at the cell we're
+                // scanning. For single-bucket events `bucket` is the event's
+                // natural timing, so this is behaviour-preserving.
+                if *timing != bucket {
+                    continue;
+                }
                 if !trigger_matches(event, pattern, *timing, id) {
                     continue;
                 }
@@ -227,7 +248,61 @@ fn scan_pending_triggers(state: &GameState, event: &TimingEvent) -> Vec<Resoluti
             }
         }
     }
+    pending.extend(scan_act_agenda_reactions(state, event, bucket));
     pending
+}
+
+/// Scan the current act + agenda for `Trigger::OnEvent` reaction abilities
+/// matching `event` at `bucket` — act 01109's "When the round ends,
+/// investigators … may … advance" group window (#434). The act/agenda are not
+/// in any `cards_in_play` zone, so [`scan_pending_triggers`] can't reach them in
+/// its per-investigator loop. Mirrors `collect_forced_hits`'s act/agenda scan:
+/// controller = the lead (board-wide effects ignore it), `CandidateSource::Board`,
+/// no per-instance usage cap (acts have none). Empty when the registry isn't
+/// installed or nothing matches.
+fn scan_act_agenda_reactions(
+    state: &GameState,
+    event: &TimingEvent,
+    bucket: EventTiming,
+) -> Vec<ResolutionCandidate> {
+    let Some(reg) = card_registry::current() else {
+        return Vec::new();
+    };
+    let Some(lead) = state.turn_order.first().copied() else {
+        return Vec::new();
+    };
+    let mut hits = Vec::new();
+    for code in [
+        state.act_deck.get(state.act_index).map(|a| &a.code),
+        state.agenda_deck.get(state.agenda_index).map(|a| &a.code),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let Some(abilities) = (reg.abilities_for)(code) else {
+            continue;
+        };
+        for (idx, ability) in abilities.iter().enumerate() {
+            let Trigger::OnEvent {
+                pattern, timing, ..
+            } = &ability.trigger
+            else {
+                continue;
+            };
+            if *timing != bucket || !trigger_matches(event, pattern, *timing, lead) {
+                continue;
+            }
+            let ability_index = u8::try_from(idx)
+                .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
+            hits.push(ResolutionCandidate {
+                code: code.clone(),
+                controller: lead,
+                ability_index,
+                source: CandidateSource::Board,
+            });
+        }
+    }
+    hits
 }
 
 /// Scan every window-eligible investigator's hand for Fast **events** whose
@@ -240,7 +315,11 @@ fn scan_pending_triggers(state: &GameState, event: &TimingEvent) -> Vec<Resoluti
 /// Returns [`CandidateSource::Hand`] candidates in active-investigator-first
 /// / turn-order order, like [`scan_pending_triggers`]. Empty when the registry
 /// isn't installed (tests that don't touch card data) or nothing matches.
-fn scan_hand_fast_events(state: &GameState, event: &TimingEvent) -> Vec<ResolutionCandidate> {
+fn scan_hand_fast_events(
+    state: &GameState,
+    event: &TimingEvent,
+    bucket: EventTiming,
+) -> Vec<ResolutionCandidate> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -283,6 +362,12 @@ fn scan_hand_fast_events(state: &GameState, event: &TimingEvent) -> Vec<Resoluti
                 else {
                     continue;
                 };
+                // Per-bucket scan (#434): only abilities timed at the cell we're
+                // scanning. For single-bucket events `bucket` is the event's
+                // natural timing, so this is behaviour-preserving.
+                if *timing != bucket {
+                    continue;
+                }
                 if !trigger_matches(event, pattern, *timing, id) {
                     continue;
                 }
@@ -334,6 +419,11 @@ fn trigger_matches(
                         TimingEvent::WouldDiscoverClues { .. },
                         EventPattern::WouldDiscoverClues
                     )
+                    // "When the round ends, investigators … may … advance" — act
+                    // 01109's group advance (#434). A board-scoped reaction (no
+                    // per-controller narrowing); the contributor scoping lives in
+                    // the native + the round-end coordinator's `When` cell.
+                    | (TimingEvent::RoundEnded, EventPattern::RoundEnded)
             );
         }
         // No `At`-timed reaction exists yet; treat it like `After` (fall through
@@ -1592,6 +1682,39 @@ mod trigger_matches_tests {
             &EventPattern::WouldDiscoverClues,
             EventTiming::When,
             inv,
+        ));
+    }
+
+    #[test]
+    fn round_ended_matches_only_its_when_reaction() {
+        let lead = InvestigatorId(1);
+        // RoundEnded ↔ RoundEnded (When) — act 01109's group advance (#434).
+        // Board-scoped: matches regardless of the candidate's controller.
+        assert!(trigger_matches(
+            &TimingEvent::RoundEnded,
+            &EventPattern::RoundEnded,
+            EventTiming::When,
+            lead,
+        ));
+        assert!(trigger_matches(
+            &TimingEvent::RoundEnded,
+            &EventPattern::RoundEnded,
+            EventTiming::When,
+            InvestigatorId(2),
+        ));
+        // The `at`/`after` buckets carry the round-end *forced* doom, not a
+        // reaction — RoundEnded opens no reaction window there.
+        assert!(!trigger_matches(
+            &TimingEvent::RoundEnded,
+            &EventPattern::RoundEnded,
+            EventTiming::At,
+            lead,
+        ));
+        assert!(!trigger_matches(
+            &TimingEvent::RoundEnded,
+            &EventPattern::RoundEnded,
+            EventTiming::After,
+            lead,
         ));
     }
 

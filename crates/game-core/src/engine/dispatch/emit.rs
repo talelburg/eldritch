@@ -169,6 +169,22 @@ impl TimingEvent {
         }
     }
 
+    /// The RR timing bucket at which this event's reaction window opens. Read
+    /// when opening a single-bucket event's window (`queue_reaction_window`) so
+    /// the scan filters reactions to the right `EventTiming`. The Before-windows
+    /// (`EnemyAttacks`, `WouldDiscoverClues`) and the round-end act advance are
+    /// `When`; every other reaction-capable point is `After`. Forced-only events
+    /// never open a reaction window, so their value here is moot (`After`).
+    pub(crate) fn reaction_bucket(&self) -> crate::dsl::EventTiming {
+        use crate::dsl::EventTiming;
+        match self {
+            TimingEvent::EnemyAttacks { .. }
+            | TimingEvent::WouldDiscoverClues { .. }
+            | TimingEvent::RoundEnded => EventTiming::When,
+            _ => EventTiming::After,
+        }
+    }
+
     /// Whether this timing event opens a reaction window. `true` only for the
     /// reaction-capable points.
     pub(crate) fn opens_reaction_window(&self) -> bool {
