@@ -214,16 +214,6 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
         state.investigators[&inv_id].damage, 0,
         "investigator took no damage"
     );
-    // The soak window opened.
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-                if matches!(kind, game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "AfterEnemyAttackDamagedAsset window opened: {:?}",
-        result.events
-    );
     // No damage on the attacker yet (reaction not fired).
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
@@ -274,9 +264,9 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
 
     // Guard Dog left play (discarded), so no soak window suspended the loop;
     // the enemy phase cascaded onward, all the way through Upkeep into the
-    // round-ending Mythos step-1.4 encounter-draw prompt (#348). The
-    // definitive "no soak window opened" proof is the event-stream assertion
-    // below; reaching the Mythos draw prompt confirms the loop was not parked.
+    // round-ending Mythos step-1.4 encounter-draw prompt (#348). Reaching the
+    // Mythos draw prompt (rather than parking on a soak window) is the
+    // definitive "no soak window opened" proof.
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. })
             && state.phase == Phase::Mythos
@@ -305,14 +295,6 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
         state.enemies.get(&enemy_id).map(|e| e.damage),
         Some(0),
         "defeated-this-attack Guard Dog does not retaliate"
-    );
-    assert!(
-        !result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-            if matches!(kind, game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "no soak window opens for a same-attack-defeated soaker"
     );
 }
 
@@ -673,16 +655,6 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     assert_eq!(
         state.investigators[&inv_id].damage, 0,
         "investigator took no AoO damage (fully soaked)"
-    );
-    // The soak window opened.
-    assert!(
-        result
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::WindowOpened { kind }
-                if matches!(kind, game_core::state::WindowKind::AfterEnemyAttackDamagedAsset { .. }))),
-        "AfterEnemyAttackDamagedAsset window opened: {:?}",
-        result.events
     );
     // Investigator has NOT moved yet (the ActionResolution frame is parked).
     assert_eq!(

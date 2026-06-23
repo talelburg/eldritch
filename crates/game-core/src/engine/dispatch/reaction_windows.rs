@@ -16,7 +16,6 @@ use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger};
 use crate::engine::TimingEvent;
-use crate::event::Event;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
     ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, SkillTestStep,
@@ -32,11 +31,9 @@ use super::Cx;
 /// #335) a Fast event in hand whose play-instruction matches. No-op when the
 /// registry isn't installed or nothing matches.
 ///
-/// Emits [`Event::WindowOpened`] before pushing onto
-/// [`GameState::open_windows`] so reaction-window observability is
-/// symmetric with the Fast-window path ([`open_fast_window`]).
-/// If no candidate matches the function returns early without
-/// emitting anything — the window never opens.
+/// Pushes the window onto [`GameState::open_windows`], symmetric with the
+/// Fast-window path ([`open_fast_window`]). If no candidate matches the
+/// function returns early without pushing — the window never opens.
 ///
 /// The hand events are appended *after* the in-play triggers in the single
 /// `pending_triggers` list, so they are offered as options after the
@@ -55,9 +52,6 @@ use super::Cx;
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
 pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEvent) {
-    let kind = event
-        .reaction_window()
-        .expect("queue_reaction_window: caller checks the event opens a reaction window");
     let mut candidates = scan_pending_triggers(cx.state, event);
     // Axis C (#335): the window also opens for a matching Fast event in hand,
     // so a defeat with Evidence! in hand (and no in-play reaction) still opens
@@ -67,9 +61,6 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEv
     if candidates.is_empty() {
         return;
     }
-    // `WindowOpened` carries the derived `WindowKind` so the observable event
-    // is byte-identical to the pre-#433 payload.
-    cx.events.push(Event::WindowOpened { kind });
     // Reaction windows admit any investigator's Fast actions (RR: Fast may be
     // played at any player window) — encoded by `mode: Reaction` (the former
     // `FastActorScope::Any` binding). Multi-window nesting is structural.
@@ -419,9 +410,8 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
 /// at a step boundary when an earlier step queued a window via
 /// [`queue_reaction_window`].
 ///
-/// [`Event::WindowOpened`] is emitted by [`queue_reaction_window`]
-/// (not here) so the event appears at queue time and is symmetric with
-/// the [`open_fast_window`] path.
+/// The window is pushed onto the stack by [`queue_reaction_window`]
+/// (not here), at queue time, symmetric with the [`open_fast_window`] path.
 pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
@@ -463,9 +453,8 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
 ///   triggers remain. Rejects when forced triggers are still pending.
 /// - Other variants reject; the window stays open.
 ///
-/// Closing the window emits [`Event::WindowClosed`] with the same
-/// kind, pops the top entry from [`GameState::open_windows`], and
-/// returns [`Done`].
+/// Closing the window pops the top entry from
+/// [`GameState::open_windows`] and returns [`Done`].
 pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
         // `OptionId(i)` indexes the single `pending_triggers` list (see
@@ -649,7 +638,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// Play the hand Fast-event `candidate` from the resolution run at
 /// `window_idx` (Axis C, #335) — the [`CandidateSource::Hand`] resolution of
 /// [`fire_pending_trigger`]. Commences the play via the shared
-/// [`super::cards::begin_event_play`] (emit [`Event::CardPlayed`], leave hand,
+/// [`super::cards::begin_event_play`] (emit [`crate::Event::CardPlayed`], leave hand,
 /// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), runs
 /// the matched `OnEvent` ability's effect, then advances the run. The apply
 /// loop flushes the event to discard on completion (step 4) — the
@@ -814,8 +803,8 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
 
 /// Close the reaction window at `idx` in [`GameState::open_windows`].
 /// Rejects when any forced trigger is still pending (player must fire
-/// them first). On success emits [`Event::WindowClosed`], removes the
-/// window at the specified index (not necessarily the top of the
+/// them first). On success removes the window at the specified index
+/// (not necessarily the top of the
 /// stack), and either resumes a paused skill-test driver (if one was
 /// mid-resolution when the window opened) or returns [`Done`].
 ///
@@ -835,17 +824,16 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     // run (its frame is `window: None` — Axis-B T5b), not here.
     let removed = cx.state.continuations.remove(idx);
 
-    // A window emits `WindowClosed` and runs its kind-specific continuation
+    // A window runs its kind-specific continuation
     // (e.g. MythosAfterDraws → mythos_phase_end). Its `WindowKind` comes from
     // the legacy `Resolution` frame (framework windows) or is derived from the
     // `TimingEvent` of a `TimingPointWindow` reaction window (#433) — so the
-    // `WindowClosed` payload + continuation are byte-identical across the
-    // migration. The forced run (#213) is not a window: no event; instead it
+    // continuation is byte-identical across the
+    // migration. The forced run (#213) is not a window; instead it
     // resumes the framework flow it suspended via its `ForcedContinuation`.
     // Either may suspend (e.g. the upkeep act round-end advance window), so
     // propagate the outcome.
     let continuation = if let Some(kind) = removed.window_kind() {
-        cx.events.push(Event::WindowClosed { kind });
         run_window_continuation(cx, kind)
     } else {
         let cont = removed.forced_continuation().unwrap_or_else(|| {
@@ -1023,15 +1011,14 @@ pub(super) fn after_enemy_phase_attacks(
     super::phases::open_attack_window(cx, next)
 }
 
-/// Open a printed Fast-play window of the given kind. Always emits
-/// [`Event::WindowOpened`] for observability. Then either:
+/// Open a printed Fast-play window of the given kind. Then either:
 ///
 /// - Pushes the [`FastWindow`](crate::state::Continuation::FastWindow) onto the
 ///   continuation stack if any pending reaction triggers or Fast-eligible plays
 ///   are detected. The
 ///   apply loop's existing "pending reactions → `AwaitingInput`" path
 ///   then surfaces the wait at the dispatch tail.
-/// - Or emits [`Event::WindowClosed`] immediately, pops the transiently
+/// - Or closes the window immediately, pops the transiently
 ///   pushed window, and runs [`run_window_continuation`] inline. This
 ///   **auto-skip** path saves a UI round-trip when nobody can act.
 ///
@@ -1056,12 +1043,10 @@ pub(super) fn after_enemy_phase_attacks(
 /// #111 step 4.5 can suspend); returns [`EngineOutcome::Done`] immediately on
 /// the wait path (window left on the stack).
 pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
-    cx.events.push(Event::WindowOpened { kind });
-
     // Push first so any_fast_play_eligible's check_play_card call sees
     // this window in state.open_windows when evaluating permissive_window.
     // Framework windows are `FastWindow` (#433 A-ii); the `FastWindowKind`
-    // discriminant reproduces `kind` for the WindowClosed payload + routes the
+    // discriminant reproduces `kind` and routes the
     // close continuation. Fast windows carry no reaction candidates — they are
     // pure Fast-gates (no `TimingEvent` reaction matches a framework window), so
     // the candidate list is always empty; the Fast-play opportunity is gated by
@@ -1093,11 +1078,10 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: WindowKind) -> EngineOutcome {
     let has_fast_eligible = any_fast_play_eligible(cx.state);
 
     if !has_pending && !has_fast_eligible {
-        // Auto-skip: nothing to do. Pop the window we just pushed,
-        // emit WindowClosed, and run the continuation inline, so the
-        // net effect on the continuation stack is the same as before.
+        // Auto-skip: nothing to do. Pop the window we just pushed and run the
+        // continuation inline, so the net effect on the continuation stack is
+        // the same as before.
         let _ = cx.state.continuations.pop();
-        cx.events.push(Event::WindowClosed { kind });
         return run_window_continuation(cx, kind);
     }
     // Otherwise the window stays on the stack. The guard at the top of
@@ -1735,12 +1719,11 @@ mod any_fast_play_eligible_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::event::Event;
     use crate::state::{EnemyId, PhaseStep, WindowKind};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
-    fn open_fast_window_with_no_eligibility_emits_open_then_close_inline() {
+    fn open_fast_window_with_no_eligibility_auto_skips_inline() {
         // No reactions, no Fast-eligible cards → auto-skip: window
         // opens and closes without ever landing on state.open_windows.
         let mut state = GameStateBuilder::default()
@@ -1763,25 +1746,6 @@ mod open_fast_window_tests {
         assert!(
             state.open_windows().is_empty(),
             "auto-skip must not leave the window on the stack"
-        );
-        assert!(
-            matches!(
-                events.first(),
-                Some(Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-                })
-            ),
-            "first event must be WindowOpened; got {:?}",
-            events.first()
-        );
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-                }
-            )),
-            "must emit WindowClosed for MythosAfterDraws; events = {events:?}"
         );
     }
 

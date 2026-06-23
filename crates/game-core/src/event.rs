@@ -18,7 +18,7 @@ use card_dsl::card_data::CardType;
 use crate::scenario::Resolution;
 use crate::state::{
     CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenResolution, UseKind, WindowKind, Zone,
+    SkillKind, TokenResolution, UseKind, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -471,44 +471,6 @@ pub enum Event {
         /// Which ability on the card fired.
         ability_index: u8,
     },
-    /// A reaction window opened. Carries the [`WindowKind`] discriminant
-    /// so listeners and replay tools know what kind of triggers can
-    /// fire inside the window. Pairs with a later
-    /// [`WindowClosed`](Self::WindowClosed) of the same kind.
-    ///
-    /// **Mid-action timing.** Per the Rules Reference's "after…"
-    /// clause, this event fires immediately after the triggering
-    /// condition's impact resolves — *inside* the surrounding action
-    /// handler, before the action's other resolution steps continue.
-    /// For a Fight that defeats an enemy, that means:
-    /// `EnemyDefeated → WindowOpened → [reaction effects] →
-    /// WindowClosed → OnSkillTestResolution → CardDiscarded →
-    /// SkillTestEnded`.
-    WindowOpened {
-        /// The kind of window that opened.
-        kind: WindowKind,
-    },
-    /// A reaction window closed — every forced trigger inside it has
-    /// fired and the player has chosen to fire or skip each optional
-    /// one. Pairs with the preceding [`WindowOpened`](Self::WindowOpened)
-    /// of the same kind.
-    ///
-    /// A window with **no** matching triggers is not opened at all —
-    /// no [`WindowOpened`]/`WindowClosed` pair fires for it. Listeners
-    /// can treat the presence of a `WindowOpened` event as proof that
-    /// at least one trigger was offered to the player; the matching
-    /// `WindowClosed` follows once the player resolves the window.
-    ///
-    /// After this fires, the surrounding action's driver resumes
-    /// (e.g. the skill-test driver advances from
-    /// [`SkillTestStep::PostFollowUp`](crate::state::SkillTestStep::PostFollowUp)
-    /// to the `OnSkillTestResolution` step).
-    ///
-    /// [`WindowOpened`]: Self::WindowOpened
-    WindowClosed {
-        /// The kind of window that closed.
-        kind: WindowKind,
-    },
     /// A scenario resolved (won or lost). Emitted by
     /// [`apply`](crate::engine::apply) when `GameState.resolution`
     /// transitions from `None` to `Some` during an apply (a dispatch
@@ -579,22 +541,6 @@ pub enum FailureReason {
     /// An `AutoFail` chaos token forced the total to 0, regardless of
     /// skill value or other modifiers.
     AutoFail,
-}
-
-#[cfg(test)]
-mod window_opened_event_tests {
-    use super::*;
-    use crate::state::{PhaseStep, WindowKind};
-
-    #[test]
-    fn window_opened_serde_roundtrip() {
-        let ev = Event::WindowOpened {
-            kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws),
-        };
-        let json = serde_json::to_string(&ev).expect("serialize");
-        let back: Event = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, ev);
-    }
 }
 
 #[cfg(test)]

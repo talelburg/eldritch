@@ -432,8 +432,7 @@ pub enum Continuation {
     /// that gates Fast actions and runs a per-step continuation on close
     /// (EmitEvent-frame Slice A, #433; was `WindowKind::PlayerWindow` /
     /// `SkillTestPlayerWindow`). The [`FastWindowKind`] discriminant reproduces
-    /// the exact [`WindowKind`] for the `WindowOpened`/`WindowClosed` event
-    /// payload and routes the close continuation (`Phase` → the `*Phase`
+    /// the exact [`WindowKind`] and routes the close continuation (`Phase` → the `*Phase`
     /// anchor's `on_child_pop`; `SkillTest` → the skill-test driver). Carries no
     /// `TimingEvent` — framework windows are not event-driven.
     FastWindow {
@@ -837,8 +836,8 @@ impl Continuation {
         }
     }
 
-    /// The [`WindowKind`] of this open frame, the pure event descriptor (#433
-    /// keeps `WindowKind` only for `WindowOpened`/`WindowClosed` observability):
+    /// The [`WindowKind`] of this open frame, the pure window descriptor (#433
+    /// keeps `WindowKind` to route the close continuation):
     /// a [`FastWindow`](Self::FastWindow) returns its [`FastWindowKind`]'s kind;
     /// a [`TimingPointWindow`](Self::TimingPointWindow) reaction window derives it
     /// from the [`TimingEvent`](crate::engine::TimingEvent). `None` for the forced
@@ -1192,29 +1191,27 @@ pub enum FastActorScope {
 /// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
 /// discriminant that survived the #433 migration off [`WindowKind`]'s
 /// `PlayerWindow` / `SkillTestPlayerWindow` variants. Routes the close
-/// continuation and reproduces the exact `WindowKind` for the
-/// `WindowOpened`/`WindowClosed` event payload (Slice A keeps `WindowKind` as
-/// the pure event descriptor; its deletion is Slice B).
+/// continuation and reproduces the exact `WindowKind` (Slice A keeps
+/// `WindowKind` as the pure window descriptor; its deletion is Slice B).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FastWindowKind {
     /// A Rules-Reference timing-step player window
     /// ([`WindowKind::PlayerWindow`]). Close routes to the `*Phase` anchor
     /// beneath via `anchor_on_child_pop`; the [`PhaseStep`] is retained only to
-    /// reproduce the event payload (the anchor's `resume` is the real
+    /// reproduce the [`WindowKind`] (the anchor's `resume` is the real
     /// continuation key, slice 1a #393).
     Phase(PhaseStep),
     /// A skill-test player window (#374,
     /// [`WindowKind::SkillTestPlayerWindow`]). Close re-enters the skill-test
     /// driver.
     SkillTest {
-        /// ST.1 (pre-commit) vs ST.2 (pre-token) — carried for the event payload.
+        /// ST.1 (pre-commit) vs ST.2 (pre-token) — carried for the [`WindowKind`].
         before_token: bool,
     },
 }
 
 impl FastWindowKind {
-    /// The [`WindowKind`] this framework window reports in its
-    /// `WindowOpened`/`WindowClosed` events.
+    /// The [`WindowKind`] this framework window corresponds to.
     #[must_use]
     pub fn window_kind(self) -> WindowKind {
         match self {
@@ -1375,7 +1372,7 @@ pub enum WindowKind {
     /// skill-test driver (`advance`) at the `PreCommitWindow` / `PreTokenWindow`
     /// cursor steps; its close re-enters `advance`.
     ///
-    /// `before_token` feeds `WindowOpened` / `WindowClosed` observability only;
+    /// `before_token` distinguishes the two windows for routing only;
     /// both windows share one continuation (re-enter `advance`, which resumes at
     /// the pre-advanced cursor). Transitional: the EmitEvent-frame slice (#431)
     /// dissolves this into the generic `FastWindow`, where "which window" is read

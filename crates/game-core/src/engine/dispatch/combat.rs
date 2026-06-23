@@ -115,7 +115,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         }
         // Enemy defeated: dispatch the timing point through the unified
         // chokepoint (Axis-B T5a). `emit_event` queues the after-defeat
-        // reaction window (Roland 01001 — `Event::WindowOpened` emitted now;
+        // reaction window (Roland 01001 — the window opens now;
         // the skill-test driver suspends at its next step boundary so the
         // player can react) and then fires the forced act objectives (Act 3's
         // advance-on-Ghoul-Priest-defeat). `()`/debug_assert guards the
@@ -645,8 +645,8 @@ fn place_queue_exhaust(
     let damaged_survivors = place_assignment(cx, investigator, assignment);
 
     // Queue a soak reaction window per surviving damaged asset, BEFORE the
-    // exhaust step — preserving the historical order in which the window's
-    // `WindowOpened` precedes `EnemyExhausted`. Inert unless a soaker has an
+    // exhaust step — preserving the historical order in which the window
+    // opens before `EnemyExhausted`. Inert unless a soaker has an
     // `EnemyAttackDamagedSelf` reaction (Guard Dog 01021).
     for asset in damaged_survivors {
         let _ = super::emit::emit_event(

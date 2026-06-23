@@ -415,8 +415,7 @@ fn open_skill_test_player_window(
 /// queues mid-step.
 ///
 /// Each loop iteration starts by checking for a queued reaction
-/// window: if one is pending, the driver emits
-/// [`Event::WindowOpened`](crate::Event::WindowOpened) and returns
+/// window: if one is pending, the driver opens it and returns
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
 /// close path ([`close_reaction_window_at`]) re-enters this driver on
 /// resume.
@@ -1371,7 +1370,7 @@ mod tests {
     /// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
     #[test]
     fn skill_test_opens_and_auto_skips_both_player_windows() {
-        use crate::state::{ChaosToken, WindowKind};
+        use crate::state::ChaosToken;
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
@@ -1400,44 +1399,15 @@ mod tests {
         );
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit prompt"
-        );
-        // `cx` still borrows `events` here; read through `cx.events`.
-        assert!(
-            cx.events.iter().any(|e| matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::SkillTestPlayerWindow {
-                        before_token: false
-                    }
-                }
-            )) && cx.events.iter().any(|e| matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::SkillTestPlayerWindow {
-                        before_token: false
-                    }
-                }
-            )),
-            "window 1 (before commit) opened and auto-skipped",
+            "commit prompt (window 1 before commit opened and auto-skipped to it)"
         );
 
         // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
         let out = finish_skill_test(&mut cx, &[]);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::SkillTestPlayerWindow { before_token: true }
-                }
-            )) && events.iter().any(|e| matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::SkillTestPlayerWindow { before_token: true }
-                }
-            )),
-            "window 2 (before token) opened and auto-skipped: {events:?}",
+        assert_eq!(
+            out,
+            EngineOutcome::Done,
+            "window 2 (before token) opened and auto-skipped, then resolved",
         );
         assert!(
             events

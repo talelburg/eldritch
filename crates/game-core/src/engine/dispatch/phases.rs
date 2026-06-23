@@ -1457,7 +1457,7 @@ mod investigation_phase_tests {
     use crate::action::PlayerAction;
     use crate::engine::dispatch::apply_player_action;
     use crate::engine::outcome::EngineOutcome;
-    use crate::state::{InvestigatorId, Phase, Status, WindowKind};
+    use crate::state::{InvestigatorId, Phase, Status};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
@@ -1561,30 +1561,15 @@ mod investigation_phase_tests {
             "Investigation phase kicks off and rotates to the lead after mulligan completes"
         );
         // PhaseStarted(Investigation) fires at mulligan completion (not
-        // during StartScenario) AND precedes the post-2.1 window — the
-        // printed 2.1 → window order.
-        let phase_started = events.iter().position(|e| {
-            matches!(
+        // during StartScenario).
+        assert!(
+            events.iter().any(|e| matches!(
                 e,
                 Event::PhaseStarted {
                     phase: Phase::Investigation
                 }
-            )
-        });
-        let window_opened = events.iter().position(|e| {
-            matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
-                }
-            )
-        });
-        let phase_started = phase_started.expect("PhaseStarted(Investigation) must fire");
-        let window_opened =
-            window_opened.expect("WindowOpened(InvestigationBegins) must fire at phase start");
-        assert!(
-            phase_started < window_opened,
-            "PhaseStarted (2.1) must precede the post-2.1 InvestigationBegins window"
+            )),
+            "PhaseStarted(Investigation) must fire"
         );
     }
 
@@ -1654,15 +1639,6 @@ mod investigation_phase_tests {
                 .iter()
                 .any(|e| matches!(e, Event::ActionsRemainingChanged { .. })),
             "rotate no longer emits ActionsRemainingChanged (actions reset at Upkeep 4.2)"
-        );
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
-                }
-            )),
-            "investigation_phase opens the post-2.1 InvestigationBegins window"
         );
     }
 
@@ -1909,18 +1885,6 @@ mod investigation_phase_tests {
                 phase: Phase::Investigation
             }
         )));
-        assert!(events.iter().any(|e| matches!(
-            e,
-            Event::WindowOpened {
-                kind: WindowKind::PlayerWindow(PhaseStep::InvestigationBegins)
-            }
-        )));
-        assert!(events.iter().any(|e| matches!(
-            e,
-            Event::WindowOpened {
-                kind: WindowKind::PlayerWindow(PhaseStep::InvestigatorTurnBegins)
-            }
-        )));
         assert!(!events.iter().any(|e| matches!(
             e,
             Event::PhaseEnded {
@@ -2051,24 +2015,6 @@ mod mythos_phase_tests {
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.current_encounter_drawer(), None);
         assert_eq!(state.phase, Phase::Investigation);
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-                }
-            )),
-            "must emit WindowOpened(MythosAfterDraws); events = {events:?}"
-        );
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::PlayerWindow(PhaseStep::MythosAfterDraws)
-                }
-            )),
-            "must emit WindowClosed(MythosAfterDraws); events = {events:?}"
-        );
         assert!(
             events.iter().any(|e| matches!(
                 e,
@@ -2414,24 +2360,6 @@ mod upkeep_phase_tests {
             )
         })
         .expect("PhaseStarted(Upkeep)");
-        let w_open = pos(&|e| {
-            matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::UpkeepBegins)
-                }
-            )
-        })
-        .expect("WindowOpened(UpkeepBegins)");
-        let w_close = pos(&|e| {
-            matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::PlayerWindow(PhaseStep::UpkeepBegins)
-                }
-            )
-        })
-        .expect("WindowClosed(UpkeepBegins)");
         let ended = pos(&|e| {
             matches!(
                 e,
@@ -2451,8 +2379,8 @@ mod upkeep_phase_tests {
         })
         .expect("PhaseStarted(Mythos)");
         assert!(
-            started < w_open && w_open < w_close && w_close < ended && ended < mythos,
-            "upkeep sub-step events must be ordered 4.1 → window → 4.6 → Mythos 1.1; \
+            started < ended && ended < mythos,
+            "upkeep sub-step events must be ordered 4.1 → 4.6 → Mythos 1.1; \
              events = {events:?}"
         );
         assert_eq!(state.phase, Phase::Mythos, "cascade lands in Mythos");
@@ -3093,8 +3021,7 @@ mod enemy_phase_tests {
         // No registry installed → the attack window auto-skips inline and the
         // cascade runs Enemy→Upkeep→Mythos within this same call, pausing at the
         // step-1.4 encounter-draw prompt (AwaitingInput). The hunter still moved
-        // + engaged during step 3.2, and the first attack window still opened —
-        // asserted via the event stream below.
+        // + engaged during step 3.2 — asserted via the event stream below.
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Mythos);
         assert_eq!(
@@ -3102,7 +3029,6 @@ mod enemy_phase_tests {
             Some(LocationId(2))
         );
         assert_event!(events, Event::EnemyEngaged { enemy, .. } if *enemy == EnemyId(1));
-        assert_event!(events, Event::WindowOpened { kind } if *kind == WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked));
     }
 
     #[test]
@@ -3185,7 +3111,6 @@ mod enemy_phase_tests {
         // Enemy->Upkeep->Mythos within the same resume call, pausing at the
         // step-1.4 encounter-draw prompt (AwaitingInput).
         assert!(matches!(resumed, EngineOutcome::AwaitingInput { .. }));
-        assert_event!(ev2, Event::WindowOpened { kind } if *kind == WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked));
         assert_eq!(state.phase, Phase::Mythos);
     }
 
@@ -3527,42 +3452,6 @@ mod enemy_phase_tests {
             )
         })
         .expect("PhaseStarted(Enemy)");
-        let w1_open = pos(&|e| {
-            matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
-                }
-            )
-        })
-        .expect("WindowOpened(Before)");
-        let w1_close = pos(&|e| {
-            matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
-                }
-            )
-        })
-        .expect("WindowClosed(Before)");
-        let w2_open = pos(&|e| {
-            matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
-                }
-            )
-        })
-        .expect("WindowOpened(After)");
-        let w2_close = pos(&|e| {
-            matches!(
-                e,
-                Event::WindowClosed {
-                    kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
-                }
-            )
-        })
-        .expect("WindowClosed(After)");
         let ended = pos(&|e| {
             matches!(
                 e,
@@ -3583,13 +3472,8 @@ mod enemy_phase_tests {
         .expect("PhaseStarted(Upkeep)");
 
         assert!(
-            started < w1_open
-                && w1_open < w1_close
-                && w1_close < w2_open
-                && w2_open < w2_close
-                && w2_close < ended
-                && ended < upkeep_started,
-            "ordered: 3.1 → BeforeInv window → AfterAll window → 3.4 → Upkeep 4.1; events = {events:?}"
+            started < ended && ended < upkeep_started,
+            "ordered: 3.1 → 3.4 → Upkeep 4.1; events = {events:?}"
         );
         assert_eq!(state.phase, Phase::Mythos, "cascade lands in Mythos");
         assert!(
@@ -3603,11 +3487,22 @@ mod enemy_phase_tests {
 
     #[test]
     fn enemy_phase_with_two_investigators_iterates_in_turn_order() {
+        // Each investigator is engaged with a ready enemy; the per-investigator
+        // attack step must fire for both, in turn order — observable as a
+        // DamageTaken per investigator (id1 before id2).
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
+        let mut e1 = test_enemy(1, "Enemy 1");
+        e1.engaged_with = Some(id1);
+        e1.attack_damage = 1;
+        let mut e2 = test_enemy(2, "Enemy 2");
+        e2.engaged_with = Some(id2);
+        e2.attack_damage = 1;
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
+            .with_enemy(e1)
+            .with_enemy(e2)
             .with_phase(Phase::Investigation)
             .build();
         state.turn_order = vec![id1, id2];
@@ -3619,47 +3514,49 @@ mod enemy_phase_tests {
             events: &mut events,
         }); // Investigation → Enemy
 
-        // Two BeforeInvestigatorAttacked windows + one AfterAll.
-        let before_opens: Vec<usize> = events
+        // One per-investigator attack landed for each, in turn order.
+        let dmg1 = events
             .iter()
-            .enumerate()
-            .filter_map(|(i, e)| {
-                matches!(
-                    e,
-                    Event::WindowOpened {
-                        kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
-                    }
-                )
-                .then_some(i)
-            })
-            .collect();
-        let after_opens: Vec<usize> = events
+            .position(
+                |e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id1),
+            )
+            .expect("id1 attacked");
+        let dmg2 = events
             .iter()
-            .enumerate()
-            .filter_map(|(i, e)| {
-                matches!(
-                    e,
-                    Event::WindowOpened {
-                        kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
-                    }
-                )
-                .then_some(i)
-            })
-            .collect();
-        assert_eq!(before_opens.len(), 2, "one window per Active investigator");
-        assert_eq!(after_opens.len(), 1);
-        assert!(before_opens[0] < before_opens[1] && before_opens[1] < after_opens[0]);
+            .position(
+                |e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id2),
+            )
+            .expect("id2 attacked");
+        assert!(
+            dmg1 < dmg2,
+            "investigators attacked in turn order (id1 before id2); events = {events:?}"
+        );
     }
 
     #[test]
     fn enemy_phase_skips_eliminated_investigator_in_advance() {
+        // All three investigators are engaged with a ready enemy, but id2 is
+        // Insane (eliminated). The per-investigator attack step must skip id2 —
+        // observable as DamageTaken for id1 and id3 only, none for id2.
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
         let id3 = InvestigatorId(3);
+        let mut e1 = test_enemy(1, "Enemy 1");
+        e1.engaged_with = Some(id1);
+        e1.attack_damage = 1;
+        let mut e2 = test_enemy(2, "Enemy 2");
+        e2.engaged_with = Some(id2);
+        e2.attack_damage = 1;
+        let mut e3 = test_enemy(3, "Enemy 3");
+        e3.engaged_with = Some(id3);
+        e3.attack_damage = 1;
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
             .with_investigator(test_investigator(3))
+            .with_enemy(e1)
+            .with_enemy(e2)
+            .with_enemy(e3)
             .with_phase(Phase::Investigation)
             .build();
         state.turn_order = vec![id1, id2, id3];
@@ -3672,19 +3569,24 @@ mod enemy_phase_tests {
             events: &mut events,
         }); // Investigation → Enemy
 
-        // Only 2 BeforeInvestigatorAttacked windows (id1 + id3).
-        let before_count = events
-            .iter()
-            .filter(|e| {
-                matches!(
-                    e,
-                    Event::WindowOpened {
-                        kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
-                    }
-                )
-            })
-            .count();
-        assert_eq!(before_count, 2, "Insane id2 must be skipped");
+        assert!(
+            events.iter().any(
+                |e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id1)
+            ),
+            "id1 attacked"
+        );
+        assert!(
+            events.iter().any(
+                |e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id3)
+            ),
+            "id3 attacked"
+        );
+        assert!(
+            !events.iter().any(
+                |e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id2)
+            ),
+            "Insane id2 must be skipped (no attack against it); events = {events:?}"
+        );
     }
 
     #[test]
@@ -3704,28 +3606,13 @@ mod enemy_phase_tests {
             events: &mut events,
         }); // Investigation → Enemy
 
-        // No BeforeInvestigatorAttacked windows — straight to AfterAll.
-        assert!(
-            events.iter().all(|e| !matches!(
-                e,
-                Event::WindowOpened {
-                    kind: WindowKind::PlayerWindow(PhaseStep::BeforeInvestigatorAttacked)
-                }
-            )),
-            "no per-investigator window when all are eliminated; events = {events:?}"
-        );
-        assert!(events.iter().any(|e| matches!(
-            e,
-            Event::WindowOpened {
-                kind: WindowKind::PlayerWindow(PhaseStep::AfterAllInvestigatorsAttacked)
-            }
-        )));
-        // With all investigators eliminated, the cascade keeps going:
+        // With all investigators eliminated, no per-investigator attack step
+        // runs (nobody to attack) and the cascade keeps going:
         // Enemy → Upkeep (no-op steps for empty Active set) → Mythos
         // (mythos_draw_pending = None → auto-skip path) → Investigation.
-        // The point of this test is the structural shape — no
-        // BeforeInvestigatorAttacked window, AfterAll opens directly —
-        // not the terminal phase.
+        // With no investigators left to attack there is no per-investigator
+        // effect to observe; the cascade landing in Investigation is the
+        // structural signal that the Enemy phase ran to completion.
         assert_eq!(state.phase, Phase::Investigation);
     }
 

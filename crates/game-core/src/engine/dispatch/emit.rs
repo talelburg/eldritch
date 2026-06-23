@@ -291,7 +291,7 @@ impl TimingEvent {
 /// # Phase ordering
 ///
 /// The reaction window is *queued* before forced abilities *resolve*, so
-/// `WindowOpened` is emitted before the forced effects' events — preserving
+/// the window opens before the forced effects' events fire — preserving
 /// the pre-T5a per-site order (each dual site called `queue_reaction_window`
 /// before `fire_forced_triggers`). The forced abilities still **resolve**
 /// synchronously here, before the player can act on the queued window (the
