@@ -99,12 +99,20 @@ C-iii  EmitEvent / TimingPoint coordinators      NEW BEHAVIOUR (per-cell re-scan
   `Done`; the loop re-dispatches the window frame.
 - **Retire the imperative window re-entry that does NOT touch skill-test:**
   `advance_resolution`'s "re-prompt or close" loop role moves into the
-  `TimingPointWindow` arm; `run_fast_continuation`'s `Phase` path pops to the
-  anchor's `on_child_pop` via the loop.
-- **Kept (the seam):** `close_reaction_window_at` / `run_fast_continuation`'s
+  `TimingPointWindow` / `FastWindow` arm (it is now invoked from the loop on the
+  top window, not from the handler tail).
+- **Kept (the seam):** `close_reaction_window_at`'s and `run_fast_continuation`'s
   `SkillTest` path still call `skill_test::advance` imperatively for a mid-test
   close. The `EncounterCard` chokepoint at `resolve_input`'s tail is untouched.
   Keeping these on the old path is what keeps C-i behaviour-preserving.
+- **Reassigned to C-ii (planning finding):** deferring `run_fast_continuation`'s
+  `Phase` path to the loop is **not** safe in C-i isolation. `open_fast_window`'s
+  auto-skip path (`reaction_windows.rs:1058-1063`) pops the window and runs
+  `run_fast_continuation` *inline*, relying on the `Phase` continuation to advance
+  the phase-anchor cursor in the same call; returning `Done` there would stall the
+  auto-skip transition unless the anchor's `resume` cursor is already advanced —
+  which needs the `anchor_on_child_pop` cursor handling that rides C-ii's broader
+  loop-driving. So the `Phase`-path defer moves to C-ii.
 
 **Behaviour-preserving claim.** Event log byte-identical. The loop never sees a bare
 `SkillTest`-on-top it cannot handle: the window arm's close path either bridges to
@@ -129,6 +137,10 @@ synchronous re-entry sites and the `resolve_input` chokepoint are gone.
   (`choice.rs:114`), the `fire_retaliate_if_any` → `drive_retaliate` Retaliate tail
   (`combat.rs:1170`), and the commit hop (`resume_skill_test_commit`,
   `mod.rs:354/430`). The implementation plan pins the exact set.
+- **Inherited from C-i:** defer `run_fast_continuation`'s `Phase` path to the loop
+  (return `Done`, let the loop dispatch the `*Phase` anchor) **and** handle the
+  `open_fast_window` auto-skip path — both need the `anchor_on_child_pop` resume-cursor
+  to be advanced before the gate opens, which is part of C-ii's loop-driving.
 - **Optional, flag-don't-force:** `skill_test::advance`'s `rposition` /
   `top_reaction_window_index` self-location logic (`skill_test.rs:445-454`) can
   simplify toward "I am top" once the loop drives it. Defer if it widens the diff —
