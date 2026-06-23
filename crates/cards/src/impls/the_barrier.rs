@@ -12,11 +12,12 @@
 //!
 //! This module implements **both** of 01109's abilities. The **front
 //! objective** (the round-end clue-spend advance) is a `When`-`RoundEnded`
-//! reaction whose native does the group clue-spend + `advance_act` (Slice B-ii):
-//! the upkeep round-end flow offers a Confirm/Skip and fires this ability on
-//! Confirm. The contributor location (the Hallway) stays a kernel
-//! `Act.round_end_advance` data field (set in `the_gathering::setup()`, C3d) for
-//! the affordability gate — only the *logic* lives here, in the registry.
+//! reaction whose native does the group clue-spend + `advance_act`. The
+//! `RoundEnded` `EmitEvent` coordinator surfaces it as the round-end `when`-cell
+//! reaction candidate (#434); picking it fires this native, `Skip` declines.
+//! The contributor location (the Hallway, `01112`) is printed-in-card — passed
+//! to the native directly — not a framework data field (the former
+//! `Act.round_end_advance` was deleted with the coordinator remodel).
 //!
 //! The **reverse** is a Forced on-advance ability that fires via
 //! `ForcedTriggerPoint::ActAdvanced` when the act advances

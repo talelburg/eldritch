@@ -5,8 +5,8 @@ use crate::action::InputResponse;
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::event::Event;
 use crate::state::{
-    ActRoundEndPending, CardCode, EnemyId, FastWindowKind, GameState, HandSizeDiscard,
-    InvestigatorId, Phase, PhaseStep, Zone,
+    CardCode, EnemyId, FastWindowKind, GameState, HandSizeDiscard, InvestigatorId, Phase,
+    PhaseStep, Zone,
 };
 
 use crate::action::RosterEntry;
@@ -827,6 +827,14 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             );
             upkeep_resume(cx)
         }
+        Some(Continuation::UpkeepPhase {
+            resume: UpkeepResume::AfterRoundEnd,
+        }) => {
+            // The round-end `EmitEvent` coordinator (the `when` act advance + the
+            // `at` doom) popped, re-exposing this anchor (#434). Run teardown
+            // (expire until-end-of-round effects, Upkeep → Mythos).
+            upkeep_round_end_teardown(cx)
+        }
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking,
@@ -976,94 +984,49 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });
-    // Fire forced act/agenda abilities keyed to `PhaseEnded { Upkeep }`
-    // ("at end of round"). The 2+-trigger reject can't propagate through
-    // the forced path here; `debug_assert!` guards it for now. #212's
-    // `emit_event` restructure will centralise forced-trigger dispatch and
-    // remove this limitation.
+    // `PhaseEnded { Upkeep }` ("at end of phase") is single-bucket and fires
+    // inline. No slice-1 card keys here, so it resolves synchronously; a
+    // 2+/suspending hit is caught structurally by `emit_event`'s loud guard.
     let forced = super::emit::emit_event(
         cx,
         &super::emit::TimingEvent::PhaseEnded {
             phase: Phase::Upkeep,
         },
     );
-    // No slice-1 card keys to "end of the upkeep phase", so this resolves
-    // synchronously. A 2+/suspending hit is caught structurally by
-    // `emit_event` (its forced run is unwired for this site) rather than here.
     debug_assert!(
         matches!(forced, EngineOutcome::Done),
         "upkeep_phase_end PhaseEnded(Upkeep) forced did not resolve to Done: {forced:?}"
     );
-    // RR "At" entry: `at the end of the round` abilities "trigger in between
-    // any 'when...' abilities and any 'after...' abilities with the same
-    // triggering condition." So act 01109's "when the round ends" clue-spend
-    // window opens BEFORE agenda 01107's "at the end of the round" doom (RR
-    // `when` -> `at`). Open the `when` window first; the `at` RoundEnded Forced
-    // abilities + teardown run on its resume (resume_act_round_end_advance), or
-    // inline below when no window opens.
-    if let Some(pending) = round_end_advance_window(cx.state) {
-        let prompt = format!(
-            "End of round: investigators at the contributor location may, as a group, \
-             spend {} clues to advance the current act. Submit ResolveInput with \
-             InputResponse::Confirm to spend and advance, or Skip to decline.",
-            pending.threshold,
-        );
-        cx.state
-            .continuations
-            .push(crate::state::Continuation::ActRoundEnd(pending));
-        return EngineOutcome::AwaitingInput {
-            request: InputRequest::prompt(prompt),
-            resume_token: ResumeToken(0),
-        };
-    }
-    upkeep_round_end_at_and_after(cx)
+    // "Round ends" (RR p.24). The `when the round ends` act advance (act 01109)
+    // and the `at the end of the round` doom (agenda 01107, Dissonant Voices
+    // 01165) resolve as the `RoundEnded` `EmitEvent` coordinator's `When`/`At`
+    // cells (#434) — structural ordering, no hand-threading. Set this anchor's
+    // resume so `upkeep_round_end_teardown` runs when the coordinator pops, then
+    // cede: `emit_event(RoundEnded)` pushes the coordinator and returns `Done`;
+    // the global loop drives the bucket walk (suspending at the `when` window)
+    // and re-exposes this anchor at `AfterRoundEnd` on completion.
+    set_upkeep_resume(cx, crate::state::UpkeepResume::AfterRoundEnd);
+    super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded)
 }
 
-/// The round-end `at the end of the round` bucket + teardown, run after the
-/// `when the round ends` act window (if any) has resolved. Fires the
-/// `RoundEnded` Forced abilities — agenda 01107's doom, Dissonant Voices
-/// 01165's discard (the RR `at` bucket). When 2+ fire simultaneously the lead
-/// orders them and the run suspends (#213); its `UpkeepAfterRoundEnded`
-/// continuation resumes the teardown via [`upkeep_round_end_teardown`]. 0 or 1
-/// resolve synchronously here.
-///
-/// Reached two ways: from [`upkeep_phase_end`] when no act window opens, and
-/// from [`resume_act_round_end_advance`] once the act window resolves.
-pub(super) fn upkeep_round_end_at_and_after(cx: &mut Cx) -> EngineOutcome {
-    // Fire the `at the end of the round` forced abilities at the `At` bucket
-    // (agenda 01107's doom, Dissonant Voices 01165's discard — both re-tagged
-    // `At`). RoundEnded opens no reaction window, so this is the forced phase
-    // only: 0/1 resolve synchronously; 2+ open the lead-ordered run, resuming
-    // teardown via `UpkeepAfterRoundEnded`.
-    let point = super::forced_triggers::ForcedTriggerPoint::RoundEnded;
-    let candidates =
-        super::forced_triggers::collect_forced_hits(cx.state, &point, crate::dsl::EventTiming::At);
-    let result = if candidates.len() >= 2 {
-        super::reaction_windows::open_forced_resolution(
-            cx,
-            &super::emit::TimingEvent::RoundEnded,
-            candidates,
-            crate::state::ForcedContinuation::UpkeepAfterRoundEnded,
-        )
-    } else {
-        super::forced_triggers::fire_forced_triggers(cx, &point, crate::dsl::EventTiming::At)
-    };
-    match result {
-        EngineOutcome::Done => upkeep_round_end_teardown(cx),
-        // The forced run suspended for the lead's ordering choice; the
-        // teardown resumes via UpkeepAfterRoundEnded when the run closes.
-        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
-        rejected @ EngineOutcome::Rejected { .. } => rejected,
+/// Set the top [`UpkeepPhase`](crate::state::Continuation::UpkeepPhase) anchor's
+/// resume cursor. The anchor is the top frame when `upkeep_phase_end` runs (the
+/// round-end coordinator is pushed *after* this call).
+fn set_upkeep_resume(cx: &mut Cx, resume: crate::state::UpkeepResume) {
+    match cx.state.continuations.last_mut() {
+        Some(crate::state::Continuation::UpkeepPhase { resume: slot }) => *slot = resume,
+        other => {
+            unreachable!("set_upkeep_resume: expected UpkeepPhase anchor on top, got {other:?}")
+        }
     }
 }
 
-/// Teardown after the round-end `at` Forced abilities resolve: expire active
-/// "until the end of the round" lasting effects (Mind over Matter 01036's
-/// substitution — RR p.24, "after the round-end forced abilities have
+/// Teardown after the round-end `EmitEvent` coordinator pops — reached via the
+/// Upkeep anchor's [`AfterRoundEnd`](crate::state::UpkeepResume::AfterRoundEnd)
+/// resume (#434, subsuming the former `ForcedContinuation::UpkeepAfterRoundEnded`):
+/// expire active "until the end of the round" lasting effects (Mind over Matter
+/// 01036's substitution — RR p.24, "after the round-end forced abilities have
 /// resolved"), then transition Upkeep → Mythos.
-///
-/// Reached inline from [`upkeep_round_end_at_and_after`] (0/1 forced) and from
-/// the forced run's [`ForcedContinuation::UpkeepAfterRoundEnded`] close (2+).
 pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
     cx.state.skill_substitutions.clear();
     // Pop the Upkeep anchor (slice 1a, #393): this is the single Upkeep→Mythos
@@ -1090,116 +1053,6 @@ pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
             resume: crate::state::MythosResume::Entry,
         });
     EngineOutcome::Done
-}
-
-/// The round-end advance window to open, if the current act offers one and
-/// the contributor-location investigators can afford its `clue_threshold`.
-/// `None` (no window) when the act has no round-end objective or the group
-/// can't afford it.
-fn round_end_advance_window(state: &GameState) -> Option<ActRoundEndPending> {
-    let act = state.act_deck.get(state.act_index)?;
-    let adv = act.round_end_advance.as_ref()?;
-    let loc = crate::engine::location_id_by_code(state, adv.contributor_location.as_str())?;
-    let contributors = super::act_agenda::investigators_at(state, loc);
-    if super::act_agenda::clues_held(state, &contributors) < u32::from(act.clue_threshold) {
-        return None;
-    }
-    Some(ActRoundEndPending {
-        contributor_location: loc,
-        threshold: act.clue_threshold,
-    })
-}
-
-/// Resume a parked act round-end clue-spend window. Confirm spends the
-/// threshold from the contributor-location investigators and advances the
-/// act; Skip declines; either way the round closes (Upkeep→Mythos). A wrong
-/// response kind rejects with state untouched.
-pub(crate) fn resume_act_round_end_advance(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(crate::state::Continuation::ActRoundEnd(pending)) = cx.state.continuations.last()
-    else {
-        unreachable!("resume_act_round_end_advance: no ActRoundEnd frame on top of the stack")
-    };
-    let pending = pending.clone();
-    match response {
-        InputResponse::Confirm => {
-            // Defensive re-check (the gate ensured affordability at prompt time;
-            // nothing acts between prompt and resume in 1p): leave state + the
-            // frame untouched on a stale submit.
-            let contributors =
-                super::act_agenda::investigators_at(cx.state, pending.contributor_location);
-            if super::act_agenda::clues_held(cx.state, &contributors) < u32::from(pending.threshold)
-            {
-                return EngineOutcome::Rejected {
-                    reason: "act round-end advance: contributors no longer hold enough clues"
-                        .into(),
-                };
-            }
-            cx.state.continuations.pop();
-            // Fire the current act's `When`-RoundEnded advance ability — 01109's
-            // registry native does the group clue-spend + `advance_act` (the
-            // logic now lives in the registry, not inline here). The reverse
-            // (Forced on-advance) chains off `advance_act` as before.
-            match fire_act_round_end_ability(cx) {
-                EngineOutcome::Done => upkeep_round_end_at_and_after(cx),
-                other => other,
-            }
-        }
-        InputResponse::Skip => {
-            cx.state.continuations.pop();
-            upkeep_round_end_at_and_after(cx)
-        }
-        other => EngineOutcome::Rejected {
-            reason: format!(
-                "ResolveInput: act round-end advance expects Confirm or Skip, got {other:?}"
-            )
-            .into(),
-        },
-    }
-}
-
-/// Locate the current act's `When`-`RoundEnded` reaction ability (01109's
-/// "when the round ends … may spend clues to advance"), returning its code +
-/// index. `None` when the act has no such ability or the registry is absent.
-fn round_end_advance_ability_index(state: &GameState) -> Option<(crate::state::CardCode, usize)> {
-    let act = state.act_deck.get(state.act_index)?;
-    let reg = crate::card_registry::current()?;
-    let abilities = (reg.abilities_for)(&act.code)?;
-    let idx = abilities.iter().position(|a| {
-        matches!(
-            &a.trigger,
-            crate::dsl::Trigger::OnEvent {
-                pattern: crate::dsl::EventPattern::RoundEnded,
-                timing: crate::dsl::EventTiming::When,
-                kind: crate::dsl::TriggerKind::Reaction,
-            }
-        )
-    })?;
-    Some((act.code.clone(), idx))
-}
-
-/// Fire the current act's `When`-`RoundEnded` advance ability through the
-/// effect evaluator — 01109's registry native does the group clue-spend +
-/// `advance_act`. Controller = the lead. Returns the ability's outcome (`Done`
-/// on a successful advance; `Rejected` if the native finds the group can't
-/// afford — unreachable behind the affordability gate). No ability ⇒ `Done`.
-fn fire_act_round_end_ability(cx: &mut Cx) -> EngineOutcome {
-    let Some((code, idx)) = round_end_advance_ability_index(cx.state) else {
-        return EngineOutcome::Done;
-    };
-    let Some(lead) = cx.state.turn_order.first().copied() else {
-        return EngineOutcome::Done;
-    };
-    let Some(reg) = crate::card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: "round-end advance: registry vanished".into(),
-        };
-    };
-    let Some(abilities) = (reg.abilities_for)(&code) else {
-        return EngineOutcome::Done;
-    };
-    let effect = abilities[idx].effect.clone();
-    let ctx = super::super::evaluator::EvalContext::for_controller_with_optional_source(lead, None);
-    super::super::evaluator::apply_effect(cx, &effect, ctx)
 }
 
 /// 4.3 Ready exhausted cards. Rules Reference p.25: "Simultaneously
@@ -2765,200 +2618,6 @@ mod upkeep_phase_tests {
             hand_before + 1,
             "drew 1"
         );
-    }
-
-    // ---- act round-end clue-spend window (#275) ------------------
-
-    /// Act 2 (round-end objective, Hallway contributors) current, a Hallway
-    /// investigator holding `clues`, phase Upkeep. Act 3 is non-terminal's
-    /// successor (terminal, with a resolution).
-    fn round_end_window_state(clues: u8) -> (crate::state::GameState, InvestigatorId) {
-        use crate::scenario::Resolution;
-        use crate::state::{Act, Location, RoundEndAdvance};
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([inv])
-            .with_phase(Phase::Upkeep)
-            // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
-            .with_phase_anchor(crate::state::Continuation::UpkeepPhase {
-                resume: crate::state::UpkeepResume::Begins,
-            })
-            .with_location(Location::new(
-                LocationId(2),
-                CardCode("01112".into()),
-                "Hallway",
-                1,
-                0,
-            ))
-            .build();
-        let i = state.investigators.get_mut(&inv).unwrap();
-        i.current_location = Some(LocationId(2));
-        i.clues = clues;
-        state.act_deck = vec![
-            Act {
-                code: CardCode("01109".into()),
-                clue_threshold: 3,
-                resolution: None,
-                round_end_advance: Some(RoundEndAdvance {
-                    contributor_location: CardCode("01112".into()),
-                }),
-            },
-            Act {
-                code: CardCode("01110".into()),
-                clue_threshold: 0,
-                resolution: Some(Resolution::Won { id: "R1".into() }),
-                round_end_advance: None,
-            },
-        ];
-        state.act_index = 0;
-        (state, inv)
-    }
-
-    #[test]
-    fn upkeep_phase_end_opens_window_when_affordable() {
-        let (mut state, _) = round_end_window_state(3);
-        let mut events = Vec::new();
-        let out = upkeep_phase_end(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        assert!(matches!(
-            state.continuations.last(),
-            Some(crate::state::Continuation::ActRoundEnd(_))
-        ));
-        assert_eq!(state.phase, Phase::Upkeep, "parked: did not transition");
-        assert_no_event!(
-            events,
-            Event::PhaseStarted {
-                phase: Phase::Mythos
-            }
-        );
-    }
-
-    #[test]
-    fn upkeep_phase_end_skips_window_when_unaffordable() {
-        let (mut state, _) = round_end_window_state(2); // < threshold 3
-        let mut events = Vec::new();
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            // slice 1b: the Upkeep→Mythos transition is loop-driven.
-            let o = upkeep_phase_end(&mut cx);
-            super::super::drive(&mut cx, o)
-        };
-        // Unaffordable → no round-end window; the cascade steps straight into
-        // Mythos and pauses at the step-1.4 encounter-draw prompt.
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        assert!(!matches!(
-            state.continuations.last(),
-            Some(crate::state::Continuation::ActRoundEnd(_))
-        ));
-        assert_eq!(state.phase, Phase::Mythos, "no window → straight to Mythos");
-    }
-
-    // `resume_confirm_spends_and_advances` moved to `tests/act_round_end.rs`:
-    // the advance now fires 01109's registry `When`-RoundEnded ability, which
-    // needs the card registry installed — a lib unit test can't install the
-    // process-global registry without polluting its siblings, so the
-    // Confirm→advance coverage lives in the integration binary (which installs a
-    // mock registry). The gate/prompt and Skip/reject paths below stay here
-    // (they don't fire the ability).
-
-    #[test]
-    fn resume_skip_advances_nothing_and_continues() {
-        use crate::action::InputResponse;
-        let (mut state, inv) = round_end_window_state(3);
-        let mut events = Vec::new();
-        let _ = upkeep_phase_end(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            let o = resume_act_round_end_advance(&mut cx, &InputResponse::Skip);
-            super::super::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
-        };
-        // Skipping the window still continues the upkeep cascade into Mythos,
-        // which pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        assert_eq!(state.act_index, 0, "no advance on Skip");
-        assert_eq!(state.investigators[&inv].clues, 3, "no clues spent");
-        assert!(!matches!(
-            state.continuations.last(),
-            Some(crate::state::Continuation::ActRoundEnd(_))
-        ));
-        assert_eq!(state.phase, Phase::Mythos);
-    }
-
-    #[test]
-    fn resume_rejects_wrong_response_kind() {
-        use crate::action::InputResponse;
-        let (mut state, _) = round_end_window_state(3);
-        let mut events = Vec::new();
-        let _ = upkeep_phase_end(&mut Cx {
-            state: &mut state,
-            events: &mut events,
-        });
-        let out = resume_act_round_end_advance(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            &InputResponse::PickMultiple { selected: vec![] },
-        );
-        assert!(matches!(out, EngineOutcome::Rejected { .. }));
-        assert!(
-            matches!(
-                state.continuations.last(),
-                Some(crate::state::Continuation::ActRoundEnd(_))
-            ),
-            "still pending"
-        );
-        assert_eq!(state.phase, Phase::Upkeep);
-    }
-
-    #[test]
-    fn affordability_counts_only_contributor_location() {
-        use crate::state::{CardCode, Location, LocationId};
-        let (mut state, _) = round_end_window_state(0); // Hallway inv holds 0
-                                                        // A second investigator elsewhere holds plenty — must NOT count.
-        let other = InvestigatorId(2);
-        let mut o = test_investigator(2);
-        o.current_location = Some(LocationId(9));
-        o.clues = 9;
-        state.investigators.insert(other, o);
-        state.turn_order.push(other);
-        state.locations.insert(
-            LocationId(9),
-            Location::new(LocationId(9), CardCode("99999".into()), "Far", 1, 0),
-        );
-        let mut events = Vec::new();
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            let o = upkeep_phase_end(&mut cx);
-            super::super::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
-        };
-        // Unaffordable by the Hallway alone: no round-end window opens, so the
-        // upkeep cascades straight into Mythos and pauses at the encounter-draw
-        // prompt (AwaitingInput) rather than opening an ActRoundEnd frame.
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "unaffordable by Hallway alone"
-        );
-        assert!(!matches!(
-            state.continuations.last(),
-            Some(crate::state::Continuation::ActRoundEnd(_))
-        ));
     }
 }
 

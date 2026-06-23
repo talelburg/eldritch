@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
-use crate::dsl::{EventPattern, EventTiming, Trigger};
+use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::engine::TimingEvent;
 use crate::state::TimingMode;
 use crate::state::{
@@ -74,6 +74,43 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEv
             mode: crate::state::TimingMode::Reaction,
             candidates,
         });
+}
+
+/// All reaction candidates (in-play + hand Fast + current act/agenda) for
+/// `event` at `bucket` — the `EmitEvent`/`TimingPoint` coordinator's per-cell
+/// reaction scan (#434). Unlike [`queue_reaction_window`] (which reads the
+/// event's *natural* bucket), the coordinator passes the cell it is resolving.
+pub(super) fn scan_reactions_at(
+    state: &GameState,
+    event: &crate::engine::TimingEvent,
+    bucket: EventTiming,
+) -> Vec<ResolutionCandidate> {
+    let mut candidates = scan_pending_triggers(state, event, bucket);
+    candidates.extend(scan_hand_fast_events(state, event, bucket));
+    candidates
+}
+
+/// Push a reaction window for the coordinator's pre-scanned `candidates` and
+/// open it (the round-end `when` act-advance window, #434). Returns the
+/// `AwaitingInput` from [`open_queued_reaction_window`]. Caller guarantees
+/// `candidates` is non-empty (it checked, to decide open-vs-finish).
+pub(super) fn open_reaction_run(
+    cx: &mut Cx,
+    event: &crate::engine::TimingEvent,
+    candidates: Vec<ResolutionCandidate>,
+) -> EngineOutcome {
+    debug_assert!(
+        !candidates.is_empty(),
+        "open_reaction_run: caller must pass a non-empty candidate list"
+    );
+    cx.state
+        .continuations
+        .push(Continuation::TimingPointWindow {
+            event: event.clone(),
+            mode: crate::state::TimingMode::Reaction,
+            candidates,
+        });
+    open_queued_reaction_window(cx)
 }
 
 /// Open the forced-resolution run (Axis-B T5b / #213): push a
@@ -215,15 +252,19 @@ fn scan_pending_triggers(
             };
             for (idx, ability) in abilities.iter().enumerate() {
                 let Trigger::OnEvent {
-                    pattern, timing, ..
+                    pattern,
+                    timing,
+                    kind,
                 } = &ability.trigger
                 else {
                     continue;
                 };
-                // Per-bucket scan (#434): only abilities timed at the cell we're
-                // scanning. For single-bucket events `bucket` is the event's
-                // natural timing, so this is behaviour-preserving.
-                if *timing != bucket {
+                // Reaction abilities only, at the cell being scanned (#434): the
+                // coordinator scans the same (event, bucket) for both forced and
+                // reaction, so kind filtering keeps a Forced ability out of the
+                // reaction window (symmetric to push_matching). For single-bucket
+                // events `bucket` is the event's natural timing — behaviour-preserving.
+                if *kind != TriggerKind::Reaction || *timing != bucket {
                     continue;
                 }
                 if !trigger_matches(event, pattern, *timing, id) {
@@ -284,12 +325,17 @@ fn scan_act_agenda_reactions(
         };
         for (idx, ability) in abilities.iter().enumerate() {
             let Trigger::OnEvent {
-                pattern, timing, ..
+                pattern,
+                timing,
+                kind,
             } = &ability.trigger
             else {
                 continue;
             };
-            if *timing != bucket || !trigger_matches(event, pattern, *timing, lead) {
+            if *kind != TriggerKind::Reaction
+                || *timing != bucket
+                || !trigger_matches(event, pattern, *timing, lead)
+            {
                 continue;
             }
             let ability_index = u8::try_from(idx)
@@ -357,15 +403,19 @@ fn scan_hand_fast_events(
             };
             for (idx, ability) in abilities.iter().enumerate() {
                 let Trigger::OnEvent {
-                    pattern, timing, ..
+                    pattern,
+                    timing,
+                    kind,
                 } = &ability.trigger
                 else {
                     continue;
                 };
-                // Per-bucket scan (#434): only abilities timed at the cell we're
-                // scanning. For single-bucket events `bucket` is the event's
-                // natural timing, so this is behaviour-preserving.
-                if *timing != bucket {
+                // Reaction abilities only, at the cell being scanned (#434): the
+                // coordinator scans the same (event, bucket) for both forced and
+                // reaction, so kind filtering keeps a Forced ability out of the
+                // reaction window (symmetric to push_matching). For single-bucket
+                // events `bucket` is the event's natural timing — behaviour-preserving.
+                if *kind != TriggerKind::Reaction || *timing != bucket {
                     continue;
                 }
                 if !trigger_matches(event, pattern, *timing, id) {
@@ -994,9 +1044,15 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
         // the pre-advanced skill-test step, whereas a reaction window sits above a
         // separate `SkillTest` frame the loop owns. The asymmetry is intentional —
         // see `run_fast_continuation`.)
+        // No continuation work here — the `drive` loop dispatches the now-top
+        // frame. After-defeat / after-investigate / entered-play sit above a
+        // separate `SkillTest` the loop owns; the round-end `when` act-advance
+        // window (act 01109, #434) sits above the coordinator's `TimingPoint`,
+        // which advances to its `Done` sub when re-dispatched.
         TimingEvent::EnemyDefeated { .. }
         | TimingEvent::SuccessfullyInvestigated { .. }
-        | TimingEvent::EnteredPlay { .. } => EngineOutcome::Done,
+        | TimingEvent::EnteredPlay { .. }
+        | TimingEvent::RoundEnded => EngineOutcome::Done,
         other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),
     }
 }

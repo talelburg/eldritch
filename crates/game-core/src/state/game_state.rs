@@ -280,36 +280,6 @@ pub struct Act {
     /// The printed resolution point on this act's reverse. `Some` on a
     /// terminal act; `None` otherwise.
     pub resolution: Option<crate::scenario::Resolution>,
-    /// When `Some`, this act offers a round-end clue-spend objective
-    /// instead of an Investigation-phase `AdvanceAct` (see [`RoundEndAdvance`]).
-    /// `None` for acts that advance by the normal action or a forced trigger.
-    pub round_end_advance: Option<RoundEndAdvance>,
-}
-
-/// A round-end "may spend clues to advance" objective (Rules Reference:
-/// act objectives). 01109 "The Barrier": investigators in the Hallway may,
-/// as a group, spend the act's `clue_threshold` clues to advance when the
-/// round ends. Generic mechanics — only the contributor location is
-/// card-specific, so it is set by content (`the_gathering.rs`), not parsed
-/// from the corpus (no structured `ArkhamDB` field exists for it; single
-/// consumer). See issue #275.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RoundEndAdvance {
-    /// Only investigators at this in-play location (by printed code) may
-    /// contribute clues — 01109: the Hallway `01112`.
-    pub contributor_location: CardCode,
-}
-
-/// A parked act round-end clue-spend window (see [`RoundEndAdvance`]). The
-/// decision context is snapshotted at park time; resolved via
-/// `resume_act_round_end_advance`. `Some` on [`GameState`] only while
-/// awaiting the group's Confirm/Skip at the end of the round.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActRoundEndPending {
-    /// In-play location whose investigators may contribute clues.
-    pub contributor_location: LocationId,
-    /// Clues to spend to advance (the act's `clue_threshold`).
-    pub threshold: u8,
 }
 
 /// Which driver to resume after a mid-attack reaction window closes.
@@ -460,9 +430,30 @@ pub enum Continuation {
     /// A suspended upkeep hand-size discard (#111), migrated off the former
     /// `GameState::hand_size_discard_pending` field (#348).
     HandSizeDiscard(HandSizeDiscard),
-    /// A suspended act round-end clue-spend window (#275), migrated off the
-    /// former `GameState::act_round_end_pending` field (#348).
-    ActRoundEnd(ActRoundEndPending),
+    /// Coordinator: walk the RR timing buckets `When → At → After` for one game
+    /// event (EmitEvent-frame C-coordinators, #434). `bucket` is the cursor.
+    /// Pushed by `emit_event` for the only multi-bucket event (`RoundEnded`);
+    /// the `drive` loop dispatches it, pushing a [`TimingPoint`](Self::TimingPoint)
+    /// per populated bucket and re-scanning each cell fresh. Suspends at the
+    /// round-end `when` act-advance window.
+    EmitEvent {
+        /// The game event whose timing buckets are being walked.
+        event: crate::engine::TimingEvent,
+        /// The bucket cursor (`When` → `At` → `After`).
+        bucket: crate::dsl::EventTiming,
+    },
+    /// Coordinator: one timing bucket of an [`EmitEvent`](Self::EmitEvent) walk,
+    /// running forced then reaction (`sub` cursor). What single-bucket
+    /// `emit_event` does today, parameterized by bucket and made frame-resumable
+    /// (#434). Child of an `EmitEvent` frame.
+    TimingPoint {
+        /// The game event (carried for the forced/reaction scans).
+        event: crate::engine::TimingEvent,
+        /// Which bucket this point resolves.
+        bucket: crate::dsl::EventTiming,
+        /// The forced-then-reaction sub-cursor.
+        sub: TimingSub,
+    },
     /// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
     /// at initiation (#322), migrated off the former
     /// `GameState::pending_substitution_prompt` field (#348). Pushed *above* the
@@ -895,6 +886,25 @@ pub enum UpkeepResume {
     Entry,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
+    /// The round-end `EmitEvent` coordinator (the `when` act advance + the `at`
+    /// doom) popped; run `upkeep_round_end_teardown` (expire until-end-of-round
+    /// effects, Upkeep → Mythos). Set by `upkeep_phase_end` before it cedes to
+    /// the coordinator (#434 — subsumes `ForcedContinuation::UpkeepAfterRoundEnded`).
+    AfterRoundEnd,
+}
+
+/// The forced-then-reaction sub-cursor of a [`Continuation::TimingPoint`]
+/// (#434). `Forced` fires the bucket's forced abilities (0/1 inline, 2+ via the
+/// lead-ordered run), `Reaction` opens the bucket's reaction window, `Done`
+/// finishes the bucket (advance the parent `EmitEvent`'s cursor + pop).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimingSub {
+    /// Fire the bucket's forced abilities.
+    Forced,
+    /// Open the bucket's reaction window.
+    Reaction,
+    /// Bucket resolved; advance the parent `EmitEvent` cursor and pop.
+    Done,
 }
 
 /// A skill test paused mid-resolution at the commit window.
@@ -2130,7 +2140,6 @@ mod act_agenda_code_tests {
             code: CardCode("01108".into()),
             clue_threshold: 2,
             resolution: None,
-            round_end_advance: None,
         };
         let agenda = Agenda {
             code: CardCode("01105".into()),

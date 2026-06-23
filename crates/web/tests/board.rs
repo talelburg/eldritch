@@ -56,7 +56,6 @@ async fn phase_bar_renders_phase_round_act_agenda() {
         code: CardCode("_test_act".into()),
         clue_threshold: 2,
         resolution: None,
-        round_end_advance: None,
     }];
     state.agenda_deck = vec![Agenda {
         code: CardCode("_test_agenda".into()),

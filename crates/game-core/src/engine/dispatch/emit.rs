@@ -122,7 +122,9 @@ pub enum TimingEvent {
 impl TimingEvent {
     /// The forced dispatch point for this timing event, if it fires forced
     /// abilities. `None` for the reaction-only `EnemyAttackDamagedSelf`.
-    fn forced_point(&self) -> Option<ForcedTriggerPoint> {
+    /// `pub(super)` so the coordinator ([`super::coordinator`]) can re-scan a
+    /// bucket's forced abilities (#434).
+    pub(super) fn forced_point(&self) -> Option<ForcedTriggerPoint> {
         match self {
             TimingEvent::EnteredLocation {
                 investigator,
@@ -230,16 +232,16 @@ impl TimingEvent {
             TimingEvent::EnteredLocation { .. } | TimingEvent::EndOfTurn { .. } => {
                 Some(ForcedContinuation::Terminal)
             }
-            // "Upkeep phase ends. Round ends." (RR p.24): after the round-end
-            // `at` forced abilities resolve, the upkeep step expires
-            // until-end-of-round effects and steps to Mythos. The act's `when
-            // the round ends` window already resolved upstream (RR `when` ->
-            // `at`), so it is not part of this continuation.
-            TimingEvent::RoundEnded => Some(ForcedContinuation::UpkeepAfterRoundEnded),
             // Non-terminal sites with no wired resume continuation. None can
             // produce 2+ forced in the current card pool; if one ever does,
             // emit_event's 2+ branch fires its loud guard rather than
             // dropping the tail. Add a ForcedContinuation variant + arm then.
+            //
+            // `RoundEnded` lives here too (#434): it no longer reaches this
+            // forced path — `emit_event`'s `RoundEnded` branch pushes the
+            // `EmitEvent` coordinator and returns, so `forced_continuation()` is
+            // never consulted for it (its `at`-cell forced run resumes the
+            // coordinator's `TimingPoint`, not a framework tail).
             //
             // Extra care for the **dual** sites (`EnemyDefeated`,
             // `SuccessfullyInvestigated`): emit_event queues their reaction
@@ -251,6 +253,7 @@ impl TimingEvent {
             | TimingEvent::ActAdvanced { .. }
             | TimingEvent::AgendaAdvanced { .. }
             | TimingEvent::EnemyDefeated { .. }
+            | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
             | TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::SuccessfullyInvestigated { .. }
@@ -284,6 +287,20 @@ impl TimingEvent {
 /// suspends or rejects). T5b replaces the forced phase's internals with the
 /// iterative ordering loop.
 pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    // The only multi-bucket event (#434): cede to the `when → at → after`
+    // coordinator + the global loop. `emit_event` returns `Done`; the caller
+    // must do no synchronous post-emit work (`upkeep_phase_end` set its anchor
+    // resume cursor first). Every other event is single-bucket and resolves
+    // inline below (Checkpoint-C: no coordinator frame for a single cell).
+    if matches!(event, TimingEvent::RoundEnded) {
+        cx.state
+            .continuations
+            .push(crate::state::Continuation::EmitEvent {
+                event: event.clone(),
+                bucket: crate::dsl::EventTiming::When,
+            });
+        return EngineOutcome::Done;
+    }
     if event.opens_reaction_window() {
         super::reaction_windows::queue_reaction_window(cx, event);
     }

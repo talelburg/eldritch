@@ -167,12 +167,16 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     );
     assert!(matches!(
         round_end.state.continuations.last(),
-        Some(game_core::state::Continuation::ActRoundEnd(_))
+        Some(game_core::state::Continuation::TimingPointWindow {
+            event: game_core::engine::TimingEvent::RoundEnded,
+            mode: game_core::state::TimingMode::Reaction,
+            ..
+        })
     ));
     let after_confirm = apply(
         round_end.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert!(

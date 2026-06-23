@@ -131,13 +131,11 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
             code: CardCode("_act1".into()),
             clue_threshold: 2,
             resolution: None,
-            round_end_advance: None,
         },
         Act {
             code: CardCode("_act2".into()),
             clue_threshold: 99,
             resolution: None,
-            round_end_advance: None,
         },
     ];
 

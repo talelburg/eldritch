@@ -394,7 +394,6 @@ fn forced_on_phase_end_fires_act_ability() {
         code: CardCode(DOOM_ACT.into()),
         clue_threshold: 3,
         resolution: None,
-        round_end_advance: None,
     }];
     state.act_index = 0;
     state.agenda_deck = vec![Agenda {

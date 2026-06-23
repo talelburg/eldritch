@@ -267,7 +267,6 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
         resolution: Some(Resolution::Won { id: "test".into() }),
-        round_end_advance: None,
     }];
     state
 }

@@ -8,6 +8,33 @@ use crate::state::{GameState, InvestigatorId, LocationId, Phase};
 use super::super::outcome::EngineOutcome;
 use super::Cx;
 
+/// Whether the current act advances *only* at the end of the round (its
+/// round-end objective — act 01109's `When`-`RoundEnded` group advance), in
+/// which case the `AdvanceAct` action is rejected. Detected from the registry
+/// (#434 — replaces the former `Act.round_end_advance` data field; the
+/// contributor location is now printed-in-card on the ability's native).
+fn act_advances_at_round_end(state: &GameState) -> bool {
+    let Some(act) = state.act_deck.get(state.act_index) else {
+        return false;
+    };
+    let Some(reg) = crate::card_registry::current() else {
+        return false;
+    };
+    let Some(abilities) = (reg.abilities_for)(&act.code) else {
+        return false;
+    };
+    abilities.iter().any(|a| {
+        matches!(
+            &a.trigger,
+            crate::dsl::Trigger::OnEvent {
+                pattern: crate::dsl::EventPattern::RoundEnded,
+                timing: crate::dsl::EventTiming::When,
+                kind: crate::dsl::TriggerKind::Reaction,
+            }
+        )
+    })
+}
+
 /// Mythos step 1.2 (Rules Reference p.24): "Take 1 doom from the token
 /// pool, and place it on the current agenda card." No-op when no agenda
 /// deck is modeled (tests/fixtures without an agenda).
@@ -127,7 +154,7 @@ pub(crate) fn check_advance_act(
     if state.act_deck.is_empty() {
         return Err("AdvanceAct: no act deck is modeled for this scenario".into());
     }
-    if state.act_deck[state.act_index].round_end_advance.is_some() {
+    if act_advances_at_round_end(state) {
         return Err(
             "this act advances only at the end of the round (its round-end \
                     objective), not via the AdvanceAct action"
@@ -499,7 +526,6 @@ mod advance_act_tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: None,
-            round_end_advance: None,
         }];
 
         let result = apply(
@@ -514,35 +540,11 @@ mod advance_act_tests {
         );
     }
 
-    #[test]
-    fn advance_act_rejected_for_round_end_advance_act() {
-        use crate::state::{Act, CardCode, RoundEndAdvance};
-        let inv = InvestigatorId(1);
-        let mut investigator = test_investigator(1);
-        investigator.clues = 9; // plenty — reject must be the objective, not affordability
-        let mut state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
-            .with_investigator(investigator)
-            .with_active_investigator(inv)
-            .with_turn_order([inv])
-            .build();
-        state.act_deck = vec![Act {
-            code: CardCode("01109".into()),
-            clue_threshold: 3,
-            resolution: None,
-            round_end_advance: Some(RoundEndAdvance {
-                contributor_location: CardCode("01112".into()),
-            }),
-        }];
-
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.act_index, 0, "act did not advance");
-        assert_eq!(result.state.investigators[&inv].clues, 9, "no clues spent");
-    }
+    // `advance_act_rejected_for_round_end_advance_act` moved to
+    // `crates/cards/tests/act_advancement.rs`: the round-end-only detection is
+    // now registry-based (`act_advances_at_round_end` reads act 01109's
+    // `When`-RoundEnded reaction, #434), which a lib unit test can't install
+    // without polluting its siblings' process-global registry.
 
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {
@@ -562,13 +564,11 @@ mod advance_act_tests {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
-                round_end_advance: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: Some(Resolution::Won { id: "demo".into() }),
-                round_end_advance: None,
             },
         ];
 
@@ -603,7 +603,6 @@ mod advance_act_tests {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
             resolution: Some(Resolution::Won { id: "demo".into() }),
-            round_end_advance: None,
         }];
 
         let result = apply(
@@ -642,13 +641,11 @@ mod advance_act_tests {
                 code: CardCode("01108".into()),
                 clue_threshold: 2,
                 resolution: None,
-                round_end_advance: None,
             },
             Act {
                 code: CardCode("01109".into()),
                 clue_threshold: 3,
                 resolution: Some(Resolution::Won { id: "R1".into() }),
-                round_end_advance: None,
             },
         ];
         let result = apply(
@@ -687,13 +684,11 @@ mod advance_act_tests {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
                 resolution: None,
-                round_end_advance: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
                 resolution: None,
-                round_end_advance: None,
             },
         ];
 

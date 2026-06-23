@@ -8,9 +8,10 @@
 use std::sync::OnceLock;
 
 use game_core::action::InputResponse;
+use game_core::engine::TimingEvent;
 use game_core::state::{
     Act, Agenda, CardCode, Continuation, Enemy, EnemyId, GameState, InvestigatorId, Location,
-    LocationId, Phase, RoundEndAdvance,
+    LocationId, Phase, TimingMode,
 };
 use game_core::test_support::{
     fire_forced_on_phase_end, fire_forced_on_round_end, resume_round_end_window,
@@ -102,9 +103,6 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
         code: CardCode::new("01109"),
         clue_threshold: 3,
         resolution: None,
-        round_end_advance: Some(RoundEndAdvance {
-            contributor_location: CardCode::new("01112"),
-        }),
     }];
     state.act_index = 0;
     {
@@ -123,7 +121,11 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
         state.continuations.last(),
-        Some(Continuation::ActRoundEnd(_))
+        Some(Continuation::TimingPointWindow {
+            event: TimingEvent::RoundEnded,
+            mode: TimingMode::Reaction,
+            ..
+        })
     ));
     // ...and the agenda's `at the end of the round` doom is NOT placed yet.
     assert_eq!(

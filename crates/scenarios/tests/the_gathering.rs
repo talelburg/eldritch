@@ -110,14 +110,19 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     );
     assert!(matches!(
         r.state.continuations.last(),
-        Some(game_core::state::Continuation::ActRoundEnd(_))
+        Some(game_core::state::Continuation::TimingPointWindow {
+            event: game_core::engine::TimingEvent::RoundEnded,
+            mode: game_core::state::TimingMode::Reaction,
+            ..
+        })
     ));
 
-    // Spend the clues as a group: act 2 advances to act 3.
+    // Pick the act-advance candidate (the window's sole option): act 2 advances
+    // to act 3 via 01109's `When`-RoundEnded group clue-spend (#434).
     let r = apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: game_core::action::InputResponse::Confirm,
+            response: game_core::action::InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert!(

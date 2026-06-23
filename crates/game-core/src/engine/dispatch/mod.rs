@@ -30,6 +30,7 @@ pub(super) mod emit;
 // pub(crate): engine/mod.rs re-exports `deal_damage_to_enemy` for the
 // `cards` crate (Guard Dog 01021's retaliate native, C5b #237).
 pub(crate) mod combat;
+pub(super) mod coordinator;
 mod cursor;
 // pub(super): evaluator reaches take_damage/take_horror via the full path
 // crate::engine::dispatch::elimination (a sibling of dispatch).
@@ -163,7 +164,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 ///   frame is on top (the open turn — slice 2a-i, #393), at terminal (empty
 ///   stack), or when an advance makes no progress (a parked phase, e.g.
 ///   Investigation with no active investigator).
-pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
+pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
     use crate::state::Continuation;
     if !matches!(outcome, EngineOutcome::Done) {
         return outcome;
@@ -239,6 +240,22 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
             // frame, so the top changes and the loop makes progress.
             Some(Continuation::EncounterCard { .. }) => {
                 encounter::teardown_encounter_card_if_top(cx);
+            }
+            // The `when → at → after` coordinator frames (#434). `EmitEvent`
+            // walks the buckets (pushing a `TimingPoint` per populated cell);
+            // `TimingPoint` runs one bucket's forced-then-reaction. Each does one
+            // step and returns `Done` (loop re-dispatches the mutated top) or
+            // `AwaitingInput` (a window / forced run opened). Only `RoundEnded`
+            // uses them today (the round-end `when` advance + `at` doom).
+            Some(Continuation::EmitEvent { .. }) => match coordinator::dispatch_emit_event(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
+            Some(Continuation::TimingPoint { .. }) => {
+                match coordinator::dispatch_timing_point(cx) {
+                    EngineOutcome::Done => {}
+                    other => return other,
+                }
             }
             // The open turn is ending: a suspending `EndOfTurn` forced (a single
             // skill test, or a 2+ forced run) stranded `end_turn` before rotation
@@ -458,7 +475,6 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::HunterMove(_)) => hunters::resume_hunter_choice(cx, response),
         Some(Continuation::SpawnEngage(_)) => hunters::resume_spawn_engage(cx, response),
         Some(Continuation::HandSizeDiscard(_)) => phases::resume_hand_size_discard(cx, response),
-        Some(Continuation::ActRoundEnd(_)) => phases::resume_act_round_end_advance(cx, response),
         Some(Continuation::Mulligan { .. }) => cards::resume_mulligan(cx, response),
         Some(Continuation::EncounterDraw { .. }) => encounter::resume_encounter_draw(cx, response),
         // An `EncounterCard` frame never awaits input — it only ever sits
@@ -515,6 +531,17 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         ) => EngineOutcome::Rejected {
             reason: "ResolveInput: no input prompt is outstanding (a phase anchor is top)".into(),
         },
+        // The `when/at/after` coordinator frames (#434) never await input — they
+        // push a child (a `TimingPoint`, a `TimingPointWindow`, a forced run)
+        // that is the prompt, and the loop drives them otherwise. If one is
+        // somehow top at ResolveInput, no prompt is outstanding (defensive).
+        Some(Continuation::EmitEvent { .. } | Continuation::TimingPoint { .. }) => {
+            EngineOutcome::Rejected {
+                reason: "ResolveInput: no input prompt is outstanding (an EmitEvent/TimingPoint \
+                         coordinator frame is top)"
+                    .into(),
+            }
+        }
         None => EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
         },
