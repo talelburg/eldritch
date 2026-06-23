@@ -265,7 +265,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 /// [`EnemyDefeated`](crate::Event::EnemyDefeated) queues an
 /// an after-enemy-defeated reaction window)
 /// suspend correctly: the cursor already reads `PostFollowUp`, so a resume from
-/// `close_reaction_window_at` re-enters `advance` at the `OnSkillTestResolution`
+/// `close_reaction_window` re-enters `advance` at the `OnSkillTestResolution`
 /// step rather than re-running the follow-up.
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) -> EngineOutcome {
     let (skill, kind, difficulty, follow_up, on_fail, on_success, source) = {
@@ -392,9 +392,9 @@ fn emit_commit_window(cx: &Cx, investigator: InvestigatorId) -> EngineOutcome {
 ///
 /// The caller must **return** this outcome, never fall through: `open_fast_window`
 /// returns `Done` both on auto-skip (continuation already ran) and when it parks
-/// a pure-Fast window on top (which emits no `AwaitingInput` and is invisible to
-/// the `advance` loop's `top_reaction_window_index` check — falling through would
-/// emit the next step's prompt *over* the parked window).
+/// a pure-Fast window on top (an empty `FastWindow` gate the `advance` loop does
+/// not re-dispatch — falling through would emit the next step's prompt *over* the
+/// parked window).
 fn open_skill_test_player_window(
     cx: &mut Cx,
     next: SkillTestStep,
@@ -417,7 +417,7 @@ fn open_skill_test_player_window(
 /// Each loop iteration starts by checking for a queued reaction
 /// window: if one is pending, the driver opens it and returns
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
-/// close path ([`close_reaction_window_at`]) re-enters this driver on
+/// close path ([`close_reaction_window`]) re-enters this driver on
 /// resume.
 ///
 /// Step → next-continuation mapping (current Phase-3 set; #64 will
@@ -433,24 +433,24 @@ fn open_skill_test_player_window(
 ///   [`SkillTestEnded`](crate::Event::SkillTestEnded), drain pending
 ///   modifiers, clear in-flight, return `Done`.
 ///
-/// [`close_reaction_window_at`]: super::reaction_windows::close_reaction_window_at
+/// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
-        // Suspend only for a reaction window opened *during* this test — one
-        // pushed *above* this test's `SkillTest` frame. A Resolution frame
-        // *below* it is a forced run that fired this test as one of its
-        // candidates (#213 reentrancy: two Frozen in Fear copies); it must
-        // not be mistaken for a mid-test window — it resumes only once this
-        // test fully tears down (via the teardown tail in `PostOnResolution`).
-        let skill_test_pos = cx
+        // A reaction window queued by the previous step now sits *above* this
+        // `SkillTest` frame — i.e. it is the top frame. Yield to the `drive` loop,
+        // which dispatches it (re-prompt via the window arm); its close
+        // re-dispatches this `SkillTest` at the pre-advanced cursor. A forced run
+        // *below* this frame (#213 reentrancy: two Frozen in Fear copies) is never
+        // `last()` while this driver runs, so "window above me" is simply
+        // "`last()` is a non-empty window" — no `rposition` / `win_idx > st`
+        // self-location (Slice C-plumbing).
+        if cx
             .state
             .continuations
-            .iter()
-            .rposition(|c| matches!(c, crate::state::Continuation::SkillTest(_)));
-        if let Some(win_idx) = cx.state.top_reaction_window_index() {
-            if skill_test_pos.is_none_or(|st| win_idx > st) {
-                return super::reaction_windows::open_queued_reaction_window(cx);
-            }
+            .last()
+            .is_some_and(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
+        {
+            return EngineOutcome::Done;
         }
 
         let (continuation, investigator, indices_u8) = {
@@ -540,25 +540,16 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     taken.is_some(),
                     "skill-test teardown: no SkillTest frame on the continuation stack",
                 );
-                // Teardown tail (relocated from `resume_skill_test_commit`). The
-                // test is fully torn down; resume whatever it was nested within,
-                // so the tail fires regardless of which resume re-entered the
-                // driver. A forced run beneath (2+ simultaneous `EndOfTurn`
-                // forced — two Frozen in Fear copies, #213): fire its remaining
-                // siblings / close it. An `InvestigatorTurn { ending }` beneath:
-                // a single suspending `EndOfTurn` forced stranded `end_turn`
-                // before rotation; resume it now (C4c, #235). A forced run owns
-                // its own post-run continuation and never flags the turn frame,
-                // so it is checked first.
-                if cx
-                    .state
-                    .continuations
-                    .last()
-                    .is_some_and(crate::state::Continuation::is_forced)
-                {
-                    let idx = cx.state.continuations.len() - 1;
-                    return super::reaction_windows::advance_resolution(cx, idx);
-                }
+                // Teardown tail. The test is fully torn down; the `drive` loop
+                // resumes whatever it was nested within. A forced run beneath (2+
+                // simultaneous `EndOfTurn` forced — two Frozen in Fear copies,
+                // #213) is now the top frame; the loop dispatches it
+                // (`TimingPointWindow { mode: Forced }`). An
+                // `InvestigatorTurn { ending }` beneath — a single suspending
+                // `EndOfTurn` forced stranded `end_turn` before rotation — is *not*
+                // yet a loop-driven frame (#235), so resume it here. The forced run,
+                // when present, is on top, so this check correctly fires only when
+                // the turn frame is the immediate parent.
                 if let Some(crate::state::Continuation::InvestigatorTurn {
                     investigator,
                     ending: true,

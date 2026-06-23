@@ -102,10 +102,11 @@ clue" is stubbed; needs the dynamic skill-test-modifier DSL surface
    - **K1 — AoO open cancel/soak windows (#293). ✅ shipped (PR #413).** `ActionResolution` frame + `drive_aoo`; the five basic actions fire AoO through `drive_attack_loop`, so Dodge cancels and Guard Dog retaliates against an AoO; `fire_attacks_of_opportunity` deleted. RR p.7 AoO-non-exhaust source-gated.
    - **K2 — Retaliate opens cancel/soak windows (#379). ✅ shipped (PR #414).** `drive_retaliate` routes the failed-Fight retaliate through `drive_attack_loop` under `EnemyAttackSource::Retaliate`; the resume re-enters `drive_skill_test` (the retaliate's park point is the existing `SkillTest` frame, not an `ActionResolution` frame).
    - **K3 ✅ #361 (PR #415)** AoO from activated abilities (Fight-exempt by effect root; effect snapshotted on the resume frame) · **✅ #378 (PR #416)** non-fast card-play AoO + the folded-in play-action charge (`ActionResume::PlayCard`; both gate on `!is_fast`) · **K4 ✅ #143 (PR #419)** player attack-order — interleaved one-at-a-time pick at the top of the shared `drive_attack_loop` (`AttackLoopStage::PickOrder`), covering both the enemy phase and AoO; extends the enemy-phase `AttackLoop` to span the whole step 3.3 (resolved slice 3's Shape-A caveat) and confirmed the attacker snapshot frozen at loop entry · **K5a ✅ #44 (PR #420)** non-attack damage/horror routed through the shared `soak_and_place` entry (treachery harm soaks like attacks) · **K5b-1 ✅ #44 (PR #421)** interactive per-point distribution for enemy attacks (`Continuation::DamageAssignment` + per-point `PickSingle`) · **K5b-2 ✅ #44 (PR #425, closes [#422](https://github.com/talelburg/eldritch/issues/422))** — substrate PR #424 reified the effect evaluator as continuation frames (retiring suspend-and-replay + `DecisionCursor` + `Continuation::Choice` + the #346/#334 guards); PR #425 added interactive `Effect::Deal` distribution (`soak_and_distribute` + the `DamageSource::Effect` resume), so multi-point treachery harm distributes per point with no loss. The deferred loop sites stay on the K5a auto-soak wrappers; the multi-soak-window drain is separately deferred (unconstructible in scope). Each rides the K1 substrate.
-5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model. **Driver-reification substrate ✅ shipped (PR #430)** ([spec](../superpowers/specs/2026-06-22-skill-test-driver-frame-reification-design.md)): the inline `FinishContinuation` cursor became `SkillTestStep` driven by the single `advance` (rename of `drive_skill_test`); the commit prompt is emitted from `advance`'s `AwaitingCommit` arm (the frame's "awaiting" logic); the teardown tail (forced-run sibling #213 + end-of-turn resume) moved into the `PostOnResolution` arm. **#374/#64 now insert windows as cursor-step boundaries inside `advance`, not new `Continuation` variants.** **#374 ✅ shipped (PR #432)** ([spec](../superpowers/specs/2026-06-22-skill-test-st1-st2-player-windows-design.md)): the two RR p.26 ST.1/ST.2 framework windows open via `PreCommitWindow`/`PreTokenWindow` + `WindowKind::SkillTestPlayerWindow` (auto-skip when nothing's Fast-eligible; park when a Fast play is available — Hyperawareness / Magnifying Glass exercise it). The `WindowKind` is transitional — it dissolves into the generic `FastWindow` in **Slice A** of the EmitEvent-frame arc ([#433](https://github.com/talelburg/eldritch/issues/433)), where "which window" is read from the `SkillTest` cursor beneath it. **#64 is deferred (no in-scope consumer yet): its first real card is Rabbit's Foot (01075) — "After you fail a skill test, exhaust: Draw 1 card", an after-resolution reaction — which isn't gate-required, so #64 waits until it's needed. Fire Axe (02032) is NOT a #64 card: its "spend 1 resource: You get +2 for this skill test" ability fires *during* the test (ST.1/ST.2, #374). So the EmitEvent-frame arc (#435) is the next objective.** Two decisions a future PR-author must respect (else they'll reintroduce a bug the substrate avoided): the **five imperative re-entry sites stay synchronous** (kept, renamed to `advance`) and there is **no `drive`-loop `SkillTest` arm** — both because routing skill-test resumption through the loop strands a treachery-Revelation test's `EncounterCard` (the `resolve_input` disposal runs on the commit resume's `Done`, *before* teardown; the loop's `_ => Done` arm never disposes). Eliminating the re-entry sites is the EmitEvent-frame arc's job (now scoped — see step 6), not this work-stream's. **[#423](https://github.com/talelburg/eldritch/issues/423) does NOT complete here:** it was filed as "complete here (or right after)" on the premise that #374 reified the reaction-window/skill-test drivers as frames — but #374 only inserted windows inside the still-Shape-A `advance`. Migrating effect sites off `apply_effect` needs their parent frames (`Resolution`, `SkillTest`, `EncounterCard`) to be `drive`-dispatched, which is the EmitEvent-frame arc (step 6). So #423 is **Slice D** of that arc, gated behind A–C.
+5. **Skill-test windows** (#374 + #64) — one reaction-window work-stream, offered as frame options on the #393 model. **Driver-reification substrate ✅ shipped (PR #430)** ([spec](../superpowers/specs/2026-06-22-skill-test-driver-frame-reification-design.md)): the inline `FinishContinuation` cursor became `SkillTestStep` driven by the single `advance` (rename of `drive_skill_test`); the commit prompt is emitted from `advance`'s `AwaitingCommit` arm (the frame's "awaiting" logic); the teardown tail (forced-run sibling #213 + end-of-turn resume) moved into the `PostOnResolution` arm. **#374/#64 now insert windows as cursor-step boundaries inside `advance`, not new `Continuation` variants.** **#374 ✅ shipped (PR #432)** ([spec](../superpowers/specs/2026-06-22-skill-test-st1-st2-player-windows-design.md)): the two RR p.26 ST.1/ST.2 framework windows open via `PreCommitWindow`/`PreTokenWindow` + `WindowKind::SkillTestPlayerWindow` (auto-skip when nothing's Fast-eligible; park when a Fast play is available — Hyperawareness / Magnifying Glass exercise it). The `WindowKind` is transitional — it dissolves into the generic `FastWindow` in **Slice A** of the EmitEvent-frame arc ([#433](https://github.com/talelburg/eldritch/issues/433)), where "which window" is read from the `SkillTest` cursor beneath it. **#64 is deferred (no in-scope consumer yet): its first real card is Rabbit's Foot (01075) — "After you fail a skill test, exhaust: Draw 1 card", an after-resolution reaction — which isn't gate-required, so #64 waits until it's needed. Fire Axe (02032) is NOT a #64 card: its "spend 1 resource: You get +2 for this skill test" ability fires *during* the test (ST.1/ST.2, #374). So the EmitEvent-frame arc (#435) is the next objective.** Two decisions a future PR-author must respect (else they'll reintroduce a bug the substrate avoided): the **five imperative re-entry sites stay synchronous** (kept, renamed to `advance`) and there is **no `drive`-loop `SkillTest` arm** — both because routing skill-test resumption through the loop strands a treachery-Revelation test's `EncounterCard` (the `resolve_input` disposal runs on the commit resume's `Done`, *before* teardown; the loop's `_ => Done` arm never disposes). Eliminating the re-entry sites is the EmitEvent-frame arc's job (now scoped — see step 6), not this work-stream's. **(Superseded by C-plumbing, PR #443: the `drive`-loop `SkillTest` arm + a loop-driven `EncounterCard` disposal arm landed *together* — the disposal-stranding hazard described here is exactly why they had to be atomic. The five re-entry sites are now gone. See step 6's Slice C.)** **[#423](https://github.com/talelburg/eldritch/issues/423) does NOT complete here:** it was filed as "complete here (or right after)" on the premise that #374 reified the reaction-window/skill-test drivers as frames — but #374 only inserted windows inside the still-Shape-A `advance`. Migrating effect sites off `apply_effect` needs their parent frames (`Resolution`, `SkillTest`, `EncounterCard`) to be `drive`-dispatched, which is the EmitEvent-frame arc (step 6). So #423 is **Slice D** of that arc, gated behind A–C.
 6. **EmitEvent-frame arc — in progress.** Scoped + sliced in [`2026-06-22-emitevent-frame-arc-decomposition-design.md`](../superpowers/specs/2026-06-22-emitevent-frame-arc-decomposition-design.md); the named end-state from #393. Reify event emission, windows, and the timing matrix as `drive`-dispatched frames so the loop drives **every** frame. Four sequenced slices: **A** ([#433](https://github.com/talelburg/eldritch/issues/433)) window-taxonomy rework → **B** ([#434](https://github.com/talelburg/eldritch/issues/434)) `EmitEvent`/`TimingPoint` coordinators (the `when/at/after × forced/reaction` matrix; the one slice with new ordering behaviour) → **C** ([#431](https://github.com/talelburg/eldritch/issues/431)) loop-driven encounter-card disposal + `SkillTest` drive arm + retire the 5 synchronous re-entry sites + **the window-frame `drive`-loop arms (folded in from Slice A's former A-iv)** → **D** ([#423](https://github.com/talelburg/eldritch/issues/423)) effect call-site migration off `apply_effect`. Umbrella for A+B is [#435](https://github.com/talelburg/eldritch/issues/435). Dependency order **A → B → C → D**; the §G Upkeep ordering pre-req shipped (PR #396).
    - **Slice A ✅ shipped (closes #433):** A-i `TimingPointWindow` for event windows (PR #436) + forced run (PR #437); A-ii framework windows → `FastWindow` (PR #438); A-iii delete the frame-level legacy taxonomy `Resolution`/`ResolutionFrame`/`ResolutionKind`/`WindowBinding` (PR #439). **Behaviour-preserving throughout — event log byte-identical.** Two load-bearing decisions: (1) **`WindowKind` survives** as the pure `Event::WindowOpened/Closed` descriptor (derived from `TimingPointWindow`'s `TimingEvent` + `FastWindow`'s `FastWindowKind`); deleting it + the observability redesign is the one event-log *behaviour* change, **deferred to Slice B**. (2) The window-frame **`drive`-loop arms (former A-iv) folded into Slice C (#431)** — same "loop drives every frame" concern as the `SkillTest` arm; Slice A leaves the windows imperatively driven. This supersedes the loose "#431 = the whole EmitEvent-frame slice" framing in the triage below.
    - **Slice B ✅ shipped — but NOT the coordinator frames (re-scoped 2026-06-23).** Reading the real `emit_event`/window machinery showed the `EmitEvent`/`TimingPoint` *stack frames* + per-cell re-scan + the §G test only earn their place once the `drive` loop dispatches them — building them as imperatively-driven scaffolding in `emit_event` (the highest-blast-radius fn) would be premature, and reaction-window *opening* is deferred across ~6 sites. So **those move to Slice C ([#431])** with the other "loop drives every frame" work. What Slice B *did* ship, behaviour-preserving except the event-log deletion: **B-i** (PR #440) `EventTiming::{When, At, After}` — rename `Before→When`, add `At`, the timing axis first-class in the DSL; **B-ii** (PR #441) the round-end remodel — act 01109's advance is now a registry `When`-`RoundEnded` ability (its native does the group clue-spend), the doom abilities re-tagged `After→At`, fixing the framework-vs-registry asymmetry (`Act.round_end_advance` kept as a pure-data field for the affordability gate); **B-iii** (PR #442) delete `Event::WindowOpened`/`WindowClosed` + `WindowKind` outright (pure output, no consumer, 1:1 redundant with the `AwaitingInput` channel) — scan eligibility + close-routing migrated onto `TimingEvent`/`FastWindowKind`. **#434/#435 stay open** for the coordinator frames now living in Slice C. Specs: [`2026-06-23-emitevent-frame-slice-b-coordinators-design.md`](../superpowers/specs/2026-06-23-emitevent-frame-slice-b-coordinators-design.md).
+   - **Slice C — C-plumbing ✅ shipped (PR #443); C-coordinators pending.** [#431](https://github.com/talelburg/eldritch/issues/431) split in two. **C-plumbing (PR #443)** made the `drive` loop dispatch **every** frame by uniform top-frame dispatch (arms for `TimingPointWindow`/`FastWindow`/`SkillTest`/`EncounterCard`); every driver returns `Done` and the loop re-dispatches `continuations.last()`. Retired the reach-down accessors (`top_reaction_window_index`/`_mut`/`top_reaction_window`), `advance`'s `win_idx > st` self-location, the 5 synchronous skill-test re-entry sites, and the `resolve_input` encounter-disposal chokepoint — on the invariant that **the stack is the resolution order, so `last()` is always what resolves next**. Behaviour-preserving. **C-coordinators** (the `EmitEvent`/`TimingPoint` `when/at/after × forced/reaction` matrix + per-cell re-scan + §G test, moved here from Slice B — #434/#435) is the remaining new-behaviour work. **D (#423) is now unblocked** and may run in parallel. Spec: [`2026-06-23-emitevent-frame-slice-c-loop-driving-design.md`](../superpowers/specs/2026-06-23-emitevent-frame-slice-c-loop-driving-design.md).
 7. **Roland elder-sign** (#118).
 8. **Edge correctness** (#300 after Engage, then #368, #353).
 9. **Browser playable surface** (capstone) — once the above stabilizes; renders the enumerated actions / #205. See below.
@@ -251,9 +252,10 @@ the cancel (Dodge) and soak (Guard Dog) windows; on the loop's pop the `drive` l
 resumes the action frame under an actor-Active + target re-validation gate.
 **K2 (PR #414) routed `fire_retaliate_if_any` through `drive_retaliate` →
 `drive_attack_loop` (`EnemyAttackSource::Retaliate`), so a failed-Fight retaliate now
-opens the cancel/soak windows too; its resume re-enters `drive_skill_test` (the
-retaliate's park point is the `SkillTest` frame). No direct-`enemy_attack` window
-bypass remains.** Exhaust rules differ by source:
+opens the cancel/soak windows too; its resume returns `Done` and the loop dispatches
+the now-top `SkillTest` (the retaliate's park point is the `SkillTest` frame; the
+direct `advance` re-entry was retired by C-plumbing, PR #443). No direct-`enemy_attack`
+window bypass remains.** Exhaust rules differ by source:
 enemy-phase always exhausts (cancelled too — RR p.6/p.25); AoO never (RR p.7 —
 source-gated in `process_attacker_dealing`); Retaliate never (RR p.18).
 **K3 added the activated-ability (PR #415) and card-play (PR #416) AoO sites:** a
@@ -265,13 +267,15 @@ firing AoO, with the card's effect resolving on resume. Fast plays stay free and
 provoke nothing (both sites gate on `!is_fast`).
 
 **Trigger spine.** `emit_event` is the one dispatch chokepoint (two-phase
-forced-then-reaction, RR p.2). Simultaneous triggers resolve through the
-`Continuation::Resolution` loop (lead-ordered, RR p.17); `ResolutionFrame.kind
-= Window | Forced`. Reentrancy across a forced/window effect that suspends into
-a skill test hinges on `drive_skill_test` reacting only to a window *above*
-the in-flight `SkillTest` frame, never a forced frame below it. Reaction/forced
-windows resume via `PickSingle(OptionId)` (the legacy `PickIndex` path is
-retired).
+forced-then-reaction, RR p.2). Simultaneous triggers resolve through a
+`TimingPointWindow { mode: Forced }` run (lead-ordered, RR p.17; the legacy
+`Continuation::Resolution`/`ResolutionFrame` taxonomy was deleted in Slice A,
+#439). Reentrancy across a forced/window effect that suspends into a skill test
+now resolves by **top-frame dispatch** (C-plumbing, PR #443): the loop dispatches
+whatever is on top — a mid-test window above the `SkillTest`, then the `SkillTest`,
+then a forced run beneath it — so no driver tells "above" from "below"
+(`advance`'s `win_idx > st` self-location is gone). Reaction/forced windows resume
+via `PickSingle(OptionId)` (the legacy `PickIndex` path is retired).
 
 **Choice & cancellation.** Interactive choice is single-pass suspend-and-replay
 on a `Continuation::Choice` frame: `resolve_choice_count` (0 ⇒ reject/printed
@@ -295,33 +299,27 @@ reveal (Hyperawareness, Magnifying Glass). The after-resolution reaction window
 (#64) is still absent — deferred (first consumer Rabbit's Foot 01075).
 `OnCommit` / `OnSkillTestResolution` card triggers fire regardless.
 
-**Skill-test control-flow shape (Shape A — not yet end-state B).** The skill
-test conforms to the #393 model on *storage* — `InFlightSkillTest` is folded
-onto the `Continuation::SkillTest` frame (#348), no `*_pending` side-channels —
-but its *control flow* is only partly on the stack:
-- **Intra-test sequencing is an inline cursor, not a frame per step.** The
-  `FinishContinuation` enum (`AwaitingCommit → PostFollowUp → PostRetaliate →
-  PostOnResolution`) is a field on the one `SkillTest` frame, advanced by a
-  `loop` in `drive_skill_test` — Shape A, the same compression as `AttackLoop`.
-  `PostRetaliate` *can* suspend (its cancel/soak window), so it's a borderline
-  step folded into the enum rather than reified.
-- **The driver is re-entered imperatively, not by uniform top-frame dispatch.**
-  `close_reaction_window_at` reaches *down* the stack — "if a skill test is
-  mid-resolution, call `drive_skill_test`" — instead of popping the window back
-  to the main loop and letting it dispatch on `SkillTest`-on-top. (`AttackLoop`
-  does the same via `resume_enemy_attack`; codebase-wide pattern, still a
-  divergence.)
-- **The driver scans the stack to locate itself.** `drive_skill_test` does
-  `rposition(SkillTest)` + `win_idx > st` to tell a window *above* it (mid-test
-  → suspend) from a forced `Resolution` *below* it (#213 reentrancy → ignore); a
-  clean top frame never reasons about relative positions. `current_skill_test` /
-  `take_skill_test` are located-singleton reads, not `last()`.
-- **Two entry points:** commit → `finish_skill_test`; the rest →
-  `drive_skill_test` (`AwaitingCommit` is `unreachable!` there).
-
-This is the intended C-checkpoint shape, **not drift.** Moving it toward
-end-state B (each step a frame, driven by top-frame dispatch) belongs with
-#374/#64 — see Ordering step 5.
+**Skill-test control-flow shape (dispatch now top-frame; intra-test sequencing
+still a cursor).** Storage is on the stack — `InFlightSkillTest` folded onto the
+`Continuation::SkillTest` frame (#348), no `*_pending` side-channels — and after
+**C-plumbing (PR #443)** *dispatch* is too:
+- **Top-frame dispatched (C-plumbing).** The `drive` loop's `SkillTest` arm calls
+  `advance` when the frame is on top; a mid-test window makes `advance` return
+  `Done` (yield), and the loop re-dispatches `SkillTest` when the window closes.
+  The former reach-downs are **gone**: no `close_reaction_window → advance` hop, no
+  `rposition(SkillTest)` + `win_idx > st` self-location. The only deeper read left
+  is `current_skill_test` as **nesting context** (an effect reading its enclosing
+  test), not dispatch. (`AttackLoop` still re-enters via `resume_enemy_attack` —
+  not yet a loop arm, #411 Shape A.)
+- **Intra-test sequencing is still an inline cursor, not a frame per step.** The
+  `SkillTestStep` enum (`PreCommitWindow → AwaitingCommit → PreTokenWindow →
+  Resolving → PostFollowUp → PostRetaliate → PostOnResolution`) is a field on the
+  `SkillTest` frame, advanced by a `loop` in `advance`. This is the remaining
+  Shape-A compression; reifying each step as its own frame is the path to full
+  end-state B (with #374/#64 / C-coordinators), not done here.
+- **Two entry points into `advance`:** the commit hop (`finish_skill_test`, a
+  legitimate top-frame resume — `SkillTest` is on top at the commit prompt) and
+  the loop's `SkillTest` arm for every other resumption.
 
 **Content patterns (mostly later slices).** Card stats come from the corpus
 (`CardKind`; read via `cards::by_code` / `metadata_for`, never hand-typed) — a

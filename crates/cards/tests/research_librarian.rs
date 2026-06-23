@@ -14,7 +14,7 @@ use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
+use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
@@ -140,7 +140,11 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     );
     assert_event!(r.events, Event::DeckShuffled { .. });
     assert!(
-        r.state.top_reaction_window().is_none(),
+        r.state
+            .continuations
+            .last()
+            .and_then(Continuation::pending_candidates)
+            .is_none_or(Vec::is_empty),
         "the reaction window closed",
     );
 }

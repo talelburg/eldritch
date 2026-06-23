@@ -1319,7 +1319,8 @@ fn discover_clue(
     // for a queued before-discover window.
     if matches!(
         cx.state
-            .top_reaction_window()
+            .continuations
+            .last()
             .and_then(crate::state::Continuation::window_timing_event),
         Some(crate::engine::TimingEvent::WouldDiscoverClues { .. })
     ) {
@@ -1335,8 +1336,8 @@ fn discover_clue(
 /// A resolution frame must be open: `Cancel` only resolves inside a
 /// Before-timing reaction window (via `fire_pending_trigger` /
 /// `play_fast_event`), which keeps its frame on the continuation stack until
-/// close. The check is the frame's *presence* — not `top_reaction_window`,
-/// which skips empty `pending_triggers` (the fired candidate is already
+/// close. The check scans for any window frame's *presence* (not just the top,
+/// and ignoring whether candidates remain — the fired candidate is already
 /// removed by the time its effect runs).
 fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(

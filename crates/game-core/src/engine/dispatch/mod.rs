@@ -204,9 +204,45 @@ pub(super) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other, // suspended for a pick, or rejected
                 }
             }
-            // Open turn idle (an `InvestigatorTurn` frame on top), terminal
-            // (empty), or a suspension on top (which a handler already surfaced
-            // as AwaitingInput before reaching here).
+            // A window on top (Slice C-plumbing): advance one resume step —
+            // re-prompt the next candidate, or (empty) close + run its
+            // continuation. A `TimingPointWindow` is always dispatched (its
+            // candidates are exhausted only by firing, so empty ⇒ close); an empty
+            // `FastWindow` is a permissive Fast-gate awaiting `Skip` and is left to
+            // idle below. Operates on the top frame — the invariant is that
+            // `last()` is what resolves next, so no reach-down index.
+            //
+            // The guard: `TimingPointWindow` matches the first disjunct (always
+            // dispatched). A `FastWindow`'s candidates are empty today (it is a
+            // pure Fast-gate — `open_fast_window` pushes `Vec::new()`), so
+            // `awaits_input()` is false and it idles; the `|| awaits_input()` arm
+            // is the (currently dormant) path that would dispatch a candidate-
+            // bearing framework window if one is ever added.
+            Some(
+                ref c @ (Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. }),
+            ) if matches!(c, Continuation::TimingPointWindow { .. }) || c.awaits_input() => {
+                match reaction_windows::advance_resolution(cx) {
+                    EngineOutcome::Done => {} // closed; loop on to the exposed frame
+                    other => return other,    // re-prompt, or a suspended continuation
+                }
+            }
+            // A skill test re-exposed on top (a mid-test window/effect closed):
+            // step its driver. By the invariant it is top — no `rposition` /
+            // `win_idx > st` self-location.
+            Some(Continuation::SkillTest(_)) => match skill_test::advance(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
+            // An encounter-treachery frame re-exposed after its Revelation's
+            // sub-resolution completed: dispose of the card + pop (the former
+            // `resolve_input` chokepoint, now loop-driven). `teardown_…` pops the
+            // frame, so the top changes and the loop makes progress.
+            Some(Continuation::EncounterCard { .. }) => {
+                encounter::teardown_encounter_card_if_top(cx);
+            }
+            // Idle: the open turn (an `InvestigatorTurn` frame), an empty
+            // `FastWindow` permissive gate, terminal (empty), or a suspension on
+            // top (which a handler already surfaced as AwaitingInput).
             _ => return EngineOutcome::Done,
         }
     }
@@ -321,15 +357,21 @@ pub(super) struct ActivateCheckResult {
 /// Resume the open window at the top of the stack: drive its reaction
 /// triggers if any are pending, else close the pure-Fast window on `Skip`.
 fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    // If the window has pending reaction triggers, drive the reaction
-    // window; otherwise it is a pure-Fast window (empty `pending_triggers`)
+    // The top frame is the window the player is acting on (resolve_input routed
+    // here for a `TimingPointWindow`/`FastWindow` on top). If it has pending
+    // candidates, drive it; otherwise it is a pure-Fast gate (empty candidates)
     // that `Skip` closes.
-    if cx.state.top_reaction_window().is_some() {
+    let has_candidates = cx
+        .state
+        .continuations
+        .last()
+        .and_then(crate::state::Continuation::pending_candidates)
+        .is_some_and(|c| !c.is_empty());
+    if has_candidates {
         return reaction_windows::resume_reaction_window(cx, response);
     }
     if matches!(response, InputResponse::Skip) {
-        let idx = cx.state.continuations.len() - 1;
-        return reaction_windows::close_reaction_window_at(cx, idx);
+        return reaction_windows::close_reaction_window(cx);
     }
     EngineOutcome::Rejected {
         reason: format!(
@@ -365,29 +407,15 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 
 /// Dispatch a [`PlayerAction::ResolveInput`].
 ///
-/// Routes to the right resume handler based on which suspension is
-/// outstanding: an open reaction window ([`resume_reaction_window`])
-/// or the skill-test commit window ([`finish_skill_test`]). Rejects
-/// when nothing is outstanding.
+/// Routes on the **top** continuation frame — the prompt awaiting input — and
+/// returns through [`drive`] (Slice C-plumbing). A window on top resolves via
+/// [`resume_window`]; a mid-test reaction window closes, returns `Done`, and the
+/// loop re-dispatches the now-top `SkillTest`. Rejects when nothing is outstanding.
 ///
-/// A reaction window on `state.open_windows` and `in_flight_skill_test`
-/// may both be present simultaneously — that's the mid-skill-test
-/// reaction case: the skill-test driver is parked at a step boundary
-/// waiting for the reaction window to close before continuing. The
-/// reaction window takes routing priority; once it closes,
-/// [`close_reaction_window_at`] re-enters [`advance`] to finish
-/// the test.
-///
-/// # Pure-Fast window closing
-///
-/// A pure-Fast window (pushed by [`open_fast_window`], empty
-/// `pending_triggers`) is **not** returned by [`GameState::top_reaction_window`]
-/// because that helper filters out empty-`pending_triggers` windows.
-/// When such a window is the only entry on the stack (no
-/// reaction-driven window below it), `InputResponse::Skip` closes it
-/// directly via [`close_reaction_window_at`] on the literal top-of-stack
-/// index. This covers the `MythosAfterDraws` window after all Fast
-/// plays have been made and the player is done.
+/// A pure-Fast window (pushed by [`open_fast_window`], empty `pending_triggers`)
+/// on top is a play *opportunity*: `InputResponse::Skip` closes it via
+/// [`close_reaction_window`]. This covers the `MythosAfterDraws` window after all
+/// Fast plays have been made and the player is done.
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     // Top-frame dispatch (umbrella §1 / #348): every suspension is a
     // `Continuation` frame, and the frame awaiting input is always the top of
@@ -478,11 +506,9 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         },
     };
     // A treachery Revelation that suspended parks its `EncounterCard` frame
-    // beneath the suspension (#380); once that sub-resolution completes (`Done`)
-    // the frame is top again, so dispose of the card here — one generic site,
-    // no resume handler aware of treacheries.
-    if matches!(outcome, EngineOutcome::Done) {
-        return encounter::teardown_encounter_card_if_top(cx);
-    }
+    // beneath the suspension (#380); once that sub-resolution completes the frame
+    // is top again and the `drive` loop's `EncounterCard` arm disposes of it
+    // (Slice C-plumbing — no `resolve_input` chokepoint). `apply_player_action`
+    // runs `drive(cx, outcome)` after this returns.
     outcome
 }

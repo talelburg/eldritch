@@ -665,7 +665,14 @@ fn complete_play(
                 controller: investigator,
             },
         );
-        if cx.state.top_reaction_window().is_some() {
+        // `emit_event` pushes a matched reaction window on *top*; open it if so.
+        if cx
+            .state
+            .continuations
+            .last()
+            .and_then(crate::state::Continuation::pending_candidates)
+            .is_some_and(|c| !c.is_empty())
+        {
             return super::reaction_windows::open_queued_reaction_window(cx);
         }
     }

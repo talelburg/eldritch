@@ -4,7 +4,7 @@
 //! windows ([`queue_reaction_window`], [`scan_pending_triggers`],
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
-//! [`bump_usage_counter`], [`close_reaction_window_at`],
+//! [`bump_usage_counter`], [`close_reaction_window`],
 //! [`run_reaction_continuation`]) and the fast-window eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
@@ -19,8 +19,7 @@ use crate::engine::TimingEvent;
 use crate::state::TimingMode;
 use crate::state::{
     CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
-    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, SkillTestStep,
-    Status,
+    ForcedContinuation, GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
 use super::super::evaluator::{apply_effect, EvalContext};
@@ -417,8 +416,10 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
 pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
-        .top_reaction_window()
-        .expect("open_queued_reaction_window: caller checked is_some");
+        .continuations
+        .last()
+        .filter(|c| c.pending_candidates().is_some())
+        .expect("open_queued_reaction_window: top frame is the just-queued window");
     let skip_hint = if window.is_forced() {
         " (forced — cannot skip; the lead orders them)"
     } else {
@@ -464,18 +465,15 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
         // the candidate's source (in-play ability vs. Axis-C hand play).
         InputResponse::PickSingle(OptionId(i)) => fire_pending_trigger(cx, *i),
         InputResponse::Skip => {
-            // Resolve the active reaction-window index up-front so the
-            // close path operates on the same window the driver had
-            // been driving (not the absolute top of `open_windows`,
-            // which may be an empty-pending_triggers window sitting
-            // above it).
-            let idx = cx
+            // The window being skipped is the top frame (the prompt). Forced
+            // abilities are mandatory — the forced run cannot be skipped
+            // (RR p.2 / #213). The lead must pick one.
+            if cx
                 .state
-                .top_reaction_window_index()
-                .expect("resume_reaction_window: caller checked is_some");
-            // Forced abilities are mandatory — the forced run cannot be
-            // skipped (RR p.2 / #213). The lead must pick one.
-            if cx.state.continuations[idx].is_forced() {
+                .continuations
+                .last()
+                .is_some_and(Continuation::is_forced)
+            {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput::Skip: forced abilities are mandatory; submit \
                              InputResponse::PickSingle(OptionId) to resolve one (the lead \
@@ -483,7 +481,7 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
                         .into(),
                 };
             }
-            close_reaction_window_at(cx, idx)
+            close_reaction_window(cx)
         }
         other => EngineOutcome::Rejected {
             reason: format!(
@@ -502,19 +500,17 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
 // unwrapping (Axis-B T3); over the line limit but cohesive.
 #[allow(clippy::too_many_lines)]
 fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
-    // Capture the index of the reaction window we're driving up-front
-    // so the close path removes the same entry (not the absolute top of
-    // the stack, which may be a different, empty-pending_triggers
-    // window once non-reaction windows can sit above one).
-    let window_idx = cx
-        .state
-        .top_reaction_window_index()
-        .expect("fire_pending_trigger: caller checked is_some");
+    // The window being driven is the top frame — the prompt the player is
+    // responding to. Operate on it directly; the stack-is-resolution-order
+    // invariant means the active window is always `last()` (Slice C-plumbing).
     // Snapshot to avoid borrowing state across the apply_effect call.
     let (trigger, pending_idx) = {
-        let candidates = cx.state.continuations[window_idx]
-            .pending_candidates()
-            .expect("fire_pending_trigger: top_reaction_window_index points at an open window/run");
+        let candidates = cx
+            .state
+            .continuations
+            .last()
+            .and_then(Continuation::pending_candidates)
+            .expect("fire_pending_trigger: top frame is an open window/run");
         let idx = match usize::try_from(i) {
             Ok(idx) if idx < candidates.len() => idx,
             _ => {
@@ -536,11 +532,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // siblings, not this one again — mirrors the in-play path below), then
     // play it.
     if trigger.source == CandidateSource::Hand {
-        cx.state.continuations[window_idx]
-            .pending_candidates_mut()
-            .expect("fire_pending_trigger: window_idx is an open window/run")
+        cx.state
+            .continuations
+            .last_mut()
+            .and_then(Continuation::pending_candidates_mut)
+            .expect("fire_pending_trigger: top frame is an open window/run")
             .remove(pending_idx);
-        return play_fast_event(cx, window_idx, &trigger);
+        return play_fast_event(cx, &trigger);
     }
 
     // Look up the ability fresh from the registry. The card may have
@@ -587,7 +585,12 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
     // `clue_discovery_count`. `None` for all other window kinds. (C5b
     // #237.)
-    match cx.state.continuations[window_idx].window_timing_event() {
+    match cx
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::window_timing_event)
+    {
         Some(crate::engine::TimingEvent::EnemyAttackDamagedSelf { enemy, .. }) => {
             eval_ctx.set_attacking_enemy(*enemy);
         }
@@ -605,11 +608,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Drop the fired entry *before* resolving its effect: if the effect
     // suspends (a forced ability that initiates a skill test — Frozen in
     // Fear 01164), the entry must already be consumed so the resume drives
-    // the *remaining* siblings, not this one again. `apply_effect` does not
-    // push/pop continuations, so `window_idx` stays valid across it.
-    cx.state.continuations[window_idx]
-        .pending_candidates_mut()
-        .expect("fire_pending_trigger: window_idx is an open window/run")
+    // the *remaining* siblings, not this one again. The window is still the
+    // top frame here (apply_effect runs after).
+    cx.state
+        .continuations
+        .last_mut()
+        .and_then(Continuation::pending_candidates_mut)
+        .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
 
     let result = apply_effect(cx, &ability.effect, eval_ctx);
@@ -632,29 +637,29 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             if usage_limit.is_some() {
                 bump_usage_counter(cx.state, &trigger);
             }
-            advance_resolution(cx, window_idx)
+            // The window frame stays on top with its remaining candidates; the
+            // `drive` loop's window arm re-dispatches it (re-prompt or close).
+            // Slice C-plumbing.
+            EngineOutcome::Done
         }
     }
 }
 
-/// Play the hand Fast-event `candidate` from the resolution run at
-/// `window_idx` (Axis C, #335) — the [`CandidateSource::Hand`] resolution of
-/// [`fire_pending_trigger`]. Commences the play via the shared
+/// Play the hand Fast-event `candidate` from the open resolution run (Axis C,
+/// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
+/// Commences the play via the shared
 /// [`super::cards::begin_event_play`] (emit [`crate::Event::CardPlayed`], leave hand,
-/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), runs
-/// the matched `OnEvent` ability's effect, then advances the run. The apply
-/// loop flushes the event to discard on completion (step 4) — the
-/// suspending-event path Dynamite Blast 01024 uses.
+/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), then runs
+/// the matched `OnEvent` ability's effect. On synchronous completion it returns
+/// [`EngineOutcome::Done`], leaving the window frame on top for the `drive` loop to
+/// re-dispatch (Slice C-plumbing); the apply loop flushes the event to discard on
+/// completion (step 4) — the suspending-event path Dynamite Blast 01024 uses.
 ///
 /// Charges no resource cost, matching [`super::cards::play_card`] (Slice 1
 /// does not model play-cost resources). The caller has already removed the
 /// candidate from the run, so a suspending effect's resume drives the
 /// remaining siblings, not this play again.
-fn play_fast_event(
-    cx: &mut Cx,
-    window_idx: usize,
-    candidate: &ResolutionCandidate,
-) -> EngineOutcome {
+fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcome {
     let controller = candidate.controller;
     // Find the event in the controller's hand by code (first match — copies
     // are fungible; resolving by code avoids stale indices after a prior play).
@@ -713,27 +718,31 @@ fn play_fast_event(
             // A no-op if the effect already disposed of the card (e.g. an event
             // that becomes an asset clears `pending_played_event` itself).
             super::cards::flush_pending_played_event(cx);
-            advance_resolution(cx, window_idx)
+            // Window stays on top; the drive loop re-dispatches it. Slice C-plumbing.
+            EngineOutcome::Done
         }
     }
 }
 
-/// Advance a resolution run after one of its candidates resolved: close it
-/// (running its continuation) when none remain, else re-emit the pick prompt.
-///
-/// Shared by [`fire_pending_trigger`]'s synchronous tail and the skill-test
-/// commit-resume path ([`super::resume_skill_test_commit`]) — the latter
-/// re-enters a forced run parked beneath a sibling's now-resolved skill test.
-pub(super) fn advance_resolution(cx: &mut Cx, window_idx: usize) -> EngineOutcome {
-    let window = &cx.state.continuations[window_idx];
+/// Advance the resolution run on **top** of the stack after one of its
+/// candidates resolved: close it (running its continuation) when none remain,
+/// else re-emit the pick prompt. Called by the `drive` loop's window arm — the
+/// window being driven is always the top frame (the stack-is-resolution-order
+/// invariant), so there is no index to thread.
+pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
+    let window = cx
+        .state
+        .continuations
+        .last()
+        .expect("advance_resolution: called with a window on top");
     let candidates = window
         .pending_candidates()
-        .expect("advance_resolution: window_idx is an open window/run");
+        .expect("advance_resolution: top frame is an open window/run");
     // Close when no candidate remains. Hand Fast-event plays (Axis C) ride
     // the candidate list alongside in-play triggers, so this single check
     // keeps a window with only a remaining hand play open.
     if candidates.is_empty() {
-        return close_reaction_window_at(cx, window_idx);
+        return close_reaction_window(cx);
     }
     let skip_hint = if window.is_forced() {
         " (forced — cannot skip)"
@@ -803,28 +812,23 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
     card.bump_ability_usage(trigger.ability_index, current_round);
 }
 
-/// Close the reaction window at `idx` in [`GameState::open_windows`].
-/// Rejects when any forced trigger is still pending (player must fire
-/// them first). On success removes the window at the specified index
-/// (not necessarily the top of the
-/// stack), and either resumes a paused skill-test driver (if one was
-/// mid-resolution when the window opened) or returns [`Done`].
+/// Close the reaction window / forced run on **top** of the stack: pop it and
+/// run its kind-specific continuation, then return its outcome.
 ///
-/// # Why an explicit index
-///
-/// `top_reaction_window_mut` skips empty-`pending_triggers` windows
-/// when finding the active reaction window. The close path must
-/// remove the same window the driver operated on, not the absolute
-/// top of the stack — once a `PlayerWindow` gate (or any other
-/// non-reaction window) can sit above an active reaction window
-/// (#69/#70/#71), a naive `open_windows.pop()` would remove the wrong
-/// entry. Callers compute the index via
-/// [`GameState::top_reaction_window_index`].
-pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome {
+/// The window being closed is always the top frame — the player is acting on
+/// the prompt it emitted (the stack-is-resolution-order invariant), so this
+/// `pop()`s rather than threading an index (Slice C-plumbing). On a `Done`
+/// continuation the loop dispatches whatever frame the close exposed (a
+/// mid-resolution `SkillTest`, an `EncounterCard`, a forced run, …).
+pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // Reaction windows are all-optional, so `Skip` always closes them. The
     // "forced abilities are mandatory" rule lives in the forced resolution
     // run (its frame is `window: None` — Axis-B T5b), not here.
-    let removed = cx.state.continuations.remove(idx);
+    let removed = cx
+        .state
+        .continuations
+        .pop()
+        .expect("close_reaction_window: a window frame is on top");
 
     // A window runs its kind-specific continuation
     // (e.g. MythosAfterDraws → mythos_phase_end). A framework window keys its
@@ -847,7 +851,7 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
         _ => {
             let cont = removed.forced_continuation().unwrap_or_else(|| {
                 unreachable!(
-                    "close_reaction_window_at: a non-window frame is the forced run \
+                    "close_reaction_window: a non-window frame is the forced run \
                      and must carry a ForcedContinuation"
                 )
             });
@@ -859,27 +863,20 @@ pub(super) fn close_reaction_window_at(cx: &mut Cx, idx: usize) -> EngineOutcome
     }
     debug_assert!(
         matches!(continuation, EngineOutcome::Done),
-        "close_reaction_window_at: window continuation returned unexpected {continuation:?} \
+        "close_reaction_window: window continuation returned unexpected {continuation:?} \
          (expected Done or AwaitingInput)",
     );
 
-    // If a skill test was mid-resolution when this window opened,
-    // hand control back to its driver to run the remaining steps.
-    // `AwaitingCommit` means the test is parked at the commit
-    // window (no driver state to resume); this happens when a future
-    // non-skill-test action queues a window — `Done` is the right
-    // terminal outcome.
-    if let Some(in_flight) = cx.state.current_skill_test() {
-        if !matches!(in_flight.continuation, SkillTestStep::AwaitingCommit) {
-            return super::skill_test::advance(cx);
-        }
-    }
-
+    // The window is closed and its continuation ran to `Done`. Return to the
+    // `drive` loop, which dispatches whatever frame is now top — a `SkillTest`
+    // mid-resolution (its driver picks up the remaining steps), an `EncounterCard`
+    // to dispose, a forced run, or idle. No reach-down into `skill_test::advance`
+    // (Slice C-plumbing).
     EngineOutcome::Done
 }
 
 /// Continuation when a **reaction** window ([`Continuation::TimingPointWindow`])
-/// closes, keyed on its [`TimingEvent`]. Called from [`close_reaction_window_at`]'s
+/// closes, keyed on its [`TimingEvent`]. Called from [`close_reaction_window`]'s
 /// pop path. Returns `Done`, or `AwaitingInput` when a body suspends (an Enemy
 /// soak window, …).
 fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
@@ -899,9 +896,14 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
             location,
             count,
         } => resume_before_discover_window(cx, *investigator, *location, *count),
-        // After-defeat / after-investigate / entered-play: no continuation work.
-        // The skill-test driver (which queued the window mid-resolution) resumes
-        // via `close_reaction_window_at`'s in-flight re-entry.
+        // After-defeat / after-investigate / entered-play: no continuation work
+        // here. Return `Done` so the `drive` loop dispatches the now-top frame —
+        // a mid-resolution `SkillTest` resumes by being re-dispatched, *not* by an
+        // inline `advance` call. (Contrast `run_fast_continuation`'s `SkillTest`
+        // arm, which *does* call `advance` inline: that window's continuation *is*
+        // the pre-advanced skill-test step, whereas a reaction window sits above a
+        // separate `SkillTest` frame the loop owns. The asymmetry is intentional —
+        // see `run_fast_continuation`.)
         TimingEvent::EnemyDefeated { .. }
         | TimingEvent::SuccessfullyInvestigated { .. }
         | TimingEvent::EnteredPlay { .. } => EngineOutcome::Done,
@@ -911,7 +913,7 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
 
 /// Continuation when a framework **fast** window ([`Continuation::FastWindow`])
 /// closes, keyed on its [`FastWindowKind`]. Called from the auto-skip path in
-/// [`open_fast_window`] and from [`close_reaction_window_at`].
+/// [`open_fast_window`] and from [`close_reaction_window`].
 ///
 /// A phase window routes to the `*Phase` anchor beneath it (slice 1a, #393): the
 /// anchor's `resume` — not the [`PhaseStep`] — selects the relocated body (the
@@ -920,6 +922,13 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
 /// its cursor was pre-advanced before the window opened. Returns `Done` or
 /// `AwaitingInput` when a body suspends.
 pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> EngineOutcome {
+    // This is the window's *own* continuation, run inline on close — including
+    // the open-time auto-skip path in `open_fast_window`, which relies on it
+    // advancing the phase / skill-test driver **synchronously** to reach the next
+    // suspending step (the commit prompt, the next phase window). It is not a
+    // driver-to-driver reach-down, so it stays imperative (the genuine reach-down
+    // — the redundant `skill_test::advance` *after* this in `close_reaction_window`
+    // — was removed in Slice C-plumbing).
     match kind {
         FastWindowKind::Phase(_) => super::phases::anchor_on_child_pop(cx),
         FastWindowKind::SkillTest { .. } => super::skill_test::advance(cx),
@@ -943,11 +952,10 @@ fn resume_before_discover_window(
     if !cancelled {
         crate::engine::evaluator::perform_discovery(cx, location, count, investigator);
     }
-    if cx.state.has_skill_test_in_flight() {
-        super::skill_test::advance(cx)
-    } else {
-        EngineOutcome::Done
-    }
+    // If a skill test is mid-flight (the dominant path: Investigate's follow-up
+    // discovery), the `drive` loop dispatches it once this returns — no reach-down
+    // into `skill_test::advance` (Slice C-plumbing).
+    EngineOutcome::Done
 }
 
 /// Resume the framework flow a closed forced run (#213) suspended.

@@ -764,11 +764,11 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
 /// hand), `ResolveInput::Skip` must close the window, run
 /// `mythos_phase_end`, and transition to Investigation.
 ///
-/// Before the fix for defect B, `resolve_input`'s Skip arm used
-/// `top_reaction_window_index()` which filters out empty-`pending_triggers`
-/// windows. A pure-Fast `MythosAfterDraws` window would not be found, and
-/// `Skip` would reject with "no `AwaitingInput` prompt is currently
-/// outstanding" — leaving the window stuck on the stack forever.
+/// `resolve_input`'s Skip arm closes the top frame: a pure-Fast
+/// `MythosAfterDraws` gate (empty `pending_triggers`) on top is closed via
+/// `close_reaction_window`. (Historically this routed through an empty-skipping
+/// `top_reaction_window_index`, which failed to find the pure-Fast window and
+/// left it stuck — Slice C-plumbing replaced that with top-frame dispatch.)
 #[test]
 fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     install_test_registry();
