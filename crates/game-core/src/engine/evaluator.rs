@@ -325,6 +325,20 @@ pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) 
     drive_effect_to_base(cx, base)
 }
 
+/// Push an effect's root [`EffectFrame`](crate::state::EffectFrame) onto the
+/// continuation stack for the global `drive` loop to own (top-frame dispatch,
+/// #393/#423). The caller returns [`EngineOutcome::Done`]; `drive` then steps
+/// the pushed frame via its [`Continuation::Effect`](crate::state::Continuation::Effect)
+/// arm. Replaces the synchronous [`apply_effect`] bounded entry at every
+/// production site.
+pub(crate) fn push_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::Effect(frame_of(
+            effect, eval_ctx,
+        )));
+}
+
 /// Build the [`EffectFrame`](crate::state::EffectFrame) for an effect node:
 /// control nodes get their own stateful frame; everything else (leaves, `If`,
 /// `ChooseOne`, `SearchDeck`, `Native`) is a `Leaf` evaluated by [`step_leaf`].
@@ -2267,6 +2281,37 @@ mod tests {
             events,
             Event::ResourcesGained { investigator, amount: 3 } if *investigator == id
         );
+    }
+
+    /// `push_effect` + the real `drive` runs an effect to completion identically
+    /// to the (deleted in Slice D) synchronous `apply_effect`: the root frame is
+    /// pushed, the global loop steps it, the effect applies, the frame pops.
+    #[test]
+    fn push_effect_then_drive_runs_to_completion() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let resources_before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        super::push_effect(&mut cx, &gain_resources(InvestigatorTarget::You, 3), ctx(1));
+        assert!(
+            matches!(
+                cx.state.continuations.last(),
+                Some(crate::state::Continuation::Effect(_))
+            ),
+            "the effect root frame is pushed for the loop",
+        );
+
+        let out = crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].resources, resources_before + 3);
+        assert!(state.continuations.is_empty(), "effect frame popped");
     }
 
     #[test]

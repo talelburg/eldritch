@@ -22,7 +22,7 @@ use crate::state::{
     GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
-use super::super::evaluator::{apply_effect, EvalContext};
+use super::super::evaluator::{apply_effect, push_effect, EvalContext};
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 
@@ -755,32 +755,18 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
 
-    let result = apply_effect(cx, &ability.effect, eval_ctx);
-    match result {
-        EngineOutcome::Rejected { reason } => {
-            // Card-impl bugs surface loudly — same policy as
-            // `fire_on_skill_test_resolution`.
-            unreachable!(
-                "OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}"
-            );
-        }
-        // The effect suspended (it started a skill test, pushing a `SkillTest`
-        // frame above this run's frame). Park: the run's frame stays with its
-        // remaining siblings, and `advance_resolution` re-enters it once the
-        // nested test resolves (Axis-B T5b reentrancy). In-scope suspending
-        // forced effects (Frozen in Fear) carry no usage limit, so skipping
-        // the bump here is correct for the current pool.
-        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
-        EngineOutcome::Done => {
-            if usage_limit.is_some() {
-                bump_usage_counter(cx.state, &trigger);
-            }
-            // The window frame stays on top with its remaining candidates; the
-            // `drive` loop's window arm re-dispatches it (re-prompt or close).
-            // Slice C-plumbing.
-            EngineOutcome::Done
-        }
+    // Usage is consumed when the ability fires — the former "bump only on
+    // `Done`" was purely defensive against an `unreachable!` `Rejected`. Bump
+    // now, then push the effect for the drive loop; the window frame beneath
+    // stays on top with its remaining candidates and `advance_resolution`
+    // re-dispatches it once the effect (and any nested skill test) pops. In-scope
+    // suspending forced effects (Frozen in Fear 01164) carry no usage limit, so
+    // the early bump is a no-op for them. Slice D, #423.
+    if usage_limit.is_some() {
+        bump_usage_counter(cx.state, &trigger);
     }
+    push_effect(cx, &ability.effect, eval_ctx);
+    EngineOutcome::Done
 }
 
 /// Play the hand Fast-event `candidate` from the open resolution run (Axis C,

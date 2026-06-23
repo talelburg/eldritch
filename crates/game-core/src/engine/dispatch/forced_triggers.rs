@@ -12,7 +12,7 @@ use crate::state::{
     ResolutionCandidate,
 };
 
-use super::super::evaluator::{apply_effect, EvalContext};
+use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
 use super::Cx;
 
@@ -134,14 +134,28 @@ pub(crate) fn fire_forced_triggers(
     point: &ForcedTriggerPoint,
     bucket: EventTiming,
 ) -> EngineOutcome {
+    // Frame-driven forced run (Slice D, #423): `resolve_one` pushes the
+    // candidate's effect root frame for the global `drive` loop to own; this
+    // function does not drive. Callers under the loop (effect-eval emits) get the
+    // forced effect driven next; callers with post-forced work (`end_turn`'s
+    // rotation, the `GameEnd` resolution finalization) arm a resumption frame
+    // before emitting and let the loop drive the forced frame then re-dispatch
+    // the resumption.
+    //
+    // At most one hit reaches here: the coordinator / emit `<2` guard routes 2+
+    // simultaneous forced abilities to the ordered forced-run frame
+    // (`open_forced_resolution`, #213), so there is no ordering to preserve.
     let hits = collect_forced_hits(cx.state, point, bucket);
-    for hit in &hits {
-        match resolve_one(cx, hit) {
-            EngineOutcome::Done => {}
-            other => return other,
-        }
+    debug_assert!(
+        hits.len() <= 1,
+        "fire_forced_triggers: expected 0/1 forced hit (2+ routes through \
+         open_forced_resolution); got {}",
+        hits.len(),
+    );
+    match hits.first() {
+        Some(hit) => resolve_one(cx, hit),
+        None => EngineOutcome::Done,
     }
-    EngineOutcome::Done
 }
 
 // dispatcher: one match arm per ForcedTriggerPoint.
@@ -440,5 +454,6 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     // harmless — hand Fast events are reaction-window plays, never forced).
     let ctx =
         EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance());
-    apply_effect(cx, &effect, ctx)
+    push_effect(cx, &effect, ctx);
+    EngineOutcome::Done
 }

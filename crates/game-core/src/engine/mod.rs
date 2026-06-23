@@ -253,8 +253,12 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     // Fire game-end Forced abilities (Cover Up 01007's mental trauma, C5a
     // #236). Non-interactive in scope; a suspending GameEnd hit is #212
     // reentrancy work. Runs even when no scenario module is registered, so
-    // it precedes the module lookup below.
-    let _ = emit_event(cx, &TimingEvent::GameEnd);
+    // it precedes the module lookup below. This is the terminal resolution
+    // hook — it runs *after* the main `drive` loop and holds the scenario
+    // registry for `apply_resolution` below — so it drives the forced effects
+    // the frame-driven `emit_event` pushes (Slice D, #423).
+    let out = emit_event(cx, &TimingEvent::GameEnd);
+    let _ = drive(cx, out);
 
     let Some(id) = cx.state.scenario_id.as_ref() else {
         return;

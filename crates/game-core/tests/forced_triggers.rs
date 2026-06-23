@@ -736,37 +736,9 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     assert_eq!(done.state.investigators[&InvestigatorId(1)].horror, 2);
 }
 
-#[test]
-fn two_simultaneous_forced_triggers_resolve_in_order() {
-    install_mock_registry();
-
-    let mut loc = test_location(10, "Double-Forced Room");
-    loc.code = CardCode(DOUBLE_FORCED.into());
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(10))
-        .with_location(loc)
-        .with_active_investigator(InvestigatorId(1))
-        .build();
-
-    let mut events = Vec::new();
-    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
-
-    // Both simultaneous forced triggers resolve in a fixed deterministic
-    // order (no reject) — #213 will let the player choose the order; a
-    // fixed order is the stand-in. Each deals 1 horror, so the total is 2.
-    assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "expected ordered resolution of both forced triggers; got {outcome:?}"
-    );
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 2);
-    assert_eq!(
-        events
-            .iter()
-            .filter(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
-            .count(),
-        2,
-        "both forced effects must emit their HorrorTaken event; events = {events:?}"
-    );
-}
+// (Removed `two_simultaneous_forced_triggers_resolve_in_order`, Slice D #423: it
+// was a pre-#213 stand-in that fired 2+ forced directly through
+// `fire_forced_triggers` in a fixed order. The production route for 2+
+// simultaneous forced is the lead-ordered run, covered by
+// `two_simultaneous_forced_triggers_present_a_choice` +
+// `two_simultaneous_forced_triggers_resolved_in_lead_chosen_order` through `apply`.)
