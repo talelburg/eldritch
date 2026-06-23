@@ -160,7 +160,8 @@ fn substitution_covers(state: &GameState, investigator: InvestigatorId, skill: S
 /// rewrites the in-flight test to an Intellect test (dropping any weapon combat
 /// bonus per the FAQ "ignore bonuses to Combat or Agility"); `PickSingle(1)`
 /// keeps the printed skill (a genuine "may" — a player may decline to fail on
-/// purpose). Either way, opens the commit window.
+/// purpose). Either way, parks for the `drive` loop, which opens the next window
+/// (the ST.1 player window, or the commit prompt on auto-skip).
 pub(in crate::engine) fn resume_substitution_choice(
     cx: &mut Cx,
     response: &InputResponse,
@@ -204,9 +205,10 @@ pub(in crate::engine) fn resume_substitution_choice(
 /// response to the
 /// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine emitted at
 /// the commit window: validate the supplied indices, persist them onto the
-/// in-flight record, advance the cursor to [`SkillTestStep::Resolving`], and
-/// hand off to [`advance`], which runs the resolution body
-/// ([`run_resolution`]) and the remaining steps.
+/// in-flight record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`],
+/// and return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
+/// the resolution body ([`run_resolution`]) and the remaining steps. (Slice C,
+/// #431 — the commit-hop `advance` reach-down is retired.)
 ///
 /// On invalid input (no in-flight test, malformed indices, or continuation
 /// already advanced) returns [`EngineOutcome::Rejected`] with no state change
