@@ -234,13 +234,28 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                 EngineOutcome::Done => {}
                 other => return other,
             },
-            // An encounter-treachery frame re-exposed after its Revelation's
-            // sub-resolution completed: dispose of the card + pop (the former
-            // `resolve_input` chokepoint, now loop-driven). `teardown_…` pops the
-            // frame, so the top changes and the loop makes progress.
+            // An encounter-card frame re-exposed after its Revelation's
+            // sub-resolution completed: dispose of the card (treachery discard /
+            // enemy spawn) + pop (#380). `dispose_…` pops the frame, so the top
+            // changes (exposing the drawer's `PlayerDraw` for the Mythos chain, or
+            // a non-draw frame) and the loop makes progress; an enemy spawn can
+            // suspend on an engagement tie, so a non-`Done` outcome propagates.
             Some(Continuation::EncounterCard { .. }) => {
-                encounter::teardown_encounter_card_if_top(cx);
+                match encounter::dispose_encounter_card_if_top(cx) {
+                    EngineOutcome::Done => {}
+                    other => return other,
+                }
             }
+            // A per-drawer Mythos surge-chain frame (callsite-migration): draw
+            // the next card (first step or a pending surge), or — chain over —
+            // pop itself and advance the loop to the next drawer / post-1.4
+            // window. Re-exposed by an `EncounterCard` disposal or a `SpawnEngage`
+            // resume. A draw can suspend on an engagement tie, so a non-`Done`
+            // outcome propagates.
+            Some(Continuation::PlayerDraw { .. }) => match encounter::drive_player_draw(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
             // The `when → at → after` coordinator frames (#434). `EmitEvent`
             // walks the buckets (pushing a `TimingPoint` per populated cell);
             // `TimingPoint` runs one bucket's forced-then-reaction. Each does one
@@ -322,14 +337,20 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Apply an [`EngineRecord`] to the state, pushing events.
+///
+/// Runs the main [`drive`] loop at the tail (mirroring [`apply_player_action`],
+/// #423): `EncounterCardRevealed` now pushes a [`Continuation::EncounterCard`]
+/// disposition frame plus the card's Revelation effect frames for the loop to
+/// step, rather than resolving synchronously.
 pub fn apply_engine_record(cx: &mut Cx, record: &EngineRecord) -> EngineOutcome {
-    match record {
+    let outcome = match record {
         EngineRecord::DeckShuffled { investigator } => cards::deck_shuffled(cx, *investigator),
         EngineRecord::EncounterDeckShuffled => encounter::encounter_deck_shuffled(cx),
         EngineRecord::EncounterCardRevealed { investigator } => {
             encounter::encounter_card_revealed(cx, *investigator)
         }
-    }
+    };
+    drive(cx, outcome)
 }
 
 /// Internal helper: where a played card lands after on-play effects
@@ -485,6 +506,15 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                      framework-internal)"
                 .into(),
         },
+        // A `PlayerDraw` surge-chain frame never awaits input — the `drive` loop
+        // drives it, and any prompt it opens (a spawn-engagement tie) sits above
+        // it. If it is somehow top, no prompt is outstanding (defensive; mirrors
+        // the EncounterCard arm).
+        Some(Continuation::PlayerDraw { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (the Mythos draw chain is \
+                     framework-internal)"
+                .into(),
+        },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
         // An order-pick suspension parks the `AttackLoop` frame as the top frame
         // (it *is* the prompt) — route its `PickSingle` to the order resume
@@ -546,10 +576,11 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
         },
     };
-    // A treachery Revelation that suspended parks its `EncounterCard` frame
-    // beneath the suspension (#380); once that sub-resolution completes the frame
-    // is top again and the `drive` loop's `EncounterCard` arm disposes of it
-    // (Slice C-plumbing — no `resolve_input` chokepoint). `apply_player_action`
-    // runs `drive(cx, outcome)` after this returns.
+    // An encounter-card Revelation that suspended parks its `EncounterCard`
+    // frame beneath the suspension (#380); once that sub-resolution completes
+    // the frame is top again and the `drive` loop's `EncounterCard` arm disposes
+    // of it — discarding a treachery or spawning an enemy — and continues any
+    // Mythos chain (#423). `apply_player_action` runs `drive(cx, outcome)` after
+    // this returns.
     outcome
 }

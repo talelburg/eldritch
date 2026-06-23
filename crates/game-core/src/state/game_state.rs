@@ -483,30 +483,55 @@ pub enum Continuation {
     /// `remaining[0]` is the investigator currently prompted to draw; the queue
     /// is the Active investigators in [`turn_order`](GameState::turn_order).
     /// Pushed by `mythos_phase`, advanced by `resume_encounter_draw` as each
-    /// investigator confirms (running their full surge chain), popped when
-    /// drained — at which point the post-1.4 `MythosAfterDraws` window opens.
-    /// A mid-chain spawn-engagement tie pushes a
-    /// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. While
-    /// present, the engine rejects every non-`ResolveInput` action. Read the
-    /// prompted drawer via [`GameState::current_encounter_drawer`].
+    /// investigator confirms (pushing a [`PlayerDraw`](Continuation::PlayerDraw)
+    /// frame that owns that drawer's surge chain), popped when drained — at which
+    /// point the post-1.4 `MythosAfterDraws` window opens. While present, the
+    /// engine rejects every non-`ResolveInput` action. Read the prompted drawer
+    /// via [`GameState::current_encounter_drawer`].
     EncounterDraw {
         /// Active investigators yet to draw, in player order; front =
         /// currently prompted.
         remaining: Vec<InvestigatorId>,
     },
-    /// A drawn encounter **treachery** whose Revelation is mid-resolution
-    /// (#380). Pushed by `resolve_encounter_card` *before* it runs the
-    /// Revelation; sits beneath any suspension the Revelation opens (a skill
-    /// test, a choice, a nested effect). When that sub-resolution completes and
-    /// this frame is top again, the **framework** disposes of the card
-    /// (one-shot → `encounter_discard`; persistent → it placed itself during
-    /// its Revelation, so skip) and pops. Suspension-reason-agnostic — replaces
-    /// the former `pending_revelation_discard` slot, which only the skill-test
-    /// driver flushed (so a choice-only Revelation was never disposed of).
-    /// Never emits `AwaitingInput`.
+    /// One drawer's Mythos surge chain (#423 / callsite-migration). Pushed by
+    /// [`EncounterDraw`](Continuation::EncounterDraw)'s `Confirm` for the current
+    /// drawer (above the loop frame); owns the surge cap budget across input
+    /// round-trips. The `drive` loop's `PlayerDraw` arm drives it: on the first
+    /// step (`chain_count == 0`) or when `surge_pending`, it draws the next card
+    /// — bumping `chain_count`, enforcing [`MAX_SURGE_CHAIN`](crate::engine), and
+    /// pushing an [`EncounterCard`](Continuation::EncounterCard) frame whose
+    /// disposal exposes this one again; otherwise it pops itself and advances the
+    /// loop to the next drawer. A mid-chain spawn-engagement tie pushes a
+    /// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. Never
+    /// awaits input itself (mirrors `EncounterCard`).
+    PlayerDraw {
+        /// Whose surge chain this is (the current `EncounterDraw` drawer).
+        investigator: InvestigatorId,
+        /// Cards drawn so far in this chain. `0` means "haven't drawn the first
+        /// card yet"; bumped per draw and capped at
+        /// [`MAX_SURGE_CHAIN`](crate::engine).
+        chain_count: usize,
+        /// Whether the last-drawn card carried `surge` — i.e. whether the next
+        /// drive step draws another card. `false` on the first step (no card
+        /// drawn yet; `chain_count == 0` triggers the first draw instead).
+        surge_pending: bool,
+    },
+    /// A drawn encounter card whose Revelation is mid-resolution (#380), tagged
+    /// with how the framework disposes of it once the Revelation's whole
+    /// sub-resolution completes (#423). Pushed by `resolve_encounter_card`
+    /// *before* it runs the Revelation; sits beneath any suspension the
+    /// Revelation opens (a skill test, a choice, a nested effect). When that
+    /// sub-resolution completes and this frame is top again, the **framework**
+    /// disposes of the card per its [`EncounterDisposition`] and pops:
+    /// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent —
+    /// is skipped, having placed itself during its Revelation); an enemy
+    /// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
+    /// `AwaitingInput`.
     EncounterCard {
-        /// The drawn treachery's card code, disposed of at teardown.
+        /// The drawn card's code, disposed of at teardown.
         card: CardCode,
+        /// How the framework disposes of the card once its Revelation resolves.
+        disposition: EncounterDisposition,
     },
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
     /// beneath the phase's framework windows. On a child window's close the
@@ -624,6 +649,29 @@ pub enum Continuation {
     /// own [`EvalContext`](crate::engine::EvalContext) snapshot (#345's grouped
     /// bindings) so resume re-binds without replay.
     Effect(EffectFrame),
+}
+
+/// How the framework disposes of a drawn encounter card after its Revelation's
+/// whole sub-resolution completes (#423). Carried by
+/// [`Continuation::EncounterCard`] so the unified disposal step
+/// (`dispose_encounter_card_if_top`) handles both encounter card types from one
+/// frame, regardless of which path revealed the card (engine-record draw,
+/// Mythos chain, or an agenda reverse-draw — the last two having no
+/// `EncounterDraw` frame to read the drawer from, so the enemy disposition
+/// carries it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EncounterDisposition {
+    /// A treachery: discard to `encounter_discard` (or skip, if persistent — it
+    /// placed itself during its Revelation).
+    Discard,
+    /// An enemy: spawn it into play at disposal, engaging the drawer
+    /// (`investigator`) per the card's spawn instruction.
+    Spawn {
+        /// The drawing/controlling investigator — carried because the
+        /// engine-record and agenda reverse-draw paths have no `EncounterDraw`
+        /// frame beneath to read it from.
+        investigator: InvestigatorId,
+    },
 }
 
 /// One node of a frame-driven card-effect walk (#422). See
@@ -1314,33 +1362,21 @@ pub enum HunterChoice {
 
 /// A suspended engagement-on-spawn choice (#128, option A): a
 /// multi-investigator spawn tie awaiting the lead investigator's
-/// `PickSingle`. `investigator_to_draw` is the drawing
-/// investigator whose Mythos encounter-draw chain resumes once the
-/// engagement is chosen.
+/// `PickSingle`.
 ///
 /// Distinct from [`HunterChoice`] because spawn engagement is not a
-/// hunter move (it never picks a location) and its resume path
-/// re-enters a different driver — the Mythos encounter-draw chain
-/// rather than the Enemy-phase hunter loop. `surge` and `chain_count`
-/// carry the surge-chain bookkeeping across the suspend boundary so the
-/// drawing investigator's chain resumes with its cap budget intact.
+/// hunter move (it never picks a location) and its resume just engages
+/// the chosen investigator and pops; any Mythos encounter-draw chain
+/// continues through the [`PlayerDraw`](Continuation::PlayerDraw) frame
+/// beneath it (which carries its own surge/chain state), so this frame
+/// holds only the pick itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SpawnEngagePending {
     /// The spawned enemy awaiting an engagement target.
     pub enemy: EnemyId,
-    /// The investigator who drew the enemy (Mythos draw resumes for them).
-    pub investigator_to_draw: InvestigatorId,
     /// Co-located investigators to choose among.
     pub candidates: Vec<InvestigatorId>,
-    /// Whether the spawned enemy card carries the surge keyword — i.e.
-    /// whether the drawing investigator draws another encounter card
-    /// once this engagement resolves.
-    pub surge: bool,
-    /// Surge-chain position at the point of suspension, so the resumed
-    /// chain keeps counting toward `MAX_SURGE_CHAIN` rather than
-    /// resetting its budget across the input round-trip.
-    pub chain_count: usize,
 }
 
 /// Suspended upkeep maximum-hand-size discard (#111). `Some` only while
@@ -1524,13 +1560,14 @@ impl GameState {
     /// otherwise. Reads the topmost [`Continuation::EncounterDraw`] frame's
     /// `remaining[0]` — the continuation stack is the single source of truth
     /// for "an encounter draw is pending" (#348, replacing the former
-    /// `mythos_draw_pending` cursor). Topmost (not `.last()`) because a
-    /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) frame can sit above
-    /// the draw frame while a spawn-engagement tie is resolved.
+    /// `mythos_draw_pending` cursor). Topmost (not `.last()`) because the
+    /// drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain frame — and a
+    /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) above it while a
+    /// spawn-engagement tie is resolved — sit above the loop frame.
     #[must_use]
     pub fn current_encounter_drawer(&self) -> Option<InvestigatorId> {
         self.continuations.iter().rev().find_map(|c| match c {
-            Continuation::EncounterDraw { remaining } => remaining.first().copied(),
+            Continuation::EncounterDraw { remaining, .. } => remaining.first().copied(),
             _ => None,
         })
     }
@@ -2080,10 +2117,7 @@ mod hunter_pending_tests {
     fn spawn_engage_pending_serde_roundtrip() {
         let original = SpawnEngagePending {
             enemy: EnemyId(2),
-            investigator_to_draw: InvestigatorId(1),
             candidates: vec![InvestigatorId(1), InvestigatorId(2)],
-            surge: false,
-            chain_count: 1,
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: SpawnEngagePending = serde_json::from_str(&json).expect("deserialize");
