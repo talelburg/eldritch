@@ -76,6 +76,44 @@ fn grasping_hands_deals_one_damage_per_point_failed_then_discards() {
 }
 
 #[test]
+fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
+    install_registry();
+    // #426: Count(SkillTestFailedBy) deals all N damage in one Deal evaluation,
+    // emitting a single DamageTaken { amount: 2 } event — not two separate
+    // DamageTaken { amount: 1 } events.
+    // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
+    let result = reveal_top(board_with("01162", ChaosToken::Numeric(-2)));
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].damage, 2);
+    // Exactly one DamageTaken event, with amount == 2.
+    game_core::assert_event_count!(result.events, 1, Event::DamageTaken { .. });
+    game_core::assert_event!(
+        result.events,
+        Event::DamageTaken { investigator, amount: 2 }
+            if *investigator == InvestigatorId(1)
+    );
+}
+
+#[test]
+fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
+    install_registry();
+    // #426: Count(SkillTestFailedBy) deals all N horror in one Deal evaluation,
+    // emitting a single HorrorTaken { amount: 2 } event — not two separate
+    // HorrorTaken { amount: 1 } events.
+    // Willpower 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
+    let result = reveal_top(board_with("01163", ChaosToken::Numeric(-2)));
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 2);
+    // Exactly one HorrorTaken event, with amount == 2.
+    game_core::assert_event_count!(result.events, 1, Event::HorrorTaken { .. });
+    game_core::assert_event!(
+        result.events,
+        Event::HorrorTaken { investigator, amount: 2 }
+            if *investigator == InvestigatorId(1)
+    );
+}
+
+#[test]
 fn crypt_chill_with_no_asset_takes_two_damage_then_discards() {
     install_registry();
     // Willpower 3 + Numeric(0) = 3 vs difficulty 4 → fail; no asset in

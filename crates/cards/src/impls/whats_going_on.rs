@@ -47,7 +47,7 @@ pub fn abilities() -> Vec<Ability> {
             native(RANDOM_DISCARD_EACH),
             // Branch B: the lead (`You`, bound to the lead by `AgendaAdvanced`)
             // takes 2 horror.
-            deal_horror(InvestigatorTarget::You, 2),
+            deal_horror(InvestigatorTarget::You, 2u8),
         ]),
     )]
 }
@@ -100,7 +100,7 @@ mod tests {
                 Effect::Deal {
                     kind: HarmKind::Horror,
                     target: card_dsl::dsl::InvestigatorTarget::You,
-                    amount: 2
+                    amount: card_dsl::dsl::IntExpr::Lit(2)
                 }
             ),
             "branch B is the lead taking 2 horror",

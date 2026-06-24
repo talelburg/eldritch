@@ -12,10 +12,11 @@
 //! parsed); the ability spends 1 per use via `Cost::SpendUses` and fights
 //! through `Effect::Fight`, whose combat modifier is `+3` when the
 //! investigator's location holds a clue and `+1` otherwise (`IntExpr::cond`
-//! over `Condition::LocationHasClues`), dealing `1 + 1` damage on success.
+//! over `Condition::Compare { CluesAtControllerLocation, Gt, 0 }`),
+//! dealing `1 + 1` damage on success.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated, fight, Ability, Condition, Cost, IntExpr};
+use card_dsl::dsl::{activated, fight, Ability, CmpOp, Condition, Cost, IntExpr, Quantity};
 
 /// `ArkhamDB` code for Roland's .38 Special.
 pub const CODE: &str = "01006";
@@ -28,7 +29,18 @@ pub fn abilities() -> Vec<Ability> {
             kind: UseKind::Ammo,
             count: 1,
         }],
-        fight(IntExpr::cond(Condition::LocationHasClues, 3, 1), 1),
+        fight(
+            IntExpr::cond(
+                Condition::Compare {
+                    quantity: Quantity::CluesAtControllerLocation,
+                    op: CmpOp::Gt,
+                    value: 0,
+                },
+                3,
+                1,
+            ),
+            1u8,
+        ),
     )]
 }
 
@@ -56,10 +68,18 @@ mod tests {
         else {
             panic!("expected Effect::Fight");
         };
-        assert_eq!(*extra_damage, 1);
+        assert_eq!(*extra_damage, IntExpr::Lit(1));
         assert_eq!(
             *combat_modifier,
-            IntExpr::cond(Condition::LocationHasClues, 3, 1)
+            IntExpr::cond(
+                Condition::Compare {
+                    quantity: Quantity::CluesAtControllerLocation,
+                    op: CmpOp::Gt,
+                    value: 0,
+                },
+                3,
+                1,
+            )
         );
     }
 }

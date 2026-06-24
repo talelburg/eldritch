@@ -25,7 +25,7 @@
 //! affecting First Aid / Medical Texts); fixed engine-wide in #361.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated, investigate, Ability, Cost, IntExpr};
+use card_dsl::dsl::{activated, investigate, Ability, Cost};
 
 /// `ArkhamDB` code for Flashlight (original-Core printing).
 pub const CODE: &str = "01087";
@@ -39,14 +39,14 @@ pub fn abilities() -> Vec<Ability> {
             kind: UseKind::Supplies,
             count: 1,
         }],
-        investigate(IntExpr::Lit(-2)),
+        investigate(-2i8),
     )]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, IntExpr, Trigger};
 
     #[test]
     fn one_action_ability_spending_a_supply_to_investigate_minus_two_shroud() {

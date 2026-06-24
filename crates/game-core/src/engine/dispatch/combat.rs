@@ -966,9 +966,9 @@ pub(super) fn resume_damage_assignment(
             }
         }
         // K5b-2 (effect/treachery path): place this point's drained assignment,
-        // then resume the parked effect walk — the parent `ForEachPointFailed`/
-        // `Seq` frame is now on top, so the remaining iterations run (and may
-        // prompt again) with no point lost (#422 / #44).
+        // then resume the parked effect walk — the parent `Seq` or `Leaf` frame
+        // is now on top, so subsequent effects run (and may prompt again) with
+        // no point lost (#422 / #44).
         DamageSource::Effect => {
             let _ = place_assignment(cx, investigator, &assignment);
             super::choice::resume_effect_walk(cx)

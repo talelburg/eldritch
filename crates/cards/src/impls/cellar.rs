@@ -22,13 +22,15 @@ pub fn abilities() -> Vec<Ability> {
     vec![forced_on_event(
         EventPattern::EnteredLocation,
         EventTiming::After,
-        deal_damage(InvestigatorTarget::You, 1),
+        deal_damage(InvestigatorTarget::You, 1u8),
     )]
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, HarmKind, InvestigatorTarget, Trigger};
+    use card_dsl::dsl::{
+        Effect, EventPattern, EventTiming, HarmKind, IntExpr, InvestigatorTarget, Trigger,
+    };
 
     #[test]
     fn abilities_are_one_forced_enter_damage() {
@@ -47,7 +49,7 @@ mod tests {
             Effect::Deal {
                 kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
-                amount: 1,
+                amount: IntExpr::Lit(1),
             }
         ));
     }

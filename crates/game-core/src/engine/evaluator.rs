@@ -60,8 +60,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
-    ModifierScope, SkillTestKind, Stat, Trigger,
+    CmpOp, Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
+    ModifierScope, Quantity, SkillTestKind, Stat, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -209,7 +209,7 @@ impl EvalContext {
 
 impl EvalContext {
     /// Just-resolved skill test's failure margin (bound only while running an
-    /// `on_fail` effect). See [`Effect::ForEachPointFailed`].
+    /// `on_fail` effect). Consumed by `IntExpr::Count(Quantity::SkillTestFailedBy)`.
     #[must_use]
     pub fn failed_by(&self) -> Option<u8> {
         self.skill_test.map(|b| b.failed_by)
@@ -318,11 +318,6 @@ fn frame_of(effect: &Effect, ctx: EvalContext) -> crate::state::EffectFrame {
             next: 0,
             ctx,
         },
-        Effect::ForEachPointFailed(body) => EffectFrame::ForEachPointFailed {
-            remaining: ctx.failed_by().unwrap_or(0),
-            body: body.clone(),
-            ctx,
-        },
         _ => EffectFrame::Leaf {
             effect: Box::new(effect.clone()),
             ctx,
@@ -356,24 +351,6 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
             }
             EngineOutcome::Done
         }
-        EffectFrame::ForEachPointFailed {
-            remaining,
-            body,
-            ctx,
-        } => {
-            if remaining > 0 {
-                let child = frame_of(&body, ctx);
-                cx.state.continuations.push(Continuation::Effect(
-                    EffectFrame::ForEachPointFailed {
-                        remaining: remaining - 1,
-                        body,
-                        ctx,
-                    },
-                ));
-                cx.state.continuations.push(Continuation::Effect(child));
-            }
-            EngineOutcome::Done
-        }
         EffectFrame::Leaf { effect, ctx } => step_leaf(cx, &effect, ctx),
     }
 }
@@ -395,9 +372,9 @@ fn suspend_leaf_in_place(cx: &mut Cx, effect: &Effect, ctx: EvalContext) {
 /// step). Grounds any `*::Chosen` target, then dispatches: a terminal effect
 /// runs; `If` pushes its chosen branch; `ChooseOne`/`SearchDeck`/`Native` push a
 /// branch or **suspend in place** (re-pushing this `Leaf` so resume re-steps it
-/// with `ctx.chosen_option` set). Control nodes (`Seq`/`ForEachPointFailed`) are
-/// normally routed to their own frames by [`frame_of`]; if one reaches here it
-/// is pushed as its frame. The `Leaf` itself was already popped by the caller.
+/// with `ctx.chosen_option` set). Control nodes (`Seq`) are normally routed to
+/// their own frames by [`frame_of`]; if one reaches here it is pushed as its
+/// frame. The `Leaf` itself was already popped by the caller.
 // A single exhaustive dispatch over every `Effect` variant; splitting it would
 // only obscure the dispatch (it mirrors the former `apply_effect_inner`).
 #[allow(clippy::too_many_lines)]
@@ -421,7 +398,17 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             kind,
             target,
             amount,
-        } => deal_effect(cx, eval_ctx, *kind, *target, *amount),
+        } => {
+            let n = match eval_int_expr(cx.state, &eval_ctx, amount) {
+                Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
+                Err(reason) => {
+                    return EngineOutcome::Rejected {
+                        reason: reason.into(),
+                    }
+                }
+            };
+            deal_effect(cx, eval_ctx, *kind, *target, n)
+        }
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
         }
@@ -430,7 +417,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             target,
             count,
         } => heal_effect(cx, eval_ctx, *kind, *target, *count),
-        Effect::Seq(_) | Effect::ForEachPointFailed(_) => {
+        Effect::Seq(_) => {
             cx.state
                 .continuations
                 .push(crate::state::Continuation::Effect(frame_of(
@@ -444,7 +431,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             then,
             else_,
         } => {
-            let holds = match eval_condition(cx.state, eval_ctx.controller, condition) {
+            let holds = match eval_condition(cx.state, &eval_ctx, condition) {
                 Ok(b) => b,
                 Err(reason) => {
                     return EngineOutcome::Rejected {
@@ -514,7 +501,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::Fight {
             combat_modifier,
             extra_damage,
-        } => apply_fight(cx, &eval_ctx, combat_modifier, *extra_damage),
+        } => apply_fight(cx, &eval_ctx, combat_modifier, extra_damage),
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
         Effect::Investigate { shroud_modifier } => {
@@ -810,14 +797,26 @@ fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// `1 + extra_damage`. The activation check has already guaranteed
 /// exactly one engaged enemy, so a missing target here is a state-shape
 /// violation rejected loudly rather than silently no-oped.
+///
+/// Both `combat_modifier` and `extra_damage` are evaluated from an
+/// `&IntExpr` (board-state-dependent AST, same path); `extra_damage` is
+/// then clamped to `u8` (negative results treated as 0).
 fn apply_fight(
     cx: &mut Cx,
     eval_ctx: &EvalContext,
     combat_modifier: &IntExpr,
-    extra_damage: u8,
+    extra_damage: &IntExpr,
 ) -> EngineOutcome {
-    let modifier = match eval_int_expr(cx.state, eval_ctx.controller, combat_modifier) {
+    let modifier = match eval_int_expr(cx.state, eval_ctx, combat_modifier) {
         Ok(m) => m,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    let extra_damage_n = match eval_int_expr(cx.state, eval_ctx, extra_damage) {
+        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
         Err(reason) => {
             return EngineOutcome::Rejected {
                 reason: reason.into(),
@@ -848,7 +847,7 @@ fn apply_fight(
         fight_difficulty,
         crate::state::SkillTestFollowUp::Fight {
             enemy: enemy_id,
-            extra_damage,
+            extra_damage: extra_damage_n,
         },
         None,
         None,
@@ -870,7 +869,7 @@ fn apply_investigate(
     eval_ctx: &EvalContext,
     shroud_modifier: &IntExpr,
 ) -> EngineOutcome {
-    let delta = match eval_int_expr(cx.state, eval_ctx.controller, shroud_modifier) {
+    let delta = match eval_int_expr(cx.state, eval_ctx, shroud_modifier) {
         Ok(d) => d,
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -1045,7 +1044,7 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// turns those into [`EngineOutcome::Rejected`].
 fn eval_condition(
     state: &GameState,
-    controller: InvestigatorId,
+    eval_ctx: &EvalContext,
     condition: &Condition,
 ) -> Result<bool, String> {
     match condition {
@@ -1055,14 +1054,21 @@ fn eval_condition(
             })?;
             Ok(t.kind == *kind)
         }
-        Condition::LocationHasClues => {
-            let has = state
-                .investigators
-                .get(&controller)
-                .and_then(|inv| inv.current_location)
-                .and_then(|loc| state.locations.get(&loc))
-                .is_some_and(|l| l.clues > 0);
-            Ok(has)
+        Condition::Compare {
+            quantity,
+            op,
+            value,
+        } => {
+            let lhs = eval_quantity(state, eval_ctx, *quantity);
+            let rhs = *value;
+            Ok(match op {
+                CmpOp::Eq => lhs == rhs,
+                CmpOp::Ne => lhs != rhs,
+                CmpOp::Lt => lhs < rhs,
+                CmpOp::Le => lhs <= rhs,
+                CmpOp::Gt => lhs > rhs,
+                CmpOp::Ge => lhs >= rhs,
+            })
         }
         Condition::SkillTest { outcome } => {
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
@@ -1081,27 +1087,46 @@ fn eval_condition(
     }
 }
 
+/// Resolve a [`Quantity`] against current state for the controller.
+/// Always non-negative; returned as `i8` to compose in [`IntExpr`].
+/// Used by [`IntExpr::Count`] and [`Condition::Compare`].
+fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
+    let controller = eval_ctx.controller;
+    let n: usize = match q {
+        Quantity::CluesAtControllerLocation => state
+            .investigators
+            .get(&controller)
+            .and_then(|inv| inv.current_location)
+            .and_then(|loc| state.locations.get(&loc))
+            .map_or(0, |l| usize::from(l.clues)),
+        Quantity::EngagedEnemies => state
+            .enemies
+            .values()
+            .filter(|e| e.engaged_with == Some(controller))
+            .count(),
+        Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
+    };
+    i8::try_from(n).unwrap_or(i8::MAX)
+}
+
 /// Resolve an [`IntExpr`] against the current state for `controller`.
 ///
 /// [`IntExpr::Cond`] evaluates its [`Condition`] (reusing
 /// [`eval_condition`]); an unexpressible condition propagates as `Err`,
 /// which the caller turns into [`EngineOutcome::Rejected`].
-fn eval_int_expr(
-    state: &GameState,
-    controller: InvestigatorId,
-    expr: &IntExpr,
-) -> Result<i8, String> {
+fn eval_int_expr(state: &GameState, eval_ctx: &EvalContext, expr: &IntExpr) -> Result<i8, String> {
     match expr {
         IntExpr::Lit(n) => Ok(*n),
         IntExpr::Cond {
             when,
             then,
             otherwise,
-        } => Ok(if eval_condition(state, controller, when)? {
+        } => Ok(if eval_condition(state, eval_ctx, when)? {
             *then
         } else {
             *otherwise
         }),
+        IntExpr::Count(q) => Ok(eval_quantity(state, eval_ctx, *q)),
     }
 }
 
@@ -2101,20 +2126,21 @@ mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
         boost_attack_damage, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_clue, draw_cards, for_each_point_failed, gain_resources, heal, modify, on_play,
-        seq, Ability, Choose, Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet,
-        LocationTarget, ModifierScope, SkillTestKind, Stat,
+        discover_clue, draw_cards, gain_resources, heal, modify, on_play, seq, Ability, Choose,
+        Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet, LocationTarget,
+        ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-    use crate::{assert_event, assert_event_count, assert_no_event};
+    use crate::{assert_event, assert_no_event};
 
     use super::{
-        constant_skill_modifier, effective_shroud, eval_condition, push_effect, step_effect_frame,
-        unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
+        constant_skill_modifier, effective_shroud, eval_condition, eval_int_expr, eval_quantity,
+        push_effect, step_effect_frame, unconditional_constant_stat_modifier, EngineOutcome,
+        EvalContext,
     };
     use crate::dsl::Condition;
     use crate::engine::Cx;
@@ -2196,6 +2222,19 @@ mod tests {
         }
     }
 
+    /// Build a `GameState` with `clue_count` clues at `InvestigatorId(1)`'s location.
+    fn with_clues(clue_count: u8) -> crate::state::GameState {
+        let loc_id = LocationId(1);
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc_id);
+        let mut loc = test_location(1, "Study");
+        loc.clues = clue_count;
+        GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .build()
+    }
+
     /// Assert the top frame is an effect node suspended in place for a pick.
     #[track_caller]
     fn assert_suspended_leaf(state: &crate::state::GameState) {
@@ -2213,9 +2252,10 @@ mod tests {
 
     #[test]
     fn location_has_clues_condition_tracks_clue_count() {
+        use card_dsl::dsl::{CmpOp, Quantity};
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(1);
-        let with_clues = |clue_count: u8| {
+        let with_clues_local = |clue_count: u8| {
             let mut inv = test_investigator(1);
             inv.current_location = Some(loc_id);
             let mut loc = test_location(1, "Study");
@@ -2225,15 +2265,75 @@ mod tests {
                 .with_location(loc)
                 .build()
         };
+        let has_clues = Condition::Compare {
+            quantity: Quantity::CluesAtControllerLocation,
+            op: CmpOp::Gt,
+            value: 0,
+        };
         // Condition tracks clue presence at the controller's location.
         assert_eq!(
-            eval_condition(&with_clues(1), inv_id, &Condition::LocationHasClues),
+            eval_condition(
+                &with_clues_local(1),
+                &EvalContext::for_controller(inv_id),
+                &has_clues
+            ),
             Ok(true)
         );
         assert_eq!(
-            eval_condition(&with_clues(0), inv_id, &Condition::LocationHasClues),
+            eval_condition(
+                &with_clues_local(0),
+                &EvalContext::for_controller(inv_id),
+                &has_clues
+            ),
             Ok(false)
         );
+    }
+
+    #[test]
+    fn eval_quantity_reads_clues_engaged_and_margin() {
+        use card_dsl::dsl::Quantity;
+        // clues at location
+        let (state, inv) = state_with_cards_in_play(&[]);
+        let ctx = EvalContext::for_controller(inv);
+        // helper `with_clues(n)` already exists in this module; reuse it:
+        assert_eq!(
+            eval_quantity(&with_clues(2), &ctx, Quantity::CluesAtControllerLocation),
+            2
+        );
+        assert_eq!(
+            eval_quantity(&with_clues(0), &ctx, Quantity::CluesAtControllerLocation),
+            0
+        );
+        // failure margin from the ctx binding
+        let mut ctx2 = EvalContext::for_controller(inv);
+        ctx2.set_failed_by(3);
+        assert_eq!(eval_quantity(&state, &ctx2, Quantity::SkillTestFailedBy), 3);
+        assert_eq!(eval_quantity(&state, &ctx, Quantity::SkillTestFailedBy), 0);
+    }
+
+    #[test]
+    fn eval_count_and_compare_over_clues() {
+        use card_dsl::dsl::{CmpOp, Condition, IntExpr, Quantity};
+        let (_s, inv) = state_with_cards_in_play(&[]);
+        let ctx = EvalContext::for_controller(inv);
+        // Count
+        assert_eq!(
+            eval_int_expr(
+                &with_clues(2),
+                &ctx,
+                &IntExpr::Count(Quantity::CluesAtControllerLocation)
+            )
+            .unwrap(),
+            2
+        );
+        // Compare: clues > 0
+        let has = Condition::Compare {
+            quantity: Quantity::CluesAtControllerLocation,
+            op: CmpOp::Gt,
+            value: 0,
+        };
+        assert!(eval_condition(&with_clues(1), &ctx, &has).unwrap());
+        assert!(!eval_condition(&with_clues(0), &ctx, &has).unwrap());
     }
 
     #[test]
@@ -4484,7 +4584,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &deal_damage(InvestigatorTarget::You, 2),
+            &deal_damage(InvestigatorTarget::You, 2u8),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4493,52 +4593,6 @@ mod tests {
             events,
             Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
         );
-    }
-
-    #[test]
-    fn for_each_point_failed_scales_body_by_margin() {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_active_investigator(InvestigatorId(1))
-            .build();
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        // Margin 2 → run Deal{Damage,You,1} twice → 2 damage, 2 events.
-        let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
-        eval_ctx.set_failed_by(2);
-        let outcome = run(
-            &mut cx,
-            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
-            eval_ctx,
-        );
-        assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
-        assert_event_count!(events, 2, Event::DamageTaken { .. });
-    }
-
-    #[test]
-    fn for_each_point_failed_with_no_margin_is_a_noop() {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_active_investigator(InvestigatorId(1))
-            .build();
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        // failed_by None (no test in context) → zero iterations.
-        let outcome = run(
-            &mut cx,
-            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
-            EvalContext::for_controller(InvestigatorId(1)),
-        );
-        assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 0);
-        assert_no_event!(events, Event::DamageTaken { .. });
     }
 
     #[test]
@@ -4554,7 +4608,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &deal_horror(InvestigatorTarget::You, 1),
+            &deal_horror(InvestigatorTarget::You, 1u8),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4581,7 +4635,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &deal_damage(InvestigatorTarget::You, 3),
+            &deal_damage(InvestigatorTarget::You, 3u8),
             EvalContext::for_controller(id),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4590,6 +4644,33 @@ mod tests {
             events,
             Event::InvestigatorDefeated { investigator, .. } if *investigator == id
         );
+    }
+
+    #[test]
+    fn deal_amount_can_be_a_count_of_failure_margin() {
+        use crate::dsl::{IntExpr, Quantity};
+        // Build a Deal whose amount is the failure margin; fail-by 2 → 2 damage.
+        let effect = deal_damage(
+            InvestigatorTarget::You,
+            IntExpr::Count(Quantity::SkillTestFailedBy),
+        );
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
+        eval_ctx.set_failed_by(2);
+        let outcome = run(&mut cx, &effect, eval_ctx);
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        // Deal evaluates the IntExpr once and applies the result in a single hit;
+        // fail-by 2 → amount 2 → one DamageTaken event with amount 2.
+        assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1));
     }
 
     #[test]

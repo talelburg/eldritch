@@ -527,8 +527,8 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
             push_effect(cx, effect, card_ctx(investigator));
         }
     } else if let Some(effect) = &on_fail {
-        // Thread the failure margin so `Effect::ForEachPointFailed`
-        // (Grasping Hands 01162) can scale.
+        // Thread the failure margin so `IntExpr::Count(Quantity::SkillTestFailedBy)`
+        // (Grasping Hands 01162, Rotting Remains 01163) can scale.
         let mut ctx = card_ctx(investigator);
         ctx.set_failed_by(failed_by);
         push_effect(cx, effect, ctx);
@@ -1312,12 +1312,12 @@ fn symbol_effects_to_effect(
             TokenEffect::Damage(n) => Effect::Deal {
                 kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
-                amount: *n,
+                amount: (*n).into(),
             },
             TokenEffect::Horror(n) => Effect::Deal {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
-                amount: *n,
+                amount: (*n).into(),
             },
         })
         .collect();
@@ -1421,7 +1421,7 @@ mod tests {
             Some(Effect::Deal {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
-                amount: 1,
+                amount: crate::dsl::IntExpr::Lit(1),
             }),
         );
 
@@ -1491,7 +1491,7 @@ mod tests {
             SkillTestKind::Plain,
             2,
             SkillTestFollowUp::None,
-            Some(deal_horror(InvestigatorTarget::You, 1)),
+            Some(deal_horror(InvestigatorTarget::You, 1u8)),
             None,
             None,
             0,

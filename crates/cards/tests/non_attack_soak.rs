@@ -1,9 +1,11 @@
 //! K5b-2 (#44 / #422): non-attack damage/horror from card/treachery effects is
 //! distributed **interactively** across controlled soakers + self. Each point a
 //! soaker can take opens a per-point `PickSingle` prompt; the multi-point case
-//! (Grasping Hands' `ForEachPointFailed(deal 1)`) suspends per point and resumes
-//! without losing iterations — the case the old suspend-and-replay model dropped.
-//! Driven through the real `apply` revelation path against the corpus registry.
+//! (Grasping Hands deals `Count(SkillTestFailedBy)` damage) suspends per point
+//! and resumes without losing iterations — the case the old suspend-and-replay
+//! model dropped (#422 / #44). Driven through the real `apply` revelation path.
+//! After #426 the damage is one `Deal { amount: N }` not N×`Deal { amount: 1 }`;
+//! the per-point prompt loop still fires via the `DamageAssignment` frame.
 
 use std::sync::Once;
 
@@ -72,9 +74,10 @@ fn dog_damage(result: &game_core::ApplyResult) -> Option<u8> {
 fn grasping_hands_distributes_both_points_onto_guard_dog() {
     install_registry();
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage, dealt
-    // as ForEachPointFailed(deal 1): two independent per-point suspensions. The
-    // player assigns both to Guard Dog (option 1 = the asset; option 0 = self).
-    // The old replay model lost the second point here — this proves no loss.
+    // as a single Deal { amount: 2 }. Two per-point prompts still fire via the
+    // DamageAssignment frame. The player assigns both to Guard Dog
+    // (option 1 = the asset; option 0 = self). The old replay model lost the
+    // second point here — this proves no loss (#422).
     let result = reveal_distributing(
         board_with_soaker("01162", "01021", ChaosToken::Numeric(-2)),
         &[1, 1],

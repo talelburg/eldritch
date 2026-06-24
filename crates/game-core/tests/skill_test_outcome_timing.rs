@@ -44,7 +44,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 kind: None,
             },
             EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1),
+            deal_horror(InvestigatorTarget::You, 1u8),
         )]
     })
 }

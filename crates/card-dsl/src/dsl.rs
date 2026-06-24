@@ -26,9 +26,12 @@
 //!   Harold Walsted leaves play: Remove him from the game and add...`
 //!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
 //!   ability-specific effect machinery.
-//! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
-//!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). [`Condition`]
-//!   today only covers skill-test outcome and kind.
+//! - **Stat-comparison / location-state conditions** (`AnyEnemyEngaged`,
+//!   `SkillSucceededByAtLeast(N)`). Note: [`Condition::Compare`] already
+//!   covers clue-count and engaged-enemy-count comparisons — these are
+//!   expressible today. What remains unexpressible are conditions keyed on
+//!   location state, success margin, or other quantities not yet in
+//!   [`Quantity`].
 //!
 //! # Has DSL surface but not yet engine support
 //!
@@ -573,7 +576,7 @@ pub enum Effect {
     Deal {
         kind: HarmKind,
         target: InvestigatorTarget,
-        amount: u8,
+        amount: IntExpr,
     },
     /// Deal `amount` direct (non-test) damage to the resolved enemy
     /// `target`, applying the defeat cascade (Beat Cop 01018). Typed (not
@@ -649,12 +652,6 @@ pub enum Effect {
         /// `on_success` — success and margin-keyed-failure are separate axes.
         on_fail: Option<Box<Effect>>,
     },
-    /// Run `body` once per point the just-resolved skill test was failed
-    /// by ("for each point you fail by, …"). Reads the failure margin
-    /// from the evaluator context; a `0` margin (or no margin in context)
-    /// runs `body` zero times. Only meaningful inside an
-    /// [`Effect::SkillTest`]'s `on_fail`.
-    ForEachPointFailed(Box<Effect>),
     /// Discard the firing card instance (the evaluator context's
     /// `source`). Locates the instance in a threat area or location
     /// attachment, removes it, and discards it to the encounter discard.
@@ -707,7 +704,7 @@ pub enum Effect {
         /// Combat modifier for this attack, resolved against state at eval.
         combat_modifier: IntExpr,
         /// Bonus damage beyond the base 1 (.38 Special: +1).
-        extra_damage: u8,
+        extra_damage: IntExpr,
     },
     /// Draw `count` cards for the resolved target investigator —
     /// "draw 1 card" (Guts 01089, Perception 01090, Overpower 01091,
@@ -1071,7 +1068,7 @@ impl EnemyTarget {
 /// A boolean predicate guarding an [`Effect::If`].
 ///
 /// Phase-2 minimal set; later phases will add things like
-/// `LocationHasClues`, `AnyEnemyEngaged`, comparisons against
+/// `Compare { CluesAtControllerLocation, Gt, 0 }`, `AnyEnemyEngaged`, comparisons against
 /// stat values, etc.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Condition {
@@ -1089,16 +1086,43 @@ pub enum Condition {
     /// there's an in-flight test whose kind matches; rejects when
     /// no test is in flight.
     SkillTestKind(SkillTestKind),
-    /// Holds when the controller's current location has ≥1 clue.
-    /// ".38 Special": "if there are 1 or more clues on your location".
-    LocationHasClues,
+    /// Compare a [`Quantity`] against `value` under `op`.
+    /// Replaces the old `LocationHasClues` (now `Compare { CluesAtControllerLocation, Gt, 0 }`).
+    Compare {
+        quantity: Quantity,
+        op: CmpOp,
+        value: i8,
+    },
+}
+
+/// A non-negative count read off game state, usable as a value
+/// ([`IntExpr::Count`]) or compared in a predicate ([`Condition::Compare`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Quantity {
+    /// Clues on the controller's current location.
+    CluesAtControllerLocation,
+    /// Enemies engaged with the controller.
+    EngagedEnemies,
+    /// Failure margin of the resolving skill test (0 outside one).
+    SkillTestFailedBy,
+}
+
+/// Comparison operator for [`Condition::Compare`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 /// An integer computed at effect-evaluation time. Lets a numeric field
 /// carry a condition-gated value without duplicating the surrounding
 /// effect — ".38 Special" reads its combat modifier as
-/// `IntExpr::cond(LocationHasClues, 3, 1)` rather than an
-/// [`Effect::If`] wrapping two near-identical `fight(…)` nodes.
+/// `IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1)`
+/// rather than an [`Effect::If`] wrapping two near-identical `fight(…)` nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IntExpr {
     /// A literal value.
@@ -1112,6 +1136,8 @@ pub enum IntExpr {
         /// Value when it does not.
         otherwise: i8,
     },
+    /// A state-read count ([`Quantity`]).
+    Count(Quantity),
 }
 
 impl IntExpr {
@@ -1123,6 +1149,18 @@ impl IntExpr {
             then,
             otherwise,
         }
+    }
+}
+
+impl From<i8> for IntExpr {
+    fn from(n: i8) -> Self {
+        IntExpr::Lit(n)
+    }
+}
+
+impl From<u8> for IntExpr {
+    fn from(n: u8) -> Self {
+        IntExpr::Lit(i8::try_from(n).unwrap_or(i8::MAX))
     }
 }
 
@@ -1276,11 +1314,11 @@ pub fn discover_clue(from: LocationTarget, count: u8) -> Effect {
 
 /// Build an [`Effect::Deal`] dealing `amount` damage to `target`.
 #[must_use]
-pub fn deal_damage(target: InvestigatorTarget, amount: u8) -> Effect {
+pub fn deal_damage(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
     Effect::Deal {
         kind: HarmKind::Damage,
         target,
-        amount,
+        amount: amount.into(),
     }
 }
 
@@ -1318,11 +1356,11 @@ pub fn heal_horror(target: InvestigatorTarget, count: u8) -> Effect {
 
 /// Build an [`Effect::Deal`] dealing `amount` horror to `target`.
 #[must_use]
-pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
+pub fn deal_horror(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
     Effect::Deal {
         kind: HarmKind::Horror,
         target,
-        amount,
+        amount: amount.into(),
     }
 }
 
@@ -1464,21 +1502,23 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
 }
 
 /// Build an [`Effect::Fight`] with the given combat modifier and bonus
-/// damage (.38 Special: `fight(IntExpr::cond(LocationHasClues, 3, 1), 1)`).
+/// damage (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
 #[must_use]
-pub fn fight(combat_modifier: IntExpr, extra_damage: u8) -> Effect {
+pub fn fight(combat_modifier: impl Into<IntExpr>, extra_damage: impl Into<IntExpr>) -> Effect {
     Effect::Fight {
-        combat_modifier,
-        extra_damage,
+        combat_modifier: combat_modifier.into(),
+        extra_damage: extra_damage.into(),
     }
 }
 
 /// Build an [`Effect::Investigate`] applying `shroud_modifier` to the
 /// controller's location difficulty for this investigation (Flashlight 01087:
-/// `investigate(IntExpr::Lit(-2))`).
+/// `investigate(-2i8)`).
 #[must_use]
-pub fn investigate(shroud_modifier: IntExpr) -> Effect {
-    Effect::Investigate { shroud_modifier }
+pub fn investigate(shroud_modifier: impl Into<IntExpr>) -> Effect {
+    Effect::Investigate {
+        shroud_modifier: shroud_modifier.into(),
+    }
 }
 
 /// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].
@@ -1505,13 +1545,6 @@ pub fn skill_test(
         on_success: on_success.map(Box::new),
         on_fail: on_fail.map(Box::new),
     }
-}
-
-/// Build an [`Effect::ForEachPointFailed`] running `body` once per point
-/// the just-resolved skill test was failed by.
-#[must_use]
-pub fn for_each_point_failed(body: Effect) -> Effect {
-    Effect::ForEachPointFailed(Box::new(body))
 }
 
 // ---- tests ----------------------------------------------------
@@ -1791,14 +1824,14 @@ mod tests {
 
     #[test]
     fn deal_builders_produce_the_kinded_effect_and_round_trip() {
-        let dmg = deal_damage(InvestigatorTarget::You, 2);
-        let hor = deal_horror(InvestigatorTarget::You, 3);
+        let dmg = deal_damage(InvestigatorTarget::You, 2u8);
+        let hor = deal_horror(InvestigatorTarget::You, 3u8);
         assert_eq!(
             dmg,
             Effect::Deal {
                 kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
-                amount: 2,
+                amount: IntExpr::Lit(2),
             }
         );
         assert_eq!(
@@ -1806,7 +1839,7 @@ mod tests {
             Effect::Deal {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
-                amount: 3,
+                amount: IntExpr::Lit(3),
             }
         );
         for e in [dmg, hor] {
@@ -1898,26 +1931,6 @@ mod tests {
             pat,
             serde_json::from_str::<EventPattern>(&json).expect("de")
         );
-    }
-
-    /// `Effect::SkillTest` (treachery-Revelation test) with a margin-keyed
-    /// `Effect::ForEachPointFailed` failure branch round-trips through serde
-    /// — both new #286 variants in one tree.
-    #[test]
-    fn skill_test_and_for_each_point_failed_round_trip() {
-        use crate::card_data::SkillKind;
-        let effect = skill_test(
-            SkillKind::Agility,
-            3,
-            None,
-            Some(for_each_point_failed(deal_damage(
-                InvestigatorTarget::You,
-                1,
-            ))),
-        );
-        let json = serde_json::to_string(&effect).expect("serialize");
-        let back: Effect = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(effect, back);
     }
 
     /// Roland-Banks-shaped reaction: "after you defeat an enemy,

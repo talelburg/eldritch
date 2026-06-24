@@ -5,11 +5,11 @@
 //! ```
 //!
 //! Pure DSL: `Trigger::Revelation` → `Effect::SkillTest` whose `on_fail`
-//! deals 1 horror per point the test was failed by (#286 machinery).
+//! deals `Count(SkillTestFailedBy)` horror in a single `Deal` (#426).
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
-    deal_horror, for_each_point_failed, revelation, skill_test, Ability, InvestigatorTarget,
+    deal_horror, revelation, skill_test, Ability, IntExpr, InvestigatorTarget, Quantity,
 };
 
 /// `ArkhamDB` code for Rotting Remains.
@@ -21,17 +21,17 @@ pub fn abilities() -> Vec<Ability> {
         SkillKind::Willpower,
         3,
         None,
-        Some(for_each_point_failed(deal_horror(
+        Some(deal_horror(
             InvestigatorTarget::You,
-            1,
-        ))),
+            IntExpr::Count(Quantity::SkillTestFailedBy),
+        )),
     ))]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, HarmKind};
+    use card_dsl::dsl::{Effect, HarmKind, IntExpr, Quantity};
 
     #[test]
     fn revelation_tests_willpower_3_then_horror_per_point() {
@@ -51,8 +51,11 @@ mod tests {
         assert!(on_success.is_none(), "no success-side effect");
         assert!(matches!(
             on_fail.as_deref(),
-            Some(Effect::ForEachPointFailed(b))
-                if matches!(**b, Effect::Deal { kind: HarmKind::Horror, amount: 1, .. })
+            Some(Effect::Deal {
+                kind: HarmKind::Horror,
+                amount: IntExpr::Count(Quantity::SkillTestFailedBy),
+                ..
+            })
         ));
     }
 }
