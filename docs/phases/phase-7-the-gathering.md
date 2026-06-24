@@ -70,8 +70,13 @@ enemy; you just forfeit the sole-engaged damage bonus).
   `ability_usage` + a `scan_investigator_card_reactions` source / `CandidateSource::
   Investigator`), which also fixes Roland's **reaction** firing from a *seated*
   investigator (previously only via test card-injection). Bridge is sunset by **#448**;
-  **#453** tracks removing the `#[serde(default)]` convention the new fields follow.
-  His signature is in the "done" criteria.
+  **#453 ✅ shipped (PR #456)** removed the `#[serde(default)]` convention the new fields
+  follow — the non-`Option` fields are now required on the wire (a stale payload errors
+  rather than silently degrading `card_code` to the empty sentinel); the two `Option`
+  fields (`pending_played_event`, `usage_limit`) stay implicitly optional because serde
+  defaults a missing `Option` to `None` regardless, so #453's concern #2 for
+  `pending_played_event` is only partially met (forcing it needs a custom deserializer,
+  deferred). His signature is in the "done" criteria.
 
 **2. #368 — before-discover eligibility (p1-next, needs-design).** Lift the
 hardcoded scan-suppression stand-ins (Cover Up 01007 `card.clues == 0`; act 01109
