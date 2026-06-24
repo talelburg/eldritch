@@ -56,7 +56,7 @@ pub fn abilities() -> Vec<Ability> {
             )),
             Some(deal_damage(
                 InvestigatorTarget::chosen_at_your_location(),
-                1,
+                1u8,
             )),
         ),
     )]
@@ -97,7 +97,7 @@ mod tests {
         );
         assert_eq!(
             on_fail.as_deref(),
-            Some(&deal_damage(target, 1)),
+            Some(&deal_damage(target, 1u8)),
             "failure deals 1 damage to the chosen investigator",
         );
     }

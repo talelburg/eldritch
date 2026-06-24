@@ -34,10 +34,10 @@ pub const CODE: &str = "01086";
 pub fn abilities() -> Vec<Ability> {
     vec![
         // [action]: Fight. You get +1 [combat] for this attack.
-        activated(1, vec![], fight(IntExpr::Lit(1), 0)),
+        activated(1, vec![], fight(IntExpr::Lit(1), 0u8)),
         // [action] Discard Knife: Fight. You get +2 [combat] for this attack.
         // This attack deals +1 damage.
-        activated(1, vec![Cost::DiscardSelf], fight(IntExpr::Lit(2), 1)),
+        activated(1, vec![Cost::DiscardSelf], fight(IntExpr::Lit(2), 1u8)),
     ]
 }
 
@@ -65,7 +65,7 @@ mod tests {
             panic!("expected Effect::Fight at index 0");
         };
         assert_eq!(*combat_modifier, IntExpr::Lit(1));
-        assert_eq!(*extra_damage, 0);
+        assert_eq!(*extra_damage, IntExpr::Lit(0));
 
         // Index 1: [action] Discard Knife Fight, +2 combat, +1 damage.
         assert_eq!(abilities[1].trigger, Trigger::Activated { action_cost: 1 });
@@ -78,7 +78,7 @@ mod tests {
             panic!("expected Effect::Fight at index 1");
         };
         assert_eq!(*combat_modifier, IntExpr::Lit(2));
-        assert_eq!(*extra_damage, 1);
+        assert_eq!(*extra_damage, IntExpr::Lit(1));
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

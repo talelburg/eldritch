@@ -33,7 +33,7 @@ pub const CODE: &str = "01020";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated(1, vec![], fight(IntExpr::Lit(1), 1))]
+    vec![activated(1, vec![], fight(IntExpr::Lit(1), 1u8))]
 }
 
 #[cfg(test)]
@@ -59,7 +59,7 @@ mod tests {
         };
         assert_eq!(*combat_modifier, IntExpr::Lit(1));
         // Unconditional +1 — see the module doc-comment / TODO(#300).
-        assert_eq!(*extra_damage, 1);
+        assert_eq!(*extra_damage, IntExpr::Lit(1));
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

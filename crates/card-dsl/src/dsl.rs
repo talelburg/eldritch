@@ -573,7 +573,7 @@ pub enum Effect {
     Deal {
         kind: HarmKind,
         target: InvestigatorTarget,
-        amount: u8,
+        amount: IntExpr,
     },
     /// Deal `amount` direct (non-test) damage to the resolved enemy
     /// `target`, applying the defeat cascade (Beat Cop 01018). Typed (not
@@ -707,7 +707,7 @@ pub enum Effect {
         /// Combat modifier for this attack, resolved against state at eval.
         combat_modifier: IntExpr,
         /// Bonus damage beyond the base 1 (.38 Special: +1).
-        extra_damage: u8,
+        extra_damage: IntExpr,
     },
     /// Draw `count` cards for the resolved target investigator —
     /// "draw 1 card" (Guts 01089, Perception 01090, Overpower 01091,
@@ -1317,11 +1317,11 @@ pub fn discover_clue(from: LocationTarget, count: u8) -> Effect {
 
 /// Build an [`Effect::Deal`] dealing `amount` damage to `target`.
 #[must_use]
-pub fn deal_damage(target: InvestigatorTarget, amount: u8) -> Effect {
+pub fn deal_damage(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
     Effect::Deal {
         kind: HarmKind::Damage,
         target,
-        amount,
+        amount: amount.into(),
     }
 }
 
@@ -1359,11 +1359,11 @@ pub fn heal_horror(target: InvestigatorTarget, count: u8) -> Effect {
 
 /// Build an [`Effect::Deal`] dealing `amount` horror to `target`.
 #[must_use]
-pub fn deal_horror(target: InvestigatorTarget, amount: u8) -> Effect {
+pub fn deal_horror(target: InvestigatorTarget, amount: impl Into<IntExpr>) -> Effect {
     Effect::Deal {
         kind: HarmKind::Horror,
         target,
-        amount,
+        amount: amount.into(),
     }
 }
 
@@ -1505,12 +1505,12 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
 }
 
 /// Build an [`Effect::Fight`] with the given combat modifier and bonus
-/// damage (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1)`).
+/// damage (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
 #[must_use]
-pub fn fight(combat_modifier: IntExpr, extra_damage: u8) -> Effect {
+pub fn fight(combat_modifier: impl Into<IntExpr>, extra_damage: impl Into<IntExpr>) -> Effect {
     Effect::Fight {
-        combat_modifier,
-        extra_damage,
+        combat_modifier: combat_modifier.into(),
+        extra_damage: extra_damage.into(),
     }
 }
 
@@ -1832,14 +1832,14 @@ mod tests {
 
     #[test]
     fn deal_builders_produce_the_kinded_effect_and_round_trip() {
-        let dmg = deal_damage(InvestigatorTarget::You, 2);
-        let hor = deal_horror(InvestigatorTarget::You, 3);
+        let dmg = deal_damage(InvestigatorTarget::You, 2u8);
+        let hor = deal_horror(InvestigatorTarget::You, 3u8);
         assert_eq!(
             dmg,
             Effect::Deal {
                 kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
-                amount: 2,
+                amount: IntExpr::Lit(2),
             }
         );
         assert_eq!(
@@ -1847,7 +1847,7 @@ mod tests {
             Effect::Deal {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
-                amount: 3,
+                amount: IntExpr::Lit(3),
             }
         );
         for e in [dmg, hor] {
@@ -1953,7 +1953,7 @@ mod tests {
             None,
             Some(for_each_point_failed(deal_damage(
                 InvestigatorTarget::You,
-                1,
+                1u8,
             ))),
         );
         let json = serde_json::to_string(&effect).expect("serialize");

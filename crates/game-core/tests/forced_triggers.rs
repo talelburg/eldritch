@@ -68,7 +68,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         Some(vec![forced_on_event(
             EventPattern::EnteredLocation,
             EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1),
+            deal_horror(InvestigatorTarget::You, 1u8),
         )])
     } else if code.as_str() == DOOM_AGENDA || code.as_str() == DOOM_ACT {
         Some(vec![forced_on_event(
@@ -76,7 +76,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 phase: DslPhase::Enemy,
             },
             EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1),
+            deal_horror(InvestigatorTarget::You, 1u8),
         )])
     } else if code.as_str() == DOUBLE_FORCED {
         // Two distinct forced `EnteredLocation` abilities at the same timing
@@ -85,19 +85,19 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             forced_on_event(
                 EventPattern::EnteredLocation,
                 EventTiming::After,
-                deal_horror(InvestigatorTarget::You, 1),
+                deal_horror(InvestigatorTarget::You, 1u8),
             ),
             forced_on_event(
                 EventPattern::EnteredLocation,
                 EventTiming::After,
-                deal_horror(InvestigatorTarget::You, 1),
+                deal_horror(InvestigatorTarget::You, 1u8),
             ),
         ])
     } else if code.as_str() == END_OF_TURN_CARD {
         Some(vec![forced_on_event(
             EventPattern::EndOfTurn,
             EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1),
+            deal_horror(InvestigatorTarget::You, 1u8),
         )])
     } else if code.as_str() == AFTER_INVESTIGATE_CARD {
         Some(vec![forced_on_event(
@@ -106,7 +106,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 kind: Some(SkillTestKind::Investigate),
             },
             EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1),
+            deal_horror(InvestigatorTarget::You, 1u8),
         )])
     } else {
         None

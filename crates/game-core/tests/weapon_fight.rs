@@ -70,7 +70,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 kind: UseKind::Ammo,
                 count: 1,
             }],
-            fight(IntExpr::Lit(1), 1),
+            fight(IntExpr::Lit(1), 1u8),
         )]),
         _ => None,
     }

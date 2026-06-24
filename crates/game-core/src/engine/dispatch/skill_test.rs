@@ -1312,12 +1312,12 @@ fn symbol_effects_to_effect(
             TokenEffect::Damage(n) => Effect::Deal {
                 kind: HarmKind::Damage,
                 target: InvestigatorTarget::You,
-                amount: *n,
+                amount: (*n).into(),
             },
             TokenEffect::Horror(n) => Effect::Deal {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
-                amount: *n,
+                amount: (*n).into(),
             },
         })
         .collect();
@@ -1421,7 +1421,7 @@ mod tests {
             Some(Effect::Deal {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
-                amount: 1,
+                amount: crate::dsl::IntExpr::Lit(1),
             }),
         );
 
@@ -1491,7 +1491,7 @@ mod tests {
             SkillTestKind::Plain,
             2,
             SkillTestFollowUp::None,
-            Some(deal_horror(InvestigatorTarget::You, 1)),
+            Some(deal_horror(InvestigatorTarget::You, 1u8)),
             None,
             None,
             0,

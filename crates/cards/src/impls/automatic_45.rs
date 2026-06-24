@@ -26,7 +26,7 @@ pub fn abilities() -> Vec<Ability> {
             kind: UseKind::Ammo,
             count: 1,
         }],
-        fight(IntExpr::Lit(1), 1),
+        fight(IntExpr::Lit(1), 1u8),
     )]
 }
 
@@ -55,7 +55,7 @@ mod tests {
             panic!("expected Effect::Fight");
         };
         assert_eq!(*combat_modifier, IntExpr::Lit(1));
-        assert_eq!(*extra_damage, 1);
+        assert_eq!(*extra_damage, IntExpr::Lit(1));
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

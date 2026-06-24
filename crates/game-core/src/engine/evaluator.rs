@@ -421,7 +421,17 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             kind,
             target,
             amount,
-        } => deal_effect(cx, eval_ctx, *kind, *target, *amount),
+        } => {
+            let n = match eval_int_expr(cx.state, &eval_ctx, amount) {
+                Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
+                Err(reason) => {
+                    return EngineOutcome::Rejected {
+                        reason: reason.into(),
+                    }
+                }
+            };
+            deal_effect(cx, eval_ctx, *kind, *target, n)
+        }
         Effect::DealDamageToEnemy { target, amount } => {
             deal_damage_to_enemy_effect(cx, eval_ctx, *target, *amount)
         }
@@ -514,7 +524,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::Fight {
             combat_modifier,
             extra_damage,
-        } => apply_fight(cx, &eval_ctx, combat_modifier, *extra_damage),
+        } => apply_fight(cx, &eval_ctx, combat_modifier, extra_damage),
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
         Effect::Investigate { shroud_modifier } => {
@@ -814,10 +824,18 @@ fn apply_fight(
     cx: &mut Cx,
     eval_ctx: &EvalContext,
     combat_modifier: &IntExpr,
-    extra_damage: u8,
+    extra_damage: &IntExpr,
 ) -> EngineOutcome {
     let modifier = match eval_int_expr(cx.state, eval_ctx, combat_modifier) {
         Ok(m) => m,
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    let extra_damage_n = match eval_int_expr(cx.state, eval_ctx, extra_damage) {
+        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
         Err(reason) => {
             return EngineOutcome::Rejected {
                 reason: reason.into(),
@@ -848,7 +866,7 @@ fn apply_fight(
         fight_difficulty,
         crate::state::SkillTestFollowUp::Fight {
             enemy: enemy_id,
-            extra_damage,
+            extra_damage: extra_damage_n,
         },
         None,
         None,
@@ -4585,7 +4603,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &deal_damage(InvestigatorTarget::You, 2),
+            &deal_damage(InvestigatorTarget::You, 2u8),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4612,7 +4630,7 @@ mod tests {
         eval_ctx.set_failed_by(2);
         let outcome = run(
             &mut cx,
-            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
+            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1u8)),
             eval_ctx,
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4634,7 +4652,7 @@ mod tests {
         // failed_by None (no test in context) → zero iterations.
         let outcome = run(
             &mut cx,
-            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
+            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1u8)),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4655,7 +4673,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &deal_horror(InvestigatorTarget::You, 1),
+            &deal_horror(InvestigatorTarget::You, 1u8),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4682,7 +4700,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &deal_damage(InvestigatorTarget::You, 3),
+            &deal_damage(InvestigatorTarget::You, 3u8),
             EvalContext::for_controller(id),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4691,6 +4709,33 @@ mod tests {
             events,
             Event::InvestigatorDefeated { investigator, .. } if *investigator == id
         );
+    }
+
+    #[test]
+    fn deal_amount_can_be_a_count_of_failure_margin() {
+        use crate::dsl::{IntExpr, Quantity};
+        // Build a Deal whose amount is the failure margin; fail-by 2 → 2 damage.
+        let effect = deal_damage(
+            InvestigatorTarget::You,
+            IntExpr::Count(Quantity::SkillTestFailedBy),
+        );
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(InvestigatorId(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
+        eval_ctx.set_failed_by(2);
+        let outcome = run(&mut cx, &effect, eval_ctx);
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        // Deal evaluates the IntExpr once and applies the result in a single hit;
+        // fail-by 2 → amount 2 → one DamageTaken event with amount 2.
+        assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1));
     }
 
     #[test]

@@ -39,7 +39,7 @@ pub fn abilities() -> Vec<Ability> {
                 3,
                 1,
             ),
-            1,
+            1u8,
         ),
     )]
 }
@@ -68,7 +68,7 @@ mod tests {
         else {
             panic!("expected Effect::Fight");
         };
-        assert_eq!(*extra_damage, 1);
+        assert_eq!(*extra_damage, IntExpr::Lit(1));
         assert_eq!(
             *combat_modifier,
             IntExpr::cond(

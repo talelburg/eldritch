@@ -412,7 +412,7 @@ mod tests {
         use crate::dsl::{Effect, IntExpr};
         let fight = Effect::Fight {
             combat_modifier: IntExpr::Lit(0),
-            extra_damage: 0,
+            extra_damage: IntExpr::Lit(0),
         };
         let non_fight = Effect::Native { tag: "heal".into() };
 
