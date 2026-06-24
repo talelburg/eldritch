@@ -190,6 +190,30 @@ pub enum Trigger {
         /// `kind` to route to the right phase.
         kind: TriggerKind,
     },
+    /// Fires when the investigator's **elder-sign** chaos token (`[O]`)
+    /// is revealed during a skill test they are taking. The elder-sign is
+    /// the investigator's *own* symbol token: its effect is sourced from
+    /// the investigator card rather than the scenario bag.
+    ///
+    /// `modifier` is the printed skill-test modifier the elder-sign grants,
+    /// as an [`IntExpr`] so board-state-dependent values (Roland Banks's
+    /// "+1 for each clue on your location" → `Count(CluesAtControllerLocation)`)
+    /// resolve at draw time. The engine adds this to the test total through
+    /// the existing `Modifier` path (`skill_test.rs`), keeping the
+    /// `ElderSign` resolution label for observability.
+    ///
+    /// Config-on-trigger, like [`Activated`](Self::Activated) /
+    /// [`OnSkillTestResolution`](Self::OnSkillTestResolution).
+    ///
+    /// **Scope (#118):** only pure-*modifier* elder-signs are handled. Signs
+    /// that also run an effect (Daisy's per-Tome draw, Agnes's optional
+    /// damage) or substitute/reveal another token are deferred — the first
+    /// such card should build a full `SymbolOutcome` from the investigator
+    /// card for uniformity with the scenario symbol path.
+    ElderSign {
+        /// The printed skill-test modifier the elder-sign grants.
+        modifier: IntExpr,
+    },
 }
 
 /// Whether an [`Trigger::OnEvent`] ability resolves mandatorily (forced)
@@ -2032,6 +2056,28 @@ mod tests {
             let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(original, recovered);
         }
+    }
+
+    /// `Trigger::ElderSign` is a config-on-trigger variant (like
+    /// `Activated { action_cost }`): it carries the elder-sign's printed
+    /// modifier as an `IntExpr` and round-trips through serde. Roland's
+    /// "+1 for each clue on your location" is `Count(CluesAtControllerLocation)`.
+    #[test]
+    fn elder_sign_trigger_carries_int_expr_and_round_trips() {
+        let t = Trigger::ElderSign {
+            modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+        };
+        let json = serde_json::to_string(&t).expect("serialize");
+        let back: Trigger = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(t, back);
+        // Distinct from a literal-modifier elder-sign and from other triggers.
+        assert_ne!(
+            t,
+            Trigger::ElderSign {
+                modifier: IntExpr::Lit(1),
+            },
+        );
+        assert_ne!(t, Trigger::Constant);
     }
 
     /// `Trigger::OnEvent` carries an explicit `TriggerKind` (forced vs
