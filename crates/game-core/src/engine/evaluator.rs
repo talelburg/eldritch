@@ -209,7 +209,7 @@ impl EvalContext {
 
 impl EvalContext {
     /// Just-resolved skill test's failure margin (bound only while running an
-    /// `on_fail` effect). See [`Effect::ForEachPointFailed`].
+    /// `on_fail` effect). Consumed by `IntExpr::Count(Quantity::SkillTestFailedBy)`.
     #[must_use]
     pub fn failed_by(&self) -> Option<u8> {
         self.skill_test.map(|b| b.failed_by)
@@ -318,11 +318,6 @@ fn frame_of(effect: &Effect, ctx: EvalContext) -> crate::state::EffectFrame {
             next: 0,
             ctx,
         },
-        Effect::ForEachPointFailed(body) => EffectFrame::ForEachPointFailed {
-            remaining: ctx.failed_by().unwrap_or(0),
-            body: body.clone(),
-            ctx,
-        },
         _ => EffectFrame::Leaf {
             effect: Box::new(effect.clone()),
             ctx,
@@ -356,24 +351,6 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
             }
             EngineOutcome::Done
         }
-        EffectFrame::ForEachPointFailed {
-            remaining,
-            body,
-            ctx,
-        } => {
-            if remaining > 0 {
-                let child = frame_of(&body, ctx);
-                cx.state.continuations.push(Continuation::Effect(
-                    EffectFrame::ForEachPointFailed {
-                        remaining: remaining - 1,
-                        body,
-                        ctx,
-                    },
-                ));
-                cx.state.continuations.push(Continuation::Effect(child));
-            }
-            EngineOutcome::Done
-        }
         EffectFrame::Leaf { effect, ctx } => step_leaf(cx, &effect, ctx),
     }
 }
@@ -395,9 +372,9 @@ fn suspend_leaf_in_place(cx: &mut Cx, effect: &Effect, ctx: EvalContext) {
 /// step). Grounds any `*::Chosen` target, then dispatches: a terminal effect
 /// runs; `If` pushes its chosen branch; `ChooseOne`/`SearchDeck`/`Native` push a
 /// branch or **suspend in place** (re-pushing this `Leaf` so resume re-steps it
-/// with `ctx.chosen_option` set). Control nodes (`Seq`/`ForEachPointFailed`) are
-/// normally routed to their own frames by [`frame_of`]; if one reaches here it
-/// is pushed as its frame. The `Leaf` itself was already popped by the caller.
+/// with `ctx.chosen_option` set). Control nodes (`Seq`) are normally routed to
+/// their own frames by [`frame_of`]; if one reaches here it is pushed as its
+/// frame. The `Leaf` itself was already popped by the caller.
 // A single exhaustive dispatch over every `Effect` variant; splitting it would
 // only obscure the dispatch (it mirrors the former `apply_effect_inner`).
 #[allow(clippy::too_many_lines)]
@@ -440,7 +417,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             target,
             count,
         } => heal_effect(cx, eval_ctx, *kind, *target, *count),
-        Effect::Seq(_) | Effect::ForEachPointFailed(_) => {
+        Effect::Seq(_) => {
             cx.state
                 .continuations
                 .push(crate::state::Continuation::Effect(frame_of(
@@ -2145,16 +2122,16 @@ mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
         boost_attack_damage, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_clue, draw_cards, for_each_point_failed, gain_resources, heal, modify, on_play,
-        seq, Ability, Choose, Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet,
-        LocationTarget, ModifierScope, SkillTestKind, Stat,
+        discover_clue, draw_cards, gain_resources, heal, modify, on_play, seq, Ability, Choose,
+        Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet, LocationTarget,
+        ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind,
     };
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-    use crate::{assert_event, assert_event_count, assert_no_event};
+    use crate::{assert_event, assert_no_event};
 
     use super::{
         constant_skill_modifier, effective_shroud, eval_condition, eval_int_expr, eval_quantity,
@@ -4612,52 +4589,6 @@ mod tests {
             events,
             Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
         );
-    }
-
-    #[test]
-    fn for_each_point_failed_scales_body_by_margin() {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_active_investigator(InvestigatorId(1))
-            .build();
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        // Margin 2 → run Deal{Damage,You,1} twice → 2 damage, 2 events.
-        let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
-        eval_ctx.set_failed_by(2);
-        let outcome = run(
-            &mut cx,
-            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1u8)),
-            eval_ctx,
-        );
-        assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
-        assert_event_count!(events, 2, Event::DamageTaken { .. });
-    }
-
-    #[test]
-    fn for_each_point_failed_with_no_margin_is_a_noop() {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_active_investigator(InvestigatorId(1))
-            .build();
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        // failed_by None (no test in context) → zero iterations.
-        let outcome = run(
-            &mut cx,
-            &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1u8)),
-            EvalContext::for_controller(InvestigatorId(1)),
-        );
-        assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 0);
-        assert_no_event!(events, Event::DamageTaken { .. });
     }
 
     #[test]

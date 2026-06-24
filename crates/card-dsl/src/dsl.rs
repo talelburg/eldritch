@@ -649,12 +649,6 @@ pub enum Effect {
         /// `on_success` — success and margin-keyed-failure are separate axes.
         on_fail: Option<Box<Effect>>,
     },
-    /// Run `body` once per point the just-resolved skill test was failed
-    /// by ("for each point you fail by, …"). Reads the failure margin
-    /// from the evaluator context; a `0` margin (or no margin in context)
-    /// runs `body` zero times. Only meaningful inside an
-    /// [`Effect::SkillTest`]'s `on_fail`.
-    ForEachPointFailed(Box<Effect>),
     /// Discard the firing card instance (the evaluator context's
     /// `source`). Locates the instance in a threat area or location
     /// attachment, removes it, and discards it to the encounter discard.
@@ -1548,13 +1542,6 @@ pub fn skill_test(
     }
 }
 
-/// Build an [`Effect::ForEachPointFailed`] running `body` once per point
-/// the just-resolved skill test was failed by.
-#[must_use]
-pub fn for_each_point_failed(body: Effect) -> Effect {
-    Effect::ForEachPointFailed(Box::new(body))
-}
-
 // ---- tests ----------------------------------------------------
 
 #[cfg(test)]
@@ -1939,26 +1926,6 @@ mod tests {
             pat,
             serde_json::from_str::<EventPattern>(&json).expect("de")
         );
-    }
-
-    /// `Effect::SkillTest` (treachery-Revelation test) with a margin-keyed
-    /// `Effect::ForEachPointFailed` failure branch round-trips through serde
-    /// — both new #286 variants in one tree.
-    #[test]
-    fn skill_test_and_for_each_point_failed_round_trip() {
-        use crate::card_data::SkillKind;
-        let effect = skill_test(
-            SkillKind::Agility,
-            3,
-            None,
-            Some(for_each_point_failed(deal_damage(
-                InvestigatorTarget::You,
-                1u8,
-            ))),
-        );
-        let json = serde_json::to_string(&effect).expect("serialize");
-        let back: Effect = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(effect, back);
     }
 
     /// Roland-Banks-shaped reaction: "after you defeat an enemy,

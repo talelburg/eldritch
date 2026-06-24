@@ -707,17 +707,6 @@ pub enum EffectFrame {
         /// The evaluation context for this sequence.
         ctx: crate::engine::EvalContext,
     },
-    /// A `ForEachPointFailed(body)` in progress: run `body` `remaining` more
-    /// times, decrementing on each child pop. Holds its own count on the stack
-    /// so each iteration may suspend independently (fixes Grasping Hands).
-    ForEachPointFailed {
-        /// Iterations still to run.
-        remaining: u8,
-        /// The per-iteration body effect.
-        body: Box<card_dsl::dsl::Effect>,
-        /// The evaluation context for this loop.
-        ctx: crate::engine::EvalContext,
-    },
     /// A single effect node to evaluate. A terminal effect runs and pops;
     /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
     /// `DamageAssignment` (K5b-2); `Effect::Native { tag }` runs the native fn.
@@ -1088,9 +1077,8 @@ pub struct ResolvedTest {
     /// Whether the test passed (`total >= difficulty`, no `AutoFail`).
     pub succeeded: bool,
     /// Failure margin (`difficulty - total`, clamped ≥ 0); `0` on success.
-    /// Read by an `on_fail` effect's
-    /// [`Effect::ForEachPointFailed`](crate::dsl::Effect::ForEachPointFailed)
-    /// (Grasping Hands 01162).
+    /// Read by `IntExpr::Count(Quantity::SkillTestFailedBy)` in an `on_fail`
+    /// effect (Grasping Hands 01162, Rotting Remains 01163).
     pub failed_by: u8,
     /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
     /// logged [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) at the

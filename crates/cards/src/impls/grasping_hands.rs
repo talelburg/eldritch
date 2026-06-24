@@ -5,11 +5,11 @@
 //! ```
 //!
 //! Pure DSL: `Trigger::Revelation` → `Effect::SkillTest` whose `on_fail`
-//! deals 1 damage per point the test was failed by (#286 machinery).
+//! deals `Count(SkillTestFailedBy)` damage in a single `Deal` (#426).
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
-    deal_damage, for_each_point_failed, revelation, skill_test, Ability, InvestigatorTarget,
+    deal_damage, revelation, skill_test, Ability, IntExpr, InvestigatorTarget, Quantity,
 };
 
 /// `ArkhamDB` code for Grasping Hands.
@@ -21,17 +21,17 @@ pub fn abilities() -> Vec<Ability> {
         SkillKind::Agility,
         3,
         None,
-        Some(for_each_point_failed(deal_damage(
+        Some(deal_damage(
             InvestigatorTarget::You,
-            1u8,
-        ))),
+            IntExpr::Count(Quantity::SkillTestFailedBy),
+        )),
     ))]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, HarmKind, IntExpr};
+    use card_dsl::dsl::{Effect, HarmKind, IntExpr, Quantity};
 
     #[test]
     fn revelation_tests_agility_3_then_damage_per_point() {
@@ -51,8 +51,11 @@ mod tests {
         assert!(on_success.is_none(), "no success-side effect");
         assert!(matches!(
             on_fail.as_deref(),
-            Some(Effect::ForEachPointFailed(b))
-                if matches!(**b, Effect::Deal { kind: HarmKind::Damage, amount: IntExpr::Lit(1), .. })
+            Some(Effect::Deal {
+                kind: HarmKind::Damage,
+                amount: IntExpr::Count(Quantity::SkillTestFailedBy),
+                ..
+            })
         ));
     }
 }

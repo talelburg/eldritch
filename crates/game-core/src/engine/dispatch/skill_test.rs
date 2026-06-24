@@ -527,8 +527,8 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
             push_effect(cx, effect, card_ctx(investigator));
         }
     } else if let Some(effect) = &on_fail {
-        // Thread the failure margin so `Effect::ForEachPointFailed`
-        // (Grasping Hands 01162) can scale.
+        // Thread the failure margin so `IntExpr::Count(Quantity::SkillTestFailedBy)`
+        // (Grasping Hands 01162, Rotting Remains 01163) can scale.
         let mut ctx = card_ctx(investigator);
         ctx.set_failed_by(failed_by);
         push_effect(cx, effect, ctx);
