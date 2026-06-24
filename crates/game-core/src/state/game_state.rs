@@ -1097,8 +1097,8 @@ pub struct InFlightSkillTest {
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
 ///   commit is validated and stored. The next driver iteration runs the
 ///   computation body (`run_resolution`: ST.3–ST.6) and pre-advances to
-///   [`EmitSuccessReactions`](Self::EmitSuccessReactions).
-/// - [`EmitSuccessReactions`](Self::EmitSuccessReactions) — the ST.6→ST.7
+///   [`EmitOutcomeReactions`](Self::EmitOutcomeReactions).
+/// - [`EmitOutcomeReactions`](Self::EmitOutcomeReactions) — the ST.6→ST.7
 ///   boundary: fire the "after you successfully investigate" timing point on
 ///   the success established at ST.6, **before** any ST.7 consequence resolves.
 /// - [`ApplyFollowUp`](Self::ApplyFollowUp) /
@@ -1127,21 +1127,22 @@ pub enum SkillTestStep {
     PreTokenWindow,
     /// Commit submitted: the next driver iteration runs the computation
     /// body (sum committed icons, resolve the chaos token — RR ST.3–ST.6),
-    /// then pre-advances to [`EmitSuccessReactions`](Self::EmitSuccessReactions).
+    /// then pre-advances to [`EmitOutcomeReactions`](Self::EmitOutcomeReactions).
     /// This step pushes nothing (every effect it would run is deferred to the
     /// cursor-sequenced steps below), so the driver stays on its own frame
     /// and `continue`s.
     Resolving,
-    /// RR ST.6→ST.7 boundary — fire the skill-test-outcome timing point
+    /// RR ST.6→ST.7 boundary — fire the general skill-test-outcome timing point
     /// (`TimingEvent::SkillTestResolved`) once the outcome is *established*
     /// (ST.6), and **before** any ST.7 consequence resolves (the clue discovery
     /// in [`ApplyFollowUp`](Self::ApplyFollowUp), the result effects in
-    /// [`ApplyResultEffect`](Self::ApplyResultEffect)). At this task it stays
-    /// gated to Investigate + success (the `{ Investigate, Success }` narrowing:
-    /// Obscuring Fog 01168 forced + Dr. Milan 01033 reaction); Task 2 generalizes
-    /// it to every test/outcome. Pre-advances to
+    /// [`ApplyResultEffect`](Self::ApplyResultEffect)). Fires for **every** test
+    /// and both outcomes; "after you successfully investigate" (Obscuring Fog
+    /// 01168 forced + Dr. Milan 01033 reaction) is the `{ Investigate, Success }`
+    /// narrowing. An empty forced/reaction candidate set opens no window, so a
+    /// test no card listens to is free. Pre-advances to
     /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
-    EmitSuccessReactions {
+    EmitOutcomeReactions {
         /// The chaos-token resolution's success determination, threaded
         /// through to [`FireOnCommit`](Self::FireOnCommit).
         succeeded: bool,

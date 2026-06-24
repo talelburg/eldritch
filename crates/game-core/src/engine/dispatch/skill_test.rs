@@ -265,7 +265,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) /
 /// [`FireOnResolution`](SkillTestStep::FireOnResolution) steps that the driver
 /// runs in turn — so it just pre-advances the cursor to
-/// [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) (threading
+/// [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) (threading
 /// `succeeded`/`failed_by`) and returns; the `advance` loop reads the next step.
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
     let (skill, kind, difficulty) = {
@@ -281,15 +281,15 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
     let (succeeded, failed_by) =
         resolve_chaos_token_and_emit(cx, investigator, skill, difficulty, skill_value);
 
-    // Pre-advance to the EmitSuccessReactions step (the ST.6→ST.7 boundary,
+    // Pre-advance to the EmitOutcomeReactions step (the ST.6→ST.7 boundary,
     // where the "after you successfully investigate" timing point fires on the
     // success just established — before any ST.7 consequence). Nothing was
     // pushed here, so the `advance` loop stays on this SkillTest frame and
-    // `continue`s into EmitSuccessReactions on the next iteration.
+    // `continue`s into EmitOutcomeReactions on the next iteration.
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .continuation = SkillTestStep::EmitSuccessReactions {
+        .continuation = SkillTestStep::EmitOutcomeReactions {
         succeeded,
         failed_by,
     };
@@ -340,7 +340,7 @@ fn fire_on_commit_step(
 /// so a suspending discovery (Cover Up 01007's before-discover interrupt)
 /// resumes at `ApplyResultEffect` rather than re-running the follow-up. (The
 /// "after you successfully investigate" timing point already fired at the
-/// preceding [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) step,
+/// preceding [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) step,
 /// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
 ///
 /// When the Investigate follow-up pushes `discover_clue` the `advance` loop's
@@ -369,30 +369,30 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId, succeeded: bo
 }
 
 /// RR ST.6→ST.7 boundary — the
-/// [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) step. Once
-/// success has been *established* (ST.6) but **before** any ST.7 consequence
+/// [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) step. Once the
+/// outcome has been *established* (ST.6) but **before** any ST.7 consequence
 /// resolves (the clue discovery in `ApplyFollowUp`, the result effects in
-/// `ApplyResultEffect`), fire the "after you successfully investigate" timing
-/// point (Obscuring Fog 01168 forced + Dr. Milan 01029 reaction, one
-/// `emit_event` so forced precedes reaction — RR p.2, #213). A no-op for every
-/// non-Investigate follow-up and on failure. Returns the `emit_event` outcome
+/// `ApplyResultEffect`), fire the general `SkillTestResolved` timing point for
+/// **every** test and both outcomes (Obscuring Fog 01168 forced + Dr. Milan
+/// 01033 reaction are the `{ Investigate, Success }` narrowing; one
+/// `emit_event` so forced precedes reaction — RR p.2, #213). The forced/reaction
+/// scans (and an empty candidate set) decide whether any window actually opens,
+/// so a test no card listens to costs nothing. Returns the `emit_event` outcome
 /// so the caller yields if a 2+ forced run suspends. Pre-advances the cursor to
 /// [`FireOnCommit`](SkillTestStep::FireOnCommit) first, so a suspending reaction
 /// window resumes past this step into the ST.7 consequences (which can then see
 /// any state the ST.6 reactions changed).
-fn emit_success_reactions_step(
+fn emit_outcome_reactions_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
     succeeded: bool,
     failed_by: u8,
 ) -> EngineOutcome {
-    let follow_up = {
-        let t = cx
-            .state
-            .current_skill_test()
-            .expect("emit_success_reactions_step: the SkillTest frame must persist");
-        t.follow_up
-    };
+    let kind = cx
+        .state
+        .current_skill_test()
+        .expect("emit_outcome_reactions_step: the SkillTest frame must persist")
+        .kind;
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
@@ -400,22 +400,19 @@ fn emit_success_reactions_step(
         succeeded,
         failed_by,
     };
-    if succeeded && matches!(follow_up, SkillTestFollowUp::Investigate) {
-        let kind = cx
-            .state
-            .current_skill_test()
-            .expect("emit_success_reactions_step: the SkillTest frame must persist")
-            .kind;
-        return super::emit::emit_event(
-            cx,
-            &super::emit::TimingEvent::SkillTestResolved {
-                investigator,
-                kind,
-                outcome: crate::dsl::TestOutcome::Success,
-            },
-        );
-    }
-    EngineOutcome::Done
+    let outcome = if succeeded {
+        crate::dsl::TestOutcome::Success
+    } else {
+        crate::dsl::TestOutcome::Failure
+    };
+    super::emit::emit_event(
+        cx,
+        &super::emit::TimingEvent::SkillTestResolved {
+            investigator,
+            kind,
+            outcome,
+        },
+    )
 }
 
 /// RR ST.7 part 2 — the [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect)
@@ -563,8 +560,8 @@ fn open_skill_test_player_window(
 /// Step → next-continuation mapping (RR p.26 ST order):
 ///
 /// - [`Resolving`](SkillTestStep::Resolving) → ST.3–ST.6 computation; advance to
-///   [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions).
-/// - [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) → fire the
+///   [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions).
+/// - [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) → fire the
 ///   `SkillTestResolved` timing point (Investigate + success only, for now) on
 ///   the ST.6 outcome, before the ST.7 consequences; advance to
 ///   [`FireOnCommit`](SkillTestStep::FireOnCommit).
@@ -634,21 +631,21 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             }
             SkillTestStep::Resolving => {
                 // RR ST.3–ST.6 computation (sum icons, chaos token). Pushes
-                // nothing; pre-advances the cursor to EmitSuccessReactions, so
+                // nothing; pre-advances the cursor to EmitOutcomeReactions, so
                 // the loop reads it next on this same frame.
                 run_resolution(cx, investigator, &indices_u8);
             }
-            SkillTestStep::EmitSuccessReactions {
+            SkillTestStep::EmitOutcomeReactions {
                 succeeded,
                 failed_by,
             } => {
                 // RR ST.6→ST.7 boundary. Pre-advances the cursor to FireOnCommit,
-                // then fires the "after you successfully investigate" timing point
-                // (Investigate + success only) — BEFORE the ST.7 consequences (the
-                // clue discovery in ApplyFollowUp, the result effects in
-                // ApplyResultEffect), so those can see any state the ST.6 reactions
-                // changed. Yields if a 2+ forced run suspends.
-                let outcome = emit_success_reactions_step(cx, investigator, succeeded, failed_by);
+                // then fires the general SkillTestResolved timing point (every
+                // test/outcome) — BEFORE the ST.7 consequences (the clue discovery
+                // in ApplyFollowUp, the result effects in ApplyResultEffect), so
+                // those can see any state the ST.6 reactions changed. Yields if a
+                // 2+ forced run suspends.
+                let outcome = emit_outcome_reactions_step(cx, investigator, succeeded, failed_by);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome;
                 }
@@ -703,7 +700,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // RR ST.8 teardown. The skill-test-outcome timing point
                 // (`SkillTestResolved`; "after you successfully investigate" =
                 // Obscuring Fog forced + Dr. Milan reaction) already fired at
-                // the EmitSuccessReactions step via `emit_event` (#213) —
+                // the EmitOutcomeReactions step via `emit_event` (#213) —
                 // forced-before-reaction.
                 discard_committed_cards(cx, investigator, &indices_u8);
                 cx.events.push(Event::SkillTestEnded { investigator });
@@ -1003,7 +1000,7 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8
 /// completion re-dispatches the `SkillTest` at
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect). The "after you
 /// successfully investigate" timing point already fired at the preceding
-/// [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) step — on the
+/// [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) step — on the
 /// ST.6 success, before this ST.7 discovery. Fight / Evade / None mutate
 /// synchronously and push nothing.
 fn apply_skill_test_follow_up(
@@ -1018,7 +1015,7 @@ fn apply_skill_test_follow_up(
             // before-timing interrupt (Cover Up 01007); the loop drives it to
             // completion either way, then re-dispatches this SkillTest at
             // `ApplyResultEffect`. The "after you successfully investigate"
-            // timing point already fired at the preceding EmitSuccessReactions
+            // timing point already fired at the preceding EmitOutcomeReactions
             // step, before this discovery. The Investigate follow-up has no
             // source card, so `for_controller` is correct.
             let effect = discover_clue(LocationTarget::YourLocation, 1);
