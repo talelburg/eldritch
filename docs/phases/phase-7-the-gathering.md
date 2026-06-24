@@ -47,26 +47,23 @@ in **Architecture to build on**. In dependency order, the arcs that landed:
 
 In dependency-friendly order.
 
-**1. `IntExpr` correctness cluster (p1-next) — share substrate, can land together.**
-The dynamic-expression AST already ships (`IntExpr::{Lit, Cond}` over `Condition`,
-wired into `Effect::Fight.combat_modifier`; see Architecture). Each item *adds an
-`IntExpr` term + plumbs `IntExpr` into one more `Effect` field*:
-- **#118 — Roland's elder-sign** ("+1 per clue on your location"). The clue-*count*
-  modifier term — `IntExpr::Count(Quantity::CluesAtControllerLocation)` — now ships
-  (this cluster, replacing the old binary `LocationHasClues`). #118 adds
-  `Trigger::ElderSign` + the ST.4 firing path (the bonus rides the chaos-token
-  `Modifier` total path, sourced from the investigator card — **not** `Effect::Modify`)
-  + the investigator-card-handle bridge (spec §2; PR 2). His signature is in the
-  "done" criteria.
-- **#300 — Machete** sole-engaged +1. Make `extra_damage` an `IntExpr` gated on a
-  "sole engaged enemy" `Condition` (`EngagedEnemies == 1`). Activated `Effect::Fight`
-  still requires exactly one engaged enemy (2+ is rejected pre-cost, pending
-  multi-target selection / #401), so the conditional is **correct card-text modelling**
-  but its `+0` branch is not yet reachable — it becomes load-bearing when #401 lands.
-- **#426 — Grasping Hands 01162 / Rotting Remains 01163** "take 1 per point you
-  fail by": make `Effect::Deal`'s amount an `IntExpr` + a `SkillTestFailedBy` term,
-  replacing `for_each_point_failed(deal 1)` so it deals one simultaneous N-point
-  instance (observable now that soak distribution prompts interactively).
+**1. `IntExpr` correctness cluster.** **DSL core + #300 + #426 ✅ shipped (PR #450).**
+A shared `Quantity` vocabulary (`CluesAtControllerLocation`, `EngagedEnemies`,
+`SkillTestFailedBy`) backs both `IntExpr::Count` (value) and `Condition::Compare`/
+`CmpOp` (predicate, retiring `LocationHasClues`); `Effect::Deal.amount` +
+`Effect::Fight.extra_damage` widened to `IntExpr` with `From`/`Into` builders
+(literals untouched). **#426** — Grasping Hands 01162 / Rotting Remains 01163 deal
+one `Count(SkillTestFailedBy)` instance (`ForEachPointFailed` deleted). **#300** —
+Machete is `+1` only vs the sole engaged enemy (`Compare(EngagedEnemies, Eq, 1)`);
+correct modelling, but its `+0` branch isn't *reachable* until activated `Effect::Fight`
+can resolve with 2+ engaged enemies (**#449** — give `Effect::Fight` a `Choose`-resolved
+target; a p1-next gate gap, separate from #401's basic-action fix).
+- **Remaining: #118 — Roland's elder-sign** ("+1 per clue on your location"). The
+  clue-*count* term `IntExpr::Count(Quantity::CluesAtControllerLocation)` already
+  ships (PR #450); #118 (PR 2) adds `Trigger::ElderSign` + the ST.4 firing path (the
+  bonus rides the chaos-token `Modifier` total path, sourced from the investigator
+  card — **not** `Effect::Modify`) + the investigator-card-handle bridge (spec §2).
+  His signature is in the "done" criteria.
 
 **2. #368 — before-discover eligibility (p1-next, needs-design).** Lift the
 hardcoded scan-suppression stand-ins (Cover Up 01007 `card.clues == 0`; act 01109
