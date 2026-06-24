@@ -118,6 +118,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 cards_in_play: Vec::new(),
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
+                ability_usage: std::collections::BTreeMap::new(),
                 action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
             },
         );
