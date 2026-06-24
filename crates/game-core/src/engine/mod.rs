@@ -164,24 +164,14 @@ pub fn apply_with_scenario_registry(
             // State half is restored after this block (the `cx` borrow on
             // `state` releases at the block close).
             cx.events.clear();
-        } else {
-            // An event completes its play here (RR Appendix I, step 4): flush
-            // the pending played-event to its owner's discard on Done, before
-            // the resolution hook. A suspending OnPlay event (Dynamite Blast)
-            // resumes to Done on a later apply and is discarded then;
-            // AwaitingInput leaves it mid-play (still "being played").
-            if matches!(outcome, EngineOutcome::Done) {
-                dispatch::cards::flush_pending_played_event(&mut cx);
-            }
-            if !resolution_already_fired {
-                // A dispatch site may have latched a resolution this apply (act/
-                // agenda resolution point, or no-remaining-players elimination).
-                // Fire the module hook exactly once, on the None->Some transition.
-                // Runs on Done AND AwaitingInput — a resolution can latch during
-                // an apply that pauses (e.g. doom crosses the threshold in Mythos
-                // 1.3 before the 1.4 draw pause).
-                fire_scenario_resolution(&mut cx, registry);
-            }
+        } else if !resolution_already_fired {
+            // A dispatch site may have latched a resolution this apply (act/
+            // agenda resolution point, or no-remaining-players elimination).
+            // Fire the module hook exactly once, on the None->Some transition.
+            // Runs on Done AND AwaitingInput — a resolution can latch during
+            // an apply that pauses (e.g. doom crosses the threshold in Mythos
+            // 1.3 before the 1.4 draw pause).
+            fire_scenario_resolution(&mut cx, registry);
         }
         outcome
         // `cx` drops here, releasing borrows on `state` and `events`.

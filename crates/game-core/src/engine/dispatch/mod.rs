@@ -246,6 +246,15 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other,
                 }
             }
+            // A hand-play disposal frame re-exposed after its OnPlay effect
+            // resolved: dispose of the card (event → flush pending_played_event;
+            // asset → remove from hand, enter play, emit EnteredPlay) and pop
+            // (Slice D #423). Never suspends itself — any reaction window queued by
+            // emit_event lands on top and the loop drives it next.
+            Some(Continuation::PlayFromHand { .. }) => match cards::dispose_play_from_hand(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
             // A per-drawer Mythos surge-chain frame (callsite-migration): draw
             // the next card (first step or a pending surge), or — chain over —
             // pop itself and advance the loop to the next drawer / post-1.4
@@ -316,6 +325,13 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         .get(&investigator)
         .is_some_and(|inv| inv.status == crate::state::Status::Active);
     if !active {
+        // A defeated actor suppresses the primary effect, but a mid-play event
+        // that already left hand (stashed in `pending_played_event` by
+        // `begin_event_play`) must still be placed in discard (RR Appendix I
+        // step 4: the card was "played" the moment it left hand; the suppression
+        // only skips the `OnPlay` effect, not the discard). The
+        // `PlayFromHand` frame won't run, so flush it here.
+        cards::flush_pending_played_event(cx);
         return EngineOutcome::Done;
     }
     match resume {
@@ -503,6 +519,11 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // outstanding (defensive; #380).
         Some(Continuation::EncounterCard { .. }) => EngineOutcome::Rejected {
             reason: "ResolveInput: no input prompt is outstanding (encounter-card disposal is \
+                     framework-internal)"
+                .into(),
+        },
+        Some(Continuation::PlayFromHand { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (hand-play disposal is \
                      framework-internal)"
                 .into(),
         },

@@ -533,6 +533,25 @@ pub enum Continuation {
         /// How the framework disposes of the card once its Revelation resolves.
         disposition: EncounterDisposition,
     },
+    /// A card being played from hand, mid-resolution (Slice D #423). Pushed
+    /// **below** the card's pushed `OnPlay`/`OnEvent` effect; when that effect
+    /// pops, the drive loop's `PlayFromHand` arm runs `dispose_play_from_hand`
+    /// (event → discard the stashed `pending_played_event`; asset → remove from
+    /// hand at `hand_index`, enter play, emit `EnteredPlay`). Single-shot:
+    /// `dispose_play_from_hand` pops the frame before emitting `EnteredPlay`, so
+    /// the loop opens any after-enters-play window itself. Framework-internal;
+    /// never awaits input (the catch-all `awaits_input`/`is_phase_anchor` arms
+    /// cover it, as for `EncounterCard`).
+    PlayFromHand {
+        /// The playing investigator.
+        investigator: InvestigatorId,
+        /// The played card's code (re-derives destination + asset metadata).
+        code: CardCode,
+        /// Hand slot of an **asset** still in hand (enters play at disposal).
+        /// Ignored for an event — `begin_event_play` already removed it and
+        /// stashed it in `pending_played_event`.
+        hand_index: u8,
+    },
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
     /// beneath the phase's framework windows. On a child window's close the
     /// framework routes to the anchor's `on_child_pop` (keyed by `resume`).

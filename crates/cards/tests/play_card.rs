@@ -351,6 +351,93 @@ fn play_unimplemented_card_is_rejected() {
     assert!(result.events.is_empty());
 }
 
+/// Emergency Cache (01088) — Neutral event, non-fast, `OnPlay` `GainResources(3)`.
+const EMERGENCY_CACHE: &str = "01088";
+
+/// Machete (01020) — Guardian weapon asset, no `OnPlay`.
+const MACHETE: &str = "01020";
+
+#[test]
+fn normal_event_play_discards_exactly_once() {
+    // Play Emergency Cache 01088 (event, OnPlay GainResources 3) with no
+    // engaged enemy (no AoO). Invariant guard for the PlayFromHand frame
+    // migration: the card must be discarded exactly once (single flush site)
+    // and pending_played_event must be cleared on Done.
+    let (state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        }),
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    let inv = &result.state.investigators[&id];
+    // Card left hand and landed in discard.
+    assert!(inv.hand.is_empty(), "hand should be empty after play");
+    assert!(inv.cards_in_play.is_empty(), "event should not enter play");
+    assert_eq!(
+        inv.discard,
+        vec![CardCode::new(EMERGENCY_CACHE)],
+        "event should be in discard"
+    );
+    // Resources gained.
+    assert!(inv.resources > 0, "resources should be gained");
+    // Exactly one CardDiscarded(Hand) — the migration invariant.
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|e| matches!(
+                e,
+                Event::CardDiscarded {
+                    from: Zone::Hand,
+                    ..
+                }
+            ))
+            .count(),
+        1,
+        "exactly one CardDiscarded from Hand"
+    );
+    assert!(
+        result.state.pending_played_event.is_none(),
+        "pending_played_event must be cleared on Done"
+    );
+}
+
+#[test]
+fn asset_play_enters_play_through_the_frame() {
+    // Play Machete 01020 (asset, no OnPlay), no engaged enemy. Invariant
+    // guard for the PlayFromHand frame migration: the asset must land in
+    // cards_in_play and be removed from hand, and no CardDiscarded fires.
+    let (state, id, _loc) = play_state(vec![MACHETE]);
+
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        }),
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    let inv = &result.state.investigators[&id];
+    // Asset removed from hand.
+    assert!(inv.hand.is_empty(), "hand should be empty after play");
+    // Asset landed in cards_in_play.
+    assert_eq!(
+        inv.cards_in_play.len(),
+        1,
+        "asset should land in cards_in_play"
+    );
+    assert_eq!(inv.cards_in_play[0].code, CardCode::new(MACHETE));
+    // No discard for assets.
+    assert!(inv.discard.is_empty(), "asset should not land in discard");
+    assert_no_event!(result.events, Event::CardDiscarded { .. });
+}
+
 #[test]
 fn play_card_after_defeat_is_rejected() {
     // Belt-and-suspenders: even with REGISTRY installed, the status
