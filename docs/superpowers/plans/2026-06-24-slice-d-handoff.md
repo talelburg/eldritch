@@ -28,8 +28,17 @@ aca248d  engine: frame-driven encounter disposition + Mythos draw chain      ←
 
 **Process notes for the new session:** the user wants per-task review pauses; take non-trivial engine reworks via subagents to save context, but ALWAYS independently re-verify the gauntlet (subagents have repeatedly claimed green while IDE diagnostics showed stale errors — the real build was clean, but verify every time). Fold review-driven fixes into the relevant task's commit (amend). RR rules/cards must be verified (ArkhamDB / the vendored PDF `data/rules-reference/ahc01_rules_reference_web.pdf`), not recalled.
 
-## NEXT IMPROVEMENT — queued (user's words, captured verbatim, not yet done)
+## NEXT IMPROVEMENT — ✅ DONE (the general skill-test-outcome timing point)
 
 > right now, when the chaos token is revealed we just push a success / fail event - that's wrong, what we should do is resolve the token effect, then resolve the total, then decide if it's success or fail - and right then and there we should emit a timing point of "succeeded/failed skill test {skill test type}", which is what those reactions should listen for.
 
-(This refines the Task-3 skill-test driver: introduce a general `Succeeded/Failed skill test {type}` timing point emitted at ST.6 — the general version of `SuccessfullyInvestigated` — that those success/fail reactions listen for. Do this before/with Task 4–5 as the user directs.)
+Shipped as a 4-commit sub-effort (design `docs/superpowers/specs/2026-06-24-skill-test-outcome-timing-point-design.md`, plan `docs/superpowers/plans/2026-06-24-skill-test-outcome-timing-point.md`):
+
+- `1fd83c1` — subsumed `SuccessfullyInvestigated` + `AfterLocationInvestigated` into one general `SkillTestResolved { kind, outcome }` triple (`EventPattern` / `TimingEvent` / `ForcedTriggerPoint`); forced collector derives the investigated location from the in-flight frame's `tested_location` (lean, location-free event). Dr. Milan 01033 / Obscuring Fog 01168 rerouted to the `{ Success, Some(Investigate) }` narrowing. Behaviour-preserving.
+- `a3cb506` — generalized the emission to fire for **every** test/outcome (renamed `EmitSuccessReactions` → step then folded; empty candidate sets open no window).
+- `c76ddef` — moved the test outcome onto the frame: `InFlightSkillTest.resolved: Option<ResolvedTest>`, set once at ST.6, read by every post-ST.6 step; the `SkillTestStep` variants dropped their `succeeded`/`failed_by` payloads (only `FireOnResolution { next }` keeps state). Invariant: `resolved.is_some()` ⇔ past the commit window.
+- `272d9ee` — chaos-symbol side-effects now apply via pushed `Effect::Deal` (interactive `soak_and_distribute`, can suspend): `immediate` at **ST.4** (before the determination), result-conditional `on_fail` at **ST.7** (after the outcome timing point). New steps `DetermineOutcome` (logged events + `SkillTestResolved`, folded) and `ApplySymbolOnFail`; `EmitSuccessReactions`/`emit_success_reactions_step`/`resolve_chaos_token_and_emit`/`apply_symbol_outcome` deleted. Token drawn once at `Resolving`; a soak suspend resumes at `DetermineOutcome` without re-drawing.
+
+Tests: `crates/game-core/tests/skill_test_outcome_timing.rs` (fires for a Plain test; no spurious window) + `crates/scenarios/tests/the_gathering_symbols.rs` (ST.4 ordering, ST.7 ordering, real Guard-Dog soak-suspend proving a single `ChaosTokenRevealed`).
+
+**Branch is NOT done — original Slice D Tasks 4 + 5 (above) still remain** (`PlayFromHand`, then delete `apply_effect`/`drive_effect_to_base`). Resume there. Note: the Task-3 step list above is now historical — `EmitSuccessReactions` → `DetermineOutcome`, and `ApplySymbolOnFail` was inserted before `FireOnResolution`.
