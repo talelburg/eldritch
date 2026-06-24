@@ -1324,6 +1324,26 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
     }
 }
 
+/// Construct a [`Trigger::ElderSign`]-driven [`Ability`] with the given
+/// modifier expression. The effect is empty (`Effect::Seq(vec![])`) because
+/// pure-modifier elder-signs have no additional on-resolution effect; for
+/// signs that run an effect (Daisy / Agnes) add a `Seq` with the desired
+/// sub-effects.
+///
+/// Called by investigator card impls in the `cards` crate and by tests in
+/// `game-core` that build mock registries. (The `Ability` struct is
+/// [`non_exhaustive`](https://doc.rust-lang.org/reference/attributes/type_system.html#the-non_exhaustive-attribute),
+/// so a struct literal is only legal inside `card-dsl` itself.)
+#[must_use]
+pub fn elder_sign(modifier: IntExpr) -> Ability {
+    Ability {
+        trigger: Trigger::ElderSign { modifier },
+        costs: Vec::new(),
+        effect: Effect::Seq(Vec::new()),
+        usage_limit: None,
+    }
+}
+
 /// Build an [`Effect::GainResources`].
 #[must_use]
 pub fn gain_resources(target: InvestigatorTarget, amount: u8) -> Effect {

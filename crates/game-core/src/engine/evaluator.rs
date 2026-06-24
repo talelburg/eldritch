@@ -1912,6 +1912,47 @@ pub fn constant_skill_modifier(
     )
 }
 
+/// The controller's **elder-sign** skill-test modifier: the
+/// `IntExpr` on their investigator card's `Trigger::ElderSign { modifier }`
+/// ability, evaluated for the controller. Returns `0` when the controller has
+/// no investigator card (empty sentinel `card_code`), the card isn't in the
+/// registry, or it carries no elder-sign ability — so every investigator
+/// without an elder-sign resolves exactly as before.
+///
+/// Called from the skill-test resolution's `TokenResolution::ElderSign` arm
+/// (`skill_test.rs`); the bonus flows through the existing `Modifier` total.
+///
+/// **Scope (#118), sunset by #448:** handles only pure-modifier elder-signs.
+/// Signs that also run an effect (Daisy / Agnes) are deferred — see
+/// [`Trigger::ElderSign`](crate::dsl::Trigger::ElderSign).
+#[must_use]
+pub(crate) fn elder_sign_modifier(
+    state: &GameState,
+    registry: &CardRegistry,
+    controller: InvestigatorId,
+) -> i8 {
+    let Some(inv) = state.investigators.get(&controller) else {
+        return 0;
+    };
+    if inv.card_code.as_str().is_empty() {
+        return 0;
+    }
+    let Some(abilities) = (registry.abilities_for)(&inv.card_code) else {
+        return 0;
+    };
+    let ctx = EvalContext::for_controller(controller);
+    for ability in &abilities {
+        if let Trigger::ElderSign { modifier } = &ability.trigger {
+            // A malformed elder-sign IntExpr (unexpressible Condition) yields
+            // Err; treat it as no bonus rather than panicking mid-test — the
+            // only in-scope IntExpr is Count(CluesAtControllerLocation), which
+            // is always Ok.
+            return eval_int_expr(state, &ctx, modifier).unwrap_or(0);
+        }
+    }
+    0
+}
+
 /// Sum a controller's *unconditional* constant modifiers to `stat`: only
 /// [`ModifierScope::WhileInPlay`] `Trigger::Constant` `Effect::Modify`
 /// abilities matching that exact stat (Beat Cop's always-on
@@ -4775,5 +4816,56 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 0, "terminal act does not move the cursor");
         assert!(matches!(state.resolution, Some(Resolution::Won { .. })));
+    }
+
+    /// `elder_sign_modifier` reads the controller's investigator card's
+    /// `Trigger::ElderSign { modifier }` and evaluates it. Roland's
+    /// `Count(CluesAtControllerLocation)` returns the clue count at his
+    /// location; an investigator with no elder-sign ability returns 0.
+    #[test]
+    fn elder_sign_modifier_reads_controller_card_clue_count() {
+        use crate::dsl::{elder_sign, IntExpr, Quantity};
+        use crate::state::CardCode;
+
+        // Mock registry: code "ES" carries a Count(CluesAtControllerLocation)
+        // elder-sign; everything else has no abilities.
+        fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+            if code.as_str() == "ES" {
+                Some(vec![elder_sign(IntExpr::Count(
+                    Quantity::CluesAtControllerLocation,
+                ))])
+            } else {
+                None
+            }
+        }
+        fn metadata_for(_: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+            None
+        }
+        let registry = CardRegistry {
+            metadata_for,
+            abilities_for,
+            native_effect_for: |_| None,
+        };
+
+        let inv_id = InvestigatorId(1);
+        let loc_id = crate::state::LocationId(10);
+        let mut inv = test_investigator(1);
+        inv.card_code = CardCode::new("ES");
+        inv.current_location = Some(loc_id);
+        let mut loc = test_location(10, "Study");
+        loc.clues = 2;
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .build();
+
+        assert_eq!(super::elder_sign_modifier(&state, &registry, inv_id), 2);
+
+        // An investigator whose card has no elder-sign ability → 0.
+        let inv_id2 = InvestigatorId(2);
+        let mut inv2 = test_investigator(2);
+        inv2.card_code = CardCode::new("PLAIN");
+        let state2 = GameStateBuilder::new().with_investigator(inv2).build();
+        assert_eq!(super::elder_sign_modifier(&state2, &registry, inv_id2), 0);
     }
 }
