@@ -14,7 +14,7 @@ use crate::dsl::{UsageLimit, UsagePeriod};
 ///
 /// The cards crate's lookups (`cards::by_code`, `cards::abilities_for`)
 /// take `&str`; deref or call `.as_str()` to bridge.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CardCode(pub String);
 

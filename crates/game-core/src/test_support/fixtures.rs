@@ -35,6 +35,7 @@ use crate::state::{
 pub fn test_investigator(id: u32) -> Investigator {
     Investigator {
         id: InvestigatorId(id),
+        card_code: CardCode::new(""),
         name: format!("Test Investigator {id}"),
         current_location: None,
         skills: Skills {

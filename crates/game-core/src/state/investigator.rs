@@ -35,6 +35,20 @@ pub struct InvestigatorId(pub u32);
 pub struct Investigator {
     /// Stable identifier within this scenario.
     pub id: InvestigatorId,
+    /// The investigator's own `ArkhamDB` card code (01001 for Roland
+    /// Banks). Set at roster seating from `RosterEntry.investigator`;
+    /// the elder-sign firing path and the seated-reaction scan look the
+    /// investigator card's abilities up by this code
+    /// (`abilities_for(card_code)`). An empty sentinel (`CardCode::new("")`)
+    /// marks the pre-seated `test_support` / builder path — codepaths skip
+    /// empty codes, so those investigators carry no investigator-card
+    /// abilities. Defaults to empty for backward-compatible deserialization.
+    ///
+    /// **Bridge (#118), sunset by #448:** when the investigator card
+    /// becomes a real `CardInPlay` (health/sanity/soak), this field and
+    /// `ability_usage` (added in #118 Task 3) fold into the uniform path.
+    #[serde(default)]
+    pub card_code: CardCode,
     /// Display name.
     pub name: String,
     /// Location the investigator is currently at, or `None` if they are
