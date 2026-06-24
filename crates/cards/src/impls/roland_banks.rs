@@ -13,10 +13,12 @@
 //!
 //! # Scope
 //!
-//! `abilities()` ships only the `[reaction]` half. The `[elder_sign]`
-//! half stays as the engine-wide `+0` placeholder until the dynamic
-//! skill-test modifier DSL primitive lands; tracked in
-//! [issue #118](https://github.com/talelburg/eldritch/issues/118).
+//! `abilities()` ships both halves: the `[reaction]` and the
+//! `[elder_sign]`. The elder-sign is a [`Trigger::ElderSign`] carrying
+//! `IntExpr::Count(Quantity::CluesAtControllerLocation)` — "+1 for each clue
+//! on your location" — which the skill-test resolution adds to the total when
+//! Roland's elder-sign token is drawn (#118). Reached via the investigator-card
+//! bridge (`Investigator.card_code`); sunset by #448.
 //!
 //! The reaction compiles to a [`Trigger::OnEvent`] with the
 //! [`EventPattern::EnemyDefeated`] pattern narrowed by
@@ -27,36 +29,43 @@
 //! UsagePeriod::Round`.
 //!
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
+//! [`Trigger::ElderSign`]: card_dsl::dsl::Trigger::ElderSign
 //! [`EventPattern::EnemyDefeated`]: card_dsl::dsl::EventPattern::EnemyDefeated
 //! [`EventTiming::After`]: card_dsl::dsl::EventTiming::After
 //! [`LocationTarget::YourLocation`]: card_dsl::dsl::LocationTarget::YourLocation
 //! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 
 use card_dsl::dsl::{
-    discover_clue, reaction_on_event, Ability, EventPattern, EventTiming, LocationTarget,
-    UsageLimit, UsagePeriod,
+    discover_clue, elder_sign, reaction_on_event, Ability, EventPattern, EventTiming, IntExpr,
+    LocationTarget, Quantity, UsageLimit, UsagePeriod,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01001";
 
-/// Roland's `[reaction]` "After you defeat an enemy: Discover 1 clue
-/// at your location. (Limit once per round.)" The `[elder_sign]` half
-/// is tracked separately (#118).
+/// Roland's two printed abilities:
+///
+/// - `[reaction]` "After you defeat an enemy: Discover 1 clue at your
+///   location. (Limit once per round.)"
+/// - `[elder_sign]` effect: "+1 for each clue on your location." (#118)
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![reaction_on_event(
-        EventPattern::EnemyDefeated {
-            by_controller: true,
-            code: None,
-        },
-        EventTiming::After,
-        discover_clue(LocationTarget::YourLocation, 1),
-    )
-    .with_usage_limit(UsageLimit {
-        count: 1,
-        period: UsagePeriod::Round,
-    })]
+    vec![
+        reaction_on_event(
+            EventPattern::EnemyDefeated {
+                by_controller: true,
+                code: None,
+            },
+            EventTiming::After,
+            discover_clue(LocationTarget::YourLocation, 1),
+        )
+        .with_usage_limit(UsageLimit {
+            count: 1,
+            period: UsagePeriod::Round,
+        }),
+        // [elder_sign] effect: +1 for each clue on your location. (01001.)
+        elder_sign(IntExpr::Count(Quantity::CluesAtControllerLocation)),
+    ]
 }
 
 #[cfg(test)]
@@ -66,9 +75,9 @@ mod tests {
     };
 
     #[test]
-    fn abilities_are_one_reaction_with_once_per_round_limit() {
+    fn first_ability_is_the_reaction_with_once_per_round_limit() {
         let abilities = super::abilities();
-        assert_eq!(abilities.len(), 1);
+        assert_eq!(abilities.len(), 2);
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
@@ -94,6 +103,24 @@ mod tests {
                 period: UsagePeriod::Round,
             }),
         );
+    }
+
+    #[test]
+    fn abilities_include_elder_sign_clue_count_modifier() {
+        use card_dsl::dsl::{IntExpr, Quantity, Trigger};
+        let abilities = super::abilities();
+        assert_eq!(abilities.len(), 2);
+        // The elder-sign half: +1 for each clue on your location.
+        assert_eq!(
+            abilities[1].trigger,
+            Trigger::ElderSign {
+                modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+            },
+        );
+        assert!(abilities[1].usage_limit.is_none());
+        // Pure-modifier elder-sign: inert empty `Seq` effect (the engine reads
+        // the trigger's `modifier`, not the effect).
+        assert!(matches!(&abilities[1].effect, card_dsl::dsl::Effect::Seq(v) if v.is_empty()),);
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

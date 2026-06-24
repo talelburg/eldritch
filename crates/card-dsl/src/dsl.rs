@@ -2100,6 +2100,24 @@ mod tests {
         assert_ne!(t, Trigger::Constant);
     }
 
+    /// The `elder_sign` builder produces an [`Ability`] with the correct
+    /// trigger, empty costs, empty effect `Seq`, and no usage limit.
+    /// Distinct from the `elder_sign_trigger_carries_int_expr_and_round_trips`
+    /// test which only exercises the `Trigger` variant itself.
+    #[test]
+    fn elder_sign_builder_constructs_the_trigger() {
+        let a = elder_sign(IntExpr::Count(Quantity::CluesAtControllerLocation));
+        assert_eq!(
+            a.trigger,
+            Trigger::ElderSign {
+                modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+            },
+        );
+        assert!(a.costs.is_empty());
+        assert!(a.usage_limit.is_none());
+        assert!(matches!(a.effect, Effect::Seq(ref v) if v.is_empty()));
+    }
+
     /// `Trigger::OnEvent` carries an explicit `TriggerKind` (forced vs
     /// reaction), and it round-trips through serde. The kind retires the
     /// old route-by-pattern dispatch (umbrella §2, Axis-B T1).
