@@ -315,6 +315,10 @@ impl EvalContext {
 /// synchronous `-> EngineOutcome` boundary for its callers. Migrating every call
 /// site off this wrapper to pure top-frame dispatch (push root + `on_child_pop`)
 /// is the #393 end-state — deferred to land with item 5: `TODO(#423)`.
+// Task 5 (choice.rs::resume_effect_walk / drive_effect_to_base) is the last
+// production caller; `#[allow(dead_code)]` suppresses the lint until that
+// migration lands (Slice D #423).
+#[allow(dead_code)]
 pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
     let base = cx.state.continuations.len();
     cx.state

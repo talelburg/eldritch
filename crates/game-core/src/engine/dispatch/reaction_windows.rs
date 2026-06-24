@@ -22,7 +22,7 @@ use crate::state::{
     GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
-use super::super::evaluator::{apply_effect, push_effect, EvalContext};
+use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 
@@ -785,11 +785,12 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
 /// Commences the play via the shared
 /// [`super::cards::begin_event_play`] (emit [`crate::Event::CardPlayed`], leave hand,
-/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), then runs
-/// the matched `OnEvent` ability's effect. On synchronous completion it returns
-/// [`EngineOutcome::Done`], leaving the window frame on top for the `drive` loop to
-/// re-dispatch (Slice C-plumbing); the apply loop flushes the event to discard on
-/// completion (step 4) — the suspending-event path Dynamite Blast 01024 uses.
+/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), then
+/// pushes a [`Continuation::PlayFromHand`] frame (above the live reaction window)
+/// and the `OnEvent` effect for the drive loop. On the effect's completion,
+/// [`super::cards::dispose_play_from_hand`] flushes the event to discard (RR
+/// Appendix I step 4) and the window beneath resumes its candidate scan (Slice D
+/// #423).
 ///
 /// Charges no resource cost, matching [`super::cards::play_card`] (Slice 1
 /// does not model play-cost resources). The caller has already removed the
@@ -812,7 +813,7 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
         });
     super::cards::begin_event_play(cx, controller, hand_idx);
 
-    // Run the matched OnEvent ability's effect under the playing investigator.
+    // Look up the matched OnEvent ability's effect from the registry.
     let reg = card_registry::current().unwrap_or_else(|| {
         unreachable!(
             "play_fast_event: registry installed at scan time is now missing; \
@@ -837,27 +838,20 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
         .clone();
     let eval_ctx = EvalContext::for_controller(controller);
 
-    match apply_effect(cx, &effect, eval_ctx) {
-        EngineOutcome::Rejected { reason } => unreachable!(
-            "Fast-event play: effect for {:?} rejected unexpectedly: {reason}",
-            candidate.code,
-        ),
-        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
-        EngineOutcome::Done => {
-            // The Fast event's effect completed (RR Appendix I step 4): discard
-            // it NOW, before advancing the window / phase cascade. The apply
-            // loop's `flush_pending_played_event` only fires on a `Done` apply,
-            // so deferring to it would strand the event in `pending_played_event`
-            // whenever this same apply later suspends for an unrelated reason —
-            // e.g. the window close cascades into the Mythos 1.4 draw prompt
-            // (#348) or an upkeep hand-size discard (#111), both `AwaitingInput`.
-            // A no-op if the effect already disposed of the card (e.g. an event
-            // that becomes an asset clears `pending_played_event` itself).
-            super::cards::flush_pending_played_event(cx);
-            // Window stays on top; the drive loop re-dispatches it. Slice C-plumbing.
-            EngineOutcome::Done
-        }
-    }
+    // Push the event's disposal frame (above the window), then push its effect
+    // for the drive loop. On the effect's completion, PlayFromHand disposal
+    // flushes the event (RR Appendix I step 4) and the window beneath resumes
+    // its candidate scan. `hand_idx` is moot for an event (begin_event_play
+    // already removed + stashed it); pass it for the frame's shape. (Slice D #423.)
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::PlayFromHand {
+            investigator: controller,
+            code: candidate.code.clone(),
+            hand_index: u8::try_from(hand_idx).unwrap_or(0),
+        });
+    push_effect(cx, &effect, eval_ctx);
+    EngineOutcome::Done
 }
 
 /// Advance the resolution run on **top** of the stack after one of its
