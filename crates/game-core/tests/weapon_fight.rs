@@ -19,7 +19,7 @@ use game_core::state::{
     TokenModifiers,
 };
 use game_core::test_support::{apply_no_commits, test_enemy, test_investigator, GameStateBuilder};
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -211,11 +211,15 @@ fn weapon_fight_rejects_when_no_enemy_engaged() {
 }
 
 #[test]
-fn weapon_fight_rejects_when_two_enemies_engaged() {
-    // 2+ engaged → deferred multi-target selection; reject, nothing charged.
+fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
+    // 2+ engaged → suspends for target pick; after picking enemy 100
+    // (OptionId(0)), the Fight resolves for 1 + 1 = 2 damage (combat 3 + mod 1
+    // vs fight 3 → success; extra_damage == 1 because the weapon's `fight`
+    // hardcodes `1u8` as `extra_damage`, not "sole-engaged" conditional).
     let (state, id, weapon) = board_with_weapon(2);
-    let actions_before = state.investigators[&id].actions_remaining;
-    let result = apply_no_commits(
+
+    // Step 1: activation suspends for the target pick.
+    let r1 = apply(
         state,
         Action::Player(PlayerAction::ActivateAbility {
             investigator: id,
@@ -223,10 +227,36 @@ fn weapon_fight_rejects_when_two_enemies_engaged() {
             ability_index: 0,
         }),
     );
-    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    assert_eq!(ammo_remaining(&result.state, id, weapon), 4);
-    assert_eq!(
-        result.state.investigators[&id].actions_remaining,
-        actions_before
+    assert!(
+        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
+        "expected AwaitingInput for target pick; got {:?}",
+        r1.outcome
     );
+
+    // Step 2: pick enemy 100 (OptionId(0)), then commit nothing to resolve the test.
+    let r2 = apply_no_commits(
+        r1.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    assert_eq!(
+        r2.outcome,
+        EngineOutcome::Done,
+        "expected Done after pick + commit; got {:?}",
+        r2.outcome
+    );
+    // Enemy 100 was attacked (chosen); enemy 101 was not.
+    assert_event!(
+        r2.events,
+        Event::EnemyDamaged {
+            enemy: game_core::state::EnemyId(100),
+            amount: 2,
+            ..
+        }
+    );
+    assert_eq!(r2.state.enemies[&game_core::state::EnemyId(100)].damage, 2);
+    assert_eq!(r2.state.enemies[&game_core::state::EnemyId(101)].damage, 0);
+    // Ammo was spent on activation.
+    assert_eq!(ammo_remaining(&r2.state, id, weapon), 3);
 }

@@ -791,12 +791,14 @@ fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resolve [`Effect::Fight`]: snapshot the combat modifier, auto-target
-/// the single engaged enemy, and start a Combat skill test (reusing the
-/// suspend/resume commit-window path) whose Fight follow-up deals
-/// `1 + extra_damage`. The activation check has already guaranteed
-/// exactly one engaged enemy, so a missing target here is a state-shape
-/// violation rejected loudly rather than silently no-oped.
+/// Resolve [`Effect::Fight`]: snapshot the combat modifier, read the target
+/// enemy from the evaluation context (grounded by `ground_chosen_targets`
+/// before this handler runs), and start a Combat skill test whose Fight
+/// follow-up deals `1 + extra_damage`. The activation check has already
+/// guaranteed ≥1 engaged enemy; `ground_chosen_targets` auto-selects on 1,
+/// suspends for a `PickSingle` on 2+, and `chosen_enemy()` is `None` only on
+/// 0 (caught pre-cost) — so a missing target here is a state-shape violation
+/// rejected loudly rather than silently no-oped.
 ///
 /// Both `combat_modifier` and `extra_damage` are evaluated from an
 /// `&IntExpr` (board-state-dependent AST, same path); `extra_damage` is
@@ -823,21 +825,21 @@ fn apply_fight(
             }
         }
     };
-    let Some(enemy_id) =
-        crate::engine::dispatch::combat::single_engaged_enemy(cx.state, eval_ctx.controller)
-    else {
+    // The target is bound by `ground_chosen_targets` before this handler
+    // runs; `None` here means 0 engaged enemies slipped past the pre-cost
+    // gate — reject defensively.
+    let Some(enemy_id) = eval_ctx.chosen_enemy() else {
         return EngineOutcome::Rejected {
-            reason: "Effect::Fight: expected exactly one engaged enemy (target check skipped?)"
-                .into(),
+            reason: "Effect::Fight: no engaged enemy chosen (target check skipped?)".into(),
         };
     };
-    // `enemy_id` came from `single_engaged_enemy` over this same map, so
+    // `enemy_id` came from `engaged_enemies` over this same map, so
     // it is present — a silent 0-difficulty default would mask corruption.
     let fight_difficulty = cx
         .state
         .enemies
         .get(&enemy_id)
-        .expect("single_engaged_enemy returned an id absent from state.enemies")
+        .expect("Fight chosen_enemy returned an id absent from state.enemies")
         .fight;
     crate::engine::dispatch::skill_test::start_skill_test(
         cx,
@@ -1575,6 +1577,12 @@ fn ground_chosen_targets(
         }
     }
 
+    if let Effect::Fight { .. } = effect {
+        if eval_ctx.chosen_enemy().is_none() {
+            return ground_engaged_enemy_choice(cx, eval_ctx);
+        }
+    }
+
     Ok(eval_ctx)
 }
 
@@ -1683,6 +1691,39 @@ fn ground_enemy_choice(
         &candidates,
         "Chosen enemy: no candidate in scope",
         "Choose an enemy",
+        |id| format!("{id:?}"),
+        |id| {
+            let mut ctx = eval_ctx;
+            ctx.set_chosen_enemy(id);
+            ctx.set_chosen_option(None);
+            ctx
+        },
+    )
+}
+
+/// Ground the [`Effect::Fight`] target against the engaged-enemy list.
+///
+/// Candidates are `combat::engaged_enemies` (all enemies engaged with the
+/// controller, in ascending [`EnemyId`] order). Delegates to
+/// [`resolve_grounded_choice`]:
+/// - 0 candidates → `Rejected` ("Fight: no enemy engaged").
+/// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
+/// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
+///
+/// On resume the evaluator re-enters the same `Leaf` step; `chosen_option`
+/// is set and the right branch of `resolve_grounded_choice` picks from the
+/// same deterministic list.
+fn ground_engaged_enemy_choice(
+    cx: &mut Cx,
+    eval_ctx: EvalContext,
+) -> Result<EvalContext, EngineOutcome> {
+    let candidates =
+        crate::engine::dispatch::combat::engaged_enemies(cx.state, eval_ctx.controller);
+    resolve_grounded_choice(
+        eval_ctx,
+        &candidates,
+        "Fight: no enemy engaged",
+        "Choose an enemy to attack",
         |id| format!("{id:?}"),
         |id| {
             let mut ctx = eval_ctx;
