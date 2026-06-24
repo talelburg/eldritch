@@ -1094,6 +1094,29 @@ pub enum Condition {
     LocationHasClues,
 }
 
+/// A non-negative count read off game state, usable as a value
+/// ([`IntExpr::Count`]) or compared in a predicate ([`Condition::Compare`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Quantity {
+    /// Clues on the controller's current location.
+    CluesAtControllerLocation,
+    /// Enemies engaged with the controller.
+    EngagedEnemies,
+    /// Failure margin of the resolving skill test (0 outside one).
+    SkillTestFailedBy,
+}
+
+/// Comparison operator for [`Condition::Compare`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
 /// An integer computed at effect-evaluation time. Lets a numeric field
 /// carry a condition-gated value without duplicating the surrounding
 /// effect — ".38 Special" reads its combat modifier as

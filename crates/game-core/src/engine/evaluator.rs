@@ -61,7 +61,7 @@ use serde::{Deserialize, Serialize};
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
     Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
-    ModifierScope, SkillTestKind, Stat, Trigger,
+    ModifierScope, Quantity, SkillTestKind, Stat, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -444,7 +444,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             then,
             else_,
         } => {
-            let holds = match eval_condition(cx.state, eval_ctx.controller, condition) {
+            let holds = match eval_condition(cx.state, &eval_ctx, condition) {
                 Ok(b) => b,
                 Err(reason) => {
                     return EngineOutcome::Rejected {
@@ -816,7 +816,7 @@ fn apply_fight(
     combat_modifier: &IntExpr,
     extra_damage: u8,
 ) -> EngineOutcome {
-    let modifier = match eval_int_expr(cx.state, eval_ctx.controller, combat_modifier) {
+    let modifier = match eval_int_expr(cx.state, eval_ctx, combat_modifier) {
         Ok(m) => m,
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -870,7 +870,7 @@ fn apply_investigate(
     eval_ctx: &EvalContext,
     shroud_modifier: &IntExpr,
 ) -> EngineOutcome {
-    let delta = match eval_int_expr(cx.state, eval_ctx.controller, shroud_modifier) {
+    let delta = match eval_int_expr(cx.state, eval_ctx, shroud_modifier) {
         Ok(d) => d,
         Err(reason) => {
             return EngineOutcome::Rejected {
@@ -1045,9 +1045,10 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// turns those into [`EngineOutcome::Rejected`].
 fn eval_condition(
     state: &GameState,
-    controller: InvestigatorId,
+    eval_ctx: &EvalContext,
     condition: &Condition,
 ) -> Result<bool, String> {
+    let controller = eval_ctx.controller;
     match condition {
         Condition::SkillTestKind(kind) => {
             let t = state.current_skill_test().ok_or_else(|| {
@@ -1081,23 +1082,43 @@ fn eval_condition(
     }
 }
 
+/// Resolve a [`Quantity`] against current state for the controller.
+/// Always non-negative; returned as `i8` to compose in [`IntExpr`].
+// Called from tests now; will be wired into `eval_int_expr`'s `Count` arm and
+// `eval_condition`'s `Compare` arm in Task 2 (IntExpr::Count / Condition::Compare).
+#[allow(dead_code)]
+fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
+    let controller = eval_ctx.controller;
+    let n: usize = match q {
+        Quantity::CluesAtControllerLocation => state
+            .investigators
+            .get(&controller)
+            .and_then(|inv| inv.current_location)
+            .and_then(|loc| state.locations.get(&loc))
+            .map_or(0, |l| usize::from(l.clues)),
+        Quantity::EngagedEnemies => state
+            .enemies
+            .values()
+            .filter(|e| e.engaged_with == Some(controller))
+            .count(),
+        Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
+    };
+    i8::try_from(n).unwrap_or(i8::MAX)
+}
+
 /// Resolve an [`IntExpr`] against the current state for `controller`.
 ///
 /// [`IntExpr::Cond`] evaluates its [`Condition`] (reusing
 /// [`eval_condition`]); an unexpressible condition propagates as `Err`,
 /// which the caller turns into [`EngineOutcome::Rejected`].
-fn eval_int_expr(
-    state: &GameState,
-    controller: InvestigatorId,
-    expr: &IntExpr,
-) -> Result<i8, String> {
+fn eval_int_expr(state: &GameState, eval_ctx: &EvalContext, expr: &IntExpr) -> Result<i8, String> {
     match expr {
         IntExpr::Lit(n) => Ok(*n),
         IntExpr::Cond {
             when,
             then,
             otherwise,
-        } => Ok(if eval_condition(state, controller, when)? {
+        } => Ok(if eval_condition(state, eval_ctx, when)? {
             *then
         } else {
             *otherwise
@@ -2113,8 +2134,8 @@ mod tests {
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
-        constant_skill_modifier, effective_shroud, eval_condition, push_effect, step_effect_frame,
-        unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
+        constant_skill_modifier, effective_shroud, eval_condition, eval_quantity, push_effect,
+        step_effect_frame, unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
     };
     use crate::dsl::Condition;
     use crate::engine::Cx;
@@ -2196,6 +2217,19 @@ mod tests {
         }
     }
 
+    /// Build a `GameState` with `clue_count` clues at `InvestigatorId(1)`'s location.
+    fn with_clues(clue_count: u8) -> crate::state::GameState {
+        let loc_id = LocationId(1);
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc_id);
+        let mut loc = test_location(1, "Study");
+        loc.clues = clue_count;
+        GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .build()
+    }
+
     /// Assert the top frame is an effect node suspended in place for a pick.
     #[track_caller]
     fn assert_suspended_leaf(state: &crate::state::GameState) {
@@ -2227,13 +2261,43 @@ mod tests {
         };
         // Condition tracks clue presence at the controller's location.
         assert_eq!(
-            eval_condition(&with_clues(1), inv_id, &Condition::LocationHasClues),
+            eval_condition(
+                &with_clues(1),
+                &EvalContext::for_controller(inv_id),
+                &Condition::LocationHasClues
+            ),
             Ok(true)
         );
         assert_eq!(
-            eval_condition(&with_clues(0), inv_id, &Condition::LocationHasClues),
+            eval_condition(
+                &with_clues(0),
+                &EvalContext::for_controller(inv_id),
+                &Condition::LocationHasClues
+            ),
             Ok(false)
         );
+    }
+
+    #[test]
+    fn eval_quantity_reads_clues_engaged_and_margin() {
+        use card_dsl::dsl::Quantity;
+        // clues at location
+        let (state, inv) = state_with_cards_in_play(&[]);
+        let ctx = EvalContext::for_controller(inv);
+        // helper `with_clues(n)` already exists in this module; reuse it:
+        assert_eq!(
+            eval_quantity(&with_clues(2), &ctx, Quantity::CluesAtControllerLocation),
+            2
+        );
+        assert_eq!(
+            eval_quantity(&with_clues(0), &ctx, Quantity::CluesAtControllerLocation),
+            0
+        );
+        // failure margin from the ctx binding
+        let mut ctx2 = EvalContext::for_controller(inv);
+        ctx2.set_failed_by(3);
+        assert_eq!(eval_quantity(&state, &ctx2, Quantity::SkillTestFailedBy), 3);
+        assert_eq!(eval_quantity(&state, &ctx, Quantity::SkillTestFailedBy), 0);
     }
 
     #[test]
