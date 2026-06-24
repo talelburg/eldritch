@@ -10,19 +10,15 @@ use crate::state::{
 
 use super::Cx;
 
-/// Every enemy currently engaged with `investigator`, in ascending [`EnemyId`]
-/// order (deterministic: `state.enemies` is a `BTreeMap`).
-///
-/// - 0 engaged → empty vec (activation gate rejects).
-/// - 1 engaged → singleton (auto-targeted, no suspend).
-/// - 2+ engaged → `resolve_grounded_choice` suspends for a `PickSingle`.
-pub(crate) fn engaged_enemies(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
-    state
-        .enemies
-        .iter()
-        .filter(|(_, e)| e.engaged_with == Some(investigator))
-        .map(|(id, _)| *id)
-        .collect()
+/// The scope of enemies a Fight (basic action or weapon `Effect::Fight`) may
+/// target: any enemy *at your location*. Per RR you choose an enemy at your
+/// location to attack and need not already be engaged, so this is co-located
+/// (`At(Here)`), not engaged-only (#451). Single source of truth shared by the
+/// activation pre-cost gate (`check_effect_target_available`) and the
+/// evaluator's target grounding (`ground_fight_target_choice`), so the two
+/// can't drift.
+pub(crate) fn fight_target_scope() -> crate::dsl::EntityScope {
+    crate::dsl::EntityScope::At(crate::dsl::LocationSet::Here)
 }
 
 /// Enemies matching an [`EntityScope`](crate::dsl::EntityScope), in `BTreeMap`
@@ -1302,45 +1298,11 @@ pub(super) fn resume_attack_order_pick(
 #[cfg(test)]
 mod combat_tests {
     use super::super::Cx;
-    use super::engaged_enemies;
     use crate::engine::{EngineOutcome, OptionId};
     use crate::event::Event;
     use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId, InvestigatorId};
     use crate::test_support::{test_enemy, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
-
-    #[test]
-    fn engaged_enemies_returns_all_in_ascending_id_order() {
-        let inv_id = InvestigatorId(1);
-        let mut e1 = test_enemy(100, "A");
-        e1.engaged_with = Some(inv_id);
-
-        // Zero engaged → empty.
-        let s0 = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .build();
-        assert!(engaged_enemies(&s0, inv_id).is_empty());
-
-        // Exactly one engaged → singleton.
-        let s1 = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_enemy(e1.clone())
-            .build();
-        assert_eq!(engaged_enemies(&s1, inv_id), vec![EnemyId(100)]);
-
-        // Two engaged → both ids in ascending EnemyId order.
-        let mut e2 = test_enemy(101, "B");
-        e2.engaged_with = Some(inv_id);
-        let s2 = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_enemy(e1)
-            .with_enemy(e2)
-            .build();
-        assert_eq!(
-            engaged_enemies(&s2, inv_id),
-            vec![EnemyId(100), EnemyId(101)]
-        );
-    }
 
     #[test]
     fn defeating_victory_enemy_places_it_in_the_victory_display() {

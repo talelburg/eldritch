@@ -1466,8 +1466,12 @@ fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
 /// `any_fast_play_eligible` and `Effect::Fight` / `DealDamageToEnemy` can treat
 /// a missing target as an invariant violation.
 ///
-/// - **Fight:** needs ≥1 engaged enemy (0 = no target, rejected pre-cost;
-///   2+ suspends to a `PickSingle` target-pick in the evaluator).
+/// - **Fight:** needs ≥1 enemy *at your location* (0 = no target, rejected
+///   pre-cost; 2+ suspends to a `PickSingle` target-pick in the evaluator).
+///   Scope is co-located, not engaged-only: per RR you choose an enemy at your
+///   location to attack and need not already be engaged (matches the basic
+///   Fight action — an Aloof enemy, or one engaged with another investigator
+///   in MP, is a legal weapon target). #451.
 /// - **`DealDamageToEnemy`:** needs ≥1 enemy in the chosen scope (e.g. "at your
 ///   location"). ≥1 proceeds — 2+ suspends via the `Choose` resolver — so only
 ///   the empty case rejects here; this is why the effect is typed, not `Native`
@@ -1482,10 +1486,11 @@ fn check_effect_target_available(
     effect: &crate::dsl::Effect,
 ) -> Result<(), Cow<'static, str>> {
     if effect_initiates_fight(effect)
-        && super::combat::engaged_enemies(state, investigator).is_empty()
+        && super::combat::enemies_in_scope(state, investigator, super::combat::fight_target_scope())
+            .is_empty()
     {
         return Err(
-            "ActivateAbility: a Fight ability needs an enemy engaged with you (none engaged)"
+            "ActivateAbility: a Fight ability needs an enemy at your location (none co-located)"
                 .into(),
         );
     }

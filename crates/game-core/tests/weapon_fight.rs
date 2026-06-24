@@ -15,10 +15,12 @@ use game_core::dsl::{activated, fight, Ability, Cost, IntExpr};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
     TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_enemy, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
@@ -87,11 +89,28 @@ fn install_mock_registry() {
     });
 }
 
+/// The single location the controller and its enemies share. Co-location is
+/// load-bearing: a weapon Fight targets any enemy *at your location*
+/// (`EntityScope::At(Here)`), so the board must place everyone there.
+const LOC: LocationId = LocationId(1);
+
 /// Board: the weapon in play (instance 0) with a freshly-seeded 4-ammo
 /// pool, the controller active with combat 3 in the Investigation phase,
-/// engaged with `enemy_count` enemies (fight 3, health 3). A `Numeric(0)`
-/// chaos bag makes the combat total deterministic.
+/// at [`LOC`] and engaged with `enemy_count` enemies (fight 3, health 3) that
+/// are co-located there. A `Numeric(0)` chaos bag makes the combat total
+/// deterministic.
 fn board_with_weapon(enemy_count: u32) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+    board_with_enemies(enemy_count, true)
+}
+
+/// As [`board_with_weapon`], but `engaged` controls whether the co-located
+/// enemies are engaged with the controller. Unengaged-but-co-located is a
+/// legal weapon Fight target (an Aloof enemy, or one engaged with another
+/// investigator in MP) — #451.
+fn board_with_enemies(
+    enemy_count: u32,
+    engaged: bool,
+) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
     install_mock_registry();
     let id = InvestigatorId(1);
     let weapon_inst = CardInstanceId(0);
@@ -105,16 +124,18 @@ fn board_with_weapon(enemy_count: u32) -> (game_core::GameState, InvestigatorId,
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_location(test_location(1, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default());
     for n in 0..enemy_count {
         let mut enemy = test_enemy(100 + n, "Ghoul");
         enemy.fight = 3;
         enemy.max_health = 3;
-        enemy.engaged_with = Some(id);
+        enemy.current_location = Some(LOC);
+        enemy.engaged_with = engaged.then_some(id);
         builder = builder.with_enemy(enemy);
     }
-    let state = builder.with_investigator(inv).build();
+    let state = builder.with_investigator_at(inv, LOC).build();
     (state, id, weapon_inst)
 }
 
@@ -189,8 +210,101 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
 }
 
 #[test]
-fn weapon_fight_rejects_when_no_enemy_engaged() {
-    // 0 engaged → illegal (no target); reject before charging anything.
+fn weapon_fight_targets_a_co_located_unengaged_enemy() {
+    // A co-located but unengaged enemy (e.g. Aloof, or engaged with another
+    // investigator in MP) is a legal weapon Fight target — RR: you choose an
+    // enemy *at your location* to attack; you need not already be engaged
+    // (#451). With exactly one such enemy the target auto-binds (no suspend),
+    // mirroring the single-engaged case.
+    let (state, id, weapon) = board_with_enemies(1, false);
+    assert_eq!(
+        state.enemies[&game_core::state::EnemyId(100)].engaged_with,
+        None,
+        "precondition: the enemy is co-located but NOT engaged"
+    );
+
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id: weapon,
+            ability_index: 0,
+        }),
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_event!(result.events, Event::SkillTestStarted { difficulty: 3, .. });
+    assert_event!(
+        result.events,
+        Event::EnemyDamaged {
+            enemy: game_core::state::EnemyId(100),
+            amount: 2,
+            ..
+        }
+    );
+    assert_eq!(ammo_remaining(&result.state, id, weapon), 3);
+    assert_eq!(
+        result.state.enemies[&game_core::state::EnemyId(100)].damage,
+        2
+    );
+}
+
+#[test]
+fn weapon_fight_rejects_an_enemy_at_a_different_location() {
+    // The scope is co-located (`At(Here)`), NOT global: an enemy elsewhere is
+    // no target, even though it exists. Guards against widening past the basic
+    // Fight action (#451).
+    install_mock_registry();
+    let id = InvestigatorId(1);
+    let weapon_inst = CardInstanceId(0);
+    let other = LocationId(2);
+
+    let mut inv = test_investigator(1);
+    inv.skills.combat = 3;
+    let mut weapon = CardInPlay::enter_play(CardCode::new(WEAPON), weapon_inst);
+    weapon.uses.insert(UseKind::Ammo, 4);
+    inv.cards_in_play.push(weapon);
+
+    let mut enemy = test_enemy(100, "Ghoul");
+    enemy.fight = 3;
+    enemy.max_health = 3;
+    enemy.current_location = Some(other); // elsewhere, not the controller's LOC
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(id)
+        .with_location(test_location(1, "Study"))
+        .with_location(test_location(2, "Hallway"))
+        .with_enemy(enemy)
+        .with_investigator_at(inv, LOC)
+        .build();
+
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: id,
+            instance_id: weapon_inst,
+            ability_index: 0,
+        }),
+    );
+    let EngineOutcome::Rejected { reason } = &result.outcome else {
+        panic!("expected Rejected; got {:?}", result.outcome);
+    };
+    assert!(
+        reason.contains("at your location"),
+        "should reject for the missing co-located target, not an unrelated \
+         precondition; got: {reason}"
+    );
+    assert_eq!(ammo_remaining(&result.state, id, weapon_inst), 4);
+    assert_eq!(
+        result.state.enemies[&game_core::state::EnemyId(100)].damage,
+        0
+    );
+}
+
+#[test]
+fn weapon_fight_rejects_when_no_co_located_enemy() {
+    // No enemy at your location → illegal (no target); reject before charging
+    // anything.
     let (state, id, weapon) = board_with_weapon(0);
     let actions_before = state.investigators[&id].actions_remaining;
     let result = apply_no_commits(

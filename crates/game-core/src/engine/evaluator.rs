@@ -795,7 +795,7 @@ fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// enemy from the evaluation context (grounded by `ground_chosen_targets`
 /// before this handler runs), and start a Combat skill test whose Fight
 /// follow-up deals `1 + extra_damage`. The activation check has already
-/// guaranteed ≥1 engaged enemy; `ground_chosen_targets` auto-selects on 1,
+/// guaranteed ≥1 co-located enemy; `ground_chosen_targets` auto-selects on 1,
 /// suspends for a `PickSingle` on 2+, and `chosen_enemy()` is `None` only on
 /// 0 (caught pre-cost) — so a missing target here is a state-shape violation
 /// rejected loudly rather than silently no-oped.
@@ -826,14 +826,14 @@ fn apply_fight(
         }
     };
     // The target is bound by `ground_chosen_targets` before this handler
-    // runs; `None` here means 0 engaged enemies slipped past the pre-cost
+    // runs; `None` here means 0 co-located enemies slipped past the pre-cost
     // gate — reject defensively.
     let Some(enemy_id) = eval_ctx.chosen_enemy() else {
         return EngineOutcome::Rejected {
-            reason: "Effect::Fight: no engaged enemy chosen (target check skipped?)".into(),
+            reason: "Effect::Fight: no co-located enemy chosen (target check skipped?)".into(),
         };
     };
-    // `enemy_id` came from `engaged_enemies` over this same map, so
+    // `enemy_id` came from `enemies_in_scope` over this same map, so
     // it is present — a silent 0-difficulty default would mask corruption.
     let fight_difficulty = cx
         .state
@@ -1579,7 +1579,7 @@ fn ground_chosen_targets(
 
     if let Effect::Fight { .. } = effect {
         if eval_ctx.chosen_enemy().is_none() {
-            return ground_engaged_enemy_choice(cx, eval_ctx);
+            return ground_fight_target_choice(cx, eval_ctx);
         }
     }
 
@@ -1701,28 +1701,34 @@ fn ground_enemy_choice(
     )
 }
 
-/// Ground the [`Effect::Fight`] target against the engaged-enemy list.
+/// Ground the [`Effect::Fight`] target against the co-located-enemy list.
 ///
-/// Candidates are `combat::engaged_enemies` (all enemies engaged with the
-/// controller, in ascending [`EnemyId`] order). Delegates to
-/// [`resolve_grounded_choice`]:
-/// - 0 candidates → `Rejected` ("Fight: no enemy engaged").
+/// Candidates are `combat::enemies_in_scope` under
+/// [`combat::fight_target_scope`](crate::engine::dispatch::combat::fight_target_scope)
+/// — every enemy *at the controller's location* (not engaged-only), in
+/// ascending [`EnemyId`] order. Per RR you choose an enemy at your location to
+/// attack and need not already be engaged, matching the basic Fight action
+/// (#451). Delegates to [`resolve_grounded_choice`]:
+/// - 0 candidates → `Rejected` ("Fight: no enemy at your location").
 /// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
 /// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
 ///
 /// On resume the evaluator re-enters the same `Leaf` step; `chosen_option`
 /// is set and the right branch of `resolve_grounded_choice` picks from the
 /// same deterministic list.
-fn ground_engaged_enemy_choice(
+fn ground_fight_target_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates =
-        crate::engine::dispatch::combat::engaged_enemies(cx.state, eval_ctx.controller);
+    let candidates = crate::engine::dispatch::combat::enemies_in_scope(
+        cx.state,
+        eval_ctx.controller,
+        crate::engine::dispatch::combat::fight_target_scope(),
+    );
     resolve_grounded_choice(
         eval_ctx,
         &candidates,
-        "Fight: no enemy engaged",
+        "Fight: no enemy at your location",
         "Choose an enemy to attack",
         |id| format!("{id:?}"),
         |id| {
