@@ -10,25 +10,19 @@ use crate::state::{
 
 use super::Cx;
 
-/// The single enemy currently engaged with `investigator`, or `None` if
-/// zero or 2+ are engaged. `Effect::Fight` auto-targets via this; the
-/// 2+ case is a deferred interactive choice (lands with the #212/#213
-/// interactive-choice cluster), so the activation check rejects it.
-pub(crate) fn single_engaged_enemy(
-    state: &GameState,
-    investigator: InvestigatorId,
-) -> Option<EnemyId> {
-    let mut engaged = state
+/// Every enemy currently engaged with `investigator`, in ascending [`EnemyId`]
+/// order (deterministic: `state.enemies` is a `BTreeMap`).
+///
+/// - 0 engaged → empty vec (activation gate rejects).
+/// - 1 engaged → singleton (auto-targeted, no suspend).
+/// - 2+ engaged → `resolve_grounded_choice` suspends for a `PickSingle`.
+pub(crate) fn engaged_enemies(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
+    state
         .enemies
         .iter()
         .filter(|(_, e)| e.engaged_with == Some(investigator))
-        .map(|(id, _)| *id);
-    let first = engaged.next()?;
-    if engaged.next().is_some() {
-        None
-    } else {
-        Some(first)
-    }
+        .map(|(id, _)| *id)
+        .collect()
 }
 
 /// Enemies matching an [`EntityScope`](crate::dsl::EntityScope), in `BTreeMap`
@@ -1308,7 +1302,7 @@ pub(super) fn resume_attack_order_pick(
 #[cfg(test)]
 mod combat_tests {
     use super::super::Cx;
-    use super::single_engaged_enemy;
+    use super::engaged_enemies;
     use crate::engine::{EngineOutcome, OptionId};
     use crate::event::Event;
     use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId, InvestigatorId};
@@ -1316,19 +1310,25 @@ mod combat_tests {
     use crate::{assert_event, assert_no_event};
 
     #[test]
-    fn single_engaged_enemy_some_for_one_none_for_zero_or_two() {
+    fn engaged_enemies_returns_all_in_ascending_id_order() {
         let inv_id = InvestigatorId(1);
         let mut e1 = test_enemy(100, "A");
         e1.engaged_with = Some(inv_id);
 
-        // Exactly one engaged → Some.
+        // Zero engaged → empty.
+        let s0 = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        assert!(engaged_enemies(&s0, inv_id).is_empty());
+
+        // Exactly one engaged → singleton.
         let s1 = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_enemy(e1.clone())
             .build();
-        assert_eq!(single_engaged_enemy(&s1, inv_id), Some(EnemyId(100)));
+        assert_eq!(engaged_enemies(&s1, inv_id), vec![EnemyId(100)]);
 
-        // Two engaged → None (deferred multi-target selection).
+        // Two engaged → both ids in ascending EnemyId order.
         let mut e2 = test_enemy(101, "B");
         e2.engaged_with = Some(inv_id);
         let s2 = GameStateBuilder::new()
@@ -1336,13 +1336,10 @@ mod combat_tests {
             .with_enemy(e1)
             .with_enemy(e2)
             .build();
-        assert_eq!(single_engaged_enemy(&s2, inv_id), None);
-
-        // Zero engaged → None.
-        let s0 = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .build();
-        assert_eq!(single_engaged_enemy(&s0, inv_id), None);
+        assert_eq!(
+            engaged_enemies(&s2, inv_id),
+            vec![EnemyId(100), EnemyId(101)]
+        );
     }
 
     #[test]

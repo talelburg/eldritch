@@ -2,8 +2,10 @@
 //!
 //! Verifies that a successful Machete Fight deals `1 + 1 = 2` damage when the
 //! attacked enemy is the sole enemy engaged with the actor ("sole-engaged" bonus
-//! active), and that with two enemies engaged the activation is rejected by the
-//! engine's current pre-#401 gate (which defers multi-target selection).
+//! active), and covers the multi-target activation path (#449): with 2 enemies
+//! engaged the activation suspends for a target pick (`AwaitingInput`), and after
+//! resuming with the first enemy chosen the Fight resolves against that enemy
+//! for `1 + 0 = 1` damage (`extra_damage` is 0 because `EngagedEnemies` == 2).
 //!
 //! Own process → installs `cards::REGISTRY`.
 
@@ -18,7 +20,7 @@ use game_core::state::{
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -85,15 +87,69 @@ fn sole_engaged_enemy_gets_bonus_damage() {
     assert_eq!(r.state.enemies[&EnemyId(100)].damage, 2);
 }
 
-/// With two enemies engaged the activation is rejected by the pre-#401
-/// multi-target gate — nothing is charged and no damage is dealt.
-///
-/// Once multi-target Fight (#401) lands this test should be replaced with
-/// one that verifies the attack deals `1 + 0 = 1` damage (`extra_damage` is
-/// 0 because `EngagedEnemies` == 2, not 1).
+/// With two enemies engaged, activating Machete suspends for a target pick.
+/// After picking enemy 100 (OptionId(0)), the Fight resolves against it for
+/// `1 + 0 = 1` damage (`extra_damage` is 0 because `EngagedEnemies` == 2).
+/// Enemy 101 is untouched.
 #[test]
-fn two_enemies_engaged_activation_is_rejected() {
+fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
     let state = board(2);
+
+    // Step 1: activate → should suspend for enemy target pick (NOT rejected).
+    let r1 = apply(
+        state,
+        Action::Player(PlayerAction::ActivateAbility {
+            investigator: INV,
+            instance_id: MACHETE_INST,
+            ability_index: 0,
+        }),
+    );
+    assert!(
+        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
+        "expected AwaitingInput for target pick; got {:?}",
+        r1.outcome
+    );
+
+    // Step 2: pick enemy 100 (OptionId(0) — enemies in BTreeMap ascending order).
+    // Then drain the commit window (no commits) to Done.
+    let r2 = apply_no_commits(
+        r1.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    assert_eq!(
+        r2.outcome,
+        EngineOutcome::Done,
+        "expected Done after pick + commit; got {:?}",
+        r2.outcome
+    );
+
+    // Enemy 100 (chosen) took 1 damage; enemy 101 (not chosen) took 0.
+    assert_event!(
+        r2.events,
+        Event::EnemyDamaged {
+            enemy: EnemyId(100),
+            amount: 1,
+            ..
+        }
+    );
+    assert_eq!(
+        r2.state.enemies[&EnemyId(100)].damage,
+        1,
+        "chosen enemy took 1 damage"
+    );
+    assert_eq!(
+        r2.state.enemies[&EnemyId(101)].damage,
+        0,
+        "unchosen enemy untouched"
+    );
+}
+
+/// With zero enemies engaged, the activation is rejected before any cost is paid.
+#[test]
+fn no_engaged_enemy_activation_is_rejected_precost() {
+    let state = board(0);
     let actions_before = state.investigators[&INV].actions_remaining;
     let r = activate_machete(state);
     assert!(
