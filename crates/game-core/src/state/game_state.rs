@@ -1023,10 +1023,9 @@ pub struct InFlightSkillTest {
     /// `advance`. Initialized to
     /// [`SkillTestStep::AwaitingCommit`] at
     /// `start_skill_test`; advanced in lock-step as the resolution
-    /// sequence runs. Post-commit variants carry the test's outcome
-    /// as a `succeeded` payload (see [`SkillTestStep`]) so the
-    /// invariant "outcome is known iff the test is past the commit
-    /// window" is structural.
+    /// sequence runs. The test outcome lives on [`resolved`](Self::resolved)
+    /// (set at ST.6), not in the cursor payloads — so the invariant "outcome is
+    /// known iff the test is past the commit window" is `resolved.is_some()`.
     pub continuation: SkillTestStep,
     /// A flat modifier applied to the test total, snapshotted by the
     /// effect that initiated the test (`Effect::Fight`'s combat
@@ -1042,6 +1041,28 @@ pub struct InFlightSkillTest {
     /// is inert for non-Fight tests. `0` for every test that no
     /// commit-time attack buff touches (regression-safe).
     pub bonus_attack_damage: u8,
+    /// The chaos-token determination, set once at the
+    /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.6) and read by every
+    /// post-ST.6 step instead of threading `succeeded`/`failed_by` through each
+    /// cursor variant. `None` until the test resolves — so `resolved.is_some()`
+    /// is the structural witness for "the test is past the commit window," the
+    /// invariant the per-variant `succeeded` payloads used to carry. (Slice D #423.)
+    pub resolved: Option<ResolvedTest>,
+}
+
+/// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
+/// [`InFlightSkillTest::resolved`] once computed and read by every subsequent
+/// driver step. One source of truth, rather than routing the same fields
+/// through each [`SkillTestStep`] payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedTest {
+    /// Whether the test passed (`total >= difficulty`, no `AutoFail`).
+    pub succeeded: bool,
+    /// Failure margin (`difficulty - total`, clamped ≥ 0); `0` on success.
+    /// Read by an `on_fail` effect's
+    /// [`Effect::ForEachPointFailed`](crate::dsl::Effect::ForEachPointFailed)
+    /// (Grasping Hands 01162).
+    pub failed_by: u8,
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -1142,14 +1163,7 @@ pub enum SkillTestStep {
     /// narrowing. An empty forced/reaction candidate set opens no window, so a
     /// test no card listens to is free. Pre-advances to
     /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
-    EmitOutcomeReactions {
-        /// The chaos-token resolution's success determination, threaded
-        /// through to [`FireOnCommit`](Self::FireOnCommit).
-        succeeded: bool,
-        /// Failure margin, threaded onward (see
-        /// [`ApplyFollowUp`](Self::ApplyFollowUp)).
-        failed_by: u8,
-    },
+    EmitOutcomeReactions,
     /// RR ST.7 head — push the committed cards' [`Trigger::OnCommit`] effects
     /// (Vicious Blow 01025's `BoostAttackDamage`). These are conditional on
     /// success ("If this skill test is successful during an attack…") so they
@@ -1161,30 +1175,14 @@ pub enum SkillTestStep {
     /// pre-advances to [`ApplyFollowUp`](Self::ApplyFollowUp).
     ///
     /// [`Trigger::OnCommit`]: crate::dsl::Trigger::OnCommit
-    FireOnCommit {
-        /// The chaos-token resolution's success determination, threaded
-        /// through to [`ApplyFollowUp`](Self::ApplyFollowUp).
-        succeeded: bool,
-        /// Failure margin, threaded onward (see
-        /// [`ApplyFollowUp`](Self::ApplyFollowUp)).
-        failed_by: u8,
-    },
+    FireOnCommit,
     /// RR ST.7 part 1 — apply the action-specific
     /// [`SkillTestFollowUp`]. On success the Investigate follow-up
     /// pushes its `discover_clue` effect for the drive loop (yielding);
     /// Fight / Evade / None run synchronously. On failure the follow-up
     /// is skipped (follow-ups are success-only). Pre-advances to
     /// [`ApplyResultEffect`](Self::ApplyResultEffect). (Slice D #423.)
-    ApplyFollowUp {
-        /// The chaos-token resolution's success determination.
-        succeeded: bool,
-        /// Failure margin (`difficulty - total`, clamped ≥ 0), threaded
-        /// to [`ApplyResultEffect`](Self::ApplyResultEffect) so an
-        /// `on_fail` effect's
-        /// [`Effect::ForEachPointFailed`](crate::dsl::Effect::ForEachPointFailed)
-        /// can scale. `0` on success.
-        failed_by: u8,
-    },
+    ApplyFollowUp,
     /// RR ST.7 part 2 — push the success/failure card effect: `on_success`
     /// on a passing draw (Frozen in Fear 01164's self-discard), or `on_fail`
     /// on a failing draw (Crypt Chill 01167's discard choice, Grasping Hands
@@ -1192,13 +1190,7 @@ pub enum SkillTestStep {
     /// after the follow-up because this step is sequenced after
     /// [`ApplyFollowUp`](Self::ApplyFollowUp). Pre-advances to
     /// [`FireOnResolution`](Self::FireOnResolution). (Slice D #423.)
-    ApplyResultEffect {
-        /// The chaos-token resolution's success determination — selects
-        /// the `on_success` vs `on_fail` branch.
-        succeeded: bool,
-        /// Failure margin, supplied to the `on_fail` eval context.
-        failed_by: u8,
-    },
+    ApplyResultEffect,
     /// RR ST.7 — fire the committed cards' [`OnSkillTestResolution`] triggers,
     /// one effect per driver visit so they cursor-sequence in committed-card
     /// order (no LIFO). `next` is the index into the flattened
@@ -1207,11 +1199,12 @@ pub enum SkillTestStep {
     /// the list, advances to [`PostRetaliate`](Self::PostRetaliate). Replaces
     /// the former single-shot `PostFollowUp` step. (Slice D #423.)
     ///
+    /// The test outcome (`succeeded`/`failed_by`) is read off
+    /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
+    /// is the only step-specific state this variant needs.
+    ///
     /// [`OnSkillTestResolution`]: crate::dsl::Trigger::OnSkillTestResolution
     FireOnResolution {
-        /// The chaos-token resolution's success determination — gates
-        /// outcome-specific triggers.
-        succeeded: bool,
         /// Index of the next matching (card, ability) trigger to fire.
         next: u32,
     },
@@ -1220,21 +1213,12 @@ pub enum SkillTestStep {
     /// against a ready retaliate enemy (Rules Reference p.18 — "after
     /// applying all results for that skill test"), then advances to
     /// teardown.
-    PostRetaliate {
-        /// The chaos-token resolution's success determination — Retaliate
-        /// fires only on failure.
-        succeeded: bool,
-    },
+    PostRetaliate,
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration discards committed cards, emits
     /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
     /// the in-flight record.
-    PostOnResolution {
-        /// Carried through to the after-resolution reactive trigger
-        /// window (#64), which will gate on outcome at the
-        /// `SkillTestEnded` boundary.
-        succeeded: bool,
-    },
+    PostOnResolution,
 }
 
 /// What to do after the bracketing skill test resolves, depending on

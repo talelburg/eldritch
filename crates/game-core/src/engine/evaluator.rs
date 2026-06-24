@@ -2587,6 +2587,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
                 },
             ));
         let mut events = Vec::new();
@@ -2644,6 +2645,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
                 },
             ));
 
@@ -2767,6 +2769,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
                 },
             ));
         state
@@ -2937,6 +2940,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
                 },
             ));
         let mut events = Vec::new();

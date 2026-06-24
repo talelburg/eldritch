@@ -28,8 +28,8 @@ pub use game_state::{
     DamageSource, EffectFrame, EncounterDisposition, EnemyAttackSource, EnemyResume,
     FastActorScope, FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest,
     InvestigationResume, MythosResume, PendingSkillModifier, PhaseStep, ResolutionCandidate,
-    SkillSubstitution, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
-    UpkeepResume,
+    ResolvedTest, SkillSubstitution, SkillTestFollowUp, SkillTestStep, SpawnEngagePending,
+    TimingMode, TimingSub, UpkeepResume,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};
