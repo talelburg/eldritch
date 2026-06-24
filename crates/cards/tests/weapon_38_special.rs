@@ -44,6 +44,7 @@ fn board(loc_clues: u8) -> game_core::GameState {
     enemy.fight = 5;
     enemy.max_health = 3;
     enemy.engaged_with = Some(INV);
+    enemy.current_location = Some(LOC); // co-located: a weapon Fight targets enemies at your location
 
     let mut location = game_core::test_support::test_location(10, "Study");
     location.clues = loc_clues;

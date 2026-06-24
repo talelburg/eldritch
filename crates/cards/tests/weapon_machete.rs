@@ -60,6 +60,7 @@ fn board(enemy_count: u32) -> game_core::GameState {
         enemy.fight = 3;
         enemy.max_health = 3;
         enemy.engaged_with = Some(INV);
+        enemy.current_location = Some(LOC); // co-located: weapon Fight targets enemies at your location
         builder = builder.with_enemy(enemy);
     }
 
@@ -146,9 +147,10 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
     );
 }
 
-/// With zero enemies engaged, the activation is rejected before any cost is paid.
+/// With no enemy at your location, the activation is rejected before any cost
+/// is paid.
 #[test]
-fn no_engaged_enemy_activation_is_rejected_precost() {
+fn no_co_located_enemy_activation_is_rejected_precost() {
     let state = board(0);
     let actions_before = state.investigators[&INV].actions_remaining;
     let r = activate_machete(state);
