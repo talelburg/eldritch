@@ -302,16 +302,21 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
     // The in-scope `immediate` effects (damage/horror) don't change the skill
     // value, so computing the total before they resolve is correct.
     let skill_value = sum_skill_value(cx.state, investigator, skill, kind, indices_u8);
-    let elder_sign_bonus =
-        card_registry::current().map_or(0, |reg| elder_sign_modifier(cx.state, reg, investigator));
     let (total, fail_reason) = match resolution {
         TokenResolution::Modifier(n) => {
             (skill_value.saturating_add(n).max(0), FailureReason::Total)
         }
-        TokenResolution::ElderSign => (
-            skill_value.saturating_add(elder_sign_bonus).max(0),
-            FailureReason::Total,
-        ),
+        TokenResolution::ElderSign => {
+            // The bonus is the controller's investigator-card elder-sign
+            // modifier (0 for every investigator without one). Computed in the
+            // arm so non-ElderSign draws skip the registry lookup.
+            let bonus = card_registry::current()
+                .map_or(0, |reg| elder_sign_modifier(cx.state, reg, investigator));
+            (
+                skill_value.saturating_add(bonus).max(0),
+                FailureReason::Total,
+            )
+        }
         TokenResolution::AutoFail => (0, FailureReason::AutoFail),
     };
     let auto_fail = matches!(resolution, TokenResolution::AutoFail);

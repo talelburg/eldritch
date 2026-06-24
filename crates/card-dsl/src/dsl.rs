@@ -198,7 +198,7 @@ pub enum Trigger {
     /// `modifier` is the printed skill-test modifier the elder-sign grants,
     /// as an [`IntExpr`] so board-state-dependent values (Roland Banks's
     /// "+1 for each clue on your location" → `Count(CluesAtControllerLocation)`)
-    /// resolve at draw time. The engine adds this to the test total through
+    /// resolve when the token is revealed. The engine adds this to the test total through
     /// the existing `Modifier` path (`skill_test.rs`), keeping the
     /// `ElderSign` resolution label for observability.
     ///

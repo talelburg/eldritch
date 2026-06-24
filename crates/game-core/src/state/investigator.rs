@@ -49,7 +49,7 @@ pub struct Investigator {
     ///
     /// **Bridge (#118), sunset by #448:** when the investigator card
     /// becomes a real `CardInPlay` (health/sanity/soak), this field and
-    /// `ability_usage` (added in #118 Task 3) fold into the uniform path.
+    /// [`ability_usage`](Self::ability_usage) fold into the uniform path.
     #[serde(default)]
     pub card_code: CardCode,
     /// Display name.
