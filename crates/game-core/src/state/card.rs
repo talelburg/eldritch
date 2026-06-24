@@ -136,9 +136,8 @@ pub struct CardInPlay {
     pub accumulated_horror: u8,
     /// Clues sitting on this card instance (Cover Up 01007 enters the
     /// threat area "with 3 clues on it"). Distinct from the investigator
-    /// and location clue pools; defaults to 0. Most cards never carry
-    /// clues, so absent on the wire → 0.
-    #[serde(default)]
+    /// and location clue pools. Most cards never carry clues (0). Required
+    /// on the wire (#453).
     pub clues: u8,
     /// Per-ability usage counter for "Limit X per \[period\]" caps. Key
     /// is the ability index within the card's `abilities()`; value
@@ -152,10 +151,10 @@ pub struct CardInPlay {
     /// no round-cycling framework yet — rounds tick by a test or future
     /// scenario action mutating `state.round`.
     ///
-    /// Empty for cards with no [`UsageLimit`] on any ability.
+    /// Empty for cards with no [`UsageLimit`] on any ability. Required on the
+    /// wire (#453).
     ///
     /// [`UsageLimit`]: crate::dsl::UsageLimit
-    #[serde(default)]
     pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
 }
 
@@ -292,15 +291,22 @@ mod tests {
     }
 
     #[test]
-    fn card_in_play_deserializes_when_clues_field_absent() {
-        // A state serialized before `clues` existed must still load (field
-        // defaults to 0), mirroring the `ability_usage` serde-default test.
-        let json = r#"{
-            "code": "_x", "instance_id": 1, "exhausted": false,
-            "uses": {}, "accumulated_damage": 0, "accumulated_horror": 0,
-            "ability_usage": {}
-        }"#;
-        let c: CardInPlay = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(c.clues, 0);
+    fn omitting_any_required_field_is_rejected() {
+        // `clues` and `ability_usage` are required on the wire (#453): a
+        // payload missing one fails loudly rather than silently defaulting.
+        let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1));
+        let full = serde_json::to_value(&c).expect("serialize");
+        serde_json::from_value::<CardInPlay>(full.clone()).expect("full object deserializes");
+        for field in ["clues", "ability_usage"] {
+            let mut v = full.clone();
+            v.as_object_mut()
+                .expect("card serializes to a JSON object")
+                .remove(field)
+                .unwrap_or_else(|| panic!("`{field}` should be present in the serialized form"));
+            assert!(
+                serde_json::from_value::<CardInPlay>(v).is_err(),
+                "omitting `{field}` must be rejected, not defaulted"
+            );
+        }
     }
 }
