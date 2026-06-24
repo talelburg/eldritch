@@ -26,9 +26,9 @@
 //!   Harold Walsted leaves play: Remove him from the game and add...`
 //!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
 //!   ability-specific effect machinery.
-//! - **Stat-comparison / location-state conditions** (`LocationHasClues`,
-//!   `AnyEnemyEngaged`, `SkillSucceededByAtLeast(N)`). [`Condition`]
-//!   today only covers skill-test outcome and kind.
+//! - **Stat-comparison / location-state conditions** (`AnyEnemyEngaged`,
+//!   `SkillSucceededByAtLeast(N)`). [`Condition::Compare`] now covers
+//!   clue counts and engaged-enemy counts.
 //!
 //! # Has DSL surface but not yet engine support
 //!
@@ -1071,7 +1071,7 @@ impl EnemyTarget {
 /// A boolean predicate guarding an [`Effect::If`].
 ///
 /// Phase-2 minimal set; later phases will add things like
-/// `LocationHasClues`, `AnyEnemyEngaged`, comparisons against
+/// `Compare { CluesAtControllerLocation, Gt, 0 }`, `AnyEnemyEngaged`, comparisons against
 /// stat values, etc.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Condition {
@@ -1089,9 +1089,13 @@ pub enum Condition {
     /// there's an in-flight test whose kind matches; rejects when
     /// no test is in flight.
     SkillTestKind(SkillTestKind),
-    /// Holds when the controller's current location has ≥1 clue.
-    /// ".38 Special": "if there are 1 or more clues on your location".
-    LocationHasClues,
+    /// Compare a [`Quantity`] against `value` under `op`.
+    /// Replaces the old `LocationHasClues` (now `Compare { CluesAtControllerLocation, Gt, 0 }`).
+    Compare {
+        quantity: Quantity,
+        op: CmpOp,
+        value: i8,
+    },
 }
 
 /// A non-negative count read off game state, usable as a value
@@ -1120,8 +1124,8 @@ pub enum CmpOp {
 /// An integer computed at effect-evaluation time. Lets a numeric field
 /// carry a condition-gated value without duplicating the surrounding
 /// effect — ".38 Special" reads its combat modifier as
-/// `IntExpr::cond(LocationHasClues, 3, 1)` rather than an
-/// [`Effect::If`] wrapping two near-identical `fight(…)` nodes.
+/// `IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1)`
+/// rather than an [`Effect::If`] wrapping two near-identical `fight(…)` nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IntExpr {
     /// A literal value.
@@ -1135,6 +1139,8 @@ pub enum IntExpr {
         /// Value when it does not.
         otherwise: i8,
     },
+    /// A state-read count ([`Quantity`]).
+    Count(Quantity),
 }
 
 impl IntExpr {
@@ -1146,6 +1152,18 @@ impl IntExpr {
             then,
             otherwise,
         }
+    }
+}
+
+impl From<i8> for IntExpr {
+    fn from(n: i8) -> Self {
+        IntExpr::Lit(n)
+    }
+}
+
+impl From<u8> for IntExpr {
+    fn from(n: u8) -> Self {
+        IntExpr::Lit(i8::try_from(n).unwrap_or(i8::MAX))
     }
 }
 
@@ -1487,7 +1505,7 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
 }
 
 /// Build an [`Effect::Fight`] with the given combat modifier and bonus
-/// damage (.38 Special: `fight(IntExpr::cond(LocationHasClues, 3, 1), 1)`).
+/// damage (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1)`).
 #[must_use]
 pub fn fight(combat_modifier: IntExpr, extra_damage: u8) -> Effect {
     Effect::Fight {

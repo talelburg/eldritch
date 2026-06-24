@@ -60,7 +60,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
+    CmpOp, Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
     ModifierScope, Quantity, SkillTestKind, Stat, Trigger,
 };
 use crate::event::Event;
@@ -1048,7 +1048,6 @@ fn eval_condition(
     eval_ctx: &EvalContext,
     condition: &Condition,
 ) -> Result<bool, String> {
-    let controller = eval_ctx.controller;
     match condition {
         Condition::SkillTestKind(kind) => {
             let t = state.current_skill_test().ok_or_else(|| {
@@ -1056,14 +1055,21 @@ fn eval_condition(
             })?;
             Ok(t.kind == *kind)
         }
-        Condition::LocationHasClues => {
-            let has = state
-                .investigators
-                .get(&controller)
-                .and_then(|inv| inv.current_location)
-                .and_then(|loc| state.locations.get(&loc))
-                .is_some_and(|l| l.clues > 0);
-            Ok(has)
+        Condition::Compare {
+            quantity,
+            op,
+            value,
+        } => {
+            let lhs = eval_quantity(state, eval_ctx, *quantity);
+            let rhs = *value;
+            Ok(match op {
+                CmpOp::Eq => lhs == rhs,
+                CmpOp::Ne => lhs != rhs,
+                CmpOp::Lt => lhs < rhs,
+                CmpOp::Le => lhs <= rhs,
+                CmpOp::Gt => lhs > rhs,
+                CmpOp::Ge => lhs >= rhs,
+            })
         }
         Condition::SkillTest { outcome } => {
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
@@ -1084,9 +1090,7 @@ fn eval_condition(
 
 /// Resolve a [`Quantity`] against current state for the controller.
 /// Always non-negative; returned as `i8` to compose in [`IntExpr`].
-// Called from tests now; will be wired into `eval_int_expr`'s `Count` arm and
-// `eval_condition`'s `Compare` arm in Task 2 (IntExpr::Count / Condition::Compare).
-#[allow(dead_code)]
+/// Used by [`IntExpr::Count`] and [`Condition::Compare`].
 fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
     let controller = eval_ctx.controller;
     let n: usize = match q {
@@ -1123,6 +1127,7 @@ fn eval_int_expr(state: &GameState, eval_ctx: &EvalContext, expr: &IntExpr) -> R
         } else {
             *otherwise
         }),
+        IntExpr::Count(q) => Ok(eval_quantity(state, eval_ctx, *q)),
     }
 }
 
@@ -2134,8 +2139,9 @@ mod tests {
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
-        constant_skill_modifier, effective_shroud, eval_condition, eval_quantity, push_effect,
-        step_effect_frame, unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
+        constant_skill_modifier, effective_shroud, eval_condition, eval_int_expr, eval_quantity,
+        push_effect, step_effect_frame, unconditional_constant_stat_modifier, EngineOutcome,
+        EvalContext,
     };
     use crate::dsl::Condition;
     use crate::engine::Cx;
@@ -2247,9 +2253,10 @@ mod tests {
 
     #[test]
     fn location_has_clues_condition_tracks_clue_count() {
+        use card_dsl::dsl::{CmpOp, Quantity};
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(1);
-        let with_clues = |clue_count: u8| {
+        let with_clues_local = |clue_count: u8| {
             let mut inv = test_investigator(1);
             inv.current_location = Some(loc_id);
             let mut loc = test_location(1, "Study");
@@ -2259,20 +2266,25 @@ mod tests {
                 .with_location(loc)
                 .build()
         };
+        let has_clues = Condition::Compare {
+            quantity: Quantity::CluesAtControllerLocation,
+            op: CmpOp::Gt,
+            value: 0,
+        };
         // Condition tracks clue presence at the controller's location.
         assert_eq!(
             eval_condition(
-                &with_clues(1),
+                &with_clues_local(1),
                 &EvalContext::for_controller(inv_id),
-                &Condition::LocationHasClues
+                &has_clues
             ),
             Ok(true)
         );
         assert_eq!(
             eval_condition(
-                &with_clues(0),
+                &with_clues_local(0),
                 &EvalContext::for_controller(inv_id),
-                &Condition::LocationHasClues
+                &has_clues
             ),
             Ok(false)
         );
@@ -2298,6 +2310,31 @@ mod tests {
         ctx2.set_failed_by(3);
         assert_eq!(eval_quantity(&state, &ctx2, Quantity::SkillTestFailedBy), 3);
         assert_eq!(eval_quantity(&state, &ctx, Quantity::SkillTestFailedBy), 0);
+    }
+
+    #[test]
+    fn eval_count_and_compare_over_clues() {
+        use card_dsl::dsl::{CmpOp, Condition, IntExpr, Quantity};
+        let (_s, inv) = state_with_cards_in_play(&[]);
+        let ctx = EvalContext::for_controller(inv);
+        // Count
+        assert_eq!(
+            eval_int_expr(
+                &with_clues(2),
+                &ctx,
+                &IntExpr::Count(Quantity::CluesAtControllerLocation)
+            )
+            .unwrap(),
+            2
+        );
+        // Compare: clues > 0
+        let has = Condition::Compare {
+            quantity: Quantity::CluesAtControllerLocation,
+            op: CmpOp::Gt,
+            value: 0,
+        };
+        assert!(eval_condition(&with_clues(1), &ctx, &has).unwrap());
+        assert!(!eval_condition(&with_clues(0), &ctx, &has).unwrap());
     }
 
     #[test]
