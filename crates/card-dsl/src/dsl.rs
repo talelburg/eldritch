@@ -27,8 +27,11 @@
 //!   from the Dunwich cycle). Need `Trigger::OnLeavePlay` plus
 //!   ability-specific effect machinery.
 //! - **Stat-comparison / location-state conditions** (`AnyEnemyEngaged`,
-//!   `SkillSucceededByAtLeast(N)`). [`Condition::Compare`] now covers
-//!   clue counts and engaged-enemy counts.
+//!   `SkillSucceededByAtLeast(N)`). Note: [`Condition::Compare`] already
+//!   covers clue-count and engaged-enemy-count comparisons — these are
+//!   expressible today. What remains unexpressible are conditions keyed on
+//!   location state, success margin, or other quantities not yet in
+//!   [`Quantity`].
 //!
 //! # Has DSL surface but not yet engine support
 //!

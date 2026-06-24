@@ -56,9 +56,11 @@ wired into `Effect::Fight.combat_modifier`; see Architecture). Each item *adds a
   shipped `Condition::LocationHasClues` is binary; elder-sign is per-clue), and
   `IntExpr` into `Effect::Modify` (`delta` is still `i8`). His signature is in the
   "done" criteria.
-- **#300 — Machete** sole-engaged +1. Multi-target Fight has landed (#401), so the
-  unconditional `extra_damage: 1` is now a real divergence with 2+ engaged enemies:
-  make `extra_damage` an `IntExpr` gated on a new "sole engaged enemy" `Condition`.
+- **#300 — Machete** sole-engaged +1. Make `extra_damage` an `IntExpr` gated on a
+  "sole engaged enemy" `Condition` (`EngagedEnemies == 1`). Activated `Effect::Fight`
+  still requires exactly one engaged enemy (2+ is rejected pre-cost, pending
+  multi-target selection / #401), so the conditional is **correct card-text modelling**
+  but its `+0` branch is not yet reachable — it becomes load-bearing when #401 lands.
 - **#426 — Grasping Hands 01162 / Rotting Remains 01163** "take 1 per point you
   fail by": make `Effect::Deal`'s amount an `IntExpr` + a `SkillTestFailedBy` term,
   replacing `for_each_point_failed(deal 1)` so it deals one simultaneous N-point
@@ -191,9 +193,15 @@ enum) is **Phase 9** — including the first real Peril/Surge cards (Hunting Sha
 ## Open questions
 
 - **Roland elder-sign DSL surface (#118).** Mostly answered: the `IntExpr` AST
-  exists (.38 Special is the live consumer). The remaining design is narrow — the
-  clue-*count* `IntExpr` term + plumbing it into the skill-test-total path
-  (`Effect::Modify.delta` is `i8`) + the `Trigger::ElderSign` / ST.4 firing path.
+  exists (.38 Special is the live consumer) and the design spec is settled (see
+  `docs/superpowers/specs/2026-06-24-intexpr-dynamic-value-cluster-design.md`
+  Section 2). The remaining work is the clue-*count* `IntExpr` term
+  (`IntExpr::Count(Quantity::CluesAtControllerLocation)`), the `Trigger::ElderSign`
+  / ST.4 firing path, and the `Investigator.card_code` bridge. The elder-sign bonus
+  flows through the existing chaos-token `Modifier` total path (sourced from the
+  investigator card) — **not** through `Effect::Modify` or a new
+  `Effect::ModifySkillTestTotal`; `Effect::Modify.delta` stays `i8` and is not
+  touched by #118.
 - **Solo-with-2 UX** — how one client presents two investigators. See Future slices.
 
 ## Dependencies

@@ -797,6 +797,10 @@ fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// `1 + extra_damage`. The activation check has already guaranteed
 /// exactly one engaged enemy, so a missing target here is a state-shape
 /// violation rejected loudly rather than silently no-oped.
+///
+/// Both `combat_modifier` and `extra_damage` are evaluated from an
+/// `&IntExpr` (board-state-dependent AST, same path); `extra_damage` is
+/// then clamped to `u8` (negative results treated as 0).
 fn apply_fight(
     cx: &mut Cx,
     eval_ctx: &EvalContext,

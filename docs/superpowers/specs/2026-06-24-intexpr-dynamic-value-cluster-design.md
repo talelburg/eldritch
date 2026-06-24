@@ -113,7 +113,7 @@ Elder-signs that also run an *effect* (Daisy's per-Tome draw, Agnes's optional d
 
 ### #300 Machete (01020)
 
-`machete.rs`: `fight(1, cond(Compare(EngagedEnemies, Eq, 1), 1, 0))` — `extra_damage` is `+1` iff the attacked enemy is the sole engaged one. Drops the unconditional-damage `TODO(#300)`. Multi-target Fight (#401) already landed, so the condition is load-bearing.
+`machete.rs`: `fight(1, cond(Compare(EngagedEnemies, Eq, 1), 1, 0))` — `extra_damage` is `+1` iff the attacked enemy is the sole engaged one. Drops the unconditional-damage `TODO(#300)`. Activated `Effect::Fight` still requires exactly one engaged enemy (2+ engaged is rejected pre-cost); #401 (multi-target selection) has not yet landed. The `EngagedEnemies == 1` condition is therefore **correct modelling** of the card text, but its `+0` branch is **not yet reachable** — it becomes load-bearing once 2-engaged activated Fight lands with #401.
 
 ### #426 Grasping Hands (01162) / Rotting Remains (01163)
 

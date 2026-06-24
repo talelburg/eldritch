@@ -8,7 +8,14 @@
 //! A bare `[action]` Fight (no exhaust, no uses) with a flat `+1` combat
 //! modifier. The bonus damage is conditional: `+1` only when the attacked
 //! enemy is the sole engaged enemy, encoded as
-//! `IntExpr::Cond(EngagedEnemies == 1, 1, 0)`.
+//! `IntExpr::cond(EngagedEnemies == 1, 1, 0)`.
+//!
+//! Note: activated `Effect::Fight` currently requires *exactly one* engaged
+//! enemy (2+ engaged is rejected pre-cost, pending multi-target selection /
+//! [#401](https://github.com/talelburg/eldritch/issues/401)). As a result the
+//! `EngagedEnemies == 1` condition always holds whenever the Fight resolves
+//! today — the `+0` branch is correct modelling but only becomes reachable
+//! once 2-engaged activated Fight lands.
 
 use card_dsl::dsl::{activated, fight, Ability, CmpOp, Condition, IntExpr, Quantity};
 
