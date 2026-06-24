@@ -105,6 +105,7 @@ pub(in crate::engine) fn start_skill_test(
             test_modifier,
             bonus_attack_damage: 0,
             resolved: None,
+            symbol_on_fail: None,
         }));
     cx.events.push(Event::SkillTestStarted {
         investigator,
@@ -256,18 +257,21 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Run the computation half of a skill test (RR ST.3–ST.6): sum the committed
-/// icons and resolve the chaos token (emitting
-/// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-/// [`SkillTestFailed`](crate::Event::SkillTestFailed)). This step pushes no
-/// effect — every result effect (ST.7) is deferred to the cursor-sequenced
-/// [`FireOnCommit`](SkillTestStep::FireOnCommit) /
-/// [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) /
-/// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) /
-/// [`FireOnResolution`](SkillTestStep::FireOnResolution) steps that the driver
-/// runs in turn — so it just pre-advances the cursor to
-/// [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) (threading
-/// `succeeded`/`failed_by`) and returns; the `advance` loop reads the next step.
+/// Run the computation half of a skill test (RR ST.3–ST.6): reveal the chaos
+/// token (ST.3), apply the symbol's unconditional `immediate` side-effects
+/// (ST.4) as pushed [`Effect::Deal`](crate::dsl::Effect::Deal), and compute the
+/// determination (ST.5 modified value, ST.6 success/failure). The determination
+/// is stashed on the frame as [`ResolvedTest`](crate::state::ResolvedTest); the
+/// logged [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
+/// [`SkillTestFailed`](crate::Event::SkillTestFailed) events are emitted later,
+/// at [`DetermineOutcome`](SkillTestStep::DetermineOutcome), **after** the ST.4
+/// immediate effects (which may suspend on a soak window). The token is drawn
+/// exactly once here; nothing re-draws it on resume. The result-conditional
+/// symbol `on_fail` effect (Cultist 01104) is built and stashed on
+/// `symbol_on_fail` for the ST.7
+/// [`ApplySymbolOnFail`](SkillTestStep::ApplySymbolOnFail) step. Pre-advances to
+/// `DetermineOutcome` **before** pushing the immediate effects (the
+/// suspend/resume invariant).
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
     let (skill, kind, difficulty) = {
         let t = cx
@@ -277,26 +281,77 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
         (t.skill, t.kind, t.difficulty)
     };
 
+    // ST.3 reveal the chaos token; resolve any scenario symbol outcome.
+    let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
+    let token = cx.state.chaos_bag.tokens[token_idx];
+    let symbol_outcome = match token {
+        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
+            crate::scenario::resolve_symbol_token(cx.state, token, investigator)
+        }
+        _ => None,
+    };
+    let resolution = match &symbol_outcome {
+        Some(o) => TokenResolution::Modifier(o.modifier),
+        None => resolve_token(token, &cx.state.token_modifiers),
+    };
+    cx.events
+        .push(Event::ChaosTokenRevealed { token, resolution });
+
+    // ST.5 modified skill value; ST.6 success/failure. Computed now but the
+    // logged events fire at DetermineOutcome — after the ST.4 immediate effects.
+    // The in-scope `immediate` effects (damage/horror) don't change the skill
+    // value, so computing the total before they resolve is correct.
     let skill_value = sum_skill_value(cx.state, investigator, skill, kind, indices_u8);
+    let (total, fail_reason) = match resolution {
+        TokenResolution::Modifier(n) => {
+            (skill_value.saturating_add(n).max(0), FailureReason::Total)
+        }
+        TokenResolution::ElderSign => (skill_value.max(0), FailureReason::Total),
+        TokenResolution::AutoFail => (0, FailureReason::AutoFail),
+    };
+    let auto_fail = matches!(resolution, TokenResolution::AutoFail);
+    let margin = total.saturating_sub(difficulty);
+    let succeeded = margin >= 0 && !auto_fail;
+    let failed_by = if succeeded {
+        0
+    } else {
+        difficulty.saturating_sub(total)
+    };
 
-    let (succeeded, failed_by) =
-        resolve_chaos_token_and_emit(cx, investigator, skill, difficulty, skill_value);
+    // Build the ST.7 symbol on_fail effect (Cultist horror) for later; the
+    // unconditional `immediate` effects are pushed below at ST.4.
+    let symbol_on_fail = if succeeded {
+        None
+    } else {
+        symbol_outcome
+            .as_ref()
+            .and_then(|o| symbol_effects_to_effect(&o.on_fail))
+    };
 
-    // Stash the determination on the frame (the single source of truth every
-    // post-ST.6 step reads) and pre-advance to the EmitOutcomeReactions step
-    // (the ST.6→ST.7 boundary, where the SkillTestResolved timing point fires on
-    // the outcome just established — before any ST.7 consequence). Nothing was
-    // pushed here, so the `advance` loop stays on this SkillTest frame and
-    // `continue`s into EmitOutcomeReactions on the next iteration.
-    let t = cx
-        .state
-        .current_skill_test_mut()
-        .expect("the SkillTest frame was present immediately above");
-    t.resolved = Some(crate::state::ResolvedTest {
-        succeeded,
-        failed_by,
-    });
-    t.continuation = SkillTestStep::EmitOutcomeReactions;
+    // Stash the determination + the ST.7 on_fail effect and pre-advance to
+    // DetermineOutcome BEFORE pushing the ST.4 immediate effects, so a soak
+    // suspend resumes at DetermineOutcome and never re-draws the token.
+    {
+        let t = cx
+            .state
+            .current_skill_test_mut()
+            .expect("the SkillTest frame was present immediately above");
+        t.resolved = Some(crate::state::ResolvedTest {
+            succeeded,
+            failed_by: u8::try_from(failed_by).unwrap_or(0),
+            margin,
+            fail_reason,
+        });
+        t.symbol_on_fail = symbol_on_fail;
+        t.continuation = SkillTestStep::DetermineOutcome;
+    }
+
+    // ST.4 apply the symbol's immediate side-effects (Tablet damage when Ghouls
+    // are present), pushed as Effect::Deal (interactive soak → may suspend). If
+    // pushed, it becomes the top frame and the loop resumes at DetermineOutcome.
+    if let Some(o) = &symbol_outcome {
+        push_symbol_effects(cx, investigator, &o.immediate);
+    }
 }
 
 /// RR ST.7 head — the [`FireOnCommit`](SkillTestStep::FireOnCommit) step.
@@ -348,7 +403,7 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[
 /// so a suspending discovery (Cover Up 01007's before-discover interrupt)
 /// resumes at `ApplyResultEffect` rather than re-running the follow-up. (The
 /// "after you successfully investigate" timing point already fired at the
-/// preceding [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) step,
+/// preceding [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step,
 /// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
 ///
 /// When the Investigate follow-up pushes `discover_clue` the `advance` loop's
@@ -374,26 +429,52 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
 }
 
 /// RR ST.6→ST.7 boundary — the
-/// [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) step. Once the
-/// outcome has been *established* (ST.6) but **before** any ST.7 consequence
-/// resolves (the clue discovery in `ApplyFollowUp`, the result effects in
-/// `ApplyResultEffect`), fire the general `SkillTestResolved` timing point for
-/// **every** test and both outcomes (Obscuring Fog 01168 forced + Dr. Milan
-/// 01033 reaction are the `{ Investigate, Success }` narrowing; one
-/// `emit_event` so forced precedes reaction — RR p.2, #213). The forced/reaction
-/// scans (and an empty candidate set) decide whether any window actually opens,
-/// so a test no card listens to costs nothing. Returns the `emit_event` outcome
-/// so the caller yields if a 2+ forced run suspends. Pre-advances the cursor to
-/// [`FireOnCommit`](SkillTestStep::FireOnCommit) first, so a suspending reaction
-/// window resumes past this step into the ST.7 consequences (which can then see
-/// any state the ST.6 reactions changed).
-fn emit_outcome_reactions_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let kind = cx
-        .state
-        .current_skill_test()
-        .expect("emit_outcome_reactions_step: the SkillTest frame must persist")
-        .kind;
-    let succeeded = resolved(cx).succeeded;
+/// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step. Emit the logged
+/// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
+/// [`SkillTestFailed`](crate::Event::SkillTestFailed) from the stashed
+/// [`ResolvedTest`](crate::state::ResolvedTest) — now, *after* the ST.4 immediate
+/// symbol effects `Resolving` pushed — then fire the general `SkillTestResolved`
+/// timing point for **every** test and both outcomes (the `{ Investigate,
+/// Success }` narrowing is Obscuring Fog 01168 forced with Dr. Milan 01033
+/// reaction; one `emit_event` so forced precedes reaction — RR p.2, #213). The
+/// forced/reaction scans (and an empty candidate set) decide whether any window
+/// actually opens, so a test no card listens to costs nothing. Returns the
+/// `emit_event` outcome so the caller yields if a 2+ forced run suspends.
+/// Pre-advances the cursor to [`FireOnCommit`](SkillTestStep::FireOnCommit)
+/// **before** the emit, so a suspending reaction window resumes past this step.
+fn determine_outcome_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    let (skill, kind) = {
+        let t = cx
+            .state
+            .current_skill_test()
+            .expect("determine_outcome_step: the SkillTest frame must persist");
+        (t.skill, t.kind)
+    };
+    let crate::state::ResolvedTest {
+        succeeded,
+        failed_by,
+        margin,
+        fail_reason,
+    } = resolved(cx);
+    // ST.6 logged events — emitted here (not at Resolving) so they follow the
+    // ST.4 immediate symbol effects in the event log.
+    if succeeded {
+        cx.events.push(Event::SkillTestSucceeded {
+            investigator,
+            skill,
+            margin,
+        });
+    } else {
+        cx.events.push(Event::SkillTestFailed {
+            investigator,
+            skill,
+            reason: fail_reason,
+            // `failed_by` is a non-negative margin stored as `u8`; the event
+            // field is `i8`. Realistic margins are tiny, so the conversion
+            // never saturates.
+            by: i8::try_from(failed_by).unwrap_or(i8::MAX),
+        });
+    }
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
@@ -424,6 +505,7 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
     let crate::state::ResolvedTest {
         succeeded,
         failed_by,
+        ..
     } = resolved(cx);
     let (on_success, on_fail, source) = {
         let t = cx
@@ -435,7 +517,7 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
-        .continuation = SkillTestStep::FireOnResolution { next: 0 };
+        .continuation = SkillTestStep::ApplySymbolOnFail;
     // Thread `source` so `Effect::DiscardSelf` finds itself across the
     // suspend/resume boundary.
     let card_ctx =
@@ -555,11 +637,12 @@ fn open_skill_test_player_window(
 ///
 /// Step → next-continuation mapping (RR p.26 ST order):
 ///
-/// - [`Resolving`](SkillTestStep::Resolving) → ST.3–ST.6 computation; advance to
-///   [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions).
-/// - [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) → fire the
-///   `SkillTestResolved` timing point (Investigate + success only, for now) on
-///   the ST.6 outcome, before the ST.7 consequences; advance to
+/// - [`Resolving`](SkillTestStep::Resolving) → ST.3–ST.6 computation + ST.4
+///   immediate symbol effects; advance to
+///   [`DetermineOutcome`](SkillTestStep::DetermineOutcome).
+/// - [`DetermineOutcome`](SkillTestStep::DetermineOutcome) → emit the logged
+///   success/failure events, then the `SkillTestResolved` timing point (every
+///   test/outcome) on the ST.6 outcome, before the ST.7 consequences; advance to
 ///   [`FireOnCommit`](SkillTestStep::FireOnCommit).
 /// - [`FireOnCommit`](SkillTestStep::FireOnCommit) → ST.7 head (`OnCommit`
 ///   effects); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
@@ -568,6 +651,9 @@ fn open_skill_test_player_window(
 ///   [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect).
 /// - [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) → push the
 ///   success/failure card effect; advance to
+///   [`ApplySymbolOnFail`](SkillTestStep::ApplySymbolOnFail).
+/// - [`ApplySymbolOnFail`](SkillTestStep::ApplySymbolOnFail) → push the chaos
+///   symbol's `on_fail` effect (Cultist horror); advance to
 ///   [`FireOnResolution`](SkillTestStep::FireOnResolution).
 /// - [`FireOnResolution`](SkillTestStep::FireOnResolution) → fire committed
 ///   cards' `OnSkillTestResolution` triggers (one per visit); advance to
@@ -626,20 +712,21 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 return open_skill_test_player_window(cx, SkillTestStep::Resolving, true);
             }
             SkillTestStep::Resolving => {
-                // RR ST.3–ST.6 computation (sum icons, chaos token). Pushes
-                // nothing; pre-advances the cursor to EmitOutcomeReactions, so
-                // the loop reads it next on this same frame.
+                // RR ST.3–ST.6 computation (chaos token, modified value,
+                // success/failure) + ST.4 immediate symbol effects pushed as
+                // Effect::Deal. Stashes the determination on the frame and
+                // pre-advances to DetermineOutcome; if an immediate effect was
+                // pushed it is the new top frame and the loop yields (may suspend
+                // on a soak window), resuming at DetermineOutcome.
                 run_resolution(cx, investigator, &indices_u8);
             }
-            SkillTestStep::EmitOutcomeReactions => {
-                // RR ST.6→ST.7 boundary. Pre-advances the cursor to FireOnCommit,
-                // then fires the general SkillTestResolved timing point (every
-                // test/outcome) — BEFORE the ST.7 consequences (the clue discovery
-                // in ApplyFollowUp, the result effects in ApplyResultEffect), so
-                // those can see any state the ST.6 reactions changed. Yields if a
-                // 2+ forced run suspends. The outcome is read off the frame's
-                // `resolved` (set at Resolving), not the cursor.
-                let outcome = emit_outcome_reactions_step(cx, investigator);
+            SkillTestStep::DetermineOutcome => {
+                // RR ST.6→ST.7 boundary. Emits the logged success/failure events
+                // (now AFTER the ST.4 immediate effects), then fires the general
+                // SkillTestResolved timing point (every test/outcome) — BEFORE the
+                // ST.7 consequences. Pre-advances to FireOnCommit; yields if a 2+
+                // forced run suspends. Reads the outcome off the frame's `resolved`.
+                let outcome = determine_outcome_step(cx, investigator);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome;
                 }
@@ -665,6 +752,25 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             SkillTestStep::ApplyResultEffect => {
                 apply_result_effect_step(cx, investigator);
             }
+            SkillTestStep::ApplySymbolOnFail => {
+                // RR ST.7 — on failure, push the chaos symbol's on_fail effect
+                // (Cultist horror) held on the frame, as Effect::Deal (may suspend
+                // on a sanity-soak). Pre-advance to FireOnResolution first.
+                let succeeded = resolved(cx).succeeded;
+                let on_fail = cx
+                    .state
+                    .current_skill_test()
+                    .and_then(|t| t.symbol_on_fail.clone());
+                cx.state
+                    .current_skill_test_mut()
+                    .expect("the SkillTest frame must persist across driver steps")
+                    .continuation = SkillTestStep::FireOnResolution { next: 0 };
+                if !succeeded {
+                    if let Some(effect) = on_fail {
+                        push_effect(cx, &effect, EvalContext::for_controller(investigator));
+                    }
+                }
+            }
             SkillTestStep::FireOnResolution { next } => {
                 fire_on_resolution_step(cx, investigator, &indices_u8, next);
             }
@@ -686,7 +792,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // RR ST.8 teardown. The skill-test-outcome timing point
                 // (`SkillTestResolved`; "after you successfully investigate" =
                 // Obscuring Fog forced + Dr. Milan reaction) already fired at
-                // the EmitOutcomeReactions step via `emit_event` (#213) —
+                // the DetermineOutcome step via `emit_event` (#213) —
                 // forced-before-reaction.
                 discard_committed_cards(cx, investigator, &indices_u8);
                 cx.events.push(Event::SkillTestEnded { investigator });
@@ -864,79 +970,6 @@ fn sum_committed_icons(hand: &[CardCode], indices: &[u8], skill: SkillKind) -> i
         .fold(0_i8, i8::saturating_add)
 }
 
-/// Advance the RNG, draw a chaos token, compute the clamped total
-/// against `difficulty`, and emit the per-step events
-/// (`ChaosTokenRevealed` + either `SkillTestSucceeded` or
-/// `SkillTestFailed`). Returns `true` on success so the caller can
-/// branch its follow-up.
-///
-/// All arithmetic stays in `i8` with saturating ops: realistic
-/// gameplay values (skill 1–8, modifier ±8, difficulty ≤ ~6) fit far
-/// inside `i8`, but saturation defends against absurd state
-/// configurations without needing a wider integer type.
-fn resolve_chaos_token_and_emit(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    skill: SkillKind,
-    difficulty: i8,
-    skill_value: i8,
-) -> (bool, u8) {
-    let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
-    let token = cx.state.chaos_bag.tokens[token_idx];
-
-    // Symbol tokens may route to the active scenario's reference-card
-    // effects (modifier + deferred side effects). Numeric/AutoFail/
-    // ElderSign never do; nor do scenarios without a hook (static path).
-    let symbol_outcome = match token {
-        ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
-            crate::scenario::resolve_symbol_token(cx.state, token, investigator)
-        }
-        _ => None,
-    };
-
-    let resolution = match &symbol_outcome {
-        Some(outcome) => TokenResolution::Modifier(outcome.modifier),
-        None => resolve_token(token, &cx.state.token_modifiers),
-    };
-    cx.events
-        .push(Event::ChaosTokenRevealed { token, resolution });
-
-    let (total, fail_reason) = match resolution {
-        TokenResolution::Modifier(n) => (skill_value.saturating_add(n).max(0), None),
-        TokenResolution::ElderSign => (skill_value.max(0), None),
-        TokenResolution::AutoFail => (0, Some(FailureReason::AutoFail)),
-    };
-    let margin = total.saturating_sub(difficulty);
-    let succeeded = margin >= 0 && fail_reason.is_none();
-    let failed_by = if succeeded {
-        0
-    } else {
-        difficulty.saturating_sub(total)
-    };
-    if succeeded {
-        cx.events.push(Event::SkillTestSucceeded {
-            investigator,
-            skill,
-            margin,
-        });
-    } else {
-        let reason = fail_reason.unwrap_or(FailureReason::Total);
-        cx.events.push(Event::SkillTestFailed {
-            investigator,
-            skill,
-            reason,
-            by: failed_by,
-        });
-    }
-
-    // Symbol side effects resolve after success/failure is known.
-    if let Some(outcome) = symbol_outcome {
-        apply_symbol_outcome(cx, investigator, &outcome, succeeded);
-    }
-
-    (succeeded, u8::try_from(failed_by).unwrap_or(0))
-}
-
 /// Move every committed hand card to the controller's discard pile,
 /// emitting [`Event::CardDiscarded`] for each. Per the
 /// [`Event::SkillTestEnded`] docs, these discards precede the
@@ -986,7 +1019,7 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8
 /// completion re-dispatches the `SkillTest` at
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect). The "after you
 /// successfully investigate" timing point already fired at the preceding
-/// [`EmitOutcomeReactions`](SkillTestStep::EmitOutcomeReactions) step — on the
+/// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step — on the
 /// ST.6 success, before this ST.7 discovery. Fight / Evade / None mutate
 /// synchronously and push nothing.
 fn apply_skill_test_follow_up(
@@ -1001,7 +1034,7 @@ fn apply_skill_test_follow_up(
             // before-timing interrupt (Cover Up 01007); the loop drives it to
             // completion either way, then re-dispatches this SkillTest at
             // `ApplyResultEffect`. The "after you successfully investigate"
-            // timing point already fired at the preceding EmitOutcomeReactions
+            // timing point already fired at the preceding DetermineOutcome
             // step, before this discovery. The Investigate follow-up has no
             // source card, so `for_controller` is correct.
             let effect = discover_clue(LocationTarget::YourLocation, 1);
@@ -1261,41 +1294,58 @@ pub(super) fn peril_check(
     //   resolution completes.
 }
 
-/// Apply a resolved symbol token's side effects to the testing
-/// investigator: `immediate` effects always, `on_fail` effects only when
-/// the test failed. Routes through the same elimination paths as
-/// `Effect::Deal`, so defeat handling and the `DamageTaken` /
-/// `HorrorTaken` events are reused.
-fn apply_symbol_outcome(
+/// Build a single [`Effect`](crate::dsl::Effect) from a chaos symbol token's
+/// side-effect list (a [`Seq`](crate::dsl::Effect::Seq) of
+/// [`Deal`](crate::dsl::Effect::Deal) targeting the tester), or `None` if empty.
+/// `Effect::Deal` routes through the interactive `soak_and_distribute` path, so
+/// these suspend when the tester controls a soak asset — RR-correct (the player
+/// assigns damage/horror to soak assets), unlike the old auto-assigning
+/// `take_damage`/`take_horror` shortcut.
+fn symbol_effects_to_effect(
+    effects: &[crate::scenario::TokenEffect],
+) -> Option<card_dsl::dsl::Effect> {
+    use crate::dsl::{Effect, HarmKind, InvestigatorTarget};
+    use crate::scenario::TokenEffect;
+    let deals: Vec<Effect> = effects
+        .iter()
+        .map(|e| match e {
+            TokenEffect::Damage(n) => Effect::Deal {
+                kind: HarmKind::Damage,
+                target: InvestigatorTarget::You,
+                amount: *n,
+            },
+            TokenEffect::Horror(n) => Effect::Deal {
+                kind: HarmKind::Horror,
+                target: InvestigatorTarget::You,
+                amount: *n,
+            },
+        })
+        .collect();
+    match deals.len() {
+        0 => None,
+        1 => deals.into_iter().next(),
+        _ => Some(Effect::Seq(deals)),
+    }
+}
+
+/// Push a chaos symbol token's side effects (built by
+/// [`symbol_effects_to_effect`]) for the drive loop, controller-scoped to the
+/// tester (symbol effects have no source card). A no-op when the list is empty.
+fn push_symbol_effects(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    outcome: &crate::scenario::SymbolOutcome,
-    succeeded: bool,
+    effects: &[crate::scenario::TokenEffect],
 ) {
-    use crate::scenario::TokenEffect;
-    let mut effects: Vec<TokenEffect> = outcome.immediate.clone();
-    if !succeeded {
-        effects.extend(outcome.on_fail.iter().copied());
-    }
-    for effect in effects {
-        match effect {
-            TokenEffect::Damage(n) => {
-                crate::engine::dispatch::elimination::take_damage(cx, investigator, n);
-            }
-            TokenEffect::Horror(n) => {
-                crate::engine::dispatch::elimination::take_horror(cx, investigator, n);
-            }
-        }
+    if let Some(effect) = symbol_effects_to_effect(effects) {
+        push_effect(cx, &effect, EvalContext::for_controller(investigator));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assert_event;
-    use crate::assert_no_event;
     use crate::event::Event;
-    use crate::scenario::{SymbolOutcome, TokenEffect};
+    use crate::scenario::TokenEffect;
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
@@ -1334,6 +1384,7 @@ mod tests {
                 test_modifier: 0,
                 bonus_attack_damage: 2,
                 resolved: None,
+                symbol_on_fail: None,
             }));
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -1358,54 +1409,27 @@ mod tests {
     }
 
     #[test]
-    fn apply_symbol_outcome_runs_immediate_always_and_on_fail_only_on_failure() {
-        let inv = InvestigatorId(1);
+    fn symbol_effects_to_effect_builds_deal_seq() {
+        use crate::dsl::{Effect, HarmKind, InvestigatorTarget};
 
-        let run = |succeeded: bool, outcome: SymbolOutcome| {
-            let mut state = GameStateBuilder::new()
-                .with_investigator(test_investigator(1))
-                .build();
-            let mut events = Vec::new();
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            apply_symbol_outcome(&mut cx, inv, &outcome, succeeded);
-            events
-        };
+        // Empty → nothing to push.
+        assert_eq!(symbol_effects_to_effect(&[]), None);
 
-        // Case 1: immediate Damage(1), test succeeded → DamageTaken present.
-        let ev = run(
-            true,
-            SymbolOutcome {
-                modifier: 0,
-                immediate: vec![TokenEffect::Damage(1)],
-                on_fail: vec![],
-            },
+        // Single effect → a bare Deal targeting the tester (interactive soak).
+        assert_eq!(
+            symbol_effects_to_effect(&[TokenEffect::Horror(1)]),
+            Some(Effect::Deal {
+                kind: HarmKind::Horror,
+                target: InvestigatorTarget::You,
+                amount: 1,
+            }),
         );
-        assert_event!(ev, Event::DamageTaken { investigator, amount: 1 } if *investigator == inv);
 
-        // Case 2: on_fail Horror(1), test succeeded → HorrorTaken absent.
-        let ev = run(
-            true,
-            SymbolOutcome {
-                modifier: 0,
-                immediate: vec![],
-                on_fail: vec![TokenEffect::Horror(1)],
-            },
-        );
-        assert_no_event!(ev, Event::HorrorTaken { .. });
-
-        // Case 3: on_fail Horror(1), test failed → HorrorTaken present.
-        let ev = run(
-            false,
-            SymbolOutcome {
-                modifier: 0,
-                immediate: vec![],
-                on_fail: vec![TokenEffect::Horror(1)],
-            },
-        );
-        assert_event!(ev, Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv);
+        // Multiple → one Seq, in order.
+        assert!(matches!(
+            symbol_effects_to_effect(&[TokenEffect::Damage(1), TokenEffect::Horror(2)]),
+            Some(Effect::Seq(v)) if v.len() == 2
+        ));
     }
 
     // The former `revelation_skill_test_failure_deals_margin_damage_and_discards`
@@ -1567,6 +1591,7 @@ mod tests {
                 test_modifier: 0,
                 bonus_attack_damage: 0,
                 resolved: None,
+                symbol_on_fail: None,
             }));
         let mut events = Vec::new();
         let out = super::super::reaction_windows::run_fast_continuation(

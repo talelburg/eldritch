@@ -1048,12 +1048,22 @@ pub struct InFlightSkillTest {
     /// is the structural witness for "the test is past the commit window," the
     /// invariant the per-variant `succeeded` payloads used to carry. (Slice D #423.)
     pub resolved: Option<ResolvedTest>,
+    /// A chaos symbol token's result-conditional `on_fail` effect (Cultist
+    /// 01104's "if this test is failed, take 1 horror"), built at the
+    /// `Resolving` step and pushed at the `ApplySymbolOnFail` step (RR ST.7,
+    /// *after* the outcome timing point). `None` when the test passed or the
+    /// symbol has no `on_fail`. Held here (a sibling of [`on_fail`](Self::on_fail)
+    /// / [`on_success`](Self::on_success)) because it is a non-`Copy` `Effect`
+    /// needed several steps after the token is drawn. (Slice D #423.)
+    pub symbol_on_fail: Option<card_dsl::dsl::Effect>,
 }
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
 /// [`InFlightSkillTest::resolved`] once computed and read by every subsequent
 /// driver step. One source of truth, rather than routing the same fields
-/// through each [`SkillTestStep`] payload.
+/// through each [`SkillTestStep`] payload. `Copy` (all scalar fields) so the
+/// driver reads it cheaply; the result-conditional symbol `on_fail` *effect*
+/// lives separately on [`InFlightSkillTest::symbol_on_fail`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedTest {
     /// Whether the test passed (`total >= difficulty`, no `AutoFail`).
@@ -1063,6 +1073,13 @@ pub struct ResolvedTest {
     /// [`Effect::ForEachPointFailed`](crate::dsl::Effect::ForEachPointFailed)
     /// (Grasping Hands 01162).
     pub failed_by: u8,
+    /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
+    /// logged [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) at the
+    /// `DetermineOutcome` step. Negative on failure (unused there).
+    pub margin: i8,
+    /// Why the test failed (meaningful only when `!succeeded`); supplied to the
+    /// logged [`SkillTestFailed`](crate::Event::SkillTestFailed).
+    pub fail_reason: crate::event::FailureReason,
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -1096,13 +1113,11 @@ pub struct ResolvedTest {
 /// triggering condition's impact has resolved" clause: the reaction
 /// fires between steps 2 and 3, not after the entire action ends.
 ///
-/// Variants past [`AwaitingCommit`](Self::AwaitingCommit) carry the
-/// `succeeded` payload because the test's outcome is determined in
-/// step 1 and read by every subsequent step
-/// (`OnSkillTestResolution` gating, `#64`'s reactive after-resolution
-/// window). Embedding it in the continuation makes the invariant
-/// "succeeded is known iff the test is past the commit window"
-/// structural.
+/// The test outcome (`succeeded`/`failed_by`/`margin`/`fail_reason`) is
+/// determined once at [`Resolving`](Self::Resolving) (ST.6) and stored on
+/// [`InFlightSkillTest::resolved`]; every subsequent step reads it from there
+/// rather than carrying it in the cursor. `resolved.is_some()` is the witness
+/// for "the test is past the commit window."
 ///
 /// Variants:
 ///
@@ -1117,11 +1132,12 @@ pub struct ResolvedTest {
 ///   opens the ST.2→ST.3 player window, then pre-advances to `Resolving`.
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
 ///   commit is validated and stored. The next driver iteration runs the
-///   computation body (`run_resolution`: ST.3–ST.6) and pre-advances to
-///   [`EmitOutcomeReactions`](Self::EmitOutcomeReactions).
-/// - [`EmitOutcomeReactions`](Self::EmitOutcomeReactions) — the ST.6→ST.7
-///   boundary: fire the "after you successfully investigate" timing point on
-///   the success established at ST.6, **before** any ST.7 consequence resolves.
+///   computation body (`run_resolution`: ST.3–ST.6, pushing the ST.4 immediate
+///   symbol effects) and pre-advances to
+///   [`DetermineOutcome`](Self::DetermineOutcome).
+/// - [`DetermineOutcome`](Self::DetermineOutcome) — the ST.6→ST.7 boundary:
+///   emit the logged success/failure events, then the `SkillTestResolved`
+///   timing point, **before** any ST.7 consequence resolves.
 /// - [`ApplyFollowUp`](Self::ApplyFollowUp) /
 ///   [`ApplyResultEffect`](Self::ApplyResultEffect) — the ST.7 "apply results"
 ///   sub-steps: action follow-up (the clue discovery), then the
@@ -1148,22 +1164,23 @@ pub enum SkillTestStep {
     PreTokenWindow,
     /// Commit submitted: the next driver iteration runs the computation
     /// body (sum committed icons, resolve the chaos token — RR ST.3–ST.6),
-    /// then pre-advances to [`EmitOutcomeReactions`](Self::EmitOutcomeReactions).
+    /// then pre-advances to [`DetermineOutcome`](Self::DetermineOutcome).
     /// This step pushes nothing (every effect it would run is deferred to the
     /// cursor-sequenced steps below), so the driver stays on its own frame
     /// and `continue`s.
     Resolving,
-    /// RR ST.6→ST.7 boundary — fire the general skill-test-outcome timing point
-    /// (`TimingEvent::SkillTestResolved`) once the outcome is *established*
-    /// (ST.6), and **before** any ST.7 consequence resolves (the clue discovery
-    /// in [`ApplyFollowUp`](Self::ApplyFollowUp), the result effects in
-    /// [`ApplyResultEffect`](Self::ApplyResultEffect)). Fires for **every** test
-    /// and both outcomes; "after you successfully investigate" (Obscuring Fog
-    /// 01168 forced + Dr. Milan 01033 reaction) is the `{ Investigate, Success }`
-    /// narrowing. An empty forced/reaction candidate set opens no window, so a
-    /// test no card listens to is free. Pre-advances to
+    /// RR ST.6→ST.7 boundary. Emit the logged
+    /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
+    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) (now, *after* the ST.4
+    /// immediate symbol effects that `Resolving` pushed), then fire the general
+    /// skill-test-outcome timing point (`TimingEvent::SkillTestResolved`) for
+    /// **every** test and both outcomes — "after you successfully investigate"
+    /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
+    /// `{ Investigate, Success }` narrowing. Fires before any ST.7 consequence;
+    /// an empty forced/reaction candidate set opens no window. Reads the outcome
+    /// off [`InFlightSkillTest::resolved`]; pre-advances to
     /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
-    EmitOutcomeReactions,
+    DetermineOutcome,
     /// RR ST.7 head — push the committed cards' [`Trigger::OnCommit`] effects
     /// (Vicious Blow 01025's `BoostAttackDamage`). These are conditional on
     /// success ("If this skill test is successful during an attack…") so they
@@ -1189,8 +1206,18 @@ pub enum SkillTestStep {
     /// 01162's margin damage). Exactly one (or neither) is pushed; it runs
     /// after the follow-up because this step is sequenced after
     /// [`ApplyFollowUp`](Self::ApplyFollowUp). Pre-advances to
-    /// [`FireOnResolution`](Self::FireOnResolution). (Slice D #423.)
+    /// [`ApplySymbolOnFail`](Self::ApplySymbolOnFail). (Slice D #423.)
     ApplyResultEffect,
+    /// RR ST.7 — push a chaos symbol token's result-conditional `on_fail`
+    /// effect (Cultist 01104's horror), held on
+    /// [`InFlightSkillTest::symbol_on_fail`], when the test failed. Sits among
+    /// the ST.7 result effects (after the card `on_fail` of
+    /// [`ApplyResultEffect`](Self::ApplyResultEffect)); RR lets the test-performer
+    /// order multiple results, the engine sequences deterministically. Pushed
+    /// via [`Effect::Deal`](crate::dsl::Effect::Deal) so a sanity-soak (Holy
+    /// Rosary 01028) suspends cleanly. Pre-advances to
+    /// [`FireOnResolution`](Self::FireOnResolution). (Slice D #423.)
+    ApplySymbolOnFail,
     /// RR ST.7 — fire the committed cards' [`OnSkillTestResolution`] triggers,
     /// one effect per driver visit so they cursor-sequence in committed-card
     /// order (no LIFO). `next` is the index into the flattened

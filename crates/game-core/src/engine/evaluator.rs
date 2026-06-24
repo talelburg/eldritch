@@ -2588,6 +2588,7 @@ mod tests {
                     test_modifier: 0,
                     bonus_attack_damage: 0,
                     resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
         let mut events = Vec::new();
@@ -2646,6 +2647,7 @@ mod tests {
                     test_modifier: 0,
                     bonus_attack_damage: 0,
                     resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
 
@@ -2770,6 +2772,7 @@ mod tests {
                     test_modifier: 0,
                     bonus_attack_damage: 0,
                     resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
         state
@@ -2941,6 +2944,7 @@ mod tests {
                     test_modifier: 0,
                     bonus_attack_damage: 0,
                     resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
         let mut events = Vec::new();
