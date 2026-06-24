@@ -1095,12 +1095,20 @@ pub struct InFlightSkillTest {
 /// - [`PreTokenWindow`](Self::PreTokenWindow) — set after the commit; `advance`
 ///   opens the ST.2→ST.3 player window, then pre-advances to `Resolving`.
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
-///   commit is validated and stored. The next driver iteration runs steps 1–2
-///   (`run_resolution`) and pre-advances to [`PostFollowUp`](Self::PostFollowUp).
-/// - [`PostFollowUp`](Self::PostFollowUp) — set once steps 1–2 have run.
-///   The next driver iteration runs step 3.
-/// - [`PostOnResolution`](Self::PostOnResolution) — set after step 3.
-///   The next driver iteration runs step 4 (terminal).
+///   commit is validated and stored. The next driver iteration runs the
+///   computation body (`run_resolution`: ST.3–ST.6) and pre-advances to
+///   [`EmitSuccessReactions`](Self::EmitSuccessReactions).
+/// - [`EmitSuccessReactions`](Self::EmitSuccessReactions) — the ST.6→ST.7
+///   boundary: fire the "after you successfully investigate" timing point on
+///   the success established at ST.6, **before** any ST.7 consequence resolves.
+/// - [`ApplyFollowUp`](Self::ApplyFollowUp) /
+///   [`ApplyResultEffect`](Self::ApplyResultEffect) — the ST.7 "apply results"
+///   sub-steps: action follow-up (the clue discovery), then the
+///   success/failure card effect. Each effect is pushed for the global drive
+///   loop and cursor-sequenced so results resolve in ST order.
+/// - [`FireOnResolution`](Self::FireOnResolution) — fire the committed cards'
+///   `OnSkillTestResolution` triggers, one per visit.
+/// - [`PostOnResolution`](Self::PostOnResolution) — terminal teardown (ST.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SkillTestStep {
@@ -1117,18 +1125,93 @@ pub enum SkillTestStep {
     /// `advance` opens the window here, pre-advancing to
     /// [`Resolving`](Self::Resolving). (#374.)
     PreTokenWindow,
-    /// Commit submitted: the next driver iteration runs the resolution
-    /// body (sum committed icons, fire `OnCommit`, resolve the chaos
-    /// token, run the action follow-up + `on_success` / `on_fail`), then
-    /// pre-advances to [`PostFollowUp`](Self::PostFollowUp).
+    /// Commit submitted: the next driver iteration runs the computation
+    /// body (sum committed icons, resolve the chaos token — RR ST.3–ST.6),
+    /// then pre-advances to [`EmitSuccessReactions`](Self::EmitSuccessReactions).
+    /// This step pushes nothing (every effect it would run is deferred to the
+    /// cursor-sequenced steps below), so the driver stays on its own frame
+    /// and `continue`s.
     Resolving,
-    /// Steps 1–2 are complete (chaos token + action follow-up).
-    /// The next driver iteration runs `OnSkillTestResolution` triggers.
-    PostFollowUp {
-        /// The chaos-token resolution's success determination, read by
-        /// the `OnSkillTestResolution` step to gate
+    /// RR ST.6→ST.7 boundary — fire the "after you successfully investigate"
+    /// timing point (`SuccessfullyInvestigated`: Obscuring Fog 01168 forced +
+    /// Dr. Milan 01029 reaction) once success is *established* (ST.6), and
+    /// **before** any ST.7 consequence resolves (the clue discovery in
+    /// [`ApplyFollowUp`](Self::ApplyFollowUp), the result effects in
+    /// [`ApplyResultEffect`](Self::ApplyResultEffect)). A no-op for every
+    /// non-Investigate follow-up and on failure. Pre-advances to
+    /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
+    EmitSuccessReactions {
+        /// The chaos-token resolution's success determination, threaded
+        /// through to [`FireOnCommit`](Self::FireOnCommit).
+        succeeded: bool,
+        /// Failure margin, threaded onward (see
+        /// [`ApplyFollowUp`](Self::ApplyFollowUp)).
+        failed_by: u8,
+    },
+    /// RR ST.7 head — push the committed cards' [`Trigger::OnCommit`] effects
+    /// (Vicious Blow 01025's `BoostAttackDamage`). These are conditional on
+    /// success ("If this skill test is successful during an attack…") so they
+    /// belong after the token is resolved, but **before**
+    /// [`ApplyFollowUp`](Self::ApplyFollowUp) reads the
+    /// `bonus_attack_damage` accumulator they populate. Collected into one
+    /// [`Effect::Seq`](crate::dsl::Effect::Seq) and pushed for the drive loop
+    /// (nothing pushed if no committed card carries an `OnCommit` trigger);
+    /// pre-advances to [`ApplyFollowUp`](Self::ApplyFollowUp).
+    ///
+    /// [`Trigger::OnCommit`]: crate::dsl::Trigger::OnCommit
+    FireOnCommit {
+        /// The chaos-token resolution's success determination, threaded
+        /// through to [`ApplyFollowUp`](Self::ApplyFollowUp).
+        succeeded: bool,
+        /// Failure margin, threaded onward (see
+        /// [`ApplyFollowUp`](Self::ApplyFollowUp)).
+        failed_by: u8,
+    },
+    /// RR ST.7 part 1 — apply the action-specific
+    /// [`SkillTestFollowUp`]. On success the Investigate follow-up
+    /// pushes its `discover_clue` effect for the drive loop (yielding);
+    /// Fight / Evade / None run synchronously. On failure the follow-up
+    /// is skipped (follow-ups are success-only). Pre-advances to
+    /// [`ApplyResultEffect`](Self::ApplyResultEffect). (Slice D #423.)
+    ApplyFollowUp {
+        /// The chaos-token resolution's success determination.
+        succeeded: bool,
+        /// Failure margin (`difficulty - total`, clamped ≥ 0), threaded
+        /// to [`ApplyResultEffect`](Self::ApplyResultEffect) so an
+        /// `on_fail` effect's
+        /// [`Effect::ForEachPointFailed`](crate::dsl::Effect::ForEachPointFailed)
+        /// can scale. `0` on success.
+        failed_by: u8,
+    },
+    /// RR ST.7 part 2 — push the success/failure card effect: `on_success`
+    /// on a passing draw (Frozen in Fear 01164's self-discard), or `on_fail`
+    /// on a failing draw (Crypt Chill 01167's discard choice, Grasping Hands
+    /// 01162's margin damage). Exactly one (or neither) is pushed; it runs
+    /// after the follow-up because this step is sequenced after
+    /// [`ApplyFollowUp`](Self::ApplyFollowUp). Pre-advances to
+    /// [`FireOnResolution`](Self::FireOnResolution). (Slice D #423.)
+    ApplyResultEffect {
+        /// The chaos-token resolution's success determination — selects
+        /// the `on_success` vs `on_fail` branch.
+        succeeded: bool,
+        /// Failure margin, supplied to the `on_fail` eval context.
+        failed_by: u8,
+    },
+    /// RR ST.7 — fire the committed cards' [`OnSkillTestResolution`] triggers,
+    /// one effect per driver visit so they cursor-sequence in committed-card
+    /// order (no LIFO). `next` is the index into the flattened
+    /// (card, matching-ability) list of the next trigger to fire; each visit
+    /// pushes that effect, advances `next`, and yields. When `next` runs past
+    /// the list, advances to [`PostRetaliate`](Self::PostRetaliate). Replaces
+    /// the former single-shot `PostFollowUp` step. (Slice D #423.)
+    ///
+    /// [`OnSkillTestResolution`]: crate::dsl::Trigger::OnSkillTestResolution
+    FireOnResolution {
+        /// The chaos-token resolution's success determination — gates
         /// outcome-specific triggers.
         succeeded: bool,
+        /// Index of the next matching (card, ability) trigger to fire.
+        next: u32,
     },
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration fires a Retaliate attack if the test was a failed Fight

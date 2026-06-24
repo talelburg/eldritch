@@ -11,12 +11,12 @@ use crate::card_registry;
 use crate::dsl::{discover_clue, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, ChaosToken, GameState, InFlightSkillTest, InvestigatorId, SkillKind,
-    SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
+    resolve_token, CardCode, ChaosToken, Continuation, GameState, InFlightSkillTest,
+    InvestigatorId, SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
 };
 
 use super::super::evaluator::{
-    apply_effect, constant_skill_modifier, pending_skill_modifier, EvalContext,
+    constant_skill_modifier, pending_skill_modifier, push_effect, EvalContext,
 };
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
@@ -255,116 +255,241 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Run the `Resolving` step of a skill test: sum the committed icons, fire
-/// `OnCommit` buffs, resolve the chaos token (emitting
+/// Run the computation half of a skill test (RR ST.3–ST.6): sum the committed
+/// icons and resolve the chaos token (emitting
 /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-/// [`SkillTestFailed`](crate::Event::SkillTestFailed)), then run the action
-/// follow-up plus the success/failure card effect. Pre-advances the cursor to
-/// [`PostFollowUp`](SkillTestStep::PostFollowUp) **before** the follow-up so a
-/// suspending sub-step resumes at the next step rather than re-running this one.
-///
-/// Returns [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) if the
-/// follow-up or `on_fail` suspends; otherwise `Done` and the driver continues
-/// to `PostFollowUp`.
-///
-/// The pre-advance is what lets a reaction window opening *inside*
-/// [`apply_skill_test_follow_up`] (the canonical case: `damage_enemy` emitting
-/// [`EnemyDefeated`](crate::Event::EnemyDefeated) queues an
-/// an after-enemy-defeated reaction window)
-/// suspend correctly: the cursor already reads `PostFollowUp`, so a resume from
-/// `close_reaction_window` re-enters `advance` at the `OnSkillTestResolution`
-/// step rather than re-running the follow-up.
-fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) -> EngineOutcome {
-    let (skill, kind, difficulty, follow_up, on_fail, on_success, source) = {
+/// [`SkillTestFailed`](crate::Event::SkillTestFailed)). This step pushes no
+/// effect — every result effect (ST.7) is deferred to the cursor-sequenced
+/// [`FireOnCommit`](SkillTestStep::FireOnCommit) /
+/// [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) /
+/// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) /
+/// [`FireOnResolution`](SkillTestStep::FireOnResolution) steps that the driver
+/// runs in turn — so it just pre-advances the cursor to
+/// [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) (threading
+/// `succeeded`/`failed_by`) and returns; the `advance` loop reads the next step.
+fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
+    let (skill, kind, difficulty) = {
         let t = cx
             .state
             .current_skill_test()
             .expect("run_resolution: the SkillTest frame must exist");
-        (
-            t.skill,
-            t.kind,
-            t.difficulty,
-            t.follow_up,
-            t.on_fail.clone(),
-            t.on_success.clone(),
-            t.source,
-        )
+        (t.skill, t.kind, t.difficulty)
     };
 
     let skill_value = sum_skill_value(cx.state, investigator, skill, kind, indices_u8);
 
-    // Fire committed cards' OnCommit effects (Vicious Blow's attack buff) before
-    // the test resolves — the commit step precedes resolution, and a Fight
-    // follow-up's damage reads the accumulator they populate.
-    fire_on_commit(cx, investigator, indices_u8);
-
     let (succeeded, failed_by) =
         resolve_chaos_token_and_emit(cx, investigator, skill, difficulty, skill_value);
 
-    // Build the eval context for the success/failure card effects, threading the
-    // firing instance (`source`) so `Effect::DiscardSelf` can find itself across
-    // the suspend/resume boundary.
-    let card_ctx = |investigator: InvestigatorId| {
-        EvalContext::for_controller_with_optional_source(investigator, source)
-    };
-
-    // Pre-advance to PostFollowUp BEFORE running the follow-up, so a follow-up
-    // that suspends on a clue-discovery interrupt (Cover Up 01007) resumes at
-    // PostFollowUp rather than re-running the follow-up. `on_success` never
-    // co-occurs with a suspending follow-up in scope (Investigate sets
-    // on_success=None; SkillTest-effect tests set follow_up=None), so running
-    // on_success after the follow-up is safe. (C5a #236.)
+    // Pre-advance to the EmitSuccessReactions step (the ST.6→ST.7 boundary,
+    // where the "after you successfully investigate" timing point fires on the
+    // success just established — before any ST.7 consequence). Nothing was
+    // pushed here, so the `advance` loop stays on this SkillTest frame and
+    // `continue`s into EmitSuccessReactions on the next iteration.
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .continuation = SkillTestStep::PostFollowUp { succeeded };
+        .continuation = SkillTestStep::EmitSuccessReactions {
+        succeeded,
+        failed_by,
+    };
+}
+
+/// RR ST.7 head — the [`FireOnCommit`](SkillTestStep::FireOnCommit) step.
+/// Collect the committed cards' [`Trigger::OnCommit`] ability effects (Vicious
+/// Blow 01025's `BoostAttackDamage`), combine them into one
+/// [`Effect::Seq`](crate::dsl::Effect::Seq), and `push_effect` it for the drive
+/// loop (push nothing if no committed card carries an `OnCommit` trigger).
+/// Pre-advances the cursor to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)
+/// **before** the push, so a suspending effect would resume past this step.
+///
+/// These effects are conditional on success ("If this skill test is successful
+/// during an attack…") so they sit after the token resolves, but **before**
+/// `ApplyFollowUp` reads the `bonus_attack_damage` accumulator they populate.
+/// The in-scope `BoostAttackDamage` is a non-suspending stat boost, so the loop
+/// drives it and re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads
+/// the now-populated accumulator.
+fn fire_on_commit_step(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    indices_u8: &[u8],
+    succeeded: bool,
+    failed_by: u8,
+) {
+    let effects = collect_on_commit(cx, investigator, indices_u8);
+    cx.state
+        .current_skill_test_mut()
+        .expect("the SkillTest frame must persist across driver steps")
+        .continuation = SkillTestStep::ApplyFollowUp {
+        succeeded,
+        failed_by,
+    };
+    if !effects.is_empty() {
+        let seq = crate::dsl::Effect::Seq(effects);
+        push_effect(cx, &seq, EvalContext::for_controller(investigator));
+    }
+}
+
+/// RR ST.7 part 1 — apply the action-specific [`SkillTestFollowUp`].
+///
+/// On **success** the follow-up runs: the Investigate follow-up pushes its
+/// `discover_clue` effect (yielding to the drive loop), while Fight / Evade /
+/// None mutate synchronously. On **failure** the follow-up is skipped entirely
+/// (every variant is success-only). The cursor is pre-advanced to
+/// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) **before** any push,
+/// so a suspending discovery (Cover Up 01007's before-discover interrupt)
+/// resumes at `ApplyResultEffect` rather than re-running the follow-up. (The
+/// "after you successfully investigate" timing point already fired at the
+/// preceding [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) step,
+/// before this discovery — RR ST.6 success precedes the ST.7 consequence.)
+///
+/// When the Investigate follow-up pushes `discover_clue` the `advance` loop's
+/// top-frame check yields on the next iteration (the Effect frame is now
+/// `last()`); Fight/Evade/None push nothing and the loop `continue`s on this
+/// frame straight into `ApplyResultEffect`.
+fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId, succeeded: bool, failed_by: u8) {
+    let follow_up = cx
+        .state
+        .current_skill_test()
+        .expect("apply_follow_up_step: the SkillTest frame must exist")
+        .follow_up;
+
+    // Pre-advance BEFORE any push, so a suspending discovery resumes past here.
+    cx.state
+        .current_skill_test_mut()
+        .expect("the SkillTest frame was present immediately above")
+        .continuation = SkillTestStep::ApplyResultEffect {
+        succeeded,
+        failed_by,
+    };
 
     if succeeded {
-        let outcome = apply_skill_test_follow_up(cx, investigator, follow_up);
-        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-            // The follow-up suspended (clue-discovery interrupt). The
-            // continuation is already PostFollowUp; resume re-enters the driver
-            // there. Don't run on_success now — it doesn't co-occur with a
-            // suspending follow-up in scope.
-            return outcome;
-        }
-        debug_assert!(
-            matches!(outcome, EngineOutcome::Done),
-            "skill-test follow-up must resolve to Done or AwaitingInput: {outcome:?}"
-        );
-        if let Some(effect) = &on_success {
-            // Success-side card effect (Frozen in Fear 01164 discards itself on a
-            // successful end-of-turn willpower test). In-scope effects run to
-            // completion; a future suspending on_success is #212 reentrancy work.
-            let outcome = apply_effect(cx, effect, card_ctx(investigator));
-            debug_assert!(
-                matches!(outcome, EngineOutcome::Done),
-                "skill-test on_success must resolve to Done in scope: {outcome:?}"
+        apply_skill_test_follow_up(cx, investigator, follow_up);
+    }
+}
+
+/// RR ST.6→ST.7 boundary — the
+/// [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) step. Once
+/// success has been *established* (ST.6) but **before** any ST.7 consequence
+/// resolves (the clue discovery in `ApplyFollowUp`, the result effects in
+/// `ApplyResultEffect`), fire the "after you successfully investigate" timing
+/// point (Obscuring Fog 01168 forced + Dr. Milan 01029 reaction, one
+/// `emit_event` so forced precedes reaction — RR p.2, #213). A no-op for every
+/// non-Investigate follow-up and on failure. Returns the `emit_event` outcome
+/// so the caller yields if a 2+ forced run suspends. Pre-advances the cursor to
+/// [`FireOnCommit`](SkillTestStep::FireOnCommit) first, so a suspending reaction
+/// window resumes past this step into the ST.7 consequences (which can then see
+/// any state the ST.6 reactions changed).
+fn emit_success_reactions_step(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    succeeded: bool,
+    failed_by: u8,
+) -> EngineOutcome {
+    let follow_up = {
+        let t = cx
+            .state
+            .current_skill_test()
+            .expect("emit_success_reactions_step: the SkillTest frame must persist");
+        t.follow_up
+    };
+    cx.state
+        .current_skill_test_mut()
+        .expect("the SkillTest frame must persist across driver steps")
+        .continuation = SkillTestStep::FireOnCommit {
+        succeeded,
+        failed_by,
+    };
+    if succeeded && matches!(follow_up, SkillTestFollowUp::Investigate) {
+        if let Some(location) = cx
+            .state
+            .investigators
+            .get(&investigator)
+            .and_then(|i| i.current_location)
+        {
+            return super::emit::emit_event(
+                cx,
+                &super::emit::TimingEvent::SuccessfullyInvestigated {
+                    investigator,
+                    location,
+                },
             );
         }
-    } else if let Some(effect) = &on_fail {
-        // Margin-keyed failure branch of a treachery-Revelation test
-        // (`Effect::SkillTest`). The failure margin is threaded so
-        // `Effect::ForEachPointFailed` can scale. In-scope on_fail effects (Deal
-        // / Native) run to completion; a future suspending on_fail is #212
-        // reentrancy work.
-        let mut ctx = card_ctx(investigator);
-        ctx.set_failed_by(failed_by);
-        let outcome = apply_effect(cx, effect, ctx);
-        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-            // on_fail suspended on a controller choice (Crypt Chill 01167's
-            // "choose an asset to discard", Axis A #334). The continuation is
-            // already `PostFollowUp` (pre-advanced above), so resuming the choice
-            // re-enters `advance` at teardown — `on_fail` does not re-run.
-            // Mirrors the follow-up-suspend path above.
-            return outcome;
-        }
-        debug_assert!(
-            matches!(outcome, EngineOutcome::Done),
-            "revelation on_fail must resolve to Done or AwaitingInput: {outcome:?}"
-        );
     }
     EngineOutcome::Done
+}
+
+/// RR ST.7 part 2 — the [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect)
+/// step. Push the success/failure card effect (exactly one, or neither):
+/// `on_success` on a passing draw (Frozen in Fear 01164), `on_fail` on a failing
+/// draw (Crypt Chill 01167, Grasping Hands 01162). Pre-advances the cursor to
+/// [`FireOnResolution`](SkillTestStep::FireOnResolution) **before** the push so a
+/// suspending effect resumes past this step. The push (if any) makes an Effect
+/// frame the new top → the `advance` loop yields to drive it.
+fn apply_result_effect_step(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    succeeded: bool,
+    failed_by: u8,
+) {
+    let (on_success, on_fail, source) = {
+        let t = cx
+            .state
+            .current_skill_test()
+            .expect("apply_result_effect_step: the SkillTest frame must persist");
+        (t.on_success.clone(), t.on_fail.clone(), t.source)
+    };
+    cx.state
+        .current_skill_test_mut()
+        .expect("the SkillTest frame must persist across driver steps")
+        .continuation = SkillTestStep::FireOnResolution { succeeded, next: 0 };
+    // Thread `source` so `Effect::DiscardSelf` finds itself across the
+    // suspend/resume boundary.
+    let card_ctx =
+        |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
+    if succeeded {
+        if let Some(effect) = &on_success {
+            push_effect(cx, effect, card_ctx(investigator));
+        }
+    } else if let Some(effect) = &on_fail {
+        // Thread the failure margin so `Effect::ForEachPointFailed`
+        // (Grasping Hands 01162) can scale.
+        let mut ctx = card_ctx(investigator);
+        ctx.set_failed_by(failed_by);
+        push_effect(cx, effect, ctx);
+    }
+}
+
+/// RR ST.7 — the [`FireOnResolution`](SkillTestStep::FireOnResolution) step.
+/// Fire the committed cards' `OnSkillTestResolution` triggers, one effect per
+/// visit, in committed-card order. Collect the matching effects, push the
+/// `next`th (pre-advancing `next` first), and yield (the pushed Effect frame is
+/// the new top); when `next` runs past the list, advance to
+/// [`PostRetaliate`](SkillTestStep::PostRetaliate).
+fn fire_on_resolution_step(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    indices_u8: &[u8],
+    succeeded: bool,
+    next: u32,
+) {
+    let effects = collect_on_skill_test_resolution(cx, investigator, indices_u8, succeeded);
+    let idx = next as usize;
+    if idx < effects.len() {
+        cx.state
+            .current_skill_test_mut()
+            .expect("the SkillTest frame must persist across driver steps")
+            .continuation = SkillTestStep::FireOnResolution {
+            succeeded,
+            next: next.saturating_add(1),
+        };
+        push_effect(cx, &effects[idx], EvalContext::for_controller(investigator));
+    } else {
+        cx.state
+            .current_skill_test_mut()
+            .expect("the SkillTest frame must persist across driver steps")
+            .continuation = SkillTestStep::PostRetaliate { succeeded };
+    }
 }
 
 /// Emit the commit-window prompt (the `AwaitingCommit` step's `awaiting()`). The
@@ -427,36 +552,56 @@ fn open_skill_test_player_window(
 /// close path ([`close_reaction_window`]) re-enters this driver on
 /// resume.
 ///
-/// Step → next-continuation mapping (current Phase-3 set; #64 will
-/// add the post-`SkillTestEnded` window between
-/// [`PostOnResolution`](SkillTestStep::PostOnResolution) and
-/// teardown):
+/// Fully frame-driven (Slice D #423): every effect a step would run is
+/// `push_effect`'d for the global `drive` loop rather than run synchronously.
+/// When a step pushes an effect (or a sub-step queues a reaction window), the
+/// pushed frame becomes `last()`; the top-of-loop check below sees a
+/// non-`SkillTest` top frame and returns `Done`, ceding to `drive`, which
+/// resolves the sub-frame and re-dispatches this `SkillTest` at the
+/// pre-advanced cursor. Each step pre-advances the cursor **before** pushing, so
+/// a suspending effect never re-runs its step.
 ///
-/// - [`PostFollowUp`](SkillTestStep::PostFollowUp) → fire
-///   `OnSkillTestResolution` triggers; advance to
+/// Step → next-continuation mapping (RR p.26 ST order):
+///
+/// - [`Resolving`](SkillTestStep::Resolving) → ST.3–ST.6 computation; advance to
+///   [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions).
+/// - [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) → fire
+///   `SuccessfullyInvestigated` (Investigate only) on the ST.6 success, before
+///   the ST.7 consequences; advance to
+///   [`FireOnCommit`](SkillTestStep::FireOnCommit).
+/// - [`FireOnCommit`](SkillTestStep::FireOnCommit) → ST.7 head (`OnCommit`
+///   effects); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
+/// - [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) → ST.7 action follow-up
+///   (the clue discovery); advance to
+///   [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect).
+/// - [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect) → push the
+///   success/failure card effect; advance to
+///   [`FireOnResolution`](SkillTestStep::FireOnResolution).
+/// - [`FireOnResolution`](SkillTestStep::FireOnResolution) → fire committed
+///   cards' `OnSkillTestResolution` triggers (one per visit); advance to
+///   [`PostRetaliate`](SkillTestStep::PostRetaliate).
+/// - [`PostRetaliate`](SkillTestStep::PostRetaliate) → fire a Retaliate attack
+///   (failed Fight vs ready retaliate enemy); advance to
 ///   [`PostOnResolution`](SkillTestStep::PostOnResolution).
-/// - [`PostOnResolution`](SkillTestStep::PostOnResolution) →
-///   discard committed cards, emit
-///   [`SkillTestEnded`](crate::Event::SkillTestEnded), drain pending
-///   modifiers, clear in-flight, return `Done`.
+/// - [`PostOnResolution`](SkillTestStep::PostOnResolution) → ST.8: discard
+///   committed cards, emit [`SkillTestEnded`](crate::Event::SkillTestEnded),
+///   drain pending modifiers, tear down the frame, return `Done`.
 ///
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
-        // A reaction window queued by the previous step now sits *above* this
-        // `SkillTest` frame — i.e. it is the top frame. Yield to the `drive` loop,
-        // which dispatches it (re-prompt via the window arm); its close
+        // A sub-frame queued by the previous step sits *above* this `SkillTest`
+        // frame — a reaction window, or a pushed on_success/on_fail effect
+        // (Slice D #423). Whenever the top frame is not this `SkillTest`, yield to
+        // the `drive` loop: it drives the sub-frame, and its completion
         // re-dispatches this `SkillTest` at the pre-advanced cursor. A forced run
         // *below* this frame (#213 reentrancy: two Frozen in Fear copies) is never
-        // `last()` while this driver runs, so "window above me" is simply
-        // "`last()` is a non-empty window" — no `rposition` / `win_idx > st`
-        // self-location (Slice C-plumbing).
-        if cx
-            .state
-            .continuations
-            .last()
-            .is_some_and(|c| c.pending_candidates().is_some_and(|p| !p.is_empty()))
-        {
+        // `last()` while this driver runs, so "not the SkillTest on top" simply
+        // means "a sub-frame above me" — no `rposition` self-location.
+        if !matches!(
+            cx.state.continuations.last(),
+            Some(Continuation::SkillTest(_))
+        ) {
             return EngineOutcome::Done;
         }
 
@@ -489,21 +634,58 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 return open_skill_test_player_window(cx, SkillTestStep::Resolving, true);
             }
             SkillTestStep::Resolving => {
-                // Commit submitted: run the resolution body (sum icons, OnCommit,
-                // chaos token, follow-up + on_success/on_fail). It pre-advances
-                // the cursor to PostFollowUp and returns `AwaitingInput` if a
-                // sub-step suspends; otherwise the loop reads PostFollowUp next.
-                let outcome = run_resolution(cx, investigator, &indices_u8);
+                // RR ST.3–ST.6 computation (sum icons, chaos token). Pushes
+                // nothing; pre-advances the cursor to EmitSuccessReactions, so
+                // the loop reads it next on this same frame.
+                run_resolution(cx, investigator, &indices_u8);
+            }
+            SkillTestStep::EmitSuccessReactions {
+                succeeded,
+                failed_by,
+            } => {
+                // RR ST.6→ST.7 boundary. Pre-advances the cursor to FireOnCommit,
+                // then fires the "after you successfully investigate" timing point
+                // (Investigate + success only) — BEFORE the ST.7 consequences (the
+                // clue discovery in ApplyFollowUp, the result effects in
+                // ApplyResultEffect), so those can see any state the ST.6 reactions
+                // changed. Yields if a 2+ forced run suspends.
+                let outcome = emit_success_reactions_step(cx, investigator, succeeded, failed_by);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome;
                 }
             }
-            SkillTestStep::PostFollowUp { succeeded } => {
-                fire_on_skill_test_resolution(cx, investigator, &indices_u8, succeeded);
-                cx.state
-                    .current_skill_test_mut()
-                    .expect("the SkillTest frame must persist across driver steps")
-                    .continuation = SkillTestStep::PostRetaliate { succeeded };
+            SkillTestStep::FireOnCommit {
+                succeeded,
+                failed_by,
+            } => {
+                // RR ST.7 head. Pre-advances the cursor to ApplyFollowUp, then
+                // pushes the committed cards' OnCommit effects (Vicious Blow's
+                // BoostAttackDamage) as one Seq. The loop drives them (non-
+                // suspending stat boosts in scope) and re-dispatches at
+                // ApplyFollowUp, which reads the now-populated accumulator.
+                fire_on_commit_step(cx, investigator, &indices_u8, succeeded, failed_by);
+            }
+            SkillTestStep::ApplyFollowUp {
+                succeeded,
+                failed_by,
+            } => {
+                // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
+                // then applies the action follow-up (success-only). The
+                // Investigate follow-up pushes discover_clue → the loop check at
+                // the top of the next iteration sees the Effect frame on top and
+                // yields; Fight/Evade/None mutate synchronously (a Fight that
+                // defeats an enemy queues a reaction window — also a non-SkillTest
+                // top frame, also yields).
+                apply_follow_up_step(cx, investigator, succeeded, failed_by);
+            }
+            SkillTestStep::ApplyResultEffect {
+                succeeded,
+                failed_by,
+            } => {
+                apply_result_effect_step(cx, investigator, succeeded, failed_by);
+            }
+            SkillTestStep::FireOnResolution { succeeded, next } => {
+                fire_on_resolution_step(cx, investigator, &indices_u8, succeeded, next);
             }
             SkillTestStep::PostRetaliate { succeeded } => {
                 // Advance the cursor first: a retaliate that suspends on its
@@ -519,9 +701,9 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 }
             }
             SkillTestStep::PostOnResolution { succeeded: _ } => {
-                // "After you successfully investigate" (Obscuring Fog forced +
-                // Dr. Milan reaction) already fired at the PostFollowUp step,
-                // via the Investigate follow-up's `emit_event`
+                // RR ST.8 teardown. "After you successfully investigate"
+                // (Obscuring Fog forced + Dr. Milan reaction) already fired at the
+                // EmitSuccessReactions step via `emit_event`
                 // (`SuccessfullyInvestigated`, #213) — forced-before-reaction.
                 discard_committed_cards(cx, investigator, &indices_u8);
                 cx.events.push(Event::SkillTestEnded { investigator });
@@ -812,59 +994,35 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8
     }
 }
 
-/// Dispatch the action-specific on-success effect for the resolving
-/// skill test. Failure-path follow-ups (none today) would route here
-/// too if we grow them.
+/// Dispatch the action-specific on-success follow-up for the resolving
+/// skill test (RR ST.7). Runs only on success (the caller gates on it).
+///
+/// The Investigate follow-up *pushes* its `discover_clue` effect for the global
+/// drive loop (Slice D #423) — `advance` then yields, the loop drives the
+/// discovery (suspending on Cover Up 01007's before-interrupt if needed), and on
+/// completion re-dispatches the `SkillTest` at
+/// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect). The "after you
+/// successfully investigate" timing point already fired at the preceding
+/// [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) step — on the
+/// ST.6 success, before this ST.7 discovery. Fight / Evade / None mutate
+/// synchronously and push nothing.
 fn apply_skill_test_follow_up(
     cx: &mut Cx,
     investigator: InvestigatorId,
     follow_up: SkillTestFollowUp,
-) -> EngineOutcome {
+) {
     match follow_up {
-        SkillTestFollowUp::None => EngineOutcome::Done,
+        SkillTestFollowUp::None => {}
         SkillTestFollowUp::Investigate => {
+            // Push discover_clue for the drive loop. It may suspend on a
+            // before-timing interrupt (Cover Up 01007); the loop drives it to
+            // completion either way, then re-dispatches this SkillTest at
+            // `ApplyResultEffect`. The "after you successfully investigate"
+            // timing point already fired at the preceding EmitSuccessReactions
+            // step, before this discovery. The Investigate follow-up has no
+            // source card, so `for_controller` is correct.
             let effect = discover_clue(LocationTarget::YourLocation, 1);
-            // discover_clue may suspend on a before-timing interrupt
-            // (Cover Up 01007). Propagate AwaitingInput; the Investigate
-            // follow-up has no source card, so `for_controller` is correct.
-            // The only rejection path ("controller between locations")
-            // can't occur post-Investigate (the action validated a
-            // location), so a Rejected here is still an invariant violation.
-            let eval_ctx = EvalContext::for_controller(investigator);
-            let outcome = apply_effect(cx, &effect, eval_ctx);
-            if let EngineOutcome::Rejected { reason } = &outcome {
-                unreachable!(
-                    "Investigate follow-up: discover_clue rejected unexpectedly after \
-                     validation: {reason}"
-                );
-            }
-            // This follow-up runs only on a successful Investigate, so the
-            // "after you successfully investigate" timing point fires once the
-            // discovery completes. Both its forced abilities (Obscuring Fog
-            // 01168 discards) and its reaction window (Dr. Milan 01033) go
-            // through one `emit_event` so the forced resolves *before* the
-            // reaction window opens (RR p.2 forced-before-reaction, #213).
-            // No-op when nothing matches, so a plain Investigate is unchanged.
-            // A suspended discovery (Cover Up's before-interrupt, AwaitingInput)
-            // resumes through PostFollowUp; firing across that boundary is out
-            // of Slice-1 scope (Dr. Milan + Cover Up don't co-occur).
-            if matches!(outcome, EngineOutcome::Done) {
-                if let Some(location) = cx
-                    .state
-                    .investigators
-                    .get(&investigator)
-                    .and_then(|i| i.current_location)
-                {
-                    return super::emit::emit_event(
-                        cx,
-                        &super::emit::TimingEvent::SuccessfullyInvestigated {
-                            investigator,
-                            location,
-                        },
-                    );
-                }
-            }
-            outcome
+            push_effect(cx, &effect, EvalContext::for_controller(investigator));
         }
         SkillTestFollowUp::Fight {
             enemy,
@@ -888,7 +1046,6 @@ fn apply_skill_test_follow_up(
                 1u8.saturating_add(extra_damage).saturating_add(bonus),
                 Some(investigator),
             );
-            EngineOutcome::Done
         }
         SkillTestFollowUp::Evade { enemy } => {
             let e = cx.state.enemies.get_mut(&enemy).unwrap_or_else(|| {
@@ -904,7 +1061,6 @@ fn apply_skill_test_follow_up(
                 investigator,
             });
             cx.events.push(Event::EnemyExhausted { enemy });
-            EngineOutcome::Done
         }
     }
 }
@@ -962,35 +1118,28 @@ fn fire_retaliate_if_any(
     }
 }
 
-/// Iterate the active investigator's committed cards and fire each
-/// matching [`Trigger::OnSkillTestResolution`] ability for the
-/// resolved outcome.
+/// Collect, in committed-card order, the effects of every committed card's
+/// [`Trigger::OnSkillTestResolution`] ability that matches the resolved
+/// outcome.
 ///
-/// Called inside `finish_skill_test` after the action-specific
-/// [`SkillTestFollowUp`] has emitted its events and before the
-/// committed cards discard. At evaluation time the cards are still in
-/// hand at their hand indices and the in-flight record still holds
-/// the tested location, so
+/// The [`FireOnResolution`](SkillTestStep::FireOnResolution) driver step
+/// indexes into this flat list, pushing one effect per visit so they
+/// cursor-sequence (no LIFO). At collection time the committed cards are still
+/// in hand at their hand indices (discard happens at teardown) and the
+/// in-flight record still holds the tested location, so
 /// [`LocationTarget::TestedLocation`] resolves cleanly.
 ///
-/// **Rejections panic.** Card-impl bugs (e.g. an `OnSkillTestResolution`
-/// effect that uses `LocationTarget::Chosen` without
-/// `AwaitingInput` plumbing landing) are state-corruption invariant
-/// violations once a card's been imported through the deck gate;
-/// surface them loudly in tests rather than silently dropping the
-/// triggered effect. Mirrors `apply_skill_test_follow_up`'s
-/// `unreachable!` on a follow-up rejection.
-fn fire_on_skill_test_resolution(
-    cx: &mut Cx,
+/// No registry installed → empty list: engine-only tests that don't touch card
+/// data never reach `OnSkillTestResolution`. Silent skip mirrors
+/// `constant_skill_modifier`'s behavior.
+fn collect_on_skill_test_resolution(
+    cx: &Cx,
     investigator: InvestigatorId,
     indices_u8: &[u8],
     succeeded: bool,
-) {
+) -> Vec<card_dsl::dsl::Effect> {
     let Some(reg) = card_registry::current() else {
-        // No registry installed — engine-only tests that don't touch
-        // card data don't reach OnSkillTestResolution at all. Silent
-        // skip mirrors `constant_skill_modifier`'s behavior.
-        return;
+        return Vec::new();
     };
     let outcome_now = if succeeded {
         crate::dsl::TestOutcome::Success
@@ -998,10 +1147,8 @@ fn fire_on_skill_test_resolution(
         crate::dsl::TestOutcome::Failure
     };
 
-    // Snapshot the (code, instance-eligible) pairs we'll iterate
-    // before re-borrowing state mutably during apply_effect calls.
-    // Each committed index resolves to a hand-position CardCode; the
-    // cards are still in hand at this point (discard happens next).
+    // Each committed index resolves to a hand-position CardCode; the cards are
+    // still in hand at this point (discard happens at teardown).
     let codes: Vec<CardCode> = {
         let inv = cx
             .state
@@ -1009,8 +1156,8 @@ fn fire_on_skill_test_resolution(
             .get(&investigator)
             .unwrap_or_else(|| {
                 unreachable!(
-                    "fire_on_skill_test_resolution: investigator {investigator:?} vanished while \
-                 test was in flight; this is a state-corruption invariant violation"
+                    "collect_on_skill_test_resolution: investigator {investigator:?} vanished \
+                 while test was in flight; this is a state-corruption invariant violation"
                 )
             });
         indices_u8
@@ -1019,6 +1166,7 @@ fn fire_on_skill_test_resolution(
             .collect()
     };
 
+    let mut effects = Vec::new();
     for code in &codes {
         let Some(abilities) = (reg.abilities_for)(code) else {
             continue;
@@ -1030,40 +1178,37 @@ fn fire_on_skill_test_resolution(
             if outcome != outcome_now {
                 continue;
             }
-            let eval_ctx = EvalContext::for_controller(investigator);
-            let result = apply_effect(cx, &ability.effect, eval_ctx);
-            if let EngineOutcome::Rejected { reason } = result {
-                unreachable!(
-                    "OnSkillTestResolution: effect for card {code:?} rejected unexpectedly: \
-                     {reason}"
-                );
-            }
+            effects.push(ability.effect);
         }
     }
+    effects
 }
 
-/// Iterate the active investigator's committed cards and fire each
-/// [`Trigger::OnCommit`] ability's effect.
+/// Collect, in committed-card order, the effects of every committed card's
+/// [`Trigger::OnCommit`] ability.
 ///
-/// Called inside `finish_skill_test` after the commit indices are
-/// validated and **before** the chaos token resolves — committing a card
-/// happens before the test is resolved (Rules Reference: the commit step
-/// precedes skill-test resolution). The in-scope consumer
+/// The [`FireOnCommit`](SkillTestStep::FireOnCommit) driver step combines these
+/// into one [`Effect::Seq`](crate::dsl::Effect::Seq) and `push_effect`s it for
+/// the drive loop. They run at the head of ST.7 (after the token resolves) but
+/// before [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) reads the
+/// `bonus_attack_damage` accumulator the in-scope consumer
 /// ([`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage),
-/// Vicious Blow 01025) accumulates onto the in-flight record so the Fight
-/// follow-up reads it; it never suspends.
+/// Vicious Blow 01025) populates — and that consumer is conditional on success
+/// ("If this skill test is successful during an attack…"). The committed cards
+/// are still in hand at this point (discard happens at teardown).
 ///
-/// **Rejections panic.** As with [`fire_on_skill_test_resolution`], an
-/// `OnCommit` effect that returns non-`Done` is a card-impl bug — there is
-/// no resume path mid-commit, so surface it loudly. A suspending commit
-/// effect is #212 reentrancy work. No-op without an installed registry
-/// (engine-only tests that don't touch card data never commit real cards).
-fn fire_on_commit(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
+/// No registry installed → empty list: engine-only tests that don't touch card
+/// data never commit real cards. Silent skip mirrors
+/// `constant_skill_modifier`'s behavior.
+fn collect_on_commit(
+    cx: &Cx,
+    investigator: InvestigatorId,
+    indices_u8: &[u8],
+) -> Vec<card_dsl::dsl::Effect> {
     let Some(reg) = card_registry::current() else {
-        return;
+        return Vec::new();
     };
-    // Snapshot the committed hand codes before re-borrowing state mutably
-    // during apply_effect calls. The cards are still in hand at commit.
+    // Snapshot the committed hand codes. The cards are still in hand at commit.
     let codes: Vec<CardCode> = {
         let inv = cx
             .state
@@ -1071,7 +1216,7 @@ fn fire_on_commit(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
             .get(&investigator)
             .unwrap_or_else(|| {
                 unreachable!(
-                    "fire_on_commit: investigator {investigator:?} vanished while test was in \
+                    "collect_on_commit: investigator {investigator:?} vanished while test was in \
                      flight; this is a state-corruption invariant violation"
                 )
             });
@@ -1081,6 +1226,7 @@ fn fire_on_commit(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
             .collect()
     };
 
+    let mut effects = Vec::new();
     for code in &codes {
         let Some(abilities) = (reg.abilities_for)(code) else {
             continue;
@@ -1089,13 +1235,10 @@ fn fire_on_commit(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
             if !matches!(ability.trigger, Trigger::OnCommit) {
                 continue;
             }
-            let eval_ctx = EvalContext::for_controller(investigator);
-            let result = apply_effect(cx, &ability.effect, eval_ctx);
-            if let EngineOutcome::Rejected { reason } = result {
-                unreachable!("OnCommit: effect for card {code:?} rejected unexpectedly: {reason}");
-            }
+            effects.push(ability.effect);
         }
     }
+    effects
 }
 
 /// Public dispatch wrapper for [`PlayerAction::PerformSkillTest`].
@@ -1214,7 +1357,7 @@ mod tests {
             events: &mut events,
         };
 
-        let out = apply_skill_test_follow_up(
+        apply_skill_test_follow_up(
             &mut cx,
             inv,
             SkillTestFollowUp::Fight {
@@ -1223,7 +1366,6 @@ mod tests {
             },
         );
 
-        assert_eq!(out, EngineOutcome::Done);
         assert_eq!(
             state.enemies[&EnemyId(7)].damage,
             4,
