@@ -1513,10 +1513,12 @@ pub fn fight(combat_modifier: impl Into<IntExpr>, extra_damage: impl Into<IntExp
 
 /// Build an [`Effect::Investigate`] applying `shroud_modifier` to the
 /// controller's location difficulty for this investigation (Flashlight 01087:
-/// `investigate(IntExpr::Lit(-2))`).
+/// `investigate(-2i8)`).
 #[must_use]
-pub fn investigate(shroud_modifier: IntExpr) -> Effect {
-    Effect::Investigate { shroud_modifier }
+pub fn investigate(shroud_modifier: impl Into<IntExpr>) -> Effect {
+    Effect::Investigate {
+        shroud_modifier: shroud_modifier.into(),
+    }
 }
 
 /// Build an [`Effect::Restrict`] carrying a constant [`Restriction`].

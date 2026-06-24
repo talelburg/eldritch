@@ -10,12 +10,15 @@
 //! enemy is the sole engaged enemy, encoded as
 //! `IntExpr::cond(EngagedEnemies == 1, 1, 0)`.
 //!
-//! Note: activated `Effect::Fight` currently requires *exactly one* engaged
-//! enemy (2+ engaged is rejected pre-cost, pending multi-target selection /
-//! [#401](https://github.com/talelburg/eldritch/issues/401)). As a result the
-//! `EngagedEnemies == 1` condition always holds whenever the Fight resolves
-//! today — the `+0` branch is correct modelling but only becomes reachable
-//! once 2-engaged activated Fight lands.
+//! Note: the `+0` branch is correct modelling but not yet *reachable*. This is
+//! not a Machete-specific limit — the engine cannot yet resolve **any**
+//! activated `Effect::Fight` while 2+ enemies are engaged (it auto-targets the
+//! single engaged enemy and rejects the ambiguous case pre-cost; multi-target
+//! attack-selection is the deferred work). Per the rules a Fight weapon *can*
+//! be activated against any one engaged enemy of several — so once that
+//! selection lands, Machete activates normally and `EngagedEnemies == 1` (not
+//! activation) gates the `+1`. Until then the condition always holds whenever
+//! the Fight resolves, so only the `+1` branch is exercised.
 
 use card_dsl::dsl::{activated, fight, Ability, CmpOp, Condition, IntExpr, Quantity};
 

@@ -13,7 +13,7 @@
 //! inspectable `Effect::Fight`, dealing `1 + 1` damage on success.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated, fight, Ability, Cost, IntExpr};
+use card_dsl::dsl::{activated, fight, Ability, Cost};
 
 /// `ArkhamDB` code for the .45 Automatic (original-Core printing).
 pub const CODE: &str = "01016";
@@ -26,14 +26,14 @@ pub fn abilities() -> Vec<Ability> {
             kind: UseKind::Ammo,
             count: 1,
         }],
-        fight(IntExpr::Lit(1), 1u8),
+        fight(1u8, 1u8),
     )]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, IntExpr, Trigger};
 
     #[test]
     fn one_activated_fight_ability_spending_ammo() {

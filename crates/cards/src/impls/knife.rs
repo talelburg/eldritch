@@ -23,7 +23,7 @@
 //! (`resolve_activated_ability` indexes the raw abilities vec and rejects
 //! any non-`Activated` trigger).
 
-use card_dsl::dsl::{activated, fight, Ability, Cost, IntExpr};
+use card_dsl::dsl::{activated, fight, Ability, Cost};
 
 /// `ArkhamDB` code for Knife (original-Core printing).
 pub const CODE: &str = "01086";
@@ -34,17 +34,17 @@ pub const CODE: &str = "01086";
 pub fn abilities() -> Vec<Ability> {
     vec![
         // [action]: Fight. You get +1 [combat] for this attack.
-        activated(1, vec![], fight(IntExpr::Lit(1), 0u8)),
+        activated(1, vec![], fight(1u8, 0u8)),
         // [action] Discard Knife: Fight. You get +2 [combat] for this attack.
         // This attack deals +1 damage.
-        activated(1, vec![Cost::DiscardSelf], fight(IntExpr::Lit(2), 1u8)),
+        activated(1, vec![Cost::DiscardSelf], fight(2u8, 1u8)),
     ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, IntExpr, Trigger};
 
     #[test]
     fn two_action_fight_abilities() {
