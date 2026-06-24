@@ -182,8 +182,9 @@ pub enum Trigger {
         /// "all forced abilities … must resolve before any `[reaction]`
         /// abilities … may be initiated." Replaces the earlier
         /// route-by-`EventPattern` heuristic (which forced twin patterns
-        /// for one game moment, e.g. `AfterLocationInvestigated` forced
-        /// vs `SuccessfullyInvestigated` reaction).
+        /// for one game moment); the unified `SkillTestResolved` pattern,
+        /// shared by forced and reaction listeners, now relies on this
+        /// `kind` to route to the right phase.
         kind: TriggerKind,
     },
 }
@@ -310,14 +311,24 @@ pub enum EventPattern {
     /// in play); binds controller = that investigator. First consumer:
     /// Frozen in Fear (01164), C4c (#235).
     EndOfTurn,
-    /// A location was successfully investigated. Fired forced via
-    /// `ForcedTriggerPoint::AfterLocationInvestigated` from the
-    /// skill-test resolution driver after a successful Investigate;
-    /// binds controller = the investigating investigator. In C4a the
-    /// forced scan covers the investigator's controlled card instances;
-    /// C4c (#235) extends it to the investigated location's attachment
-    /// zone for Obscuring Fog (01168), the first consumer.
-    AfterLocationInvestigated,
+    /// A skill test resolved with the given `outcome` (RR ST.6). The
+    /// card-facing narrowing of the engine's ST.6→ST.7 timing point — the
+    /// general form of which "after you successfully investigate" (Dr. Milan
+    /// 01033 reaction, Obscuring Fog 01168 forced) is the `{ Success,
+    /// Investigate }` case. `kind: None` matches any test type; `Some(k)`
+    /// narrows to that type. Forced vs reaction is the `OnEvent { kind }`
+    /// distinction (Obscuring Fog `Forced`, Dr. Milan `Reaction`), not a
+    /// pattern distinction — both share this pattern. The engine binds *you* =
+    /// the testing investigator; a forced ability on a location attachment is
+    /// scanned via the investigated location (the forced collector reads it
+    /// from the in-flight test frame). (Slice D #423; collapses the #212/#213
+    /// forced/reaction pattern split for this timing point.)
+    SkillTestResolved {
+        /// Whether the listener fires on a passed or failed test.
+        outcome: TestOutcome,
+        /// Narrow to a test type, or `None` for any.
+        kind: Option<SkillTestKind>,
+    },
     /// An investigator is about to discover one or more clues. Matched
     /// **only** by the clue-discovery interrupt seam in `discover_clue`
     /// (paired with [`EventTiming::When`]), never by the general
@@ -333,22 +344,6 @@ pub enum EventPattern {
     /// 01007's "Forced - When the game ends, if there are any clues on
     /// Cover Up: You suffer 1 mental trauma." (C5a #236.)
     GameEnd,
-    /// You successfully investigated — the **player-reaction** timing of
-    /// "`[reaction]` After you successfully investigate" (Dr. Milan
-    /// Christopher 01033: gain 1 resource). Bare: the engine binds *you* =
-    /// the investigating investigator from the window context.
-    ///
-    /// Distinct from [`AfterLocationInvestigated`](Self::AfterLocationInvestigated),
-    /// the **forced** twin of the same Arkham timing (Obscuring Fog 01168).
-    /// They are separate patterns only because this codebase has no
-    /// `Trigger::Forced`: the engine routes by pattern, firing
-    /// `AfterLocationInvestigated` through the forced auto-fire path and
-    /// `SuccessfullyInvestigated` through a player reaction window
-    /// (the after-successful-investigate window). Unifying forced +
-    /// reaction at one window is the #212/#213 trigger-dispatch work; until
-    /// then the split pattern keeps a forced ability from auto-firing a
-    /// reaction (and vice versa).
-    SuccessfullyInvestigated,
     /// An enemy attack dealt damage to the asset this ability is printed
     /// on (the soaked ally). Bare — the engine binds *self* = the soaked
     /// asset instance from the firing window context, the way
@@ -2183,8 +2178,11 @@ mod tests {
     }
 
     #[test]
-    fn successfully_investigated_round_trips() {
-        let p = EventPattern::SuccessfullyInvestigated;
+    fn skill_test_resolved_round_trips() {
+        let p = EventPattern::SkillTestResolved {
+            outcome: TestOutcome::Success,
+            kind: Some(SkillTestKind::Investigate),
+        };
         let json = serde_json::to_string(&p).expect("serialize");
         let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(p, back);

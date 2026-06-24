@@ -7,7 +7,7 @@ use crate::dsl::{Cost, Trigger};
 use crate::event::Event;
 use crate::state::{CardCode, CardInstanceId, Investigator, InvestigatorId, UseKind};
 
-use super::super::evaluator::{apply_effect, EvalContext};
+use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
 use super::Cx;
 
@@ -119,9 +119,11 @@ pub(super) fn activate_ability(
         return super::combat::drive_aoo(cx, investigator);
     }
 
-    // Fast (not an action), or an AoO-exempt Fight ability: resolve synchronously.
+    // Fast (not an action), or an AoO-exempt Fight ability: push the effect for
+    // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
     let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
-    apply_effect(cx, &effect, eval_ctx)
+    push_effect(cx, &effect, eval_ctx);
+    EngineOutcome::Done
 }
 
 /// Whether activating an ability with this `action_cost` and `effect` provokes
@@ -148,10 +150,10 @@ fn provokes_aoo(action_cost: u8, effect: &crate::dsl::Effect) -> bool {
 ///
 /// TODO(#417) (richer mid-action invalidation): unlike the basic-action resumes
 /// (`investigate_primary_effect` etc., which return `Done` to *suppress*
-/// gracefully when their target precondition has lapsed), this delegates
-/// straight to `apply_effect`. Some effects (`Effect::Investigate` on
-/// Flashlight 01087, `Effect::Heal` on First Aid 01019) return
-/// [`EngineOutcome::Rejected`] on a lapsed precondition, which `apply()`
+/// gracefully when their target precondition has lapsed), this pushes the
+/// effect for the drive loop with no suppression gate. Some effects
+/// (`Effect::Investigate` on Flashlight 01087, `Effect::Heal` on First Aid
+/// 01019) return [`EngineOutcome::Rejected`] on a lapsed precondition, which `apply()`
 /// snapshot-restores — rolling back the *whole* activation (the `AoO` damage +
 /// the spent cost) rather than suppressing the primary only (the §D contract).
 /// Unreachable in scope: for the actor to survive the `Active` gate yet have a
@@ -167,7 +169,8 @@ pub(super) fn resume_activate_ability(
     effect: &crate::dsl::Effect,
 ) -> EngineOutcome {
     let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
-    apply_effect(cx, effect, eval_ctx)
+    push_effect(cx, effect, eval_ctx);
+    EngineOutcome::Done
 }
 
 /// Pay the action cost and every payment cost of an activated

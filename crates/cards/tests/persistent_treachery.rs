@@ -6,13 +6,14 @@
 
 use std::sync::Once;
 
-use game_core::action::{EngineRecord, PlayerAction};
+use game_core::action::{EngineRecord, InputResponse, PlayerAction};
+use game_core::engine::OptionId;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, EnemyId, InvestigatorId, Location,
-    LocationId, Phase,
+    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
+    InvestigatorId, Location, LocationId, Phase, TokenModifiers, UpkeepResume,
 };
 use game_core::test_support::{
-    drive, fire_forced_after_location_investigated, fire_forced_on_round_end, test_enemy,
+    apply_no_commits, drive, fire_forced_on_round_end, run_upkeep_round_end, test_enemy,
     test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
 use game_core::{apply, Action, EngineOutcome};
@@ -77,21 +78,47 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     );
 
     // Forced — after the attached location is successfully investigated,
-    // discard Obscuring Fog.
-    let mut state = result.state;
-    let mut events = Vec::new();
-    let outcome = fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(20),
+    // discard Obscuring Fog. Drive a real (passing) Investigate so the
+    // in-flight SkillTest frame is live when SkillTestResolved fires: the
+    // forced collector reads `tested_location` off that frame to scan the
+    // location's attachment zone (the lean, location-free timing event derives
+    // the location from the stack rather than carrying it).
+    let mut loc = test_location(20, "Here");
+    loc.shroud = 0; // effective 0 + 2 (Obscuring Fog) = 2; intellect 3 clears it
+    loc.clues = 1;
+    loc.attachments.push(CardInPlay::enter_play(
+        CardCode::new("01168"),
+        CardInstanceId(1),
+    ));
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(20));
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator(inv)
+        .with_location(loc)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::Investigate {
+            investigator: InvestigatorId(1),
+        }),
     );
-    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(result.outcome, EngineOutcome::Done);
     assert!(
-        state.locations[&LocationId(20)].attachments.is_empty(),
-        "Obscuring Fog discards after its location is investigated",
+        result.state.locations[&LocationId(20)]
+            .attachments
+            .is_empty(),
+        "Obscuring Fog discards after its location is successfully investigated",
     );
-    assert!(state.encounter_discard.contains(&CardCode::new("01168")));
+    assert!(result
+        .state
+        .encounter_discard
+        .contains(&CardCode::new("01168")));
 }
 
 // ---- Dissonant Voices (01165) --------------------------------------
@@ -164,10 +191,14 @@ fn dissonant_voices_forbids_playing_an_asset() {
 #[test]
 fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     install_registry();
-    // Both Dissonant Voices (threat area) and agenda 01107 carry a
-    // RoundEnded forced ability. They must resolve together (deterministic
-    // multi-resolve), not reject: the agenda places doom per ghoul in the
-    // Hallway/Parlor, and Dissonant Voices discards itself.
+    // Both Dissonant Voices (threat area) and agenda 01107 carry an
+    // `At`-`RoundEnded` forced ability. Two simultaneous forced at one timing
+    // point let the lead order them (#213), so the real round-end coordinator
+    // path opens the ordered forced-run: the agenda places doom per ghoul in the
+    // Hallway/Parlor and Dissonant Voices discards itself, both resolving in the
+    // lead's chosen order rather than rejecting. Driven through the upkeep
+    // round-end coordinator (not the bare `fire_forced_triggers`), which is the
+    // production route for 2+ simultaneous forced.
     let loc = |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
     let mut inv = test_investigator(1);
     inv.threat_area.push(CardInPlay::enter_play(
@@ -175,6 +206,10 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         CardInstanceId(0),
     ));
     let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Upkeep)
+        .with_phase_anchor(Continuation::UpkeepPhase {
+            resume: UpkeepResume::Begins,
+        })
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
         .with_location(loc(2, "01112", "Hallway"))
@@ -191,24 +226,46 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     }];
     state.agenda_index = 0;
 
+    // Walk the round-end coordinator: 2+ At-forced → the lead orders them.
     let mut events = Vec::new();
-    let outcome = fire_forced_on_round_end(&mut state, &mut events);
-    assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "two simultaneous RoundEnded forced triggers resolve in order, not reject",
+    let opened = run_upkeep_round_end(&mut state, &mut events);
+    assert!(
+        matches!(opened, EngineOutcome::AwaitingInput { .. }),
+        "two simultaneous RoundEnded forced present the lead an ordering choice: {opened:?}",
     );
-    assert_eq!(
-        state.agenda_deck[0_usize].doom_threshold, 10,
-        "doom_threshold unchanged (sanity)",
+    // Resolve the forced run in the lead's chosen order: first pick, then the
+    // remaining one, ending Done — both fire, neither rejects.
+    let after_first = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
     );
     assert!(
-        state.agenda_doom >= 1,
+        matches!(after_first.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the second forced is still pending after the first resolves: {:?}",
+        after_first.outcome,
+    );
+    let done = apply(
+        after_first.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    // Both forced resolved and the round ended cleanly: the coordinator advanced
+    // into the next Mythos (the 1.4 encounter-draw prompt), not a rejection.
+    assert!(
+        matches!(done.outcome, EngineOutcome::AwaitingInput { .. }),
+        "round-end completed and advanced past the forced run: {:?}",
+        done.outcome,
+    );
+    assert!(
+        done.state.agenda_doom >= 1,
         "agenda 01107 placed doom for the Ghoul in the Hallway; agenda_doom = {}",
-        state.agenda_doom,
+        done.state.agenda_doom,
     );
     assert!(
-        state.investigators[&InvestigatorId(1)]
+        done.state.investigators[&InvestigatorId(1)]
             .threat_area
             .is_empty(),
         "Dissonant Voices also discarded in the same round-end resolution",

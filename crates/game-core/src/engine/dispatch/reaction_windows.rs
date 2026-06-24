@@ -22,7 +22,7 @@ use crate::state::{
     GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
-use super::super::evaluator::{apply_effect, EvalContext};
+use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 
@@ -496,12 +496,24 @@ fn trigger_matches(
         // `scan_pending_triggers` (only the `asset` instance reaches here). Sole
         // consumer: Guard Dog 01021's retaliate reaction. (C5b #237.)
         (TimingEvent::EnemyAttackDamagedSelf { .. }, EventPattern::EnemyAttackDamagedSelf) => true,
-        // Scoped to the controller's own investigation ("after **you**
-        // investigate" — Dr. Milan 01033). (C6a #241.)
+        // "after you succeed/fail a skill test" — scoped to the controller's
+        // own test ("after **you** …"), narrowed by outcome and (optionally)
+        // test kind. Dr. Milan 01033 is `{ Success, Some(Investigate) }`.
         (
-            TimingEvent::SuccessfullyInvestigated { investigator, .. },
-            EventPattern::SuccessfullyInvestigated,
-        ) => *investigator == controller,
+            TimingEvent::SkillTestResolved {
+                investigator,
+                kind,
+                outcome,
+            },
+            EventPattern::SkillTestResolved {
+                outcome: p_out,
+                kind: p_kind,
+            },
+        ) => {
+            *investigator == controller
+                && outcome == p_out
+                && (p_kind.is_none() || *p_kind == Some(*kind))
+        }
         // Scoped to the entered card's owner; the self-instance scoping is in
         // the scan (Research Librarian 01032).
         (
@@ -755,43 +767,30 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
 
-    let result = apply_effect(cx, &ability.effect, eval_ctx);
-    match result {
-        EngineOutcome::Rejected { reason } => {
-            // Card-impl bugs surface loudly — same policy as
-            // `fire_on_skill_test_resolution`.
-            unreachable!(
-                "OnEvent reaction: effect for card {code:?} rejected unexpectedly: {reason}"
-            );
-        }
-        // The effect suspended (it started a skill test, pushing a `SkillTest`
-        // frame above this run's frame). Park: the run's frame stays with its
-        // remaining siblings, and `advance_resolution` re-enters it once the
-        // nested test resolves (Axis-B T5b reentrancy). In-scope suspending
-        // forced effects (Frozen in Fear) carry no usage limit, so skipping
-        // the bump here is correct for the current pool.
-        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
-        EngineOutcome::Done => {
-            if usage_limit.is_some() {
-                bump_usage_counter(cx.state, &trigger);
-            }
-            // The window frame stays on top with its remaining candidates; the
-            // `drive` loop's window arm re-dispatches it (re-prompt or close).
-            // Slice C-plumbing.
-            EngineOutcome::Done
-        }
+    // Usage is consumed when the ability fires — the former "bump only on
+    // `Done`" was purely defensive against an `unreachable!` `Rejected`. Bump
+    // now, then push the effect for the drive loop; the window frame beneath
+    // stays on top with its remaining candidates and `advance_resolution`
+    // re-dispatches it once the effect (and any nested skill test) pops. In-scope
+    // suspending forced effects (Frozen in Fear 01164) carry no usage limit, so
+    // the early bump is a no-op for them. Slice D, #423.
+    if usage_limit.is_some() {
+        bump_usage_counter(cx.state, &trigger);
     }
+    push_effect(cx, &ability.effect, eval_ctx);
+    EngineOutcome::Done
 }
 
 /// Play the hand Fast-event `candidate` from the open resolution run (Axis C,
 /// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
 /// Commences the play via the shared
 /// [`super::cards::begin_event_play`] (emit [`crate::Event::CardPlayed`], leave hand,
-/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), then runs
-/// the matched `OnEvent` ability's effect. On synchronous completion it returns
-/// [`EngineOutcome::Done`], leaving the window frame on top for the `drive` loop to
-/// re-dispatch (Slice C-plumbing); the apply loop flushes the event to discard on
-/// completion (step 4) — the suspending-event path Dynamite Blast 01024 uses.
+/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), then
+/// pushes a [`Continuation::PlayFromHand`] frame (above the live reaction window)
+/// and the `OnEvent` effect for the drive loop. On the effect's completion,
+/// [`super::cards::dispose_play_from_hand`] flushes the event to discard (RR
+/// Appendix I step 4) and the window beneath resumes its candidate scan (Slice D
+/// #423).
 ///
 /// Charges no resource cost, matching [`super::cards::play_card`] (Slice 1
 /// does not model play-cost resources). The caller has already removed the
@@ -814,7 +813,7 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
         });
     super::cards::begin_event_play(cx, controller, hand_idx);
 
-    // Run the matched OnEvent ability's effect under the playing investigator.
+    // Look up the matched OnEvent ability's effect from the registry.
     let reg = card_registry::current().unwrap_or_else(|| {
         unreachable!(
             "play_fast_event: registry installed at scan time is now missing; \
@@ -839,27 +838,20 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
         .clone();
     let eval_ctx = EvalContext::for_controller(controller);
 
-    match apply_effect(cx, &effect, eval_ctx) {
-        EngineOutcome::Rejected { reason } => unreachable!(
-            "Fast-event play: effect for {:?} rejected unexpectedly: {reason}",
-            candidate.code,
-        ),
-        suspended @ EngineOutcome::AwaitingInput { .. } => suspended,
-        EngineOutcome::Done => {
-            // The Fast event's effect completed (RR Appendix I step 4): discard
-            // it NOW, before advancing the window / phase cascade. The apply
-            // loop's `flush_pending_played_event` only fires on a `Done` apply,
-            // so deferring to it would strand the event in `pending_played_event`
-            // whenever this same apply later suspends for an unrelated reason —
-            // e.g. the window close cascades into the Mythos 1.4 draw prompt
-            // (#348) or an upkeep hand-size discard (#111), both `AwaitingInput`.
-            // A no-op if the effect already disposed of the card (e.g. an event
-            // that becomes an asset clears `pending_played_event` itself).
-            super::cards::flush_pending_played_event(cx);
-            // Window stays on top; the drive loop re-dispatches it. Slice C-plumbing.
-            EngineOutcome::Done
-        }
-    }
+    // Push the event's disposal frame (above the window), then push its effect
+    // for the drive loop. On the effect's completion, PlayFromHand disposal
+    // flushes the event (RR Appendix I step 4) and the window beneath resumes
+    // its candidate scan. `hand_idx` is moot for an event (begin_event_play
+    // already removed + stashed it); pass it for the frame's shape. (Slice D #423.)
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::PlayFromHand {
+            investigator: controller,
+            code: candidate.code.clone(),
+            hand_index: u8::try_from(hand_idx).unwrap_or(0),
+        });
+    push_effect(cx, &effect, eval_ctx);
+    EngineOutcome::Done
 }
 
 /// Advance the resolution run on **top** of the stack after one of its
@@ -1042,7 +1034,7 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
         // window (act 01109, #434) sits above the coordinator's `TimingPoint`,
         // which advances to its `Done` sub when re-dispatched.
         TimingEvent::EnemyDefeated { .. }
-        | TimingEvent::SuccessfullyInvestigated { .. }
+        | TimingEvent::SkillTestResolved { .. }
         | TimingEvent::EnteredPlay { .. }
         | TimingEvent::RoundEnded => EngineOutcome::Done,
         other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),

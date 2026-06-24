@@ -483,30 +483,74 @@ pub enum Continuation {
     /// `remaining[0]` is the investigator currently prompted to draw; the queue
     /// is the Active investigators in [`turn_order`](GameState::turn_order).
     /// Pushed by `mythos_phase`, advanced by `resume_encounter_draw` as each
-    /// investigator confirms (running their full surge chain), popped when
-    /// drained — at which point the post-1.4 `MythosAfterDraws` window opens.
-    /// A mid-chain spawn-engagement tie pushes a
-    /// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. While
-    /// present, the engine rejects every non-`ResolveInput` action. Read the
-    /// prompted drawer via [`GameState::current_encounter_drawer`].
+    /// investigator confirms (pushing a [`PlayerDraw`](Continuation::PlayerDraw)
+    /// frame that owns that drawer's surge chain), popped when drained — at which
+    /// point the post-1.4 `MythosAfterDraws` window opens. While present, the
+    /// engine rejects every non-`ResolveInput` action. Read the prompted drawer
+    /// via [`GameState::current_encounter_drawer`].
     EncounterDraw {
         /// Active investigators yet to draw, in player order; front =
         /// currently prompted.
         remaining: Vec<InvestigatorId>,
     },
-    /// A drawn encounter **treachery** whose Revelation is mid-resolution
-    /// (#380). Pushed by `resolve_encounter_card` *before* it runs the
-    /// Revelation; sits beneath any suspension the Revelation opens (a skill
-    /// test, a choice, a nested effect). When that sub-resolution completes and
-    /// this frame is top again, the **framework** disposes of the card
-    /// (one-shot → `encounter_discard`; persistent → it placed itself during
-    /// its Revelation, so skip) and pops. Suspension-reason-agnostic — replaces
-    /// the former `pending_revelation_discard` slot, which only the skill-test
-    /// driver flushed (so a choice-only Revelation was never disposed of).
-    /// Never emits `AwaitingInput`.
+    /// One drawer's Mythos surge chain (#423 / callsite-migration). Pushed by
+    /// [`EncounterDraw`](Continuation::EncounterDraw)'s `Confirm` for the current
+    /// drawer (above the loop frame); owns the surge cap budget across input
+    /// round-trips. The `drive` loop's `PlayerDraw` arm drives it: on the first
+    /// step (`chain_count == 0`) or when `surge_pending`, it draws the next card
+    /// — bumping `chain_count`, enforcing [`MAX_SURGE_CHAIN`](crate::engine), and
+    /// pushing an [`EncounterCard`](Continuation::EncounterCard) frame whose
+    /// disposal exposes this one again; otherwise it pops itself and advances the
+    /// loop to the next drawer. A mid-chain spawn-engagement tie pushes a
+    /// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. Never
+    /// awaits input itself (mirrors `EncounterCard`).
+    PlayerDraw {
+        /// Whose surge chain this is (the current `EncounterDraw` drawer).
+        investigator: InvestigatorId,
+        /// Cards drawn so far in this chain. `0` means "haven't drawn the first
+        /// card yet"; bumped per draw and capped at
+        /// [`MAX_SURGE_CHAIN`](crate::engine).
+        chain_count: usize,
+        /// Whether the last-drawn card carried `surge` — i.e. whether the next
+        /// drive step draws another card. `false` on the first step (no card
+        /// drawn yet; `chain_count == 0` triggers the first draw instead).
+        surge_pending: bool,
+    },
+    /// A drawn encounter card whose Revelation is mid-resolution (#380), tagged
+    /// with how the framework disposes of it once the Revelation's whole
+    /// sub-resolution completes (#423). Pushed by `resolve_encounter_card`
+    /// *before* it runs the Revelation; sits beneath any suspension the
+    /// Revelation opens (a skill test, a choice, a nested effect). When that
+    /// sub-resolution completes and this frame is top again, the **framework**
+    /// disposes of the card per its [`EncounterDisposition`] and pops:
+    /// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent —
+    /// is skipped, having placed itself during its Revelation); an enemy
+    /// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
+    /// `AwaitingInput`.
     EncounterCard {
-        /// The drawn treachery's card code, disposed of at teardown.
+        /// The drawn card's code, disposed of at teardown.
         card: CardCode,
+        /// How the framework disposes of the card once its Revelation resolves.
+        disposition: EncounterDisposition,
+    },
+    /// A card being played from hand, mid-resolution (Slice D #423). Pushed
+    /// **below** the card's pushed `OnPlay`/`OnEvent` effect; when that effect
+    /// pops, the drive loop's `PlayFromHand` arm runs `dispose_play_from_hand`
+    /// (event → discard the stashed `pending_played_event`; asset → remove from
+    /// hand at `hand_index`, enter play, emit `EnteredPlay`). Single-shot:
+    /// `dispose_play_from_hand` pops the frame before emitting `EnteredPlay`, so
+    /// the loop opens any after-enters-play window itself. Framework-internal;
+    /// never awaits input (the catch-all `awaits_input`/`is_phase_anchor` arms
+    /// cover it, as for `EncounterCard`).
+    PlayFromHand {
+        /// The playing investigator.
+        investigator: InvestigatorId,
+        /// The played card's code (re-derives destination + asset metadata).
+        code: CardCode,
+        /// Hand slot of an **asset** still in hand (enters play at disposal).
+        /// Ignored for an event — `begin_event_play` already removed it and
+        /// stashed it in `pending_played_event`.
+        hand_index: u8,
     },
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
     /// beneath the phase's framework windows. On a child window's close the
@@ -624,6 +668,29 @@ pub enum Continuation {
     /// own [`EvalContext`](crate::engine::EvalContext) snapshot (#345's grouped
     /// bindings) so resume re-binds without replay.
     Effect(EffectFrame),
+}
+
+/// How the framework disposes of a drawn encounter card after its Revelation's
+/// whole sub-resolution completes (#423). Carried by
+/// [`Continuation::EncounterCard`] so the unified disposal step
+/// (`dispose_encounter_card_if_top`) handles both encounter card types from one
+/// frame, regardless of which path revealed the card (engine-record draw,
+/// Mythos chain, or an agenda reverse-draw — the last two having no
+/// `EncounterDraw` frame to read the drawer from, so the enemy disposition
+/// carries it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EncounterDisposition {
+    /// A treachery: discard to `encounter_discard` (or skip, if persistent — it
+    /// placed itself during its Revelation).
+    Discard,
+    /// An enemy: spawn it into play at disposal, engaging the drawer
+    /// (`investigator`) per the card's spawn instruction.
+    Spawn {
+        /// The drawing/controlling investigator — carried because the
+        /// engine-record and agenda reverse-draw paths have no `EncounterDraw`
+        /// frame beneath to read it from.
+        investigator: InvestigatorId,
+    },
 }
 
 /// One node of a frame-driven card-effect walk (#422). See
@@ -975,10 +1042,9 @@ pub struct InFlightSkillTest {
     /// `advance`. Initialized to
     /// [`SkillTestStep::AwaitingCommit`] at
     /// `start_skill_test`; advanced in lock-step as the resolution
-    /// sequence runs. Post-commit variants carry the test's outcome
-    /// as a `succeeded` payload (see [`SkillTestStep`]) so the
-    /// invariant "outcome is known iff the test is past the commit
-    /// window" is structural.
+    /// sequence runs. The test outcome lives on [`resolved`](Self::resolved)
+    /// (set at ST.6), not in the cursor payloads — so the invariant "outcome is
+    /// known iff the test is past the commit window" is `resolved.is_some()`.
     pub continuation: SkillTestStep,
     /// A flat modifier applied to the test total, snapshotted by the
     /// effect that initiated the test (`Effect::Fight`'s combat
@@ -994,6 +1060,45 @@ pub struct InFlightSkillTest {
     /// is inert for non-Fight tests. `0` for every test that no
     /// commit-time attack buff touches (regression-safe).
     pub bonus_attack_damage: u8,
+    /// The chaos-token determination, set once at the
+    /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.6) and read by every
+    /// post-ST.6 step instead of threading `succeeded`/`failed_by` through each
+    /// cursor variant. `None` until the test resolves — so `resolved.is_some()`
+    /// is the structural witness for "the test is past the commit window," the
+    /// invariant the per-variant `succeeded` payloads used to carry. (Slice D #423.)
+    pub resolved: Option<ResolvedTest>,
+    /// A chaos symbol token's result-conditional `on_fail` effect (Cultist
+    /// 01104's "if this test is failed, take 1 horror"), built at the
+    /// `Resolving` step and pushed at the `ApplySymbolOnFail` step (RR ST.7,
+    /// *after* the outcome timing point). `None` when the test passed or the
+    /// symbol has no `on_fail`. Held here (a sibling of [`on_fail`](Self::on_fail)
+    /// / [`on_success`](Self::on_success)) because it is a non-`Copy` `Effect`
+    /// needed several steps after the token is drawn. (Slice D #423.)
+    pub symbol_on_fail: Option<card_dsl::dsl::Effect>,
+}
+
+/// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
+/// [`InFlightSkillTest::resolved`] once computed and read by every subsequent
+/// driver step. One source of truth, rather than routing the same fields
+/// through each [`SkillTestStep`] payload. `Copy` (all scalar fields) so the
+/// driver reads it cheaply; the result-conditional symbol `on_fail` *effect*
+/// lives separately on [`InFlightSkillTest::symbol_on_fail`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedTest {
+    /// Whether the test passed (`total >= difficulty`, no `AutoFail`).
+    pub succeeded: bool,
+    /// Failure margin (`difficulty - total`, clamped ≥ 0); `0` on success.
+    /// Read by an `on_fail` effect's
+    /// [`Effect::ForEachPointFailed`](crate::dsl::Effect::ForEachPointFailed)
+    /// (Grasping Hands 01162).
+    pub failed_by: u8,
+    /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
+    /// logged [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) at the
+    /// `DetermineOutcome` step. Negative on failure (unused there).
+    pub margin: i8,
+    /// Why the test failed (meaningful only when `!succeeded`); supplied to the
+    /// logged [`SkillTestFailed`](crate::Event::SkillTestFailed).
+    pub fail_reason: crate::event::FailureReason,
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -1027,13 +1132,11 @@ pub struct InFlightSkillTest {
 /// triggering condition's impact has resolved" clause: the reaction
 /// fires between steps 2 and 3, not after the entire action ends.
 ///
-/// Variants past [`AwaitingCommit`](Self::AwaitingCommit) carry the
-/// `succeeded` payload because the test's outcome is determined in
-/// step 1 and read by every subsequent step
-/// (`OnSkillTestResolution` gating, `#64`'s reactive after-resolution
-/// window). Embedding it in the continuation makes the invariant
-/// "succeeded is known iff the test is past the commit window"
-/// structural.
+/// The test outcome (`succeeded`/`failed_by`/`margin`/`fail_reason`) is
+/// determined once at [`Resolving`](Self::Resolving) (ST.6) and stored on
+/// [`InFlightSkillTest::resolved`]; every subsequent step reads it from there
+/// rather than carrying it in the cursor. `resolved.is_some()` is the witness
+/// for "the test is past the commit window."
 ///
 /// Variants:
 ///
@@ -1047,12 +1150,21 @@ pub struct InFlightSkillTest {
 /// - [`PreTokenWindow`](Self::PreTokenWindow) — set after the commit; `advance`
 ///   opens the ST.2→ST.3 player window, then pre-advances to `Resolving`.
 /// - [`Resolving`](Self::Resolving) — set by `finish_skill_test` once the
-///   commit is validated and stored. The next driver iteration runs steps 1–2
-///   (`run_resolution`) and pre-advances to [`PostFollowUp`](Self::PostFollowUp).
-/// - [`PostFollowUp`](Self::PostFollowUp) — set once steps 1–2 have run.
-///   The next driver iteration runs step 3.
-/// - [`PostOnResolution`](Self::PostOnResolution) — set after step 3.
-///   The next driver iteration runs step 4 (terminal).
+///   commit is validated and stored. The next driver iteration runs the
+///   computation body (`run_resolution`: ST.3–ST.6, pushing the ST.4 immediate
+///   symbol effects) and pre-advances to
+///   [`DetermineOutcome`](Self::DetermineOutcome).
+/// - [`DetermineOutcome`](Self::DetermineOutcome) — the ST.6→ST.7 boundary:
+///   emit the logged success/failure events, then the `SkillTestResolved`
+///   timing point, **before** any ST.7 consequence resolves.
+/// - [`ApplyFollowUp`](Self::ApplyFollowUp) /
+///   [`ApplyResultEffect`](Self::ApplyResultEffect) — the ST.7 "apply results"
+///   sub-steps: action follow-up (the clue discovery), then the
+///   success/failure card effect. Each effect is pushed for the global drive
+///   loop and cursor-sequenced so results resolve in ST order.
+/// - [`FireOnResolution`](Self::FireOnResolution) — fire the committed cards'
+///   `OnSkillTestResolution` triggers, one per visit.
+/// - [`PostOnResolution`](Self::PostOnResolution) — terminal teardown (ST.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SkillTestStep {
@@ -1069,39 +1181,90 @@ pub enum SkillTestStep {
     /// `advance` opens the window here, pre-advancing to
     /// [`Resolving`](Self::Resolving). (#374.)
     PreTokenWindow,
-    /// Commit submitted: the next driver iteration runs the resolution
-    /// body (sum committed icons, fire `OnCommit`, resolve the chaos
-    /// token, run the action follow-up + `on_success` / `on_fail`), then
-    /// pre-advances to [`PostFollowUp`](Self::PostFollowUp).
+    /// Commit submitted: the next driver iteration runs the computation
+    /// body (sum committed icons, resolve the chaos token — RR ST.3–ST.6),
+    /// then pre-advances to [`DetermineOutcome`](Self::DetermineOutcome).
+    /// This step pushes nothing (every effect it would run is deferred to the
+    /// cursor-sequenced steps below), so the driver stays on its own frame
+    /// and `continue`s.
     Resolving,
-    /// Steps 1–2 are complete (chaos token + action follow-up).
-    /// The next driver iteration runs `OnSkillTestResolution` triggers.
-    PostFollowUp {
-        /// The chaos-token resolution's success determination, read by
-        /// the `OnSkillTestResolution` step to gate
-        /// outcome-specific triggers.
-        succeeded: bool,
+    /// RR ST.6→ST.7 boundary. Emit the logged
+    /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
+    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) (now, *after* the ST.4
+    /// immediate symbol effects that `Resolving` pushed), then fire the general
+    /// skill-test-outcome timing point (`TimingEvent::SkillTestResolved`) for
+    /// **every** test and both outcomes — "after you successfully investigate"
+    /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
+    /// `{ Investigate, Success }` narrowing. Fires before any ST.7 consequence;
+    /// an empty forced/reaction candidate set opens no window. Reads the outcome
+    /// off [`InFlightSkillTest::resolved`]; pre-advances to
+    /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
+    DetermineOutcome,
+    /// RR ST.7 head — push the committed cards' [`Trigger::OnCommit`] effects
+    /// (Vicious Blow 01025's `BoostAttackDamage`). These are conditional on
+    /// success ("If this skill test is successful during an attack…") so they
+    /// belong after the token is resolved, but **before**
+    /// [`ApplyFollowUp`](Self::ApplyFollowUp) reads the
+    /// `bonus_attack_damage` accumulator they populate. Collected into one
+    /// [`Effect::Seq`](crate::dsl::Effect::Seq) and pushed for the drive loop
+    /// (nothing pushed if no committed card carries an `OnCommit` trigger);
+    /// pre-advances to [`ApplyFollowUp`](Self::ApplyFollowUp).
+    ///
+    /// [`Trigger::OnCommit`]: crate::dsl::Trigger::OnCommit
+    FireOnCommit,
+    /// RR ST.7 part 1 — apply the action-specific
+    /// [`SkillTestFollowUp`]. On success the Investigate follow-up
+    /// pushes its `discover_clue` effect for the drive loop (yielding);
+    /// Fight / Evade / None run synchronously. On failure the follow-up
+    /// is skipped (follow-ups are success-only). Pre-advances to
+    /// [`ApplyResultEffect`](Self::ApplyResultEffect). (Slice D #423.)
+    ApplyFollowUp,
+    /// RR ST.7 part 2 — push the success/failure card effect: `on_success`
+    /// on a passing draw (Frozen in Fear 01164's self-discard), or `on_fail`
+    /// on a failing draw (Crypt Chill 01167's discard choice, Grasping Hands
+    /// 01162's margin damage). Exactly one (or neither) is pushed; it runs
+    /// after the follow-up because this step is sequenced after
+    /// [`ApplyFollowUp`](Self::ApplyFollowUp). Pre-advances to
+    /// [`ApplySymbolOnFail`](Self::ApplySymbolOnFail). (Slice D #423.)
+    ApplyResultEffect,
+    /// RR ST.7 — push a chaos symbol token's result-conditional `on_fail`
+    /// effect (Cultist 01104's horror), held on
+    /// [`InFlightSkillTest::symbol_on_fail`], when the test failed. Sits among
+    /// the ST.7 result effects (after the card `on_fail` of
+    /// [`ApplyResultEffect`](Self::ApplyResultEffect)); RR lets the test-performer
+    /// order multiple results, the engine sequences deterministically. Pushed
+    /// via [`Effect::Deal`](crate::dsl::Effect::Deal) so a sanity-soak (Holy
+    /// Rosary 01028) suspends cleanly. Pre-advances to
+    /// [`FireOnResolution`](Self::FireOnResolution). (Slice D #423.)
+    ApplySymbolOnFail,
+    /// RR ST.7 — fire the committed cards' [`OnSkillTestResolution`] triggers,
+    /// one effect per driver visit so they cursor-sequence in committed-card
+    /// order (no LIFO). `next` is the index into the flattened
+    /// (card, matching-ability) list of the next trigger to fire; each visit
+    /// pushes that effect, advances `next`, and yields. When `next` runs past
+    /// the list, advances to [`PostRetaliate`](Self::PostRetaliate). Replaces
+    /// the former single-shot `PostFollowUp` step. (Slice D #423.)
+    ///
+    /// The test outcome (`succeeded`/`failed_by`) is read off
+    /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
+    /// is the only step-specific state this variant needs.
+    ///
+    /// [`OnSkillTestResolution`]: crate::dsl::Trigger::OnSkillTestResolution
+    FireOnResolution {
+        /// Index of the next matching (card, ability) trigger to fire.
+        next: u32,
     },
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration fires a Retaliate attack if the test was a failed Fight
     /// against a ready retaliate enemy (Rules Reference p.18 — "after
     /// applying all results for that skill test"), then advances to
     /// teardown.
-    PostRetaliate {
-        /// The chaos-token resolution's success determination — Retaliate
-        /// fires only on failure.
-        succeeded: bool,
-    },
+    PostRetaliate,
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration discards committed cards, emits
     /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
     /// the in-flight record.
-    PostOnResolution {
-        /// Carried through to the after-resolution reactive trigger
-        /// window (#64), which will gate on outcome at the
-        /// `SkillTestEnded` boundary.
-        succeeded: bool,
-    },
+    PostOnResolution,
 }
 
 /// What to do after the bracketing skill test resolves, depending on
@@ -1314,33 +1477,21 @@ pub enum HunterChoice {
 
 /// A suspended engagement-on-spawn choice (#128, option A): a
 /// multi-investigator spawn tie awaiting the lead investigator's
-/// `PickSingle`. `investigator_to_draw` is the drawing
-/// investigator whose Mythos encounter-draw chain resumes once the
-/// engagement is chosen.
+/// `PickSingle`.
 ///
 /// Distinct from [`HunterChoice`] because spawn engagement is not a
-/// hunter move (it never picks a location) and its resume path
-/// re-enters a different driver — the Mythos encounter-draw chain
-/// rather than the Enemy-phase hunter loop. `surge` and `chain_count`
-/// carry the surge-chain bookkeeping across the suspend boundary so the
-/// drawing investigator's chain resumes with its cap budget intact.
+/// hunter move (it never picks a location) and its resume just engages
+/// the chosen investigator and pops; any Mythos encounter-draw chain
+/// continues through the [`PlayerDraw`](Continuation::PlayerDraw) frame
+/// beneath it (which carries its own surge/chain state), so this frame
+/// holds only the pick itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SpawnEngagePending {
     /// The spawned enemy awaiting an engagement target.
     pub enemy: EnemyId,
-    /// The investigator who drew the enemy (Mythos draw resumes for them).
-    pub investigator_to_draw: InvestigatorId,
     /// Co-located investigators to choose among.
     pub candidates: Vec<InvestigatorId>,
-    /// Whether the spawned enemy card carries the surge keyword — i.e.
-    /// whether the drawing investigator draws another encounter card
-    /// once this engagement resolves.
-    pub surge: bool,
-    /// Surge-chain position at the point of suspension, so the resumed
-    /// chain keeps counting toward `MAX_SURGE_CHAIN` rather than
-    /// resetting its budget across the input round-trip.
-    pub chain_count: usize,
 }
 
 /// Suspended upkeep maximum-hand-size discard (#111). `Some` only while
@@ -1524,13 +1675,14 @@ impl GameState {
     /// otherwise. Reads the topmost [`Continuation::EncounterDraw`] frame's
     /// `remaining[0]` — the continuation stack is the single source of truth
     /// for "an encounter draw is pending" (#348, replacing the former
-    /// `mythos_draw_pending` cursor). Topmost (not `.last()`) because a
-    /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) frame can sit above
-    /// the draw frame while a spawn-engagement tie is resolved.
+    /// `mythos_draw_pending` cursor). Topmost (not `.last()`) because the
+    /// drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain frame — and a
+    /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) above it while a
+    /// spawn-engagement tie is resolved — sit above the loop frame.
     #[must_use]
     pub fn current_encounter_drawer(&self) -> Option<InvestigatorId> {
         self.continuations.iter().rev().find_map(|c| match c {
-            Continuation::EncounterDraw { remaining } => remaining.first().copied(),
+            Continuation::EncounterDraw { remaining, .. } => remaining.first().copied(),
             _ => None,
         })
     }
@@ -2080,10 +2232,7 @@ mod hunter_pending_tests {
     fn spawn_engage_pending_serde_roundtrip() {
         let original = SpawnEngagePending {
             enemy: EnemyId(2),
-            investigator_to_draw: InvestigatorId(1),
             candidates: vec![InvestigatorId(1), InvestigatorId(2)],
-            surge: false,
-            chain_count: 1,
         };
         let json = serde_json::to_string(&original).expect("serialize");
         let back: SpawnEngagePending = serde_json::from_str(&json).expect("deserialize");

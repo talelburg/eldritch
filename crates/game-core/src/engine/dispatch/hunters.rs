@@ -499,17 +499,23 @@ pub(super) fn resume_hunter_choice(
 }
 
 /// Resume a suspended engagement-on-spawn choice (#128, option A) with
-/// the lead investigator's `PickSingle`, then continue the drawing
-/// investigator's Mythos encounter-draw chain.
+/// the lead investigator's `PickSingle`: pop the `SpawnEngage` frame and engage
+/// the chosen investigator, then return [`EngineOutcome::Done`].
 ///
 /// Validate-first: an invalid pick (wrong response shape, or a target
-/// outside the stored candidate set) rejects and leaves the `SpawnEngage` frame on the stack so the client can retry.
+/// outside the stored candidate set) rejects and leaves the `SpawnEngage` frame
+/// on the stack so the client can retry.
 ///
-/// The chain only resumes when the suspension arose mid-Mythos-draw —
-/// i.e. the drawing investigator is still the pending cursor. The
-/// single-draw `EncounterCardRevealed` path (`mythos_draw_pending` is
-/// `None`, or points elsewhere) engages and stops at `Done` without
-/// touching the cursor.
+/// Continuing the Mythos surge chain is no longer this function's job
+/// (callsite-migration). The enemy's `EncounterCard` frame was already popped
+/// before `spawn_enemy` suspended (the disposal pops, then spawns — #380), so
+/// the `SpawnEngage` frame sits *above* the drawing investigator's
+/// [`PlayerDraw`](crate::state::Continuation::PlayerDraw) chain frame. Once we
+/// pop the `SpawnEngage` here, that `PlayerDraw` frame is exposed and the
+/// `drive` loop's `PlayerDraw` arm continues the chain off its own
+/// `surge_pending` (set when the enemy card was drawn). The standalone
+/// `EncounterCardRevealed` / agenda-reverse-draw paths have no `PlayerDraw`
+/// frame beneath, so the loop simply finishes.
 pub(super) fn resume_spawn_engage(
     cx: &mut Cx,
     response: &crate::action::InputResponse,
@@ -539,34 +545,9 @@ pub(super) fn resume_spawn_engage(
     // Pop the SpawnEngage frame we validated against (it is the top frame).
     cx.state.continuations.pop();
     engage_enemy_with(cx, pending.enemy, who);
-
-    // Only re-enter the Mythos surge chain if the suspend happened mid-chain.
-    // The `SpawnEngage` frame was pushed *above* the drawing investigator's
-    // `EncounterDraw` frame, so now that we've popped it, that frame is on top
-    // — and its `remaining[0]` is still the drawing investigator (#348). The
-    // `EncounterCardRevealed` single-draw path (no `EncounterDraw` frame on the
-    // stack) resolves to `Done`.
-    //
-    // Invariant: while a SpawnEngage frame is on the stack, the apply guard
-    // rejects every non-`ResolveInput` action, so nothing can retarget the
-    // Mythos loop between suspend and resume. Hence the top frame being the
-    // drawer's `EncounterDraw` reliably means "we suspended mid-chain for this
-    // investigator."
-    let mid_mythos_draw = matches!(
-        cx.state.continuations.last(),
-        Some(crate::state::Continuation::EncounterDraw { remaining })
-            if remaining.first() == Some(&pending.investigator_to_draw)
-    );
-    if mid_mythos_draw {
-        super::encounter::run_mythos_draw_chain(
-            cx,
-            pending.investigator_to_draw,
-            pending.chain_count,
-            pending.surge,
-        )
-    } else {
-        EngineOutcome::Done
-    }
+    // The exposed `PlayerDraw` frame (if any) is driven by the `drive` loop;
+    // nothing else to do here.
+    EngineOutcome::Done
 }
 
 #[cfg(test)]

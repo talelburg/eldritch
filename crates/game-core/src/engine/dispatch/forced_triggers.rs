@@ -12,7 +12,7 @@ use crate::state::{
     ResolutionCandidate,
 };
 
-use super::super::evaluator::{apply_effect, EvalContext};
+use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
 use super::Cx;
 
@@ -76,19 +76,21 @@ pub(crate) enum ForcedTriggerPoint {
         /// The investigator whose turn ended.
         investigator: InvestigatorId,
     },
-    /// A location was successfully investigated. Scans the investigating
-    /// investigator's controlled card instances (threat area + in play)
-    /// for `EventPattern::AfterLocationInvestigated` forced abilities;
-    /// binds controller = that investigator. C4c (#235) extends the scan
-    /// to the investigated location's attachments for Obscuring Fog
-    /// (01168), the first real consumer.
-    AfterLocationInvestigated {
-        /// The investigator who investigated.
+    /// A skill test resolved (RR ST.6). Forced side of
+    /// [`TimingEvent::SkillTestResolved`](super::emit::TimingEvent::SkillTestResolved).
+    /// Scans the resolving investigator's controlled card instances (threat
+    /// area + in play) **and** the investigated location's attachment zone
+    /// (Obscuring Fog 01168) for matching `EventPattern::SkillTestResolved`
+    /// forced abilities; binds controller = that investigator. The location is
+    /// derived from the in-flight `SkillTest` frame's `tested_location` at scan
+    /// time, so this point carries no location of its own.
+    SkillTestResolved {
+        /// The investigator who took the test.
         investigator: InvestigatorId,
-        /// The location that was investigated. Unused by the C4a scan
-        /// (which keys off the investigator); C4c reads it to scan the
-        /// location's attachment zone.
-        location: LocationId,
+        /// The test kind — matched against a listener's `kind` narrowing.
+        kind: crate::dsl::SkillTestKind,
+        /// The test outcome — matched against a listener's `outcome`.
+        outcome: crate::dsl::TestOutcome,
     },
     /// The game ended (a scenario resolution latched). Scans every
     /// investigator's controlled card instances (threat area + in play)
@@ -100,7 +102,7 @@ pub(crate) enum ForcedTriggerPoint {
     /// for `EventPattern::LeftLocation` forced abilities (Barricade 01038's
     /// self-discard); binds controller = the leaving investigator, source =
     /// the firing attachment instance. Mirrors the attachment scan in
-    /// [`AfterLocationInvestigated`](Self::AfterLocationInvestigated).
+    /// [`SkillTestResolved`](Self::SkillTestResolved).
     LeftLocation {
         /// The investigator who left.
         investigator: InvestigatorId,
@@ -134,14 +136,28 @@ pub(crate) fn fire_forced_triggers(
     point: &ForcedTriggerPoint,
     bucket: EventTiming,
 ) -> EngineOutcome {
+    // Frame-driven forced run (Slice D, #423): `resolve_one` pushes the
+    // candidate's effect root frame for the global `drive` loop to own; this
+    // function does not drive. Callers under the loop (effect-eval emits) get the
+    // forced effect driven next; callers with post-forced work (`end_turn`'s
+    // rotation, the `GameEnd` resolution finalization) arm a resumption frame
+    // before emitting and let the loop drive the forced frame then re-dispatch
+    // the resumption.
+    //
+    // At most one hit reaches here: the coordinator / emit `<2` guard routes 2+
+    // simultaneous forced abilities to the ordered forced-run frame
+    // (`open_forced_resolution`, #213), so there is no ordering to preserve.
     let hits = collect_forced_hits(cx.state, point, bucket);
-    for hit in &hits {
-        match resolve_one(cx, hit) {
-            EngineOutcome::Done => {}
-            other => return other,
-        }
+    debug_assert!(
+        hits.len() <= 1,
+        "fire_forced_triggers: expected 0/1 forced hit (2+ routes through \
+         open_forced_resolution); got {}",
+        hits.len(),
+    );
+    match hits.first() {
+        Some(hit) => resolve_one(cx, hit),
+        None => EngineOutcome::Done,
     }
-    EngineOutcome::Done
 }
 
 // dispatcher: one match arm per ForcedTriggerPoint.
@@ -285,18 +301,29 @@ pub(super) fn collect_forced_hits(
                 );
             }
         }
-        ForcedTriggerPoint::AfterLocationInvestigated {
+        ForcedTriggerPoint::SkillTestResolved {
             investigator,
-            location,
+            kind,
+            outcome,
         } => {
             let Some(inv) = state.investigators.get(investigator) else {
                 return hits;
             };
-            // Scan the investigator's controlled instances (C4a) and the
-            // investigated location's attachment zone (C4c — Obscuring Fog
-            // 01168 attaches to the location, not the threat area). Bind
-            // source = the firing instance so `Effect::DiscardSelf` finds
-            // itself.
+            // Match the card-facing narrowing: same outcome, and either an
+            // unnarrowed (`None`) or kind-matching listener.
+            let want = |p: &EventPattern| {
+                let EventPattern::SkillTestResolved {
+                    outcome: o,
+                    kind: k,
+                } = p
+                else {
+                    return false;
+                };
+                *o == *outcome && (k.is_none() || *k == Some(*kind))
+            };
+            // Scan the investigator's controlled instances (threat area + in
+            // play). Bind source = the firing instance so `Effect::DiscardSelf`
+            // finds itself.
             for card in inv.controlled_card_instances() {
                 push_matching(
                     reg,
@@ -305,20 +332,26 @@ pub(super) fn collect_forced_hits(
                     Some(card.instance_id),
                     &mut hits,
                     bucket,
-                    |p| matches!(p, EventPattern::AfterLocationInvestigated),
+                    want,
                 );
             }
-            if let Some(loc) = state.locations.get(location) {
-                for att in &loc.attachments {
-                    push_matching(
-                        reg,
-                        &att.code,
-                        *investigator,
-                        Some(att.instance_id),
-                        &mut hits,
-                        bucket,
-                        |p| matches!(p, EventPattern::AfterLocationInvestigated),
-                    );
+            // Scan the investigated location's attachment zone (Obscuring Fog
+            // 01168 attaches to the location, not the threat area). Derive the
+            // location from the still-live in-flight `SkillTest` frame —
+            // teardown is at `PostOnResolution`, well after this fires.
+            if let Some(loc_id) = state.current_skill_test().and_then(|t| t.tested_location) {
+                if let Some(loc) = state.locations.get(&loc_id) {
+                    for att in &loc.attachments {
+                        push_matching(
+                            reg,
+                            &att.code,
+                            *investigator,
+                            Some(att.instance_id),
+                            &mut hits,
+                            bucket,
+                            want,
+                        );
+                    }
                 }
             }
         }
@@ -440,5 +473,6 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     // harmless — hand Fast events are reaction-window plays, never forced).
     let ctx =
         EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance());
-    apply_effect(cx, &effect, ctx)
+    push_effect(cx, &effect, ctx);
+    EngineOutcome::Done
 }

@@ -18,7 +18,7 @@ use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
     discover_clue, gain_resources, reaction_on_event, Ability, EventPattern, EventTiming,
-    InvestigatorTarget, LocationTarget,
+    InvestigatorTarget, LocationTarget, SkillTestKind, TestOutcome,
 };
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
@@ -90,7 +90,10 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             ),
         ]),
         MILAN_REACTION => Some(vec![reaction_on_event(
-            EventPattern::SuccessfullyInvestigated,
+            EventPattern::SkillTestResolved {
+                outcome: TestOutcome::Success,
+                kind: Some(SkillTestKind::Investigate),
+            },
             EventTiming::After,
             gain_resources(InvestigatorTarget::You, 1),
         )]),

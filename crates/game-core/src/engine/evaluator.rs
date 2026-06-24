@@ -293,36 +293,18 @@ impl EvalContext {
     }
 }
 
-/// Apply an effect tree to the state.
-///
-/// See module docs for the v0 scope and the validate-first
-/// state-mutation contract.
-///
-/// **Stubbed-leaf cascade:** while any effect variant is stubbed
-/// (returns `Rejected` with TODO), a [`Seq`](Effect::Seq) containing
-/// it rejects as a unit even if other effects in the sequence are
-/// implementable. That's correct given the stub semantics — the
-/// evaluator can't safely run "the parts that work" because card
-/// authors expect the whole sequence or nothing — but it means
-/// gluing implemented + stubbed effects together still blocks on
-/// the stubs.
-///
-/// Frame-driven (#422): pushes the effect's root
-/// [`EffectFrame`](crate::state::EffectFrame) and drives it via
-/// [`step_effect_frame`] to completion (`Done`) or a controller-pick suspension
-/// (`AwaitingInput`). This is a **thin bounded entry** into the single global
-/// drive (it reuses [`step_effect_frame`], not a second loop), keeping the
-/// synchronous `-> EngineOutcome` boundary for its callers. Migrating every call
-/// site off this wrapper to pure top-frame dispatch (push root + `on_child_pop`)
-/// is the #393 end-state — deferred to land with item 5: `TODO(#423)`.
-pub(crate) fn apply_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutcome {
-    let base = cx.state.continuations.len();
+/// Push an effect's root [`EffectFrame`](crate::state::EffectFrame) onto the
+/// continuation stack for the global `drive` loop to own (top-frame dispatch,
+/// #393/#423). The caller returns [`EngineOutcome::Done`]; `drive` then steps
+/// the pushed frame via its [`Continuation::Effect`](crate::state::Continuation::Effect)
+/// arm. Replaced the synchronous `apply_effect` bounded entry at every
+/// production site (Slice D #423 retired that wrapper).
+pub(crate) fn push_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
     cx.state
         .continuations
         .push(crate::state::Continuation::Effect(frame_of(
             effect, eval_ctx,
         )));
-    drive_effect_to_base(cx, base)
 }
 
 /// Build the [`EffectFrame`](crate::state::EffectFrame) for an effect node:
@@ -348,32 +330,12 @@ fn frame_of(effect: &Effect, ctx: EvalContext) -> crate::state::EffectFrame {
     }
 }
 
-/// Drive the contiguous run of [`Continuation::Effect`](crate::state::Continuation::Effect)
-/// frames on top of the stack until it shrinks back to `base` (the walk
-/// completed → `Done`), a node suspends for input (`AwaitingInput`, frames left
-/// parked), or a node delegates to a non-effect continuation (e.g. a skill test)
-/// that surfaces on top. Retains the synchronous `apply_effect -> EngineOutcome`
-/// boundary for the evaluator's callers (#422).
-pub(crate) fn drive_effect_to_base(cx: &mut Cx, base: usize) -> EngineOutcome {
-    use crate::state::Continuation;
-    loop {
-        if cx.state.continuations.len() <= base
-            || !matches!(cx.state.continuations.last(), Some(Continuation::Effect(_)))
-        {
-            return EngineOutcome::Done;
-        }
-        match step_effect_frame(cx) {
-            EngineOutcome::Done => {}
-            other => return other,
-        }
-    }
-}
-
 /// Step the top [`Continuation::Effect`](crate::state::Continuation::Effect)
 /// frame once: advance a `Seq`/loop cursor (pushing the next child), or evaluate
 /// a `Leaf` (running it, pushing a chosen branch, or suspending in place for a
-/// pick). Pops completed frames. Used by [`drive_effect_to_base`] and the global
-/// `drive` loop (for effect frames parked across an `apply()` boundary).
+/// pick). Pops completed frames. Driven by the global `drive` loop's
+/// `Continuation::Effect` arm (for effect frames parked across an `apply()`
+/// boundary).
 pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
     use crate::state::{Continuation, EffectFrame};
     let Some(Continuation::Effect(frame)) = cx.state.continuations.pop() else {
@@ -2151,7 +2113,7 @@ mod tests {
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{
-        apply_effect, constant_skill_modifier, effective_shroud, eval_condition,
+        constant_skill_modifier, effective_shroud, eval_condition, push_effect, step_effect_frame,
         unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
     };
     use crate::dsl::Condition;
@@ -2161,18 +2123,68 @@ mod tests {
         EvalContext::for_controller(InvestigatorId(id))
     }
 
+    /// Bounded effect driver — the deleted production `drive_effect_to_base`,
+    /// now test-only (Slice D #423). Steps the top contiguous `Effect` run until
+    /// it shrinks to `base` (run complete → `Done`) or a leaf suspends for a pick
+    /// (`AwaitingInput`), WITHOUT touching fixture frames beneath `base` (an
+    /// in-flight `SkillTest` carrying `tested_location`, say). The production
+    /// path no longer needs this — the global `drive` loop drives the parked run
+    /// and then *does* advance the enclosing frame — but a unit test parks
+    /// fixtures it does not want driven, so it drives bounded instead.
+    fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
+        use crate::state::Continuation;
+        loop {
+            if cx.state.continuations.len() <= base
+                || !matches!(cx.state.continuations.last(), Some(Continuation::Effect(_)))
+            {
+                return EngineOutcome::Done;
+            }
+            match step_effect_frame(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            }
+        }
+    }
+
+    /// Push an effect's root frame and drive **only that run** to completion or
+    /// a controller-pick suspension — the test-only successor to the deleted
+    /// `apply_effect` bounded entry (Slice D #423). `Done` stays `Done`; a 2+
+    /// controller pick stays `AwaitingInput`.
+    fn run(cx: &mut Cx, effect: &Effect, ctx: EvalContext) -> EngineOutcome {
+        let base = cx.state.continuations.len();
+        push_effect(cx, effect, ctx);
+        drive_effect_run_to(cx, base)
+    }
+
     /// Resume a suspended-in-place effect choice with `PickSingle(i)` — the same
-    /// path `apply(ResolveInput)` routes to (#422). Re-steps the top `Leaf` frame
-    /// with `chosen_option` set.
+    /// path `apply(ResolveInput)` routes to (#422). Records the pick on the top
+    /// `Leaf` via `resume_effect_choice` (which now just cedes to the global
+    /// loop), then drives the resumed top effect run **bounded** — in a unit
+    /// test there is no `apply()`→`drive()` afterward to step it (Slice D #423).
     fn resume_pick(
         state: &mut crate::state::GameState,
         events: &mut Vec<Event>,
         i: u32,
     ) -> EngineOutcome {
-        crate::engine::dispatch::choice::resume_effect_choice(
-            &mut Cx { state, events },
+        use crate::state::Continuation;
+        let mut cx = Cx { state, events };
+        let recorded = crate::engine::dispatch::choice::resume_effect_choice(
+            &mut cx,
             &crate::action::InputResponse::PickSingle(crate::engine::OptionId(i)),
-        )
+        );
+        // A reject (bad pick / top not a Leaf) propagates as-is; otherwise the
+        // pick is recorded and the resumed run is driven bounded (base = depth
+        // just below the top contiguous Effect run, so fixtures stay untouched).
+        if !matches!(recorded, EngineOutcome::Done) {
+            return recorded;
+        }
+        let base = cx
+            .state
+            .continuations
+            .iter()
+            .rposition(|c| !matches!(c, Continuation::Effect(_)))
+            .map_or(0, |idx| idx + 1);
+        drive_effect_run_to(&mut cx, base)
     }
 
     /// Number of options offered by a suspending `AwaitingInput` (replaces the
@@ -2252,7 +2264,7 @@ mod tests {
         let resources_before = state.investigators[&id].resources;
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2269,6 +2281,37 @@ mod tests {
         );
     }
 
+    /// `push_effect` + the real `drive` runs an effect to completion identically
+    /// to the (deleted in Slice D) synchronous `apply_effect`: the root frame is
+    /// pushed, the global loop steps it, the effect applies, the frame pops.
+    #[test]
+    fn push_effect_then_drive_runs_to_completion() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let resources_before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        super::push_effect(&mut cx, &gain_resources(InvestigatorTarget::You, 3), ctx(1));
+        assert!(
+            matches!(
+                cx.state.continuations.last(),
+                Some(crate::state::Continuation::Effect(_))
+            ),
+            "the effect root frame is pushed for the loop",
+        );
+
+        let out = crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.investigators[&id].resources, resources_before + 3);
+        assert!(state.continuations.is_empty(), "effect frame popped");
+    }
+
     #[test]
     fn gain_resources_zero_amount_is_a_silent_noop() {
         // Symmetric with discover_clue_on_empty_location_is_a_silent_noop:
@@ -2282,7 +2325,7 @@ mod tests {
         let resources_before = state.investigators[&id].resources;
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2305,7 +2348,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2331,7 +2374,7 @@ mod tests {
         });
         assert!(!state.pending_cancellation);
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2358,7 +2401,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2398,7 +2441,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2432,7 +2475,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2468,7 +2511,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2492,7 +2535,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2542,11 +2585,13 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2572,7 +2617,7 @@ mod tests {
         let mut events = Vec::new();
 
         // No in-flight test: a clean no-op (no panic, nothing to mutate).
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2599,11 +2644,13 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
 
         for _ in 0..2 {
-            apply_effect(
+            run(
                 &mut Cx {
                     state: &mut state,
                     events: &mut events,
@@ -2633,7 +2680,7 @@ mod tests {
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2650,7 +2697,7 @@ mod tests {
 
         // count == 0 → clean no-op (no further draw, no event).
         let mut events0 = Vec::new();
-        apply_effect(
+        run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events0,
@@ -2677,7 +2724,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2722,6 +2769,8 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
         state
@@ -2737,7 +2786,7 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2761,7 +2810,7 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2789,7 +2838,7 @@ mod tests {
         );
         let resources_before = state.investigators[&InvestigatorId(1)].resources;
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2819,7 +2868,7 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2848,7 +2897,7 @@ mod tests {
             discover_clue(LocationTarget::TestedLocation, 1),
         );
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2892,11 +2941,13 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    resolved: None,
+                    symbol_on_fail: None,
                 },
             ));
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2924,7 +2975,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2959,7 +3010,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
 
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2984,7 +3035,7 @@ mod tests {
         // wired the ability wrong. Reject loudly.
         let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3002,7 +3053,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3029,7 +3080,7 @@ mod tests {
             .build();
         let mut events = Vec::new();
         let ctx_with_src = EvalContext::for_controller_with_source(id, src);
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3045,7 +3096,7 @@ mod tests {
     fn modify_with_this_turn_scope_rejects_with_todo() {
         let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3073,7 +3124,7 @@ mod tests {
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3094,7 +3145,7 @@ mod tests {
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3121,7 +3172,7 @@ mod tests {
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3157,7 +3208,7 @@ mod tests {
             ]),
         ]);
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3192,7 +3243,7 @@ mod tests {
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3215,7 +3266,7 @@ mod tests {
         let before2 = state.investigators[&InvestigatorId(2)].resources;
         let mut events = Vec::new();
         // Two candidates ⇒ suspend.
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3260,7 +3311,7 @@ mod tests {
         let mut events = Vec::new();
 
         // Suspend on the branch choice.
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3291,7 +3342,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3311,7 +3362,7 @@ mod tests {
             .build();
         state.investigators.get_mut(&id).unwrap().deck = vec![CardCode::new("90001")];
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3339,7 +3390,7 @@ mod tests {
             .build();
         state.investigators.get_mut(&id).unwrap().deck.clear();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3372,7 +3423,7 @@ mod tests {
             crate::dsl::SearchScope::Top(3),
             None,
         );
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3410,7 +3461,7 @@ mod tests {
         let mut events = Vec::new();
 
         // First suspend: the branch choice.
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3447,7 +3498,7 @@ mod tests {
             .with_location(test_location(2, "B"))
             .build();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3476,7 +3527,7 @@ mod tests {
             .unwrap()
             .current_location = Some(LocationId(1));
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3523,7 +3574,7 @@ mod tests {
             .current_location = Some(LocationId(2));
         let before1 = state.investigators[&InvestigatorId(1)].resources;
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3560,7 +3611,7 @@ mod tests {
             .unwrap()
             .current_location = Some(LocationId(1));
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3584,7 +3635,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .build();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3621,7 +3672,7 @@ mod tests {
             .unwrap()
             .current_location = Some(LocationId(1));
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3668,7 +3719,7 @@ mod tests {
             .unwrap()
             .current_location = Some(LocationId(1));
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3693,7 +3744,7 @@ mod tests {
             .unwrap()
             .current_location = Some(LocationId(1));
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3716,7 +3767,7 @@ mod tests {
             .unwrap()
             .horror = 1;
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3761,7 +3812,7 @@ mod tests {
             .unwrap()
             .damage = 2;
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3800,7 +3851,7 @@ mod tests {
             .unwrap()
             .current_location = Some(LocationId(1));
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -3937,7 +3988,7 @@ mod tests {
             };
             let mut c = EvalContext::for_controller(InvestigatorId(1));
             c.source = Some(inst);
-            apply_effect(&mut cx, &super::Effect::DiscardSelf, c)
+            run(&mut cx, &super::Effect::DiscardSelf, c)
         };
         assert_eq!(outcome, EngineOutcome::Done);
         assert!(state.investigators[&InvestigatorId(1)]
@@ -3972,7 +4023,7 @@ mod tests {
             };
             let mut c = EvalContext::for_controller(InvestigatorId(1));
             c.source = Some(CardInstanceId(9));
-            apply_effect(&mut cx, &super::Effect::DiscardSelf, c)
+            run(&mut cx, &super::Effect::DiscardSelf, c)
         };
         assert_eq!(outcome, EngineOutcome::Done);
         assert!(state.locations[&LocationId(3)].attachments.is_empty());
@@ -3993,7 +4044,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        let outcome = apply_effect(
+        let outcome = run(
             &mut cx,
             &super::Effect::DiscardSelf,
             EvalContext::for_controller(InvestigatorId(1)),
@@ -4013,7 +4064,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        let outcome = apply_effect(
+        let outcome = run(
             &mut cx,
             &put_into_threat_area_with_clues("01007", 3),
             EvalContext::for_controller(id),
@@ -4431,7 +4482,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        let outcome = apply_effect(
+        let outcome = run(
             &mut cx,
             &deal_damage(InvestigatorTarget::You, 2),
             EvalContext::for_controller(InvestigatorId(1)),
@@ -4458,7 +4509,7 @@ mod tests {
         // Margin 2 → run Deal{Damage,You,1} twice → 2 damage, 2 events.
         let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
         eval_ctx.set_failed_by(2);
-        let outcome = apply_effect(
+        let outcome = run(
             &mut cx,
             &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
             eval_ctx,
@@ -4480,7 +4531,7 @@ mod tests {
             events: &mut events,
         };
         // failed_by None (no test in context) → zero iterations.
-        let outcome = apply_effect(
+        let outcome = run(
             &mut cx,
             &for_each_point_failed(deal_damage(InvestigatorTarget::You, 1)),
             EvalContext::for_controller(InvestigatorId(1)),
@@ -4501,7 +4552,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        let outcome = apply_effect(
+        let outcome = run(
             &mut cx,
             &deal_horror(InvestigatorTarget::You, 1),
             EvalContext::for_controller(InvestigatorId(1)),
@@ -4525,7 +4576,7 @@ mod tests {
         inv.max_health = 3;
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events = Vec::new();
-        let outcome = apply_effect(
+        let outcome = run(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -4566,7 +4617,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        let out = apply_effect(
+        let out = run(
             &mut cx,
             &Effect::AdvanceCurrentAct,
             EvalContext::for_controller(InvestigatorId(1)),
@@ -4594,7 +4645,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        let out = apply_effect(
+        let out = run(
             &mut cx,
             &Effect::AdvanceCurrentAct,
             EvalContext::for_controller(InvestigatorId(1)),

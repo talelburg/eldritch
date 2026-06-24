@@ -94,9 +94,16 @@ C. #431  loop-driven              SkillTest drive-loop arm + EncounterCard dispo
    skill-test/encounter            loop-driven + retire the 5 synchronous re-entry sites
         │                         ⇒ unblocks #423's skill-test/revelation effect sites
         ▼
-D. #423  effect call-site         every apply_effect site → push root Effect frame +
-   migration                       on_child_pop; reduce apply_effect to test-only/remove
+D. #423  effect call-site    ✅DONE every apply_effect site → push root Effect frame +
+   migration                       on_child_pop; apply_effect + drive_effect_to_base DELETED
 ```
+
+**✅ #423 complete (Slice D).** Every effect-invocation site is top-frame dispatched
+(push the root `Effect` frame + return `Done`; the global `drive` loop owns it).
+`apply_effect` and `drive_effect_to_base` are deleted — the bounded synchronous driver
+survives only as a test helper. The migrated sites: forced run, encounter/`PlayerDraw`,
+the skill-test driver (incl. the ST.4/ST.7 chaos-symbol rework + the `SkillTestResolved`
+timing point), `PlayFromHand` (normal + Fast hand-play), and `resume_effect_walk`.
 
 **Dependency order:** A → B (coordinators push the new window frames) · A → C (windows
 drive-dispatched lets a mid-test reaction resume through the loop, not the imperative

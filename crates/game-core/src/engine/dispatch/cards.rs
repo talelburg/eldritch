@@ -8,7 +8,7 @@ use crate::dsl::Trigger;
 use crate::event::Event;
 use crate::state::{CardCode, InvestigatorId, Zone};
 
-use super::super::evaluator::{apply_effect, EvalContext};
+use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use super::Cx;
 
@@ -507,11 +507,12 @@ pub(super) fn resolve_play_target(
 ///
 /// [`Event::CardPlayed`] fires first (the play *causes* any on-play
 /// effects, so it's correct for the play event to precede the
-/// effects' own events in the stream). Then each [`Trigger::OnPlay`]
-/// ability runs through [`apply_effect`]; if any returns non-`Done`,
-/// the handler propagates that outcome. Finally the card moves out
-/// of `hand` — into `cards_in_play` for assets / investigators, or
-/// into `discard` (with an emitted [`Event::CardDiscarded`]) for
+/// effects' own events in the stream). Then the [`Trigger::OnPlay`]
+/// abilities are `push_effect`'d for the global `drive` loop beneath a
+/// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
+/// (Slice D #423); when that effect pops, the frame's disposal moves the
+/// card out of `hand` — into `cards_in_play` for assets / investigators,
+/// or into `discard` (with an emitted [`Event::CardDiscarded`]) for
 /// events.
 ///
 /// # State-mutation contract
@@ -596,14 +597,83 @@ pub(super) fn play_card(
     complete_play(cx, investigator, idx, &code)
 }
 
-/// Run a played card's `OnPlay` effects and, for an asset, move it into play —
-/// the tail shared by the fast path (inline) and the non-fast path (parked on
-/// an [`ActionResolution`](crate::state::Continuation::ActionResolution) frame
-/// and resumed after the `AoO` loop, #378). Re-derives destination + abilities
-/// from the registry by `code` (an event has already left hand, so a live re-
-/// read is impossible; `hand_index` locates an asset still in hand). An `OnPlay`
-/// effect that suspends (Dynamite Blast's location choice) returns its outcome;
-/// its frame resumes through its own path.
+/// Dispose of a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
+/// once its pushed `OnPlay`/`OnEvent` effect has popped (Slice D #423). Pops the
+/// frame first, then by destination: an **event** flushes its stashed
+/// `pending_played_event` to discard; an **asset** is removed from hand at
+/// `hand_index`, minted into play, and announced via `EnteredPlay`. Because the
+/// frame is popped *before* `emit_event`, a reaction window the latter queues
+/// (Research Librarian 01032) lands on top and the drive loop opens it — no
+/// manual window open, no second stage. Returns `Done` (disposal never awaits
+/// input); a missing-registry re-derive surfaces as `Rejected`.
+pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
+    let Some(crate::state::Continuation::PlayFromHand {
+        investigator,
+        code,
+        hand_index,
+    }) = cx.state.continuations.last().cloned()
+    else {
+        unreachable!("dispose_play_from_hand: top frame is not PlayFromHand");
+    };
+    cx.state.continuations.pop();
+
+    let destination = match resolve_play_target(&code) {
+        Ok((destination, _abilities, _is_fast, _card_type)) => destination,
+        // Unreachable post-play (this code already resolved at play time); a
+        // Rejected here would strand the played card, so surface it loudly.
+        Err(outcome) => return outcome,
+    };
+
+    match destination {
+        super::PlayDestination::Discard => {
+            // Event: discard the stashed played event (RR Appendix I step 4),
+            // exactly once for a play that resolves — the mid-play-defeat path
+            // flushes in `resume_action_resolution` instead; the two sites are
+            // mutually exclusive, so the event discards exactly once per play.
+            flush_pending_played_event(cx);
+        }
+        super::PlayDestination::InPlay => {
+            // Asset: remove from hand, mint + seed its in-play instance, push it
+            // into play, then announce it. The drive loop opens the
+            // after-enters-play reaction window (Research Librarian 01032) if
+            // `emit_event` queued one — the frame is already popped.
+            let played = cx
+                .state
+                .investigators
+                .get_mut(&investigator)
+                .expect("dispose_play_from_hand: investigator present")
+                .hand
+                .remove(usize::from(hand_index));
+            let in_play = super::threat_area::new_in_play_instance(cx, played);
+            let instance = in_play.instance_id;
+            cx.state
+                .investigators
+                .get_mut(&investigator)
+                .expect("dispose_play_from_hand: investigator present")
+                .cards_in_play
+                .push(in_play);
+            let _ = super::emit::emit_event(
+                cx,
+                &super::emit::TimingEvent::EnteredPlay {
+                    instance,
+                    controller: investigator,
+                },
+            );
+        }
+    }
+    EngineOutcome::Done
+}
+
+/// Push a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame and
+/// the card's `OnPlay` effects for the drive loop — the tail shared by the fast
+/// path (inline) and the non-fast path (parked on an
+/// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame and
+/// resumed after the `AoO` loop, #378). Re-derives destination + abilities from
+/// the registry by `code` (an event has already left hand; `hand_index` locates
+/// an asset still in hand). The drive loop resolves the `OnPlay` effect, then
+/// disposes of the card via `dispose_play_from_hand` (event → discard; asset →
+/// enter play). (Slice D #423 — replaces the synchronous `apply_effect` + asset
+/// tail + manual window open.)
 ///
 /// TODO(#417) (richer mid-action invalidation, shared with
 /// `resume_activate_ability`, #361): a resumed `OnPlay` effect that returns
@@ -621,60 +691,29 @@ fn complete_play(
     hand_index: usize,
     code: &CardCode,
 ) -> EngineOutcome {
-    let (destination, abilities, _is_fast, _card_type) = match resolve_play_target(code) {
+    let (_destination, abilities, _is_fast, _card_type) = match resolve_play_target(code) {
         Ok(v) => v,
-        // Unreachable post-validation (the play already resolved this code); a
-        // `Rejected` here would roll back the AoO, so surface it loudly instead.
         Err(outcome) => return outcome,
     };
-    let eval_ctx = EvalContext::for_controller(investigator);
-    for ability in abilities.iter().filter(|a| a.trigger == Trigger::OnPlay) {
-        let outcome = apply_effect(cx, &ability.effect, eval_ctx);
-        if !matches!(outcome, EngineOutcome::Done) {
-            return outcome;
-        }
-    }
-    if let super::PlayDestination::InPlay = destination {
-        // Remove the card from hand, then mint + seed its in-play instance via
-        // the shared constructor (mints the id, seeds the asset uses-pool) and
-        // push it into the play area.
-        let played = cx
-            .state
-            .investigators
-            .get_mut(&investigator)
-            .expect("checked")
-            .hand
-            .remove(hand_index);
-        let in_play = super::threat_area::new_in_play_instance(cx, played);
-        let instance = in_play.instance_id;
-        cx.state
-            .investigators
-            .get_mut(&investigator)
-            .expect("checked")
-            .cards_in_play
-            .push(in_play);
-        // "[reaction] After … enters play" (Research Librarian 01032): emit the
-        // timing event (queues the AfterEnteredPlay window iff a matching
-        // reaction exists), then open the window so the player can act. The
-        // event is reaction-only, so `emit_event` returns `Done`; we only need
-        // to drive an opened window.
-        let _ = super::emit::emit_event(
-            cx,
-            &super::emit::TimingEvent::EnteredPlay {
-                instance,
-                controller: investigator,
-            },
-        );
-        // `emit_event` pushes a matched reaction window on *top*; open it if so.
-        if cx
-            .state
-            .continuations
-            .last()
-            .and_then(crate::state::Continuation::pending_candidates)
-            .is_some_and(|c| !c.is_empty())
-        {
-            return super::reaction_windows::open_queued_reaction_window(cx);
-        }
+    // Combine the OnPlay effects into one Seq and push it for the drive loop,
+    // below a PlayFromHand frame that disposes the card (event → discard; asset
+    // → enter play) once the effect pops. (Slice D #423 — replaces the
+    // synchronous apply_effect + asset tail + manual window open.)
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::PlayFromHand {
+            investigator,
+            code: code.clone(),
+            hand_index: u8::try_from(hand_index).expect("hand index fits u8 (#111 hand-size cap)"),
+        });
+    let on_play: Vec<crate::dsl::Effect> = abilities
+        .into_iter()
+        .filter(|a| a.trigger == Trigger::OnPlay)
+        .map(|a| a.effect)
+        .collect();
+    if !on_play.is_empty() {
+        let eval_ctx = EvalContext::for_controller(investigator);
+        push_effect(cx, &crate::dsl::Effect::Seq(on_play), eval_ctx);
     }
     EngineOutcome::Done
 }
@@ -686,7 +725,8 @@ fn complete_play(
 ///
 /// On a mid-play defeat the gate suppresses this before it runs, so the card
 /// was *announced* (`CardPlayed`, action spent) but does not resolve: an event
-/// is flushed to discard by the apply loop (it was played); an **asset** never
+/// is flushed to discard by the suppress path in `resume_action_resolution`
+/// (the `PlayFromHand` frame is never pushed on the suppressed path); an **asset** never
 /// enters play and stays in hand — correct, and swept into the removed pile by
 /// elimination cleanup (you don't gain the asset if you die paying for it).
 pub(super) fn resume_play_card(
@@ -703,9 +743,10 @@ pub(super) fn resume_play_card(
 /// and stash it in
 /// [`pending_played_event`](crate::state::GameState::pending_played_event) so
 /// it is placed in discard on *completion* of its effect (step 4), flushed by
-/// the apply loop on `Done`. Stashing before the effect runs means a
-/// suspending effect (Dynamite Blast 01024's location choice) discards the
-/// event when it resumes rather than stranding it in hand.
+/// `dispose_play_from_hand` once the `PlayFromHand` frame is re-exposed after
+/// its `OnPlay`/`OnEvent` effect pops (RR Appendix I step 4). Stashing before
+/// the effect runs means a suspending effect (Dynamite Blast 01024's location
+/// choice) discards the event on resume rather than stranding it in hand.
 ///
 /// Shared by [`play_card`]'s event branch and the Axis-C reaction-event play
 /// (`reaction_windows::play_fast_event`). The caller runs the event's
@@ -736,11 +777,12 @@ pub(super) fn begin_event_play(cx: &mut Cx, investigator: InvestigatorId, hand_i
 
 /// Flush a [`pending_played_event`](crate::state::GameState::pending_played_event)
 /// to its owner's discard pile, emitting [`Event::CardDiscarded`] (`from:
-/// Zone::Hand`). Called by the apply loop when an action completes (`Done`):
-/// per RR Appendix I step 4, an event is placed in discard "simultaneously with
-/// the completion" of its effect — so this fires immediately for a normal event
-/// and on resume for one whose `OnPlay` suspended (Dynamite Blast 01024). A
-/// no-op when no event is mid-play.
+/// Zone::Hand`). Called by [`dispose_play_from_hand`] when a play resolves (Slice
+/// D #423), and also by the suppress path in `resume_action_resolution` for the
+/// mid-play-defeat case (where `PlayFromHand` is never pushed). The two call sites
+/// are mutually exclusive per play, so per RR Appendix I step 4 an event is
+/// placed in discard exactly once — "simultaneously with the completion" of its
+/// effect. A no-op when no event is mid-play.
 pub(in crate::engine) fn flush_pending_played_event(cx: &mut Cx) {
     let Some((investigator, code)) = cx.state.pending_played_event.take() else {
         return;

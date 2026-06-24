@@ -5,15 +5,16 @@
 use std::sync::Once;
 
 use game_core::action::{Action, PlayerAction};
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
-    Act, CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind,
-    TokenResolution,
+    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId,
+    Phase, SkillKind, TokenResolution,
 };
 use game_core::test_support::{
-    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, drive, test_enemy, test_investigator, test_location, GameStateBuilder,
+    ScriptedResolver,
 };
 use scenarios::REGISTRY;
 
@@ -159,6 +160,130 @@ fn tablet_is_minus_two_and_damage_iff_ghoul_present() {
             .any(|e| matches!(e, Event::DamageTaken { .. })),
         "expected NO DamageTaken on tablet without ghoul, events: {:?}",
         no_ghoul.events
+    );
+}
+
+#[test]
+fn tablet_immediate_damage_precedes_the_determination() {
+    install_registries();
+    // RR ST.4 (apply chaos symbol effect) precedes ST.6 (determine
+    // success/failure): Tablet's immediate Damage(1) must land in the event log
+    // BEFORE SkillTestSucceeded/Failed. (Difficulty 0; willpower 3 + (-2) = 1
+    // succeeds.)
+    let r = perform(gathering_state(ChaosToken::Tablet, 1), 0);
+    let damage = r
+        .events
+        .iter()
+        .position(|e| matches!(e, Event::DamageTaken { amount: 1, .. }))
+        .expect("Tablet+ghoul deals immediate damage");
+    let determined = r
+        .events
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                Event::SkillTestSucceeded { .. } | Event::SkillTestFailed { .. }
+            )
+        })
+        .expect("the test resolves");
+    assert!(
+        damage < determined,
+        "ST.4 immediate damage must precede the ST.6 determination; events: {:?}",
+        r.events
+    );
+
+    // No-redraw: the token is drawn once at Resolving; pushing the immediate
+    // Effect::Deal and resuming at DetermineOutcome must not re-draw it.
+    let reveals = r
+        .events
+        .iter()
+        .filter(|e| matches!(e, Event::ChaosTokenRevealed { .. }))
+        .count();
+    assert_eq!(
+        reveals, 1,
+        "exactly one ChaosTokenRevealed (no re-draw across the ST.4 push/resume); events: {:?}",
+        r.events
+    );
+}
+
+#[test]
+fn cultist_on_fail_horror_follows_the_determination() {
+    install_registries();
+    // RR: a chaos symbol's result-conditional effect ("if this test is failed")
+    // resolves at ST.7, AFTER the ST.6 determination (and after the outcome
+    // timing point). Cultist's on_fail Horror(1) must follow SkillTestFailed in
+    // the log. (Difficulty 99 >> willpower 3 + (-1) = 2 → fail.)
+    let r = perform(gathering_state(ChaosToken::Cultist, 0), 99);
+    let failed = r
+        .events
+        .iter()
+        .position(|e| matches!(e, Event::SkillTestFailed { .. }))
+        .expect("the test fails");
+    let horror = r
+        .events
+        .iter()
+        .position(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
+        .expect("Cultist on_fail deals horror");
+    assert!(
+        failed < horror,
+        "ST.7 symbol on_fail horror must follow the ST.6 determination; events: {:?}",
+        r.events
+    );
+}
+
+#[test]
+fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
+    install_registries();
+    // Tablet + ghoul deals immediate Damage(1) at ST.4. With Guard Dog (01021,
+    // health 3) controlled, that non-attack damage is distributed interactively
+    // (one PickSingle prompt) — the symbol effect suspends mid-ST.4. Resuming
+    // must finish the test from DetermineOutcome WITHOUT re-drawing the chaos
+    // token. (Symbol damage is effect-source, so no Guard Dog reaction window.)
+    let mut state = gathering_state(ChaosToken::Tablet, 1);
+    state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .expect("investigator present")
+        .cards_in_play
+        .push(CardInPlay::enter_play(
+            CardCode::new("01021"),
+            CardInstanceId(1),
+        ));
+
+    let mut resolver = ScriptedResolver::new();
+    resolver.commit_cards(&[]); // ST.2 commit window: commit nothing.
+    resolver.pick_single(OptionId(1)); // soak the 1 damage onto Guard Dog (option 1).
+    let r = drive(
+        state,
+        Action::Player(PlayerAction::PerformSkillTest {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Willpower,
+            difficulty: 0,
+        }),
+        resolver,
+    );
+
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.damage, 0, "damage soaked, investigator took none");
+    let dog = inv
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == CardInstanceId(1));
+    assert_eq!(
+        dog.map(|c| c.accumulated_damage),
+        Some(1),
+        "1 damage soaked onto Guard Dog",
+    );
+    let reveals = r
+        .events
+        .iter()
+        .filter(|e| matches!(e, Event::ChaosTokenRevealed { .. }))
+        .count();
+    assert_eq!(
+        reveals, 1,
+        "exactly one ChaosTokenRevealed across the ST.4 soak suspend; events: {:?}",
+        r.events
     );
 }
 

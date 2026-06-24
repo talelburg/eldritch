@@ -32,16 +32,16 @@ use super::Cx;
 /// event-driven reaction-window points (the reaction dispatch key). Each
 /// variant maps to an optional forced point (`forced_point`) and to whether
 /// it opens a reaction window (`opens_reaction_window`); `EnemyDefeated` and
-/// `SuccessfullyInvestigated` are **dual** (both forced and reaction at the
+/// `SkillTestResolved` are **dual** (both forced and reaction at the
 /// same point).
 ///
-/// `SuccessfullyInvestigated` collapses the successful-investigate moment
-/// into one timing point (T5b / #213): pre-T5b its forced (Obscuring Fog)
-/// fired a skill-test driver step *after* its reaction window (Dr. Milan)
-/// opened — reaction-before-forced, against RR p.2. Routing both through one
-/// `emit_event` restores forced-before-reaction. Framework
-/// `PlayerWindow(PhaseStep)` windows are *not* timing events — they have no
-/// `EventPattern` and stay on explicit `open_fast_window` calls.
+/// `SkillTestResolved` is the general skill-test-outcome timing point (RR
+/// ST.6), of which "after you successfully investigate" (Obscuring Fog forced +
+/// Dr. Milan reaction) is the `{ Investigate, Success }` narrowing. Routing the
+/// forced and reaction phases through one `emit_event` keeps RR p.2
+/// forced-before-reaction. Framework `PlayerWindow(PhaseStep)` windows are *not*
+/// timing events — they have no `EventPattern` and stay on explicit
+/// `open_fast_window` calls.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimingEvent {
     /// An investigator entered a location (forced only).
@@ -75,14 +75,18 @@ pub enum TimingEvent {
         enemy: EnemyId,
         controller: InvestigatorId,
     },
-    /// A location was successfully investigated. **Dual:** forced (Obscuring
-    /// Fog 01168 discards) + the after-investigate reaction window (Dr. Milan
-    /// 01033). Both fire at one timing point — RR p.2 forced-before-reaction
-    /// — via this single emit, replacing the pre-T5b split where the forced
-    /// fired a step *after* the reaction window opened.
-    SuccessfullyInvestigated {
+    /// A skill test resolved (RR ST.6). **Dual:** forced + reaction. The
+    /// general timing point of which "after you successfully investigate"
+    /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
+    /// `{ Investigate, Success }` narrowing. Carries no location: the forced
+    /// collector derives the investigated location from the still-live
+    /// in-flight `SkillTest` frame (`current_skill_test().tested_location`) —
+    /// teardown is at `PostOnResolution`, well after this fires. Both phases
+    /// fire at one timing point, RR p.2 forced-before-reaction.
+    SkillTestResolved {
         investigator: InvestigatorId,
-        location: LocationId,
+        kind: crate::dsl::SkillTestKind,
+        outcome: crate::dsl::TestOutcome,
     },
     /// An enemy is about to attack an investigator (reaction-only, Before).
     /// Opens the `BeforeEnemyAttack` cancel window — Dodge 01023. (Axis D
@@ -148,12 +152,14 @@ impl TimingEvent {
                 investigator: *investigator,
             }),
             TimingEvent::GameEnd => Some(ForcedTriggerPoint::GameEnd),
-            TimingEvent::SuccessfullyInvestigated {
+            TimingEvent::SkillTestResolved {
                 investigator,
-                location,
-            } => Some(ForcedTriggerPoint::AfterLocationInvestigated {
+                kind,
+                outcome,
+            } => Some(ForcedTriggerPoint::SkillTestResolved {
                 investigator: *investigator,
-                location: *location,
+                kind: *kind,
+                outcome: *outcome,
             }),
             TimingEvent::LeftLocation {
                 investigator,
@@ -192,7 +198,7 @@ impl TimingEvent {
             self,
             TimingEvent::EnemyDefeated { .. }
                 | TimingEvent::EnemyAttackDamagedSelf { .. }
-                | TimingEvent::SuccessfullyInvestigated { .. }
+                | TimingEvent::SkillTestResolved { .. }
                 | TimingEvent::EnemyAttacks { .. }
                 | TimingEvent::WouldDiscoverClues { .. }
                 | TimingEvent::EnteredPlay { .. }

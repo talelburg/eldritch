@@ -224,54 +224,47 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // `EndOfTurnAfterForced` — the turn frame is the single resume path.
     //
     // A `Rejected` propagates as-is.
-    let end_of_turn = super::emit::emit_event(
+    // Frame-driven rotation (Slice D, #423): arm the `InvestigatorTurn` frame's
+    // `ending` flag BEFORE emitting `EndOfTurn`, then emit. `emit_event` pushes
+    // the forced/reaction abilities (Frozen in Fear 01164's willpower test, a 2+
+    // forced run) as frames; the `drive` loop drives them and, once they pop,
+    // re-dispatches the `InvestigatorTurn { ending: true }` frame → `resume_end_turn`
+    // for the rotation (RR p.24 step 2.2.2). Uniform whether the forced run is
+    // empty, completes immediately, or suspends — there is no inline-resume branch.
+    // A `Rejected` from `emit_event` rolls back the armed flag with the rest of
+    // the apply (transactional snapshot).
+    let ending = cx
+        .state
+        .continuations
+        .iter_mut()
+        .rev()
+        .find_map(|c| match c {
+            crate::state::Continuation::InvestigatorTurn {
+                investigator,
+                ending,
+            } if *investigator == active_id => Some(ending),
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
+        });
+    *ending = true;
+    super::emit::emit_event(
         cx,
         &super::emit::TimingEvent::EndOfTurn {
             investigator: active_id,
         },
-    );
-    match end_of_turn {
-        EngineOutcome::Done => resume_end_turn(cx, active_id),
-        EngineOutcome::AwaitingInput { .. } => {
-            // A suspending `EndOfTurn` forced stranded rotation — either a single
-            // skill test (above the `InvestigatorTurn` frame) or a 2+ forced run
-            // (above it too). Either way, flag the frame; the `drive` loop
-            // re-dispatches it as `ending: true` once the suspension resolves,
-            // running `resume_end_turn`. Unified path (#434) — no `is_forced`
-            // special-case: the 2+ forced run no longer carries
-            // `EndOfTurnAfterForced`, it closes to `Done` and the loop drives the
-            // re-exposed turn frame.
-            let ending = cx
-                .state
-                .continuations
-                .iter_mut()
-                .rev()
-                .find_map(|c| match c {
-                    crate::state::Continuation::InvestigatorTurn {
-                        investigator,
-                        ending,
-                    } if *investigator == active_id => Some(ending),
-                    _ => None,
-                })
-                .unwrap_or_else(|| {
-                    unreachable!(
-                        "end_turn stranded with no InvestigatorTurn({active_id:?}) on the stack"
-                    )
-                });
-            *ending = true;
-            end_of_turn
-        }
-        EngineOutcome::Rejected { .. } => end_of_turn,
-    }
+    )
 }
 
 /// Run the post-`EndOfTurn`-forced portion of [`end_turn`] (Rules
 /// Reference p.24 step 2.2.2): rotate to the next active investigator, or
-/// end the Investigation phase. Called inline by `end_turn` when the
-/// `EndOfTurn` forced effects resolved synchronously, and by the
-/// skill-test commit-resume path (keyed off the `InvestigatorTurn` frame's
-/// `ending` flag) when a suspending `EndOfTurn` forced effect (Frozen in
-/// Fear 01164) stranded `end_turn` before rotation.
+/// end the Investigation phase. Reached uniformly through the `drive` loop's
+/// `InvestigatorTurn { ending: true }` arm (Slice D, #423): `end_turn` arms
+/// that flag and emits `EndOfTurn`, whose forced/reaction effects (Frozen in
+/// Fear 01164's willpower test) the loop drives as frames; once they pop, the
+/// re-exposed turn frame runs this rotation — whether the forced run was empty,
+/// completed immediately, or suspended.
 pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineOutcome {
     // The turn is over: pop the InvestigatorTurn frame this turn ran on (slice
     // 2a-i, #393). It is always on top here — end_turn reaches this after the

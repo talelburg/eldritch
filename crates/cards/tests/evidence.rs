@@ -188,6 +188,35 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
 }
 
 #[test]
+fn evidence_fast_event_discards_exactly_once() {
+    // Defeat an enemy to open the after-defeat window, then play Evidence!
+    // 01022 from hand in it. Invariant guard for the PlayFromHand migration
+    // (Slice D #423): the event must be discarded exactly once — no double-flush.
+    let (inv_id, enemy_id, _loc_id, state) = investigator_with_evidence_and_enemy(2);
+
+    let mut resolver = ScriptedResolver::new();
+    resolver.commit_cards(&[]).pick_single(OptionId(0));
+    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Event::CardDiscarded {
+                        from: Zone::Hand,
+                        ..
+                    }
+                )
+            })
+            .count(),
+        1,
+    );
+}
+
+#[test]
 fn window_offers_both_in_play_reaction_and_hand_evidence() {
     use game_core::state::{CardInPlay, CardInstanceId};
     install_real_registry();

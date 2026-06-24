@@ -20,6 +20,7 @@ use game_core::card_registry::CardRegistry;
 use game_core::dsl::Phase as DslPhase;
 use game_core::dsl::{
     deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
+    SkillTestKind, TestOutcome,
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -53,8 +54,8 @@ const DOUBLE_FORCED: &str = "test-double-forced";
 /// minus the skill test (kept non-suspending for the C4a firing path).
 const END_OF_TURN_CARD: &str = "test-end-of-turn";
 
-/// Mock threat-area card: one `EventPattern::AfterLocationInvestigated`
-/// forced ability dealing 1 horror to the controller. The
+/// Mock threat-area card: one `EventPattern::SkillTestResolved { Success,
+/// Some(Investigate) }` forced ability dealing 1 horror to the controller. The
 /// Obscuring-Fog-shape (C4c), minus the location attachment.
 const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
@@ -100,7 +101,10 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         )])
     } else if code.as_str() == AFTER_INVESTIGATE_CARD {
         Some(vec![forced_on_event(
-            EventPattern::AfterLocationInvestigated,
+            EventPattern::SkillTestResolved {
+                outcome: TestOutcome::Success,
+                kind: Some(SkillTestKind::Investigate),
+            },
             EventTiming::After,
             deal_horror(InvestigatorTarget::You, 1),
         )])
@@ -531,12 +535,8 @@ fn fire_forced_after_investigate_resolves_threat_area_ability() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(10),
-    );
+    let outcome =
+        fire_forced_after_location_investigated(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
@@ -560,12 +560,8 @@ fn fire_forced_after_investigate_no_op_without_threat_area_card() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(10),
-    );
+    let outcome =
+        fire_forced_after_location_investigated(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
@@ -736,37 +732,9 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     assert_eq!(done.state.investigators[&InvestigatorId(1)].horror, 2);
 }
 
-#[test]
-fn two_simultaneous_forced_triggers_resolve_in_order() {
-    install_mock_registry();
-
-    let mut loc = test_location(10, "Double-Forced Room");
-    loc.code = CardCode(DOUBLE_FORCED.into());
-
-    let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(10))
-        .with_location(loc)
-        .with_active_investigator(InvestigatorId(1))
-        .build();
-
-    let mut events = Vec::new();
-    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
-
-    // Both simultaneous forced triggers resolve in a fixed deterministic
-    // order (no reject) — #213 will let the player choose the order; a
-    // fixed order is the stand-in. Each deals 1 horror, so the total is 2.
-    assert_eq!(
-        outcome,
-        EngineOutcome::Done,
-        "expected ordered resolution of both forced triggers; got {outcome:?}"
-    );
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 2);
-    assert_eq!(
-        events
-            .iter()
-            .filter(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
-            .count(),
-        2,
-        "both forced effects must emit their HorrorTaken event; events = {events:?}"
-    );
-}
+// (Removed `two_simultaneous_forced_triggers_resolve_in_order`, Slice D #423: it
+// was a pre-#213 stand-in that fired 2+ forced directly through
+// `fire_forced_triggers` in a fixed order. The production route for 2+
+// simultaneous forced is the lead-ordered run, covered by
+// `two_simultaneous_forced_triggers_present_a_choice` +
+// `two_simultaneous_forced_triggers_resolved_in_lead_chosen_order` through `apply`.)

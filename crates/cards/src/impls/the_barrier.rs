@@ -117,13 +117,13 @@ fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 /// The Parlor is revealed only after a successful spawn, so a reject
 /// leaves the board untouched. (Reveal vs. spawn order is functionally
 /// independent — they touch disjoint state.)
-fn reverse(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let Some(parlor) = location_id_by_code(cx.state, PARLOR) else {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Parlor (01115) not in play".into(),
         };
     };
-    let spawned = spawn_set_aside_enemy(cx, ctx.controller, GHOUL_PRIEST, HALLWAY);
+    let spawned = spawn_set_aside_enemy(cx, GHOUL_PRIEST, HALLWAY);
     if !matches!(spawned, EngineOutcome::Done) {
         return spawned;
     }
