@@ -35,7 +35,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // Validate-first: resolve every roster entry's stats from card data
     // before mutating anything. Any failure rejects with state unchanged.
     let registry = crate::card_registry::current();
-    let mut resolved: Vec<(Skills, u8, u8, String, Vec<CardCode>)> =
+    let mut resolved: Vec<(Skills, u8, u8, String, Vec<CardCode>, CardCode)> =
         Vec::with_capacity(roster.len());
     for entry in roster {
         let Some(reg) = registry else {
@@ -66,6 +66,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
             sanity,
             meta.name.clone(),
             entry.deck.clone(),
+            entry.investigator.clone(),
         ));
     }
 
@@ -93,12 +94,13 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // (set by setup()). None leaves them unplaced — the pre-seated path.
     let start = cx.state.starting_location;
 
-    for (idx, (skills, health, sanity, name, deck)) in resolved.into_iter().enumerate() {
+    for (idx, (skills, health, sanity, name, deck, card_code)) in resolved.into_iter().enumerate() {
         let id = InvestigatorId(u32::try_from(idx).unwrap_or(0) + 1);
         cx.state.investigators.insert(
             id,
             Investigator {
                 id,
+                card_code,
                 name,
                 current_location: start,
                 skills,
@@ -116,6 +118,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 cards_in_play: Vec::new(),
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
+                ability_usage: std::collections::BTreeMap::new(),
                 action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
             },
         );

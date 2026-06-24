@@ -190,6 +190,30 @@ pub enum Trigger {
         /// `kind` to route to the right phase.
         kind: TriggerKind,
     },
+    /// Fires when the investigator's **elder-sign** chaos token (`[O]`)
+    /// is revealed during a skill test they are taking. The elder-sign is
+    /// the investigator's *own* symbol token: its effect is sourced from
+    /// the investigator card rather than the scenario bag.
+    ///
+    /// `modifier` is the printed skill-test modifier the elder-sign grants,
+    /// as an [`IntExpr`] so board-state-dependent values (Roland Banks's
+    /// "+1 for each clue on your location" → `Count(CluesAtControllerLocation)`)
+    /// resolve when the token is revealed. The engine adds this to the test total through
+    /// the existing `Modifier` path (`skill_test.rs`), keeping the
+    /// `ElderSign` resolution label for observability.
+    ///
+    /// Config-on-trigger, like [`Activated`](Self::Activated) /
+    /// [`OnSkillTestResolution`](Self::OnSkillTestResolution).
+    ///
+    /// **Scope (#118):** only pure-*modifier* elder-signs are handled. Signs
+    /// that also run an effect (Daisy's per-Tome draw, Agnes's optional
+    /// damage) or substitute/reveal another token are deferred — the first
+    /// such card should build a full `SymbolOutcome` from the investigator
+    /// card for uniformity with the scenario symbol path.
+    ElderSign {
+        /// The printed skill-test modifier the elder-sign grants.
+        modifier: IntExpr,
+    },
 }
 
 /// Whether an [`Trigger::OnEvent`] ability resolves mandatorily (forced)
@@ -1300,6 +1324,26 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
     }
 }
 
+/// Construct a [`Trigger::ElderSign`]-driven [`Ability`] with the given
+/// modifier expression. The effect is empty (`Effect::Seq(vec![])`) because
+/// pure-modifier elder-signs have no additional on-resolution effect; for
+/// signs that run an effect (Daisy / Agnes) add a `Seq` with the desired
+/// sub-effects.
+///
+/// Called by investigator card impls in the `cards` crate and by tests in
+/// `game-core` that build mock registries. (The `Ability` struct is
+/// [`non_exhaustive`](https://doc.rust-lang.org/reference/attributes/type_system.html#the-non_exhaustive-attribute),
+/// so a struct literal is only legal inside `card-dsl` itself.)
+#[must_use]
+pub fn elder_sign(modifier: IntExpr) -> Ability {
+    Ability {
+        trigger: Trigger::ElderSign { modifier },
+        costs: Vec::new(),
+        effect: Effect::Seq(Vec::new()),
+        usage_limit: None,
+    }
+}
+
 /// Build an [`Effect::GainResources`].
 #[must_use]
 pub fn gain_resources(target: InvestigatorTarget, amount: u8) -> Effect {
@@ -2032,6 +2076,46 @@ mod tests {
             let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(original, recovered);
         }
+    }
+
+    /// `Trigger::ElderSign` is a config-on-trigger variant (like
+    /// `Activated { action_cost }`): it carries the elder-sign's printed
+    /// modifier as an `IntExpr` and round-trips through serde. Roland's
+    /// "+1 for each clue on your location" is `Count(CluesAtControllerLocation)`.
+    #[test]
+    fn elder_sign_trigger_carries_int_expr_and_round_trips() {
+        let t = Trigger::ElderSign {
+            modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+        };
+        let json = serde_json::to_string(&t).expect("serialize");
+        let back: Trigger = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(t, back);
+        // Distinct from a literal-modifier elder-sign and from other triggers.
+        assert_ne!(
+            t,
+            Trigger::ElderSign {
+                modifier: IntExpr::Lit(1),
+            },
+        );
+        assert_ne!(t, Trigger::Constant);
+    }
+
+    /// The `elder_sign` builder produces an [`Ability`] with the correct
+    /// trigger, empty costs, empty effect `Seq`, and no usage limit.
+    /// Distinct from the `elder_sign_trigger_carries_int_expr_and_round_trips`
+    /// test which only exercises the `Trigger` variant itself.
+    #[test]
+    fn elder_sign_builder_constructs_the_trigger() {
+        let a = elder_sign(IntExpr::Count(Quantity::CluesAtControllerLocation));
+        assert_eq!(
+            a.trigger,
+            Trigger::ElderSign {
+                modifier: IntExpr::Count(Quantity::CluesAtControllerLocation),
+            },
+        );
+        assert!(a.costs.is_empty());
+        assert!(a.usage_limit.is_none());
+        assert!(matches!(a.effect, Effect::Seq(ref v) if v.is_empty()));
     }
 
     /// `Trigger::OnEvent` carries an explicit `TriggerKind` (forced vs

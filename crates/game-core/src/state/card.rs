@@ -14,7 +14,7 @@ use crate::dsl::{UsageLimit, UsagePeriod};
 ///
 /// The cards crate's lookups (`cards::by_code`, `cards::abilities_for`)
 /// take `&str`; deref or call `.as_str()` to bridge.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CardCode(pub String);
 
@@ -187,6 +187,55 @@ impl AbilityUsageRecord {
     }
 }
 
+/// Whether the ability at `ability_index` has reached its
+/// [`UsageLimit::count`] for the current period, reading the firing
+/// record out of `usage`. Shared by [`CardInPlay`] and
+/// [`Investigator`](crate::state::Investigator) so both usage-bearing
+/// sources apply the same lazy-reset semantics (see the field docs on
+/// [`CardInPlay::ability_usage`]). `None` limit ⇒ no cap ⇒ `false`.
+#[must_use]
+pub fn usage_exhausted(
+    usage: &BTreeMap<u8, AbilityUsageRecord>,
+    ability_index: u8,
+    limit: Option<UsageLimit>,
+    current_round: u32,
+) -> bool {
+    let Some(limit) = limit else {
+        return false;
+    };
+    match limit.period {
+        UsagePeriod::Round => {
+            let Some(record) = usage.get(&ability_index) else {
+                return false;
+            };
+            if record.round != current_round {
+                return false;
+            }
+            record.count >= limit.count
+        }
+    }
+}
+
+/// Record one firing of the ability at `ability_index` against the
+/// current period, into `usage` (lazy reset when the stored record is
+/// for a stale period). Shared by [`CardInPlay`] and
+/// [`Investigator`](crate::state::Investigator).
+pub fn bump_usage(
+    usage: &mut BTreeMap<u8, AbilityUsageRecord>,
+    ability_index: u8,
+    current_round: u32,
+) {
+    let record = usage.entry(ability_index).or_insert(AbilityUsageRecord {
+        round: current_round,
+        count: 0,
+    });
+    if record.round != current_round {
+        record.round = current_round;
+        record.count = 0;
+    }
+    record.count = record.count.saturating_add(1);
+}
+
 impl CardInPlay {
     /// Construct a fresh in-play instance: ready, no uses, no
     /// accumulated damage or horror. Caller threads the `instance_id`
@@ -220,20 +269,7 @@ impl CardInPlay {
         limit: Option<UsageLimit>,
         current_round: u32,
     ) -> bool {
-        let Some(limit) = limit else {
-            return false;
-        };
-        match limit.period {
-            UsagePeriod::Round => {
-                let Some(record) = self.ability_usage.get(&ability_index) else {
-                    return false;
-                };
-                if record.round != current_round {
-                    return false;
-                }
-                record.count >= limit.count
-            }
-        }
+        usage_exhausted(&self.ability_usage, ability_index, limit, current_round)
     }
 
     /// Record one firing of the ability at `ability_index` against the
@@ -241,18 +277,7 @@ impl CardInPlay {
     /// a stale period (lazy reset — see the field-level docs on
     /// [`ability_usage`](Self::ability_usage)).
     pub fn bump_ability_usage(&mut self, ability_index: u8, current_round: u32) {
-        let record = self
-            .ability_usage
-            .entry(ability_index)
-            .or_insert(AbilityUsageRecord {
-                round: current_round,
-                count: 0,
-            });
-        if record.round != current_round {
-            record.round = current_round;
-            record.count = 0;
-        }
-        record.count = record.count.saturating_add(1);
+        bump_usage(&mut self.ability_usage, ability_index, current_round);
     }
 }
 

@@ -84,6 +84,26 @@ fn rejects_non_investigator_code() {
 }
 
 #[test]
+fn seated_investigator_carries_its_card_code() {
+    install_registry();
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new("01001"),
+        deck: vec![],
+    }];
+    let state = GameStateBuilder::new().build();
+    let result = apply(
+        state,
+        Action::Player(PlayerAction::StartScenario { roster }),
+    );
+    let inv = result
+        .state
+        .investigators
+        .get(&InvestigatorId(1))
+        .expect("Roland seated at id 1");
+    assert_eq!(inv.card_code, CardCode::new("01001"));
+}
+
+#[test]
 fn rejects_unknown_code() {
     install_registry();
     let roster = vec![RosterEntry {

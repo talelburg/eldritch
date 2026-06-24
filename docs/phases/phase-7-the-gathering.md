@@ -60,11 +60,14 @@ Machete is `+1` only vs the sole engaged enemy (`Compare(EngagedEnemies, Eq, 1)`
 so an investigator swarmed by 2+ enemies can activate a weapon and Machete's `+0`
 branch is reachable. (#451 follows up: widen the candidate scope engaged → any
 co-located enemy, matching #401's basic-action fix.)
-- **Remaining: #118 — Roland's elder-sign** ("+1 per clue on your location"). The
-  clue-*count* term `IntExpr::Count(Quantity::CluesAtControllerLocation)` already
-  ships (PR #450); #118 (PR 2) adds `Trigger::ElderSign` + the ST.4 firing path (the
-  bonus rides the chaos-token `Modifier` total path, sourced from the investigator
-  card — **not** `Effect::Modify`) + the investigator-card-handle bridge (spec §2).
+- **#118 — Roland's elder-sign ✅ shipped (PR #454).** `Trigger::ElderSign { modifier:
+  IntExpr }` + an ST.4 firing path: the bonus rides the chaos-token `Modifier` total
+  (sourced from the investigator card via `elder_sign_modifier` — **not** `Effect::Modify`).
+  Folded in the **investigator-card bridge** (`Investigator.card_code` at seating +
+  `ability_usage` + a `scan_investigator_card_reactions` source / `CandidateSource::
+  Investigator`), which also fixes Roland's **reaction** firing from a *seated*
+  investigator (previously only via test card-injection). Bridge is sunset by **#448**;
+  **#453** tracks removing the `#[serde(default)]` convention the new fields follow.
   His signature is in the "done" criteria.
 
 **2. #368 — before-discover eligibility (p1-next, needs-design).** Lift the

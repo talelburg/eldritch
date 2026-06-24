@@ -2,9 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::card::{CardCode, CardInPlay, CardInstanceId};
+use super::card::{
+    bump_usage, usage_exhausted, AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId,
+};
 use super::location::LocationId;
 use super::Skills;
+use std::collections::BTreeMap;
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -35,6 +38,20 @@ pub struct InvestigatorId(pub u32);
 pub struct Investigator {
     /// Stable identifier within this scenario.
     pub id: InvestigatorId,
+    /// The investigator's own `ArkhamDB` card code (01001 for Roland
+    /// Banks). Set at roster seating from `RosterEntry.investigator`;
+    /// the elder-sign firing path and the seated-reaction scan look the
+    /// investigator card's abilities up by this code
+    /// (`abilities_for(card_code)`). An empty sentinel (`CardCode::new("")`)
+    /// marks the pre-seated `test_support` / builder path — codepaths skip
+    /// empty codes, so those investigators carry no investigator-card
+    /// abilities. Defaults to empty for backward-compatible deserialization.
+    ///
+    /// **Bridge (#118), sunset by #448:** when the investigator card
+    /// becomes a real `CardInPlay` (health/sanity/soak), this field and
+    /// [`ability_usage`](Self::ability_usage) fold into the uniform path.
+    #[serde(default)]
+    pub card_code: CardCode,
     /// Display name.
     pub name: String,
     /// Location the investigator is currently at, or `None` if they are
@@ -101,6 +118,20 @@ pub struct Investigator {
     /// serialized before this field was added still deserialize.
     #[serde(default)]
     pub removed_from_game: Vec<CardCode>,
+    /// Per-ability "Limit X per \[period\]" usage records for this
+    /// investigator's **own card** abilities (Roland Banks's once-per-round
+    /// `[reaction]`). Mirrors [`CardInPlay::ability_usage`] — the investigator
+    /// card is not a `CardInPlay`, so it needs its own usage home. Keyed by
+    /// ability index within the investigator card's `abilities()`. Lazy
+    /// reset: a stale-round record reads as 0 (see [`CardInPlay::ability_usage`]
+    /// docs). Defaults to empty for backward-compatible deserialization.
+    ///
+    /// **Bridge (#118), sunset by #448:** retired when the investigator card
+    /// becomes a real `CardInPlay`.
+    ///
+    /// [`CardInPlay::ability_usage`]: crate::state::CardInPlay::ability_usage
+    #[serde(default)]
+    pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
     /// Source instances whose [`ExtraActionCost`](crate::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round
     /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
@@ -119,6 +150,26 @@ impl Investigator {
     /// shared scan source #212 later absorbs.
     pub fn controlled_card_instances(&self) -> impl Iterator<Item = &CardInPlay> {
         self.cards_in_play.iter().chain(self.threat_area.iter())
+    }
+
+    /// Whether this investigator's own-card ability at `ability_index` has
+    /// reached its per-period [`UsageLimit`](crate::dsl::UsageLimit). Mirrors
+    /// [`CardInPlay::is_usage_exhausted`] over [`ability_usage`](Self::ability_usage).
+    #[must_use]
+    pub fn is_usage_exhausted(
+        &self,
+        ability_index: u8,
+        limit: Option<crate::dsl::UsageLimit>,
+        current_round: u32,
+    ) -> bool {
+        usage_exhausted(&self.ability_usage, ability_index, limit, current_round)
+    }
+
+    /// Record one firing of this investigator's own-card ability at
+    /// `ability_index` against the current period. Mirrors
+    /// [`CardInPlay::bump_ability_usage`].
+    pub fn bump_ability_usage(&mut self, ability_index: u8, current_round: u32) {
+        bump_usage(&mut self.ability_usage, ability_index, current_round);
     }
 }
 
@@ -207,6 +258,40 @@ mod threat_area_tests {
             .map(|c| c.code.as_str())
             .collect();
         assert_eq!(codes, vec!["in-play", "threat"]);
+    }
+}
+
+#[cfg(test)]
+mod ability_usage_tests {
+    use crate::dsl::{UsageLimit, UsagePeriod};
+    use crate::state::AbilityUsageRecord;
+
+    #[test]
+    fn new_investigator_has_empty_ability_usage() {
+        let inv = crate::test_support::test_investigator(1);
+        assert!(inv.ability_usage.is_empty());
+    }
+
+    #[test]
+    fn usage_exhausts_after_limit_within_a_round_and_resets_across_rounds() {
+        let mut inv = crate::test_support::test_investigator(1);
+        let limit = Some(UsageLimit {
+            count: 1,
+            period: UsagePeriod::Round,
+        });
+        // Ability 0, round 5: not yet fired → not exhausted.
+        assert!(!inv.is_usage_exhausted(0, limit, 5));
+        // Fire once in round 5 → now exhausted in round 5.
+        inv.bump_ability_usage(0, 5);
+        assert!(inv.is_usage_exhausted(0, limit, 5));
+        assert_eq!(
+            inv.ability_usage.get(&0),
+            Some(&AbilityUsageRecord::new(5, 1))
+        );
+        // Round 6: lazy reset → not exhausted (stored record is stale).
+        assert!(!inv.is_usage_exhausted(0, limit, 6));
+        // No limit (None) is never exhausted.
+        assert!(!inv.is_usage_exhausted(0, None, 5));
     }
 }
 

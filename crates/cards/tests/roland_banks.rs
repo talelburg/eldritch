@@ -260,7 +260,7 @@ fn registry_returns_reaction_with_once_per_round_limit() {
     install_real_registry();
     let abilities =
         (cards::REGISTRY.abilities_for)(&CardCode::new(ROLAND)).expect("Roland is registered");
-    assert_eq!(abilities.len(), 1);
+    assert_eq!(abilities.len(), 2);
     assert_eq!(
         abilities[0].usage_limit,
         Some(UsageLimit {

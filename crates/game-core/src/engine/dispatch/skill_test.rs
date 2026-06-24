@@ -16,7 +16,7 @@ use crate::state::{
 };
 
 use super::super::evaluator::{
-    constant_skill_modifier, pending_skill_modifier, push_effect, EvalContext,
+    constant_skill_modifier, elder_sign_modifier, pending_skill_modifier, push_effect, EvalContext,
 };
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
@@ -306,7 +306,17 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
         TokenResolution::Modifier(n) => {
             (skill_value.saturating_add(n).max(0), FailureReason::Total)
         }
-        TokenResolution::ElderSign => (skill_value.max(0), FailureReason::Total),
+        TokenResolution::ElderSign => {
+            // The bonus is the controller's investigator-card elder-sign
+            // modifier (0 for every investigator without one). Computed in the
+            // arm so non-ElderSign draws skip the registry lookup.
+            let bonus = card_registry::current()
+                .map_or(0, |reg| elder_sign_modifier(cx.state, reg, investigator));
+            (
+                skill_value.saturating_add(bonus).max(0),
+                FailureReason::Total,
+            )
+        }
         TokenResolution::AutoFail => (0, FailureReason::AutoFail),
     };
     let auto_fail = matches!(resolution, TokenResolution::AutoFail);
@@ -2032,5 +2042,49 @@ mod tests {
             "no prompt"
         );
         assert_eq!(state.current_skill_test().unwrap().skill, SkillKind::Combat,);
+    }
+
+    /// With no elder-sign ability on the controller's card (empty sentinel
+    /// `card_code`), the `ElderSign` token resolves exactly as before: total =
+    /// clamped skill value, bonus 0. Locks the behaviour-preserving default.
+    #[test]
+    fn elder_sign_token_adds_zero_without_an_elder_sign_ability() {
+        use crate::state::ChaosToken;
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1)) // card_code = "" sentinel
+            .with_active_investigator(inv)
+            .build();
+        // Willpower 3, difficulty 2, ElderSign token. Bonus 0 → total 3 → succeed by 1.
+        state.chaos_bag.tokens = vec![ChaosToken::ElderSign];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            None,
+            None,
+            None,
+            0,
+        );
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
+        let out = finish_skill_test(&mut cx, &[]);
+        let out = super::super::drive(&mut cx, out);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::SkillTestSucceeded { margin, .. } if *margin == 1
+            )),
+            "ElderSign with no elder-sign ability → bonus 0 → succeed by 1: {events:?}",
+        );
     }
 }

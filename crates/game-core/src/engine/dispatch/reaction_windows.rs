@@ -288,6 +288,7 @@ fn scan_pending_triggers(
         }
     }
     pending.extend(scan_act_agenda_reactions(state, event, bucket));
+    pending.extend(scan_investigator_card_reactions(state, event, bucket));
     pending
 }
 
@@ -343,6 +344,79 @@ fn scan_act_agenda_reactions(
                 controller: lead,
                 ability_index,
                 source: CandidateSource::Board,
+            });
+        }
+    }
+    hits
+}
+
+/// Scan every investigator's **own card** (by `Investigator.card_code`) for
+/// `Trigger::OnEvent` reaction abilities matching `event` at `bucket` — makes
+/// Roland Banks's `[reaction]` fire from a *seated* investigator, whose card is
+/// not in any `cards_in_play` zone (so `scan_pending_triggers`' per-instance
+/// loop can't reach it). Mirrors [`scan_act_agenda_reactions`]: candidate keyed
+/// by `code`, `CandidateSource::Investigator(id)`, the per-period usage check
+/// pointed at `Investigator.ability_usage`. Skips empty sentinel codes (the
+/// pre-seated `test_support` path) and uninstalled registry / non-matching
+/// abilities. **Bridge (#118), sunset by #448.**
+fn scan_investigator_card_reactions(
+    state: &GameState,
+    event: &TimingEvent,
+    bucket: EventTiming,
+) -> Vec<ResolutionCandidate> {
+    let Some(reg) = card_registry::current() else {
+        return Vec::new();
+    };
+    // Active-investigator-first / turn-order order, matching `scan_pending_triggers`.
+    let mut order: Vec<InvestigatorId> = Vec::with_capacity(state.turn_order.len());
+    if let Some(active) = state.active_investigator {
+        order.push(active);
+    }
+    for id in &state.turn_order {
+        if Some(*id) != state.active_investigator {
+            order.push(*id);
+        }
+    }
+
+    let mut hits = Vec::new();
+    for id in order {
+        let Some(inv) = state.investigators.get(&id) else {
+            continue;
+        };
+        // Empty sentinel ⇒ pre-seated path, no investigator-card abilities.
+        if inv.card_code.as_str().is_empty() {
+            continue;
+        }
+        let Some(abilities) = (reg.abilities_for)(&inv.card_code) else {
+            continue;
+        };
+        for (idx, ability) in abilities.iter().enumerate() {
+            let Trigger::OnEvent {
+                pattern,
+                timing,
+                kind,
+            } = &ability.trigger
+            else {
+                continue;
+            };
+            if *kind != TriggerKind::Reaction
+                || *timing != bucket
+                || !trigger_matches(event, pattern, *timing, id)
+            {
+                continue;
+            }
+            let ability_index = u8::try_from(idx)
+                .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
+            // "Limit X per [period]" — skip if the investigator-card counter has
+            // hit the cap this round (Roland's reaction is Limit 1 per round).
+            if inv.is_usage_exhausted(ability_index, ability.usage_limit, state.round) {
+                continue;
+            }
+            hits.push(ResolutionCandidate {
+                code: inv.card_code.clone(),
+                controller: id,
+                ability_index,
+                source: CandidateSource::Investigator(id),
             });
         }
     }
@@ -544,7 +618,9 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
         .map(|(i, cand)| {
             let label = match cand.source {
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
-                CandidateSource::InPlay(_) | CandidateSource::Board => {
+                CandidateSource::InPlay(_)
+                | CandidateSource::Board
+                | CandidateSource::Investigator(_) => {
                     format!("Resolve reaction: {}", cand.code)
                 }
             };
@@ -898,6 +974,11 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 /// whose `usage_limit` is `Some(_)`; for abilities with no limit
 /// nothing tracks them.
 ///
+/// Routes on [`CandidateSource`]: `InPlay` bumps the `CardInPlay` instance,
+/// `Investigator` bumps `Investigator.ability_usage` (Roland Banks's seated
+/// `[reaction]`). `Board` and `Hand` candidates carry no usage limits and are
+/// `unreachable!` here.
+///
 /// **TODO (cancellation-counts-against-limit).** Rules Reference
 /// page 14: *"If the effects of a card or ability with a limit or
 /// maximum are canceled, it is still counted against the
@@ -908,38 +989,47 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 /// fires still count.
 fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
     let current_round = state.round;
-    // Only usage-limited abilities reach here, and those are on in-play
-    // instances (reactions) — so the source is always `InPlay`.
-    let CandidateSource::InPlay(instance_id) = trigger.source else {
-        unreachable!(
-            "bump_usage_counter: a usage-limited candidate must be an in-play instance \
-             (board / hand candidates carry no usage limits); candidate {trigger:?}"
-        )
-    };
-    let inv = state
-        .investigators
-        .get_mut(&trigger.controller)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "bump_usage_counter: controller {ctl:?} vanished while reaction window \
-                 was open; state-corruption invariant violation",
-                ctl = trigger.controller,
-            )
-        });
-    let card = inv
-        .cards_in_play
-        .iter_mut()
-        .chain(inv.threat_area.iter_mut())
-        .find(|c| c.instance_id == instance_id)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "bump_usage_counter: instance {instance_id:?} vanished from controller {ctl:?}'s \
-                 cards_in_play / threat area while reaction window was open; \
-                 state-corruption invariant violation",
-                ctl = trigger.controller,
-            )
-        });
-    card.bump_ability_usage(trigger.ability_index, current_round);
+    match trigger.source {
+        CandidateSource::InPlay(instance_id) => {
+            let inv = state
+                .investigators
+                .get_mut(&trigger.controller)
+                .unwrap_or_else(|| {
+                    unreachable!(
+                        "bump_usage_counter: controller {ctl:?} vanished while reaction window \
+                         was open; state-corruption invariant violation",
+                        ctl = trigger.controller,
+                    )
+                });
+            let card = inv
+                .cards_in_play
+                .iter_mut()
+                .chain(inv.threat_area.iter_mut())
+                .find(|c| c.instance_id == instance_id)
+                .unwrap_or_else(|| {
+                    unreachable!(
+                        "bump_usage_counter: instance {instance_id:?} vanished from controller \
+                         {ctl:?}'s cards_in_play / threat area while reaction window was open; \
+                         state-corruption invariant violation",
+                        ctl = trigger.controller,
+                    )
+                });
+            card.bump_ability_usage(trigger.ability_index, current_round);
+        }
+        CandidateSource::Investigator(id) => {
+            let inv = state.investigators.get_mut(&id).unwrap_or_else(|| {
+                unreachable!(
+                    "bump_usage_counter: investigator {id:?} vanished while reaction window \
+                     was open; state-corruption invariant violation"
+                )
+            });
+            inv.bump_ability_usage(trigger.ability_index, current_round);
+        }
+        CandidateSource::Board | CandidateSource::Hand => unreachable!(
+            "bump_usage_counter: a usage-limited candidate must be an in-play instance or an \
+             investigator card (board / hand candidates carry no usage limits); candidate {trigger:?}"
+        ),
+    }
 }
 
 /// Close the reaction window / forced run on **top** of the stack: pop it and

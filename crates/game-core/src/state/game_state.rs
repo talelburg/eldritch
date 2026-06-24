@@ -1519,18 +1519,27 @@ pub enum CandidateSource {
     /// A Fast event in the controller's hand (Axis C) — *played* rather than
     /// fired. No instance until it would enter play (events never do).
     Hand,
+    /// An ability on an investigator's **own card** (Roland Banks's seated
+    /// `[reaction]`). Carries the controller id — the investigator card is
+    /// not a `CardInPlay`, so it has no `CardInstanceId`; usage-limit checks
+    /// and bumps point at `Investigator.ability_usage` instead. Fires by
+    /// `code` like `Board`. **Bridge (#118), sunset by #448.**
+    Investigator(InvestigatorId),
 }
 
 impl CandidateSource {
     /// The firing in-play instance, if any — `Some` for [`InPlay`](Self::InPlay),
-    /// `None` for [`Board`](Self::Board) (scenario card) and [`Hand`](Self::Hand)
-    /// (event not yet in play). Feeds
+    /// `None` for [`Board`](Self::Board) (scenario card), [`Hand`](Self::Hand)
+    /// (event not yet in play), and [`Investigator`](Self::Investigator)
+    /// (investigator card is not a `CardInPlay`). Feeds
     /// [`EvalContext::for_controller_with_optional_source`](crate::engine::EvalContext::for_controller_with_optional_source).
     #[must_use]
     pub fn instance(self) -> Option<CardInstanceId> {
         match self {
             CandidateSource::InPlay(id) => Some(id),
-            CandidateSource::Board | CandidateSource::Hand => None,
+            CandidateSource::Board | CandidateSource::Hand | CandidateSource::Investigator(_) => {
+                None
+            }
         }
     }
 }
