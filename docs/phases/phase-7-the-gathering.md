@@ -51,10 +51,12 @@ In dependency-friendly order.
 The dynamic-expression AST already ships (`IntExpr::{Lit, Cond}` over `Condition`,
 wired into `Effect::Fight.combat_modifier`; see Architecture). Each item *adds an
 `IntExpr` term + plumbs `IntExpr` into one more `Effect` field*:
-- **#118 — Roland's elder-sign** ("+1 per clue on your location"). Needs a
-  `Trigger::ElderSign` + ST.4 firing path, a clue-*count* `IntExpr` term (the
-  shipped `Condition::LocationHasClues` is binary; elder-sign is per-clue), and
-  `IntExpr` into `Effect::Modify` (`delta` is still `i8`). His signature is in the
+- **#118 — Roland's elder-sign** ("+1 per clue on your location"). The clue-*count*
+  modifier term — `IntExpr::Count(Quantity::CluesAtControllerLocation)` — now ships
+  (this cluster, replacing the old binary `LocationHasClues`). #118 adds
+  `Trigger::ElderSign` + the ST.4 firing path (the bonus rides the chaos-token
+  `Modifier` total path, sourced from the investigator card — **not** `Effect::Modify`)
+  + the investigator-card-handle bridge (spec §2; PR 2). His signature is in the
   "done" criteria.
 - **#300 — Machete** sole-engaged +1. Make `extra_damage` an `IntExpr` gated on a
   "sole engaged enemy" `Condition` (`EngagedEnemies == 1`). Activated `Effect::Fight`
