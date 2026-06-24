@@ -626,7 +626,9 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
     match destination {
         super::PlayDestination::Discard => {
             // Event: discard the stashed played event (RR Appendix I step 4),
-            // exactly once — this is the sole flush site.
+            // exactly once for a play that resolves — the mid-play-defeat path
+            // flushes in `resume_action_resolution` instead; the two sites are
+            // mutually exclusive, so the event discards exactly once per play.
             flush_pending_played_event(cx);
         }
         super::PlayDestination::InPlay => {
@@ -722,7 +724,8 @@ fn complete_play(
 ///
 /// On a mid-play defeat the gate suppresses this before it runs, so the card
 /// was *announced* (`CardPlayed`, action spent) but does not resolve: an event
-/// is flushed to discard by the apply loop (it was played); an **asset** never
+/// is flushed to discard by the suppress path in `resume_action_resolution`
+/// (the `PlayFromHand` frame is never pushed on the suppressed path); an **asset** never
 /// enters play and stays in hand — correct, and swept into the removed pile by
 /// elimination cleanup (you don't gain the asset if you die paying for it).
 pub(super) fn resume_play_card(
@@ -739,9 +742,10 @@ pub(super) fn resume_play_card(
 /// and stash it in
 /// [`pending_played_event`](crate::state::GameState::pending_played_event) so
 /// it is placed in discard on *completion* of its effect (step 4), flushed by
-/// the apply loop on `Done`. Stashing before the effect runs means a
-/// suspending effect (Dynamite Blast 01024's location choice) discards the
-/// event when it resumes rather than stranding it in hand.
+/// `dispose_play_from_hand` once the `PlayFromHand` frame is re-exposed after
+/// its `OnPlay`/`OnEvent` effect pops (RR Appendix I step 4). Stashing before
+/// the effect runs means a suspending effect (Dynamite Blast 01024's location
+/// choice) discards the event on resume rather than stranding it in hand.
 ///
 /// Shared by [`play_card`]'s event branch and the Axis-C reaction-event play
 /// (`reaction_windows::play_fast_event`). The caller runs the event's
@@ -772,12 +776,12 @@ pub(super) fn begin_event_play(cx: &mut Cx, investigator: InvestigatorId, hand_i
 
 /// Flush a [`pending_played_event`](crate::state::GameState::pending_played_event)
 /// to its owner's discard pile, emitting [`Event::CardDiscarded`] (`from:
-/// Zone::Hand`). Called by [`dispose_play_from_hand`] (Slice D #423): per RR
-/// Appendix I step 4, an event is placed in discard "simultaneously with the
-/// completion" of its effect — the `PlayFromHand` frame is the sole flush site,
-/// popped by the drive loop once the `OnPlay` effect resolves (immediately for a
-/// normal event, on resume for a suspending one like Dynamite Blast 01024). A
-/// no-op when no event is mid-play.
+/// Zone::Hand`). Called by [`dispose_play_from_hand`] when a play resolves (Slice
+/// D #423), and also by the suppress path in `resume_action_resolution` for the
+/// mid-play-defeat case (where `PlayFromHand` is never pushed). The two call sites
+/// are mutually exclusive per play, so per RR Appendix I step 4 an event is
+/// placed in discard exactly once — "simultaneously with the completion" of its
+/// effect. A no-op when no event is mid-play.
 pub(in crate::engine) fn flush_pending_played_event(cx: &mut Cx) {
     let Some((investigator, code)) = cx.state.pending_played_event.take() else {
         return;
