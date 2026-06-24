@@ -7,7 +7,6 @@
 //! card-local natives. No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
-use crate::engine::evaluator::drive_effect_to_base;
 use crate::engine::{ChoiceOption, Cx, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{Continuation, EffectFrame};
 
@@ -93,32 +92,24 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
     resume_effect_walk(cx)
 }
 
-/// Drive the contiguous run of effect frames on top of the stack (a resumed
-/// effect walk) to completion or its next suspension, then — on completion —
-/// re-enter the enclosing driver (skill test / reaction window) so it advances
-/// or tears down. Shared by [`resume_effect_choice`] and the effect-path arm of
-/// `resume_damage_assignment` (K5b-2): both resume a parked effect walk after a
-/// player input (#422). A still-suspended outcome returns as-is.
-pub(crate) fn resume_effect_walk(cx: &mut Cx) -> EngineOutcome {
-    // `base` is the depth just below the contiguous top run of effect frames.
-    let base = cx
-        .state
-        .continuations
-        .iter()
-        .rposition(|c| !matches!(c, Continuation::Effect(_)))
-        .map_or(0, |i| i + 1);
-    let outcome = drive_effect_to_base(cx, base);
-    // On completion the effect frames are popped; the `drive` loop dispatches
-    // whatever frame the walk was nested within — a `SkillTest` mid-resolution or
-    // a window with remaining candidates. No reach-down (Slice C-plumbing).
-    outcome
+/// Resume a parked effect walk after a player input by ceding to the global
+/// `drive` loop (Slice D #423). The caller ([`resume_effect_choice`] / the
+/// effect-path arm of `resume_damage_assignment`, K5b-2) has already recorded
+/// the input on the suspended top `Effect` leaf; returning `Done` hands the
+/// parked frames to `apply_player_action`'s `drive(cx, outcome)`, whose
+/// `Continuation::Effect` arm steps them via the same `step_effect_frame` the
+/// old bounded `drive_effect_to_base` used, then dispatches whatever frame the
+/// walk was nested within (a `SkillTest` mid-resolution, a window with remaining
+/// candidates). No bounded re-entry, no reach-down.
+pub(crate) fn resume_effect_walk(_cx: &mut Cx) -> EngineOutcome {
+    EngineOutcome::Done
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dsl::Effect;
-    use crate::engine::evaluator::{apply_effect, EvalContext};
+    use crate::engine::evaluator::{push_effect, EvalContext};
 
     #[test]
     fn resolve_zero_options_is_reject() {
@@ -147,14 +138,17 @@ mod tests {
         let effect = Effect::ChooseOne(vec![Effect::Seq(vec![]), Effect::Seq(vec![])]);
         let mut state = GameStateBuilder::default().build();
         let mut events = Vec::new();
-        let out = apply_effect(
-            &mut Cx {
+        // Push the effect root + drive it through the real global loop (the
+        // deleted `apply_effect` bounded entry's test-only successor); a
+        // 2-branch ChooseOne suspends in place for a pick.
+        let out = {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut events,
-            },
-            &effect,
-            ctx,
-        );
+            };
+            push_effect(&mut cx, &effect, ctx);
+            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+        };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
             "a 2-branch ChooseOne suspends for a pick",

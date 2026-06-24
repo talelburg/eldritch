@@ -507,11 +507,12 @@ pub(super) fn resolve_play_target(
 ///
 /// [`Event::CardPlayed`] fires first (the play *causes* any on-play
 /// effects, so it's correct for the play event to precede the
-/// effects' own events in the stream). Then each [`Trigger::OnPlay`]
-/// ability runs through [`apply_effect`]; if any returns non-`Done`,
-/// the handler propagates that outcome. Finally the card moves out
-/// of `hand` — into `cards_in_play` for assets / investigators, or
-/// into `discard` (with an emitted [`Event::CardDiscarded`]) for
+/// effects' own events in the stream). Then the [`Trigger::OnPlay`]
+/// abilities are `push_effect`'d for the global `drive` loop beneath a
+/// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
+/// (Slice D #423); when that effect pops, the frame's disposal moves the
+/// card out of `hand` — into `cards_in_play` for assets / investigators,
+/// or into `discard` (with an emitted [`Event::CardDiscarded`]) for
 /// events.
 ///
 /// # State-mutation contract
