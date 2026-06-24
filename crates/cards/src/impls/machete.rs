@@ -10,15 +10,11 @@
 //! enemy is the sole engaged enemy, encoded as
 //! `IntExpr::cond(EngagedEnemies == 1, 1, 0)`.
 //!
-//! Note: the `+0` branch is correct modelling but not yet *reachable*. This is
-//! not a Machete-specific limit — the engine cannot yet resolve **any**
-//! activated `Effect::Fight` while 2+ enemies are engaged (it auto-targets the
-//! single engaged enemy and rejects the ambiguous case pre-cost; multi-target
-//! attack-selection is the deferred work). Per the rules a Fight weapon *can*
-//! be activated against any one engaged enemy of several — so once that
-//! selection lands, Machete activates normally and `EngagedEnemies == 1` (not
-//! activation) gates the `+1`. Until then the condition always holds whenever
-//! the Fight resolves, so only the `+1` branch is exercised.
+//! Both branches are reachable: `Effect::Fight` picks among the engaged
+//! enemies (#449) — with one engaged it auto-targets (and `EngagedEnemies == 1`
+//! ⇒ `+1`); with two or more the player picks which to attack, and
+//! `EngagedEnemies` is then ≥ 2 ⇒ `+0`. The candidate scope is engaged-only for
+//! now (#451 widens it to any co-located enemy).
 
 use card_dsl::dsl::{activated, fight, Ability, CmpOp, Condition, IntExpr, Quantity};
 

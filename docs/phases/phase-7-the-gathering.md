@@ -54,10 +54,12 @@ A shared `Quantity` vocabulary (`CluesAtControllerLocation`, `EngagedEnemies`,
 `Effect::Fight.extra_damage` widened to `IntExpr` with `From`/`Into` builders
 (literals untouched). **#426** — Grasping Hands 01162 / Rotting Remains 01163 deal
 one `Count(SkillTestFailedBy)` instance (`ForEachPointFailed` deleted). **#300** —
-Machete is `+1` only vs the sole engaged enemy (`Compare(EngagedEnemies, Eq, 1)`);
-correct modelling, but its `+0` branch isn't *reachable* until activated `Effect::Fight`
-can resolve with 2+ engaged enemies (**#449** — give `Effect::Fight` a `Choose`-resolved
-target; a p1-next gate gap, separate from #401's basic-action fix).
+Machete is `+1` only vs the sole engaged enemy (`Compare(EngagedEnemies, Eq, 1)`).
+**#449 ✅ shipped** — `Effect::Fight` now picks among the engaged enemies
+(auto-binds 1, suspends for a `PickSingle` on 2+; `single_engaged_enemy` retired),
+so an investigator swarmed by 2+ enemies can activate a weapon and Machete's `+0`
+branch is reachable. (#451 follows up: widen the candidate scope engaged → any
+co-located enemy, matching #401's basic-action fix.)
 - **Remaining: #118 — Roland's elder-sign** ("+1 per clue on your location"). The
   clue-*count* term `IntExpr::Count(Quantity::CluesAtControllerLocation)` already
   ships (PR #450); #118 (PR 2) adds `Trigger::ElderSign` + the ST.4 firing path (the
