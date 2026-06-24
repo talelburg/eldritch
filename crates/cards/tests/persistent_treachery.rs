@@ -9,12 +9,12 @@ use std::sync::Once;
 use game_core::action::{EngineRecord, InputResponse, PlayerAction};
 use game_core::engine::OptionId;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, Continuation, EnemyId,
-    InvestigatorId, Location, LocationId, Phase, UpkeepResume,
+    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
+    InvestigatorId, Location, LocationId, Phase, TokenModifiers, UpkeepResume,
 };
 use game_core::test_support::{
-    drive, fire_forced_after_location_investigated, fire_forced_on_round_end, run_upkeep_round_end,
-    test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    apply_no_commits, drive, fire_forced_on_round_end, run_upkeep_round_end, test_enemy,
+    test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
 use game_core::{apply, Action, EngineOutcome};
 
@@ -78,21 +78,47 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     );
 
     // Forced — after the attached location is successfully investigated,
-    // discard Obscuring Fog.
-    let mut state = result.state;
-    let mut events = Vec::new();
-    let outcome = fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(20),
+    // discard Obscuring Fog. Drive a real (passing) Investigate so the
+    // in-flight SkillTest frame is live when SkillTestResolved fires: the
+    // forced collector reads `tested_location` off that frame to scan the
+    // location's attachment zone (the lean, location-free timing event derives
+    // the location from the stack rather than carrying it).
+    let mut loc = test_location(20, "Here");
+    loc.shroud = 0; // effective 0 + 2 (Obscuring Fog) = 2; intellect 3 clears it
+    loc.clues = 1;
+    loc.attachments.push(CardInPlay::enter_play(
+        CardCode::new("01168"),
+        CardInstanceId(1),
+    ));
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(20));
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator(inv)
+        .with_location(loc)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+
+    let result = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::Investigate {
+            investigator: InvestigatorId(1),
+        }),
     );
-    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(result.outcome, EngineOutcome::Done);
     assert!(
-        state.locations[&LocationId(20)].attachments.is_empty(),
-        "Obscuring Fog discards after its location is investigated",
+        result.state.locations[&LocationId(20)]
+            .attachments
+            .is_empty(),
+        "Obscuring Fog discards after its location is successfully investigated",
     );
-    assert!(state.encounter_discard.contains(&CardCode::new("01168")));
+    assert!(result
+        .state
+        .encounter_discard
+        .contains(&CardCode::new("01168")));
 }
 
 // ---- Dissonant Voices (01165) --------------------------------------

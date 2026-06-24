@@ -496,12 +496,24 @@ fn trigger_matches(
         // `scan_pending_triggers` (only the `asset` instance reaches here). Sole
         // consumer: Guard Dog 01021's retaliate reaction. (C5b #237.)
         (TimingEvent::EnemyAttackDamagedSelf { .. }, EventPattern::EnemyAttackDamagedSelf) => true,
-        // Scoped to the controller's own investigation ("after **you**
-        // investigate" — Dr. Milan 01033). (C6a #241.)
+        // "after you succeed/fail a skill test" — scoped to the controller's
+        // own test ("after **you** …"), narrowed by outcome and (optionally)
+        // test kind. Dr. Milan 01033 is `{ Success, Some(Investigate) }`.
         (
-            TimingEvent::SuccessfullyInvestigated { investigator, .. },
-            EventPattern::SuccessfullyInvestigated,
-        ) => *investigator == controller,
+            TimingEvent::SkillTestResolved {
+                investigator,
+                kind,
+                outcome,
+            },
+            EventPattern::SkillTestResolved {
+                outcome: p_out,
+                kind: p_kind,
+            },
+        ) => {
+            *investigator == controller
+                && outcome == p_out
+                && (p_kind.is_none() || *p_kind == Some(*kind))
+        }
         // Scoped to the entered card's owner; the self-instance scoping is in
         // the scan (Research Librarian 01032).
         (
@@ -1028,7 +1040,7 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
         // window (act 01109, #434) sits above the coordinator's `TimingPoint`,
         // which advances to its `Done` sub when re-dispatched.
         TimingEvent::EnemyDefeated { .. }
-        | TimingEvent::SuccessfullyInvestigated { .. }
+        | TimingEvent::SkillTestResolved { .. }
         | TimingEvent::EnteredPlay { .. }
         | TimingEvent::RoundEnded => EngineOutcome::Done,
         other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),

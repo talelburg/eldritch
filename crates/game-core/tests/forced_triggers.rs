@@ -20,6 +20,7 @@ use game_core::card_registry::CardRegistry;
 use game_core::dsl::Phase as DslPhase;
 use game_core::dsl::{
     deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
+    SkillTestKind, TestOutcome,
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -53,8 +54,8 @@ const DOUBLE_FORCED: &str = "test-double-forced";
 /// minus the skill test (kept non-suspending for the C4a firing path).
 const END_OF_TURN_CARD: &str = "test-end-of-turn";
 
-/// Mock threat-area card: one `EventPattern::AfterLocationInvestigated`
-/// forced ability dealing 1 horror to the controller. The
+/// Mock threat-area card: one `EventPattern::SkillTestResolved { Success,
+/// Some(Investigate) }` forced ability dealing 1 horror to the controller. The
 /// Obscuring-Fog-shape (C4c), minus the location attachment.
 const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
@@ -100,7 +101,10 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         )])
     } else if code.as_str() == AFTER_INVESTIGATE_CARD {
         Some(vec![forced_on_event(
-            EventPattern::AfterLocationInvestigated,
+            EventPattern::SkillTestResolved {
+                outcome: TestOutcome::Success,
+                kind: Some(SkillTestKind::Investigate),
+            },
             EventTiming::After,
             deal_horror(InvestigatorTarget::You, 1),
         )])
@@ -531,12 +535,8 @@ fn fire_forced_after_investigate_resolves_threat_area_ability() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(10),
-    );
+    let outcome =
+        fire_forced_after_location_investigated(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
@@ -560,12 +560,8 @@ fn fire_forced_after_investigate_no_op_without_threat_area_card() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(10),
-    );
+    let outcome =
+        fire_forced_after_location_investigated(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);

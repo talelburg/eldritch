@@ -401,20 +401,19 @@ fn emit_success_reactions_step(
         failed_by,
     };
     if succeeded && matches!(follow_up, SkillTestFollowUp::Investigate) {
-        if let Some(location) = cx
+        let kind = cx
             .state
-            .investigators
-            .get(&investigator)
-            .and_then(|i| i.current_location)
-        {
-            return super::emit::emit_event(
-                cx,
-                &super::emit::TimingEvent::SuccessfullyInvestigated {
-                    investigator,
-                    location,
-                },
-            );
-        }
+            .current_skill_test()
+            .expect("emit_success_reactions_step: the SkillTest frame must persist")
+            .kind;
+        return super::emit::emit_event(
+            cx,
+            &super::emit::TimingEvent::SkillTestResolved {
+                investigator,
+                kind,
+                outcome: crate::dsl::TestOutcome::Success,
+            },
+        );
     }
     EngineOutcome::Done
 }
@@ -565,9 +564,9 @@ fn open_skill_test_player_window(
 ///
 /// - [`Resolving`](SkillTestStep::Resolving) → ST.3–ST.6 computation; advance to
 ///   [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions).
-/// - [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) → fire
-///   `SuccessfullyInvestigated` (Investigate only) on the ST.6 success, before
-///   the ST.7 consequences; advance to
+/// - [`EmitSuccessReactions`](SkillTestStep::EmitSuccessReactions) → fire the
+///   `SkillTestResolved` timing point (Investigate + success only, for now) on
+///   the ST.6 outcome, before the ST.7 consequences; advance to
 ///   [`FireOnCommit`](SkillTestStep::FireOnCommit).
 /// - [`FireOnCommit`](SkillTestStep::FireOnCommit) → ST.7 head (`OnCommit`
 ///   effects); advance to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp).
@@ -701,10 +700,11 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 }
             }
             SkillTestStep::PostOnResolution { succeeded: _ } => {
-                // RR ST.8 teardown. "After you successfully investigate"
-                // (Obscuring Fog forced + Dr. Milan reaction) already fired at the
-                // EmitSuccessReactions step via `emit_event`
-                // (`SuccessfullyInvestigated`, #213) — forced-before-reaction.
+                // RR ST.8 teardown. The skill-test-outcome timing point
+                // (`SkillTestResolved`; "after you successfully investigate" =
+                // Obscuring Fog forced + Dr. Milan reaction) already fired at
+                // the EmitSuccessReactions step via `emit_event` (#213) —
+                // forced-before-reaction.
                 discard_committed_cards(cx, investigator, &indices_u8);
                 cx.events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when

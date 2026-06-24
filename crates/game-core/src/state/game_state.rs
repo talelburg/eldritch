@@ -1132,13 +1132,14 @@ pub enum SkillTestStep {
     /// cursor-sequenced steps below), so the driver stays on its own frame
     /// and `continue`s.
     Resolving,
-    /// RR ST.6→ST.7 boundary — fire the "after you successfully investigate"
-    /// timing point (`SuccessfullyInvestigated`: Obscuring Fog 01168 forced +
-    /// Dr. Milan 01029 reaction) once success is *established* (ST.6), and
-    /// **before** any ST.7 consequence resolves (the clue discovery in
-    /// [`ApplyFollowUp`](Self::ApplyFollowUp), the result effects in
-    /// [`ApplyResultEffect`](Self::ApplyResultEffect)). A no-op for every
-    /// non-Investigate follow-up and on failure. Pre-advances to
+    /// RR ST.6→ST.7 boundary — fire the skill-test-outcome timing point
+    /// (`TimingEvent::SkillTestResolved`) once the outcome is *established*
+    /// (ST.6), and **before** any ST.7 consequence resolves (the clue discovery
+    /// in [`ApplyFollowUp`](Self::ApplyFollowUp), the result effects in
+    /// [`ApplyResultEffect`](Self::ApplyResultEffect)). At this task it stays
+    /// gated to Investigate + success (the `{ Investigate, Success }` narrowing:
+    /// Obscuring Fog 01168 forced + Dr. Milan 01033 reaction); Task 2 generalizes
+    /// it to every test/outcome. Pre-advances to
     /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
     EmitSuccessReactions {
         /// The chaos-token resolution's success determination, threaded

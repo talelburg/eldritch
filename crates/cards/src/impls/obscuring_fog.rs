@@ -19,7 +19,7 @@
 
 use card_dsl::dsl::{
     constant, discard_self, forced_on_event, modify, native, revelation, Ability, EventPattern,
-    EventTiming, ModifierScope, Stat,
+    EventTiming, ModifierScope, SkillTestKind, Stat, TestOutcome,
 };
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{CardCode, Zone};
@@ -36,7 +36,10 @@ pub fn abilities() -> Vec<Ability> {
         revelation(native(LIMIT1_ATTACH)),
         constant(modify(Stat::Shroud, 2, ModifierScope::WhileInPlay)),
         forced_on_event(
-            EventPattern::AfterLocationInvestigated,
+            EventPattern::SkillTestResolved {
+                outcome: TestOutcome::Success,
+                kind: Some(SkillTestKind::Investigate),
+            },
             EventTiming::After,
             discard_self(),
         ),
@@ -115,7 +118,10 @@ mod tests {
         assert!(matches!(
             &abilities[2].trigger,
             Trigger::OnEvent {
-                pattern: EventPattern::AfterLocationInvestigated,
+                pattern: EventPattern::SkillTestResolved {
+                    outcome: card_dsl::dsl::TestOutcome::Success,
+                    kind: Some(card_dsl::dsl::SkillTestKind::Investigate),
+                },
                 timing: EventTiming::After,
                 ..
             }

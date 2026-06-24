@@ -22,7 +22,7 @@
 
 use card_dsl::dsl::{
     constant, gain_resources, modify, reaction_on_event, Ability, EventPattern, EventTiming,
-    InvestigatorTarget, ModifierScope, Stat,
+    InvestigatorTarget, ModifierScope, SkillTestKind, Stat, TestOutcome,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
@@ -35,7 +35,10 @@ pub fn abilities() -> Vec<Ability> {
     vec![
         constant(modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
         reaction_on_event(
-            EventPattern::SuccessfullyInvestigated,
+            EventPattern::SkillTestResolved {
+                outcome: TestOutcome::Success,
+                kind: Some(SkillTestKind::Investigate),
+            },
             EventTiming::After,
             gain_resources(InvestigatorTarget::You, 1),
         ),
@@ -45,7 +48,8 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{
-        Effect, EventPattern, EventTiming, InvestigatorTarget, ModifierScope, Stat, Trigger,
+        Effect, EventPattern, EventTiming, InvestigatorTarget, ModifierScope, SkillTestKind, Stat,
+        TestOutcome, Trigger,
     };
 
     #[test]
@@ -66,7 +70,10 @@ mod tests {
         assert_eq!(
             abilities[1].trigger,
             Trigger::OnEvent {
-                pattern: EventPattern::SuccessfullyInvestigated,
+                pattern: EventPattern::SkillTestResolved {
+                    outcome: TestOutcome::Success,
+                    kind: Some(SkillTestKind::Investigate),
+                },
                 timing: EventTiming::After,
                 kind: card_dsl::dsl::TriggerKind::Reaction,
             },

@@ -176,21 +176,25 @@ pub fn fire_forced_at_end_of_turn(
     crate::engine::drive(&mut cx, out)
 }
 
-/// Test helper: fire `ForcedTriggerPoint::AfterLocationInvestigated`,
-/// returning the `EngineOutcome`. See `fire_forced_on_enter`. Exercises
-/// the threat-area "after successfully investigated" forced path.
+/// Test helper: fire the forced phase of
+/// `ForcedTriggerPoint::SkillTestResolved` (Investigate + success), returning
+/// the `EngineOutcome`. See `fire_forced_on_enter`. Exercises the threat-area
+/// "after successfully investigated" forced path via the controlled-instance
+/// scan. It sets up no in-flight `SkillTest` frame, so the location-attachment
+/// scan is a no-op here — the attachment path (Obscuring Fog 01168) is
+/// exercised end-to-end through a real Investigate instead.
 pub fn fire_forced_after_location_investigated(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,
     investigator: crate::state::InvestigatorId,
-    location: crate::state::LocationId,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
     let out = crate::engine::fire_forced_triggers(
         &mut cx,
-        &crate::engine::ForcedTriggerPoint::AfterLocationInvestigated {
+        &crate::engine::ForcedTriggerPoint::SkillTestResolved {
             investigator,
-            location,
+            kind: crate::dsl::SkillTestKind::Investigate,
+            outcome: crate::dsl::TestOutcome::Success,
         },
         crate::dsl::EventTiming::After,
     );
