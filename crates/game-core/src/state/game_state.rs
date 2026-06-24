@@ -135,10 +135,8 @@ pub struct GameState {
     /// frame is resumed by `resolve_input`, taking priority over the
     /// legacy `pending_*` modes. Open reaction/fast windows live here as
     /// `TimingPointWindow` / `FastWindow` frames (the former `open_windows` Vec,
-    /// absorbed into the one stack). `#[serde(default)]` so pre-field
-    /// states still load. Inspect windows via [`Self::open_windows`] /
-    /// [`Self::top_window`].
-    #[serde(default)]
+    /// absorbed into the one stack). Required on the wire (#453). Inspect
+    /// windows via [`Self::open_windows`] / [`Self::top_window`].
     pub continuations: Vec<Continuation>,
     /// Identifier of the scenario this state belongs to, if any.
     ///
@@ -164,7 +162,7 @@ pub struct GameState {
     /// to skip the prevented impact (Axis D #336). A bool suffices because
     /// Before-windows do not nest in scope — exactly one cancellable impact is
     /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
-    #[serde(default)]
+    /// Required on the wire (#453).
     pub pending_cancellation: bool,
     // The former `pending_revelation_discard: Option<CardCode>` side-channel is
     // removed (#380): a drawn treachery's disposal now rides a
@@ -181,13 +179,16 @@ pub struct GameState {
     /// moved onto the [`EncounterCard`](Continuation::EncounterCard) frame
     /// (a sibling side-channel, folded similarly in a future cycle). `None`
     /// outside an in-flight event play.
-    #[serde(default)]
+    ///
+    /// Stays implicitly optional (#453 per-field reassessment): serde treats a
+    /// missing `Option` field as `None`, and forcing presence would need a
+    /// custom `deserialize_with` not worth it for a field the live wire always
+    /// serializes. `None`-when-absent is the genuine absent-by-design case.
     pub pending_played_event: Option<(InvestigatorId, CardCode)>,
     /// Active round-scoped skill substitutions (Mind over Matter 01036).
     /// While present, the owning investigator may make a `for_skills` test as
     /// a `use_skill` test instead (offered at test initiation). Cleared at the
-    /// round boundary ("until the end of the round").
-    #[serde(default)]
+    /// round boundary ("until the end of the round"). Required on the wire (#453).
     pub skill_substitutions: Vec<SkillSubstitution>,
     /// Shared encounter deck (top = front). Built at scenario setup
     /// from encounter-set codes; drawn from during Mythos. When the
@@ -2010,18 +2011,39 @@ mod continuation_stack_tests {
     }
 
     #[test]
-    fn continuations_default_empty_and_absent_field_loads() {
+    fn omitting_any_required_field_is_rejected() {
+        // The non-`Option` formerly-`#[serde(default)]` fields are now required
+        // on the wire (#453): a payload missing one fails loudly rather than
+        // silently defaulting (e.g. an absent `continuations` would drop every
+        // open window). The `Option` field is handled separately below.
         let s = GameStateBuilder::new().build();
-        assert!(s.continuations.is_empty());
-
-        // A pre-field serialized state (no `continuations` key) still loads,
-        // defaulting to an empty stack (`#[serde(default)]`).
-        let mut v = serde_json::to_value(&s).expect("serialize");
+        let full = serde_json::to_value(&s).expect("serialize");
+        serde_json::from_value::<GameState>(full.clone()).expect("full object deserializes");
+        for field in [
+            "continuations",
+            "pending_cancellation",
+            "skill_substitutions",
+        ] {
+            let mut v = full.clone();
+            v.as_object_mut()
+                .expect("state serializes to a JSON object")
+                .remove(field)
+                .unwrap_or_else(|| panic!("`{field}` should be present in the serialized form"));
+            assert!(
+                serde_json::from_value::<GameState>(v).is_err(),
+                "omitting `{field}` must be rejected, not defaulted"
+            );
+        }
+        // `pending_played_event` stays implicitly optional (it is an `Option`;
+        // serde defaults a missing one to `None`) — by design, see its doc.
+        let mut v = full;
         v.as_object_mut()
-            .expect("state serializes to a JSON object")
-            .remove("continuations");
-        let back: GameState = serde_json::from_value(v).expect("deserialize without the field");
-        assert!(back.continuations.is_empty());
+            .unwrap()
+            .remove("pending_played_event")
+            .expect("present in serialized form");
+        let back =
+            serde_json::from_value::<GameState>(v).expect("absent Option deserializes to None");
+        assert!(back.pending_played_event.is_none());
     }
 
     #[test]

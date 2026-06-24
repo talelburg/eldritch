@@ -549,15 +549,14 @@ pub enum UsagePeriod {
 #[non_exhaustive]
 pub struct Ability {
     pub trigger: Trigger,
-    /// Payment costs (besides action cost). Defaults to empty on
-    /// deserialize so older saved logs still load cleanly.
-    #[serde(default)]
+    /// Payment costs (besides action cost). Empty for abilities with no
+    /// non-action payment. Required on the wire (#453).
     pub costs: Vec<Cost>,
     pub effect: Effect,
     /// "Limit X per \[period\]" cap. `None` for abilities with no
-    /// printed cap. Defaults to `None` on deserialize so older saved
-    /// logs still load cleanly.
-    #[serde(default)]
+    /// printed cap. Stays implicitly optional (#453 per-field reassessment):
+    /// serde treats a missing `Option` field as `None`, the genuine
+    /// absent-by-design case.
     pub usage_limit: Option<UsageLimit>,
 }
 
@@ -2076,6 +2075,44 @@ mod tests {
             let recovered: Ability = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(original, recovered);
         }
+    }
+
+    #[test]
+    fn omitting_any_required_ability_field_is_rejected() {
+        // `costs` is required on the wire (#453): a payload missing it fails
+        // loudly rather than silently defaulting. `usage_limit` is an `Option`
+        // and stays implicitly optional (handled separately below).
+        let ability = on_event(
+            EventPattern::EnemyDefeated {
+                by_controller: true,
+                code: None,
+            },
+            EventTiming::When,
+            TriggerKind::Reaction,
+            discover_clue(LocationTarget::YourLocation, 1),
+        );
+        let full = serde_json::to_value(&ability).expect("serialize");
+        serde_json::from_value::<Ability>(full.clone()).expect("full object deserializes");
+        // `costs` is required; omitting it is rejected, not defaulted.
+        let mut v = full.clone();
+        v.as_object_mut()
+            .expect("ability serializes to a JSON object")
+            .remove("costs")
+            .expect("`costs` present in serialized form");
+        assert!(
+            serde_json::from_value::<Ability>(v).is_err(),
+            "omitting `costs` must be rejected, not defaulted"
+        );
+        // `usage_limit` stays implicitly optional (it is an `Option`; serde
+        // defaults a missing one to `None`) — by design, see its doc.
+        let mut v = full;
+        v.as_object_mut()
+            .unwrap()
+            .remove("usage_limit")
+            .expect("present in serialized form");
+        let back =
+            serde_json::from_value::<Ability>(v).expect("absent Option deserializes to None");
+        assert!(back.usage_limit.is_none());
     }
 
     /// `Trigger::ElderSign` is a config-on-trigger variant (like

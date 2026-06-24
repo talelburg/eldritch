@@ -45,12 +45,12 @@ pub struct Investigator {
     /// (`abilities_for(card_code)`). An empty sentinel (`CardCode::new("")`)
     /// marks the pre-seated `test_support` / builder path — codepaths skip
     /// empty codes, so those investigators carry no investigator-card
-    /// abilities. Defaults to empty for backward-compatible deserialization.
+    /// abilities. Required on the wire (#453): a payload omitting it is
+    /// rejected rather than silently degrading to the empty sentinel.
     ///
     /// **Bridge (#118), sunset by #448:** when the investigator card
     /// becomes a real `CardInPlay` (health/sanity/soak), this field and
     /// [`ability_usage`](Self::ability_usage) fold into the uniform path.
-    #[serde(default)]
     pub card_code: CardCode,
     /// Display name.
     pub name: String,
@@ -103,20 +103,16 @@ pub struct Investigator {
     /// cards there are at the investigator's location). Mirrors
     /// [`cards_in_play`](Self::cards_in_play) — same `CardInPlay`
     /// per-instance state — but holds scenario-bag content rather than
-    /// player cards. Defaults to empty for backward-compat: states
-    /// serialized before this field was added still deserialize.
+    /// player cards. Required on the wire (#453).
     ///
     /// [`cards_in_play`]: Self::cards_in_play
-    #[serde(default)]
     pub threat_area: Vec<CardInPlay>,
     /// Cards removed from the game (Rules Reference p.10, "Elimination,"
     /// step 1). When this investigator is eliminated, every card they
     /// control in play (`cards_in_play`) and every card they own in an
     /// out-of-play area (`hand`, `deck`, `discard`) is drained into this
     /// pile and removed from the game. Stays empty for Active
-    /// investigators. Defaults to empty for backward-compat: states
-    /// serialized before this field was added still deserialize.
-    #[serde(default)]
+    /// investigators. Required on the wire (#453).
     pub removed_from_game: Vec<CardCode>,
     /// Per-ability "Limit X per \[period\]" usage records for this
     /// investigator's **own card** abilities (Roland Banks's once-per-round
@@ -124,20 +120,18 @@ pub struct Investigator {
     /// card is not a `CardInPlay`, so it needs its own usage home. Keyed by
     /// ability index within the investigator card's `abilities()`. Lazy
     /// reset: a stale-round record reads as 0 (see [`CardInPlay::ability_usage`]
-    /// docs). Defaults to empty for backward-compatible deserialization.
+    /// docs). Required on the wire (#453).
     ///
     /// **Bridge (#118), sunset by #448:** retired when the investigator card
     /// becomes a real `CardInPlay`.
     ///
     /// [`CardInPlay::ability_usage`]: crate::state::CardInPlay::ability_usage
-    #[serde(default)]
     pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
     /// Source instances whose [`ExtraActionCost`](crate::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round
     /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
-    /// instance so multiple surcharge sources track independently. Defaults
-    /// to empty for backward-compatible deserialization.
-    #[serde(default)]
+    /// instance so multiple surcharge sources track independently. Required
+    /// on the wire (#453).
     pub action_surcharge_spent_this_round: std::collections::BTreeSet<CardInstanceId>,
 }
 
@@ -227,19 +221,34 @@ mod threat_area_tests {
     }
 
     #[test]
-    fn deserializes_when_threat_area_field_absent() {
-        // A state serialized before `threat_area` existed must still
-        // parse (serde default), proving backward-compat.
-        let json = r#"{
-            "id": 1, "name": "Test", "current_location": null,
-            "skills": {"willpower":3,"intellect":3,"combat":3,"agility":3},
-            "max_health": 8, "damage": 0, "max_sanity": 8, "horror": 0,
-            "clues": 0, "resources": 0, "actions_remaining": 3,
-            "status": "Active", "deck": [], "hand": [], "discard": [],
-            "cards_in_play": []
-        }"#;
-        let inv: Investigator = serde_json::from_str(json).expect("deserialize");
-        assert!(inv.threat_area.is_empty());
+    fn omitting_any_required_field_is_rejected() {
+        // Every field is required on the wire (#453): a payload missing one
+        // fails loudly rather than silently defaulting. `card_code` in
+        // particular — an absent identity field must not degrade to the empty
+        // sentinel (which would silently disable that investigator's
+        // elder-sign + seated reaction).
+        let inv = crate::test_support::test_investigator(1);
+        let full = serde_json::to_value(&inv).expect("serialize");
+        // The complete object still round-trips.
+        serde_json::from_value::<Investigator>(full.clone()).expect("full object deserializes");
+        // Each formerly-`#[serde(default)]` field is now mandatory.
+        for field in [
+            "card_code",
+            "threat_area",
+            "removed_from_game",
+            "ability_usage",
+            "action_surcharge_spent_this_round",
+        ] {
+            let mut v = full.clone();
+            v.as_object_mut()
+                .expect("investigator serializes to a JSON object")
+                .remove(field)
+                .unwrap_or_else(|| panic!("`{field}` should be present in the serialized form"));
+            assert!(
+                serde_json::from_value::<Investigator>(v).is_err(),
+                "omitting `{field}` must be rejected, not defaulted"
+            );
+        }
     }
 
     #[test]
@@ -297,27 +306,9 @@ mod ability_usage_tests {
 
 #[cfg(test)]
 mod removed_from_game_tests {
-    use super::*;
-
     #[test]
     fn new_investigator_has_empty_removed_pile() {
         let inv = crate::test_support::test_investigator(1);
-        assert!(inv.removed_from_game.is_empty());
-    }
-
-    #[test]
-    fn deserializes_when_field_absent() {
-        // A JSON object missing `removed_from_game` must still parse
-        // (serde default), proving forward-compat for pre-field states.
-        let json = r#"{
-            "id": 1, "name": "Test", "current_location": null,
-            "skills": {"willpower":3,"intellect":3,"combat":3,"agility":3},
-            "max_health": 8, "damage": 0, "max_sanity": 8, "horror": 0,
-            "clues": 0, "resources": 0, "actions_remaining": 3,
-            "status": "Active", "deck": [], "hand": [], "discard": [],
-            "cards_in_play": []
-        }"#;
-        let inv: Investigator = serde_json::from_str(json).expect("deserialize");
         assert!(inv.removed_from_game.is_empty());
     }
 }
