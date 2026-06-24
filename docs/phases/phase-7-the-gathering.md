@@ -58,8 +58,11 @@ Machete is `+1` only vs the sole engaged enemy (`Compare(EngagedEnemies, Eq, 1)`
 **#449 ✅ shipped** — `Effect::Fight` now picks among the engaged enemies
 (auto-binds 1, suspends for a `PickSingle` on 2+; `single_engaged_enemy` retired),
 so an investigator swarmed by 2+ enemies can activate a weapon and Machete's `+0`
-branch is reachable. (#451 follows up: widen the candidate scope engaged → any
-co-located enemy, matching #401's basic-action fix.)
+branch is reachable. **#451 ✅ shipped (PR #455)** — widened that candidate scope
+engaged → any co-located enemy (`combat::fight_target_scope()` = `At(Here)`, shared
+by the pre-cost gate and the target grounding so they can't drift), matching #401's
+basic-action fix and Machete's FAQ (you *can* attack an Aloof / other-player-engaged
+enemy; you just forfeit the sole-engaged damage bonus).
 - **#118 — Roland's elder-sign ✅ shipped (PR #454).** `Trigger::ElderSign { modifier:
   IntExpr }` + an ST.4 firing path: the bonus rides the chaos-token `Modifier` total
   (sourced from the investigator card via `elder_sign_modifier` — **not** `Effect::Modify`).
