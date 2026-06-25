@@ -52,6 +52,10 @@ pub(crate) use dispatch::phases::upkeep_phase_end;
 // `pub(crate)` for `test_support` round-end helpers: drive the coordinator the
 // real loop drives (#434), and resume a window via the player-action entry.
 pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
+// `pub(crate)` so `test_support::perform_skill_test` can start a plain skill test
+// directly (the synthetic entry point that replaced the retired
+// `PlayerAction::PerformSkillTest` wire variant, #447).
+pub(crate) use dispatch::skill_test::perform_skill_test as start_plain_skill_test;
 
 use crate::action::Action;
 use crate::event::Event;
@@ -102,8 +106,8 @@ pub struct ApplyResult {
 /// partial state is legitimate and retained.
 ///
 /// On [`EngineOutcome::AwaitingInput`], the returned state and event
-/// list reflect the work done up to the pause point — e.g. a
-/// `PerformSkillTest` apply that suspends at the commit window has
+/// list reflect the work done up to the pause point — e.g. a skill test
+/// that suspends at the commit window has
 /// already emitted [`Event::SkillTestStarted`] and pushed the
 /// [`SkillTest`](crate::state::Continuation::SkillTest) frame (read via
 /// [`GameState::current_skill_test`]). The resume action
@@ -289,8 +293,9 @@ mod tests {
         Status, TokenModifiers, TokenResolution, Zone,
     };
     use crate::test_support::{
-        apply_no_commits, dispatch_turn_action_unchecked, take_turn_action, test_enemy,
-        test_investigator, test_location, GameStateBuilder,
+        apply_no_commits, dispatch_turn_action_unchecked, perform_skill_test,
+        perform_skill_test_no_commits, take_turn_action, test_enemy, test_investigator,
+        test_location, GameStateBuilder,
     };
     use crate::{assert_event, assert_event_count, assert_no_event};
 
@@ -548,14 +553,7 @@ mod tests {
             .with_chaos_bag(bag_only_zero())
             .build();
 
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: InvestigatorId(1),
-                skill: SkillKind::Willpower,
-                difficulty: 2,
-            }),
-        );
+        let paused = perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 2);
         assert!(
             matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
             "skill test should pause at the commit window, got {:?}",
@@ -605,14 +603,8 @@ mod tests {
         let state = GameStateBuilder::new()
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: InvestigatorId(999),
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result =
+            perform_skill_test_no_commits(state, InvestigatorId(999), SkillKind::Willpower, 0);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -623,14 +615,7 @@ mod tests {
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 0);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -642,14 +627,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: -1,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, -1);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -663,14 +641,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Intellect, 3);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -707,14 +678,7 @@ mod tests {
             .with_investigator(strong)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Combat,
-                difficulty: 2,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Combat, 2);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -733,14 +697,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Combat,
-                difficulty: 5,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Combat, 5);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -768,14 +725,7 @@ mod tests {
             .with_investigator(high)
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 4,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 4);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -799,14 +749,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 0);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -833,14 +776,7 @@ mod tests {
                 ..TokenModifiers::default()
             })
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 2,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 2);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -862,14 +798,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::ElderSign]))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Agility,
-                difficulty: 3,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Agility, 3);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -892,14 +821,7 @@ mod tests {
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::Skull]))
             .with_token_modifiers(night_of_the_zealot_standard())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 2,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 2);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -939,14 +861,7 @@ mod tests {
             },
         ];
 
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id1,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id1, SkillKind::Willpower, 0);
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_eq!(
             result.state.pending_skill_modifiers.len(),
@@ -958,7 +873,7 @@ mod tests {
 
     #[test]
     fn perform_skill_test_advances_rng_and_log_round_trips() {
-        // Determinism: applying the same PerformSkillTest action twice
+        // Determinism: starting the same plain skill test twice
         // from identical initial state produces identical post-state.
         let id = InvestigatorId(1);
         let initial = GameStateBuilder::new()
@@ -971,14 +886,8 @@ mod tests {
             .with_token_modifiers(night_of_the_zealot_standard())
             .with_rng_seed(123)
             .build();
-        let action = Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Willpower,
-            difficulty: 3,
-        });
-
-        let first = apply_no_commits(initial.clone(), action.clone());
-        let second = apply_no_commits(initial, action);
+        let first = perform_skill_test_no_commits(initial.clone(), id, SkillKind::Willpower, 3);
+        let second = perform_skill_test_no_commits(initial, id, SkillKind::Willpower, 3);
 
         assert_eq!(first.outcome, EngineOutcome::Done);
         assert_eq!(first.state.rng, second.state.rng);
@@ -3690,14 +3599,7 @@ mod tests {
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 0);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -4518,14 +4420,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let result = perform_skill_test(state, id, SkillKind::Intellect, 3);
 
         assert!(matches!(
             result.outcome,
@@ -4554,14 +4449,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
 
         let resumed = apply(
             paused.state,
@@ -4596,14 +4484,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         assert!(matches!(
             paused.outcome,
             EngineOutcome::AwaitingInput { .. }
@@ -4649,13 +4530,11 @@ mod tests {
             .with_chaos_bag(bag_only_zero())
             .build();
 
-        let result = apply_no_commits_with_response(
+        let result = perform_skill_test_with_response(
             state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
+            id,
+            SkillKind::Intellect,
+            3,
             InputResponse::PickMultiple {
                 selected: vec![OptionId(0), OptionId(1)],
             },
@@ -4685,18 +4564,20 @@ mod tests {
         );
     }
 
-    /// Helper: drive a skill-test-initiating action through with the
-    /// given `InputResponse`. Used by commit-window tests that don't
-    /// fit `apply_no_commits` (which always submits an empty commit).
-    fn apply_no_commits_with_response(
+    /// Helper: start a plain skill test and drive it through with the
+    /// given `InputResponse`. Used by commit-window tests that don't fit
+    /// `perform_skill_test_no_commits` (which always submits an empty commit).
+    fn perform_skill_test_with_response(
         state: GameState,
-        action: Action,
+        investigator: InvestigatorId,
+        skill: SkillKind,
+        difficulty: i8,
         response: InputResponse,
     ) -> crate::engine::ApplyResult {
         use crate::test_support::ScriptedResolver;
         let mut resolver = ScriptedResolver::new();
         resolver.push(response);
-        crate::test_support::drive(state, action, resolver)
+        crate::test_support::drive_skill_test(state, investigator, skill, difficulty, resolver)
     }
 
     #[test]
@@ -4708,14 +4589,7 @@ mod tests {
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
@@ -4747,14 +4621,7 @@ mod tests {
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
@@ -4789,14 +4656,7 @@ mod tests {
             .with_active_investigator(id)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         let rejected = apply(
             paused.state,
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
@@ -4823,14 +4683,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {

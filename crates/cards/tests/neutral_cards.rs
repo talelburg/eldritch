@@ -76,14 +76,7 @@ fn guts_board(wp: i8, token: ChaosToken) -> GameState {
 }
 
 fn perform_and_commit_guts(state: GameState) -> game_core::engine::ApplyResult {
-    let paused = game_core::engine::apply(
-        state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: INV,
-            skill: SkillKind::Willpower,
-            difficulty: 1,
-        }),
-    );
+    let paused = game_core::test_support::perform_skill_test(state, INV, SkillKind::Willpower, 1);
     game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {

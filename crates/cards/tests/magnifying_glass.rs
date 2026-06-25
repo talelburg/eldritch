@@ -15,8 +15,8 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, take_turn_action, test_investigator, test_location, GameStateBuilder,
-    TestSession,
+    apply_no_commits, perform_skill_test_no_commits, take_turn_action, test_investigator,
+    test_location, GameStateBuilder, TestSession,
 };
 use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
 
@@ -127,7 +127,7 @@ fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
 fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
     // The bonus is gated to `SkillTestKind::Investigate`. A bare
     // intellect test (e.g. a treachery testing intellect) goes
-    // through `PerformSkillTest` with `SkillTestKind::Plain` —
+    // through a plain skill test (`SkillTestKind::Plain`) —
     // the Magnifying Glass contribution must NOT apply. 3 + 0 < 4
     // → fail by 1, even with the card in play.
     let (state, id, _loc) = state_with_mg_in_hand();
@@ -141,14 +141,7 @@ fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
 
-    let result = apply_no_commits(
-        after_play.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
+    let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,

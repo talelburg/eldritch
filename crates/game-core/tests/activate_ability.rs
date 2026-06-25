@@ -25,11 +25,11 @@ use game_core::state::{
     Status, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, dispatch_turn_action_unchecked, take_turn_action, test_investigator,
-    GameStateBuilder,
+    dispatch_turn_action_unchecked, perform_skill_test_no_commits, take_turn_action,
+    test_investigator, GameStateBuilder,
 };
+use game_core::TurnAction;
 use game_core::{assert_event, assert_event_count, assert_no_event};
-use game_core::{Action, PlayerAction, TurnAction};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —
 /// economically meaningless (pay 1 to gain 1) but exercises the
@@ -362,14 +362,8 @@ fn this_skill_test_modifier_contributes_to_next_skill_test() {
         "ThisSkillTest push should leave one pending entry",
     );
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
+    let after_test =
+        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
     assert_eq!(after_test.outcome, EngineOutcome::Done);
     assert_event!(
         after_test.events,
@@ -400,24 +394,12 @@ fn this_skill_test_modifier_does_not_leak_into_a_second_test() {
         },
     );
 
-    let after_first_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
+    let after_first_test =
+        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
     assert_eq!(after_first_test.outcome, EngineOutcome::Done);
 
-    let after_second_test = apply_no_commits(
-        after_first_test.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
+    let after_second_test =
+        perform_skill_test_no_commits(after_first_test.state, id, SkillKind::Intellect, 4);
     assert_eq!(after_second_test.outcome, EngineOutcome::Done);
     assert_event!(
         after_second_test.events,

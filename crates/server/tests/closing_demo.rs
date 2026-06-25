@@ -14,7 +14,7 @@ mod common;
 
 use common::{connect, install_registry, memory_pool, recv, send, spawn_server, TEST_SCENARIO_ID};
 use game_core::scenario::ScenarioId;
-use game_core::state::{GameState, InvestigatorId, SkillKind};
+use game_core::state::GameState;
 use game_core::{EngineOutcome, Event, InputResponse, PlayerAction};
 use protocol::{ClientMessage, ServerMessage};
 use server::GameSession;
@@ -63,15 +63,12 @@ async fn phase_5_closing_demo() {
         "both connections see the same initial state"
     );
 
-    // The actor performs a skill test, which pauses at its commit window.
-    // The spectator, who sends nothing, observes the identical stream.
+    // The actor starts the scenario, which pauses at the setup mulligan
+    // (`AwaitingInput`). The spectator, who sends nothing, observes the
+    // identical stream.
     send(
         &mut actor,
-        &submit(PlayerAction::PerformSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Intellect,
-            difficulty: 2,
-        }),
+        &submit(PlayerAction::StartScenario { roster: vec![] }),
     )
     .await;
     let actor_start = applied_events(recv(&mut actor).await);
@@ -81,12 +78,8 @@ async fn phase_5_closing_demo() {
         "spectator sees the identical event stream"
     );
     assert!(
-        actor_start.contains(&Event::SkillTestStarted {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Intellect,
-            difficulty: 2,
-        }),
-        "the skill test announced itself: {actor_start:?}"
+        !actor_start.is_empty(),
+        "starting the scenario announced itself with events: {actor_start:?}"
     );
 
     // (2) A client reconnecting mid-scenario receives the in-flight

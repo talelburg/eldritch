@@ -17,11 +17,10 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver, TestSession,
+    drive_skill_test, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    TestSession,
 };
-use game_core::{
-    assert_event, assert_event_count, assert_no_event, Action, PlayerAction, TurnAction,
-};
+use game_core::{assert_event, assert_event_count, assert_no_event, TurnAction};
 
 const DEDUCTION: &str = "01039";
 
@@ -127,26 +126,18 @@ fn failed_investigate_does_not_fire_deductions_bonus() {
 
 #[test]
 fn non_investigate_test_does_not_fire_deductions_bonus() {
-    // A bare PerformSkillTest is `SkillTestKind::Plain`. Deduction's
+    // A bare plain skill test is `SkillTestKind::Plain`. Deduction's
     // bonus is gated to Investigate, so even though the test succeeds
     // with Deduction's icon contributing to the total, the bonus must
     // not fire.
     //
     // 3 + 0 + 1 = 4 vs difficulty 4 → succeed by 0. Location keeps
-    // its clue (no action follow-up either — bare PerformSkillTest's
+    // its clue (no action follow-up either — a bare plain test's
     // follow-up is `None`).
     let (state, id, loc) = state_with_deduction(1, 4);
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[CardCode::new(DEDUCTION)]);
-    let result = drive(
-        state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-        resolver,
-    );
+    let result = drive_skill_test(state, id, SkillKind::Intellect, 4, resolver);
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(

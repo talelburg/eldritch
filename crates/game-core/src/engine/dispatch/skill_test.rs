@@ -1267,11 +1267,13 @@ fn collect_on_commit(
     effects
 }
 
-/// Public dispatch wrapper for [`PlayerAction::PerformSkillTest`].
+/// Start a plain skill test directly, the synthetic entry point behind
+/// [`test_support::perform_skill_test`](crate::test_support::perform_skill_test)
+/// (the retired `PlayerAction::PerformSkillTest` wire variant, #447).
 ///
 /// Opens the commit window with no action-specific follow-up. The
 /// after-resolution trigger window (#64) is downstream.
-pub(super) fn perform_skill_test(
+pub(crate) fn perform_skill_test(
     cx: &mut Cx,
     investigator: InvestigatorId,
     skill: SkillKind,

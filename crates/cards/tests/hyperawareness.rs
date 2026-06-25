@@ -11,6 +11,7 @@
 
 use std::sync::Once;
 
+use game_core::assert_event;
 use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
@@ -18,10 +19,9 @@ use game_core::state::{
     TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, dispatch_turn_action_unchecked, take_turn_action, test_investigator,
-    GameStateBuilder,
+    dispatch_turn_action_unchecked, perform_skill_test_no_commits, take_turn_action,
+    test_investigator, GameStateBuilder,
 };
-use game_core::{assert_event, Action, PlayerAction};
 
 const HYPERAWARENESS: &str = "01034";
 
@@ -85,14 +85,8 @@ fn intellect_ability_buffs_an_intellect_test_at_difficulty_4() {
         "1 resource paid",
     );
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
+    let after_test =
+        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
     assert_eq!(after_test.outcome, EngineOutcome::Done);
     assert_event!(
         after_test.events,
@@ -119,14 +113,7 @@ fn agility_ability_buffs_an_agility_test_at_difficulty_4() {
         },
     );
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Agility,
-            difficulty: 4,
-        }),
-    );
+    let after_test = perform_skill_test_no_commits(after_activate.state, id, SkillKind::Agility, 4);
     assert_eq!(after_test.outcome, EngineOutcome::Done);
     assert_event!(
         after_test.events,
@@ -150,14 +137,7 @@ fn intellect_ability_does_not_buff_an_agility_test() {
         },
     );
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Agility,
-            difficulty: 4,
-        }),
-    );
+    let after_test = perform_skill_test_no_commits(after_activate.state, id, SkillKind::Agility, 4);
     assert_eq!(after_test.outcome, EngineOutcome::Done);
     assert_event!(
         after_test.events,

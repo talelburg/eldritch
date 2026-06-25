@@ -172,7 +172,7 @@ fn scan_pending_triggers(
     };
     // Active investigator first, then the rest of turn_order in their
     // listed order. Investigators not in turn_order are skipped
-    // entirely — the bare PerformSkillTest path can run without a
+    // entirely — a bare plain skill-test path can run without a
     // turn order populated, but no scenario opens a reaction window
     // outside an action initiated by a turn-order investigator.
     let mut order: Vec<InvestigatorId> = Vec::with_capacity(state.turn_order.len());

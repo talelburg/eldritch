@@ -931,8 +931,7 @@ pub enum ActionClass {
 /// just the underlying stat — Magnifying Glass's "+1 intellect while
 /// investigating" applies to Investigate but **not** to a treachery
 /// that tests intellect. Engine-side, every test-initiating action
-/// (Investigate, Fight, Evade, the generic
-/// `PerformSkillTest` (in `game_core::action::PlayerAction`))
+/// (Investigate, Fight, Evade, plus a generic plain skill test)
 /// passes the matching kind to skill-test resolution.
 ///
 /// Add a variant when a new test-initiating action lands (Parley /
@@ -947,9 +946,8 @@ pub enum SkillTestKind {
     Fight,
     /// The Evade action's agility test against an enemy.
     Evade,
-    /// Any other skill test: treachery effects, agenda effects, or
-    /// `PlayerAction::PerformSkillTest` (in `game_core::action`)
-    /// invoked directly. Cards qualifying their bonus with one of the
+    /// Any other skill test: treachery effects, agenda effects, or a plain skill test
+    /// invoked directly (the synthetic `perform_skill_test` test entry point). Cards qualifying their bonus with one of the
     /// named-action variants will NOT contribute here.
     Plain,
 }
@@ -1051,8 +1049,8 @@ pub enum LocationTarget {
     /// firing path reads this snapshot. Rejects when
     /// no skill test is in flight or when the snapshotted location
     /// is absent (controller was between locations at test start —
-    /// only reachable via `PlayerAction::PerformSkillTest` (in `game_core::action`)
-    /// from outside an Investigate path).
+    /// only reachable via a bare plain skill test from outside an
+    /// Investigate path).
     TestedLocation,
 }
 

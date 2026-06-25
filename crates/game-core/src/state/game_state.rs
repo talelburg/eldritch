@@ -957,13 +957,13 @@ pub enum TimingSub {
 
 /// A skill test paused mid-resolution at the commit window.
 ///
-/// Pushed by the skill-test initiator (`PerformSkillTest`, `Investigate`,
+/// Pushed by the skill-test initiator (a plain skill test, `Investigate`,
 /// `Fight`, `Evade`) after [`SkillTestStarted`] fires; consumed by the
 /// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) dispatch
 /// once the active investigator submits their commit list. The follow-
 /// up describes the action-specific success path: discover a clue
 /// (Investigate), deal damage (Fight), disengage and exhaust (Evade),
-/// or nothing (bare `PerformSkillTest`).
+/// or nothing (a bare plain skill test).
 ///
 /// [`SkillTestStarted`]: crate::Event::SkillTestStarted
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1003,9 +1003,9 @@ pub struct InFlightSkillTest {
     /// has since moved (no Phase-3 path moves mid-test, but the
     /// snapshot future-proofs against cards that will). `None` when
     /// the investigator was between locations at test start —
-    /// only reachable via the bare
-    /// [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest)
-    /// from outside an Investigate path.
+    /// only reachable via a bare plain skill test (the
+    /// [`test_support::perform_skill_test`](crate::test_support::perform_skill_test)
+    /// synthetic entry point) from outside an Investigate path.
     pub tested_location: Option<LocationId>,
     /// Action-specific resolution to apply on success.
     pub follow_up: SkillTestFollowUp,
@@ -1266,8 +1266,9 @@ pub enum SkillTestStep {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SkillTestFollowUp {
-    /// No action-specific follow-up. Used by bare
-    /// [`PerformSkillTest`](crate::action::PlayerAction::PerformSkillTest).
+    /// No action-specific follow-up. Used by a bare plain skill test (the
+    /// [`test_support::perform_skill_test`](crate::test_support::perform_skill_test)
+    /// synthetic entry point).
     None,
     /// On success, discover 1 clue at the investigator's current
     /// location (via the

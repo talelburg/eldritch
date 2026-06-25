@@ -3106,7 +3106,7 @@ mod tests {
     #[test]
     fn tested_location_rejects_when_test_has_no_location_snapshot() {
         // In-flight test exists but tested_location is None (e.g.
-        // bare PerformSkillTest invoked while between locations).
+        // a bare plain skill test invoked while between locations).
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();

@@ -15,9 +15,9 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    drive_skill_test, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{Action, EngineOutcome, PlayerAction};
+use game_core::EngineOutcome;
 
 const ROLAND: &str = "01001";
 
@@ -62,14 +62,9 @@ fn run_elder_sign_test(clues: u8) -> Vec<Event> {
 
     // Bare PerformSkillTest: Willpower vs difficulty 3. ElderSign bonus = clues.
     // total = 3 + clues; succeed iff total >= 3 (always, here) by margin = clues.
-    let action = Action::Player(PlayerAction::PerformSkillTest {
-        investigator: inv_id,
-        skill: SkillKind::Willpower,
-        difficulty: 3,
-    });
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]);
-    let result = drive(state, action, resolver);
+    let result = drive_skill_test(state, inv_id, SkillKind::Willpower, 3, resolver);
     assert_eq!(result.outcome, EngineOutcome::Done);
     result.events
 }

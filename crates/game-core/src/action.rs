@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind};
+use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId};
 
 /// A single entry in the action log.
 ///
@@ -63,21 +63,6 @@ pub enum PlayerAction {
         /// The investigator initiating the spend (the "acting" player;
         /// their clues are spent first when the group holds a surplus).
         investigator: InvestigatorId,
-    },
-    /// Perform a skill test on `investigator` against `difficulty`,
-    /// using the named `skill`.
-    ///
-    /// Phase-1 foundation: resolves in one apply call as base skill +
-    /// chaos token modifier vs. difficulty. Card commits, the commit
-    /// window's `AwaitingInput`, and the after-resolution trigger
-    /// window land in #63 / #64.
-    PerformSkillTest {
-        /// Investigator taking the test.
-        investigator: InvestigatorId,
-        /// Which of the four skills the test is against.
-        skill: SkillKind,
-        /// Difficulty: total to meet or exceed for success.
-        difficulty: i8,
     },
     /// Move the active investigator from their current location to a
     /// connected location. Spends 1 action.
