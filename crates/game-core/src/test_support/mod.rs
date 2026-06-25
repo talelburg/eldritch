@@ -86,7 +86,9 @@ pub fn install_test_registry() {
 }
 
 pub use crate::state::GameStateBuilder;
-pub use fixtures::{awaiting_commit_input, test_enemy, test_investigator, test_location};
+pub use fixtures::{
+    awaiting_commit_input, awaiting_pick_single_input, test_enemy, test_investigator, test_location,
+};
 pub use resolver::{
     apply_no_commits, drive, take_turn_action, ChoiceResolver, ScriptedResolver, TestSession,
 };

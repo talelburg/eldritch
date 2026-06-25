@@ -18,7 +18,7 @@
 //! when a field addition lands.
 
 use crate::card_data::{ClueValue, Prey};
-use crate::engine::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, Investigator, InvestigatorId, Location,
     LocationId, Skills, Status,
@@ -129,6 +129,34 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
 pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::prompt(prompt),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// A sample structured [`PickSingle`](crate::InputResponse::PickSingle)
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
+/// fixtures (#447). Carries two options:
+///
+/// - `OptionId(0)` → `"End turn"`
+/// - `OptionId(1)` → `"Investigate"`
+///
+/// The `ResumeToken` value is irrelevant to rendering.
+#[must_use]
+pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::choice(
+            prompt,
+            vec![
+                ChoiceOption {
+                    id: OptionId(0),
+                    label: "End turn".into(),
+                },
+                ChoiceOption {
+                    id: OptionId(1),
+                    label: "Investigate".into(),
+                },
+            ],
+        ),
         resume_token: ResumeToken(0),
     }
 }
