@@ -116,16 +116,37 @@ each call site during the migration and classify it.
 
 ## §3 — Soak + defeat unification
 
-- **`build_soakers`** gains a `CardKind::Investigator { health, sanity }` arm and adds the
-  investigator card as the **always-eligible default soaker**, replacing the `assign_attack`
-  "remainder-to-the-investigator-field" special case. Per the RR, the investigator card takes
-  whatever can't be assigned to an asset.
+> **Amended after implementation (cp2b).** The original plan was to add the investigator
+> card to `build_soakers` as a `Soaker` struct entry and delete the `assign_attack`
+> remainder tail. Implementation (and an independent review) found that refactor is **not
+> behaviour-preserving** and would re-implement byte-identical behaviour with *more* code: an
+> asset `Soaker` is capped at its remaining capacity, but the investigator's remainder is
+> **uncapped** (overflowing capacity is precisely how the investigator is defeated); the asset
+> apply-path (`find_controlled_mut`) scans only `cards_in_play`, so routing the investigator
+> card through it would drop the harm and emit no `DamageTaken`; and investigator elimination
+> must run **before** the asset-overflow sweep (elimination drains co-overflowing assets to
+> `removed_from_game` with no `CardDiscarded`). So the unification is achieved via the
+> **already-correct remainder path** (delivered by §1/cp2a moving harm onto the card), not a
+> `Soaker` entry. Mechanism below reflects the shipped state.
+
+- **Soaking:** the investigator card is the **always-eligible, uncapped, mandatory-remainder
+  soaker**. `assign_attack` fills each asset `Soaker` to its capacity, then assigns the
+  uncapped leftover to the investigator; `place_assignment` routes that leftover through
+  `apply_{damage,horror}_numeric`, which (since cp2a) write `investigator_card.accumulated_*`
+  and emit `DamageTaken`/`HorrorTaken`. Per the RR, the investigator card takes whatever can't
+  be assigned to an asset. It is the **real** soaker (real capacity from metadata, real
+  accumulated harm) — the phantom-soaker hazard is dissolved — even though it is not a
+  `Soaker` struct value. (A `defeat_overflowed_assets` doc-comment warns future refactorers
+  not to fold the investigator card into that asset-only sweep.)
 - **Defeat** uses the asset rule uniformly: `investigator_card.accumulated_damage ≥
-  max_health()` (resp. horror/sanity). The single investigator-specific branch: when the
-  *investigator card* overflows, run **investigator elimination** (`Status::Killed` /
-  `Insane`, carrying `DefeatCause`) instead of asset discard. `defeat_overflowed_assets` /
-  `apply_{damage,horror}_numeric` / `place_assignment` route harm to
-  `investigator_card.accumulated_*` and branch on "is this the investigator card?".
+  max_health()` (resp. horror/sanity). The investigator-specific branch lives in
+  `place_assignment` step 2: when the investigator's accumulated harm reaches capacity, run
+  **investigator elimination** (`Status::Killed` / `Insane`, carrying `DefeatCause`) *before*
+  the asset-overflow sweep, instead of asset discard. `defeat_overflowed_assets` scans only
+  `cards_in_play`, so the investigator card (in its own field) is never asset-discarded.
+- Locked by three characterization tests (`crates/cards/tests/guard_dog_soak.rs`): asset-soaks-
+  first-then-investigator-remainder, investigator-overflow→elimination (not discard), and the
+  defeat-before-asset-sweep ordering invariant.
 - **Healing** (`heal_effect`) reduces `investigator_card.accumulated_*`.
 
 ## §4 — Seating + event suppression
