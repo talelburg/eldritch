@@ -314,13 +314,21 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
             ability_index: 1,
         },
     );
-    let state = result.state;
 
+    // No AoO fired: outcome-independent proof. An AoO would deal the attacker's
+    // 2 damage to the investigator, surfacing as a `DamageTaken`/`HorrorTaken`
+    // event for `inv_id` (Beat Cop's own effect damages the *enemy*, not the
+    // investigator). None firing ⇒ no attack of opportunity.
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "the fast ability resolves without suspending on an AoO window: {:?}",
-        result.outcome
+        !result.events.iter().any(|e| matches!(
+            e,
+            Event::DamageTaken { investigator, .. } | Event::HorrorTaken { investigator, .. }
+                if *investigator == inv_id
+        )),
+        "no AoO attack landed on the investigator: {:?}",
+        result.events
     );
+    let state = result.state;
     assert_eq!(
         state.investigators[&inv_id].damage(),
         0,
@@ -479,20 +487,32 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
             ability_index: 0,
         },
     );
-    let state = result.state;
 
+    // The heal effect was suppressed by the §D re-validation gate: outcome-
+    // independent proof. Had First Aid's heal run, a `Healed` event would have
+    // fired and the actor's damage would be 1 lower. Neither happens ⇒ the
+    // parked effect was aborted.
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::Healed { .. })),
+        "the suppressed activation healed nothing: {:?}",
+        result.events
+    );
+    let state = result.state;
+    // Damage is the full lethal AoO (2 initial + 50 from the attacker), NOT
+    // reduced by 1 — the heal never subtracted from it.
+    assert_eq!(
+        state.investigators[&inv_id].damage(),
+        52,
+        "First Aid's heal was suppressed: the AoO's full 50 damage stands, \
+         un-reduced by the would-be 1-point heal"
+    );
     // The actor was defeated by the AoO.
     assert_ne!(
         state.investigators[&inv_id].status,
         game_core::state::Status::Active,
         "the lethal AoO defeated the actor"
-    );
-    // The heal effect was suppressed: had it run, First Aid's `choose_one` would
-    // have suspended on its damage-or-horror choice (`AwaitingInput`). Resolving
-    // to `Done` instead proves the §D gate aborted the parked effect.
-    assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "the suppressed activation resolves to Done (no heal choice opened): {:?}",
-        result.outcome
     );
 }
