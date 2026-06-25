@@ -144,13 +144,22 @@ pub struct Investigator {
 
 impl Investigator {
     /// Every in-play card instance this investigator controls that can
-    /// carry a triggerable ability: cards in play, then threat-area
-    /// cards. The single definition both the reaction-window scan and
-    /// the forced instance-scan walk, so the threat area is covered by
-    /// both dispatch paths without a duplicate walk. This is the
-    /// shared scan source #212 later absorbs.
+    /// carry a triggerable ability: the **investigator card** first, then
+    /// cards in play, then threat-area cards. The single definition both
+    /// the reaction-window scan and the forced instance-scan walk, so the
+    /// investigator card and threat area are covered by both dispatch paths
+    /// without a duplicate walk (#448 cp3a folds the investigator card into
+    /// this iterator, retiring the bespoke `scan_investigator_card_reactions`
+    /// source). This is the shared scan source #212 later absorbs.
+    ///
+    /// The investigator card is deliberately *not* in `cards_in_play`, so
+    /// loops over "cards the player played" (asset queries, elimination
+    /// drain, discard-all, soak `build_soakers`) keep iterating
+    /// `cards_in_play` directly and never touch it.
     pub fn controlled_card_instances(&self) -> impl Iterator<Item = &CardInPlay> {
-        self.cards_in_play.iter().chain(self.threat_area.iter())
+        std::iter::once(&self.investigator_card)
+            .chain(self.cards_in_play.iter())
+            .chain(self.threat_area.iter())
     }
 
     /// Whether this investigator's own-card ability at `ability_index` has
@@ -303,8 +312,11 @@ mod threat_area_tests {
     }
 
     #[test]
-    fn controlled_card_instances_yields_in_play_then_threat_area() {
+    fn controlled_card_instances_yields_investigator_card_then_in_play_then_threat_area() {
+        // #448 cp3a: the investigator card is yielded first (so the unified
+        // scan fires its abilities), then `cards_in_play`, then `threat_area`.
         let mut inv = crate::test_support::test_investigator(1);
+        inv.investigator_card.code = CardCode::new("inv-card");
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("in-play"),
             CardInstanceId(1),
@@ -317,7 +329,7 @@ mod threat_area_tests {
             .controlled_card_instances()
             .map(|c| c.code.as_str())
             .collect();
-        assert_eq!(codes, vec!["in-play", "threat"]);
+        assert_eq!(codes, vec!["inv-card", "in-play", "threat"]);
     }
 }
 

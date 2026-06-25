@@ -2105,8 +2105,10 @@ pub fn pending_action_surcharge(
 
 /// Shared core of [`constant_skill_modifier`] and
 /// [`unconditional_constant_stat_modifier`]: sum the `delta` of every
-/// `Trigger::Constant` `Effect::Modify` on `controller`'s cards in play
-/// whose scope and stat both satisfy the given predicates. Silently skips
+/// `Trigger::Constant` `Effect::Modify` on every instance `controller`
+/// controls — the investigator card, cards in play, and the threat area
+/// (via [`controlled_card_instances`](crate::state::Investigator::controlled_card_instances),
+/// #448 cp3a) — whose scope and stat both satisfy the given predicates. Silently skips
 /// cards whose code the registry can't resolve (same policy as the
 /// callers — the deck-import gate keeps unimplemented codes out of play).
 fn sum_constant_modify(
@@ -2120,7 +2122,7 @@ fn sum_constant_modify(
         return 0;
     };
     let mut total: i8 = 0;
-    for in_play in &inv.cards_in_play {
+    for in_play in inv.controlled_card_instances() {
         let Some(abilities) = (registry.abilities_for)(&in_play.code) else {
             continue;
         };
@@ -4085,6 +4087,14 @@ mod tests {
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
+            // A standalone fake investigator card carrying a constant +2
+            // willpower — used to prove the unified `controlled_card_instances()`
+            // scan now sums the investigator card (not just `cards_in_play`).
+            "inv-willpower-plus-2" => Some(vec![constant(modify(
+                Stat::Willpower,
+                2,
+                ModifierScope::WhileInPlay,
+            ))]),
             "intellect-plus-1-while-investigating" => Some(vec![constant(modify(
                 Stat::Intellect,
                 1,
@@ -4366,6 +4376,31 @@ mod tests {
         assert_eq!(
             constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             0
+        );
+    }
+
+    #[test]
+    fn a_seated_investigator_card_constant_modifier_is_summed() {
+        // The investigator card lives in `investigator_card`, NOT in
+        // `cards_in_play`. After cp3a the constant-modifier scan walks
+        // `controlled_card_instances()`, which yields the investigator card
+        // first, so its `Trigger::Constant` modifier must be summed without any
+        // `cards_in_play` injection.
+        let (mut state, id) = state_with_cards_in_play(&[]);
+        state
+            .investigators
+            .get_mut(&id)
+            .unwrap()
+            .investigator_card
+            .code = CardCode::new("inv-willpower-plus-2");
+        let reg = fake_registry();
+        assert!(
+            state.investigators[&id].cards_in_play.is_empty(),
+            "the modifier must come from the investigator card, not cards_in_play"
+        );
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
+            2
         );
     }
 
