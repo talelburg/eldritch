@@ -69,8 +69,14 @@ enemy; you just forfeit the sole-engaged damage bonus).
   Folded in the **investigator-card bridge** (`Investigator.card_code` at seating +
   `ability_usage` + a `scan_investigator_card_reactions` source / `CandidateSource::
   Investigator`), which also fixes Roland's **reaction** firing from a *seated*
-  investigator (previously only via test card-injection). Bridge is sunset by **#448**;
-  **#453 ✅ shipped (PR #456)** removed the `#[serde(default)]` convention the new fields
+  investigator (previously only via test card-injection). **Bridge retired by #448 ✅
+  shipped (PR #457)** — the investigator card is now a real `CardInPlay`
+  (`Investigator.investigator_card`) holding health/sanity + harm + identity + usage, so
+  `card_code` / `ability_usage` / the bespoke `scan_investigator_card_reactions` source all
+  collapse into the uniform `controlled_card_instances()` scan; this also fully resolves
+  #453's `card_code`-sentinel question (no field left to default) and made the web client a
+  registry host (`cards::REGISTRY` installed at startup, since capacity now reads from
+  metadata). **#453 ✅ shipped (PR #456)** removed the `#[serde(default)]` convention the new fields
   follow — the non-`Option` fields are now required on the wire (a stale payload errors
   rather than silently degrading `card_code` to the empty sentinel); the two `Option`
   fields (`pending_played_event`, `usage_limit`) stay implicitly optional because serde
