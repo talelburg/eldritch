@@ -52,6 +52,51 @@ pub(crate) mod reveal;
 pub(super) mod skill_test;
 pub(crate) mod threat_area;
 
+/// Dispatch one enumerated open-turn action (the internal id→action map target).
+/// The same handlers `apply_player_action`'s typed arms call; behaviour-identical.
+/// Called from the `InvestigatorTurn { ending: false }` arm of `resolve_input`
+/// (slice 2b, #447).
+pub(crate) fn dispatch_turn_action(
+    cx: &mut Cx,
+    action: &crate::engine::enumerate::TurnAction,
+) -> EngineOutcome {
+    use crate::engine::enumerate::TurnAction;
+    match action {
+        TurnAction::EndTurn => phases::end_turn(cx),
+        TurnAction::Move {
+            investigator,
+            destination,
+        } => actions::move_action(cx, *investigator, *destination),
+        TurnAction::Investigate { investigator } => actions::investigate(cx, *investigator),
+        TurnAction::Resource { investigator } => actions::resource_action(cx, *investigator),
+        TurnAction::Draw { investigator } => cards::draw(cx, *investigator),
+        TurnAction::Fight {
+            investigator,
+            enemy,
+        } => actions::fight(cx, *investigator, *enemy),
+        TurnAction::Evade {
+            investigator,
+            enemy,
+        } => actions::evade(cx, *investigator, *enemy),
+        TurnAction::Engage {
+            investigator,
+            enemy,
+        } => actions::engage(cx, *investigator, *enemy),
+        TurnAction::PlayCard {
+            investigator,
+            hand_index,
+        } => cards::play_card(cx, *investigator, *hand_index),
+        TurnAction::ActivateAbility {
+            investigator,
+            instance_id,
+            ability_index,
+        } => abilities::activate_ability(cx, *investigator, *instance_id, *ability_index),
+        TurnAction::AdvanceAct { investigator } => {
+            act_agenda::advance_act_action(cx, *investigator)
+        }
+    }
+}
+
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
 /// Phase-1 minimal coverage: [`StartScenario`](PlayerAction::StartScenario)
@@ -562,13 +607,32 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                      frame is top)"
                 .into(),
         },
-        // The open turn does not emit an AwaitingInput prompt in 2a (typed
-        // actions drive it; the enumeration is 2a-ii / surfacing is 2b). A
-        // ResolveInput arriving here is spurious — reject defensively, mirroring
-        // the phase-anchor arm (slice 2a-i, #393).
+        // Open-turn OptionId dispatch (slice 2b, #447): `ResolveInput(PickSingle(OptionId))`
+        // at the open turn re-enumerates `legal_actions`, indexes by the submitted
+        // `OptionId`, and forwards to `dispatch_turn_action`. The `ending: false`
+        // arm is the live open turn; `ending: true` is only ever top momentarily
+        // inside `drive`'s resume tail and never legitimately awaits input here.
+        Some(Continuation::InvestigatorTurn { ending: false, .. }) => {
+            let crate::action::InputResponse::PickSingle(opt) = response else {
+                return EngineOutcome::Rejected {
+                    reason: "ResolveInput: the open turn expects PickSingle(OptionId)".into(),
+                };
+            };
+            let actions = crate::engine::enumerate::legal_actions(cx.state);
+            let Some(action) = actions.get(opt.0 as usize).cloned() else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "ResolveInput: open-turn OptionId({}) out of range (0..{})",
+                        opt.0,
+                        actions.len()
+                    )
+                    .into(),
+                };
+            };
+            dispatch_turn_action(cx, &action)
+        }
         Some(Continuation::InvestigatorTurn { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (the open turn \
-                     takes typed actions, not ResolveInput)"
+            reason: "ResolveInput: no input prompt is outstanding (transient rotation frame)"
                 .into(),
         },
         // Phase anchors (slice 1a, #393) never await input — they only sit
