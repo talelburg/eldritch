@@ -4256,15 +4256,18 @@ mod tests {
         assert_eq!(inv2_after.deck, original_inv2_deck);
     }
 
-    // ---- PlayCard non-enumeration tests --------------------------
+    // ---- PlayCard handler-rejection tests ------------------------
     //
-    // Post-OptionId-routing (#447), illegality is expressed as
-    // *non-enumeration*: an illegal PlayCard is simply absent from
-    // `legal_actions`, so there is no OptionId to submit. These assert
-    // that. (Game-core's registry is `TEST_INV`-only, so a card-bearing
-    // PlayCard is never enumerated here regardless; the *positive*
-    // PlayCard enumeration + the validation prefix live in
-    // `enumerate.rs` and the registry-backed `crates/cards/tests/play_card.rs`.)
+    // Card actions can't use the non-enumeration form here: these states
+    // carry no `InvestigatorTurn` frame (so `legal_actions` returns empty
+    // and the assertion would be vacuous), and game-core's `TEST_INV`-only
+    // registry never enumerates a card-bearing PlayCard anyway. Instead we
+    // reach the handler directly via `dispatch_turn_action_unchecked`
+    // (bypassing the enumeration gate) and assert it rejects — testing the
+    // handler's defensive validation, exactly as the pre-#447 typed-action
+    // `apply(PlayCard)` tests did. (The *positive* PlayCard enumeration +
+    // the registry-backed flow live in `enumerate.rs` and
+    // `crates/cards/tests/play_card.rs`.)
 
     fn play_card_state(active: bool, hand: Vec<CardCode>) -> (GameState, InvestigatorId) {
         let id = InvestigatorId(1);
@@ -4289,17 +4292,35 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::PlayCard { .. })));
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn play_card_by_non_active_investigator_is_rejected() {
-        let (state, _id) = play_card_state(false, vec![CardCode::new("01059")]);
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::PlayCard { .. })));
+        let (state, id) = play_card_state(false, vec![CardCode::new("01059")]);
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
@@ -4313,36 +4334,63 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::PlayCard { .. })));
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn play_card_with_out_of_bounds_hand_index_is_rejected() {
-        let (state, _id) = play_card_state(true, vec![CardCode::new("01059")]);
-        // No PlayCard is offered for any hand_index here (TEST_INV-only registry
-        // never resolves "01059"); in particular none for an out-of-bounds index.
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::PlayCard { hand_index, .. } if *hand_index >= 1)));
+        let (state, id) = play_card_state(true, vec![CardCode::new("01059")]);
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::PlayCard {
+                investigator: id,
+                hand_index: 5,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn play_card_with_empty_hand_is_rejected() {
-        let (state, _id) = play_card_state(true, vec![]);
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::PlayCard { .. })));
+        let (state, id) = play_card_state(true, vec![]);
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
-    // ---- ActivateAbility non-enumeration tests --------------------
+    // ---- ActivateAbility handler-rejection tests ------------------
     //
-    // Post-OptionId-routing (#447): an illegal ActivateAbility is absent
-    // from `legal_actions`. Game-core's `TEST_INV`-only registry yields no
-    // abilities for "01059", so ActivateAbility is never enumerated here
-    // regardless; the registry-backed activation flow (and its rejection
-    // prefix) lives in crates/game-core/tests/activate_ability.rs.
+    // As with PlayCard above, the non-enumeration form is vacuous here (no
+    // `InvestigatorTurn` frame; `TEST_INV`-only registry yields no abilities
+    // for "01059"). Reach the handler directly via
+    // `dispatch_turn_action_unchecked` and assert it rejects — the handler's
+    // defensive validation, exactly as the pre-#447 typed-action tests did.
+    // The registry-backed activation flow lives in
+    // crates/game-core/tests/activate_ability.rs.
 
     use crate::state::CardInstanceId;
 
@@ -4377,25 +4425,55 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::ActivateAbility { .. })));
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id,
+                ability_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn activate_ability_by_non_active_investigator_is_rejected() {
-        let (state, _id, _instance_id) = activate_ability_state(false);
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::ActivateAbility { .. })));
+        let (state, id, instance_id) = activate_ability_state(false);
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id,
+                ability_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn activate_ability_with_unknown_instance_id_is_rejected() {
-        let (state, _id, _real_instance) = activate_ability_state(true);
-        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
-            |a| matches!(a, TurnAction::ActivateAbility { instance_id, .. } if *instance_id == CardInstanceId(9999))
-        ));
+        let (state, id, _real_instance) = activate_ability_state(true);
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: CardInstanceId(9999),
+                ability_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
@@ -4413,9 +4491,19 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        assert!(!crate::engine::enumerate::legal_actions(&state)
-            .iter()
-            .any(|a| matches!(a, TurnAction::ActivateAbility { .. })));
+        let result = dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id,
+                ability_index: 0,
+            },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     // ---- skill-test commit window (#63) -----------------------------
