@@ -7,9 +7,11 @@
 
 use std::sync::Once;
 
+use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome, OptionId};
+use game_core::seat_and_open;
 use game_core::state::{CardCode, GameState, InvestigatorId};
-use game_core::test_support::take_turn_action;
+use game_core::test_support::{take_turn_action, TEST_INV};
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_CHOICE_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
@@ -23,18 +25,21 @@ fn install() {
 
 /// Synthetic setup → mulligan → the sole investigator's round-ending `EndTurn`
 /// cascades to the Mythos step-1.4 encounter-draw prompt. Seed the encounter
-/// deck (after `StartScenario`'s shuffle) with only the choice-treachery on top.
+/// deck (after `seat_and_open`'s shuffle) with only the choice-treachery on top.
 fn at_mythos_draw_with_choice_treachery() -> GameState {
     install();
-    let mut state = synthetic::setup();
-    for action in [
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck: vec![],
+    }];
+    let mut state = seat_and_open(synthetic::setup(), &roster).state;
+    state = apply(
+        state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
-    ] {
-        state = apply(state, action).state;
-    }
+    )
+    .state;
     state = take_turn_action(state, &TurnAction::EndTurn).state;
     synthetic::with_encounter_deck(&mut state, vec![CardCode::new(SYNTH_CHOICE_TREACHERY_CODE)]);
     state

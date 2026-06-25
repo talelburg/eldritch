@@ -10,10 +10,13 @@
 
 use std::sync::Once;
 
+use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::Resolution;
-use game_core::state::{CardCode, GameState, InvestigatorId, LocationId, Phase};
+use game_core::seat_and_open;
+use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
+use game_core::test_support::TEST_INV;
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_TREACHERY_CODE, TEST_REGISTRY,
@@ -111,11 +114,16 @@ fn won_walk_full_cycle_replays_identically() {
     install_registry();
     let inv = InvestigatorId(1);
 
-    // Raw setup() with no local seeding — exactly the state the browser
-    // plays. setup() itself must place the investigator at the demo
-    // location, stock it with clues, and seed a non-empty chaos bag; this
-    // walk is the regression guard for that (P6.8 demo playability).
-    let make_initial = scenarios::test_fixtures::synthetic::setup;
+    // make_initial folds seat_and_open in: the log starts from the post-seat
+    // state so replay_with_roundtrip rebuilds from the same starting point.
+    // setup() stocks the demo location with clues and seeds a non-empty chaos
+    // bag; this walk is the regression guard for that (P6.8 demo playability).
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck: vec![],
+    }];
+    let make_initial =
+        || seat_and_open(scenarios::test_fixtures::synthetic::setup(), &roster).state;
 
     // Round 1 (Mythos skipped): Investigate x3 (each followed by a
     // PickMultiple round-trip for the skill-test commit window) ->
@@ -148,10 +156,7 @@ fn won_walk_full_cycle_replays_identically() {
         }};
     }
 
-    // StartScenario + mulligan.
-    push_apply!(Action::Player(PlayerAction::StartScenario {
-        roster: vec![]
-    }));
+    // Mulligan (seat_and_open is in make_initial, not the log).
     push_apply!(Action::Player(PlayerAction::ResolveInput {
         response: InputResponse::PickMultiple { selected: vec![] },
     }));
@@ -232,12 +237,15 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     install_registry();
     let inv = InvestigatorId(1);
 
-    // setup() + place the investigator at the demo location so the
-    // spawn-bearing enemy can engage on arrival, then seed the encounter
-    // deck with the enemy on top so the first Mythos draw spawns it.
+    // make_initial folds seat_and_open in (investigator is placed at
+    // starting_location = LocationId(10) by seat_and_open), then seeds the
+    // encounter deck with the enemy on top so the first Mythos draw spawns it.
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck: vec![],
+    }];
     let make_initial = || {
-        let mut s = scenarios::test_fixtures::synthetic::setup();
-        s.investigators.get_mut(&inv).unwrap().current_location = Some(LocationId(10));
+        let mut s = seat_and_open(scenarios::test_fixtures::synthetic::setup(), &roster).state;
         scenarios::test_fixtures::synthetic::with_encounter_deck(
             &mut s,
             vec![
@@ -248,15 +256,13 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
         s
     };
 
-    // Setup + close mulligan, then drive an EndTurn cascade, drawing only
-    // when a Mythos draw is pending and breaking on resolution. Record the
-    // realized action log so the round-trip replays exactly what ran.
-    let mut log = vec![
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    ];
+    // Close mulligan (seat_and_open is in make_initial, not the log), then
+    // drive an EndTurn cascade, drawing only when a Mythos draw is pending
+    // and breaking on resolution. Record the realized action log so the
+    // round-trip replays exactly what ran.
+    let mut log = vec![Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickMultiple { selected: vec![] },
+    })];
     let (mut state, mut events) = drive(make_initial(), &log);
 
     // 12 iterations is ~2x headroom: doom +1 per Mythos and the two

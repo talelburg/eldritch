@@ -1,6 +1,6 @@
 //! Integration tests for #69 Mythos phase content.
 //!
-//! Drives full apply cycles through `StartScenario` → `Mulligan` →
+//! Drives full apply cycles through `seat_and_open` → `Mulligan` →
 //! `EndTurn` → `DrawEncounterCard`, verifying the per-card 5-step
 //! sub-sequence, surge chain, and post-1.4 window behavior end-to-end.
 //!
@@ -21,13 +21,15 @@
 
 use std::sync::Once;
 
+use game_core::action::RosterEntry;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
+use game_core::seat_and_open;
 use game_core::state::{
     CardCode, Continuation, FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::take_turn_action;
+use game_core::test_support::{take_turn_action, TEST_INV};
 use game_core::{
     assert_event, assert_event_sequence, Action, InputResponse, PlayerAction, TurnAction,
 };
@@ -45,45 +47,29 @@ fn install_test_registry() {
     });
 }
 
-/// Drive a sequence of actions from an initial state, collecting all
-/// events. Returns the final state and the concatenation of all event
-/// vecs.
-fn drive(
-    initial_state: game_core::state::GameState,
-    actions: Vec<Action>,
-) -> (game_core::state::GameState, Vec<Event>) {
-    let mut state = initial_state;
-    let mut all_events = Vec::new();
-    for action in actions {
-        let result = apply(state, action);
-        all_events.extend(result.events);
-        state = result.state;
-    }
-    (state, all_events)
-}
-
 /// Build the standard single-investigator sequence up to the point
 /// where `DrawEncounterCard` is the next expected action.
 ///
 /// Returns the state after `EndTurn` has ticked through all phases
 /// and landed in Mythos with `mythos_draw_pending = Some(InvestigatorId(1))`.
 fn setup_at_mythos_draw(state: game_core::state::GameState) -> game_core::state::GameState {
-    let (mut state, _) = drive(
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck: vec![],
+    }];
+    // seat_and_open opens the mulligan prompt; close it (keep hand).
+    let mut state = seat_and_open(state, &roster).state;
+    state = apply(
         state,
-        vec![
-            // Round 1 begins; mulligan window opens.
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            // Close mulligan window (empty redraw = keep hand).
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        ],
-    );
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state;
     // Sole investigator ends their turn → auto-advance through
     // Investigation → Enemy → Upkeep → Mythos (round 2).
     // Pauses with mythos_draw_pending = Some(inv1).
-    state = take_turn_action(state, &TurnAction::EndTurn).state;
-    state
+    take_turn_action(state, &TurnAction::EndTurn).state
 }
 
 // ------------------------------------------------------------------
@@ -161,7 +147,7 @@ fn mythos_phase_surge_chains_into_next_card() {
     let mut state = setup_at_mythos_draw(base);
     assert_eq!(state.phase, Phase::Mythos);
 
-    // Seed the controlled draw order *after* StartScenario's shuffle:
+    // Seed the controlled draw order *after* seat_and_open's shuffle:
     // surge treachery on top, plain treachery below.
     synthetic::with_encounter_deck(
         &mut state,
@@ -210,13 +196,10 @@ fn mythos_phase_surge_chains_into_next_card() {
 #[test]
 fn mythos_phase_resolves_single_spawn_enemy() {
     install_test_registry();
+    // seat_and_open (called inside setup_at_mythos_draw) places the investigator
+    // at starting_location = LocationId(10), so the spawned enemy engages them.
     let mut base = synthetic::setup();
-    // Place the investigator at the synth location so the spawn engages them.
-    base.investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .current_location = Some(LocationId(10));
-    // Deck: synth enemy (already placed at LocationId(10) = synth loc via SYNTH_LOC_CODE).
+    // Deck: synth enemy (placed at LocationId(10) = synth loc via SYNTH_LOC_CODE).
     synthetic::with_encounter_deck(&mut base, vec![CardCode(SYNTH_ENEMY_CODE.into())]);
 
     let state = setup_at_mythos_draw(base);
@@ -270,31 +253,37 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // chain — which, the enemy being non-surge, advances the cursor to
     // inv2 and stays in Mythos.
     install_test_registry();
-    let mut base = synthetic::setup();
-    base.investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .current_location = Some(LocationId(10));
-    let mut inv2 = game_core::test_support::test_investigator(2);
-    inv2.current_location = Some(LocationId(10));
-    base.investigators.insert(InvestigatorId(2), inv2);
-    base.turn_order.push(InvestigatorId(2));
+    // Both investigators are seated at LocationId(10) (starting_location) by
+    // seat_and_open; no pre-seating needed.
+    let base = synthetic::setup();
 
-    // Drive both investigators through setup into Mythos (mirrors
-    // `mythos_phase_multi_investigator_player_order`; `setup_at_mythos_draw`
-    // only mulligans inv1 and so can't seat a second investigator).
-    let (mut state, _) = drive(
-        base,
-        vec![
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        ],
-    );
+    // Seat both investigators and drive through setup into Mythos.
+    let roster = vec![
+        RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        },
+        RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        },
+    ];
+    let mut state = seat_and_open(base, &roster).state;
+    // Close mulligan for both investigators.
+    state = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state;
+    state = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state;
     // inv1 ends turn → rotates to inv2.
     state = take_turn_action(state, &TurnAction::EndTurn).state;
     // inv2 is the last in turn_order → ticks through phases into Mythos.
@@ -302,7 +291,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
-    // Seed the controlled draw order *after* StartScenario's shuffle:
+    // Seed the controlled draw order *after* seat_and_open's shuffle:
     // inv1 draws the enemy; inv2 draws a plain treachery afterward.
     synthetic::with_encounter_deck(
         &mut state,
@@ -401,13 +390,9 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
 #[test]
 fn mythos_phase_multi_investigator_player_order() {
     install_test_registry();
-    // Build a two-investigator state manually, starting from setup()
-    // (which gives us inv1 + the synth location).
+    // Build a two-investigator state from setup() (both seated at
+    // starting_location by seat_and_open).
     let mut base = synthetic::setup();
-    let mut inv2 = game_core::test_support::test_investigator(2);
-    inv2.current_location = Some(LocationId(10));
-    base.investigators.insert(InvestigatorId(2), inv2);
-    base.turn_order.push(InvestigatorId(2));
 
     // Two treacheries — one per investigator.
     synthetic::with_encounter_deck(
@@ -421,19 +406,32 @@ fn mythos_phase_multi_investigator_player_order() {
     let inv1 = InvestigatorId(1);
     let inv2 = InvestigatorId(2);
 
-    // StartScenario + mulligan both investigators.
-    let (mut state, _) = drive(
-        base,
-        vec![
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        ],
-    );
+    // Seat both investigators and mulligan each.
+    let roster = vec![
+        RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        },
+        RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        },
+    ];
+    let mut state = seat_and_open(base, &roster).state;
+    state = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state;
+    state = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state;
     // inv1 ends turn → rotates to inv2.
     state = take_turn_action(state, &TurnAction::EndTurn).state;
     // inv2 is the last in turn_order → ticks through phases into Mythos.
@@ -517,6 +515,7 @@ fn mythos_phase_full_round_chain() {
 // ------------------------------------------------------------------
 
 #[test]
+#[allow(clippy::too_many_lines)] // end-to-end multi-investigator surge-isolation walkthrough
 fn mythos_phase_multi_investigator_surge_does_not_spill() {
     // Verifies that a surge in inv1's draw chain resolves entirely within
     // inv1's DrawEncounterCard apply — consuming two cards from the shared
@@ -525,7 +524,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     // Encounter deck (top → bottom):
     //   [SYNTH_SURGE_TREACHERY, SYNTH_TREACHERY, SYNTH_TREACHERY]
     //
-    // Drive: StartScenario → mulligans → EndTurn(inv1) → EndTurn(inv2)
+    // Drive: seat_and_open → mulligans → EndTurn(inv1) → EndTurn(inv2)
     //        → DrawEncounterCard(inv1) → DrawEncounterCard(inv2)
     //
     // Expected:
@@ -538,28 +537,38 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     //     Phase transitions to Investigation; mythos_draw_pending = None.
     install_test_registry();
 
-    let mut base = synthetic::setup();
-    let mut inv2 = game_core::test_support::test_investigator(2);
-    inv2.current_location = Some(LocationId(10));
-    base.investigators.insert(InvestigatorId(2), inv2);
-    base.turn_order.push(InvestigatorId(2));
+    // Both investigators seated at starting_location by seat_and_open.
+    let base = synthetic::setup();
 
     let inv1 = InvestigatorId(1);
     let inv2 = InvestigatorId(2);
 
-    // StartScenario + mulligan both investigators + both EndTurns.
-    let (mut state, _) = drive(
-        base,
-        vec![
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        ],
-    );
+    // Seat both investigators and mulligan each.
+    let roster = vec![
+        RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        },
+        RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        },
+    ];
+    let mut state = seat_and_open(base, &roster).state;
+    state = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state;
+    state = apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state;
     // inv1 ends turn → rotates to inv2.
     state = take_turn_action(state, &TurnAction::EndTurn).state;
     // inv2 is last in turn_order → auto-advances into Mythos.
@@ -572,7 +581,7 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
         "inv1 draws first"
     );
 
-    // Seed the controlled draw order *after* StartScenario's shuffle:
+    // Seed the controlled draw order *after* seat_and_open's shuffle:
     // surge on top, then two plain treacheries.
     synthetic::with_encounter_deck(
         &mut state,
@@ -728,7 +737,7 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
 
     let mut state = setup_at_mythos_draw(base);
     // Insert the synthetic Fast event into inv1's hand AFTER setup so it
-    // doesn't interact with the player-deck draw during StartScenario.
+    // doesn't interact with the player-deck draw during seat_and_open.
     state
         .investigators
         .get_mut(&InvestigatorId(1))

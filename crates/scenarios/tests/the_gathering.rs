@@ -6,7 +6,7 @@
 use std::sync::Once;
 
 use game_core::action::RosterEntry;
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{apply, seat_and_open, EngineOutcome};
 use game_core::scenario::Resolution;
 use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
@@ -41,20 +41,17 @@ fn apply_checked(
 
 /// Seat solo Roland (01001, empty deck) and close the mulligan window.
 fn setup_and_seat() -> game_core::state::GameState {
-    let mut state = the_gathering::setup();
-    for a in [
-        Action::Player(PlayerAction::StartScenario {
-            roster: vec![RosterEntry {
-                investigator: CardCode("01001".into()),
-                deck: vec![],
-            }],
-        }),
-        Action::Player(PlayerAction::ResolveInput {
+    let roster = vec![RosterEntry {
+        investigator: CardCode("01001".into()),
+        deck: vec![],
+    }];
+    let mut state = seat_and_open(the_gathering::setup(), &roster).state;
+    state = apply_checked(
+        state,
+        &Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
-    ] {
-        state = apply_checked(state, &a);
-    }
+    );
     state
 }
 

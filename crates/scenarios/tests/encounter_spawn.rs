@@ -33,7 +33,8 @@ use game_core::action::EngineRecord;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId};
+use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
+use game_core::test_support::test_investigator;
 use game_core::{assert_event_sequence, Action};
 use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, SYNTH_LOC_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
@@ -49,14 +50,18 @@ fn install_test_registry() {
 #[test]
 fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
     install_test_registry();
+    let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
-    // Place the drawing investigator at the synth location so the
-    // engagement-on-spawn resolves to them.
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .current_location = Some(LocationId(10));
+    // Manually seed the investigator at the synth location — this test uses
+    // EngineRecord::EncounterCardRevealed directly (not via seat_and_open).
+    {
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(10));
+        state.investigators.insert(inv1, inv);
+        state.turn_order = vec![inv1];
+        state.active_investigator = Some(inv1);
+        state.phase = Phase::Mythos;
+    }
     // Replace the seeded treachery on top of the deck with the synth
     // enemy.
     state.encounter_deck.clear();
@@ -66,9 +71,7 @@ fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
 
     let result = apply(
         state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
+        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -82,9 +85,9 @@ fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
         Event::EnemySpawned { code, location, engaged_with, .. }
             if *code == CardCode(SYNTH_ENEMY_CODE.into())
                 && *location == LocationId(10)
-                && *engaged_with == Some(InvestigatorId(1)),
+                && *engaged_with == Some(inv1),
         Event::EnemyEngaged { investigator, .. }
-            if *investigator == InvestigatorId(1),
+            if *investigator == inv1,
     );
 
     // Enemy is in play.
@@ -95,7 +98,7 @@ fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
     );
     let enemy = result.state.enemies.values().next().unwrap();
     assert_eq!(enemy.current_location, Some(LocationId(10)));
-    assert_eq!(enemy.engaged_with, Some(InvestigatorId(1)));
+    assert_eq!(enemy.engaged_with, Some(inv1));
 
     // Enemy is NOT in encounter_discard (enemies stay in play; only
     // treacheries discard after Revelation).
@@ -115,18 +118,23 @@ fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
 #[test]
 fn revealing_synth_enemy_with_two_investigators_at_loc_suspends_for_lead_pick() {
     install_test_registry();
+    let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
+    // Manually seed both investigators at LocationId(10) — this test uses
+    // EngineRecord::EncounterCardRevealed directly (not via seat_and_open).
+    {
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(10));
+        state.investigators.insert(inv1, inv);
+        state.turn_order = vec![inv1];
+        state.active_investigator = Some(inv1);
+        state.phase = Phase::Mythos;
+    }
     // Add a second investigator at the same location.
-    let mut inv2 = game_core::test_support::test_investigator(2);
+    let mut inv2 = test_investigator(2);
     inv2.current_location = Some(LocationId(10));
     state.investigators.insert(InvestigatorId(2), inv2);
     state.turn_order.push(InvestigatorId(2));
-    // First investigator also at LocationId(10).
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .current_location = Some(LocationId(10));
 
     // Swap deck to the synth enemy.
     state.encounter_deck.clear();
@@ -136,9 +144,7 @@ fn revealing_synth_enemy_with_two_investigators_at_loc_suspends_for_lead_pick() 
 
     let result = apply(
         state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
+        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );
 
     assert!(

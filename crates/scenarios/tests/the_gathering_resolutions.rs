@@ -11,7 +11,7 @@
 use std::sync::Once;
 
 use game_core::action::RosterEntry;
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{apply, seat_and_open, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId};
@@ -49,13 +49,10 @@ fn seated_roland() -> GameState {
     // StartScenario opens the mulligan prompt (AwaitingInput); each
     // investigator then submits a single mulligan (ResolveInput) before the
     // turn's actions begin.
-    let started = apply(
-        state,
-        Action::Player(PlayerAction::StartScenario { roster }),
-    );
+    let started = seat_and_open(state, &roster);
     assert!(
         matches!(started.outcome, EngineOutcome::AwaitingInput { .. }),
-        "StartScenario opens the mulligan prompt, got {:?}",
+        "seat_and_open opens the mulligan prompt, got {:?}",
         started.outcome
     );
     let after_mulligan = apply(
