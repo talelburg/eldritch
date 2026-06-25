@@ -34,7 +34,7 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
         .with_investigator(test_investigator(1))
         .with_turn_order([lead])
         .build();
-    assert_eq!(state.investigators[&lead].horror, 0);
+    assert_eq!(state.investigators[&lead].horror(), 0);
 
     // Firing the reverse suspends on the lead's choice (Choice frame pushed).
     let mut events = Vec::new();
@@ -53,7 +53,8 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     );
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
-        result.state.investigators[&lead].horror, 2,
+        result.state.investigators[&lead].horror(),
+        2,
         "branch 1 deals 2 horror to the lead investigator",
     );
     assert!(
@@ -100,7 +101,8 @@ fn agenda_01105_reverse_choice_random_discard_each() {
         "the discarded card landed in the discard pile",
     );
     assert_eq!(
-        result.state.investigators[&lead].horror, 0,
+        result.state.investigators[&lead].horror(),
+        0,
         "no horror branch"
     );
 }

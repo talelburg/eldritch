@@ -88,7 +88,7 @@ fn success_heals_one_damage_from_the_chosen_investigator() {
             ..
         }
     );
-    assert_eq!(r.state.investigators[&INV].damage, 1, "1 damage healed");
+    assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage healed");
 }
 
 #[test]
@@ -104,5 +104,5 @@ fn failure_deals_one_damage_to_the_chosen_investigator() {
             amount: 1,
         }
     );
-    assert_eq!(r.state.investigators[&INV].damage, 1, "1 damage dealt");
+    assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage dealt");
 }

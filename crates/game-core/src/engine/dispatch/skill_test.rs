@@ -1511,7 +1511,8 @@ mod tests {
         let out = super::super::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(
-            state.investigators[&inv].horror, 1,
+            state.investigators[&inv].horror(),
+            1,
             "on_success effect ran on the passing draw",
         );
     }

@@ -358,7 +358,7 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         return false;
     }
     inv.damage = inv.damage.saturating_add(amount);
-    let lethal = inv.damage >= inv.max_health;
+    let lethal = inv.damage() >= inv.max_health();
     cx.events.push(Event::DamageTaken {
         investigator,
         amount,
@@ -388,7 +388,7 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
         return false;
     }
     inv.horror = inv.horror.saturating_add(amount);
-    let lethal = inv.horror >= inv.max_sanity;
+    let lethal = inv.horror() >= inv.max_sanity();
     cx.events.push(Event::HorrorTaken {
         investigator,
         amount,
@@ -1383,8 +1383,8 @@ mod combat_tests {
         let survivors = super::soak_and_place(&mut cx, id, 2, 1);
         assert!(survivors.is_empty(), "no soakers → no survivors");
 
-        assert_eq!(state.investigators[&id].damage, 2, "all damage on inv");
-        assert_eq!(state.investigators[&id].horror, 1, "all horror on inv");
+        assert_eq!(state.investigators[&id].damage(), 2, "all damage on inv");
+        assert_eq!(state.investigators[&id].horror(), 1, "all horror on inv");
         assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == id);
         assert_event!(events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
         assert!(
@@ -1543,7 +1543,8 @@ mod combat_tests {
         assert_eq!(card.accumulated_damage, 1, "asset soaked 1 damage");
         assert_eq!(card.accumulated_horror, 1, "asset soaked 1 horror");
         assert_eq!(
-            state.investigators[&id].damage, 1,
+            state.investigators[&id].damage(),
+            1,
             "investigator took overflow damage"
         );
         assert_eq!(
@@ -1676,7 +1677,8 @@ mod combat_tests {
         let _ = super::resume_enemy_attack(&mut cx);
 
         assert_eq!(
-            state.investigators[&inv_id].damage, 0,
+            state.investigators[&inv_id].damage(),
+            0,
             "cancelled attack deals no damage"
         );
         assert!(
@@ -1729,7 +1731,8 @@ mod combat_tests {
         let _ = super::resume_enemy_attack(&mut cx);
 
         assert_eq!(
-            state.investigators[&inv_id].damage, 1,
+            state.investigators[&inv_id].damage(),
+            1,
             "an un-cancelled attack deals its damage"
         );
         assert!(state.enemies[&attacker].exhausted, "attacker exhausted");
@@ -1762,7 +1765,8 @@ mod combat_tests {
             "retaliate must not exhaust (RR p.18)"
         );
         assert_eq!(
-            cx.state.investigators[&inv_id].damage, 1,
+            cx.state.investigators[&inv_id].damage(),
+            1,
             "retaliate dealt 1 damage"
         );
         assert_event!(events, Event::DamageTaken { .. });
@@ -1795,7 +1799,8 @@ mod combat_tests {
             "AoO must not exhaust the attacker (RR p.7)"
         );
         assert_eq!(
-            cx.state.investigators[&inv_id].damage, 1,
+            cx.state.investigators[&inv_id].damage(),
+            1,
             "AoO damage landed on the investigator"
         );
         // Enemy attack fires DamageTaken (no EnemyAttacked event exists); verify

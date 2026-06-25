@@ -265,7 +265,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
 
     assert_eq!(r.outcome, EngineOutcome::Done);
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.damage, 0, "damage soaked, investigator took none");
+    assert_eq!(inv.damage(), 0, "damage soaked, investigator took none");
     let dog = inv
         .cards_in_play
         .iter()

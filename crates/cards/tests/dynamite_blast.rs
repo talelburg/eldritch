@@ -119,7 +119,8 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
         "enemy at the blasted location was defeated and removed",
     );
     assert_eq!(
-        r.state.investigators[&INV].damage, 3,
+        r.state.investigators[&INV].damage(),
+        3,
         "the controller blasted its own location and took 3",
     );
     // LOC_B (not chosen): untouched.
@@ -128,7 +129,8 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
         "enemy at LOC_B untouched"
     );
     assert_eq!(
-        r.state.investigators[&INV2].damage, 0,
+        r.state.investigators[&INV2].damage(),
+        0,
         "investigator at LOC_B untouched",
     );
 
@@ -173,7 +175,7 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
         "single candidate → no suspend"
     );
     assert_eq!(r.state.enemies[&ENEMY_A].damage, 3, "enemy took 3");
-    assert_eq!(r.state.investigators[&INV].damage, 3, "controller took 3");
+    assert_eq!(r.state.investigators[&INV].damage(), 3, "controller took 3");
     assert_eq!(
         r.state.investigators[&INV].discard,
         vec![CardCode::new(DYNAMITE)],

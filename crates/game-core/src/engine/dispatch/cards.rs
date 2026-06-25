@@ -882,7 +882,8 @@ mod draw_one_with_deckout_tests {
             "drew 1"
         );
         assert_eq!(
-            state.investigators[&id].horror, 1,
+            state.investigators[&id].horror(),
+            1,
             "deck-out costs 1 horror"
         );
         assert!(events

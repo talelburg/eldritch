@@ -956,7 +956,8 @@ mod actions_tests {
         );
         // AoO damage is visible.
         assert_eq!(
-            result.state.investigators[&inv_id].damage, 1,
+            result.state.investigators[&inv_id].damage(),
+            1,
             "investigator damage == 1 after nonlethal AoO"
         );
         // Engaged enemy moved with investigator to L2.
@@ -1047,7 +1048,8 @@ mod actions_tests {
         );
         // Investigator took 1 damage.
         assert_eq!(
-            outcome.state.investigators[&inv_id].damage, 1,
+            outcome.state.investigators[&inv_id].damage(),
+            1,
             "investigator must have taken 1 damage from AoO"
         );
         // AoO does not exhaust the attacker (RR p.7).
@@ -1213,7 +1215,8 @@ mod actions_tests {
         );
         // Investigator took the AoO damage.
         assert_eq!(
-            result.state.investigators[&inv_id].damage, 1,
+            result.state.investigators[&inv_id].damage(),
+            1,
             "investigator damage == 1 after nonlethal AoO"
         );
     }
@@ -1371,7 +1374,8 @@ mod actions_tests {
         );
         // Investigator took 1 damage.
         assert_eq!(
-            result.state.investigators[&inv_id].damage, 1,
+            result.state.investigators[&inv_id].damage(),
+            1,
             "investigator damage == 1 after nonlethal AoO"
         );
         // AoO attacker is not exhausted (RR p.7).

@@ -176,7 +176,8 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         "AoO damage from the activation soaked onto Guard Dog"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "investigator took no AoO damage (soaked onto Guard Dog)"
     );
     // First Aid spent its supply (the cost paid before the AoO).
@@ -251,7 +252,8 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         "no AoO soaked onto Guard Dog"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "no AoO damage to the investigator"
     );
     // The activation went straight to the Fight skill test.
@@ -315,7 +317,8 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         result.outcome
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "no AoO damage to the investigator"
     );
     // The fast ability's own effect resolved: the enemy took 1 damage.
@@ -388,7 +391,8 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     // The AoO was cancelled — no damage — and the activation resumed into First
     // Aid's heal choice (the effect ran after the window closed).
     assert_eq!(
-        state.investigators[&inv_id].damage, 2,
+        state.investigators[&inv_id].damage(),
+        2,
         "the cancelled AoO dealt no damage"
     );
     assert!(
@@ -407,7 +411,8 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     );
     let state = result.state;
     assert_eq!(
-        state.investigators[&inv_id].damage, 1,
+        state.investigators[&inv_id].damage(),
+        1,
         "First Aid healed 1 damage after the AoO was dodged and the effect resumed"
     );
     assert!(

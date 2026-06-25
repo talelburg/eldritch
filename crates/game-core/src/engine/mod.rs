@@ -1971,8 +1971,8 @@ mod tests {
         // Retaliate attack lands (damage + horror, simultaneously).
         assert_event!(result.events, Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id);
         assert_event!(result.events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id);
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 1);
         // Enemy does NOT exhaust after a retaliate attack (RR p.18).
         assert!(!result.state.enemies[&enemy_id].exhausted);
         // Failed fight dealt no damage to the enemy.
@@ -2001,7 +2001,7 @@ mod tests {
         assert_event!(result.events, Event::SkillTestSucceeded { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2024,7 +2024,7 @@ mod tests {
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2045,7 +2045,7 @@ mod tests {
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2067,7 +2067,7 @@ mod tests {
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2092,7 +2092,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(result.events, Event::SkillTestFailed { .. });
         // Retaliate damage landed.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         // Enemy must remain ready (not exhausted) after the retaliate (RR p.18).
         assert!(!result.state.enemies[&enemy_id].exhausted);
         assert_no_event!(result.events, Event::EnemyExhausted { .. });
@@ -2481,7 +2481,7 @@ mod tests {
             "AoO DamageTaken (idx {damage_idx}) must precede InvestigatorMoved (idx {moved_idx})"
         );
         // Investigator damaged.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         // Investigator moved.
         assert_eq!(
             result.state.investigators[&inv_id].current_location,
@@ -2513,7 +2513,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
         // Exhausted enemy still follows the investigator.
         assert_eq!(result.state.enemies[&enemy_id].current_location, Some(b));
     }
@@ -2579,7 +2579,7 @@ mod tests {
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         // AoO fired: investigator took 1 damage, but the resource is still gained.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_eq!(result.state.investigators[&inv_id].resources, 6);
         assert_event!(
             result.events,
@@ -2783,7 +2783,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         // The OTHER engaged enemy made the AoO; the target (not engaged at
         // AoO time) did not. Target ends engaged; investigator took 1 damage.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_eq!(result.state.enemies[&target_id].engaged_with, Some(inv_id));
         assert_event!(
             result.events,
@@ -2969,7 +2969,7 @@ mod tests {
         );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_event!(
             result.events,
             Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
@@ -3122,7 +3122,7 @@ mod tests {
         );
         // Skill test still runs after AoO.
         assert_event!(result.events, Event::SkillTestStarted { .. });
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 1);
     }
 
     #[test]
@@ -3148,8 +3148,8 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
-        assert_eq!(result.state.investigators[&inv_id].horror, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 0);
     }
 
     #[test]
@@ -3171,7 +3171,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -3266,7 +3266,7 @@ mod tests {
             vec![4, 2, 1],
             "chosen order: 302 (dmg4), 301 (dmg2), 300 (dmg1)"
         );
-        assert_eq!(r3.state.investigators[&inv_id].damage, 7);
+        assert_eq!(r3.state.investigators[&inv_id].damage(), 7);
         // The Move completed once the AoO loop drained.
         assert_event!(r3.events, Event::InvestigatorMoved { .. });
     }
@@ -3293,8 +3293,8 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
-        assert_eq!(result.state.investigators[&inv_id].horror, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 0);
     }
 
     // ------------------------------------------------------------------
@@ -3460,7 +3460,7 @@ mod tests {
         assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
         assert_event_count!(r2.events, 1, Event::InvestigatorDefeated { .. });
         // Damage saturates at the first AoO's amount; the second AoO is skipped.
-        assert_eq!(r2.state.investigators[&inv_id].damage, 5);
+        assert_eq!(r2.state.investigators[&inv_id].damage(), 5);
         // The actor was defeated mid-action → the Move's primary effect is
         // suppressed by the re-validation gate (#293 keystone).
         assert_no_event!(r2.events, Event::InvestigatorMoved { .. });
@@ -3495,8 +3495,8 @@ mod tests {
             result.events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].damage, 5);
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 5);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 1);
         // Exactly one InvestigatorDefeated, caused by Damage.
         assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
         assert_event!(
@@ -3535,8 +3535,8 @@ mod tests {
             result.events,
             Event::HorrorTaken { investigator, amount: 5 } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
-        assert_eq!(result.state.investigators[&inv_id].horror, 5);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 5);
         assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
         assert_event!(
             result.events,
@@ -3568,8 +3568,8 @@ mod tests {
             }),
         );
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 1);
         assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
         assert_event!(
             result.events,
@@ -3812,7 +3812,7 @@ mod tests {
         assert_eq!(inv.hand.len(), 1);
         assert_eq!(inv.deck.len(), 2);
         assert!(inv.discard.is_empty());
-        assert_eq!(inv.horror, 1);
+        assert_eq!(inv.horror(), 1);
     }
 
     #[test]
@@ -3836,7 +3836,7 @@ mod tests {
         );
         assert_no_event!(result.events, Event::DeckShuffled { .. });
         let inv = &result.state.investigators[&id];
-        assert_eq!(inv.horror, 1);
+        assert_eq!(inv.horror(), 1);
         assert_eq!(inv.actions_remaining, 2);
         assert!(inv.hand.is_empty());
         assert!(inv.deck.is_empty());

@@ -211,7 +211,8 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
         "Guard Dog soaked all 2 damage"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "investigator took no damage"
     );
     // No damage on the attacker yet (reaction not fired).
@@ -653,7 +654,8 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         "AoO damage soaked onto Guard Dog"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "investigator took no AoO damage (fully soaked)"
     );
     // Investigator has NOT moved yet (the ActionResolution frame is parked).

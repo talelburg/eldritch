@@ -172,6 +172,33 @@ impl Investigator {
     pub fn bump_ability_usage(&mut self, ability_index: u8, current_round: u32) {
         bump_usage(&mut self.ability_usage, ability_index, current_round);
     }
+
+    /// Physical damage currently on the investigator. Reads the investigator
+    /// card's accumulated damage once harm moves there (#448 cp2); during the
+    /// seam it delegates to the legacy field.
+    #[must_use]
+    pub fn damage(&self) -> u8 {
+        self.damage
+    }
+
+    /// Horror currently on the investigator. See [`Self::damage`].
+    #[must_use]
+    pub fn horror(&self) -> u8 {
+        self.horror
+    }
+
+    /// Maximum health (printed). Reads `CardKind::Investigator` metadata once
+    /// the seam closes (#448 cp2); during the seam it delegates to the field.
+    #[must_use]
+    pub fn max_health(&self) -> u8 {
+        self.max_health
+    }
+
+    /// Maximum sanity (printed). See [`Self::max_health`].
+    #[must_use]
+    pub fn max_sanity(&self) -> u8 {
+        self.max_sanity
+    }
 }
 
 /// Whether an investigator is still active in the scenario, and if not,
@@ -318,6 +345,20 @@ mod removed_from_game_tests {
     fn new_investigator_has_empty_removed_pile() {
         let inv = crate::test_support::test_investigator(1);
         assert!(inv.removed_from_game.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod harm_accessor_tests {
+    #[test]
+    fn harm_accessors_match_the_underlying_fields_during_the_seam() {
+        let mut inv = crate::test_support::test_investigator(1);
+        inv.damage = 2;
+        inv.horror = 1;
+        assert_eq!(inv.damage(), 2);
+        assert_eq!(inv.horror(), 1);
+        assert_eq!(inv.max_health(), inv.max_health);
+        assert_eq!(inv.max_sanity(), inv.max_sanity);
     }
 }
 

@@ -88,7 +88,7 @@ fn grasping_hands_distributes_both_points_onto_guard_dog() {
         "both points distributed; no soak reaction window for treachery harm",
     );
     let inv = &result.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.damage, 0, "investigator took none (both soaked)");
+    assert_eq!(inv.damage(), 0, "investigator took none (both soaked)");
     assert_eq!(
         dog_damage(&result),
         Some(2),
@@ -109,7 +109,7 @@ fn grasping_hands_player_splits_across_soaker_and_self() {
     );
     assert_eq!(result.outcome, EngineOutcome::Done);
     let inv = &result.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.damage, 1, "one point taken by the investigator");
+    assert_eq!(inv.damage(), 1, "one point taken by the investigator");
     assert_eq!(
         dog_damage(&result),
         Some(1),
@@ -129,7 +129,7 @@ fn rotting_remains_horror_distributes_onto_beat_cop() {
     );
     assert_eq!(result.outcome, EngineOutcome::Done);
     let inv = &result.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.horror, 0, "horror soaked, investigator took none");
+    assert_eq!(inv.horror(), 0, "horror soaked, investigator took none");
     let cop = inv
         .cards_in_play
         .iter()

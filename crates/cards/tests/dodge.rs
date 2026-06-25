@@ -94,7 +94,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
         result.outcome
     );
     // No damage dealt yet (the attack hasn't resolved).
-    assert_eq!(state.investigators[&inv_id].damage, 0);
+    assert_eq!(state.investigators[&inv_id].damage(), 0);
 
     // Play Dodge (the single offered candidate) → cancel the attack.
     let result = apply(
@@ -106,7 +106,8 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
     state = result.state;
 
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "the cancelled attack dealt no damage"
     );
     assert!(
@@ -171,7 +172,8 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
         result.events
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 2,
+        state.investigators[&inv_id].damage(),
+        2,
         "investigator carries the 2 damage"
     );
     assert!(

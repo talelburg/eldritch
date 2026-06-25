@@ -38,6 +38,7 @@ fn run_elder_sign_test(clues: u8) -> Vec<Event> {
 
     let mut inv = test_investigator(1);
     inv.card_code = CardCode::new(ROLAND);
+    inv.investigator_card.code = CardCode::new(ROLAND);
     inv.current_location = Some(loc_id);
     inv.skills.willpower = 3; // base 3
     assert!(

@@ -1940,10 +1940,10 @@ pub(crate) fn elder_sign_modifier(
     let Some(inv) = state.investigators.get(&controller) else {
         return 0;
     };
-    if inv.card_code.as_str().is_empty() {
+    if inv.investigator_card.code.as_str().is_empty() {
         return 0;
     }
-    let Some(abilities) = (registry.abilities_for)(&inv.card_code) else {
+    let Some(abilities) = (registry.abilities_for)(&inv.investigator_card.code) else {
         return 0;
     };
     let ctx = EvalContext::for_controller(controller);
@@ -3965,7 +3965,7 @@ mod tests {
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+        assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
         assert_event!(
             events,
             Event::Healed {
@@ -4014,7 +4014,7 @@ mod tests {
         );
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(
-            state.investigators[&InvestigatorId(1)].damage,
+            state.investigators[&InvestigatorId(1)].damage(),
             1,
             "sole co-located target healed"
         );
@@ -4676,7 +4676,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 2);
         assert_event!(
             events,
             Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
@@ -4700,7 +4700,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+        assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
         assert_event!(
             events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
@@ -4755,7 +4755,7 @@ mod tests {
         eval_ctx.set_failed_by(2);
         let outcome = run(&mut cx, &effect, eval_ctx);
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 2);
         // Deal evaluates the IntExpr once and applies the result in a single hit;
         // fail-by 2 → amount 2 → one DamageTaken event with amount 2.
         assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1));
@@ -4857,6 +4857,7 @@ mod tests {
         let loc_id = crate::state::LocationId(10);
         let mut inv = test_investigator(1);
         inv.card_code = CardCode::new("ES");
+        inv.investigator_card.code = CardCode::new("ES");
         inv.current_location = Some(loc_id);
         let mut loc = test_location(10, "Study");
         loc.clues = 2;
@@ -4871,6 +4872,7 @@ mod tests {
         let inv_id2 = InvestigatorId(2);
         let mut inv2 = test_investigator(2);
         inv2.card_code = CardCode::new("PLAIN");
+        inv2.investigator_card.code = CardCode::new("PLAIN");
         let state2 = GameStateBuilder::new().with_investigator(inv2).build();
         assert_eq!(super::elder_sign_modifier(&state2, &registry, inv_id2), 0);
     }

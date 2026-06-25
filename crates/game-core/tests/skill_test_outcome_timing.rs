@@ -108,7 +108,8 @@ fn general_timing_point_fires_for_non_investigate_test() {
             if *investigator == id
     );
     assert_eq!(
-        result.state.investigators[&id].horror, 1,
+        result.state.investigators[&id].horror(),
+        1,
         "the general SkillTestResolved timing point must fire the forced ability \
          on a passing Plain (non-Investigate) test",
     );
@@ -130,5 +131,5 @@ fn general_timing_point_opens_no_window_without_a_listener() {
         result.events,
         Event::SkillTestSucceeded { investigator, .. } if *investigator == id
     );
-    assert_eq!(result.state.investigators[&id].horror, 0);
+    assert_eq!(result.state.investigators[&id].horror(), 0);
 }

@@ -384,10 +384,10 @@ fn scan_investigator_card_reactions(
             continue;
         };
         // Empty sentinel ⇒ pre-seated path, no investigator-card abilities.
-        if inv.card_code.as_str().is_empty() {
+        if inv.investigator_card.code.as_str().is_empty() {
             continue;
         }
-        let Some(abilities) = (reg.abilities_for)(&inv.card_code) else {
+        let Some(abilities) = (reg.abilities_for)(&inv.investigator_card.code) else {
             continue;
         };
         for (idx, ability) in abilities.iter().enumerate() {
@@ -413,7 +413,7 @@ fn scan_investigator_card_reactions(
                 continue;
             }
             hits.push(ResolutionCandidate {
-                code: inv.card_code.clone(),
+                code: inv.investigator_card.code.clone(),
                 controller: id,
                 ability_index,
                 source: CandidateSource::Investigator(id),

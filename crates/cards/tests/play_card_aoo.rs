@@ -154,7 +154,8 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         "AoO damage from the play soaked onto Guard Dog"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "investigator took no AoO damage"
     );
     // The "gain 3 resources" effect has NOT run yet — it resolves only after the

@@ -48,7 +48,7 @@ fn measure_value(
     let (base, stat) = match measure {
         PreyMeasure::Skill(kind) => (i32::from(inv.skills.value(kind)), skill_to_stat(kind)),
         PreyMeasure::RemainingHealth => (
-            i32::from(inv.max_health) - i32::from(inv.damage),
+            i32::from(inv.max_health()) - i32::from(inv.damage()),
             Stat::MaxHealth,
         ),
     };

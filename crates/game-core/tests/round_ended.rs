@@ -148,7 +148,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
         paused.state.agenda_doom, 0,
         "no forced resolves until ordered"
     );
-    assert_eq!(paused.state.investigators[&InvestigatorId(1)].horror, 0);
+    assert_eq!(paused.state.investigators[&InvestigatorId(1)].horror(), 0);
 
     // Resolve the first ordered forced; the second is still pending.
     let after_first = apply(
@@ -186,7 +186,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
          placed its +1 doom — the upkeep tail ran through to the next phase",
     );
     assert_eq!(
-        done.state.investigators[&InvestigatorId(1)].horror,
+        done.state.investigators[&InvestigatorId(1)].horror(),
         1,
         "threat-area round-end forced resolved",
     );
