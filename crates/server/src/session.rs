@@ -1,12 +1,13 @@
 //! `GameSession`: the host wrapper pairing the pure engine with the
 //! `SQLite` action log.
 //!
-//! A game is a seed [`GameState`] (the scenario's `setup()` output) plus
-//! an ordered sequence of applied actions. The live session keeps the
-//! derived state in memory and appends each accepted action to the log;
-//! [`GameSession::load`] reconstructs a session by replaying that log
-//! over the seed, reproducing state bit-for-bit.
+//! A game is a seed [`GameState`] (the scenario's `setup()` output after
+//! seating runs) plus an ordered sequence of applied actions. The live
+//! session keeps the derived state in memory and appends each accepted
+//! action to the log; [`GameSession::load`] reconstructs a session by
+//! replaying that log over the seed, reproducing state bit-for-bit.
 
+use game_core::action::RosterEntry;
 use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
 use game_core::{Action, EngineOutcome, Event, PlayerAction};
@@ -28,6 +29,10 @@ pub enum SessionError {
     /// No scenario module is registered for the requested id.
     #[error("unknown scenario: {}", .0.as_str())]
     UnknownScenario(ScenarioId),
+    /// Seating the roster at creation was rejected by the engine (empty
+    /// roster, unknown/non-investigator code, or an already-started seed).
+    #[error("seating rejected: {0}")]
+    Seating(String),
 }
 
 /// A live game: derived state plus its connection to the action log.
@@ -47,29 +52,43 @@ pub struct GameSession {
 }
 
 impl GameSession {
-    /// Create a new game from a scenario's `setup()` and persist its
-    /// seed state.
+    /// Create a new game: seats the roster into the scenario's `setup()`
+    /// state, persists the seated seed and its outcome, and returns a live
+    /// session at the mulligan prompt.
     ///
     /// Looks the scenario module up via the installed
     /// [`scenario_registry`](game_core::scenario_registry); returns
     /// [`SessionError::UnknownScenario`] if none is registered.
+    /// Returns [`SessionError::Seating`] if the engine rejects the roster
+    /// (empty roster, unknown investigator code, etc.).
     pub async fn create(
         db: SqlitePool,
         game_id: impl Into<GameId>,
         scenario_id: ScenarioId,
+        roster: Vec<RosterEntry>,
     ) -> Result<Self, SessionError> {
         let module = game_core::scenario_registry::current()
             .and_then(|registry| (registry.module_for)(&scenario_id))
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
 
-        let state = (module.setup)();
+        let setup = (module.setup)();
+        let result = game_core::seat_and_open(setup, &roster);
+        let outcome = match result.outcome {
+            EngineOutcome::Rejected { reason } => {
+                return Err(SessionError::Seating(reason.to_string()))
+            }
+            other => other,
+        };
+        let state = result.state;
         let seed_state = serde_json::to_string(&state)?;
+        let seed_outcome = serde_json::to_string(&outcome)?;
         let game_id = game_id.into();
         store::insert_game(
             &db,
             &game_id,
             &scenario_id,
             &seed_state,
+            &seed_outcome,
             &unix_millis_string(),
         )
         .await?;
@@ -77,7 +96,7 @@ impl GameSession {
         Ok(Self {
             game_id,
             state,
-            outcome: EngineOutcome::Done,
+            outcome,
             seq: 0,
             db,
         })
@@ -109,13 +128,20 @@ impl GameSession {
 
     /// Reconstruct a session by replaying its action log over the seed
     /// state. Returns `None` if no game with `game_id` exists.
+    ///
+    /// `outcome` is initialised from the persisted seed outcome (not
+    /// `Done`), so a freshly-created game with an empty log — whose seed
+    /// is already `AwaitingInput` (the setup mulligan) — loads correctly.
+    /// Each replayed action overwrites `outcome` exactly as today.
     pub async fn load(db: SqlitePool, game_id: &GameId) -> Result<Option<Self>, SessionError> {
-        let Some((_scenario_id, seed_state)) = store::load_game(&db, game_id).await? else {
+        let Some((_scenario_id, seed_state, seed_outcome)) =
+            store::load_game(&db, game_id).await?
+        else {
             return Ok(None);
         };
 
         let mut state: GameState = serde_json::from_str(&seed_state)?;
-        let mut outcome = EngineOutcome::Done;
+        let mut outcome: EngineOutcome = serde_json::from_str(&seed_outcome)?;
         let mut seq: i64 = 0;
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;

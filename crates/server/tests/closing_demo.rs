@@ -12,7 +12,8 @@
 
 mod common;
 
-use common::{connect, install_registry, memory_pool, recv, send, spawn_server, TEST_SCENARIO_ID};
+use common::{connect, install_registry, memory_pool, recv, roster, send, spawn_server,
+             TEST_SCENARIO_ID};
 use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
 use game_core::{EngineOutcome, Event, InputResponse, PlayerAction};
@@ -48,12 +49,18 @@ fn applied_events(msg: ServerMessage) -> Vec<Event> {
 async fn phase_5_closing_demo() {
     install_registry();
     let pool = memory_pool().await;
-    GameSession::create(pool.clone(), "demo", ScenarioId::new(TEST_SCENARIO_ID))
-        .await
-        .expect("create the demo game");
+    GameSession::create(
+        pool.clone(),
+        "demo",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+    )
+    .await
+    .expect("create the demo game");
     let addr = spawn_server(pool.clone()).await;
 
-    // (1) Two clients connect and see the same initial state.
+    // (1) Two clients connect and see the same initial state (seated,
+    // round 1, mulligan-pending).
     let mut actor = connect(addr, "demo").await;
     let mut spectator = connect(addr, "demo").await;
     let actor_initial = hello_state(recv(&mut actor).await);
@@ -63,38 +70,8 @@ async fn phase_5_closing_demo() {
         "both connections see the same initial state"
     );
 
-    // The actor starts the scenario, which pauses at the setup mulligan
-    // (`AwaitingInput`). The spectator, who sends nothing, observes the
-    // identical stream.
-    send(
-        &mut actor,
-        &submit(PlayerAction::StartScenario { roster: vec![] }),
-    )
-    .await;
-    let actor_start = applied_events(recv(&mut actor).await);
-    let spectator_start = applied_events(recv(&mut spectator).await);
-    assert_eq!(
-        actor_start, spectator_start,
-        "spectator sees the identical event stream"
-    );
-    assert!(
-        !actor_start.is_empty(),
-        "starting the scenario announced itself with events: {actor_start:?}"
-    );
-
-    // (2) A client reconnecting mid-scenario receives the in-flight
-    // AwaitingInput.
-    let mut latecomer = connect(addr, "demo").await;
-    assert!(
-        matches!(
-            hello_outcome(recv(&mut latecomer).await),
-            EngineOutcome::AwaitingInput { .. }
-        ),
-        "a mid-scenario reconnect surfaces the in-flight prompt"
-    );
-
-    // The actor resolves the commit window; both original clients see the
-    // identical resolution stream.
+    // The actor resolves the setup mulligan (keep the full hand).
+    // The spectator, who sends nothing, observes the identical event stream.
     send(
         &mut actor,
         &submit(PlayerAction::ResolveInput {
@@ -102,11 +79,26 @@ async fn phase_5_closing_demo() {
         }),
     )
     .await;
-    let actor_resolve = applied_events(recv(&mut actor).await);
-    let spectator_resolve = applied_events(recv(&mut spectator).await);
+    let actor_resolved = applied_events(recv(&mut actor).await);
+    let spectator_resolved = applied_events(recv(&mut spectator).await);
     assert_eq!(
-        actor_resolve, spectator_resolve,
-        "spectator sees the identical resolution stream"
+        actor_resolved, spectator_resolved,
+        "spectator sees the identical event stream"
+    );
+    assert!(
+        !actor_resolved.is_empty(),
+        "resolving the mulligan announced itself with events: {actor_resolved:?}"
+    );
+
+    // (2) A client reconnecting after the mulligan receives the in-flight
+    // `AwaitingInput` (the open-turn action menu) in its Hello.
+    let mut latecomer = connect(addr, "demo").await;
+    assert!(
+        matches!(
+            hello_outcome(recv(&mut latecomer).await),
+            EngineOutcome::AwaitingInput { .. }
+        ),
+        "a mid-scenario reconnect surfaces the in-flight prompt"
     );
 
     // Capture the post-resolution live state from a fresh connection.

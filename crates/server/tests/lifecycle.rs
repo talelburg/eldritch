@@ -7,6 +7,7 @@ mod common;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use common::{install_registry, memory_pool, TEST_SCENARIO_ID};
+use game_core::test_support::TEST_INV;
 use server::{GameId, GameSession};
 use tower::ServiceExt;
 
@@ -21,7 +22,7 @@ async fn post_games_creates_game_and_returns_id() {
         .uri("/games")
         .header("content-type", "application/json")
         .body(Body::from(format!(
-            r#"{{"scenario_id":"{TEST_SCENARIO_ID}"}}"#
+            r#"{{"scenario_id":"{TEST_SCENARIO_ID}","roster":[{{"investigator":"{TEST_INV}","deck":[]}}]}}"#
         )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
@@ -53,7 +54,7 @@ async fn post_games_unknown_scenario_is_bad_request() {
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"scenario_id":"no-such-scenario"}"#))
+        .body(Body::from(r#"{"scenario_id":"no-such-scenario","roster":[]}"#))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
 

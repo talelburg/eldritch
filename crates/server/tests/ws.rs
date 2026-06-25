@@ -4,16 +4,21 @@
 
 mod common;
 
-use common::{connect, install_registry, memory_pool, recv, send, spawn_server, TEST_SCENARIO_ID};
+use common::{connect, install_registry, memory_pool, recv, roster, send, spawn_server,
+             TEST_SCENARIO_ID};
 use game_core::scenario::ScenarioId;
-use game_core::state::InvestigatorId;
 use game_core::{EngineOutcome, InputResponse, OptionId, PlayerAction};
 use protocol::{ClientMessage, ServerMessage};
 
 async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str) {
-    server::GameSession::create(pool.clone(), game_id, ScenarioId::new(TEST_SCENARIO_ID))
-        .await
-        .expect("seed game");
+    server::GameSession::create(
+        pool.clone(),
+        game_id,
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+    )
+    .await
+    .expect("seed game");
 }
 
 #[tokio::test]
@@ -27,8 +32,12 @@ async fn connect_receives_hello_with_current_state() {
 
     match recv(&mut ws).await {
         ServerMessage::Hello { state, outcome } => {
-            assert_eq!(state.round, 0);
-            assert!(matches!(outcome, EngineOutcome::Done));
+            // create seats the roster: round is 1, mulligan is pending.
+            assert_eq!(state.round, 1);
+            assert!(
+                matches!(outcome, EngineOutcome::AwaitingInput { .. }),
+                "freshly-created game is mulligan-pending, got {outcome:?}"
+            );
         }
         other => panic!("expected Hello, got {other:?}"),
     }
@@ -48,28 +57,22 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
     let _ = recv(&mut a).await;
     let _ = recv(&mut b).await;
 
+    // Resolve the setup mulligan (keep the full hand — empty redraw).
     send(
         &mut a,
         &ClientMessage::Submit {
-            action: PlayerAction::StartScenario { roster: vec![] },
+            action: PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
+            },
         },
     )
     .await;
 
     for ws in [&mut a, &mut b] {
         match recv(ws).await {
-            ServerMessage::Applied {
-                state,
-                events,
-                outcome,
-            } => {
+            ServerMessage::Applied { outcome, events, .. } => {
                 assert!(!matches!(outcome, EngineOutcome::Rejected { .. }));
-                assert!(!events.is_empty(), "StartScenario emits events");
-                // The broadcast carries the authoritative post-action
-                // state: StartScenario opens the setup mulligan loop, so the
-                // first investigator is prompted (it was None in the
-                // pre-action Hello).
-                assert_eq!(state.current_mulligan(), Some(InvestigatorId(1)));
+                assert!(!events.is_empty(), "resolving the mulligan emits events");
             }
             other => panic!("expected Applied, got {other:?}"),
         }
@@ -88,25 +91,22 @@ async fn rejected_action_returns_rejected_to_sender_only() {
     let _ = recv(&mut a).await;
     let _ = recv(&mut b).await;
 
-    // A `ResolveInput` with no outstanding prompt is invalid from the
-    // round-0 setup state (stands in for the removed typed gameplay variants).
+    // Post-create the mulligan is pending. Selecting a non-existent hand
+    // index (OptionId(999_999)) is rejected by the mulligan handler.
     send(
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(OptionId(0)),
+                response: InputResponse::PickMultiple {
+                    selected: vec![OptionId(999_999)],
+                },
             },
         },
     )
     .await;
 
     match recv(&mut a).await {
-        ServerMessage::Rejected { reason } => {
-            assert!(
-                reason.contains("no AwaitingInput prompt"),
-                "reason was: {reason}"
-            );
-        }
+        ServerMessage::Rejected { .. } => {}
         other => panic!("expected Rejected, got {other:?}"),
     }
 

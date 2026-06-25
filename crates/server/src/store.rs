@@ -13,14 +13,16 @@ pub(crate) async fn insert_game(
     game_id: &GameId,
     scenario_id: &ScenarioId,
     seed_state: &str,
+    seed_outcome: &str,
     created_at: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO games (game_id, scenario_id, seed_state, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO games (game_id, scenario_id, seed_state, seed_outcome, created_at) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(game_id.as_str())
     .bind(scenario_id.as_str())
     .bind(seed_state)
+    .bind(seed_outcome)
     .bind(created_at)
     .execute(db)
     .await?;
@@ -43,12 +45,12 @@ pub(crate) async fn insert_action(
     Ok(())
 }
 
-/// Fetch a game's `(scenario_id, seed_state)`, or `None` if no such game.
+/// Fetch a game's `(scenario_id, seed_state, seed_outcome)`, or `None`.
 pub(crate) async fn load_game(
     db: &SqlitePool,
     game_id: &GameId,
-) -> Result<Option<(String, String)>, sqlx::Error> {
-    sqlx::query_as("SELECT scenario_id, seed_state FROM games WHERE game_id = ?")
+) -> Result<Option<(String, String, String)>, sqlx::Error> {
+    sqlx::query_as("SELECT scenario_id, seed_state, seed_outcome FROM games WHERE game_id = ?")
         .bind(game_id.as_str())
         .fetch_optional(db)
         .await
