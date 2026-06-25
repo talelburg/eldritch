@@ -1343,8 +1343,8 @@ mod investigation_phase_tests {
             super::super::drive(&mut cx, EngineOutcome::Done)
         };
 
-        // The open turn idles as Done (NOT AwaitingInput) — behaviour-preserving.
-        assert_eq!(outcome, EngineOutcome::Done);
+        // The open turn surfaces its action menu as AwaitingInput (2b, #447).
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         // Top frame is the InvestigatorTurn for investigator 1...
         assert_eq!(
             state.continuations.last(),
@@ -1386,7 +1386,7 @@ mod investigation_phase_tests {
             },
         );
 
-        assert!(matches!(outcome, EngineOutcome::Done));
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
             state.current_mulligan(),
             None,
@@ -1645,7 +1645,7 @@ mod investigation_phase_tests {
             super::super::drive(&mut cx, o)
         };
 
-        assert!(matches!(outcome, EngineOutcome::Done));
+        assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
             state.active_investigator,
             Some(InvestigatorId(2)),

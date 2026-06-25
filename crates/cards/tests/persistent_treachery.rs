@@ -112,7 +112,10 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
             c.commit_cards(&[]);
         })
         .run();
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result.state.locations[&LocationId(20)]
             .attachments
@@ -306,7 +309,7 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
             destination: LocationId(2),
         },
     );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].actions_remaining,
         1,
@@ -321,7 +324,7 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
             destination: LocationId(1),
         },
     );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].actions_remaining,
         0,
@@ -370,7 +373,7 @@ fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
     install_registry();
     // Willpower 3 + Numeric(0) = 3 vs difficulty 3 → success.
     let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(0)));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(
         r.state.investigators[&InvestigatorId(1)]
             .threat_area
@@ -397,7 +400,7 @@ fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
     install_registry();
     // Willpower 3 + Numeric(-1) = 2 vs difficulty 3 → fail.
     let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(-1)));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].threat_area.len(),
         1,
@@ -463,7 +466,7 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
         })
         .run();
 
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(
         r.state.investigators[&InvestigatorId(1)]
             .threat_area

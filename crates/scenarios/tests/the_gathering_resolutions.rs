@@ -64,7 +64,10 @@ fn seated_roland() -> GameState {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
-    assert_eq!(after_mulligan.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_mulligan.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     after_mulligan.state
 }
 
@@ -195,7 +198,10 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
             response: InputResponse::Confirm,
         }),
     );
-    assert_eq!(mythos.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        mythos.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     let mut state = mythos.state;
 
     // --- Seed only the spawned Priest's health + engagement (see doc above).

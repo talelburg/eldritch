@@ -89,7 +89,7 @@ fn fire(state: game_core::GameState) -> game_core::engine::ApplyResult {
 fn plus_three_with_a_clue_on_location_hits_for_two() {
     // Clue present → +3: combat 3 + 3 = 6 vs fight 5 → success, 1 + 1 = 2.
     let r = fire(board(1));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 2);
     assert_eq!(ammo(&r.state), 3, "1 ammo spent");
@@ -100,7 +100,7 @@ fn plus_one_without_a_clue_misses() {
     // No clue → +1: combat 3 + 1 = 4 vs fight 5 → fail, no damage. Ammo is
     // still spent on activation regardless of the result.
     let r = fire(board(0));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestFailed { .. });
     assert_no_event!(r.events, Event::EnemyDamaged { .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 0);

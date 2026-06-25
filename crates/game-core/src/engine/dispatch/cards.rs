@@ -224,7 +224,7 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
     }
 }
 
-/// Handler for [`PlayerAction::Draw`].
+/// Handler for `TurnAction::Draw`.
 ///
 /// Validate-first: Investigation phase, investigator is active and
 /// `Status::Active`, has at least 1 action remaining. Then spend the
@@ -465,7 +465,7 @@ pub(super) fn resolve_play_target(
     Ok((destination, abilities, is_fast, card_type))
 }
 
-/// Handler for [`PlayerAction::PlayCard`].
+/// Handler for `TurnAction::PlayCard`.
 ///
 /// Validates the standard player-action prefix, looks up the card's
 /// metadata and abilities via the installed [`card_registry`], routes

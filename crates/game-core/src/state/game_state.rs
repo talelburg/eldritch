@@ -810,12 +810,18 @@ impl Continuation {
             Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. } => {
                 self.pending_candidates().is_some_and(|c| !c.is_empty())
             }
-            // Neither is a mandatory ResolveInput prompt. The open turn takes
-            // typed actions (Move/Investigate/Fight/…), not ResolveInput (slice
-            // 2a-i, #393). The parked attack loop is internal sequencing: the
-            // reaction window pushed above it is the player-facing prompt, not
-            // this frame — it is only ever momentarily on top inside
-            // `resume_enemy_attack`, never at a suspension boundary (#411).
+            // The open turn (`ending: false`) now surfaces its legal-action
+            // enumeration as an `AwaitingInput` menu, resolved solely by
+            // `ResolveInput(PickSingle(OptionId))` (2b, #447) — so it IS a
+            // mandatory prompt. `ending: true` is the transient rotation-tail
+            // sentinel (only ever momentarily on top inside `drive`'s resume
+            // tail), not a prompt.
+            Continuation::InvestigatorTurn { ending: false, .. } => true,
+            // The parked attack loop is internal sequencing: the reaction window
+            // pushed above it is the player-facing prompt, not this frame — only
+            // ever momentarily on top inside `resume_enemy_attack`, never at a
+            // suspension boundary (#411). The `ending: true` rotation transient
+            // and `ActionResolution` likewise never await input here.
             Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
             | Continuation::ActionResolution { .. } => false,
@@ -1273,11 +1279,11 @@ pub enum SkillTestFollowUp {
     /// On success, discover 1 clue at the investigator's current
     /// location (via the
     /// [`DiscoverClue`](crate::dsl::Effect::DiscoverClue) evaluator
-    /// path). Used by [`Investigate`](crate::action::PlayerAction::Investigate).
+    /// path). Used by `Investigate`.
     Investigate,
     /// On success, deal 1 damage to the named enemy (and defeat it if
     /// damage reaches `max_health`). Used by
-    /// [`Fight`](crate::action::PlayerAction::Fight).
+    /// `Fight`.
     Fight {
         /// The enemy the Fight action targeted.
         enemy: EnemyId,
@@ -1285,7 +1291,7 @@ pub enum SkillTestFollowUp {
         extra_damage: u8,
     },
     /// On success, disengage the named enemy from the investigator and
-    /// exhaust it. Used by [`Evade`](crate::action::PlayerAction::Evade).
+    /// exhaust it. Used by `Evade`.
     Evade {
         /// The enemy the Evade action targeted.
         enemy: EnemyId,
@@ -1954,10 +1960,17 @@ mod continuation_stack_tests {
         };
         // The open turn is not a framework anchor...
         assert!(!frame.is_phase_anchor());
-        // ...and it does NOT await ResolveInput — typed actions (Move, Fight, …)
-        // run against it, exactly as they ran against the TurnBegins anchor.
-        assert!(!frame.awaits_input());
-        // It carries no window candidates.
+        // ...and it DOES await input: the open turn surfaces its legal-action
+        // enumeration as an `AwaitingInput` menu, resolved by
+        // `ResolveInput(PickSingle(OptionId))` (2b, #447).
+        assert!(frame.awaits_input());
+        // The transient `ending: true` rotation sentinel is not a prompt.
+        assert!(!Continuation::InvestigatorTurn {
+            investigator: InvestigatorId(1),
+            ending: true,
+        }
+        .awaits_input());
+        // It carries no window candidates (the menu is re-enumerated, not stored).
         assert!(frame.pending_candidates().is_none());
     }
 

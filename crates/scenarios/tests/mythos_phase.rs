@@ -109,7 +109,10 @@ fn mythos_phase_resolves_single_treachery() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // Mythos → Investigation transition completes inline (MythosAfterDraws
     // auto-closes because no fast-play-eligible cards are in any hand).
     assert_eq!(result.state.phase, Phase::Investigation);
@@ -175,7 +178,10 @@ fn mythos_phase_surge_chains_into_next_card() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result.state.encounter_deck.is_empty(),
         "both cards consumed by surge chain"
@@ -223,7 +229,10 @@ fn mythos_phase_resolves_single_spawn_enemy() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         result.state.enemies.len(),
         1,
@@ -459,7 +468,10 @@ fn mythos_phase_multi_investigator_player_order() {
             response: InputResponse::Confirm,
         }),
     );
-    assert_eq!(result2.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result2.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(result2.state.current_encounter_drawer(), None);
     assert_eq!(result2.state.phase, Phase::Investigation);
     assert!(result2.state.encounter_deck.is_empty());
@@ -488,7 +500,10 @@ fn mythos_phase_full_round_chain() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         result.state.round, 2,
         "round stays 2 — it bumps on Mythos *entry*"
@@ -619,7 +634,10 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
             response: InputResponse::Confirm,
         }),
     );
-    assert_eq!(result2.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result2.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(result2.state.phase, Phase::Investigation);
     assert_eq!(result2.state.current_encounter_drawer(), None);
     assert!(result2.state.encounter_deck.is_empty());

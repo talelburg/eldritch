@@ -396,7 +396,10 @@ mod tests {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
         );
-        assert_eq!(mulligan_result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            mulligan_result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(
             mulligan_result.state.current_mulligan(),
             None,
@@ -3111,7 +3114,7 @@ mod tests {
                 response: InputResponse::PickSingle(pick_301),
             }),
         );
-        assert_eq!(r3.outcome, EngineOutcome::Done);
+        assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
 
         let damages: Vec<u8> = r1
             .events
@@ -3336,7 +3339,7 @@ mod tests {
                 response: InputResponse::PickSingle(pick),
             }),
         );
-        assert_eq!(r2.outcome, EngineOutcome::Done);
+        assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
         // Exactly one DamageTaken event (from the chosen first AoO) and one
         // InvestigatorDefeated; the second enemy never attacks (early-break).
         assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
@@ -3854,7 +3857,10 @@ mod tests {
         // shuffles, two new cards come back.
         let (id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[1, 3]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_event!(
             result.events,
             Event::MulliganPerformed { investigator, redrawn_count: 2 }
@@ -3878,7 +3884,10 @@ mod tests {
         let original_hand = state.investigators[&id].hand.clone();
         let original_deck = state.investigators[&id].deck.clone();
         let result = apply(state, mulligan_resolve(&[]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_event!(
             result.events,
             Event::MulliganPerformed { investigator, redrawn_count: 0 }
@@ -3897,7 +3906,10 @@ mod tests {
     fn mulligan_redraw_all_replaces_entire_hand() {
         let (id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[0, 1, 2, 3, 4]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_event!(
             result.events,
             Event::MulliganPerformed { investigator, redrawn_count: 5 }
@@ -3932,7 +3944,10 @@ mod tests {
         // rejected.
         let (_id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[0]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(result.state.current_mulligan(), None);
         // Try again on the post-mulligan state.
         let result2 = apply(result.state, mulligan_resolve(&[0]));
@@ -4061,7 +4076,10 @@ mod tests {
         // investigators have mulliganed and the loop drains.
         let (_id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(result.state.current_mulligan(), None);
     }
 
@@ -4091,7 +4109,10 @@ mod tests {
         assert_eq!(after_first.state.current_mulligan(), Some(inv2));
 
         let after_second = apply(after_first.state, mulligan_resolve(&[]));
-        assert_eq!(after_second.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            after_second.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(after_second.state.current_mulligan(), None);
     }
 
@@ -4145,7 +4166,10 @@ mod tests {
         let original_inv2_hand = after_inv1.state.investigators[&inv2].hand.clone();
         let original_inv2_deck = after_inv1.state.investigators[&inv2].deck.clone();
         let after_inv2 = apply(after_inv1.state, mulligan_resolve(&[]));
-        assert_eq!(after_inv2.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            after_inv2.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(after_inv2.state.current_mulligan(), None);
         assert_event!(
             after_inv2.events,

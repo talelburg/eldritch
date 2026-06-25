@@ -70,7 +70,7 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
-    assert_eq!(r2.outcome, EngineOutcome::Done);
+    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
 
     // Snapshot baselines at end-of-Investigation (before Upkeep runs).
     let res_before = r2.state.investigators[&inv1].resources;

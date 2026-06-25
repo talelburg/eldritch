@@ -70,14 +70,20 @@ fn willpower_test_succeeds_at_difficulty_4_after_playing_holy_rosary() {
             hand_index: 0,
         },
     );
-    assert_eq!(after_play.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_play.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     let in_play = &after_play.state.investigators[&id].cards_in_play;
     assert_eq!(in_play.len(), 1);
     assert_eq!(in_play[0].code, CardCode::new(HOLY_ROSARY));
 
     // Difficulty-4 willpower test — +1 from the rosary should carry it.
     let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 4);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Willpower, margin: 0 }
@@ -97,10 +103,16 @@ fn willpower_test_fails_at_difficulty_5_even_with_holy_rosary() {
             hand_index: 0,
         },
     );
-    assert_eq!(after_play.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_play.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
     let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 5);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Willpower, by: 1, .. }
@@ -122,10 +134,16 @@ fn intellect_test_unaffected_by_holy_rosary_in_play() {
             hand_index: 0,
         },
     );
-    assert_eq!(after_play.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_play.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
     let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -143,7 +161,10 @@ fn willpower_test_without_rosary_in_play_uses_base_value_only() {
     assert!(state.investigators[&id].cards_in_play.is_empty());
 
     let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 4);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Willpower, by: 1, .. }

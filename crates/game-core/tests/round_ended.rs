@@ -139,7 +139,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // where the two round-end forced abilities fire simultaneously. The
     // forced run suspends for the lead's ordering choice rather than
     // transitioning to Mythos. Submitted via the enumeration round-trip
-    // (the typed `PlayerAction::EndTurn` is removed in a later task).
+    // (the typed `PlayerAction::EndTurn` removed in 2b, #447).
     let end_turn = {
         let idx = legal_actions(&state)
             .iter()

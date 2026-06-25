@@ -88,7 +88,7 @@ fn activate_machete(state: game_core::GameState) -> game_core::engine::ApplyResu
 #[test]
 fn sole_engaged_enemy_gets_bonus_damage() {
     let r = activate_machete(board(1));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
     assert_eq!(r.state.enemies[&EnemyId(100)].damage, 2);
 }
@@ -124,10 +124,9 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
             response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
-    assert_eq!(
-        r2.outcome,
-        EngineOutcome::Done,
-        "expected Done after pick + commit; got {:?}",
+    assert!(
+        matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }),
+        "expected the open-turn menu after pick + commit; got {:?}",
         r2.outcome
     );
 

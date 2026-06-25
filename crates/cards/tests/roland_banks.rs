@@ -106,7 +106,10 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
         })
         .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
@@ -162,7 +165,10 @@ fn once_per_round_limit_blocks_second_reaction_in_same_round() {
         })
         .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // Defeat still happened.
     assert_event!(
         result.events,
@@ -208,7 +214,10 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
         })
         .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
@@ -246,7 +255,10 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
         })
         .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // The window opened (the resolver's scripted Skip was consumed by it) but
     // closed without firing → no clue moved.
     assert_no_event!(result.events, Event::CluePlaced { .. });

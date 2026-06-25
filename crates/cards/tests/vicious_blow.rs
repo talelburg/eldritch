@@ -77,7 +77,7 @@ fn committing_vicious_blow_adds_one_attack_damage() {
         })
         .run();
 
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 2);
 }
@@ -94,7 +94,7 @@ fn fight_without_vicious_blow_deals_base_damage() {
         })
         .run();
 
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 1, .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 1);
 }

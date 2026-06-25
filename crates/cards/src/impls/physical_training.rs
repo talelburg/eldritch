@@ -15,10 +15,10 @@
 //!
 //! The willpower ability is at `ability_index: 0`; the combat ability is
 //! at `ability_index: 1`. The order is significant — the
-//! [`PlayerAction::ActivateAbility`] action carries the index, so tests
+//! [`TurnAction::ActivateAbility`] action carries the index, so tests
 //! and clients must pick the matching slot.
 //!
-//! [`PlayerAction::ActivateAbility`]: game_core::PlayerAction::ActivateAbility
+//! [`TurnAction::ActivateAbility`]: game_core::TurnAction::ActivateAbility
 
 use card_dsl::dsl::{activated, modify, Ability, Cost, ModifierScope, Stat};
 

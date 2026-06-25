@@ -97,24 +97,42 @@ pub(crate) fn dispatch_turn_action(
     }
 }
 
+/// Build the open-turn action menu (2b, #447): the legal-action enumeration
+/// surfaced as a structured [`InputRequest`](crate::engine::InputRequest).
+/// `OptionId(i)` indexes [`legal_actions`](crate::engine::enumerate::legal_actions);
+/// the `InvestigatorTurn` arm of [`resolve_input`] re-enumerates and dispatches.
+fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
+    let options = crate::engine::enumerate::legal_actions(state)
+        .iter()
+        .enumerate()
+        .map(|(i, a)| crate::engine::ChoiceOption {
+            id: crate::engine::OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
+            label: a.label(state),
+        })
+        .collect();
+    crate::engine::InputRequest::choice("Choose an action", options)
+}
+
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
-/// Phase-1 minimal coverage: [`StartScenario`](PlayerAction::StartScenario)
-/// and [`EndTurn`](PlayerAction::EndTurn) are implemented end-to-end;
-/// other variants return [`EngineOutcome::Rejected`] with a TODO message
-/// so callers and tests get a useful signal rather than a silent no-op.
-#[allow(clippy::too_many_lines)] // dispatcher: a guard ladder + one match arm per PlayerAction
+/// After 2b (#447) the wire surface is two variants:
+/// [`StartScenario`](PlayerAction::StartScenario) (session setup) and
+/// [`ResolveInput`](PlayerAction::ResolveInput) (the open-turn action menu plus
+/// every framework suspension). The pending-prompt gate below rejects a
+/// non-`ResolveInput` action whenever a prompt is outstanding — including the
+/// open-turn menu, which now `awaits_input`.
 pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
     // A pending prompt gates every action but `ResolveInput` (slice 1b, #393).
     // After the §1 continuation-stack work and the phase-anchor slices, the
     // frame awaiting input is always the top of the stack, and *every* non-anchor
     // frame on top is such a prompt — reaction/Fast window, skill-test commit,
     // choice, substitution prompt, hunter/spawn pick, hand-size discard, act
-    // round-end, mulligan, encounter draw. A `*Phase` anchor on top is the open
-    // turn (or inert), so typed actions are allowed there. This single rule
-    // replaces the former eight per-suspension guard blocks; the specific
-    // expected `InputResponse` rides the `AwaitingInput` request the client
-    // already holds.
+    // round-end, mulligan, encounter draw. Post-2b (#447) the open turn (an
+    // `InvestigatorTurn` frame) also `awaits_input` — its action menu is a prompt
+    // — so `ResolveInput` is the only action that ever passes this gate while a
+    // frame awaits input. This single rule replaces the former eight
+    // per-suspension guard blocks; the specific expected `InputResponse` rides
+    // the `AwaitingInput` request the client already holds.
     if cx
         .state
         .continuations
@@ -130,41 +148,14 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
         };
     }
 
+    // The typed gameplay variants are gone (2b, #447): open-turn gameplay flows
+    // through `ResolveInput(PickSingle(OptionId))` against the `InvestigatorTurn`
+    // menu, dispatched internally via `dispatch_turn_action`. The wire surface is
+    // just session-setup (`StartScenario`) + the menu-input channel
+    // (`ResolveInput`).
     let outcome = match action {
         PlayerAction::StartScenario { roster } => phases::start_scenario(cx, roster),
-        PlayerAction::EndTurn => phases::end_turn(cx),
-        PlayerAction::Investigate { investigator } => actions::investigate(cx, *investigator),
-        PlayerAction::Resource { investigator } => actions::resource_action(cx, *investigator),
-        PlayerAction::Engage {
-            investigator,
-            enemy,
-        } => actions::engage(cx, *investigator, *enemy),
-        PlayerAction::Move {
-            investigator,
-            destination,
-        } => actions::move_action(cx, *investigator, *destination),
-        PlayerAction::Draw { investigator } => cards::draw(cx, *investigator),
-        PlayerAction::Fight {
-            investigator,
-            enemy,
-        } => actions::fight(cx, *investigator, *enemy),
-        PlayerAction::Evade {
-            investigator,
-            enemy,
-        } => actions::evade(cx, *investigator, *enemy),
-        PlayerAction::PlayCard {
-            investigator,
-            hand_index,
-        } => cards::play_card(cx, *investigator, *hand_index),
-        PlayerAction::ActivateAbility {
-            investigator,
-            instance_id,
-            ability_index,
-        } => abilities::activate_ability(cx, *investigator, *instance_id, *ability_index),
         PlayerAction::ResolveInput { response } => resolve_input(cx, response),
-        PlayerAction::AdvanceAct { investigator } => {
-            act_agenda::advance_act_action(cx, *investigator)
-        }
     };
 
     // The post-mulligan Investigation kickoff moved into `resume_mulligan`
@@ -334,8 +325,20 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                 EngineOutcome::Done => {} // rotated / phase ended; loop on
                 other => return other,
             },
-            // Idle: the open turn (an `InvestigatorTurn { ending: false }`
-            // frame), an empty `FastWindow` permissive gate, terminal (empty), or
+            // The open turn surfaces its legal-action enumeration as an
+            // `AwaitingInput` menu (2b, #447): gameplay input is now solely
+            // `ResolveInput(PickSingle(OptionId))` against this frame. The menu
+            // is re-enumerated at resolve (not cached) — see the
+            // `InvestigatorTurn { ending: false }` arm of `resolve_input`.
+            Some(Continuation::InvestigatorTurn { ending: false, .. }) => {
+                return EngineOutcome::AwaitingInput {
+                    request: turn_menu(cx.state),
+                    // Deterministic resume-token is #458; placeholder like every
+                    // other `AwaitingInput` site until then.
+                    resume_token: crate::engine::ResumeToken(0),
+                };
+            }
+            // Idle: an empty `FastWindow` permissive gate, terminal (empty), or
             // a suspension on top (which a handler already surfaced as
             // AwaitingInput).
             _ => return EngineOutcome::Done,

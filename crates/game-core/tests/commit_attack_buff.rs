@@ -111,7 +111,7 @@ fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
 
 /// Resolve the open-turn `Fight` action against `state` to its `OptionId`,
 /// returning the `ResolveInput(PickSingle)` submit the enumeration round-trip
-/// expects. Replaces the typed `PlayerAction::Fight` (removed in a later task).
+/// expects. Replaces the typed `PlayerAction::Fight` (removed in 2b, #447).
 fn fight_action(state: &game_core::GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
     let target = TurnAction::Fight {
         investigator: inv,
@@ -148,7 +148,10 @@ fn committing_vicious_blow_adds_one_attack_damage() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(result.events, Event::EnemyDamaged { amount: 2, .. });
     assert_eq!(result.state.enemies[&enemy_id].damage, 2);
 }
@@ -169,7 +172,10 @@ fn fight_without_commit_deals_base_damage() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(result.events, Event::EnemyDamaged { amount: 1, .. });
     assert_eq!(result.state.enemies[&enemy_id].damage, 1);
 }

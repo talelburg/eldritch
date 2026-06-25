@@ -96,7 +96,7 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
             response: InputResponse::PickSingle(pick),
         }),
     );
-    assert_eq!(r2.outcome, EngineOutcome::Done);
+    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(!matches!(
         r2.state.continuations.last(),
         Some(game_core::state::Continuation::SpawnEngage(_))

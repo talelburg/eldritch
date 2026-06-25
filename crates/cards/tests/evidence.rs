@@ -170,7 +170,10 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
         })
         .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::CardPlayed { investigator, code } if *investigator == inv_id && code.as_str() == EVIDENCE
@@ -275,7 +278,10 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
         })
         .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::CardPlayed { investigator, code } if *investigator == inv_id && code.as_str() == EVIDENCE

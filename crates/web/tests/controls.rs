@@ -1,15 +1,13 @@
-//! Headless tests for `ActionControls` (P6.7a): feed a `GameState` +
-//! `EngineOutcome` through the store, then assert each control, when
-//! legal, submits the matching `ClientMessage::Submit { action }`.
-//! wasm32-only (browser DOM + the wasm-only transport types).
+//! Headless tests for `ActionControls` (P6.7a, post-2b #447): the only bespoke
+//! control left is `StartScenario`. Open-turn gameplay is the engine's
+//! `AwaitingInput` action menu, rendered by `AwaitingInputView` (covered by
+//! `tests/awaiting_input.rs`). wasm32-only (browser DOM + wasm-only transport).
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc;
 use game_core::state::GameStateBuilder;
-use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::fixtures::{
-    awaiting_commit_input, test_enemy, test_investigator, test_location,
-};
+use game_core::state::{InvestigatorId, Phase};
+use game_core::test_support::fixtures::{awaiting_commit_input, test_investigator};
 use game_core::{EngineOutcome, PlayerAction};
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
@@ -70,9 +68,8 @@ fn click_in(section: &web_sys::Element, selector: &str) {
         .click();
 }
 
-/// An in-progress Investigation-phase game with one active investigator.
-/// `round 1` because an in-progress game is never round 0 (round 0 is the
-/// pre-start state that gates to `StartScenario`).
+/// An in-progress Investigation-phase game (round 1, so never the round-0
+/// pre-start state).
 fn investigation_game() -> game_core::state::GameState {
     GameStateBuilder::new()
         .with_investigator(test_investigator(1))
@@ -82,247 +79,17 @@ fn investigation_game() -> game_core::state::GameState {
         .build()
 }
 
-/// Extract the submitted `PlayerAction`. `ClientMessage` has no
-/// `PartialEq`, so tests match the action rather than `assert_eq!` the
-/// whole frame (the `input.rs` pattern). `Submit` is the only variant, so
-/// the destructure is irrefutable.
+/// Extract the submitted `PlayerAction`. `Submit` is the only `ClientMessage`
+/// variant, so the destructure is irrefutable.
 fn submit_action(frame: ClientMessage) -> PlayerAction {
     let ClientMessage::Submit { action } = frame;
     action
 }
 
 #[wasm_bindgen_test]
-async fn end_turn_submits_end_turn() {
-    let mut rx = mount(investigation_game(), EngineOutcome::Done).await;
-    click_in(&last_controls(), ".end-turn");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::EndTurn => {}
-        other => panic!("expected EndTurn, got {other:?}"),
-    }
-}
-
-#[wasm_bindgen_test]
-async fn investigate_submits_investigate_for_active() {
-    let mut rx = mount(investigation_game(), EngineOutcome::Done).await;
-    click_in(&last_controls(), ".investigate");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::Investigate { investigator } => {
-            assert_eq!(investigator, InvestigatorId(1));
-        }
-        other => panic!("expected Investigate, got {other:?}"),
-    }
-}
-
-#[wasm_bindgen_test]
-async fn advance_act_submits_advance_act_for_active() {
-    let mut rx = mount(investigation_game(), EngineOutcome::Done).await;
-    click_in(&last_controls(), ".advance-act");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::AdvanceAct { investigator } => {
-            assert_eq!(investigator, InvestigatorId(1));
-        }
-        other => panic!("expected AdvanceAct, got {other:?}"),
-    }
-}
-
-// The former `draw_encounter_submits_draw_encounter_card` test is gone (#348
-// part 2c-iii-b): the dedicated Draw-encounter button was removed. The Mythos
-// step-1.4 draw is now an `AwaitingInput(Confirm)` that flows through the
-// `ResolveInput` prompt UI (Confirm/Skip rendering deferred to #205), not a
-// core-loop control.
-
-#[wasm_bindgen_test]
-async fn illegal_controls_are_disabled_and_do_not_submit() {
-    // During an `AwaitingInput` pause, every core-loop control is disabled
-    // (`enabled_controls` returns empty). A disabled button must not submit a
-    // frame when clicked.
-    let game = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
-        .with_active_investigator(InvestigatorId(1))
-        .with_phase(Phase::Investigation)
-        .with_round(1)
-        .build();
-
-    let mut rx = mount(game, awaiting_commit_input("commit")).await;
-    let controls = last_controls();
-    let end_turn = controls
-        .query_selector(".end-turn")
-        .expect("query")
-        .expect("end-turn present");
-    assert!(
-        end_turn.has_attribute("disabled"),
-        "End turn should be disabled during an AwaitingInput pause"
-    );
-
-    // A disabled button does not fire click → no frame.
-    click_in(&controls, ".end-turn");
-    leptos::task::tick().await;
-    assert!(rx.try_recv().is_err(), "disabled button must not submit");
-}
-
-#[wasm_bindgen_test]
-async fn move_picker_submits_move_to_connected_destination() {
-    // Investigator at location 1, which connects to location 2.
-    let mut loc1 = test_location(1, "Study");
-    loc1.connections = vec![LocationId(2)];
-    let loc2 = test_location(2, "Hallway");
-    let game = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(1))
-        .with_active_investigator(InvestigatorId(1))
-        .with_location(loc1)
-        .with_location(loc2)
-        .with_phase(Phase::Investigation)
-        .with_round(1)
-        .build();
-
-    let mut rx = mount(game, EngineOutcome::Done).await;
-    let controls = last_controls();
-    // The single destination button is labeled by the destination name.
-    let dest = controls
-        .query_selector(".move-dest")
-        .expect("query")
-        .expect("a move destination button");
-    assert!(dest.text_content().unwrap_or_default().contains("Hallway"));
-
-    click_in(&controls, ".move-dest");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::Move {
-            investigator,
-            destination,
-        } => {
-            assert_eq!(investigator, InvestigatorId(1));
-            assert_eq!(destination, LocationId(2));
-        }
-        other => panic!("expected Move, got {other:?}"),
-    }
-}
-
-#[wasm_bindgen_test]
-async fn play_picker_submits_play_card_by_hand_index() {
-    let mut inv = test_investigator(1);
-    inv.hand = vec![
-        CardCode::new("_synth_event_a"),
-        CardCode::new("_synth_event_b"),
-    ];
-    let game = GameStateBuilder::new()
-        .with_investigator(inv)
-        .with_active_investigator(InvestigatorId(1))
-        .with_phase(Phase::Investigation)
-        .with_round(1)
-        .build();
-
-    let mut rx = mount(game, EngineOutcome::Done).await;
-    let controls = last_controls();
-    // Click the second card's Play button → hand_index 1.
-    let buttons = controls.query_selector_all(".play-card").expect("query");
-    buttons
-        .item(1)
-        .expect("second play button")
-        .dyn_into::<web_sys::HtmlElement>()
-        .expect("HtmlElement")
-        .click();
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::PlayCard {
-            investigator,
-            hand_index,
-        } => {
-            assert_eq!(investigator, InvestigatorId(1));
-            assert_eq!(hand_index, 1);
-        }
-        other => panic!("expected PlayCard, got {other:?}"),
-    }
-}
-
-// The dedicated mulligan-picker tests are gone (#348 part 2c-iii-a): the setup
-// mulligan is now an `AwaitingInput` handled by `AwaitingInputView`, covered by
-// the mulligan tests in tests/input.rs.
-
-/// An Investigation-phase game with one enemy (id 7) engaged with the
-/// active investigator (id 1).
-fn investigation_game_with_engaged_enemy() -> game_core::state::GameState {
-    let mut enemy = test_enemy(7, "Ghoul");
-    enemy.engaged_with = Some(InvestigatorId(1));
-    GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
-        .with_active_investigator(InvestigatorId(1))
-        .with_phase(Phase::Investigation)
-        .with_round(1)
-        .with_enemy(enemy)
-        .build()
-}
-
-#[wasm_bindgen_test]
-async fn draw_button_submits_draw() {
-    let game = investigation_game();
-    let mut rx = mount(game, EngineOutcome::Done).await;
-    let controls = last_controls();
-    click_in(&controls, ".action.draw");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::Draw { investigator } => {
-            assert_eq!(investigator, InvestigatorId(1));
-        }
-        other => panic!("expected Draw, got {other:?}"),
-    }
-}
-
-#[wasm_bindgen_test]
-async fn fight_target_submits_fight_with_chosen_enemy() {
-    let game = investigation_game_with_engaged_enemy();
-    let mut rx = mount(game, EngineOutcome::Done).await;
-    let controls = last_controls();
-    click_in(&controls, ".fight-target");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::Fight {
-            investigator,
-            enemy,
-        } => {
-            assert_eq!(investigator, InvestigatorId(1));
-            assert_eq!(enemy, EnemyId(7));
-        }
-        other => panic!("expected Fight, got {other:?}"),
-    }
-}
-
-#[wasm_bindgen_test]
-async fn evade_target_submits_evade_with_chosen_enemy() {
-    let game = investigation_game_with_engaged_enemy();
-    let mut rx = mount(game, EngineOutcome::Done).await;
-    let controls = last_controls();
-    click_in(&controls, ".evade-target");
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
-        PlayerAction::Evade {
-            investigator,
-            enemy,
-        } => {
-            assert_eq!(investigator, InvestigatorId(1));
-            assert_eq!(enemy, EnemyId(7));
-        }
-        other => panic!("expected Evade, got {other:?}"),
-    }
-}
-
-#[wasm_bindgen_test]
-async fn start_scenario_is_the_only_control_at_round_zero() {
-    // The state straight from a scenario `setup()`: phase Mythos, round 0,
-    // no cursors, no active investigator. The only legal action is
-    // StartScenario — this is the state the server hands a freshly created
-    // game, so the player must be able to start it.
+async fn round_zero_renders_an_enabled_start_scenario_that_submits() {
+    // The state straight from a scenario `setup()`: round 0. `StartScenario` is
+    // the sole legal action, and clicking it submits the matching frame.
     let game = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
@@ -330,18 +97,10 @@ async fn start_scenario_is_the_only_control_at_round_zero() {
 
     let mut rx = mount(game, EngineOutcome::Done).await;
     let controls = last_controls();
-    let end_turn = controls
-        .query_selector(".end-turn")
-        .expect("query")
-        .expect("end-turn present");
     let start = controls
         .query_selector(".start-scenario")
         .expect("query")
         .expect("start-scenario present");
-    assert!(
-        end_turn.has_attribute("disabled"),
-        "core-loop buttons should be disabled pre-start"
-    );
     assert!(
         !start.has_attribute("disabled"),
         "Start scenario should be enabled pre-start"
@@ -349,33 +108,74 @@ async fn start_scenario_is_the_only_control_at_round_zero() {
 
     click_in(&controls, ".start-scenario");
     leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after tick");
-    match submit_action(frame) {
+    match submit_action(rx.try_recv().expect("a frame after tick")) {
         PlayerAction::StartScenario { .. } => {}
         other => panic!("expected StartScenario, got {other:?}"),
     }
 }
 
 #[wasm_bindgen_test]
-async fn resolved_scenario_disables_all_controls() {
+async fn no_bespoke_in_game_action_controls_render() {
+    // Post-2b (#447) there are no per-action buttons: open-turn gameplay is the
+    // engine's `AwaitingInput` action menu (rendered by `AwaitingInputView`).
+    // None of the old bespoke controls exist in the section.
+    let _rx = mount(investigation_game(), EngineOutcome::Done).await;
+    let controls = last_controls();
+    for gone in [
+        ".end-turn",
+        ".investigate",
+        ".advance-act",
+        ".draw",
+        ".move-dest",
+        ".play-card",
+        ".fight-target",
+        ".evade-target",
+    ] {
+        assert!(
+            controls.query_selector(gone).expect("query").is_none(),
+            "the {gone} bespoke control must be gone (#447)"
+        );
+    }
+}
+
+#[wasm_bindgen_test]
+async fn start_scenario_disabled_and_inert_during_awaiting_input() {
+    // During an `AwaitingInput` pause (the open-turn menu, a commit window, …)
+    // `enabled_controls` returns empty, so the start-scenario button is disabled
+    // and a click submits nothing.
+    let mut rx = mount(investigation_game(), awaiting_commit_input("commit")).await;
+    let controls = last_controls();
+    let start = controls
+        .query_selector(".start-scenario")
+        .expect("query")
+        .expect("start-scenario present");
+    assert!(
+        start.has_attribute("disabled"),
+        "start-scenario should be disabled during an AwaitingInput pause"
+    );
+
+    click_in(&controls, ".start-scenario");
+    leptos::task::tick().await;
+    assert!(rx.try_recv().is_err(), "disabled button must not submit");
+}
+
+#[wasm_bindgen_test]
+async fn resolved_scenario_disables_start_scenario() {
     use game_core::Resolution;
-    // An Investigation-phase game that would normally enable the core
-    // loop; once resolved, every rendered control is disabled.
-    let mut game = investigation_game();
+    // A round-0 game (where StartScenario would otherwise be enabled); once a
+    // resolution latches, the control is disabled.
+    let mut game = GameStateBuilder::new()
+        .with_investigator(test_investigator(1))
+        .build();
     game.resolution = Some(Resolution::Won { id: "demo".into() });
 
     let _rx = mount(game, EngineOutcome::Done).await;
-    let controls = last_controls();
-    // `.draw-encounter` is gone (#348 2c-iii-b); `.draw` is a representative
-    // remaining core-loop button.
-    for selector in [".start-scenario", ".end-turn", ".draw"] {
-        let btn = controls
-            .query_selector(selector)
-            .expect("query")
-            .expect("button present");
-        assert!(
-            btn.has_attribute("disabled"),
-            "{selector} should be disabled when the scenario is resolved"
-        );
-    }
+    let start = last_controls()
+        .query_selector(".start-scenario")
+        .expect("query")
+        .expect("start-scenario present");
+    assert!(
+        start.has_attribute("disabled"),
+        "start-scenario should be disabled when the scenario is resolved"
+    );
 }

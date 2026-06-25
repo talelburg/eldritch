@@ -78,7 +78,7 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
             hand_index: 0,
         },
     );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     // Exactly one Barricade: attached to the location, none in hand/discard.
     assert_eq!(
         r.state.locations[&A]
@@ -189,7 +189,7 @@ fn leaving_the_barricaded_location_discards_barricade() {
             destination: B,
         },
     );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(
         r.state.locations[&A].attachments.is_empty(),
         "Barricade discarded on leave",

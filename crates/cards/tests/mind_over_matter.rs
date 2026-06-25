@@ -108,10 +108,9 @@ fn commit(state: game_core::GameState, indices: Vec<u32>) -> game_core::engine::
 fn play_then_fight_substituting_succeeds_via_intellect() {
     // combat 1 fails fight-3; intellect 4 passes.
     let r = play_card(board(1, 4, vec![CardCode::new(MOM)]), 0);
-    assert_eq!(
-        r.outcome,
-        EngineOutcome::Done,
-        "MoM plays (Fast, your turn)"
+    assert!(
+        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "MoM plays (Fast, your turn) and returns to the open-turn menu"
     );
     assert!(
         r.state.investigators[&INV]
@@ -131,7 +130,7 @@ fn play_then_fight_substituting_succeeds_via_intellect() {
         "commit window"
     );
     let r = commit(r.state, vec![]);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestSucceeded { .. });
     assert!(
         r.state.enemies[&ENEMY].damage >= 1,
@@ -145,7 +144,7 @@ fn fight_declining_substitution_fails_on_combat() {
     let r = fight(r.state);
     let r = pick(r.state, 1); // keep Combat
     let r = commit(r.state, vec![]);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestFailed { .. });
     assert_eq!(
         r.state.enemies[&ENEMY].damage, 0,
@@ -173,7 +172,7 @@ fn substituted_intellect_test_ignores_committed_combat_icons() {
         "commit window"
     );
     let r = commit(r.state, vec![0]); // commit Overpower (combat icons)
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestFailed { .. });
     assert_eq!(
         r.state.enemies[&ENEMY].damage, 0,
@@ -259,7 +258,7 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
     );
     let r = pick(r.state, 0); // use Intellect (drops the +combat weapon bonus)
     let r = commit(r.state, vec![]);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestSucceeded { .. });
     assert_eq!(
         r.state.enemies[&ENEMY].damage, 2,

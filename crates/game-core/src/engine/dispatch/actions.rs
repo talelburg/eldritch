@@ -11,7 +11,7 @@ use crate::state::{
 use super::super::outcome::EngineOutcome;
 use super::Cx;
 
-/// Handler for [`PlayerAction::Investigate`].
+/// Handler for `TurnAction::Investigate`.
 ///
 /// Spends 1 action, runs an intellect skill test against the location's
 /// shroud, and on success applies [`Effect::DiscoverClue`] to move 1
@@ -133,7 +133,7 @@ pub(super) fn investigate_primary_effect(
     )
 }
 
-/// Handler for [`PlayerAction::Resource`]. The basic "gain 1 resource"
+/// Handler for `TurnAction::Resource`. The basic "gain 1 resource"
 /// action (Rules Reference, Investigation step 2.2.1).
 ///
 /// Validate-first: Investigation phase, `investigator` is active and
@@ -191,7 +191,7 @@ pub(super) fn resource_primary_effect(cx: &mut Cx, investigator: InvestigatorId)
     EngineOutcome::Done
 }
 
-/// Handler for [`PlayerAction::Engage`]. Engage an enemy at the
+/// Handler for `TurnAction::Engage`. Engage an enemy at the
 /// investigator's location that they are not already engaged with
 /// (Rules Reference p.4) — it becomes engaged with the investigator.
 ///
@@ -305,7 +305,7 @@ pub(super) fn engage_primary_effect(
     EngineOutcome::Done
 }
 
-/// Handler for [`PlayerAction::Move`].
+/// Handler for `TurnAction::Move`.
 ///
 /// Spends 1 action, then updates `current_location` to a connected
 /// destination. Move is legal while engaged with enemies: per the
@@ -701,7 +701,7 @@ fn charge_action(
     Ok(())
 }
 
-/// Handler for [`PlayerAction::Fight`].
+/// Handler for `TurnAction::Fight`.
 ///
 /// Spends 1 action, runs a Combat skill test against the enemy's
 /// fight value, and on success deals 1 damage. If damage reaches
@@ -776,7 +776,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
     )
 }
 
-/// Handler for [`PlayerAction::Evade`].
+/// Handler for `TurnAction::Evade`.
 ///
 /// Spends 1 action, runs an Agility skill test against the enemy's
 /// evade value, and on success disengages and exhausts the enemy.

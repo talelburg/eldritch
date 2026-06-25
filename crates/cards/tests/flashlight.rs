@@ -90,7 +90,7 @@ fn minus_two_shroud_turns_a_failing_investigation_into_a_success() {
     // Intellect 2 + 0 = 2. Base difficulty (shroud 4) would fail; the -2
     // brings it to 2 → success by 0, discovering the location's clue.
     let r = activate(board(2, 4, true));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(
         r.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -107,7 +107,7 @@ fn reduced_shroud_clamps_at_zero() {
     // Shroud 1, -2 → difficulty (1 - 2).max(0) = 0, not -1 (which would
     // reject as a negative difficulty). Intellect 0 + 0 = 0 ≥ 0 → success.
     let r = activate(board(0, 1, true));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(
         r.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }

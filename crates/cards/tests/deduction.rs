@@ -82,7 +82,10 @@ fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon(
     let (state, id, loc) = state_with_deduction(2, 4);
     let result = drive_committing_deduction(state);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -106,7 +109,10 @@ fn failed_investigate_does_not_fire_deductions_bonus() {
     let (state, id, loc) = state_with_deduction(2, 99);
     let result = drive_committing_deduction(state);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 95, .. }
@@ -139,7 +145,10 @@ fn non_investigate_test_does_not_fire_deductions_bonus() {
     resolver.commit_cards(&[CardCode::new(DEDUCTION)]);
     let result = drive_skill_test(state, id, SkillKind::Intellect, 4, resolver);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -162,7 +171,10 @@ fn uncommitted_deduction_does_not_fire_its_bonus() {
         })
         .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }

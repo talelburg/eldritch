@@ -91,7 +91,7 @@ fn spends_a_supply_and_heals_one_damage_when_the_damage_branch_is_chosen() {
     // Branch 0 = heal damage; the sole co-located investigator (the controller)
     // auto-binds, so this completes.
     let r = pick(r.state, 0);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage healed");
     assert_eq!(r.state.investigators[&INV].horror(), 2, "horror untouched");
     assert_event!(
@@ -111,7 +111,7 @@ fn heals_one_horror_when_the_horror_branch_is_chosen() {
 
     // Branch 1 = heal horror.
     let r = pick(r.state, 1);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.investigators[&INV].horror(), 1, "1 horror healed");
     assert_eq!(r.state.investigators[&INV].damage(), 2, "damage untouched");
     assert_event!(
@@ -143,7 +143,7 @@ fn spending_the_last_supply_discards_first_aid() {
     // The heal still resolves (the ability continues even though its source
     // left play).
     let r = pick(r.state, 0);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         r.state.investigators[&INV].damage(),
         1,

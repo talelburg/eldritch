@@ -87,7 +87,10 @@ fn intellect_ability_buffs_an_intellect_test_at_difficulty_4() {
 
     let after_test =
         perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -114,7 +117,10 @@ fn agility_ability_buffs_an_agility_test_at_difficulty_4() {
     );
 
     let after_test = perform_skill_test_no_commits(after_activate.state, id, SkillKind::Agility, 4);
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Agility, margin: 0 }
@@ -138,7 +144,10 @@ fn intellect_ability_does_not_buff_an_agility_test() {
     );
 
     let after_test = perform_skill_test_no_commits(after_activate.state, id, SkillKind::Agility, 4);
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Agility, by: 1, .. }

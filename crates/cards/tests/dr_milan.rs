@@ -89,7 +89,10 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(resumed.state.locations[&LOC].clues, 0, "clue discovered");
     assert_eq!(
         resumed.state.investigators[&INV].resources,
@@ -170,6 +173,9 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(resumed.state.locations[&LOC].clues, 0, "clue discovered");
 }

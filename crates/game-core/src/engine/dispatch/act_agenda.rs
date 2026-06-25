@@ -133,7 +133,7 @@ fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<Investiga
         .collect()
 }
 
-/// Validate the [`AdvanceAct`](crate::action::PlayerAction::AdvanceAct) action
+/// Validate the `AdvanceAct` action
 /// without mutating: Investigation phase, a modeled act deck, the current act
 /// advances via the action (not a round-end objective), and the group holds at
 /// least the act's clue threshold. Returns the threshold on success (so the
@@ -176,7 +176,7 @@ pub(crate) fn check_advance_act(
     Ok(threshold)
 }
 
-/// Handler for [`PlayerAction::AdvanceAct`](crate::action::PlayerAction::AdvanceAct):
+/// Handler for `TurnAction::AdvanceAct`:
 /// validate via [`check_advance_act`], then (on success) spend exactly the act's
 /// clue threshold (acting investigator first, then the rest in `turn_order`) and
 /// either set the resolution latch (terminal act) or emit [`Event::ActAdvanced`]

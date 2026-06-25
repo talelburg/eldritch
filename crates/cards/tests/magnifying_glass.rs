@@ -72,7 +72,10 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
             hand_index: 0,
         },
     );
-    assert_eq!(after_play.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_play.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         after_play.state.investigators[&id].cards_in_play[0].code,
         CardCode::new(MAGNIFYING_GLASS),
@@ -84,7 +87,10 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
             c.commit_cards(&[]);
         })
         .run();
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -115,7 +121,10 @@ fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -139,10 +148,16 @@ fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
             hand_index: 0,
         },
     );
-    assert_eq!(after_play.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_play.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
     let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }

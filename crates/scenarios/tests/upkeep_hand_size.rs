@@ -66,7 +66,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
-    assert_eq!(r2.outcome, EngineOutcome::Done);
+    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
 
     // Pad the hand so we're over cap at 4.5. The step-4.4 draw adds one
     // card; padding to 11 here lands us at 12 cards at the 4.5 check,

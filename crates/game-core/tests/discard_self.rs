@@ -182,7 +182,10 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     let inv_after = &result.state.investigators[&id];
     assert!(inv_after.cards_in_play.is_empty(), "source asset left play");
     assert_eq!(inv_after.discard, vec![CardCode::new(TRINKET)]);
@@ -287,7 +290,10 @@ fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result.state.investigators[&id].cards_in_play.is_empty(),
         "source discarded",
@@ -332,7 +338,10 @@ fn spending_last_use_discards_a_discard_when_empty_asset() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result.state.investigators[&id].cards_in_play.is_empty(),
         "depleted discard_when_empty asset discarded",
@@ -362,7 +371,10 @@ fn spending_last_use_keeps_a_non_discarding_asset_in_play() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         result.state.investigators[&id].cards_in_play.len(),
         1,

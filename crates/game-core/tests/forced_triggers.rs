@@ -129,7 +129,7 @@ fn install_mock_registry() {
 }
 
 /// Submit the open-turn `Move` action via the enumeration round-trip (the typed
-/// `PlayerAction::Move` is removed in a later task). The state must carry an
+/// `PlayerAction::Move` removed in 2b, #447). The state must carry an
 /// `InvestigatorTurn` frame so the move is offered by `legal_actions`.
 fn move_action(
     state: game_core::state::GameState,
@@ -209,7 +209,7 @@ fn move_into_forced_location_fires_its_effect() {
     let result = move_action(state, InvestigatorId(1), LocationId(11));
 
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "outcome was {:?}",
         result.outcome
     );
@@ -661,7 +661,10 @@ fn successful_investigate_fires_after_location_investigated_forced() {
         )
     };
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result
             .events
@@ -772,7 +775,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(done.outcome, EngineOutcome::Done);
+    assert!(matches!(done.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(done.state.investigators[&InvestigatorId(1)].horror(), 2);
 }
 

@@ -282,6 +282,19 @@ pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
     drive_to_terminal_no_commits(apply(state, action))
 }
 
+/// Whether `state` is paused at the open-turn action menu (2b, #447): an
+/// [`InvestigatorTurn { ending: false }`](crate::state::Continuation::InvestigatorTurn)
+/// frame on top, which the engine surfaces as the `AwaitingInput` action menu.
+/// Test drivers treat it as a terminal stopping point — it is the *next*
+/// action's prompt, not a window to resolve, so driving past it would silently
+/// consume another turn action.
+fn at_open_turn_menu(state: &GameState) -> bool {
+    matches!(
+        state.continuations.last(),
+        Some(crate::state::Continuation::InvestigatorTurn { ending: false, .. })
+    )
+}
+
 /// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
 /// and drive it to a terminal outcome committing no cards and declining every
 /// Fast window — the skill-test analogue of [`apply_no_commits`]. Replaces the
@@ -314,9 +327,20 @@ fn drive_to_terminal_no_commits(first: ApplyResult) -> ApplyResult {
     } = first;
     let mut iterations = 0u32;
     loop {
-        // The only `AwaitingInput` in a no-commits drive is a commit window
-        // (see the assumption above); a `Done`-idle with an open window is a
-        // parked Fast player window to decline. Anything else is terminal.
+        // The open-turn action menu (2b, #447) is a TERMINAL stopping point: it
+        // is the next action's prompt, not a commit window, and resolving it
+        // would consume another turn action. Stop here — the post-flip
+        // equivalent of the old idle-`Done` open turn.
+        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) && at_open_turn_menu(&state) {
+            return ApplyResult {
+                state,
+                events,
+                outcome,
+            };
+        }
+        // The only other `AwaitingInput` in a no-commits drive is a commit
+        // window; a `Done`-idle with an open window is a parked Fast player
+        // window to decline. Anything else is terminal.
         let next = if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
             InputResponse::PickMultiple {
                 selected: Vec::new(),
@@ -429,6 +453,17 @@ where
     let mut iterations = 0u32;
 
     loop {
+        // The open-turn action menu (2b, #447) is terminal for a resolver-driven
+        // drive: it is the next action's prompt, not something the resolver
+        // scripts, so stop and return it (the post-flip equivalent of the old
+        // idle-`Done` open turn).
+        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) && at_open_turn_menu(&state) {
+            return ApplyResult {
+                state,
+                events,
+                outcome,
+            };
+        }
         let request = match outcome {
             EngineOutcome::Done => {
                 return ApplyResult {

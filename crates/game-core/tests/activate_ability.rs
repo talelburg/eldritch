@@ -364,7 +364,10 @@ fn this_skill_test_modifier_contributes_to_next_skill_test() {
 
     let after_test =
         perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -396,11 +399,17 @@ fn this_skill_test_modifier_does_not_leak_into_a_second_test() {
 
     let after_first_test =
         perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
-    assert_eq!(after_first_test.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_first_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
     let after_second_test =
         perform_skill_test_no_commits(after_first_test.state, id, SkillKind::Intellect, 4);
-    assert_eq!(after_second_test.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_second_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_second_test.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }

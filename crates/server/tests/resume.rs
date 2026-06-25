@@ -100,7 +100,10 @@ async fn resolve_input_resumes_and_completes() {
     send(&mut a, &start_to_mulligan()).await;
     let _ = recv(&mut a).await; // Applied(AwaitingInput)
 
-    // Resolve: commit nothing. The engine finishes the test.
+    // Resolve: keep the whole hand (empty redraw). The mulligan completes and
+    // the engine drives forward into the Investigation phase, surfacing the
+    // open-turn action menu (`AwaitingInput`) — i.e. the resolve is accepted and
+    // makes progress, not rejected.
     send(
         &mut a,
         &ClientMessage::Submit {
@@ -113,11 +116,8 @@ async fn resolve_input_resumes_and_completes() {
     match recv(&mut a).await {
         ServerMessage::Applied { outcome, .. } => {
             assert!(
-                !matches!(
-                    outcome,
-                    EngineOutcome::AwaitingInput { .. } | EngineOutcome::Rejected { .. }
-                ),
-                "resolving the commit window completes the test, got {outcome:?}"
+                !matches!(outcome, EngineOutcome::Rejected { .. }),
+                "resolving the mulligan is accepted and drives forward, got {outcome:?}"
             );
         }
         other => panic!("expected Applied(completed), got {other:?}"),

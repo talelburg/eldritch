@@ -178,7 +178,10 @@ fn play_card_seeds_the_ammo_pool_from_metadata() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     let weapon = result.state.investigators[&id]
         .cards_in_play
         .first()
@@ -210,7 +213,10 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::UsesSpent {
@@ -259,7 +265,10 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(result.events, Event::SkillTestStarted { difficulty: 3, .. });
     assert_event!(
         result.events,
@@ -389,10 +398,9 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
             response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
-    assert_eq!(
-        r2.outcome,
-        EngineOutcome::Done,
-        "expected Done after pick + commit; got {:?}",
+    assert!(
+        matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }),
+        "expected the open-turn menu after pick + commit; got {:?}",
         r2.outcome
     );
     // Enemy 100 was attacked (chosen); enemy 101 was not.

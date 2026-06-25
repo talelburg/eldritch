@@ -96,7 +96,7 @@ fn action_searches_top_three_into_hand_then_shuffles() {
 
     // Pick option 1 → the second card of the top 3 ("90002").
     let r = pick(r.state, 1);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     let inv = &r.state.investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new("90002")),

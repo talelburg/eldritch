@@ -123,7 +123,7 @@ fn pending_window_blocks_non_resolve_actions() {
     let state = opened_round_end_window(3);
     // A non-ResolveInput submit while the window is open is rejected by the
     // action-gate. `StartScenario` stands in as the surviving non-ResolveInput
-    // action (the typed gameplay variants are removed in a later task).
+    // action (the typed gameplay variants were removed in 2b (#447)).
     let r = apply(
         state,
         Action::Player(PlayerAction::StartScenario { roster: vec![] }),

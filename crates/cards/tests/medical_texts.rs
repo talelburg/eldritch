@@ -84,7 +84,7 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
 fn success_heals_one_damage_from_the_chosen_investigator() {
     // intellect 3 + 0 = 3 >= difficulty 2 → success → heal 1 damage.
     let r = activate(board(3, 2));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestSucceeded { .. });
     assert_event!(
         r.events,
@@ -101,7 +101,7 @@ fn success_heals_one_damage_from_the_chosen_investigator() {
 fn failure_deals_one_damage_to_the_chosen_investigator() {
     // intellect 1 + 0 = 1 < difficulty 2 → failure → deal 1 damage.
     let r = activate(board(1, 0));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestFailed { .. });
     assert_event!(
         r.events,

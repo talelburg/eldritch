@@ -120,7 +120,7 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
 
     // candidate_locations = [LOC_A, LOC_B] → OptionId(0) blasts LOC_A.
     let r = pick(r.state, 0);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
 
     // LOC_A: enemy defeated (3 dmg ≥ 3 health), controller took 3 (self-damage).
     assert!(
@@ -181,11 +181,10 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
         .build();
 
     let r = play(state);
-    assert_eq!(
-        r.outcome,
-        EngineOutcome::Done,
-        "single candidate → no suspend"
-    );
+    // Returns to the open-turn menu; the damage assertions below prove the
+    // blast resolved fully (a single candidate auto-binds — no target-pick
+    // suspend).
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.enemies[&ENEMY_A].damage, 3, "enemy took 3");
     assert_eq!(r.state.investigators[&INV].damage(), 3, "controller took 3");
     assert_eq!(

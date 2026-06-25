@@ -124,7 +124,7 @@ fn playing_cover_up_discards_instead_of_discovering() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert!(matches!(r.outcome, EngineOutcome::Done));
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.locations[&LOC].clues, 2, "location clues unchanged");
     assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
     let cu = r.state.investigators[&INV]
@@ -146,7 +146,7 @@ fn skip_discovers_normally() {
             response: InputResponse::Skip,
         }),
     );
-    assert!(matches!(r.outcome, EngineOutcome::Done));
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.locations[&LOC].clues, 1, "location -1");
     assert_eq!(r.state.investigators[&INV].clues, 1, "investigator +1");
     let cu = r.state.investigators[&INV]

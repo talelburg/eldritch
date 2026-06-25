@@ -89,7 +89,7 @@ fn entering_play_tutors_the_only_tome_asset() {
     // Fire the reaction (option 0 = the sole pending trigger). One eligible
     // Tome ⇒ the search auto-takes (no second prompt) ⇒ Done.
     let r = pick(r.state, 0);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     let inv = &r.state.investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(OLD_BOOK)),
@@ -128,7 +128,7 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     // Pick the second eligible Tome (Medical Texts). On Done, resume_choice
     // re-drives the still-open reaction window so it closes (Task 4).
     let r = pick(r.state, 1);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     let inv = &r.state.investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(MEDICAL_TEXTS)),

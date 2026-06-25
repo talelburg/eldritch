@@ -212,7 +212,10 @@ fn playing_a_non_fast_event_spends_one_action() {
     );
     let state = result.state;
 
-    assert!(matches!(result.outcome, EngineOutcome::Done));
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         state.investigators[&inv_id].actions_remaining, 2,
         "playing a non-fast card spent one action"
@@ -317,11 +320,14 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     );
     let state = result.state;
 
-    // A fast event provokes no AoO: the play resolves without ever suspending
-    // on an AoO window (a window would have surfaced as AwaitingInput).
+    // A fast event provokes no AoO: the play resolves and returns to the
+    // open-turn menu (`AwaitingInput`). The *no-AoO* proof is the
+    // `accumulated_damage == 0` assertion below — an AoO would have soaked
+    // onto Guard Dog — not the outcome variant (the open-turn menu is itself
+    // `AwaitingInput`).
     assert!(
-        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "a fast event provokes no AoO — the play must not suspend on a window: {:?}",
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the fast play resolves to the open-turn menu: {:?}",
         result.outcome
     );
     let dog_in_play = state.investigators[&inv_id]
