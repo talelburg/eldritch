@@ -151,7 +151,16 @@ pub(super) struct Soaker {
 ///
 /// Fills `soakers` (already ordered by the caller, by `CardInstanceId`
 /// to match the codebase's other simultaneous loops) up to each one's
-/// remaining capacity, then the investigator absorbs the remainder.
+/// remaining capacity, then the **investigator card** absorbs the
+/// remainder. The investigator card is the always-eligible,
+/// mandatory-remainder soaker (RR: "all damage/horror that cannot be
+/// assigned to an asset must be assigned to the investigator") — it takes
+/// whatever the assets cannot, *uncapped* (overflowing its own capacity is
+/// exactly how the investigator is defeated). Its share rides
+/// `Assignment::investigator_damage/horror` (not `asset_*`) so
+/// [`place_assignment`] routes it onto `investigator_card.accumulated_*`
+/// via the numeric helpers, keeping the [`Event::DamageTaken`] /
+/// [`Event::HorrorTaken`] emission and the elimination wiring intact.
 /// Damage and horror are assigned **independently** — an asset with
 /// only health soaks damage, an asset with only sanity soaks horror.
 ///
@@ -199,7 +208,7 @@ fn find_controlled_mut(
         .find(|c| c.instance_id == inst)
 }
 
-/// Discard every controlled asset whose accumulated damage/horror has
+/// Discard every controlled **asset** whose accumulated damage/horror has
 /// reached its printed health/sanity (C5b #237).
 ///
 /// Reads printed health/sanity from the card registry; an asset whose
@@ -208,6 +217,19 @@ fn find_controlled_mut(
 /// `cards_in_play` and emit [`Event::CardDiscarded`] with
 /// `from: Zone::InPlay` (matching the discard event shape used elsewhere
 /// — see `dispatch/cards.rs`).
+///
+/// The **investigator card** is the other soaker subject to the same
+/// `accumulated >= printed capacity` defeat rule (#448), but it is
+/// deliberately *not* swept here: it lives in `investigator_card`, not
+/// `cards_in_play`, and its overflow consequence is *elimination*, not a
+/// discard. That defeat is resolved one step earlier — in
+/// [`place_assignment`] step 2, *before* this asset sweep — and the order
+/// is load-bearing: elimination (RR p.10 step 1) removes every controlled
+/// card *from the game* (`removed_from_game`, no `CardDiscarded`), so an
+/// asset that co-overflows with the investigator card is already gone
+/// from `cards_in_play` by the time this sweep runs and never emits an
+/// asset-defeat discard. Folding the investigator card into this sweep
+/// would reverse that order and emit a spurious discard — do not.
 fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
     let Some(reg) = crate::card_registry::current() else {
         return;
@@ -261,10 +283,18 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 /// Steps, in order:
 /// 1. Accumulate the soaked damage/horror onto each asset's
 ///    `accumulated_*` fields.
-/// 2. Place the investigator's share via the numeric helpers (which emit
-///    [`Event::DamageTaken`] / [`Event::HorrorTaken`] and report
-///    lethality), then apply investigator defeat if either crossed — so
-///    both stats land before any defeat check, per RR p.7.
+/// 2. Place the investigator card's share (the mandatory remainder — RR:
+///    "all damage/horror that cannot be assigned to an asset must be
+///    assigned to the investigator") via the numeric helpers, which write
+///    `investigator_card.accumulated_*` and emit [`Event::DamageTaken`] /
+///    [`Event::HorrorTaken`], then apply investigator defeat if either
+///    crossed (`accumulated >= max_health()/max_sanity()` — the same
+///    `accumulated >= printed capacity` rule as an asset, but the
+///    consequence is *elimination*, not discard). Both stats land before
+///    the defeat check, per RR p.7. This runs *before* the asset sweep so
+///    elimination's "remove controlled cards from the game" step (RR p.10)
+///    pre-empts any co-overflowing asset's discard (see
+///    [`defeat_overflowed_assets`]).
 /// 3. Defeat overflowed assets (`accumulated >= printed stat` →
 ///    discard).
 ///

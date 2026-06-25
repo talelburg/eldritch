@@ -27,7 +27,7 @@ use game_core::engine::{apply, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, InvestigatorId, LocationId,
-    Phase, Zone,
+    Phase, Status, Zone,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location};
 use game_core::{Action, InputResponse, PlayerAction};
@@ -726,5 +726,210 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         state.open_windows().is_empty(),
         "no windows stranded after Guard Dog reaction + move resume: {:?}",
         state.open_windows()
+    );
+}
+
+// ---------------------------------------------------------------------
+// Case 6 — the investigator card is the mandatory-remainder soaker
+// (#448 cp2b). An asset soaks to capacity (and is defeated); the
+// remainder lands on the *investigator card* via its `accumulated_damage`
+// (not a bespoke field), exactly as the RR's "all damage that cannot be
+// assigned to an asset must be assigned to the investigator" clause
+// requires. This is the soaker-side half of the soak/defeat unification.
+// ---------------------------------------------------------------------
+
+#[test]
+fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
+    let dog = CardInstanceId(1);
+    let inv = InvestigatorId(1);
+    let loc = LocationId(101);
+    // Attack deals 5 damage. Guard Dog (printed health 3) soaks 3 and is
+    // defeated by reaching its printed health; the remaining 2 must be
+    // assigned to the investigator — landing on the investigator card's
+    // `accumulated_damage`. Skids O'Toole (01003) has 8 health, so 2 < 8 →
+    // the investigator survives.
+    let (mut state, inv_id, _) = soak_state(
+        vec![(GUARD_DOG, dog)],
+        vec![engaged_attacker(7, inv, loc, 5, 3)],
+    );
+
+    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
+    // onto the investigator.
+    let result = distribute_onto(result, dog);
+    state = result.state;
+
+    // Guard Dog reached printed health → defeated and discarded from play.
+    assert!(
+        !state.investigators[&inv_id]
+            .cards_in_play
+            .iter()
+            .any(|c| c.instance_id == dog),
+        "Guard Dog at accumulated 3 >= health 3 is discarded"
+    );
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            Event::CardDiscarded { code, from, .. }
+                if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
+        )),
+        "Guard Dog discard emitted: {:?}",
+        result.events
+    );
+    // The mandatory remainder (2) landed on the investigator *card* —
+    // `investigator_card.accumulated_damage`, surfaced via `damage()`.
+    assert_eq!(
+        state.investigators[&inv_id]
+            .investigator_card
+            .accumulated_damage,
+        2,
+        "the 2-damage remainder lands on the investigator card's accumulated_damage"
+    );
+    assert_eq!(
+        state.investigators[&inv_id].damage(),
+        2,
+        "damage() reads the investigator card's accumulated_damage"
+    );
+    // The investigator is not defeated (2 < 8).
+    assert_eq!(
+        state.investigators[&inv_id].status,
+        Status::Active,
+        "investigator survives a sub-lethal remainder"
+    );
+}
+
+// ---------------------------------------------------------------------
+// Case 7 — investigator-card overflow triggers investigator elimination,
+// not asset discard (#448 cp2b). The defeat half of the unification: the
+// investigator card uses the same `accumulated >= printed capacity` rule
+// as an asset, but the consequence is elimination (Status::Killed) rather
+// than discard-to-owner.
+// ---------------------------------------------------------------------
+
+#[test]
+fn investigator_card_overflow_eliminates_the_investigator() {
+    let dog = CardInstanceId(1);
+    let inv = InvestigatorId(1);
+    let loc = LocationId(101);
+    // Skids O'Toole (01003) has 8 health. Pre-load the investigator card
+    // with 7 damage (survived prior harm). A 4-damage attack: Guard Dog
+    // soaks 3 (defeated), the remaining 1 lands on the investigator card →
+    // 8 >= 8 → the investigator is eliminated (Killed), not the card
+    // discarded to a pile.
+    let (mut state, inv_id, _) = soak_state(
+        vec![(GUARD_DOG, dog)],
+        vec![engaged_attacker(7, inv, loc, 4, 3)],
+    );
+    state
+        .investigators
+        .get_mut(&inv_id)
+        .unwrap()
+        .investigator_card
+        .accumulated_damage = 7;
+
+    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = distribute_onto(result, dog);
+    state = result.state;
+
+    // The investigator card reached its printed health → elimination, with
+    // the damage cause (Killed). The InvestigatorDefeated event fired.
+    assert_eq!(
+        state.investigators[&inv_id].status,
+        Status::Killed,
+        "investigator-card overflow eliminates (Killed), not asset-discards"
+    );
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            Event::InvestigatorDefeated { investigator, cause }
+                if *investigator == inv_id && *cause == game_core::state::DefeatCause::Damage
+        )),
+        "InvestigatorDefeated {{ cause: Damage }} emitted: {:?}",
+        result.events
+    );
+    // The investigator card was NOT discarded to a pile as if it were an
+    // asset: no CardDiscarded for the investigator's own code, and the
+    // investigator card itself is never the subject of an asset-defeat
+    // discard (elimination removes the investigator's cards from the game
+    // instead).
+    assert!(
+        !result.events.iter().any(|e| matches!(
+            e,
+            Event::CardDiscarded { code, .. } if *code == CardCode::new("01003")
+        )),
+        "investigator card is eliminated, not discarded as an asset: {:?}",
+        result.events
+    );
+}
+
+// ---------------------------------------------------------------------
+// Case 8 — defeat ORDERING when the same attack overflows both an asset
+// and the investigator card (#448 cp2b). Load-bearing invariant: the
+// investigator-card overflow is resolved (elimination) *before* the asset
+// overflow sweep, because RR p.10 Elimination step 1 removes every card
+// the investigator controls *from the game* (into `removed_from_game`, NOT
+// the discard pile). So a co-overflowing asset is removed-from-game
+// silently — it never emits the asset-defeat `CardDiscarded`. This guards
+// against a future "fold the investigator card into one uniform post-asset
+// defeat sweep" refactor, which would emit that discard before elimination
+// removed the card — a behaviour change.
+// ---------------------------------------------------------------------
+
+#[test]
+fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eliminated() {
+    let dog = CardInstanceId(1);
+    let inv = InvestigatorId(1);
+    let loc = LocationId(101);
+    // Skids O'Toole (01003): 8 health. Pre-load 5 onto the investigator card
+    // and 2 onto Guard Dog (printed health 3). A 4-damage attack distributed
+    // soak-first: Guard Dog takes 1 (→ 3 >= 3, would defeat) and the
+    // remaining 3 land on the investigator card (→ 8 >= 8, eliminated). The
+    // investigator is eliminated in step 2, draining cards_in_play to
+    // removed_from_game before the asset sweep runs.
+    let (mut state, inv_id, _) = soak_state(
+        vec![(GUARD_DOG, dog)],
+        vec![engaged_attacker(7, inv, loc, 4, 3)],
+    );
+    {
+        let inv_mut = state.investigators.get_mut(&inv_id).unwrap();
+        inv_mut.investigator_card.accumulated_damage = 5;
+        inv_mut.cards_in_play[0].accumulated_damage = 2;
+    }
+
+    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = distribute_onto(result, dog);
+    state = result.state;
+
+    // Investigator eliminated (Killed).
+    assert_eq!(
+        state.investigators[&inv_id].status,
+        Status::Killed,
+        "investigator card overflow eliminates the investigator"
+    );
+    // Elimination step 1 removed all controlled cards from the game: the
+    // Guard Dog is in removed_from_game, NOT the discard pile.
+    assert!(
+        state.investigators[&inv_id]
+            .removed_from_game
+            .contains(&CardCode::new(GUARD_DOG)),
+        "co-overflowing Guard Dog removed from game by elimination: {:?}",
+        state.investigators[&inv_id].removed_from_game
+    );
+    assert!(
+        !state.investigators[&inv_id]
+            .discard
+            .contains(&CardCode::new(GUARD_DOG)),
+        "co-overflowing Guard Dog is NOT in the discard pile"
+    );
+    // Crucially: NO asset-defeat CardDiscarded for the Guard Dog. The asset
+    // sweep ran after elimination had already removed it from cards_in_play.
+    assert!(
+        !result.events.iter().any(|e| matches!(
+            e,
+            Event::CardDiscarded { code, from, .. }
+                if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
+        )),
+        "no asset-defeat discard for the co-overflowing Guard Dog: {:?}",
+        result.events
     );
 }
