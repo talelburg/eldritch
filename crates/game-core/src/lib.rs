@@ -46,8 +46,9 @@ pub use engine::{
     apply, attach_to_location, deal_damage_to_enemy, discard_random_from_hand, effective_shroud,
     enemy_can_enter_location, legal_actions, location_id_by_code, place_doom_on_current_agenda,
     place_in_threat_area, reshuffle_encounter_discard, resolve_choice_count,
-    resolve_encounter_card, reveal_location, round_end_advance, shortest_first_steps,
-    shortest_first_steps_with, spawn_set_aside_enemy, suspend_for_native_choice, take_damage,
+    resolve_encounter_card, reveal_location, round_end_advance, seat_and_open,
+    shortest_first_steps, shortest_first_steps_with, spawn_set_aside_enemy,
+    suspend_for_native_choice, take_damage,
     ApplyResult, ChoiceOption, ChoiceResolution, Cx, EngineOutcome, EvalContext, InputRequest,
     OptionId, ResumeToken, TurnAction,
 };

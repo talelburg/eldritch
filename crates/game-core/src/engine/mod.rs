@@ -143,6 +143,21 @@ pub fn apply_with_scenario_registry(
     })
 }
 
+/// Create a freshly seated game: run scenario setup's roster seating over
+/// `setup_state` and drive to the first `AwaitingInput` (the setup mulligan).
+///
+/// This is the non-logged seating path (#459). The returned
+/// [`ApplyResult::state`] is already seated, shuffled, and mulligan-pending —
+/// hosts persist it as the seed, so the action log is `ResolveInput`-only and
+/// replay never re-runs setup RNG. Validation mirrors a player action: an
+/// empty roster, an unknown/non-investigator code, or an already-started
+/// state rejects with state unchanged.
+pub fn seat_and_open(setup_state: GameState, roster: &[crate::action::RosterEntry]) -> ApplyResult {
+    apply_via(setup_state, crate::scenario_registry::current(), |cx| {
+        dispatch::seat_and_open(cx, roster)
+    })
+}
+
 /// The shared `apply` scaffolding, parameterized by the dispatch step.
 ///
 /// Builds the [`Cx`], runs `dispatch` to produce the outcome, then applies the
@@ -299,7 +314,7 @@ mod tests {
     };
     use crate::{assert_event, assert_event_count, assert_no_event};
 
-    use super::{apply, EngineOutcome, OptionId};
+    use super::{apply, seat_and_open, EngineOutcome, OptionId};
 
     /// Drive one open-turn action through the `ResolveInput(PickSingle)` routing
     /// path, draining the skill-test commit window automatically (like
@@ -4983,5 +4998,43 @@ mod tests {
         );
         assert!(result.state.victory_display.is_empty());
         assert_no_event!(result.events, Event::EnteredVictoryDisplay { .. });
+    }
+
+    #[test]
+    fn seat_and_open_opens_mulligan_for_a_synthetic_roster() {
+        use crate::action::RosterEntry;
+        use crate::state::CardCode;
+        crate::test_support::install_test_registry();
+
+        let setup = GameStateBuilder::new().build(); // round 0, no investigators
+        let roster = vec![RosterEntry {
+            investigator: CardCode::new(crate::test_support::TEST_INV),
+            deck: vec![],
+        }];
+
+        let result = seat_and_open(setup, &roster);
+
+        assert!(
+            matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+            "seat_and_open opens the mulligan prompt, got {:?}",
+            result.outcome
+        );
+        assert_eq!(result.state.round, 1);
+        assert!(result.state.investigators.contains_key(&crate::state::InvestigatorId(1)));
+    }
+
+    #[test]
+    fn seat_and_open_rejects_an_unknown_investigator_code() {
+        use crate::action::RosterEntry;
+        use crate::state::CardCode;
+        crate::test_support::install_test_registry();
+
+        let setup = GameStateBuilder::new().build();
+        let roster = vec![RosterEntry { investigator: CardCode::new("99999"), deck: vec![] }];
+
+        let result = seat_and_open(setup, &roster);
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(result.state.round, 0, "rejected seating leaves state unchanged");
     }
 }
