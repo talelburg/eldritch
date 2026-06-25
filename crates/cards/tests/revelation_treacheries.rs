@@ -44,8 +44,12 @@ fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
 /// Common board: one investigator at a location, the named treachery on
 /// top of the encounter deck, and a single rigged chaos token.
 fn board_with(treachery: &str, token: ChaosToken) -> game_core::GameState {
+    let mut inv = test_investigator(1);
+    // Real investigator code so max_health()/max_sanity() reads from the
+    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(20))
+        .with_investigator_at(inv, LocationId(20))
         .with_location(test_location(20, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();

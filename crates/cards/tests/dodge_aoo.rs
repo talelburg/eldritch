@@ -120,6 +120,9 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 
     let mut investigator = test_investigator(1);
     investigator.current_location = Some(from);
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    investigator.investigator_card.code = CardCode::new("01003");
     investigator.hand = vec![CardCode::new(DODGE)];
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 3);
@@ -274,6 +277,9 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
 
     let mut investigator = test_investigator(1);
     investigator.current_location = Some(from);
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    investigator.investigator_card.code = CardCode::new("01003");
     investigator.hand = vec![CardCode::new(DODGE)];
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 5);

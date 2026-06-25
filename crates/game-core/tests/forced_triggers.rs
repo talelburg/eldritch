@@ -59,8 +59,11 @@ const END_OF_TURN_CARD: &str = "test-end-of-turn";
 /// Obscuring-Fog-shape (C4c), minus the location attachment.
 const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
+/// Returns metadata for `TEST_INV` (used by `test_investigator`) so that
+/// capacity reads (`max_health()` / `max_sanity()`) work when this registry
+/// is installed. All other codes return `None`.
+fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    game_core::test_support::metadata_for_test_inv(code)
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {

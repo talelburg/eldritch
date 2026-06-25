@@ -44,7 +44,7 @@ fn seated_roland_with_enemy(
     let loc_id = LocationId(10);
 
     let mut inv = test_investigator(1);
-    inv.card_code = game_core::state::CardCode::new(ROLAND);
+    // After #448 cp2a the scanner reads investigator_card.code, not card_code.
     inv.investigator_card.code = game_core::state::CardCode::new(ROLAND);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 4;

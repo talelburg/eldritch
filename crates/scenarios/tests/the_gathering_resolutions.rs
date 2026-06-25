@@ -88,10 +88,11 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
 
     let mut state = seated_roland();
 
-    // Seed: Roland one hit from death (health 9 → damage 8).
+    // Seed: Roland one hit from death. After cp2a, accumulated_damage is the
+    // source of truth; max_health() reads from cards::REGISTRY (9 for Roland).
     {
         let roland = state.investigators.get_mut(&INV).expect("Roland seated");
-        roland.damage = roland.max_health() - 1;
+        roland.investigator_card.accumulated_damage = roland.max_health() - 1;
     }
     let loc = state.investigators[&INV]
         .current_location

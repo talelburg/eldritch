@@ -22,7 +22,7 @@ use game_core::state::{
     SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, metadata_for_test_inv, test_investigator, test_location, GameStateBuilder,
 };
 use game_core::{assert_event, Action, PlayerAction};
 
@@ -32,8 +32,10 @@ use game_core::{assert_event, Action, PlayerAction};
 /// reaction-window resolution needed to observe the timing point.
 const ANY_SUCCESS_FORCED: &str = "MOCK-STR-ANY-SUCCESS";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
+/// Returns metadata for `TEST_INV` so capacity reads work when this registry
+/// is installed. All other codes return `None`.
+fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    metadata_for_test_inv(code)
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {

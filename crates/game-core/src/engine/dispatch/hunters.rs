@@ -633,14 +633,13 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_lowest_remaining_health_picks_min() {
-        // inv1: max_health 5, damage 4 → remaining 1.
-        // inv2: max_health 5, damage 0 → remaining 5. inv1 is lowest.
+        // max_health() = 8 (TEST_INV registry, #448 cp2a).
+        // hurt: accumulated_damage 6 → remaining 2.
+        // healthy: accumulated_damage 0 → remaining 8. hurt is lowest.
+        crate::test_support::install_test_registry();
         let mut hurt = test_investigator(1);
-        hurt.max_health = 5;
-        hurt.damage = 4;
-        let mut healthy = test_investigator(2);
-        healthy.max_health = 5;
-        healthy.damage = 0;
+        hurt.investigator_card.accumulated_damage = 6;
+        let healthy = test_investigator(2);
         let state = GameStateBuilder::new()
             .with_investigator(hurt)
             .with_investigator(healthy)
@@ -658,13 +657,14 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_lowest_remaining_health_tie_is_tie() {
-        // inv1: 5 − 2 = 3 remaining. inv2: 4 − 1 = 3 remaining. Tie.
+        // max_health() = 8 (TEST_INV registry, #448 cp2a).
+        // a: accumulated_damage 3 → remaining 5.
+        // b: accumulated_damage 3 → remaining 5. Tie.
+        crate::test_support::install_test_registry();
         let mut a = test_investigator(1);
-        a.max_health = 5;
-        a.damage = 2;
+        a.investigator_card.accumulated_damage = 3;
         let mut b = test_investigator(2);
-        b.max_health = 4;
-        b.damage = 1;
+        b.investigator_card.accumulated_damage = 3;
         let state = GameStateBuilder::new()
             .with_investigator(a)
             .with_investigator(b)
@@ -726,8 +726,10 @@ mod measure_value_tests {
     /// `state.investigators[inv.id].cards_in_play`, so the investigator
     /// must be in the state, not merely passed by reference).
     fn state_with(cards: &[&str], damage: u8) -> GameState {
-        let mut inv = test_investigator(1); // combat 3, max_health 8
-        inv.damage = damage;
+        crate::test_support::install_test_registry();
+        let mut inv = test_investigator(1); // combat 3, max_health() = 8 from TEST_INV registry
+                                            // After #448 cp2a harm accumulates on the investigator card.
+        inv.investigator_card.accumulated_damage = damage;
         inv.cards_in_play = cards
             .iter()
             .enumerate()

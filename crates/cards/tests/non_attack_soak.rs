@@ -30,6 +30,9 @@ fn install_registry() {
 /// `treachery` on top of the encounter deck and one rigged chaos token.
 fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> game_core::GameState {
     let mut inv = test_investigator(1);
+    // Real investigator code so max_health()/max_sanity() reads from the
+    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    inv.investigator_card.code = CardCode::new("01003");
     inv.cards_in_play = vec![CardInPlay::enter_play(
         CardCode::new(soaker),
         CardInstanceId(1),

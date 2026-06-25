@@ -52,6 +52,10 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
 
     let mut inv = test_investigator(1);
     inv.current_location = Some(loc_id);
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry; TEST_INV is only in the game-core test
+    // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
+    inv.investigator_card.code = CardCode::new("01003");
     inv.hand = vec![CardCode::new(DODGE)];
     // A spare deck card so the round-ending cascade's upkeep step-4.4 draw has
     // something to draw. Without it, the empty deck reshuffles the discard —

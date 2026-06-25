@@ -845,11 +845,15 @@ mod actions_tests {
         let l2 = LocationId(11);
         let enemy_id = EnemyId(100);
 
+        crate::test_support::install_test_registry();
         let mut inv = test_investigator(1);
         inv.current_location = Some(l1);
         inv.actions_remaining = 3;
-        inv.max_health = inv_health;
-        inv.damage = 0;
+        // After #448 cp2a: max_health() reads from the registry (TEST_INV = 8).
+        // Pre-load accumulated_damage so the old `inv_health` parameter still
+        // determines defeat: total = (8 - inv_health) + attack_damage >= 8
+        // ⟺ attack_damage >= inv_health (same condition as before).
+        inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
         let mut loc1 = test_location(10, "L1");
         loc1.connections = vec![l2];
@@ -978,6 +982,8 @@ mod actions_tests {
         inv_health: u8,
         attack_damage: u8,
     ) -> (InvestigatorId, LocationId, EnemyId, crate::state::GameState) {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
         let enemy_id = EnemyId(200);
@@ -985,8 +991,9 @@ mod actions_tests {
         let mut inv = test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
-        inv.max_health = inv_health;
-        inv.damage = 0;
+        // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
+        // accumulated_damage equals inv_health (the "remaining health" the test intended).
+        inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
         let mut loc = test_location(10, "Study");
         loc.clues = 2;
@@ -1099,6 +1106,8 @@ mod actions_tests {
         attack_damage: u8,
         inv_health: u8,
     ) -> (InvestigatorId, EnemyId, crate::state::GameState) {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
         let enemy_id = EnemyId(300);
@@ -1106,8 +1115,9 @@ mod actions_tests {
         let mut inv = test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
-        inv.max_health = inv_health;
-        inv.damage = 0;
+        // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
+        // accumulated_damage equals inv_health (the "remaining health" the test intended).
+        inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
         inv.resources = 0;
 
         let loc = test_location(10, "Study");
@@ -1280,6 +1290,8 @@ mod actions_tests {
         inv_health: u8,
         aoo_damage: u8,
     ) -> (InvestigatorId, EnemyId, EnemyId, crate::state::GameState) {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
         let target_id = EnemyId(400);
@@ -1288,8 +1300,9 @@ mod actions_tests {
         let mut inv = test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
-        inv.max_health = inv_health;
-        inv.damage = 0;
+        // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
+        // accumulated_damage equals inv_health (the "remaining health" the test intended).
+        inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
         let loc = test_location(10, "Study");
 

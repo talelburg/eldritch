@@ -41,6 +41,29 @@ fn test_inv_metadata() -> &'static crate::card_data::CardMetadata {
     })
 }
 
+/// Metadata lookup for the synthetic `TEST_INV` investigator code.
+///
+/// Integration tests in `crates/game-core/tests/` install their own
+/// mock `CardRegistry` instead of calling [`install_test_registry`].
+/// When those mocks use `test_investigator`, the investigator's
+/// `investigator_card.code` is `TEST_INV`. Any code path that reads
+/// `max_health()` / `max_sanity()` (damage/horror application, defeat
+/// checks) calls `investigator_capacity(TEST_INV)` and needs the
+/// registry to know that code. Compose this into the mock's
+/// `metadata_for`:
+///
+/// ```ignore
+/// fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+///     game_core::test_support::metadata_for_test_inv(code)
+///         .or_else(|| /* mock-specific lookups */)
+/// }
+/// ```
+pub fn metadata_for_test_inv(
+    code: &crate::state::CardCode,
+) -> Option<&'static crate::card_data::CardMetadata> {
+    (code.as_str() == TEST_INV).then(test_inv_metadata)
+}
+
 /// Install a minimal game-core test registry that knows `TEST_INV` (and only
 /// it). Idempotent; safe to call from any test. Capacity-reading code
 /// (`max_health()` / `max_sanity()` / soak / defeat) needs this installed.

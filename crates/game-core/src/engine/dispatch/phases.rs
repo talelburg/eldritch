@@ -2983,6 +2983,8 @@ mod enemy_phase_tests {
 
     #[test]
     fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop() {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
 
         // EnemyId(1) deals the killing blow on its attack.
@@ -2998,7 +3000,9 @@ mod enemy_phase_tests {
         let mut state = GameStateBuilder::default()
             .with_investigator({
                 let mut inv = test_investigator(1);
-                inv.max_health = 1; // e1's attack defeats
+                // Pre-load accumulated_damage so remaining health = 1 (lethal with attack_damage=1).
+                // max_health()=8 from TEST_INV; 7+1=8=defeated.
+                inv.investigator_card.accumulated_damage = 7;
                 inv
             })
             .with_turn_order([inv_id])

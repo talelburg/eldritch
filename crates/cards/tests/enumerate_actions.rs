@@ -32,6 +32,9 @@ fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> game_core::GameSt
     install_real_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC);
+    // Real investigator code so max_health()/max_sanity() reads from the
+    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    inv.investigator_card.code = CardCode::new("01003");
     inv.actions_remaining = 3;
     inv.resources = 9;
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();

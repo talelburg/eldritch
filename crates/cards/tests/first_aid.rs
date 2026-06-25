@@ -33,8 +33,9 @@ fn install() {
 fn board(supplies: u8) -> game_core::GameState {
     install();
     let mut inv = test_investigator(1);
-    inv.damage = 2;
-    inv.horror = 2;
+    // Harm accumulates on the investigator card after #448 cp2a.
+    inv.investigator_card.accumulated_damage = 2;
+    inv.investigator_card.accumulated_horror = 2;
     let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT_INST);
     kit.uses.insert(UseKind::Supplies, supplies);
     inv.cards_in_play.push(kit);

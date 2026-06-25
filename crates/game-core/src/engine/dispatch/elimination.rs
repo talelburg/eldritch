@@ -451,9 +451,12 @@ mod elimination_tests {
     fn last_investigator_defeated_latches_lost_resolution() {
         // Single investigator; defeat them and assert the no-remaining-players
         // resolution latch is set (Rules Reference p.10 step 6).
+        crate::test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
-        investigator.max_sanity = 1;
+        // After #448 cp2a: max_sanity() reads from the registry (TEST_INV = 8).
+        // Pre-load 7 horror so 1 more = 8 = max_sanity → lethal horror.
+        investigator.investigator_card.accumulated_horror = 7;
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(investigator)
@@ -462,7 +465,7 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        // Apply lethal horror through the standard defeat path.
+        // Apply the final point of lethal horror through the standard defeat path.
         take_horror(
             &mut Cx {
                 state: &mut state,

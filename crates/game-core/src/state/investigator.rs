@@ -173,31 +173,47 @@ impl Investigator {
         bump_usage(&mut self.ability_usage, ability_index, current_round);
     }
 
-    /// Physical damage currently on the investigator. Reads the investigator
-    /// card's accumulated damage once harm moves there (#448 cp2); during the
-    /// seam it delegates to the legacy field.
+    /// Physical damage currently on the investigator — reads
+    /// `investigator_card.accumulated_damage` (#448 cp2a).
     #[must_use]
     pub fn damage(&self) -> u8 {
-        self.damage
+        self.investigator_card.accumulated_damage
     }
 
     /// Horror currently on the investigator. See [`Self::damage`].
     #[must_use]
     pub fn horror(&self) -> u8 {
-        self.horror
+        self.investigator_card.accumulated_horror
     }
 
-    /// Maximum health (printed). Reads `CardKind::Investigator` metadata once
-    /// the seam closes (#448 cp2); during the seam it delegates to the field.
+    /// Maximum health (printed) — reads `CardKind::Investigator` metadata from
+    /// the installed registry (#448 cp2a). Panics if the registry is absent or
+    /// the investigator card's code is not a `CardKind::Investigator`.
     #[must_use]
     pub fn max_health(&self) -> u8 {
-        self.max_health
+        investigator_capacity(&self.investigator_card.code).0
     }
 
     /// Maximum sanity (printed). See [`Self::max_health`].
     #[must_use]
     pub fn max_sanity(&self) -> u8 {
-        self.max_sanity
+        investigator_capacity(&self.investigator_card.code).1
+    }
+}
+
+/// (health, sanity) printed capacity for an investigator card, from the
+/// installed registry. Panics if the registry is uninstalled or the code is
+/// not an investigator card — a state-shape invariant violation, surfaced
+/// rather than silently defaulted.
+fn investigator_capacity(code: &CardCode) -> (u8, u8) {
+    let reg = crate::card_registry::current()
+        .expect("investigator capacity read before a CardRegistry was installed");
+    match &(reg.metadata_for)(code)
+        .expect("investigator card code absent from registry")
+        .kind
+    {
+        crate::card_data::CardKind::Investigator { health, sanity, .. } => (*health, *sanity),
+        _ => panic!("investigator_card.code does not resolve to a CardKind::Investigator"),
     }
 }
 
@@ -350,15 +366,20 @@ mod removed_from_game_tests {
 
 #[cfg(test)]
 mod harm_accessor_tests {
+    // Seam test from cp1b (which delegated to legacy fields) is removed by
+    // cp2a: the accessors now read the investigator_card directly.
     #[test]
-    fn harm_accessors_match_the_underlying_fields_during_the_seam() {
+    fn harm_accessors_read_from_investigator_card() {
+        crate::test_support::install_test_registry();
         let mut inv = crate::test_support::test_investigator(1);
-        inv.damage = 2;
-        inv.horror = 1;
+        // Set accumulated harm directly on the card.
+        inv.investigator_card.accumulated_damage = 2;
+        inv.investigator_card.accumulated_horror = 1;
         assert_eq!(inv.damage(), 2);
         assert_eq!(inv.horror(), 1);
-        assert_eq!(inv.max_health(), inv.max_health);
-        assert_eq!(inv.max_sanity(), inv.max_sanity);
+        // Capacity reads from the registry (TEST_INV has 8/8).
+        assert_eq!(inv.max_health(), 8);
+        assert_eq!(inv.max_sanity(), 8);
     }
 }
 

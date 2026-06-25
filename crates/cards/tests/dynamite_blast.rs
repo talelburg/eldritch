@@ -61,9 +61,17 @@ fn board() -> game_core::GameState {
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry (#448 cp2a). Roland Banks (01001): 9/5.
+    // Use Skids O'Toole (01003, 8 health / 6 sanity) — real code so
+    // max_health()/max_sanity() can read from the installed cards registry
+    // (#448 cp2a), no implemented abilities so no reaction windows fire.
+    inv.investigator_card.code = CardCode::new("01003");
 
     let mut inv2 = test_investigator(2);
     inv2.current_location = Some(LOC_B);
+    // Same reason as inv above.
+    inv2.investigator_card.code = CardCode::new("01003");
 
     let mut loc_a = test_location(10, "Cellar");
     loc_a.connections = vec![LOC_B];
@@ -153,6 +161,8 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
+    // Real investigator code so max_health() reads from the cards registry (#448 cp2a).
+    inv.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
 
     let loc_a = test_location(10, "Cellar"); // no connections
     let mut enemy_a = test_enemy(100, "Ghoul A");

@@ -299,6 +299,11 @@ fn synth_cover_up_trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 }
 
 /// `metadata_for` function pointer used by [`TEST_REGISTRY`].
+///
+/// Falls through to `game_core::test_support::metadata_for_test_inv` for
+/// the synthetic investigator code (`TEST_INV`) used by `test_investigator()`.
+/// After cp2a `max_health()`/`max_sanity()` read from the registry; the
+/// fallthrough makes capacity reads work without installing a separate registry.
 fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     match code.as_str() {
         SYNTH_TREACHERY_CODE => Some(synth_treachery_metadata_static()),
@@ -307,7 +312,7 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
         SYNTH_CHOICE_TREACHERY_CODE => Some(synth_choice_treachery_metadata_static()),
         SYNTH_FAST_EVENT_CODE => Some(synth_fast_event_metadata_static()),
         SYNTH_COVER_UP_CODE => Some(synth_cover_up_metadata_static()),
-        _ => None,
+        _ => game_core::test_support::metadata_for_test_inv(code),
     }
 }
 

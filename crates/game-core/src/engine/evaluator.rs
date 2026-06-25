@@ -1485,8 +1485,8 @@ fn heal_effect(
         };
     };
     let current = match kind {
-        HarmKind::Damage => &mut inv.damage,
-        HarmKind::Horror => &mut inv.horror,
+        HarmKind::Damage => &mut inv.investigator_card.accumulated_damage,
+        HarmKind::Horror => &mut inv.investigator_card.accumulated_horror,
     };
     let healed = (*current).min(count);
     *current -= healed;
@@ -3946,6 +3946,7 @@ mod tests {
 
     #[test]
     fn heal_reduces_horror_saturating_and_emits_event() {
+        crate::test_support::install_test_registry();
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
@@ -3953,7 +3954,8 @@ mod tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .horror = 1;
+            .investigator_card
+            .accumulated_horror = 1;
         let mut events = Vec::new();
         let outcome = run(
             &mut Cx {
@@ -3978,6 +3980,7 @@ mod tests {
 
     #[test]
     fn heal_target_chosen_at_your_location_auto_binds() {
+        crate::test_support::install_test_registry();
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
@@ -3998,7 +4001,8 @@ mod tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .damage = 2;
+            .investigator_card
+            .accumulated_damage = 2;
         let mut events = Vec::new();
         let outcome = run(
             &mut Cx {
@@ -4709,13 +4713,15 @@ mod tests {
 
     #[test]
     fn deal_damage_at_max_health_defeats_investigator() {
-        // Build an investigator with a known low max_health (3), then
-        // apply exactly 3 damage via Effect::Deal and assert the
-        // investigator is Killed and InvestigatorDefeated is emitted.
         use crate::state::Status;
+        // Apply damage that exactly reaches max_health (8 from TEST_INV) via
+        // Effect::Deal and assert the investigator is Killed and
+        // InvestigatorDefeated is emitted. Pre-load 5 accumulated_damage so
+        // 5 + 3 = 8 = defeated with a 3-damage deal.
+        crate::test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
-        inv.max_health = 3;
+        inv.investigator_card.accumulated_damage = 5;
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events = Vec::new();
         let outcome = run(
