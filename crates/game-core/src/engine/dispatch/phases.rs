@@ -3845,17 +3845,16 @@ mod start_scenario_tests {
     use super::*;
     use crate::action::{Action, PlayerAction, RosterEntry};
     use crate::engine::apply;
+    use crate::seat_and_open;
     use crate::state::CardCode;
     use crate::state::GameStateBuilder;
     use crate::test_support::fixtures::test_investigator;
+    use crate::test_support::{install_test_registry, TEST_INV};
 
     #[test]
     fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
         let state = GameStateBuilder::new().build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
+        let result = seat_and_open(state, &[]);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty(), "no events on reject");
@@ -3923,24 +3922,22 @@ mod start_scenario_tests {
     // fake. Either way it rejects; the registry-backed happy and
     // unknown-code paths are pinned deterministically by the
     // `crates/cards` integration test, which installs `cards::REGISTRY`.
-    /// `StartScenario` shuffles the shared encounter deck (like the player
+    /// `seat_and_open` shuffles the shared encounter deck (like the player
     /// decks) with the scenario-start RNG: the deck's multiset is preserved
     /// and `EncounterDeckShuffled` fires.
     #[test]
     fn start_scenario_shuffles_the_encounter_deck() {
         use crate::state::CardCode;
-        let id = crate::state::InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
+        install_test_registry();
+        let mut state = GameStateBuilder::new().build();
         let codes = ["e1", "e2", "e3", "e4", "e5"];
         state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();
+        let roster = vec![RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        }];
 
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
+        let result = seat_and_open(state, &roster);
 
         assert!(matches!(
             result.outcome,
@@ -3964,10 +3961,7 @@ mod start_scenario_tests {
             investigator: CardCode::new("01001"),
             deck: vec![],
         }];
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster }),
-        );
+        let result = seat_and_open(state, &roster);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty());
