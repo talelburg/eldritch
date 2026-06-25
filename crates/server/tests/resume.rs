@@ -141,11 +141,13 @@ async fn non_resolve_action_while_awaiting_input_is_rejected() {
     send(&mut a, &skill_test()).await;
     let _ = recv(&mut a).await; // Applied(AwaitingInput)
 
-    // A non-ResolveInput submit while paused is rejected by the engine.
+    // A non-ResolveInput submit while paused is rejected by the engine's
+    // pending-prompt gate. `StartScenario` stands in as the surviving
+    // non-ResolveInput action (the typed gameplay variants are gone).
     send(
         &mut a,
         &ClientMessage::Submit {
-            action: PlayerAction::EndTurn,
+            action: PlayerAction::StartScenario { roster: vec![] },
         },
     )
     .await;
