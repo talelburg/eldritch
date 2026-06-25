@@ -24,10 +24,10 @@
 //!
 //! ```
 //! use game_core::{
-//!     apply, Action, Event, InvestigatorId, PlayerAction, Phase,
+//!     Event, InvestigatorId, Phase, TurnAction,
 //!     assert_event, assert_no_event,
 //!     state::{Continuation, InvestigationResume},
-//!     test_support::{test_investigator, GameStateBuilder},
+//!     test_support::{take_turn_action, test_investigator, GameStateBuilder},
 //! };
 //!
 //! let state = GameStateBuilder::new()
@@ -41,7 +41,7 @@
 //!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
 //!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
-//! let result = apply(state, Action::Player(PlayerAction::EndTurn));
+//! let result = take_turn_action(state, &TurnAction::EndTurn);
 //!
 //! assert_event!(result.events, Event::TurnEnded { .. });
 //! assert_no_event!(result.events, Event::ScenarioStarted);

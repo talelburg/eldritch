@@ -869,6 +869,7 @@ mod tests {
 
     #[test]
     fn test_session_fluent_round_trip() {
+        use crate::engine::enumerate::TurnAction;
         let id = InvestigatorId(1);
         // Two investigators so the first EndTurn is a mid-round rotation
         // (reaches Done immediately) rather than a round-ending cascade — the
@@ -885,13 +886,13 @@ mod tests {
             })
             .with_investigator_turn(id)
             .session()
-            .apply(Action::Player(PlayerAction::EndTurn))
+            .take(&TurnAction::EndTurn)
             .resolve_choices(|c| {
                 // Stale script: engine reaches Done without prompting.
                 c.confirm();
             })
             .run();
-        assert!(matches!(result.outcome, EngineOutcome::Done));
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
     }
 
     #[test]

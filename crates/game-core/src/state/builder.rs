@@ -11,9 +11,9 @@
 //!
 //! ```
 //! use game_core::{
-//!     apply, Action, PlayerAction, Phase, InvestigatorId,
+//!     TurnAction, InvestigatorId, Phase,
 //!     state::{GameStateBuilder, Continuation, InvestigationResume},
-//!     test_support::{test_investigator, test_location},
+//!     test_support::{take_turn_action, test_investigator, test_location},
 //! };
 //!
 //! let state = GameStateBuilder::new()
@@ -29,7 +29,8 @@
 //!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
 //!
-//! let result = apply(state, Action::Player(PlayerAction::EndTurn));
+//! let result = take_turn_action(state, &TurnAction::EndTurn);
+//! assert!(!matches!(result.outcome, game_core::EngineOutcome::Rejected { .. }));
 //! ```
 
 use std::collections::{BTreeMap, VecDeque};
