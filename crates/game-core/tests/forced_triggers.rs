@@ -14,6 +14,7 @@
 
 use std::sync::OnceLock;
 
+use game_core::action::InputResponse;
 use game_core::assert_event;
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
@@ -127,6 +128,34 @@ fn install_mock_registry() {
     });
 }
 
+/// Submit the open-turn `Move` action via the enumeration round-trip (the typed
+/// `PlayerAction::Move` is removed in a later task). The state must carry an
+/// `InvestigatorTurn` frame so the move is offered by `legal_actions`.
+fn move_action(
+    state: game_core::state::GameState,
+    investigator: InvestigatorId,
+    destination: LocationId,
+) -> game_core::ApplyResult {
+    use game_core::engine::enumerate::legal_actions;
+    use game_core::engine::OptionId;
+    use game_core::TurnAction;
+
+    let target = TurnAction::Move {
+        investigator,
+        destination,
+    };
+    let idx = legal_actions(&state)
+        .iter()
+        .position(|a| a == &target)
+        .expect("Move must be a legal open-turn action");
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        }),
+    )
+}
+
 #[test]
 fn forced_on_enter_resolves_immediately() {
     install_mock_registry();
@@ -173,15 +202,11 @@ fn move_into_forced_location_fires_its_effect() {
         .with_location(attic)
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
         .build();
 
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::Move {
-            investigator: InvestigatorId(1),
-            destination: LocationId(11),
-        }),
-    );
+    let result = move_action(state, InvestigatorId(1), LocationId(11));
 
     assert!(
         matches!(result.outcome, EngineOutcome::Done),
@@ -504,7 +529,21 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
         .with_investigator_turn(InvestigatorId(1))
         .build();
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = {
+        use game_core::engine::enumerate::legal_actions;
+        use game_core::engine::OptionId;
+        use game_core::TurnAction;
+        let idx = legal_actions(&state)
+            .iter()
+            .position(|a| a == &TurnAction::EndTurn)
+            .expect("EndTurn must be a legal open-turn action");
+        apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+            }),
+        )
+    };
 
     assert!(
         result
@@ -595,18 +634,32 @@ fn successful_investigate_fires_after_location_investigated_forced() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
 
-    let result = apply_no_commits(
-        state,
-        Action::Player(PlayerAction::Investigate {
-            investigator: InvestigatorId(1),
-        }),
-    );
+    let result = {
+        use game_core::engine::enumerate::legal_actions;
+        use game_core::engine::OptionId;
+        use game_core::TurnAction;
+        let idx = legal_actions(&state)
+            .iter()
+            .position(|a| {
+                a == &TurnAction::Investigate {
+                    investigator: InvestigatorId(1),
+                }
+            })
+            .expect("Investigate must be a legal open-turn action");
+        apply_no_commits(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+            }),
+        )
+    };
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert!(
@@ -646,15 +699,10 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
         .build();
 
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::Move {
-            investigator: InvestigatorId(1),
-            destination: LocationId(11),
-        }),
-    );
+    let result = move_action(state, InvestigatorId(1), LocationId(11));
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -672,8 +720,6 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
 fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     // Resume the choice: pick each forced trigger in turn; both resolve, the
     // move completes (terminal site → Done), total 2 horror.
-    use game_core::action::InputResponse;
-
     install_mock_registry();
 
     let mut from = test_location(10, "Hallway");
@@ -692,15 +738,10 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
         .build();
 
-    let paused = apply(
-        state,
-        Action::Player(PlayerAction::Move {
-            investigator: InvestigatorId(1),
-            destination: LocationId(11),
-        }),
-    );
+    let paused = move_action(state, InvestigatorId(1), LocationId(11));
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }

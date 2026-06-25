@@ -20,7 +20,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{assert_event, Action, InputResponse, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";
@@ -99,6 +99,7 @@ fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_turn_order([id])
+        .with_investigator_turn(id)
         .with_investigator(inv)
         .with_location(test_location(10, "Study"))
         .with_enemy(enemy)
@@ -108,10 +109,20 @@ fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
     (state, id, enemy_id)
 }
 
-fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
-    Action::Player(PlayerAction::Fight {
+/// Resolve the open-turn `Fight` action against `state` to its `OptionId`,
+/// returning the `ResolveInput(PickSingle)` submit the enumeration round-trip
+/// expects. Replaces the typed `PlayerAction::Fight` (removed in a later task).
+fn fight_action(state: &game_core::GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
+    let target = TurnAction::Fight {
         investigator: inv,
         enemy,
+    };
+    let idx = game_core::engine::enumerate::legal_actions(state)
+        .iter()
+        .position(|a| a == &target)
+        .expect("Fight must be a legal open-turn action");
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
     })
 }
 
@@ -121,7 +132,8 @@ fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
 fn committing_vicious_blow_adds_one_attack_damage() {
     let (state, id, enemy_id) = board();
 
-    let paused = game_core::engine::apply(state, fight_action(id, enemy_id));
+    let fight = fight_action(&state, id, enemy_id);
+    let paused = game_core::engine::apply(state, fight);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -148,7 +160,8 @@ fn committing_vicious_blow_adds_one_attack_damage() {
 fn fight_without_commit_deals_base_damage() {
     let (state, id, enemy_id) = board();
 
-    let paused = game_core::engine::apply(state, fight_action(id, enemy_id));
+    let fight = fight_action(&state, id, enemy_id);
+    let paused = game_core::engine::apply(state, fight);
     let result = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {

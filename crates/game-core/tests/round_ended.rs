@@ -94,9 +94,11 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // upkeep tail — the Upkeep→Mythos transition — that a terminal close would
     // have dropped.
     use game_core::action::InputResponse;
+    use game_core::engine::enumerate::legal_actions;
+    use game_core::engine::OptionId;
     use game_core::state::{CardInPlay, CardInstanceId, LocationId, Phase};
     use game_core::test_support::test_location;
-    use game_core::{apply, Action, PlayerAction};
+    use game_core::{apply, Action, PlayerAction, TurnAction};
 
     install();
 
@@ -136,8 +138,18 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // EndTurn drives Investigation → Enemy → Upkeep and reaches step 4.6,
     // where the two round-end forced abilities fire simultaneously. The
     // forced run suspends for the lead's ordering choice rather than
-    // transitioning to Mythos.
-    let paused = apply(state, Action::Player(PlayerAction::EndTurn));
+    // transitioning to Mythos. Submitted via the enumeration round-trip
+    // (the typed `PlayerAction::EndTurn` is removed in a later task).
+    let end_turn = {
+        let idx = legal_actions(&state)
+            .iter()
+            .position(|a| a == &TurnAction::EndTurn)
+            .expect("EndTurn must be a legal open-turn action");
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        })
+    };
+    let paused = apply(state, end_turn);
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "two round-end forced must present the lead a choice; got {:?}",

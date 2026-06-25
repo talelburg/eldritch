@@ -19,9 +19,10 @@ use game_core::state::{
     TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
+    GameStateBuilder,
 };
-use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
+use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -124,6 +125,7 @@ fn board_with_enemies(
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_location(test_location(1, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default());
@@ -157,14 +159,23 @@ fn play_card_seeds_the_ammo_pool_from_metadata() {
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_investigator(inv)
         .build();
 
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::PlayCard {
+                investigator: id,
+                hand_index: 0,
+            }
+        })
+        .expect("PlayCard must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -182,12 +193,20 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
 
     // Activate → pays 1 ammo up front, then the Combat test resolves
     // (combat 3 + modifier 1 vs fight 3 → success) dealing 1 + 1 = 2.
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: weapon,
+                ability_index: 0,
+            }
+        })
+        .expect("ability must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: id,
-            instance_id: weapon,
-            ability_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
 
@@ -223,12 +242,20 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
         "precondition: the enemy is co-located but NOT engaged"
     );
 
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: weapon,
+                ability_index: 0,
+            }
+        })
+        .expect("ability must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: id,
-            instance_id: weapon,
-            ability_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
 
@@ -278,13 +305,13 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
         .with_investigator_at(inv, LOC)
         .build();
 
-    let result = apply_no_commits(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id: weapon_inst,
             ability_index: 0,
-        }),
+        },
     );
     let EngineOutcome::Rejected { reason } = &result.outcome else {
         panic!("expected Rejected; got {:?}", result.outcome);
@@ -307,13 +334,13 @@ fn weapon_fight_rejects_when_no_co_located_enemy() {
     // anything.
     let (state, id, weapon) = board_with_weapon(0);
     let actions_before = state.investigators[&id].actions_remaining;
-    let result = apply_no_commits(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id: weapon,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     // Nothing charged: ammo still 4, actions unchanged.
@@ -333,12 +360,20 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
     let (state, id, weapon) = board_with_weapon(2);
 
     // Step 1: activation suspends for the target pick.
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: weapon,
+                ability_index: 0,
+            }
+        })
+        .expect("ability must be legal");
     let r1 = apply(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: id,
-            instance_id: weapon,
-            ability_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
     assert!(

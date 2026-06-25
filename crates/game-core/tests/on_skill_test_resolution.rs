@@ -27,7 +27,9 @@ use game_core::state::{
 use game_core::test_support::{
     apply_no_commits, drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{assert_event, assert_event_count, assert_no_event, Action, PlayerAction};
+use game_core::{
+    assert_event, assert_event_count, assert_no_event, Action, InputResponse, PlayerAction,
+};
 
 /// Mock: success-gated `OnSkillTestResolution` → discover 1 clue at
 /// the tested location. The Deduction-shape (without kind narrowing,
@@ -99,6 +101,8 @@ fn state_with_hand_and_location(
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_turn_order([id])
+        .with_investigator_turn(id)
         .with_investigator(inv)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -282,11 +286,21 @@ fn investigate_canonical_event_order_with_on_resolution() {
     // alone (both name the same investigator + count = 1), so this
     // pin is essential as the spec for downstream listeners.
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_SUCCESS], 3);
-    let result = drive_with_commits(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-        &[BONUS_CLUE_SUCCESS],
-    );
+    // Submit the open-turn Investigate via the enumeration round-trip (the typed
+    // `PlayerAction::Investigate` is removed in a later task).
+    let investigate = {
+        use game_core::engine::enumerate::legal_actions;
+        use game_core::engine::OptionId;
+        use game_core::TurnAction;
+        let idx = legal_actions(&state)
+            .iter()
+            .position(|a| a == &TurnAction::Investigate { investigator: id })
+            .expect("Investigate must be a legal open-turn action");
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        })
+    };
+    let result = drive_with_commits(state, investigate, &[BONUS_CLUE_SUCCESS]);
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(result.state.locations[&loc].clues, 1, "lost 2 clues total");
