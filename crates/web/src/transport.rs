@@ -17,9 +17,6 @@ use crate::url::current_ws_url;
 
 /// localStorage key holding the active game id across reloads.
 const GAME_ID_KEY: &str = "eldritch_game_id";
-/// The scenario the client requests on `POST /games` — The Gathering, now
-/// that the server installs the real `cards`/`scenarios` registries (C7a).
-const SCENARIO_ID: &str = "the-gathering";
 /// Fixed reconnect backoff. Plenty for a solo v0; not exponential.
 const RECONNECT_MS: u32 = 1000;
 
@@ -27,16 +24,22 @@ const RECONNECT_MS: u32 = 1000;
 /// submit actions; cloneable, survives reconnects.
 pub type OutboundTx = mpsc::UnboundedSender<ClientMessage>;
 
-/// Start the transport: provide an `OutboundTx` into context, then spawn
-/// the bootstrap + connect loop. Call once from `App` (wasm only).
+/// Start the transport: provide an `OutboundTx` and a `CreateTx` into context,
+/// then spawn the bootstrap + connect loop. Call once from `App` (wasm only).
 pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
+    let (create_tx, create_rx) = mpsc::unbounded::<CreateGameRequest>();
     provide_context(tx);
-    spawn_local(run(store, rx));
+    provide_context::<crate::picker::CreateTx>(create_tx);
+    spawn_local(run(store, rx, create_rx));
 }
 
-async fn run(store: StoreSignal, mut rx: mpsc::UnboundedReceiver<ClientMessage>) {
-    let mut game_id: GameId = match bootstrap(store).await {
+async fn run(
+    store: StoreSignal,
+    mut rx: mpsc::UnboundedReceiver<ClientMessage>,
+    mut create_rx: mpsc::UnboundedReceiver<CreateGameRequest>,
+) {
+    let mut game_id: GameId = match bootstrap(store, &mut create_rx).await {
         Some(id) => id,
         None => return, // bootstrap set ConnStatus::Failed already
     };
@@ -48,7 +51,10 @@ async fn run(store: StoreSignal, mut rx: mpsc::UnboundedReceiver<ClientMessage>)
             // server (e.g. a DB reset). Discard it and create a fresh game.
             ConnectOutcome::StaleId => {
                 clear_saved_id();
-                match create_game(store).await {
+                let Some(req) = await_roster(&store, &mut create_rx).await else {
+                    return;
+                };
+                match create_game(store, req).await {
                     Some(id) => game_id = id,
                     None => return,
                 }
@@ -79,20 +85,31 @@ enum ConnectOutcome {
     Disconnected,
 }
 
-/// Resolve a game id: reuse a saved one, else create and save. Returns
-/// `None` (and sets `Failed`) if creation fails.
-async fn bootstrap(store: StoreSignal) -> Option<GameId> {
+/// Resolve a game id: reuse a saved one, else await a roster from the picker
+/// and create. Returns `None` (and sets `Failed`) if creation fails.
+async fn bootstrap(
+    store: StoreSignal,
+    create_rx: &mut mpsc::UnboundedReceiver<CreateGameRequest>,
+) -> Option<GameId> {
     if let Some(id) = saved_id() {
         return Some(id);
     }
-    create_game(store).await
+    let req = await_roster(&store, create_rx).await?;
+    create_game(store, req).await
 }
 
-async fn create_game(store: StoreSignal) -> Option<GameId> {
+/// Set status to `AwaitingRoster` and block until the picker sends a request.
+async fn await_roster(
+    store: &StoreSignal,
+    create_rx: &mut mpsc::UnboundedReceiver<CreateGameRequest>,
+) -> Option<CreateGameRequest> {
+    store.update(|s| s.status = ConnStatus::AwaitingRoster);
+    create_rx.next().await
+}
+
+async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<GameId> {
     let resp = Request::post("/games")
-        .json(&CreateGameRequest {
-            scenario_id: SCENARIO_ID.to_string(),
-        })
+        .json(&request)
         .ok()?
         .send()
         .await

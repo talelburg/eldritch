@@ -20,6 +20,7 @@ pub fn BoardView() -> impl IntoView {
         ConnStatus::Connected => "connected",
         ConnStatus::Reconnecting => "reconnecting",
         ConnStatus::Failed => "failed",
+        ConnStatus::AwaitingRoster => "awaiting-roster",
     };
     let rejection = move || store.get().last_rejection.unwrap_or_default();
 
