@@ -11,7 +11,7 @@ use crate::state::{
 
 use crate::action::RosterEntry;
 use crate::card_data::CardKind;
-use crate::state::{Investigator, Skills, Status};
+use crate::state::{CardInPlay, Investigator, Skills, Status};
 
 use super::Cx;
 
@@ -96,6 +96,8 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
 
     for (idx, (skills, health, sanity, name, deck, card_code)) in resolved.into_iter().enumerate() {
         let id = InvestigatorId(u32::try_from(idx).unwrap_or(0) + 1);
+        let inv_card_id = cx.state.card_instance_ids.mint();
+        let investigator_card = CardInPlay::enter_play(card_code.clone(), inv_card_id);
         cx.state.investigators.insert(
             id,
             Investigator {
@@ -120,6 +122,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 removed_from_game: Vec::new(),
                 ability_usage: std::collections::BTreeMap::new(),
                 action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
+                investigator_card,
             },
         );
         cx.state.turn_order.push(id);

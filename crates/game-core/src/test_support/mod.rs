@@ -13,6 +13,55 @@ pub mod assertions;
 pub mod fixtures;
 pub mod resolver;
 
+/// Synthetic investigator-card code for unit tests. Registered by
+/// [`install_test_registry`] with 8 health / 8 sanity (mirroring the legacy
+/// `test_investigator` capacity).
+pub const TEST_INV: &str = "TEST_INV";
+
+fn test_inv_metadata() -> &'static crate::card_data::CardMetadata {
+    use crate::card_data::{CardKind, CardMetadata, Class, Skills};
+    static M: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
+    M.get_or_init(|| CardMetadata {
+        code: TEST_INV.to_owned(),
+        name: "Test Investigator".to_owned(),
+        traits: vec![],
+        text: None,
+        pack_code: "_test".to_owned(),
+        kind: CardKind::Investigator {
+            class: Class::Neutral,
+            skills: Skills {
+                willpower: 3,
+                intellect: 3,
+                combat: 3,
+                agility: 3,
+            },
+            health: 8,
+            sanity: 8,
+        },
+    })
+}
+
+/// Install a minimal game-core test registry that knows `TEST_INV` (and only
+/// it). Idempotent; safe to call from any test. Capacity-reading code
+/// (`max_health()` / `max_sanity()` / soak / defeat) needs this installed.
+pub fn install_test_registry() {
+    use crate::state::CardCode;
+    static INSTALL: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    INSTALL.get_or_init(|| {
+        fn metadata_for(code: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+            (code.as_str() == TEST_INV).then(test_inv_metadata)
+        }
+        fn abilities_for(_: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
+            None
+        }
+        let _ = crate::card_registry::install(crate::card_registry::CardRegistry {
+            metadata_for,
+            abilities_for,
+            native_effect_for: |_| None,
+        });
+    });
+}
+
 pub use crate::state::GameStateBuilder;
 pub use fixtures::{awaiting_commit_input, test_enemy, test_investigator, test_location};
 pub use resolver::{apply_no_commits, drive, ChoiceResolver, ScriptedResolver, TestSession};

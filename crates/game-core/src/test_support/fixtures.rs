@@ -20,7 +20,8 @@
 use crate::card_data::{ClueValue, Prey};
 use crate::engine::{EngineOutcome, InputRequest, ResumeToken};
 use crate::state::{
-    CardCode, Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, Investigator, InvestigatorId, Location,
+    LocationId, Skills, Status,
 };
 
 /// A stock investigator with reasonable defaults.
@@ -33,6 +34,10 @@ use crate::state::{
 /// Mutate fields directly after construction to customize.
 #[must_use]
 pub fn test_investigator(id: u32) -> Investigator {
+    let investigator_card = CardInPlay::enter_play(
+        CardCode::new(crate::test_support::TEST_INV),
+        CardInstanceId(u32::MAX - id),
+    );
     Investigator {
         id: InvestigatorId(id),
         card_code: CardCode::new(""),
@@ -60,6 +65,7 @@ pub fn test_investigator(id: u32) -> Investigator {
         removed_from_game: Vec::new(),
         ability_usage: std::collections::BTreeMap::new(),
         action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
+        investigator_card,
     }
 }
 

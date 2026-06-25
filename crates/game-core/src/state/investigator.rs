@@ -133,6 +133,13 @@ pub struct Investigator {
     /// instance so multiple surcharge sources track independently. Required
     /// on the wire (#453).
     pub action_surcharge_spent_this_round: std::collections::BTreeSet<CardInstanceId>,
+    /// The investigator's own card as a real in-play permanent: it holds the
+    /// investigator's health/sanity capacity (from `CardKind::Investigator`
+    /// metadata) and is the default damage/horror soaker via its
+    /// `accumulated_damage` / `accumulated_horror`. Lives here rather than in
+    /// `cards_in_play` so loops over "cards the player played" never touch it
+    /// (#448). Required on the wire.
+    pub investigator_card: CardInPlay,
 }
 
 impl Investigator {
@@ -238,6 +245,7 @@ mod threat_area_tests {
             "removed_from_game",
             "ability_usage",
             "action_surcharge_spent_this_round",
+            "investigator_card",
         ] {
             let mut v = full.clone();
             v.as_object_mut()
@@ -310,5 +318,19 @@ mod removed_from_game_tests {
     fn new_investigator_has_empty_removed_pile() {
         let inv = crate::test_support::test_investigator(1);
         assert!(inv.removed_from_game.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod investigator_card_tests {
+    #[test]
+    fn test_investigator_has_an_investigator_card_with_the_synthetic_code() {
+        let inv = crate::test_support::test_investigator(1);
+        assert_eq!(
+            inv.investigator_card.code.as_str(),
+            crate::test_support::TEST_INV
+        );
+        assert_eq!(inv.investigator_card.accumulated_damage, 0);
+        assert_eq!(inv.investigator_card.accumulated_horror, 0);
     }
 }
