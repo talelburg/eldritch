@@ -26,7 +26,7 @@ use crate::state::{
 
 /// A stock investigator with reasonable defaults.
 ///
-/// - 3/3/3/3 skills; capacity and harm live on `investigator_card` (TEST_INV: 8/8 health/sanity).
+/// - 3/3/3/3 skills; capacity and harm live on `investigator_card` (`TEST_INV`: 8/8 health/sanity).
 /// - 5 starting resources, 0 clues.
 /// - 3 actions remaining.
 /// - Not placed at any location (`current_location: None`).
