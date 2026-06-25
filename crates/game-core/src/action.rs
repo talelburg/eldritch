@@ -33,24 +33,15 @@ pub enum Action {
 
 /// Input from a human player.
 ///
-/// Two wire variants after 2b (#447): session setup ([`StartScenario`](Self::StartScenario))
-/// and the menu-input channel ([`ResolveInput`](Self::ResolveInput)). Open-turn
-/// gameplay is no longer typed — the engine surfaces its legal-action
-/// enumeration as an open-turn `AwaitingInput` menu, and every gameplay action
-/// flows through `ResolveInput(PickSingle(OptionId))` against it, dispatched
-/// internally via the `TurnAction` id→action map.
+/// After #447/#459 the action log is `ResolveInput`-only. Session setup
+/// (seating investigators, starting the scenario) is handled by the
+/// non-logged `seat_and_open` entry point and never appears here.
+/// Open-turn gameplay flows through `ResolveInput(PickSingle(OptionId))`
+/// against the `InvestigatorTurn` menu, dispatched internally via the
+/// `TurnAction` id→action map (slice 2b, #447).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum PlayerAction {
-    /// Begin a scenario session, seating the chosen investigators.
-    ///
-    /// `roster` pairs each investigator card code with the deck the
-    /// player chose for them. Stats are resolved from card data at
-    /// seat time (not carried here); the deck is taken verbatim — a
-    /// free input that Phase 9's decklist import will populate.
-    /// An empty roster seats no one; `start_scenario` rejects unless at
-    /// least one investigator ends up seated.
-    StartScenario { roster: Vec<RosterEntry> },
     /// Respond to an [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)
     /// prompt the engine emitted. The shape of `response` is dictated by the
     /// active prompt — the open-turn action menu and every framework suspension
@@ -80,10 +71,10 @@ pub struct RosterEntry {
 /// Anything that doesn't originate from a single player action but
 /// still needs an action-log entry for replay clarity. Chaos token
 /// draws and inline-during-handler deck shuffles do NOT use this
-/// channel — they happen as side effects of the action that
-/// triggered them (e.g. [`PlayerAction::StartScenario`] shuffles
-/// every player deck before the initial hand draw), and RNG
-/// determinism reproduces them from the same triggering action.
+/// channel — they happen as side effects of the action that triggered
+/// them (e.g. `seat_and_open` shuffles every player deck during scenario
+/// setup), and RNG determinism reproduces them from the same triggering
+/// action.
 ///
 /// The standalone [`DeckShuffled`](EngineRecord::DeckShuffled)
 /// variant is for shuffle requests that don't come from a player

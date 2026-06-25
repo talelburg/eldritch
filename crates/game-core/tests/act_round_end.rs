@@ -1,7 +1,6 @@
 //! Round-end `when` act-advance window through the public `apply` entry
 //! (EmitEvent-frame C-coordinators, #434). The Upkeep round-end coordinator
-//! opens act 01109's `When`-`RoundEnded` reaction as a board candidate; the
-//! action-gate blocks non-`ResolveInput` actions while it is open, and
+//! opens act 01109's `When`-`RoundEnded` reaction as a board candidate;
 //! `ResolveInput(PickSingle)` fires the advance / `Skip` declines.
 
 use std::sync::OnceLock;
@@ -116,32 +115,6 @@ fn opened_round_end_window(clues: u8) -> GameState {
         state.continuations.last(),
     );
     state
-}
-
-#[test]
-fn pending_window_blocks_non_resolve_actions() {
-    let state = opened_round_end_window(3);
-    // A non-ResolveInput submit while the window is open is rejected by the
-    // action-gate. `StartScenario` stands in as the surviving non-ResolveInput
-    // action (the typed gameplay variants were removed in 2b (#447)).
-    let r = apply(
-        state,
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-    );
-    assert!(
-        matches!(r.outcome, EngineOutcome::Rejected { .. }),
-        "the guard blocks non-ResolveInput actions while a window is open"
-    );
-    assert!(
-        matches!(
-            r.state.continuations.last(),
-            Some(Continuation::TimingPointWindow {
-                event: TimingEvent::RoundEnded,
-                ..
-            })
-        ),
-        "still open"
-    );
 }
 
 #[test]

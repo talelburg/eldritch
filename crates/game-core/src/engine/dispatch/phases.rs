@@ -20,15 +20,16 @@ use super::Cx;
 /// rulebook.
 pub(super) const ACTIONS_PER_TURN: u8 = 3;
 
+/// Internal scenario setup: seat the roster, shuffle decks, push the initial
+/// phase anchors. Called by [`super::seat_and_open`] (the non-logged engine
+/// entry point); never reached via a `PlayerAction` — the action log is
+/// `ResolveInput`-only after #447/#459.
 pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
-    // The GameState constructor places the world in its initial shape;
-    // this action is the explicit "session has begun" marker that lands
-    // in the action log. Replaying it on an already-started state is a
-    // bug, not a no-op — reject so callers notice rather than silently
-    // double-emitting `ScenarioStarted`.
+    // Replaying on an already-started state is a bug, not a no-op — reject so
+    // callers notice rather than silently double-emitting `ScenarioStarted`.
     if cx.state.round != 0 {
         return EngineOutcome::Rejected {
-            reason: "StartScenario applied to a state that is already in progress".into(),
+            reason: "start_scenario called on a state that is already in progress".into(),
         };
     }
 

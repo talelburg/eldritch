@@ -529,44 +529,6 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
 }
 
 #[test]
-fn non_resolve_input_action_rejects_while_window_open() {
-    // While a reaction window is open, every non-ResolveInput player
-    // action rejects. Mirrors the commit-window and mulligan-window
-    // guards.
-    let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let action = fight_action(&state, inv_id, enemy_id);
-    let paused = fight_through_commit_window(state, action);
-    assert!(matches!(
-        paused.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-
-    // `StartScenario` stands in as the surviving non-ResolveInput action (the
-    // typed gameplay variants were removed in 2b, #447); the gate rejects it
-    // identically while a prompt is outstanding.
-    let rejected = game_core::engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-    );
-    match rejected.outcome {
-        EngineOutcome::Rejected { reason } => {
-            // slice 1b: one unified guard reason (the request carries specifics).
-            assert!(
-                reason.contains("a prompt is outstanding") && reason.contains("ResolveInput"),
-                "unexpected reason: {reason}",
-            );
-        }
-        other => panic!("expected Rejected, got {other:?}"),
-    }
-    assert!(rejected
-        .state
-        .continuations
-        .last()
-        .and_then(Continuation::pending_candidates)
-        .is_some_and(|p| !p.is_empty()));
-}
-
-#[test]
 fn multiple_pending_triggers_resolve_one_at_a_time() {
     // TWO_REACTIONS exposes two OnEvent abilities. The window opens
     // with both pending; PickSingle(OptionId(0)) fires the first (clue), engine
