@@ -96,3 +96,32 @@ pub(super) fn next_active_investigator_after(
             })
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::Status;
+    use crate::test_support::{test_investigator, GameStateBuilder};
+
+    #[test]
+    fn active_investigators_in_turn_order_excludes_eliminated() {
+        // The setup mulligan queue (phases.rs) is seeded from this filter, so a
+        // Killed/Insane/Resigned investigator is structurally excluded — it never
+        // gets prompted. inv1 is Killed, inv2 is Active; only inv2 survives.
+        let inv1 = InvestigatorId(1);
+        let inv2 = InvestigatorId(2);
+        let mut a = test_investigator(1);
+        a.status = Status::Killed;
+        let b = test_investigator(2);
+        let state = GameStateBuilder::new()
+            .with_investigator(a)
+            .with_investigator(b)
+            .with_turn_order([inv1, inv2])
+            .build();
+        assert_eq!(
+            active_investigators_in_turn_order(&state),
+            vec![inv2],
+            "the eliminated inv1 is excluded; only the Active inv2 remains in turn order"
+        );
+    }
+}

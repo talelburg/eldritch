@@ -3962,30 +3962,6 @@ mod tests {
         assert!(result.events.is_empty());
     }
 
-    #[test]
-    fn mulligan_loop_skips_defeated_investigator_in_turn_order() {
-        // `active_investigators_in_turn_order` (used by `start_scenario` to seed
-        // the mulligan queue) skips non-Active investigators, so a Killed
-        // investigator never enters the `remaining` queue. This test stages that
-        // post-seating state directly: inv1 is Killed and the mulligan frame was
-        // already seeded for inv2 only, as start_scenario would have done.
-        let inv1 = InvestigatorId(1);
-        let inv2 = InvestigatorId(2);
-        let mut a = test_investigator(1);
-        a.status = Status::Killed;
-        let b = test_investigator(2);
-        let state = GameStateBuilder::new()
-            .with_investigator(a)
-            .with_investigator(b)
-            .with_turn_order([inv1, inv2])
-            .with_mulligan_remaining([inv2])
-            .build();
-        assert_eq!(
-            state.current_mulligan(),
-            Some(inv2),
-            "the defeated inv1 is excluded from the queue; the loop prompts inv2"
-        );
-    }
 
     #[test]
     fn mulligan_with_out_of_bounds_index_is_rejected() {
@@ -4651,9 +4627,10 @@ mod tests {
     // non-ResolveInput action" to exercise the pending-prompt gate in
     // `apply_player_action`. After migrating seating to `seat_and_open`
     // (which bypasses that gate), no other non-`ResolveInput` action remains
-    // in the wire surface to proxy with. The gate is covered by the broader
-    // AwaitingInput/ResolveInput flow throughout these tests, and the wrong-
-    // response-kind rejection is pinned in `resolve_input_with_wrong_response_variant_rejects`.
+    // in the wire surface to proxy with. The gate's rejection branch is covered
+    // by `crates/game-core/tests/reaction_windows.rs::non_resolve_input_action_rejects_while_window_open`,
+    // and the wrong-response-kind rejection is pinned in
+    // `resolve_input_with_wrong_response_variant_rejects`.
 
     #[test]
     fn resolve_input_with_wrong_response_variant_rejects() {
