@@ -128,6 +128,40 @@ async fn create_rejects_unknown_scenario() {
 }
 
 #[tokio::test]
+async fn create_rejects_bad_roster() {
+    install_registry();
+    let pool = memory_pool().await;
+
+    // Use an obviously-unknown investigator code; the synthetic registry
+    // resolves nothing for it, so seating rejects.
+    let bad_roster = vec![game_core::action::RosterEntry {
+        investigator: game_core::state::CardCode::new("99999"),
+        deck: vec![],
+    }];
+
+    let result = GameSession::create(
+        pool.clone(),
+        "bad",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        bad_roster,
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(server::session::SessionError::Seating(_))),
+        "unknown investigator code must produce SessionError::Seating"
+    );
+
+    // The rejection must persist nothing: no games row for "bad".
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM games WHERE game_id = ?")
+        .bind("bad")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "seating rejection must not persist a games row");
+}
+
+#[tokio::test]
 async fn apply_persists_accepted_action_and_advances_state() {
     install_registry();
     let pool = memory_pool().await;
@@ -146,12 +180,11 @@ async fn apply_persists_accepted_action_and_advances_state() {
         .unwrap();
 
     assert!(!matches!(outcome, EngineOutcome::Rejected { .. }));
-    // After the mulligan resolves the investigator is no longer in the
-    // mulligan queue.
+    // After the mulligan resolves the mulligan queue must be empty (solo
+    // game: only one investigator to resolve).
     assert!(
-        session.state.current_mulligan().is_none()
-            || session.state.current_mulligan() != Some(InvestigatorId(1)),
-        "mulligan must have advanced past investigator 1"
+        session.state.current_mulligan().is_none(),
+        "mulligan queue must be empty after the single investigator resolves"
     );
 
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM actions WHERE game_id = ?")

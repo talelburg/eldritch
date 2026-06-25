@@ -72,6 +72,10 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
         match recv(ws).await {
             ServerMessage::Applied { outcome, events, .. } => {
                 assert!(!matches!(outcome, EngineOutcome::Rejected { .. }));
+                assert!(
+                    matches!(outcome, EngineOutcome::AwaitingInput { .. } | EngineOutcome::Done),
+                    "resolving the mulligan advances to the open-turn menu or completes, got {outcome:?}"
+                );
                 assert!(!events.is_empty(), "resolving the mulligan emits events");
             }
             other => panic!("expected Applied, got {other:?}"),

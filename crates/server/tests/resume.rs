@@ -62,7 +62,7 @@ async fn reconnect_delivers_in_flight_awaiting_input() {
 }
 
 #[tokio::test]
-async fn restart_rebuilds_awaiting_input_via_replay() {
+async fn restart_restores_awaiting_input_from_persisted_seed_outcome() {
     install_registry();
     let pool = memory_pool().await;
     seed(&pool, "g-restart").await;
@@ -118,7 +118,7 @@ async fn resolve_input_resumes_and_completes() {
 }
 
 #[tokio::test]
-async fn non_resolve_action_while_awaiting_input_is_rejected() {
+async fn invalid_mulligan_response_is_rejected() {
     install_registry();
     let pool = memory_pool().await;
     seed(&pool, "g-busy").await;
@@ -127,8 +127,9 @@ async fn non_resolve_action_while_awaiting_input_is_rejected() {
     let mut a = connect(addr, "g-busy").await;
     let _ = recv(&mut a).await; // Hello (AwaitingInput — mulligan already pending)
 
-    // Selecting a non-existent hand index (OptionId(999_999)) is rejected by
-    // the mulligan handler since the empty deck means hand size 0.
+    // Submitting a ResolveInput with an out-of-range option against the
+    // mulligan is rejected: OptionId(999_999) is out of bounds since the
+    // deck is empty (hand size 0).
     send(
         &mut a,
         &ClientMessage::Submit {

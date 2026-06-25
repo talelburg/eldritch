@@ -41,8 +41,9 @@ pub struct GameSession {
     pub game_id: GameId,
     /// Current derived state.
     pub state: GameState,
-    /// Outcome of the most recent apply (`Done` for a freshly created
-    /// game with no actions yet).
+    /// Outcome of the most recent apply, or — for a freshly created game
+    /// with no actions yet — the seed outcome (the setup mulligan prompt,
+    /// i.e. `AwaitingInput`).
     pub outcome: EngineOutcome,
     /// Next sequence number to assign to a persisted action — equal to
     /// the number of actions already in the log.

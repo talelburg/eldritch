@@ -13,7 +13,8 @@ use crate::AppState;
 /// `POST /games`: set up a new game from a scenario and return its id.
 ///
 /// `201 Created` with the `game_id` on success; `400 Bad Request` for an
-/// unknown scenario; `500` on a persistence failure.
+/// unknown scenario; `422 Unprocessable Entity` for a roster the engine
+/// rejects; `500` on a persistence failure.
 pub(crate) async fn create_game(
     State(state): State<AppState>,
     Json(request): Json<CreateGameRequest>,
