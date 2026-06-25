@@ -1,55 +1,44 @@
 //! Which core-loop action controls are enabled, given the current state
 //! and the latest engine outcome (P6.6). A pure UX affordance: the
 //! server stays authoritative and rejects anything illegal (see the P6.6
-//! design spec, decision S2). Consumed by P6.7's action buttons.
+//! design spec, decision S2).
+//!
+//! After 2b (#447) the only bespoke control left is `StartScenario`: the open
+//! turn surfaces its action menu as an `AwaitingInput`, so every in-game action
+//! (move/investigate/fight/play/…) flows through the `ResolveInput` prompt UI
+//! (`AwaitingInputView`), not a dedicated
+//! button. `StartScenario` is the one pre-game action that precedes any
+//! `AwaitingInput` (it seeds hands and opens the setup mulligan).
 
 use std::collections::BTreeSet;
 
-use game_core::state::{GameState, Phase};
+use game_core::state::GameState;
 use game_core::EngineOutcome;
 
-/// A clickable core-loop action in the client.
+/// A clickable core-loop action in the client. After 2b (#447) the only bespoke
+/// control is session start; in-game actions are rendered from the engine's
+/// `AwaitingInput` action menu instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ActionControl {
     StartScenario,
-    Move,
-    Investigate,
-    PlayCard,
-    EndTurn,
-    AdvanceAct,
-    Fight,
-    Evade,
-    Draw,
 }
 
 /// The controls the player may click right now.
 ///
 /// Gating, in order:
-/// 0. A latched `game.resolution` is terminal: the scenario is over, so
-///    no action is legal. Checked first — it dominates every cursor,
-///    pause, and phase below.
-/// 1. An `AwaitingInput` pause blocks every core-loop action — only the
-///    pending `ResolveInput` (the prompt UI) is legal. This keys off the
-///    outcome, so it covers every suspension mode the engine surfaces as
-///    `AwaitingInput` (reaction windows, hunter moves, hand-size discard,
-///    the skill-test commit window), not just the commit prompt.
-/// 2. `round == 0` is the pre-start state straight from a scenario
-///    `setup()` (the engine bumps to round 1 at `StartScenario` and only
-///    ever increments), so `StartScenario` is the sole legal action — it
-///    seeds hands and opens the setup mulligan loop. The mulligan and the
-///    Mythos step-1.4 encounter draw are both `AwaitingInput`s (case 1
-///    above), so they need no dedicated control — they flow through the
-///    `ResolveInput` prompt UI like every other suspension.
-/// 3. Otherwise, the controls the current `Phase` permits.
-///
-/// Finer checks (resources, action budget, clue presence) are
-/// deliberately not mirrored — the server's `Rejected` is the truth.
+/// 0. A latched `game.resolution` is terminal: the scenario is over, so no
+///    action is legal.
+/// 1. An `AwaitingInput` pause means the only legal input is the pending
+///    `ResolveInput` (the prompt UI) — this covers the open-turn action menu and
+///    every framework suspension (mulligan, encounter draw, commit/reaction
+///    windows, …).
+/// 2. `round == 0` is the pre-start state straight from a scenario `setup()`
+///    (the engine bumps to round 1 at `StartScenario`), so `StartScenario` is
+///    the sole legal action.
+/// 3. Otherwise (an in-game round between prompts), nothing: gameplay flows
+///    through the `AwaitingInput` menu, which case 1 already gates.
 #[must_use]
 pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<ActionControl> {
-    use ActionControl::{
-        AdvanceAct, Draw, EndTurn, Evade, Fight, Investigate, Move, PlayCard, StartScenario,
-    };
-
     if game.resolution.is_some() {
         return BTreeSet::new();
     }
@@ -57,28 +46,13 @@ pub fn enabled_controls(game: &GameState, outcome: &EngineOutcome) -> BTreeSet<A
         return BTreeSet::new();
     }
     if game.round == 0 {
-        return BTreeSet::from([StartScenario]);
+        return BTreeSet::from([ActionControl::StartScenario]);
     }
-    match game.phase {
-        Phase::Investigation => BTreeSet::from([
-            Move,
-            Investigate,
-            PlayCard,
-            EndTurn,
-            AdvanceAct,
-            Fight,
-            Evade,
-            Draw,
-        ]),
-        Phase::Mythos | Phase::Enemy | Phase::Upkeep => BTreeSet::new(),
-    }
+    BTreeSet::new()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ActionControl::{
-        AdvanceAct, Draw, EndTurn, Evade, Fight, Investigate, Move, PlayCard,
-    };
     use super::{enabled_controls, ActionControl};
     use game_core::state::GameStateBuilder;
     use game_core::state::{InvestigatorId, Phase};
@@ -114,53 +88,37 @@ mod tests {
 
     #[test]
     fn awaiting_input_disables_everything() {
+        // Covers the open-turn action menu and every framework suspension —
+        // all surface as `AwaitingInput` and flow through the `ResolveInput`
+        // prompt UI, not a bespoke control.
         let game = investigation_game();
         let out = awaiting_commit_input("commit");
         assert_eq!(enabled_controls(&game, &out), BTreeSet::new());
     }
 
-    // The former `mulligan_pending_enables_only_mulligan` (#348 2c-iii-a) and
-    // `mythos_draw_pending_enables_only_draw_encounter` (#348 2c-iii-b) tests
-    // are gone: the setup mulligan and the Mythos step-1.4 encounter draw are
-    // now `AwaitingInput`s, so both are covered by
-    // `awaiting_input_disables_everything` — they flow through the
-    // `ResolveInput` prompt UI, not a dedicated control.
-
     #[test]
-    fn investigation_phase_enables_the_core_loop() {
-        let game = investigation_game();
-        assert_eq!(
-            enabled_controls(&game, &EngineOutcome::Done),
-            BTreeSet::from([
-                Move,
-                Investigate,
-                PlayCard,
-                EndTurn,
-                AdvanceAct,
-                Fight,
-                Evade,
-                Draw
-            ])
-        );
-    }
-
-    #[test]
-    fn non_investigation_phases_enable_nothing() {
-        for phase in [Phase::Mythos, Phase::Enemy, Phase::Upkeep] {
+    fn in_game_round_between_prompts_enables_nothing() {
+        // After 2b (#447) there are no bespoke in-game controls: an in-game
+        // round (round >= 1) enables nothing regardless of phase — gameplay
+        // flows through the `AwaitingInput` menu.
+        for phase in [
+            Phase::Investigation,
+            Phase::Mythos,
+            Phase::Enemy,
+            Phase::Upkeep,
+        ] {
             let mut game = investigation_game();
             game.phase = phase;
             assert_eq!(
                 enabled_controls(&game, &EngineOutcome::Done),
                 BTreeSet::new(),
-                "phase {phase:?} should enable nothing"
+                "phase {phase:?} should enable no bespoke control"
             );
         }
     }
 
     #[test]
     fn resolution_disables_all_controls() {
-        // investigation_game() would normally enable the full core loop;
-        // a latched resolution must dominate and enable nothing.
         let mut game = investigation_game();
         game.resolution = Some(Resolution::Won { id: "demo".into() });
         assert_eq!(

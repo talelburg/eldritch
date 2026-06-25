@@ -29,8 +29,8 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, InvestigatorId, LocationId,
     Phase, Status, Zone,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::{take_turn_action, test_enemy, test_investigator, test_location};
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.
@@ -196,7 +196,7 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
         vec![engaged_attacker(7, inv, loc, 2, 3)],
     );
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     // Distribute the attack: assign both points onto Guard Dog (#44/K5b).
     let result = distribute_onto(result, dog);
     state = result.state;
@@ -262,7 +262,7 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
         vec![engaged_attacker(7, inv, loc, 3, 3)],
     );
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
     state = result.state;
 
@@ -322,7 +322,7 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     // Survived a prior attack: 2 already accumulated (under health 3).
     state.investigators.get_mut(&inv_id).unwrap().cards_in_play[0].accumulated_damage = 2;
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
     state = result.state;
 
@@ -383,7 +383,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
         vec![engaged_attacker(7, inv, loc, 2, 3)],
     );
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
     state = result.state;
 
@@ -466,7 +466,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 
     // Two engaged attackers → the enemy phase first asks the player which
     // attacks next (#143). Pick the first attacker (EnemyId 7).
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let pick_first = order_pick(&result.outcome, first);
 
     // The chosen first attacker attacks: its 1 damage prompts the soak
@@ -625,18 +625,19 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Step 1: take the Move — AoO runs; Guard Dog has no cancel reaction
     // so the before-attack window is skipped; damage soaks onto Guard Dog;
     // the soak window opens and suspends.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::Move {
+        &TurnAction::Move {
             investigator: inv_id,
             destination: dest,
-        }),
+        },
     );
     // The AoO prompts for the soak distribution (#44/K5b): assign both points
     // onto Guard Dog to reproduce the soak.
@@ -753,7 +754,7 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
         vec![engaged_attacker(7, inv, loc, 5, 3)],
     );
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
     // onto the investigator.
     let result = distribute_onto(result, dog);
@@ -827,7 +828,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
         .investigator_card
         .accumulated_damage = 7;
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
     state = result.state;
 
@@ -896,7 +897,7 @@ fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eli
         inv_mut.cards_in_play[0].accumulated_damage = 2;
     }
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
     state = result.state;
 

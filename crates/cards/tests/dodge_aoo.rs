@@ -38,8 +38,8 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::{take_turn_action, test_enemy, test_investigator, test_location};
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -134,17 +134,18 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Step 1: take the Move — AoO fires; Dodge is in hand so the
     // BeforeEnemyAttack cancel window opens and suspends.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::Move {
+        &TurnAction::Move {
             investigator: inv_id,
             destination: dest,
-        }),
+        },
     );
     let mut state = result.state;
 
@@ -291,16 +292,17 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Step 1: Move → AoO → BeforeEnemyAttack window.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::Move {
+        &TurnAction::Move {
             investigator: inv_id,
             destination: dest,
-        }),
+        },
     );
     let mut state = result.state;
     assert!(matches!(
@@ -397,17 +399,18 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Step 1: Move → AoO → distribution prompt (Guard Dog has capacity, #44/K5b).
     // Assign both AoO damage points onto Guard Dog → soak window opens.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::Move {
+        &TurnAction::Move {
             investigator: inv_id,
             destination: dest,
-        }),
+        },
     );
     let result = apply(
         result.state,

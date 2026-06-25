@@ -28,16 +28,18 @@
 //! # Example
 //!
 //! ```
-//! use game_core::action::{Action, PlayerAction};
+//! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
 //! use game_core::test_support::GameStateBuilder;
 //!
-//! // A skill-test action with no investigator in state still rejects
-//! // — useful as a tiny smoke test for the fluent API without needing
-//! // a real chaos bag.
+//! // A `ResolveInput` against a bare state with no outstanding prompt
+//! // rejects — a tiny smoke test for the fluent API without needing a
+//! // real chaos bag or any setup.
 //! let result = GameStateBuilder::new()
 //!     .session()
-//!     .apply(Action::Player(PlayerAction::EndTurn))
+//!     .apply(Action::Player(PlayerAction::ResolveInput {
+//!         response: InputResponse::Skip,
+//!     }))
 //!     .run();
 //! assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
 //! ```
@@ -46,7 +48,6 @@ use std::collections::VecDeque;
 
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::{apply, ApplyResult, EngineOutcome, InputRequest};
-use crate::event::Event;
 use crate::state::{CardCode, GameState, InvestigatorId, LocationId};
 
 /// Provide a response for an `AwaitingInput` prompt during a
@@ -278,50 +279,94 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
 /// skill-test ST.1/ST.2 windows never surface a reaction prompt (they carry no
 /// `Trigger::OnEvent` candidates).
 pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
-    // Drive to a terminal outcome, committing no cards and *declining* every
-    // framework Fast player window (Skip). Most actions never open one, so this
-    // is identical to a plain commit-nothing drive — but the skill-test ST.1/ST.2
-    // player windows (#374) *park* (return `Done`-idle with the window on the
-    // stack, no `AwaitingInput`) whenever a Fast card/ability is available, and a
-    // plain `drive` would mistake that idle for the terminal outcome. So skip a
-    // parked window explicitly and continue.
+    drive_to_terminal_no_commits(apply(state, action))
+}
+
+/// Whether `state` is paused at the open-turn action menu (2b, #447): an
+/// [`InvestigatorTurn { ending: false }`](crate::state::Continuation::InvestigatorTurn)
+/// frame on top, which the engine surfaces as the `AwaitingInput` action menu.
+/// Test drivers treat it as a terminal stopping point — it is the *next*
+/// action's prompt, not a window to resolve, so driving past it would silently
+/// consume another turn action.
+fn at_open_turn_menu(state: &GameState) -> bool {
+    matches!(
+        state.continuations.last(),
+        Some(crate::state::Continuation::InvestigatorTurn { ending: false, .. })
+    )
+}
+
+/// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
+/// and drive it to a terminal outcome committing no cards and declining every
+/// Fast window — the skill-test analogue of [`apply_no_commits`]. Replaces the
+/// `apply_no_commits(state, Action::Player(PlayerAction::PerformSkillTest{..}))`
+/// idiom (#447): a rejection at the start surfaces directly; a started test
+/// resolves through its commit window with an empty commit list.
+pub fn perform_skill_test_no_commits(
+    state: GameState,
+    investigator: InvestigatorId,
+    skill: crate::state::SkillKind,
+    difficulty: i8,
+) -> ApplyResult {
+    drive_to_terminal_no_commits(perform_skill_test(state, investigator, skill, difficulty))
+}
+
+/// Continue a no-commits drive from an already-applied [`ApplyResult`]: commit
+/// no cards (empty `PickMultiple` at every commit window) and *decline* every
+/// framework Fast player window (Skip). Most actions never open one, so this is
+/// identical to a plain commit-nothing drive — but the skill-test ST.1/ST.2
+/// player windows (#374) *park* (return `Done`-idle with the window on the
+/// stack, no `AwaitingInput`) whenever a Fast card/ability is available, and a
+/// plain `drive` would mistake that idle for the terminal outcome. So skip a
+/// parked window explicitly and continue.
+fn drive_to_terminal_no_commits(first: ApplyResult) -> ApplyResult {
     const MAX_ITERATIONS: u32 = 1024;
-    let mut state = state;
-    let mut events = Vec::new();
-    let mut next = action;
+    let ApplyResult {
+        mut state,
+        mut events,
+        mut outcome,
+    } = first;
     let mut iterations = 0u32;
     loop {
+        // The open-turn action menu (2b, #447) is a TERMINAL stopping point: it
+        // is the next action's prompt, not a commit window, and resolving it
+        // would consume another turn action. Stop here — the post-flip
+        // equivalent of the old idle-`Done` open turn.
+        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) && at_open_turn_menu(&state) {
+            return ApplyResult {
+                state,
+                events,
+                outcome,
+            };
+        }
+        // The only other `AwaitingInput` in a no-commits drive is a commit
+        // window; a `Done`-idle with an open window is a parked Fast player
+        // window to decline. Anything else is terminal.
+        let next = if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+            InputResponse::PickMultiple {
+                selected: Vec::new(),
+            }
+        } else if matches!(outcome, EngineOutcome::Done) && !state.open_windows().is_empty() {
+            InputResponse::Skip
+        } else {
+            return ApplyResult {
+                state,
+                events,
+                outcome,
+            };
+        };
         iterations += 1;
         assert!(
             iterations <= MAX_ITERATIONS,
-            "apply_no_commits: exceeded {MAX_ITERATIONS} iterations without a terminal \
-             outcome; the engine appears to be cycling (re-parking a window?)",
+            "drive_to_terminal_no_commits: exceeded {MAX_ITERATIONS} iterations without a \
+             terminal outcome; the engine appears to be cycling (re-parking a window?)",
         );
-        let r = apply(state, next);
+        let r = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput { response: next }),
+        );
         state = r.state;
         events.extend(r.events);
-        // The only `AwaitingInput` in a no-commits drive is a commit window
-        // (see the doc-comment's assumption).
-        if matches!(r.outcome, EngineOutcome::AwaitingInput { .. }) {
-            next = Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple {
-                    selected: Vec::new(),
-                },
-            });
-            continue;
-        }
-        // A parked Fast player window (Done-idle): decline it.
-        if matches!(r.outcome, EngineOutcome::Done) && !state.open_windows().is_empty() {
-            next = Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::Skip,
-            });
-            continue;
-        }
-        return ApplyResult {
-            state,
-            events,
-            outcome: r.outcome,
-        };
+        outcome = r.outcome;
     }
 }
 
@@ -361,29 +406,65 @@ where
     R: ChoiceResolver + ?Sized,
     F: FnMut(GameState, Action) -> ApplyResult,
 {
+    let first = applier(state, action);
+    drain_with_applier(first, resolver, applier)
+}
+
+/// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
+/// and drain its commit window — and any further `AwaitingInput` — through
+/// `resolver`. The resolver/`commit_cards` analogue of [`drive`], replacing the
+/// `drive(state, Action::Player(PlayerAction::PerformSkillTest{..}), resolver)`
+/// idiom (#447).
+pub fn drive_skill_test<R: ChoiceResolver>(
+    state: GameState,
+    investigator: InvestigatorId,
+    skill: crate::state::SkillKind,
+    difficulty: i8,
+    mut resolver: R,
+) -> ApplyResult {
+    drain_with_applier(
+        perform_skill_test(state, investigator, skill, difficulty),
+        &mut resolver,
+        apply,
+    )
+}
+
+/// Continue a resolver-driven drive from an already-applied [`ApplyResult`]:
+/// drain every [`AwaitingInput`](EngineOutcome::AwaitingInput) through
+/// `resolver` (re-applying its `ResolveInput` responses via `applier`) until the
+/// engine returns Done/Rejected. The shared tail of [`drive_with_applier`] and
+/// [`drive_skill_test`], so neither re-implements the drain loop.
+pub(crate) fn drain_with_applier<R, F>(
+    first: ApplyResult,
+    resolver: &mut R,
+    mut applier: F,
+) -> ApplyResult
+where
+    R: ChoiceResolver + ?Sized,
+    F: FnMut(GameState, Action) -> ApplyResult,
+{
     const MAX_ITERATIONS: u32 = 1024;
 
-    let mut state = state;
-    let mut events: Vec<Event> = Vec::new();
-    let mut next_action = Some(action);
+    let ApplyResult {
+        mut state,
+        mut events,
+        mut outcome,
+    } = first;
     let mut iterations = 0u32;
 
     loop {
-        iterations += 1;
-        assert!(
-            iterations <= MAX_ITERATIONS,
-            "drive: exceeded {MAX_ITERATIONS} iterations without reaching Done/Rejected; \
-             resolver or engine appears to be cycling",
-        );
-
-        let act = next_action
-            .take()
-            .expect("drive: internal invariant — next_action set on every loop entry");
-        let result = applier(state, act);
-        state = result.state;
-        events.extend(result.events);
-
-        match result.outcome {
+        // The open-turn action menu (2b, #447) is terminal for a resolver-driven
+        // drive: it is the next action's prompt, not something the resolver
+        // scripts, so stop and return it (the post-flip equivalent of the old
+        // idle-`Done` open turn).
+        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) && at_open_turn_menu(&state) {
+            return ApplyResult {
+                state,
+                events,
+                outcome,
+            };
+        }
+        let request = match outcome {
             EngineOutcome::Done => {
                 return ApplyResult {
                     state,
@@ -401,12 +482,94 @@ where
             EngineOutcome::AwaitingInput {
                 request,
                 resume_token: _,
-            } => {
-                let response = resolver.next(&request, &state);
-                next_action = Some(Action::Player(PlayerAction::ResolveInput { response }));
-            }
-        }
+            } => request,
+        };
+        let response = resolver.next(&request, &state);
+        iterations += 1;
+        assert!(
+            iterations <= MAX_ITERATIONS,
+            "drive: exceeded {MAX_ITERATIONS} iterations without reaching Done/Rejected; \
+             resolver or engine appears to be cycling",
+        );
+        let result = applier(
+            state,
+            Action::Player(PlayerAction::ResolveInput { response }),
+        );
+        state = result.state;
+        events.extend(result.events);
+        outcome = result.outcome;
     }
+}
+
+/// Drive one open-turn action by enumerating the legal actions, finding the
+/// `OptionId` whose `TurnAction` equals `action`, and submitting it as
+/// `ResolveInput(PickSingle(..))`. Panics if `action` is not currently legal
+/// (a test-authoring bug). Returns the raw `ApplyResult` — assert on the
+/// resulting **state/events**, not on `outcome == Done` (post-flip the outcome
+/// is the next open-turn menu's `AwaitingInput`).
+pub fn take_turn_action(
+    state: GameState,
+    action: &crate::engine::enumerate::TurnAction,
+) -> ApplyResult {
+    let actions = crate::engine::enumerate::legal_actions(&state);
+    let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
+        panic!("take_turn_action: {action:?} is not legal; offered: {actions:?}")
+    });
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(crate::engine::OptionId(
+                u32::try_from(idx).expect("action index fits u32"),
+            )),
+        }),
+    )
+}
+
+/// Dispatch a [`TurnAction`](crate::engine::enumerate::TurnAction) straight to
+/// its handler, **bypassing the enumeration gate** that
+/// [`take_turn_action`] routes through.
+///
+/// [`take_turn_action`] calls `legal_actions` first and panics if the action
+/// is not offered — so it cannot reach a handler against deliberately corrupt
+/// state (the corrupt action is excluded from the enumeration). This seam runs
+/// the action through the same `Cx` build, transactional restore, and
+/// resolution-latch firing as [`apply`] (via the shared
+/// `apply_via` scaffolding), but dispatches via the internal
+/// `dispatch_turn_action` + `drive` instead of the enumeration round-trip. The
+/// single legitimate use is the
+/// `#[should_panic(expected = "state-corruption invariant violation")]` handler
+/// tests that inject a dangling `current_location` / missing-from-map and expect
+/// the handler — not the enumerator — to panic.
+pub fn dispatch_turn_action_unchecked(
+    state: GameState,
+    action: &crate::engine::enumerate::TurnAction,
+) -> ApplyResult {
+    crate::engine::apply_via(state, crate::scenario_registry::current(), |cx| {
+        let outcome = crate::engine::dispatch_turn_action(cx, action);
+        crate::engine::drive(cx, outcome)
+    })
+}
+
+/// Start a plain skill test directly: `investigator` tests `skill` against
+/// `difficulty`, returning the [`ApplyResult`] (typically an `AwaitingInput`
+/// pausing at the commit window).
+///
+/// The synthetic test entry point that replaced the retired
+/// `PlayerAction::PerformSkillTest` wire variant (#447). Skill tests are
+/// normally initiated by a real action (Investigate / Fight / Evade) or a card
+/// effect; this lets a test exercise skill-test resolution in isolation with an
+/// arbitrary skill + difficulty. Runs through the same `Cx` build / `drive` loop
+/// as [`apply`], via the shared `apply_via` scaffolding.
+pub fn perform_skill_test(
+    state: GameState,
+    investigator: InvestigatorId,
+    skill: crate::state::SkillKind,
+    difficulty: i8,
+) -> ApplyResult {
+    crate::engine::apply_via(state, crate::scenario_registry::current(), |cx| {
+        let outcome = crate::engine::start_plain_skill_test(cx, investigator, skill, difficulty);
+        crate::engine::drive(cx, outcome)
+    })
 }
 
 /// Fluent test driver: pair a [`GameState`] with an initial action and
@@ -455,6 +618,21 @@ impl TestSession {
         self
     }
 
+    /// Fluent open-turn action: see [`take_turn_action`]. Threads the resulting
+    /// state; drains any `AwaitingInput` the action itself opens via the session's
+    /// resolver script, exactly like [`TestSession::apply`].
+    pub fn take(self, action: &crate::engine::enumerate::TurnAction) -> Self {
+        let idx = crate::engine::enumerate::legal_actions(&self.state)
+            .iter()
+            .position(|a| a == action)
+            .unwrap_or_else(|| panic!("TestSession::take: {action:?} not legal"));
+        self.apply(Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(crate::engine::OptionId(
+                u32::try_from(idx).expect("action index fits u32"),
+            )),
+        }))
+    }
+
     /// Record the resolver script. The closure receives `&mut
     /// ScriptedResolver`; chain calls inside to build up the response
     /// sequence:
@@ -487,9 +665,36 @@ impl TestSession {
 mod tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine::{InputRequest, OptionId, ResumeToken};
+    use crate::engine::{EngineOutcome, InputRequest, OptionId, ResumeToken};
+    use crate::event::Event;
     use crate::state::{CardCode, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+
+    #[test]
+    fn take_turn_action_resolves_end_turn_via_optionid() {
+        use crate::engine::enumerate::TurnAction;
+        // EndTurn reads max_health / max_sanity on the investigator card.
+        crate::test_support::install_test_registry();
+        let state = crate::test_support::GameStateBuilder::default()
+            .with_investigator(crate::test_support::test_investigator(1))
+            .with_phase(crate::state::Phase::Investigation)
+            .with_active_investigator(crate::state::InvestigatorId(1))
+            .with_turn_order([crate::state::InvestigatorId(1)])
+            .with_chaos_bag(crate::state::ChaosBag::new([
+                crate::state::ChaosToken::Numeric(0),
+            ]))
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(crate::state::InvestigatorId(1))
+            .build();
+        let result = take_turn_action(state, &TurnAction::EndTurn);
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
+    }
 
     fn empty_state() -> GameState {
         GameStateBuilder::new().build()
@@ -654,7 +859,9 @@ mod tests {
         let mut resolver = ScriptedResolver::new();
         let result = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );
@@ -671,7 +878,15 @@ mod tests {
             step += 1;
             match step {
                 1 => {
-                    assert!(matches!(action, Action::Player(PlayerAction::EndTurn)));
+                    // The initial action is the opaque payload threaded to the
+                    // (fake) applier — any surviving variant works; `ResolveInput`
+                    // is the only gameplay-bearing one post-OptionId-routing (#447).
+                    assert!(matches!(
+                        action,
+                        Action::Player(PlayerAction::ResolveInput {
+                            response: InputResponse::Skip
+                        })
+                    ));
                     ApplyResult {
                         state,
                         events: vec![],
@@ -717,7 +932,9 @@ mod tests {
         resolver.confirm().skip();
         let result = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );
@@ -739,7 +956,9 @@ mod tests {
         let mut resolver = ScriptedResolver::new();
         let _ = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );
@@ -775,7 +994,9 @@ mod tests {
         resolver.confirm();
         let result = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );
@@ -804,6 +1025,7 @@ mod tests {
 
     #[test]
     fn test_session_fluent_round_trip() {
+        use crate::engine::enumerate::TurnAction;
         let id = InvestigatorId(1);
         // Two investigators so the first EndTurn is a mid-round rotation
         // (reaches Done immediately) rather than a round-ending cascade — the
@@ -820,13 +1042,13 @@ mod tests {
             })
             .with_investigator_turn(id)
             .session()
-            .apply(Action::Player(PlayerAction::EndTurn))
+            .take(&TurnAction::EndTurn)
             .resolve_choices(|c| {
                 // Stale script: engine reaches Done without prompting.
                 c.confirm();
             })
             .run();
-        assert!(matches!(result.outcome, EngineOutcome::Done));
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
     }
 
     #[test]

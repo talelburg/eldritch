@@ -16,8 +16,10 @@ use game_core::state::{
     Act, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     GameState, InvestigatorId, LocationId, Phase, ResolutionCandidate,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_COVER_UP_CODE, TEST_REGISTRY};
 
 static INSTALL: Once = Once::new();
@@ -61,10 +63,7 @@ fn investigate_state(loc_clues: u8, cover_up_clues: u8) -> GameState {
 /// clue-discovery interrupt (or resolved, if none was offered) plus the
 /// last outcome.
 fn investigate_to_interrupt(state: GameState) -> (GameState, EngineOutcome) {
-    let r = apply(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: INV }),
-    );
+    let r = dispatch_turn_action_unchecked(state, &TurnAction::Investigate { investigator: INV });
     assert!(
         matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
         "Investigate should open the commit window, got {:?}",
@@ -274,9 +273,9 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
 #[test]
 fn game_end_emits_trauma_when_cover_up_has_clues() {
     install();
-    let r = apply(
+    let r = dispatch_turn_action_unchecked(
         resolving_state(3),
-        Action::Player(PlayerAction::AdvanceAct { investigator: INV }),
+        &TurnAction::AdvanceAct { investigator: INV },
     );
     assert!(
         r.events
@@ -302,9 +301,9 @@ fn game_end_emits_trauma_when_cover_up_has_clues() {
 #[test]
 fn game_end_emits_no_trauma_when_cover_up_empty() {
     install();
-    let r = apply(
+    let r = dispatch_turn_action_unchecked(
         resolving_state(0),
-        Action::Player(PlayerAction::AdvanceAct { investigator: INV }),
+        &TurnAction::AdvanceAct { investigator: INV },
     );
     assert!(r
         .events

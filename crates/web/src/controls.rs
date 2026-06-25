@@ -1,12 +1,10 @@
-//! Core-loop action controls (P6.7a, wasm-only). Buttons that submit the
-//! toy scenario's actions, each `disabled` per the P6.6 legality helper
-//! ([`enabled_controls`](crate::legality::enabled_controls)) — a UX
-//! affordance, not a correctness gate (the server stays authoritative).
-//! Move/PlayCard use inline pickers; the setup mulligan is an `AwaitingInput`
-//! handled by `AwaitingInputView` (input.rs), not a dedicated control here.
-//! `board.rs` stays read-only — all interactivity lives here.
+//! Core-loop action controls (P6.7a, wasm-only). After 2b (#447) the only
+//! bespoke control is `StartScenario`: the engine surfaces open-turn gameplay as
+//! an `AwaitingInput` action menu, rendered by `AwaitingInputView` (input.rs),
+//! which submits `ResolveInput(PickSingle(OptionId))`. The setup mulligan and
+//! every other suspension flow through that same prompt UI. `board.rs` stays
+//! read-only — interactivity lives here (session start) and in the prompt view.
 
-use game_core::state::{EnemyId, GameState, InvestigatorId};
 use game_core::PlayerAction;
 use leptos::prelude::*;
 use protocol::ClientMessage;
@@ -16,7 +14,7 @@ use crate::store::use_store;
 use crate::transport::OutboundTx;
 
 /// A single zero-payload action button. `class` carries a test-stable hook
-/// (e.g. `"action end-turn"`); `disabled` reflects legality; the click
+/// (e.g. `"action start-scenario"`); `disabled` reflects legality; the click
 /// submits `action` when an `OutboundTx` is present (absent in
 /// render-only contexts → no-op, matching `AwaitingInputView`).
 fn submit_button(
@@ -41,175 +39,12 @@ fn submit_button(
     }
 }
 
-/// Move picker: one button per connected destination (from the active
-/// investigator's location's `connections`), labeled by destination name.
-/// Empty when `legal` is false or there is no active investigator/location.
-fn move_picker(
-    game: &GameState,
-    active: Option<InvestigatorId>,
-    legal: bool,
-    tx: Option<&OutboundTx>,
-) -> impl IntoView {
-    let dests: Vec<_> = if legal {
-        active
-            .and_then(|inv| game.investigators.get(&inv))
-            .and_then(|inv| inv.current_location)
-            .and_then(|loc_id| game.locations.get(&loc_id))
-            .map(|loc| loc.connections.clone())
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|dest_id| {
-                let inv = active?;
-                let name = game
-                    .locations
-                    .get(&dest_id)
-                    .map_or_else(|| format!("loc {}", dest_id.0), |l| l.name.clone());
-                let tx = tx.cloned();
-                Some(view! {
-                    <button
-                        class="move-dest"
-                        on:click=move |_| {
-                            if let Some(tx) = tx.clone() {
-                                let _ = tx.unbounded_send(ClientMessage::Submit {
-                                    action: PlayerAction::Move {
-                                        investigator: inv,
-                                        destination: dest_id,
-                                    },
-                                });
-                            }
-                        }
-                    >
-                        "Move to " {name}
-                    </button>
-                })
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    view! { <div class="move-picker">{dests}</div> }
-}
-
-/// `PlayCard` picker: a "Play" button per card in the active
-/// investigator's hand (`hand_index` = position). Empty when `legal` is
-/// false or there is no active investigator.
-fn play_picker(
-    game: &GameState,
-    active: Option<InvestigatorId>,
-    legal: bool,
-    tx: Option<&OutboundTx>,
-) -> impl IntoView {
-    let buttons: Vec<_> = if legal {
-        active
-            .and_then(|inv| game.investigators.get(&inv))
-            .map(|inv_state| {
-                inv_state
-                    .hand
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, code)| {
-                        let hand_index = u8::try_from(idx).expect("hand fits in u8");
-                        let inv = active.expect("active present in this branch");
-                        let label = code.to_string();
-                        let tx = tx.cloned();
-                        view! {
-                            <li>
-                                <button
-                                    class="play-card"
-                                    on:click=move |_| {
-                                        if let Some(tx) = tx.clone() {
-                                            let _ = tx.unbounded_send(ClientMessage::Submit {
-                                                action: PlayerAction::PlayCard {
-                                                    investigator: inv,
-                                                    hand_index,
-                                                },
-                                            });
-                                        }
-                                    }
-                                >
-                                    "Play " {label}
-                                </button>
-                            </li>
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    view! { <ul class="play-picker">{buttons}</ul> }
-}
-
-fn fight_action(investigator: InvestigatorId, enemy: EnemyId) -> PlayerAction {
-    PlayerAction::Fight {
-        investigator,
-        enemy,
-    }
-}
-
-fn evade_action(investigator: InvestigatorId, enemy: EnemyId) -> PlayerAction {
-    PlayerAction::Evade {
-        investigator,
-        enemy,
-    }
-}
-
-/// Enemy picker: one button per enemy currently engaged with the active
-/// investigator, labeled `"{verb} {enemy name}"`. Empty when `legal` is
-/// false, there is no active investigator, or no enemies are engaged —
-/// same empty-render behavior as `move_picker`.
-fn enemy_picker(
-    game: &GameState,
-    active: Option<InvestigatorId>,
-    legal: bool,
-    class: &'static str,
-    verb: &'static str,
-    make_action: fn(InvestigatorId, EnemyId) -> PlayerAction,
-    tx: Option<&OutboundTx>,
-) -> impl IntoView {
-    let buttons: Vec<_> = if legal {
-        active
-            .map(|inv| {
-                game.enemies
-                    .values()
-                    .filter(|e| e.engaged_with == Some(inv))
-                    .map(|enemy| {
-                        let enemy_id = enemy.id;
-                        let name = enemy.name.clone();
-                        let tx = tx.cloned();
-                        view! {
-                            <button
-                                class=class
-                                on:click=move |_| {
-                                    if let Some(tx) = tx.clone() {
-                                        let _ = tx.unbounded_send(ClientMessage::Submit {
-                                            action: make_action(inv, enemy_id),
-                                        });
-                                    }
-                                }
-                            >
-                                {verb} " " {name}
-                            </button>
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    view! { <div class=format!("{class}-picker")>{buttons}</div> }
-}
-
-// The dedicated setup-mulligan picker is gone (#348 part 2c-iii-a): the
-// mulligan is now an `AwaitingInput`, so it flows through `AwaitingInputView`
-// (input.rs), which builds the `ResolveInput(PickMultiple)` from the prompted
-// investigator's selected hand cards — the same multi-select shape. Prompt
-// text / labeling polish is deferred to #205.
-
-/// All core-loop action controls. Reads the store reactively; nothing
-/// renders until both a `game` and an `outcome` are present.
+/// The remaining bespoke control: `StartScenario` (the one pre-game action that
+/// precedes any `AwaitingInput`). Every in-game action flows through
+/// `AwaitingInputView` — the engine's
+/// open-turn action menu and framework prompts, submitted as `ResolveInput`.
+/// Reads the store reactively; nothing renders until both a `game` and an
+/// `outcome` are present.
 #[component]
 pub fn ActionControls() -> impl IntoView {
     let store = use_store();
@@ -222,67 +57,20 @@ pub fn ActionControls() -> impl IntoView {
                 return ().into_any();
             };
             let enabled = enabled_controls(&game, &outcome);
-            let has = |c: ActionControl| enabled.contains(&c);
-            let active = game.active_investigator;
-
-            // Investigator-bearing buttons only render with an active
-            // investigator; the toy scenario always has one in Investigation.
-            let investigate = active.map(|inv| {
-                submit_button(
-                    "action investigate",
-                    "Investigate",
-                    !has(ActionControl::Investigate),
-                    tx.clone(),
-                    PlayerAction::Investigate { investigator: inv },
-                )
-            });
-            let advance_act = active.map(|inv| {
-                submit_button(
-                    "action advance-act",
-                    "Advance act",
-                    !has(ActionControl::AdvanceAct),
-                    tx.clone(),
-                    PlayerAction::AdvanceAct { investigator: inv },
-                )
-            });
-            let draw = active.map(|inv| {
-                submit_button(
-                    "action draw",
-                    "Draw",
-                    !has(ActionControl::Draw),
-                    tx.clone(),
-                    PlayerAction::Draw { investigator: inv },
-                )
-            });
 
             view! {
                 <section class="controls">
                     {submit_button(
                         "action start-scenario",
                         "Start scenario",
-                        !has(ActionControl::StartScenario),
+                        !enabled.contains(&ActionControl::StartScenario),
                         tx.clone(),
                         PlayerAction::StartScenario { roster: vec![] },
                     )}
-                    {investigate}
-                    {advance_act}
-                    {draw}
-                    {submit_button(
-                        "action end-turn",
-                        "End turn",
-                        !has(ActionControl::EndTurn),
-                        tx.clone(),
-                        PlayerAction::EndTurn,
-                    )}
-                    // The dedicated Mythos encounter-draw button is gone (#348
-                    // part 2c-iii-b): the draw is now an `AwaitingInput`
-                    // (Confirm), so — like the act round-end window (#275) — it
-                    // flows through the `ResolveInput` prompt UI. The Confirm /
-                    // Skip prompt rendering is deferred to #205.
-                    {move_picker(&game, active, has(ActionControl::Move), tx.as_ref())}
-                    {play_picker(&game, active, has(ActionControl::PlayCard), tx.as_ref())}
-                    {enemy_picker(&game, active, has(ActionControl::Fight), "fight-target", "Fight", fight_action, tx.as_ref())}
-                    {enemy_picker(&game, active, has(ActionControl::Evade), "evade-target", "Evade", evade_action, tx.as_ref())}
+                    // The open-turn action menu and every framework suspension
+                    // (mulligan, encounter draw, commit/reaction windows, …)
+                    // render through `AwaitingInputView` (input.rs) as the engine
+                    // offers them — no dedicated control per action (#447).
                 </section>
             }
             .into_any()

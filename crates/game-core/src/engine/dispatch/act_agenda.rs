@@ -133,7 +133,7 @@ fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<Investiga
         .collect()
 }
 
-/// Validate the [`AdvanceAct`](crate::action::PlayerAction::AdvanceAct) action
+/// Validate the `AdvanceAct` action
 /// without mutating: Investigation phase, a modeled act deck, the current act
 /// advances via the action (not a round-end objective), and the group holds at
 /// least the act's clue threshold. Returns the threshold on success (so the
@@ -176,7 +176,7 @@ pub(crate) fn check_advance_act(
     Ok(threshold)
 }
 
-/// Handler for [`PlayerAction::AdvanceAct`](crate::action::PlayerAction::AdvanceAct):
+/// Handler for `TurnAction::AdvanceAct`:
 /// validate via [`check_advance_act`], then (on success) spend exactly the act's
 /// clue threshold (acting investigator first, then the rest in `turn_order`) and
 /// either set the resolution latch (terminal act) or emit [`Event::ActAdvanced`]
@@ -503,11 +503,11 @@ mod doom_agenda_tests {
 
 #[cfg(test)]
 mod advance_act_tests {
-    use crate::action::{Action, PlayerAction};
-    use crate::engine::{apply, EngineOutcome};
+    use crate::engine::enumerate::{legal_actions, TurnAction};
+    use crate::engine::EngineOutcome;
     use crate::event::Event;
     use crate::state::{InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
 
     #[test]
@@ -521,6 +521,10 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![Act {
             code: CardCode("_test_act".into()),
@@ -528,15 +532,12 @@ mod advance_act_tests {
             resolution: None,
         }];
 
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.act_index, 0);
-        assert_eq!(
-            result.state.investigators[&inv].clues, 1,
-            "no clues spent on reject"
+        // Insufficient clues (1 < 2): AdvanceAct is not legal.
+        assert!(
+            !legal_actions(&state)
+                .iter()
+                .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
+            "AdvanceAct must not be legal when clues < threshold"
         );
     }
 
@@ -558,6 +559,10 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![
             Act {
@@ -572,11 +577,8 @@ mod advance_act_tests {
             },
         ];
 
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.act_index, 1);
         assert_eq!(
             result.state.investigators[&inv].clues, 1,
@@ -598,6 +600,10 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![Act {
             code: CardCode("_test_act".into()),
@@ -605,11 +611,8 @@ mod advance_act_tests {
             resolution: Some(Resolution::Won { id: "demo".into() }),
         }];
 
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.act_index, 0,
             "cursor does not move on a terminal act"
@@ -626,7 +629,7 @@ mod advance_act_tests {
     fn advance_act_without_registry_still_advances() {
         use crate::scenario::Resolution;
         use crate::state::{Act, CardCode, InvestigatorId, Phase};
-        use crate::test_support::{test_investigator, GameStateBuilder};
+        use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 2;
@@ -635,6 +638,10 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![
             Act {
@@ -648,11 +655,8 @@ mod advance_act_tests {
                 resolution: Some(Resolution::Won { id: "R1".into() }),
             },
         ];
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.act_index, 1,
             "cursor advances even with no forced ability"
@@ -674,6 +678,10 @@ mod advance_act_tests {
             .with_investigator(inv2)
             .with_active_investigator(acting)
             .with_turn_order([acting, other])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(acting)
             .build();
         // Two acts so the non-terminal first act can advance the cursor to 1
         // (a terminal `resolution: None` act at the end would hit the
@@ -693,13 +701,13 @@ mod advance_act_tests {
         ];
 
         // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::AdvanceAct {
+            &TurnAction::AdvanceAct {
                 investigator: acting,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.investigators[&acting].clues, 0,
             "acting drained first"

@@ -13,9 +13,12 @@
 use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
+use game_core::test_support::{
+    take_turn_action, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 const LIBRARIAN: &str = "01032";
@@ -46,16 +49,17 @@ fn board(deck: Vec<CardCode>) -> game_core::GameState {
         .with_location(test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .build()
 }
 
 fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply(
+    take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: INV,
             hand_index: 0,
-        }),
+        },
     )
 }
 
@@ -85,7 +89,7 @@ fn entering_play_tutors_the_only_tome_asset() {
     // Fire the reaction (option 0 = the sole pending trigger). One eligible
     // Tome ⇒ the search auto-takes (no second prompt) ⇒ Done.
     let r = pick(r.state, 0);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     let inv = &r.state.investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(OLD_BOOK)),
@@ -124,7 +128,7 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     // Pick the second eligible Tome (Medical Texts). On Done, resume_choice
     // re-drives the still-open reaction window so it closes (Task 4).
     let r = pick(r.state, 1);
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     let inv = &r.state.investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(MEDICAL_TEXTS)),

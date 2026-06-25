@@ -15,8 +15,8 @@ use std::sync::Once;
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{CardCode, Enemy, EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_enemy, test_investigator, test_location};
-use game_core::{Action, GameState, InputResponse, PlayerAction};
+use game_core::test_support::{take_turn_action, test_enemy, test_investigator, test_location};
+use game_core::{Action, GameState, InputResponse, PlayerAction, TurnAction};
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -90,7 +90,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
 
     // EndTurn → Enemy phase → the attack loop opens the before-attack cancel
     // window and suspends, offering Dodge from hand.
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let mut state = result.state;
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -151,7 +151,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
 fn declining_the_before_attack_window_lets_the_attack_land() {
     let (state, inv_id, enemy_id) = dodge_state();
 
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
     let mut state = result.state;
     assert!(matches!(
         result.outcome,

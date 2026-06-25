@@ -2,10 +2,7 @@
 //! real card registry (Ghoul metadata) + the installed scenario module.
 //! Own process so the global registries can be installed once.
 
-use std::sync::Once;
-
-use game_core::action::{Action, PlayerAction};
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
@@ -13,10 +10,12 @@ use game_core::state::{
     Phase, SkillKind, TokenResolution,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, test_enemy, test_investigator, test_location, GameStateBuilder,
-    ScriptedResolver,
+    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test_no_commits, test_enemy,
+    test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
+use game_core::TurnAction;
 use scenarios::REGISTRY;
+use std::sync::Once;
 
 static INSTALL: Once = Once::new();
 
@@ -52,15 +51,10 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState
 }
 
 fn perform(state: game_core::state::GameState, difficulty: i8) -> game_core::engine::ApplyResult {
-    // apply_no_commits drives past the card-commit window (raw apply stops there with AwaitingInput) so the symbol path resolves end-to-end.
-    let r = apply_no_commits(
-        state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Willpower,
-            difficulty,
-        }),
-    );
+    // perform_skill_test_no_commits drives past the card-commit window (the bare
+    // helper stops there with AwaitingInput) so the symbol path resolves end-to-end.
+    let r =
+        perform_skill_test_no_commits(state, InvestigatorId(1), SkillKind::Willpower, difficulty);
     assert_eq!(r.outcome, EngineOutcome::Done);
     r
 }
@@ -256,15 +250,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]); // ST.2 commit window: commit nothing.
     resolver.pick_single(OptionId(1)); // soak the 1 damage onto Guard Dog (option 1).
-    let r = drive(
-        state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Willpower,
-            difficulty: 0,
-        }),
-        resolver,
-    );
+    let r = drive_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 0, resolver);
 
     assert_eq!(r.outcome, EngineOutcome::Done);
     let inv = &r.state.investigators[&InvestigatorId(1)];
@@ -321,11 +307,11 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::G
 }
 
 fn advance_to_resolution(state: game_core::state::GameState) -> game_core::engine::ApplyResult {
-    let r = apply(
+    let r = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::AdvanceAct {
+        &TurnAction::AdvanceAct {
             investigator: InvestigatorId(1),
-        }),
+        },
     );
     assert_eq!(r.outcome, EngineOutcome::Done);
     r

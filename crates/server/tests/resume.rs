@@ -12,19 +12,14 @@ mod common;
 
 use common::{connect, install_registry, memory_pool, recv, send, spawn_server, TEST_SCENARIO_ID};
 use game_core::scenario::ScenarioId;
-use game_core::state::{InvestigatorId, SkillKind};
 use game_core::{EngineOutcome, InputResponse, PlayerAction};
 use protocol::{ClientMessage, ServerMessage};
 use server::GameSession;
 
-/// A skill test pauses at its commit window → `AwaitingInput`.
-fn skill_test() -> ClientMessage {
+/// Starting the scenario pauses at the setup mulligan → `AwaitingInput`.
+fn start_to_mulligan() -> ClientMessage {
     ClientMessage::Submit {
-        action: PlayerAction::PerformSkillTest {
-            investigator: InvestigatorId(1),
-            skill: SkillKind::Intellect,
-            difficulty: 2,
-        },
+        action: PlayerAction::StartScenario { roster: vec![] },
     }
 }
 
@@ -44,7 +39,7 @@ async fn reconnect_delivers_in_flight_awaiting_input() {
     // Drive the game to AwaitingInput on connection A.
     let mut a = connect(addr, "g-resume").await;
     let _ = recv(&mut a).await; // Hello
-    send(&mut a, &skill_test()).await;
+    send(&mut a, &start_to_mulligan()).await;
     match recv(&mut a).await {
         ServerMessage::Applied { outcome, .. } => {
             assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -75,7 +70,7 @@ async fn restart_rebuilds_awaiting_input_via_replay() {
     let addr1 = spawn_server(pool.clone()).await;
     let mut a = connect(addr1, "g-restart").await;
     let _ = recv(&mut a).await; // Hello
-    send(&mut a, &skill_test()).await;
+    send(&mut a, &start_to_mulligan()).await;
     let _ = recv(&mut a).await; // Applied(AwaitingInput)
 
     // "Restart": a fresh server with empty rooms over the same database.
@@ -102,10 +97,13 @@ async fn resolve_input_resumes_and_completes() {
 
     let mut a = connect(addr, "g-do-resolve").await;
     let _ = recv(&mut a).await; // Hello
-    send(&mut a, &skill_test()).await;
+    send(&mut a, &start_to_mulligan()).await;
     let _ = recv(&mut a).await; // Applied(AwaitingInput)
 
-    // Resolve: commit nothing. The engine finishes the test.
+    // Resolve: keep the whole hand (empty redraw). The mulligan completes and
+    // the engine drives forward into the Investigation phase, surfacing the
+    // open-turn action menu (`AwaitingInput`) — i.e. the resolve is accepted and
+    // makes progress, not rejected.
     send(
         &mut a,
         &ClientMessage::Submit {
@@ -118,11 +116,8 @@ async fn resolve_input_resumes_and_completes() {
     match recv(&mut a).await {
         ServerMessage::Applied { outcome, .. } => {
             assert!(
-                !matches!(
-                    outcome,
-                    EngineOutcome::AwaitingInput { .. } | EngineOutcome::Rejected { .. }
-                ),
-                "resolving the commit window completes the test, got {outcome:?}"
+                !matches!(outcome, EngineOutcome::Rejected { .. }),
+                "resolving the mulligan is accepted and drives forward, got {outcome:?}"
             );
         }
         other => panic!("expected Applied(completed), got {other:?}"),
@@ -138,14 +133,16 @@ async fn non_resolve_action_while_awaiting_input_is_rejected() {
 
     let mut a = connect(addr, "g-busy").await;
     let _ = recv(&mut a).await; // Hello
-    send(&mut a, &skill_test()).await;
+    send(&mut a, &start_to_mulligan()).await;
     let _ = recv(&mut a).await; // Applied(AwaitingInput)
 
-    // A non-ResolveInput submit while paused is rejected by the engine.
+    // A non-ResolveInput submit while paused is rejected by the engine's
+    // pending-prompt gate. `StartScenario` stands in as the surviving
+    // non-ResolveInput action (the typed gameplay variants are gone).
     send(
         &mut a,
         &ClientMessage::Submit {
-            action: PlayerAction::EndTurn,
+            action: PlayerAction::StartScenario { roster: vec![] },
         },
     )
     .await;

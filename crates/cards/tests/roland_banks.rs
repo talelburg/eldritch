@@ -24,10 +24,9 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, test_enemy, test_investigator, test_location, GameStateBuilder,
-    ScriptedResolver,
+    test_enemy, test_investigator, test_location, GameStateBuilder, TestSession,
 };
-use game_core::{assert_event, assert_no_event, Action, PlayerAction};
+use game_core::{assert_event, assert_no_event, TurnAction};
 
 /// `ArkhamDB` code for original-Core Roland Banks.
 const ROLAND: &str = "01001";
@@ -81,6 +80,7 @@ fn roland_at_location_with_enemy(
         .with_round(round)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -90,25 +90,26 @@ fn roland_at_location_with_enemy(
     (inv_id, enemy_id, loc_id, state)
 }
 
-fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
-    Action::Player(PlayerAction::Fight {
-        investigator: inv,
-        enemy,
-    })
-}
-
 #[test]
 fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
     let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(2, 0);
 
     // Empty commit, then PickSingle(OptionId(0)) for the reaction window.
-    let mut resolver = ScriptedResolver::new();
-    resolver
-        .commit_cards(&[])
-        .pick_single(game_core::engine::OptionId(0));
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+    let result = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[])
+                .pick_single(game_core::engine::OptionId(0));
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
@@ -154,9 +155,20 @@ fn once_per_round_limit_blocks_second_reaction_in_same_round() {
         roland_card.bump_ability_usage(0, 0);
     }
 
-    let result = apply_no_commits(state, fight_action(inv_id, enemy_id));
+    let result = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // Defeat still happened.
     assert_event!(
         result.events,
@@ -191,13 +203,21 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
         roland_card.bump_ability_usage(0, 0);
     }
 
-    let mut resolver = ScriptedResolver::new();
-    resolver
-        .commit_cards(&[])
-        .pick_single(game_core::engine::OptionId(0));
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+    let result = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[])
+                .pick_single(game_core::engine::OptionId(0));
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
@@ -225,11 +245,20 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     // round.
     let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(2, 0);
 
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).skip();
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+    let result = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).skip();
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // The window opened (the resolver's scripted Skip was consumed by it) but
     // closed without firing → no clue moved.
     assert_no_event!(result.events, Event::CluePlaced { .. });

@@ -1,13 +1,14 @@
 //! `GameSession` persistence: create-from-setup, apply-and-persist,
 //! load-by-replay. Driven against an in-memory `SQLite` with a mock
 //! scenario registry installed (a fresh round-0 state, so
-//! `StartScenario` is accepted and `EndTurn` is rejected).
+//! `StartScenario` is accepted and a `ResolveInput` with no outstanding
+//! prompt is rejected).
 
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::GameStateBuilder;
 use game_core::state::{GameState, InvestigatorId};
 use game_core::test_support::fixtures::test_investigator;
-use game_core::{EngineOutcome, Event, PlayerAction, Resolution};
+use game_core::{EngineOutcome, Event, InputResponse, OptionId, PlayerAction, Resolution};
 use server::session::GameSession;
 use server::GameId;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -120,8 +121,15 @@ async fn apply_rejects_invalid_action_without_persisting() {
         .await
         .unwrap();
 
-    // EndTurn is invalid from the round-0 Mythos setup state.
-    let (events, outcome) = session.apply(PlayerAction::EndTurn).await.unwrap();
+    // A `ResolveInput` when no prompt is outstanding is invalid from the
+    // round-0 setup state (no `AwaitingInput` to resolve). Stands in for the
+    // now-removed typed gameplay variants as a cleanly-rejected action.
+    let (events, outcome) = session
+        .apply(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        })
+        .await
+        .unwrap();
 
     assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
     assert!(events.is_empty());

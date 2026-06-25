@@ -35,8 +35,10 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, InvestigatorId,
     LocationId, Phase, UseKind,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::{
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 
 /// First Aid (01019): Guardian Item, `[action] Spend 1 supply: Heal …`. A
 /// non-fight action ability → provokes an `AoO`.
@@ -132,18 +134,19 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Activate First Aid (ability 0). Action-cost, non-fight → provokes an AoO
     // after the supply cost is paid and before the heal effect resolves.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: kit,
             ability_index: 0,
-        }),
+        },
     );
     // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
     // K5b): assign both AoO damage points onto Guard Dog to reproduce the soak.
@@ -226,18 +229,19 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         // The Fight starts a Combat skill test, which needs a non-empty bag.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: blade,
             ability_index: 0,
-        }),
+        },
     );
     let state = result.state;
 
@@ -296,26 +300,35 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Beat Cop ability 1 is the `[fast]` deal-1-damage (ability 0 is its
     // constant +1 combat).
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: cop,
             ability_index: 1,
-        }),
+        },
+    );
+
+    // No AoO fired: outcome-independent proof. An AoO would deal the attacker's
+    // 2 damage to the investigator, surfacing as a `DamageTaken`/`HorrorTaken`
+    // event for `inv_id` (Beat Cop's own effect damages the *enemy*, not the
+    // investigator). None firing ⇒ no attack of opportunity.
+    assert!(
+        !result.events.iter().any(|e| matches!(
+            e,
+            Event::DamageTaken { investigator, .. } | Event::HorrorTaken { investigator, .. }
+                if *investigator == inv_id
+        )),
+        "no AoO attack landed on the investigator: {:?}",
+        result.events
     );
     let state = result.state;
-
-    assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "the fast ability resolves without suspending on an AoO window: {:?}",
-        result.outcome
-    );
     assert_eq!(
         state.investigators[&inv_id].damage(),
         0,
@@ -368,18 +381,19 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Activate First Aid → AoO → Dodge is in hand, so the BeforeEnemyAttack
     // cancel window opens.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: kit,
             ability_index: 0,
-        }),
+        },
     );
     let state = result.state;
 
@@ -461,31 +475,44 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: kit,
             ability_index: 0,
-        }),
+        },
+    );
+
+    // The heal effect was suppressed by the §D re-validation gate: outcome-
+    // independent proof. Had First Aid's heal run, a `Healed` event would have
+    // fired and the actor's damage would be 1 lower. Neither happens ⇒ the
+    // parked effect was aborted.
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::Healed { .. })),
+        "the suppressed activation healed nothing: {:?}",
+        result.events
     );
     let state = result.state;
-
+    // Damage is the full lethal AoO (2 initial + 50 from the attacker), NOT
+    // reduced by 1 — the heal never subtracted from it.
+    assert_eq!(
+        state.investigators[&inv_id].damage(),
+        52,
+        "First Aid's heal was suppressed: the AoO's full 50 damage stands, \
+         un-reduced by the would-be 1-point heal"
+    );
     // The actor was defeated by the AoO.
     assert_ne!(
         state.investigators[&inv_id].status,
         game_core::state::Status::Active,
         "the lethal AoO defeated the actor"
-    );
-    // The heal effect was suppressed: had it run, First Aid's `choose_one` would
-    // have suspended on its damage-or-horror choice (`AwaitingInput`). Resolving
-    // to `Done` instead proves the §D gate aborted the parked effect.
-    assert!(
-        matches!(result.outcome, EngineOutcome::Done),
-        "the suppressed activation resolves to Done (no heal choice opened): {:?}",
-        result.outcome
     );
 }

@@ -11,14 +11,17 @@
 
 use std::sync::Once;
 
-use game_core::engine::{apply, EngineOutcome};
+use game_core::assert_event;
+use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
     TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_investigator, GameStateBuilder};
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, perform_skill_test_no_commits, take_turn_action,
+    test_investigator, GameStateBuilder,
+};
 
 const HYPERAWARENESS: &str = "01034";
 
@@ -52,6 +55,8 @@ fn state_with_hyperawareness() -> (game_core::GameState, InvestigatorId, CardIns
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
+        .with_turn_order([id])
+        .with_investigator_turn(id)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
@@ -66,30 +71,26 @@ fn intellect_ability_buffs_an_intellect_test_at_difficulty_4() {
     let (state, id, instance_id) = state_with_hyperawareness();
     let resources_before = state.investigators[&id].resources;
 
-    let after_activate = apply(
+    let after_activate = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: INTELLECT_ABILITY,
-        }),
+        },
     );
-    assert_eq!(after_activate.outcome, EngineOutcome::Done);
     assert_eq!(
         after_activate.state.investigators[&id].resources,
         resources_before - 1,
         "1 resource paid",
     );
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    let after_test =
+        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -106,25 +107,20 @@ fn agility_ability_buffs_an_agility_test_at_difficulty_4() {
     // Same as above but ability_index = 1 buffs agility.
     let (state, id, instance_id) = state_with_hyperawareness();
 
-    let after_activate = apply(
+    let after_activate = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: AGILITY_ABILITY,
-        }),
+        },
     );
-    assert_eq!(after_activate.outcome, EngineOutcome::Done);
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Agility,
-            difficulty: 4,
-        }),
-    );
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    let after_test = perform_skill_test_no_commits(after_activate.state, id, SkillKind::Agility, 4);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Agility, margin: 0 }
@@ -138,25 +134,20 @@ fn intellect_ability_does_not_buff_an_agility_test() {
     // ignores it. 3 + 0 < 4 → fail by 1.
     let (state, id, instance_id) = state_with_hyperawareness();
 
-    let after_activate = apply(
+    let after_activate = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: INTELLECT_ABILITY,
-        }),
+        },
     );
-    assert_eq!(after_activate.outcome, EngineOutcome::Done);
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Agility,
-            difficulty: 4,
-        }),
-    );
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    let after_test = perform_skill_test_no_commits(after_activate.state, id, SkillKind::Agility, 4);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Agility, by: 1, .. }
@@ -169,13 +160,13 @@ fn activation_rejects_when_controller_lacks_a_resource() {
     let (mut state, id, instance_id) = state_with_hyperawareness();
     state.investigators.get_mut(&id).unwrap().resources = 0;
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: INTELLECT_ABILITY,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -191,29 +182,27 @@ fn both_abilities_cost_no_action_points() {
     let (state, id, instance_id) = state_with_hyperawareness();
     let actions_before = state.investigators[&id].actions_remaining;
 
-    let after_intellect = apply(
+    let after_intellect = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: INTELLECT_ABILITY,
-        }),
+        },
     );
-    assert_eq!(after_intellect.outcome, EngineOutcome::Done);
     assert_eq!(
         after_intellect.state.investigators[&id].actions_remaining,
         actions_before,
     );
 
-    let after_agility = apply(
+    let after_agility = take_turn_action(
         after_intellect.state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: AGILITY_ABILITY,
-        }),
+        },
     );
-    assert_eq!(after_agility.outcome, EngineOutcome::Done);
     assert_eq!(
         after_agility.state.investigators[&id].actions_remaining,
         actions_before,

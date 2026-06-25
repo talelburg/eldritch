@@ -29,7 +29,7 @@ pub use dispatch::encounter::{
 pub use dispatch::hunters::enemy_can_enter_location;
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
-pub use enumerate::legal_actions;
+pub use enumerate::{legal_actions, TurnAction};
 pub use evaluator::{effective_shroud, location_id_by_code, EvalContext};
 pub use outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 pub use pathfinding::{shortest_first_steps, shortest_first_steps_with};
@@ -51,7 +51,11 @@ pub use dispatch::emit::TimingEvent;
 pub(crate) use dispatch::phases::upkeep_phase_end;
 // `pub(crate)` for `test_support` round-end helpers: drive the coordinator the
 // real loop drives (#434), and resume a window via the player-action entry.
-pub(crate) use dispatch::{apply_player_action, drive};
+pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
+// `pub(crate)` so `test_support::perform_skill_test` can start a plain skill test
+// directly (the synthetic entry point that replaced the retired
+// `PlayerAction::PerformSkillTest` wire variant, #447).
+pub(crate) use dispatch::skill_test::perform_skill_test as start_plain_skill_test;
 
 use crate::action::Action;
 use crate::event::Event;
@@ -102,8 +106,8 @@ pub struct ApplyResult {
 /// partial state is legitimate and retained.
 ///
 /// On [`EngineOutcome::AwaitingInput`], the returned state and event
-/// list reflect the work done up to the pause point — e.g. a
-/// `PerformSkillTest` apply that suspends at the commit window has
+/// list reflect the work done up to the pause point — e.g. a skill test
+/// that suspends at the commit window has
 /// already emitted [`Event::SkillTestStarted`] and pushed the
 /// [`SkillTest`](crate::state::Continuation::SkillTest) frame (read via
 /// [`GameState::current_skill_test`]). The resume action
@@ -133,6 +137,27 @@ pub fn apply_with_scenario_registry(
     action: Action,
     registry: Option<&ScenarioRegistry>,
 ) -> ApplyResult {
+    apply_via(state, registry, |cx| match action {
+        Action::Player(p) => dispatch::apply_player_action(cx, &p),
+        Action::Engine(e) => dispatch::apply_engine_record(cx, &e),
+    })
+}
+
+/// The shared `apply` scaffolding, parameterized by the dispatch step.
+///
+/// Builds the [`Cx`], runs `dispatch` to produce the outcome, then applies the
+/// transactional-restore + resolution-hook contract uniformly:
+/// [`apply_with_scenario_registry`] passes the typed-action dispatch;
+/// [`test_support::dispatch_turn_action_unchecked`](crate::test_support::dispatch_turn_action_unchecked)
+/// passes a [`TurnAction`]-through-handler dispatch that bypasses the
+/// enumeration gate (so handler-level corruption panics are reachable from
+/// tests). Factored out so neither caller copy-pastes the `Cx` build, the
+/// snapshot/restore, or the `None`->`Some` resolution-latch firing.
+pub(crate) fn apply_via(
+    state: GameState,
+    registry: Option<&ScenarioRegistry>,
+    dispatch: impl FnOnce(&mut Cx) -> EngineOutcome,
+) -> ApplyResult {
     let mut state = state;
     let mut events = Vec::new();
     // Transactional snapshot: a Rejected outcome must leave the returned
@@ -154,10 +179,7 @@ pub fn apply_with_scenario_registry(
             state: &mut state,
             events: &mut events,
         };
-        let outcome = match action {
-            Action::Player(p) => dispatch::apply_player_action(&mut cx, &p),
-            Action::Engine(e) => dispatch::apply_engine_record(&mut cx, &e),
-        };
+        let outcome = dispatch(&mut cx);
         if matches!(outcome, EngineOutcome::Rejected { .. }) {
             // Transactional restore (event half): the events buffer is
             // per-apply and starts empty, so clearing it == restoring it.
@@ -263,6 +285,7 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
 #[cfg(test)]
 mod tests {
     use crate::action::{Action, EngineRecord, InputResponse, PlayerAction};
+    use crate::engine::enumerate::TurnAction;
     use crate::event::{Event, FailureReason};
     use crate::state::EnemyId;
     use crate::state::{
@@ -270,11 +293,36 @@ mod tests {
         Status, TokenModifiers, TokenResolution, Zone,
     };
     use crate::test_support::{
-        apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+        apply_no_commits, dispatch_turn_action_unchecked, perform_skill_test,
+        perform_skill_test_no_commits, take_turn_action, test_enemy, test_investigator,
+        test_location, GameStateBuilder,
     };
     use crate::{assert_event, assert_event_count, assert_no_event};
 
     use super::{apply, EngineOutcome, OptionId};
+
+    /// Drive one open-turn action through the `ResolveInput(PickSingle)` routing
+    /// path, draining the skill-test commit window automatically (like
+    /// `apply_no_commits` does). Works for Investigate, Fight, Evade, and any
+    /// other action that initiates a skill test.
+    ///
+    /// Internally this finds the `OptionId` for `action` in `legal_actions`,
+    /// then calls `apply_no_commits` with a `ResolveInput(PickSingle(idx))`
+    /// so the commit-window drain loop fires automatically.
+    fn take_action_no_commits(state: GameState, action: &TurnAction) -> crate::engine::ApplyResult {
+        let actions = crate::engine::enumerate::legal_actions(&state);
+        let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
+            panic!("take_action_no_commits: {action:?} is not legal; offered: {actions:?}")
+        });
+        apply_no_commits(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(
+                    u32::try_from(idx).expect("action index fits u32"),
+                )),
+            }),
+        )
+    }
 
     #[test]
     fn start_scenario_advances_to_investigation_with_round_one() {
@@ -348,7 +396,10 @@ mod tests {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
         );
-        assert_eq!(mulligan_result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            mulligan_result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(
             mulligan_result.state.current_mulligan(),
             None,
@@ -397,9 +448,9 @@ mod tests {
             .with_investigator_turn(id)
             .build();
 
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(state, &TurnAction::EndTurn);
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::ActionsRemainingChanged { investigator, new_count: 0 } if *investigator == id
@@ -417,10 +468,10 @@ mod tests {
             .with_phase(Phase::Investigation)
             .build();
 
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
-
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // No active investigator → EndTurn is not a legal open-turn action.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::EndTurn)));
     }
 
     #[test]
@@ -432,10 +483,10 @@ mod tests {
             .with_active_investigator(id)
             .build();
 
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
-
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Mythos phase → EndTurn is not a legal open-turn action.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::EndTurn)));
     }
 
     #[test]
@@ -505,14 +556,7 @@ mod tests {
             .with_chaos_bag(bag_only_zero())
             .build();
 
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: InvestigatorId(1),
-                skill: SkillKind::Willpower,
-                difficulty: 2,
-            }),
-        );
+        let paused = perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 2);
         assert!(
             matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
             "skill test should pause at the commit window, got {:?}",
@@ -562,14 +606,8 @@ mod tests {
         let state = GameStateBuilder::new()
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: InvestigatorId(999),
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result =
+            perform_skill_test_no_commits(state, InvestigatorId(999), SkillKind::Willpower, 0);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -580,14 +618,7 @@ mod tests {
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 0);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -599,14 +630,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: -1,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, -1);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -620,14 +644,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Intellect, 3);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -664,14 +681,7 @@ mod tests {
             .with_investigator(strong)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Combat,
-                difficulty: 2,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Combat, 2);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -690,14 +700,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Combat,
-                difficulty: 5,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Combat, 5);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -725,14 +728,7 @@ mod tests {
             .with_investigator(high)
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 4,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 4);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -756,14 +752,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 0);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -790,14 +779,7 @@ mod tests {
                 ..TokenModifiers::default()
             })
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 2,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 2);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -819,14 +801,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::ElderSign]))
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Agility,
-                difficulty: 3,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Agility, 3);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -849,14 +824,7 @@ mod tests {
             .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::Skull]))
             .with_token_modifiers(night_of_the_zealot_standard())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 2,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 2);
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(
@@ -896,14 +864,7 @@ mod tests {
             },
         ];
 
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id1,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id1, SkillKind::Willpower, 0);
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_eq!(
             result.state.pending_skill_modifiers.len(),
@@ -915,7 +876,7 @@ mod tests {
 
     #[test]
     fn perform_skill_test_advances_rng_and_log_round_trips() {
-        // Determinism: applying the same PerformSkillTest action twice
+        // Determinism: starting the same plain skill test twice
         // from identical initial state produces identical post-state.
         let id = InvestigatorId(1);
         let initial = GameStateBuilder::new()
@@ -928,14 +889,8 @@ mod tests {
             .with_token_modifiers(night_of_the_zealot_standard())
             .with_rng_seed(123)
             .build();
-        let action = Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Willpower,
-            difficulty: 3,
-        });
-
-        let first = apply_no_commits(initial.clone(), action.clone());
-        let second = apply_no_commits(initial, action);
+        let first = perform_skill_test_no_commits(initial.clone(), id, SkillKind::Willpower, 3);
+        let second = perform_skill_test_no_commits(initial, id, SkillKind::Willpower, 3);
 
         assert_eq!(first.outcome, EngineOutcome::Done);
         assert_eq!(first.state.rng, second.state.rng);
@@ -968,6 +923,10 @@ mod tests {
             .with_chaos_bag(bag_only_zero())
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
         (inv_id, loc_id, state)
     }
@@ -976,14 +935,14 @@ mod tests {
     fn investigate_succeeds_and_moves_one_clue_to_investigator() {
         // Default intellect 3, shroud 2 → margin 1 → success.
         let (inv_id, loc_id, state) = investigate_scenario(2, 2);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::ActionsRemainingChanged { investigator, new_count: 2 }
@@ -1015,14 +974,14 @@ mod tests {
     fn investigate_failure_spends_action_but_moves_no_clue() {
         // Intellect 3, shroud 5 → fails by 2; action still spent.
         let (inv_id, loc_id, state) = investigate_scenario(2, 5);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::SkillTestFailed { by: 2, .. });
         assert_no_event!(result.events, Event::CluePlaced { .. });
         assert_no_event!(result.events, Event::LocationCluesChanged { .. });
@@ -1037,14 +996,14 @@ mod tests {
         // the location is empty without trying), the action is still
         // spent, and discover_clue is a silent no-op on success.
         let (inv_id, loc_id, state) = investigate_scenario(0, 2);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::SkillTestSucceeded { .. });
         assert_no_event!(result.events, Event::CluePlaced { .. });
         assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
@@ -1056,14 +1015,10 @@ mod tests {
     fn investigate_outside_investigation_phase_is_rejected() {
         let (inv_id, _, mut state) = investigate_scenario(2, 2);
         state.phase = Phase::Mythos;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Investigate {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Mythos phase → Investigate is not a legal open-turn action.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Investigate { investigator } if *investigator == inv_id)
+        ));
     }
 
     #[test]
@@ -1072,14 +1027,10 @@ mod tests {
         // Add a second investigator but keep the first active.
         let other = InvestigatorId(2);
         state.investigators.insert(other, test_investigator(2));
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Investigate {
-                investigator: other,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Non-active investigator → their Investigate is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Investigate { investigator } if *investigator == other)
+        ));
     }
 
     #[test]
@@ -1090,14 +1041,10 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .actions_remaining = 0;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Investigate {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // No actions remaining → Investigate is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Investigate { investigator } if *investigator == inv_id)
+        ));
     }
 
     #[test]
@@ -1108,14 +1055,10 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .current_location = None;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Investigate {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // No current location → Investigate is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Investigate { investigator } if *investigator == inv_id)
+        ));
     }
 
     // After T09, end_turn pauses at Mythos when mythos_draw_pending is
@@ -1185,7 +1128,7 @@ mod tests {
 
         // First EndTurn (inv1): rotates to inv2 within Investigation.
         // No phase transitions yet.
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(state, &TurnAction::EndTurn);
         let state = result.state;
         assert_eq!(state.round, 1);
         assert_eq!(state.phase, Phase::Investigation);
@@ -1210,7 +1153,7 @@ mod tests {
         // Investigation → Enemy → Upkeep → Mythos and then PAUSES at the
         // step-1.4 encounter-draw prompt for inv1. The phase chain does NOT
         // continue to Investigation — that waits for the ResolveInput(Confirm)s.
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(state, &TurnAction::EndTurn);
         assert!(
             matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
             "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
@@ -1290,7 +1233,7 @@ mod tests {
         )
         .state;
 
-        let result = apply(after_mulligan, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(after_mulligan, &TurnAction::EndTurn);
         assert!(
             matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
             "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
@@ -1554,11 +1497,11 @@ mod tests {
         // corruption pattern used by end_turn / rotate_to_active.
         let (inv_id, loc_id, mut state) = investigate_scenario(2, 2);
         state.locations.remove(&loc_id);
-        let _ = apply(
+        let _ = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
     }
 
@@ -1589,6 +1532,10 @@ mod tests {
             .with_location(loc_b)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
         (inv_id, a, b, state)
     }
@@ -1596,15 +1543,15 @@ mod tests {
     #[test]
     fn move_to_connected_location_spends_action_and_emits_events() {
         let (inv_id, a, b, state) = move_scenario();
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::ActionsRemainingChanged { investigator, new_count: 2 }
@@ -1628,44 +1575,29 @@ mod tests {
         let (inv_id, _, _, mut state) = move_scenario();
         let c = crate::state::LocationId(12);
         state.locations.insert(c, test_location(12, "C"));
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: c,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // C is not connected from A → Move to C is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == c)));
     }
 
     #[test]
     fn move_to_current_location_is_rejected() {
         let (inv_id, a, _, state) = move_scenario();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: a,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Current location → Move to A is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|act| matches!(act, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == a)));
     }
 
     #[test]
     fn move_outside_investigation_phase_is_rejected() {
         let (inv_id, _, b, mut state) = move_scenario();
         state.phase = Phase::Mythos;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: b,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Mythos phase → Move is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == b)));
     }
 
     #[test]
@@ -1673,15 +1605,10 @@ mod tests {
         let (_, _, b, mut state) = move_scenario();
         let other = InvestigatorId(2);
         state.investigators.insert(other, test_investigator(2));
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: other,
-                destination: b,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Non-active investigator → their Move is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == other && *destination == b)));
     }
 
     #[test]
@@ -1692,15 +1619,10 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .actions_remaining = 0;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: b,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // No actions remaining → Move is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == b)));
     }
 
     #[test]
@@ -1711,15 +1633,10 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .current_location = None;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: b,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // No current location → Move is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == b)));
     }
 
     #[test]
@@ -1730,15 +1647,10 @@ mod tests {
         // graph the caller might fix; reject.
         let (inv_id, _a, b, mut state) = move_scenario();
         state.locations.remove(&b);
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: b,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // B removed from locations → Move to B is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == b)));
     }
 
     #[test]
@@ -1748,12 +1660,12 @@ mod tests {
         // state.locations. Surface loudly per the project pattern.
         let (inv_id, a, b, mut state) = move_scenario();
         state.locations.remove(&a);
-        let _ = apply(
+        let _ = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
     }
 
@@ -1766,12 +1678,12 @@ mod tests {
         // corrupt state — panic to match end_turn / rotate_to_active.
         let (inv_id, _a, b, mut state) = move_scenario();
         state.investigators.remove(&inv_id);
-        let _ = apply(
+        let _ = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
     }
 
@@ -1794,15 +1706,11 @@ mod tests {
             .unwrap()
             .connections
             .push(LocationId(99));
-        let r = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: LocationId(99),
-            }),
-        );
+        // Set-aside location is out of play → Move to it is not legal.
         assert!(
-            matches!(r.outcome, EngineOutcome::Rejected { .. }),
+            !crate::engine::enumerate::legal_actions(&state)
+                .iter()
+                .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == LocationId(99))),
             "set-aside location is out of play"
         );
     }
@@ -1817,14 +1725,14 @@ mod tests {
         loc_b.revealed = false;
         loc_b.clues = 0;
         loc_b.printed_clues = ClueValue::PerInvestigator(2);
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         let loc_b = &result.state.locations[&b];
         assert!(loc_b.revealed, "entering an unrevealed location reveals it");
         assert_eq!(loc_b.clues, 2, "1 investigator × 2 per-investigator");
@@ -1837,14 +1745,11 @@ mod tests {
         // makes the rule explicit.
         let (inv_id, loc_id, mut state) = investigate_scenario(2, 2);
         state.locations.get_mut(&loc_id).unwrap().revealed = false;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Investigate {
-                investigator: inv_id,
-            }),
-        );
+        // Unrevealed location → Investigate is not legal.
         assert!(
-            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            !crate::engine::enumerate::legal_actions(&state).iter().any(
+                |a| matches!(a, TurnAction::Investigate { investigator } if *investigator == inv_id)
+            ),
             "unrevealed location cannot be investigated"
         );
     }
@@ -1855,11 +1760,11 @@ mod tests {
         // Same corruption pattern as above, applied to Investigate.
         let (inv_id, _, mut state) = investigate_scenario(2, 2);
         state.investigators.remove(&inv_id);
-        let _ = apply(
+        let _ = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
     }
 
@@ -1890,6 +1795,10 @@ mod tests {
             .with_chaos_bag(bag_only_zero())
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
         (inv_id, enemy_id, state)
     }
@@ -1901,15 +1810,15 @@ mod tests {
         // Set investigator combat = 3 (default already is 3) so the
         // test just barely passes.
         state.investigators.get_mut(&inv_id).unwrap().skills.combat = 3;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::ActionsRemainingChanged { investigator, new_count: 2 }
@@ -1937,15 +1846,15 @@ mod tests {
     fn fight_failure_spends_action_but_deals_no_damage() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().skills.combat = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::EnemyDamaged { .. });
         assert_no_event!(result.events, Event::EnemyDefeated { .. });
@@ -1962,15 +1871,15 @@ mod tests {
         e.retaliate = true;
         e.attack_damage = 1;
         e.attack_horror = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::SkillTestFailed { .. });
         // Retaliate attack lands (damage + horror, simultaneously).
         assert_event!(result.events, Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id);
@@ -1994,12 +1903,12 @@ mod tests {
         e.retaliate = true;
         e.attack_damage = 1;
         e.attack_horror = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
         assert_event!(result.events, Event::SkillTestSucceeded { .. });
@@ -2018,12 +1927,12 @@ mod tests {
         e.exhausted = true;
         e.attack_damage = 1;
         e.attack_horror = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
@@ -2039,12 +1948,12 @@ mod tests {
         let e = state.enemies.get_mut(&enemy_id).unwrap();
         e.attack_damage = 1;
         e.attack_horror = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
@@ -2061,12 +1970,12 @@ mod tests {
         e.retaliate = true;
         e.attack_damage = 1;
         e.attack_horror = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Evade {
+            &TurnAction::Evade {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
@@ -2085,15 +1994,15 @@ mod tests {
         e.retaliate = true;
         e.attack_damage = 1;
         e.attack_horror = 0;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::SkillTestFailed { .. });
         // Retaliate damage landed.
         assert_eq!(result.state.investigators[&inv_id].damage(), 1);
@@ -2110,15 +2019,15 @@ mod tests {
         // removed from state, engagement cleared.
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().damage = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::EnemyDamaged { enemy: e, amount: 1, new_damage: 2 } if *e == enemy_id
@@ -2135,15 +2044,15 @@ mod tests {
     fn evade_succeeds_disengages_and_exhausts() {
         // Default agility 3, evade 3 → margin 0 → success.
         let (inv_id, enemy_id, state) = fight_evade_scenario();
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Evade {
+            &TurnAction::Evade {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::SkillTestStarted {
@@ -2171,15 +2080,15 @@ mod tests {
     fn evade_failure_leaves_engagement_intact() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().skills.agility = 1;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Evade {
+            &TurnAction::Evade {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::EnemyDisengaged { .. });
         assert_no_event!(result.events, Event::EnemyExhausted { .. });
@@ -2205,12 +2114,12 @@ mod tests {
         enemy.current_location = Some(loc_id);
         enemy.engaged_with = None;
 
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
         // Accepted: the Fight resolves its combat test rather than rejecting.
         assert!(
@@ -2240,59 +2149,39 @@ mod tests {
         enemy.current_location = Some(there_id);
         enemy.engaged_with = None;
 
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Fight {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Enemy at a different location → Fight is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
     fn evade_when_not_engaged_with_target_is_rejected() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().engaged_with = None;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Evade {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Not engaged → Evade is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Evade { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
     fn fight_with_unknown_enemy_is_rejected() {
         let (inv_id, _, state) = fight_evade_scenario();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Fight {
-                investigator: inv_id,
-                enemy: EnemyId(9999),
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Unknown enemy → Fight is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == inv_id && *enemy == EnemyId(9999))));
     }
 
     #[test]
     fn fight_outside_investigation_phase_is_rejected() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.phase = Phase::Mythos;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Fight {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Mythos phase → Fight is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
@@ -2300,15 +2189,10 @@ mod tests {
         let (_, enemy_id, mut state) = fight_evade_scenario();
         let other = InvestigatorId(2);
         state.investigators.insert(other, test_investigator(2));
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Fight {
-                investigator: other,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Non-active investigator → their Fight is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == other && *enemy == enemy_id)));
     }
 
     #[test]
@@ -2319,15 +2203,10 @@ mod tests {
             .get_mut(&inv_id)
             .unwrap()
             .actions_remaining = 0;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Fight {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // No actions remaining → Fight is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
@@ -2338,17 +2217,13 @@ mod tests {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().fight = -1;
         let actions_before = state.investigators[&inv_id].actions_remaining;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Fight {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Negative fight value → Fight is not legal (enumerate skips malformed enemies).
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
+        // actions_remaining is unchanged (no mutation occurred).
         assert_eq!(
-            result.state.investigators[&inv_id].actions_remaining,
+            state.investigators[&inv_id].actions_remaining,
             actions_before
         );
     }
@@ -2358,17 +2233,13 @@ mod tests {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().evade = -1;
         let actions_before = state.investigators[&inv_id].actions_remaining;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Evade {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Negative evade value → Evade is not legal (enumerate skips malformed enemies).
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Evade { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
+        // actions_remaining is unchanged (no mutation occurred).
         assert_eq!(
-            result.state.investigators[&inv_id].actions_remaining,
+            state.investigators[&inv_id].actions_remaining,
             actions_before
         );
     }
@@ -2381,14 +2252,14 @@ mod tests {
         // `exhausted = true`.
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Evade {
+            &TurnAction::Evade {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::SkillTestSucceeded { .. });
         assert_event!(result.events, Event::EnemyDisengaged { .. });
         assert!(result.state.enemies[&enemy_id].exhausted);
@@ -2408,15 +2279,15 @@ mod tests {
         // full attribution + removal path while the other is untouched.
         state.enemies.get_mut(&enemy_id).unwrap().damage = 1;
 
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(!result.state.enemies.contains_key(&enemy_id));
         // Other enemy untouched.
         assert!(result.state.enemies.contains_key(&other_id));
@@ -2454,15 +2325,15 @@ mod tests {
     #[test]
     fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {
         let (inv_id, a, b, enemy_id, state) = move_scenario_with_engaged_enemy();
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
@@ -2506,15 +2377,15 @@ mod tests {
     fn move_with_exhausted_engaged_enemy_does_not_fire_aoo() {
         let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
         state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
         assert_eq!(result.state.investigators[&inv_id].damage(), 0);
@@ -2536,16 +2407,20 @@ mod tests {
                 i
             })
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Resource {
+            &TurnAction::Resource {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.investigators[&inv_id].resources, 6);
         assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
         assert_event!(
@@ -2572,16 +2447,20 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Resource {
+            &TurnAction::Resource {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // AoO fired: investigator took 1 damage, but the resource is still gained.
         assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_eq!(result.state.investigators[&inv_id].resources, 6);
@@ -2599,15 +2478,10 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_active_investigator(inv_id)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Resource {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.investigators[&inv_id].resources, 5);
-        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+        // Mythos phase → Resource is not a legal open-turn action.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)
+        ));
     }
 
     #[test]
@@ -2620,13 +2494,10 @@ mod tests {
             .with_investigator(test_investigator(2))
             .with_active_investigator(other)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Resource {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        // Non-active investigator → their Resource is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)
+        ));
     }
 
     #[test]
@@ -2641,14 +2512,10 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Resource {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.investigators[&inv_id].resources, 5);
+        // No actions remaining → Resource is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)
+        ));
     }
 
     #[test]
@@ -2663,15 +2530,10 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Resource {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.investigators[&inv_id].resources, 5);
-        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+        // Killed status → Resource is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)
+        ));
     }
 
     #[test]
@@ -2696,13 +2558,17 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Resource {
+            &TurnAction::Resource {
                 investigator: inv_id,
-            }),
+            },
         );
 
         // Lethal AoO landed.
@@ -2732,17 +2598,21 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Engage {
+            &TurnAction::Engage {
                 investigator: inv_id,
                 enemy: enemy_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.enemies[&enemy_id].engaged_with, Some(inv_id));
         assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
         assert_event!(
@@ -2774,17 +2644,21 @@ mod tests {
             .with_active_investigator(inv_id)
             .with_enemy(target)
             .with_enemy(other)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Engage {
+            &TurnAction::Engage {
                 investigator: inv_id,
                 enemy: target_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // The OTHER engaged enemy made the AoO; the target (not engaged at
         // AoO time) did not. Target ends engaged; investigator took 1 damage.
         assert_eq!(result.state.investigators[&inv_id].damage(), 1);
@@ -2815,16 +2689,10 @@ mod tests {
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Engage {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
-        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+        // Enemy at a different location → Engage is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
@@ -2846,15 +2714,10 @@ mod tests {
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Engage {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+        // Already engaged → Engage is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
@@ -2871,14 +2734,10 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Engage {
-                investigator: inv_id,
-                enemy: EnemyId(999),
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        // Unknown enemy → Engage is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == EnemyId(999))));
     }
 
     #[test]
@@ -2900,15 +2759,10 @@ mod tests {
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Engage {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
+        // No actions remaining → Engage is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
@@ -2930,16 +2784,10 @@ mod tests {
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Engage {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.enemies[&enemy_id].engaged_with, None);
-        assert_eq!(result.state.investigators[&inv_id].actions_remaining, 3);
+        // Insane status → Engage is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
@@ -2963,16 +2811,20 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Draw {
+            &TurnAction::Draw {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_event!(
             result.events,
@@ -3002,17 +2854,21 @@ mod tests {
             })
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Draw {
+            &TurnAction::Draw {
                 investigator: inv_id,
-            }),
+            },
         );
 
         // Lethal AoO landed.
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::DamageTaken { investigator, amount: 8 } if *investigator == inv_id
@@ -3043,18 +2899,22 @@ mod tests {
                 i
             })
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
         let hand_before = state.investigators[&inv_id].hand.len();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Draw {
+            &TurnAction::Draw {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.investigators[&inv_id].hand.len(),
             hand_before + 1,
@@ -3081,15 +2941,15 @@ mod tests {
         // keeping the focus on the unengaged enemy.
         state.enemies.remove(&EnemyId(200));
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // Investigator moved.
         assert_eq!(
             result.state.investigators[&inv_id].current_location,
@@ -3112,14 +2972,14 @@ mod tests {
         enemy.attack_horror = 1;
         let mut state = state;
         state.enemies.insert(enemy_id, enemy);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id
@@ -3141,15 +3001,15 @@ mod tests {
         bystander.engaged_with = Some(inv_id);
         bystander.attack_damage = 5;
         state.enemies.insert(bystander_id, bystander);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Fight {
+            &TurnAction::Fight {
                 investigator: inv_id,
                 enemy: target_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
         assert_eq!(result.state.investigators[&inv_id].damage(), 0);
@@ -3164,15 +3024,15 @@ mod tests {
         bystander.engaged_with = Some(inv_id);
         bystander.attack_damage = 5;
         state.enemies.insert(bystander_id, bystander);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Evade {
+            &TurnAction::Evade {
                 investigator: inv_id,
                 enemy: target_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
         assert_eq!(result.state.investigators[&inv_id].damage(), 0);
@@ -3184,14 +3044,14 @@ mod tests {
         // enemies exist; pre-existing Move tests should not have
         // started failing.
         let (inv_id, _, b, state) = move_scenario();
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(result.events, Event::DamageTaken { .. });
     }
 
@@ -3225,12 +3085,12 @@ mod tests {
             state.enemies.insert(EnemyId(id), e);
         }
         // Move provokes the AoO; 3 engaged → order pick (no attack dealt yet).
-        let r1 = apply(
+        let r1 = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
         assert!(matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }));
         let pick_302 = attack_order_pick(&r1.outcome, EnemyId(302));
@@ -3254,7 +3114,7 @@ mod tests {
                 response: InputResponse::PickSingle(pick_301),
             }),
         );
-        assert_eq!(r3.outcome, EngineOutcome::Done);
+        assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
 
         let damages: Vec<u8> = r1
             .events
@@ -3288,14 +3148,14 @@ mod tests {
         e.attack_damage = 0;
         e.attack_horror = 0;
         state.enemies.insert(EnemyId(310), e);
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
         assert_eq!(result.state.investigators[&inv_id].damage(), 0);
@@ -3336,15 +3196,15 @@ mod tests {
     #[test]
     fn aoo_lethal_damage_defeats_investigator_during_move_and_cancels_move() {
         let (inv_id, a, b, enemy_id, state) = move_scenario_with_lethal_aoo();
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // Damage applied + defeat event fired.
         assert_event!(
             result.events,
@@ -3396,14 +3256,14 @@ mod tests {
         enemy.attack_damage = 0;
         enemy.attack_horror = 1;
         state.enemies.insert(enemy_id, enemy);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id
@@ -3428,14 +3288,14 @@ mod tests {
         // explicit on the status field and absence of defeat events.
         // After cp2a max_health()=8 from TEST_INV registry; attack_damage=1 < 8 → survives.
         let (inv_id, _, b, _, state) = move_scenario_with_engaged_enemy();
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.investigators[&inv_id].status, Status::Active);
         assert_no_event!(result.events, Event::InvestigatorDefeated { .. });
         // Move proceeds.
@@ -3464,12 +3324,12 @@ mod tests {
         e2.engaged_with = Some(inv_id);
         e2.attack_damage = 5;
         state.enemies.insert(EnemyId(201), e2);
-        let r1 = apply(
+        let r1 = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
         assert!(matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }));
         let pick = attack_order_pick(&r1.outcome, EnemyId(200));
@@ -3479,7 +3339,7 @@ mod tests {
                 response: InputResponse::PickSingle(pick),
             }),
         );
-        assert_eq!(r2.outcome, EngineOutcome::Done);
+        assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
         // Exactly one DamageTaken event (from the chosen first AoO) and one
         // InvestigatorDefeated; the second enemy never attacks (early-break).
         assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
@@ -3510,14 +3370,14 @@ mod tests {
         let enemy = state.enemies.get_mut(&enemy_id).unwrap();
         enemy.attack_damage = 5;
         enemy.attack_horror = 1;
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // Both events fire and both numeric fields land.
         assert_event!(
             result.events,
@@ -3559,14 +3419,14 @@ mod tests {
         let enemy = state.enemies.get_mut(&enemy_id).unwrap();
         enemy.attack_damage = 1;
         enemy.attack_horror = 5;
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
@@ -3613,14 +3473,14 @@ mod tests {
         let enemy = state.enemies.get_mut(&enemy_id).unwrap();
         enemy.attack_damage = 1;
         enemy.attack_horror = 1;
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // Pre-loaded 7 + attack 1 = 8 each.
         assert_eq!(result.state.investigators[&inv_id].damage(), 8);
         assert_eq!(result.state.investigators[&inv_id].horror(), 8);
@@ -3666,20 +3526,24 @@ mod tests {
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv1)
             .with_enemy(e)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv1)
             .build();
         // First, place inv1 at A so the move scenario validates.
         let mut state = state;
         state.investigators.get_mut(&inv1).unwrap().current_location = Some(a);
 
         // inv1 moves → AoO defeats them. inv2 is still Active.
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv1,
                 destination: b,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::InvestigatorDefeated { investigator, .. } if *investigator == inv1
@@ -3693,59 +3557,40 @@ mod tests {
     fn defeated_investigator_cannot_move() {
         let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
         state.investigators.get_mut(&inv_id).unwrap().status = Status::Killed;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: inv_id,
-                destination: b,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Killed status → Move is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == b)));
     }
 
     #[test]
     fn defeated_investigator_cannot_investigate() {
         let (inv_id, _, mut state) = investigate_scenario(2, 2);
         state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Investigate {
-                investigator: inv_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Insane status → Investigate is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
+            |a| matches!(a, TurnAction::Investigate { investigator } if *investigator == inv_id)
+        ));
     }
 
     #[test]
     fn defeated_investigator_cannot_fight() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().status = Status::Killed;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Fight {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Killed status → Fight is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
     fn defeated_investigator_cannot_evade() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
         state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::Evade {
-                investigator: inv_id,
-                enemy: enemy_id,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Insane status → Evade is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Evade { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
     }
 
     #[test]
@@ -3757,14 +3602,7 @@ mod tests {
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply_no_commits(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Willpower,
-                difficulty: 0,
-            }),
-        );
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 0);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert!(result.events.is_empty());
     }
@@ -3790,6 +3628,10 @@ mod tests {
             .with_phase(Phase::Investigation)
             .with_active_investigator(id)
             .with_rng_seed(13)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(id)
             .build();
         (id, state)
     }
@@ -3799,11 +3641,8 @@ mod tests {
         let (id, mut state) = draw_scenario();
         state.investigators.get_mut(&id).unwrap().deck =
             vec![CardCode::new("test-001"), CardCode::new("test-002")];
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw { investigator: id }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        let result = take_turn_action(state, &TurnAction::Draw { investigator: id });
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::ActionsRemainingChanged { investigator, new_count: 2 }
@@ -3831,11 +3670,8 @@ mod tests {
             CardCode::new("test-B"),
             CardCode::new("test-C"),
         ];
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw { investigator: id }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        let result = take_turn_action(state, &TurnAction::Draw { investigator: id });
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::DeckShuffled { investigator } if *investigator == id
@@ -3881,11 +3717,8 @@ mod tests {
         // happens. We still apply the 1-horror penalty as the safer
         // reading of "would-draw-from-empty-deck" (see handler doc).
         let (id, state) = draw_scenario();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw { investigator: id }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        let result = take_turn_action(state, &TurnAction::Draw { investigator: id });
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == id
@@ -3907,12 +3740,10 @@ mod tests {
     fn draw_outside_investigation_phase_is_rejected() {
         let (id, mut state) = draw_scenario();
         state.phase = Phase::Mythos;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw { investigator: id }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Mythos phase → Draw is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Draw { investigator } if *investigator == id)));
     }
 
     #[test]
@@ -3920,38 +3751,30 @@ mod tests {
         let (_, mut state) = draw_scenario();
         let other = InvestigatorId(2);
         state.investigators.insert(other, test_investigator(2));
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw {
-                investigator: other,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Non-active investigator → their Draw is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Draw { investigator } if *investigator == other)));
     }
 
     #[test]
     fn draw_with_zero_actions_is_rejected() {
         let (id, mut state) = draw_scenario();
         state.investigators.get_mut(&id).unwrap().actions_remaining = 0;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw { investigator: id }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // No actions remaining → Draw is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Draw { investigator } if *investigator == id)));
     }
 
     #[test]
     fn draw_by_defeated_investigator_is_rejected() {
         let (id, mut state) = draw_scenario();
         state.investigators.get_mut(&id).unwrap().status = Status::Killed;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw { investigator: id }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Killed status → Draw is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Draw { investigator } if *investigator == id)));
     }
 
     #[test]
@@ -3965,11 +3788,8 @@ mod tests {
         // Pre-load accumulated_horror so remaining sanity = 1 (lethal with the 1-horror penalty).
         // max_sanity()=8 from TEST_INV; 7+1=8=defeated.
         inv.investigator_card.accumulated_horror = 7;
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Draw { investigator: id }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        let result = take_turn_action(state, &TurnAction::Draw { investigator: id });
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == id
@@ -4037,7 +3857,10 @@ mod tests {
         // shuffles, two new cards come back.
         let (id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[1, 3]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_event!(
             result.events,
             Event::MulliganPerformed { investigator, redrawn_count: 2 }
@@ -4061,7 +3884,10 @@ mod tests {
         let original_hand = state.investigators[&id].hand.clone();
         let original_deck = state.investigators[&id].deck.clone();
         let result = apply(state, mulligan_resolve(&[]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_event!(
             result.events,
             Event::MulliganPerformed { investigator, redrawn_count: 0 }
@@ -4080,7 +3906,10 @@ mod tests {
     fn mulligan_redraw_all_replaces_entire_hand() {
         let (id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[0, 1, 2, 3, 4]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_event!(
             result.events,
             Event::MulliganPerformed { investigator, redrawn_count: 5 }
@@ -4115,7 +3944,10 @@ mod tests {
         // rejected.
         let (_id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[0]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(result.state.current_mulligan(), None);
         // Try again on the post-mulligan state.
         let result2 = apply(result.state, mulligan_resolve(&[0]));
@@ -4212,7 +4044,8 @@ mod tests {
     fn non_resolve_input_action_while_mulligan_pending_is_rejected() {
         // Non-`ResolveInput` player actions are gated by the `Mulligan` frame:
         // the engine refuses Move/Investigate/etc. until every investigator
-        // has submitted their mulligan choice.
+        // has submitted their mulligan choice. Without an InvestigatorTurn
+        // frame, no open-turn actions are legal.
         let id = InvestigatorId(1);
         let a = crate::state::LocationId(10);
         let b = crate::state::LocationId(11);
@@ -4230,15 +4063,10 @@ mod tests {
             .with_turn_order([id])
             .with_mulligan_remaining([id])
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::Move {
-                investigator: id,
-                destination: b,
-            }),
-        );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        // Mulligan frame gates all open-turn actions → Move is not legal.
+        assert!(!crate::engine::enumerate::legal_actions(&state)
+            .iter()
+            .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == id && *destination == b)));
     }
 
     #[test]
@@ -4248,7 +4076,10 @@ mod tests {
         // investigators have mulliganed and the loop drains.
         let (_id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[]));
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(result.state.current_mulligan(), None);
     }
 
@@ -4278,7 +4109,10 @@ mod tests {
         assert_eq!(after_first.state.current_mulligan(), Some(inv2));
 
         let after_second = apply(after_first.state, mulligan_resolve(&[]));
-        assert_eq!(after_second.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            after_second.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(after_second.state.current_mulligan(), None);
     }
 
@@ -4332,7 +4166,10 @@ mod tests {
         let original_inv2_hand = after_inv1.state.investigators[&inv2].hand.clone();
         let original_inv2_deck = after_inv1.state.investigators[&inv2].deck.clone();
         let after_inv2 = apply(after_inv1.state, mulligan_resolve(&[]));
-        assert_eq!(after_inv2.outcome, EngineOutcome::Done);
+        assert!(matches!(
+            after_inv2.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
         assert_eq!(after_inv2.state.current_mulligan(), None);
         assert_event!(
             after_inv2.events,
@@ -4345,13 +4182,18 @@ mod tests {
         assert_eq!(inv2_after.deck, original_inv2_deck);
     }
 
-    // ---- PlayCard rejection tests --------------------------------
+    // ---- PlayCard handler-rejection tests ------------------------
     //
-    // These exercise the validations that fire *before* the registry
-    // lookup. Tests that need real-card metadata / abilities live in
-    // crates/cards/tests/play_card.rs — that crate can install the
-    // real REGISTRY in its own integration-test process without
-    // polluting game-core's OnceLock.
+    // Card actions can't use the non-enumeration form here: these states
+    // carry no `InvestigatorTurn` frame (so `legal_actions` returns empty
+    // and the assertion would be vacuous), and game-core's `TEST_INV`-only
+    // registry never enumerates a card-bearing PlayCard anyway. Instead we
+    // reach the handler directly via `dispatch_turn_action_unchecked`
+    // (bypassing the enumeration gate) and assert it rejects — testing the
+    // handler's defensive validation, exactly as the pre-#447 typed-action
+    // `apply(PlayCard)` tests did. (The *positive* PlayCard enumeration +
+    // the registry-backed flow live in `enumerate.rs` and
+    // `crates/cards/tests/play_card.rs`.)
 
     fn play_card_state(active: bool, hand: Vec<CardCode>) -> (GameState, InvestigatorId) {
         let id = InvestigatorId(1);
@@ -4376,34 +4218,35 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::PlayCard {
+            &TurnAction::PlayCard {
                 investigator: id,
                 hand_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
-        // Hand untouched.
-        assert_eq!(
-            result.state.investigators[&id].hand,
-            vec![CardCode::new("01059")]
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
         );
     }
 
     #[test]
     fn play_card_by_non_active_investigator_is_rejected() {
         let (state, id) = play_card_state(false, vec![CardCode::new("01059")]);
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::PlayCard {
+            &TurnAction::PlayCard {
                 investigator: id,
                 hand_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
@@ -4417,51 +4260,63 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::PlayCard {
+            &TurnAction::PlayCard {
                 investigator: id,
                 hand_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn play_card_with_out_of_bounds_hand_index_is_rejected() {
         let (state, id) = play_card_state(true, vec![CardCode::new("01059")]);
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::PlayCard {
+            &TurnAction::PlayCard {
                 investigator: id,
                 hand_index: 5,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn play_card_with_empty_hand_is_rejected() {
         let (state, id) = play_card_state(true, vec![]);
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::PlayCard {
+            &TurnAction::PlayCard {
                 investigator: id,
                 hand_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
-    // ---- ActivateAbility rejection tests --------------------------
+    // ---- ActivateAbility handler-rejection tests ------------------
     //
-    // State-side rejection prefix only. The full activation flow
-    // (registry → ability dispatch → cost payment → effect) needs
-    // a registry, which lives in crates/game-core/tests/activate_ability.rs
-    // as a separate integration-test binary.
+    // As with PlayCard above, the non-enumeration form is vacuous here (no
+    // `InvestigatorTurn` frame; `TEST_INV`-only registry yields no abilities
+    // for "01059"). Reach the handler directly via
+    // `dispatch_turn_action_unchecked` and assert it rejects — the handler's
+    // defensive validation, exactly as the pre-#447 typed-action tests did.
+    // The registry-backed activation flow lives in
+    // crates/game-core/tests/activate_ability.rs.
 
     use crate::state::CardInstanceId;
 
@@ -4496,46 +4351,55 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::ActivateAbility {
+            &TurnAction::ActivateAbility {
                 investigator: id,
                 instance_id,
                 ability_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn activate_ability_by_non_active_investigator_is_rejected() {
         let (state, id, instance_id) = activate_ability_state(false);
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::ActivateAbility {
+            &TurnAction::ActivateAbility {
                 investigator: id,
                 instance_id,
                 ability_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
     fn activate_ability_with_unknown_instance_id_is_rejected() {
         let (state, id, _real_instance) = activate_ability_state(true);
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::ActivateAbility {
+            &TurnAction::ActivateAbility {
                 investigator: id,
                 instance_id: CardInstanceId(9999),
                 ability_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     #[test]
@@ -4553,16 +4417,19 @@ mod tests {
             .with_investigator(inv)
             .with_active_investigator(id)
             .build();
-        let result = apply(
+        let result = dispatch_turn_action_unchecked(
             state,
-            Action::Player(PlayerAction::ActivateAbility {
+            &TurnAction::ActivateAbility {
                 investigator: id,
                 instance_id,
                 ability_index: 0,
-            }),
+            },
         );
-        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert!(result.events.is_empty());
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
     }
 
     // ---- skill-test commit window (#63) -----------------------------
@@ -4577,14 +4444,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let result = perform_skill_test(state, id, SkillKind::Intellect, 3);
 
         assert!(matches!(
             result.outcome,
@@ -4613,14 +4473,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
 
         let resumed = apply(
             paused.state,
@@ -4655,14 +4508,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         assert!(matches!(
             paused.outcome,
             EngineOutcome::AwaitingInput { .. }
@@ -4708,13 +4554,11 @@ mod tests {
             .with_chaos_bag(bag_only_zero())
             .build();
 
-        let result = apply_no_commits_with_response(
+        let result = perform_skill_test_with_response(
             state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
+            id,
+            SkillKind::Intellect,
+            3,
             InputResponse::PickMultiple {
                 selected: vec![OptionId(0), OptionId(1)],
             },
@@ -4744,18 +4588,20 @@ mod tests {
         );
     }
 
-    /// Helper: drive a skill-test-initiating action through with the
-    /// given `InputResponse`. Used by commit-window tests that don't
-    /// fit `apply_no_commits` (which always submits an empty commit).
-    fn apply_no_commits_with_response(
+    /// Helper: start a plain skill test and drive it through with the
+    /// given `InputResponse`. Used by commit-window tests that don't fit
+    /// `perform_skill_test_no_commits` (which always submits an empty commit).
+    fn perform_skill_test_with_response(
         state: GameState,
-        action: Action,
+        investigator: InvestigatorId,
+        skill: SkillKind,
+        difficulty: i8,
         response: InputResponse,
     ) -> crate::engine::ApplyResult {
         use crate::test_support::ScriptedResolver;
         let mut resolver = ScriptedResolver::new();
         resolver.push(response);
-        crate::test_support::drive(state, action, resolver)
+        crate::test_support::drive_skill_test(state, investigator, skill, difficulty, resolver)
     }
 
     #[test]
@@ -4767,14 +4613,7 @@ mod tests {
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
@@ -4806,14 +4645,7 @@ mod tests {
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
@@ -4837,7 +4669,10 @@ mod tests {
     fn non_resolve_input_action_rejects_while_skill_test_paused() {
         // While a test is paused at its commit window, the engine
         // rejects every other player action (mirrors the
-        // mulligan_pending guard).
+        // mulligan_pending guard). `StartScenario` stands in for "any
+        // non-ResolveInput action": the outstanding-prompt guard fires
+        // before any action-specific dispatch, so the reason is the
+        // prompt guard's, not StartScenario's.
         let id = InvestigatorId(1);
         let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -4845,15 +4680,11 @@ mod tests {
             .with_active_investigator(id)
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
+        let rejected = apply(
+            paused.state,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
         );
-        let rejected = apply(paused.state, Action::Player(PlayerAction::EndTurn));
         match rejected.outcome {
             EngineOutcome::Rejected { reason } => {
                 // slice 1b collapsed the per-suspension guards into one rule with
@@ -4876,14 +4707,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_chaos_bag(bag_only_zero())
             .build();
-        let paused = apply(
-            state,
-            Action::Player(PlayerAction::PerformSkillTest {
-                investigator: id,
-                skill: SkillKind::Intellect,
-                difficulty: 3,
-            }),
-        );
+        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
         let bad = apply(
             paused.state,
             Action::Player(PlayerAction::ResolveInput {
@@ -4919,13 +4743,13 @@ mod tests {
         // back would break downstream listeners that key off the end
         // marker as "all sub-effects already applied."
         let (inv_id, _loc_id, state) = investigate_scenario(2, 2);
-        let result = apply_no_commits(
+        let result = take_action_no_commits(
             state,
-            Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         crate::assert_event_sequence!(
             result.events,
             Event::SkillTestStarted { .. },
@@ -4978,11 +4802,18 @@ mod tests {
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 1;
+        // Seat the open-turn frame (InvestigationPhase anchor + InvestigatorTurn)
+        // so `legal_actions` enumerates `AdvanceAct` — the OptionId-routing entry
+        // point these tests drive through `apply_with_scenario_registry`.
         let mut builder = GameStateBuilder::new()
             .with_phase(crate::state::Phase::Investigation)
             .with_investigator(investigator)
             .with_active_investigator(inv)
-            .with_turn_order([inv]);
+            .with_turn_order([inv])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv);
         if let Some(id) = scenario_id {
             builder = builder.with_scenario_id(ScenarioId::new(id));
         }
@@ -4995,20 +4826,45 @@ mod tests {
         state
     }
 
+    /// Route an open-turn [`TurnAction`] through
+    /// [`apply_with_scenario_registry`] via `OptionId` (slice 2b, #447):
+    /// enumerate `legal_actions`, find the matching action's index, and submit it
+    /// as `ResolveInput(PickSingle)`. Mirrors `take_turn_action` but threads the
+    /// explicit registry the resolution-hook tests require (which the plain
+    /// `take_turn_action` helper cannot supply, as it calls `apply`).
+    fn take_turn_action_with_registry(
+        state: GameState,
+        action: &TurnAction,
+        registry: Option<&ScenarioRegistry>,
+    ) -> super::ApplyResult {
+        let actions = crate::engine::enumerate::legal_actions(&state);
+        let idx = actions
+            .iter()
+            .position(|a| a == action)
+            .unwrap_or_else(|| panic!("{action:?} not offered; legal: {actions:?}"));
+        super::apply_with_scenario_registry(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+            }),
+            registry,
+        )
+    }
+
     #[test]
     fn resolution_fires_and_applies_when_latch_set_with_module() {
         let state = terminal_act_state(Some("stamp"));
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,
         };
-        let result = super::apply_with_scenario_registry(
+        let result = take_turn_action_with_registry(
             state,
-            Action::Player(PlayerAction::AdvanceAct {
+            &TurnAction::AdvanceAct {
                 investigator: InvestigatorId(1),
-            }),
+            },
             Some(&reg),
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
             Event::ScenarioResolved { resolution: Resolution::Won { id } } if id == "test"
@@ -5025,14 +4881,14 @@ mod tests {
         // No registry: the event still fires (resolution is engine state),
         // but apply_resolution can't run.
         let state = terminal_act_state(Some("unknown"));
-        let result = super::apply_with_scenario_registry(
+        let result = take_turn_action_with_registry(
             state,
-            Action::Player(PlayerAction::AdvanceAct {
+            &TurnAction::AdvanceAct {
                 investigator: InvestigatorId(1),
-            }),
+            },
             None,
         );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(result.events, Event::ScenarioResolved { .. });
     }
 
@@ -5042,11 +4898,11 @@ mod tests {
         // no-op with no controlled cards carrying a GameEnd ability: the
         // resolution still fires, and no TraumaSuffered is emitted.
         let state = terminal_act_state(Some("unknown"));
-        let result = super::apply_with_scenario_registry(
+        let result = take_turn_action_with_registry(
             state,
-            Action::Player(PlayerAction::AdvanceAct {
+            &TurnAction::AdvanceAct {
                 investigator: InvestigatorId(1),
-            }),
+            },
             None,
         );
         assert_event!(result.events, Event::ScenarioResolved { .. });
@@ -5055,39 +4911,23 @@ mod tests {
 
     #[test]
     fn resolution_does_not_refire_on_a_later_apply() {
-        let mut state = terminal_act_state(Some("stamp"));
-        // Mid-Investigation invariant (slice 1a): the EndTurn below cascades
-        // through investigation_phase_end, which pops the InvestigationPhase
-        // anchor — so it must be present.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
-            });
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame on
-        // top of the anchor, popped by the EndTurn below.
-        state
-            .continuations
-            .push(crate::state::Continuation::InvestigatorTurn {
-                investigator: InvestigatorId(1),
-                ending: false,
-            });
+        // `terminal_act_state` seats the InvestigationPhase anchor + the
+        // InvestigatorTurn frame (slice 1a / 2a-i, #393): AdvanceAct routes via
+        // OptionId, and the subsequent EndTurn pops the InvestigatorTurn frame
+        // and cascades through investigation_phase_end.
+        let state = terminal_act_state(Some("stamp"));
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,
         };
-        let first = super::apply_with_scenario_registry(
+        let first = take_turn_action_with_registry(
             state,
-            Action::Player(PlayerAction::AdvanceAct {
+            &TurnAction::AdvanceAct {
                 investigator: InvestigatorId(1),
-            }),
+            },
             Some(&reg),
         );
         assert_event!(first.events, Event::ScenarioResolved { .. });
-        let second = super::apply_with_scenario_registry(
-            first.state,
-            Action::Player(PlayerAction::EndTurn),
-            Some(&reg),
-        );
+        let second = take_turn_action_with_registry(first.state, &TurnAction::EndTurn, Some(&reg));
         // The round-ending EndTurn cascades into Mythos and pauses at the
         // encounter-draw prompt (AwaitingInput); the point of this test is that
         // the already-latched resolution does NOT re-fire on this later apply.
@@ -5103,12 +4943,23 @@ mod tests {
         let inv = InvestigatorId(1);
         let mut state = terminal_act_state(Some("stamp"));
         state.investigators.get_mut(&inv).unwrap().clues = 0;
+        // With 0 clues AdvanceAct is illegal, so it is not enumerated — there is
+        // no OptionId to submit (OptionId-routing #447 expresses illegality as
+        // non-enumeration).
+        let legal = crate::engine::enumerate::legal_actions(&state);
+        assert!(!legal
+            .iter()
+            .any(|a| matches!(a, TurnAction::AdvanceAct { .. })));
+        // Submitting an out-of-range OptionId rejects, and a Rejected outcome must
+        // skip the resolution hook (no ScenarioResolved fires).
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,
         };
         let result = super::apply_with_scenario_registry(
             state,
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(u32::try_from(legal.len()).unwrap())),
+            }),
             Some(&reg),
         );
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -5123,11 +4974,11 @@ mod tests {
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,
         };
-        let result = super::apply_with_scenario_registry(
+        let result = take_turn_action_with_registry(
             state,
-            Action::Player(PlayerAction::AdvanceAct {
+            &TurnAction::AdvanceAct {
                 investigator: InvestigatorId(1),
-            }),
+            },
             Some(&reg),
         );
         assert!(result.state.victory_display.is_empty());

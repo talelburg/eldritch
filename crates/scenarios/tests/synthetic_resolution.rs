@@ -21,7 +21,8 @@ use game_core::engine::apply;
 use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{GameState, InvestigatorId, Phase};
-use game_core::{assert_event, Action, InputResponse, PlayerAction};
+use game_core::test_support::take_turn_action;
+use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::REGISTRY;
 
@@ -71,13 +72,13 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
 
     // Seed enough clues to advance both acts (2 + 2), then spend twice.
     state.investigators.get_mut(&inv).unwrap().clues = 4;
-    let (state, events) = drive(
-        state,
-        vec![
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }), // act 0 -> 1
-            Action::Player(PlayerAction::AdvanceAct { investigator: inv }), // act 1 -> Won
-        ],
-    );
+    let mut all_events = Vec::new();
+    let r = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 0 -> 1
+    all_events.extend(r.events);
+    let state = r.state;
+    let r = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 1 -> Won
+    all_events.extend(r.events);
+    let (state, events) = (r.state, all_events);
 
     assert_event!(
         events,
@@ -112,10 +113,10 @@ fn synthetic_scenario_resolves_lost_via_doom() {
     //
     // Break-on-resolution rather than a fixed count: tolerates cadence
     // drift and only draws when a Mythos draw is actually pending.
-    let mut all_events = Vec::new();
+    let mut doom_events = Vec::new();
     for _ in 0..12 {
-        let r1 = apply(state, Action::Player(PlayerAction::EndTurn));
-        all_events.extend(r1.events);
+        let r1 = take_turn_action(state, &TurnAction::EndTurn);
+        doom_events.extend(r1.events);
         state = r1.state;
         if state.resolution.is_some() {
             break;
@@ -127,13 +128,14 @@ fn synthetic_scenario_resolves_lost_via_doom() {
                     response: InputResponse::Confirm,
                 }),
             );
-            all_events.extend(r2.events);
+            doom_events.extend(r2.events);
             state = r2.state;
             if state.resolution.is_some() {
                 break;
             }
         }
     }
+    let all_events = doom_events;
 
     // Agenda 0 advanced once, then the terminal agenda latched Lost via doom.
     assert_event!(all_events, Event::AgendaAdvanced { from } if *from == 0);

@@ -20,10 +20,10 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 pub const TEST_SCENARIO_ID: &str = "test-scenario";
 
 fn test_setup() -> GameState {
-    // Round-0 Mythos state: `StartScenario` is accepted, `EndTurn` is
-    // rejected. The single-token chaos bag also makes the investigator
-    // eligible for a `PerformSkillTest` (which pauses at a commit window
-    // → `AwaitingInput`), exercised by the resume tests.
+    // Round-0 Mythos state: `StartScenario` is accepted (and opens the
+    // setup mulligan → `AwaitingInput`, exercised by the resume/closing
+    // tests); a `ResolveInput` with no prompt outstanding is rejected
+    // (exercised by the reject tests).
     GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_turn_order([InvestigatorId(1)])

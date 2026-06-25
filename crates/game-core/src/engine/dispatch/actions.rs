@@ -11,7 +11,7 @@ use crate::state::{
 use super::super::outcome::EngineOutcome;
 use super::Cx;
 
-/// Handler for [`PlayerAction::Investigate`].
+/// Handler for `TurnAction::Investigate`.
 ///
 /// Spends 1 action, runs an intellect skill test against the location's
 /// shroud, and on success applies [`Effect::DiscoverClue`] to move 1
@@ -133,7 +133,7 @@ pub(super) fn investigate_primary_effect(
     )
 }
 
-/// Handler for [`PlayerAction::Resource`]. The basic "gain 1 resource"
+/// Handler for `TurnAction::Resource`. The basic "gain 1 resource"
 /// action (Rules Reference, Investigation step 2.2.1).
 ///
 /// Validate-first: Investigation phase, `investigator` is active and
@@ -191,7 +191,7 @@ pub(super) fn resource_primary_effect(cx: &mut Cx, investigator: InvestigatorId)
     EngineOutcome::Done
 }
 
-/// Handler for [`PlayerAction::Engage`]. Engage an enemy at the
+/// Handler for `TurnAction::Engage`. Engage an enemy at the
 /// investigator's location that they are not already engaged with
 /// (Rules Reference p.4) — it becomes engaged with the investigator.
 ///
@@ -305,7 +305,7 @@ pub(super) fn engage_primary_effect(
     EngineOutcome::Done
 }
 
-/// Handler for [`PlayerAction::Move`].
+/// Handler for `TurnAction::Move`.
 ///
 /// Spends 1 action, then updates `current_location` to a connected
 /// destination. Move is legal while engaged with enemies: per the
@@ -701,7 +701,7 @@ fn charge_action(
     Ok(())
 }
 
-/// Handler for [`PlayerAction::Fight`].
+/// Handler for `TurnAction::Fight`.
 ///
 /// Spends 1 action, runs a Combat skill test against the enemy's
 /// fight value, and on success deals 1 damage. If damage reaches
@@ -776,7 +776,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
     )
 }
 
-/// Handler for [`PlayerAction::Evade`].
+/// Handler for `TurnAction::Evade`.
 ///
 /// Spends 1 action, runs an Agility skill test against the enemy's
 /// evade value, and on success disengages and exhausts the enemy.
@@ -817,15 +817,37 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
 
 #[cfg(test)]
 mod actions_tests {
-    use crate::action::{Action, PlayerAction};
-    use crate::engine::apply;
+    use crate::action::{Action, InputResponse, PlayerAction};
+    use crate::engine::enumerate::TurnAction;
     use crate::engine::EngineOutcome;
     use crate::event::Event;
     use crate::state::{EnemyId, InvestigatorId, LocationId, Phase, Status};
     use crate::test_support::{
-        apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+        apply_no_commits, take_turn_action, test_enemy, test_investigator, test_location,
+        GameStateBuilder,
     };
     use crate::{assert_event, assert_event_sequence, assert_no_event};
+
+    /// Drive a turn action that may suspend at a skill-test commit window.
+    /// Equivalent to `take_turn_action` but drains `AwaitingInput` (commit
+    /// window) by submitting an empty `PickMultiple`, matching `apply_no_commits`.
+    fn take_turn_action_no_commits(
+        state: crate::state::GameState,
+        action: &TurnAction,
+    ) -> crate::engine::ApplyResult {
+        let actions = crate::engine::enumerate::legal_actions(&state);
+        let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
+            panic!("take_turn_action_no_commits: {action:?} is not legal; offered: {actions:?}")
+        });
+        apply_no_commits(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(crate::engine::OptionId(
+                    u32::try_from(idx).expect("action index fits u32"),
+                )),
+            }),
+        )
+    }
 
     /// Build a Move scenario: investigator at L1, L1 connected to L2,
     /// 3 actions, Investigation phase, active investigator, with one
@@ -873,6 +895,10 @@ mod actions_tests {
             .with_enemy(enemy)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
         (inv_id, l1, l2, enemy_id, state)
@@ -890,15 +916,18 @@ mod actions_tests {
         // event fires and the investigator does NOT appear at the destination.
         let (inv_id, _l1, l2, _enemy_id, state) = move_scenario_with_enemy(1, 1);
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: l2,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, crate::engine::EngineOutcome::Done);
+        assert!(!matches!(
+            result.outcome,
+            crate::engine::EngineOutcome::Rejected { .. }
+        ));
         // Action was still spent.
         assert_event!(
             result.events,
@@ -932,15 +961,18 @@ mod actions_tests {
         // No registry installed → no cancel/soak windows → no suspension.
         let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Move {
+            &TurnAction::Move {
                 investigator: inv_id,
                 destination: l2,
-            }),
+            },
         );
 
-        assert_eq!(result.outcome, crate::engine::EngineOutcome::Done);
+        assert!(!matches!(
+            result.outcome,
+            crate::engine::EngineOutcome::Rejected { .. }
+        ));
         // AoO damage landed.
         assert_event!(
             result.events,
@@ -1015,6 +1047,10 @@ mod actions_tests {
             ]))
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
         (inv_id, loc_id, enemy_id, state)
@@ -1028,11 +1064,11 @@ mod actions_tests {
         // the investigator is still Active, and took 1 damage.
         let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
 
-        let outcome = apply(
+        let outcome = take_turn_action(
             state,
-            crate::action::Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
 
         // Outcome should be AwaitingInput (skill-test commit window).
@@ -1069,18 +1105,17 @@ mod actions_tests {
         // test starts, outcome is Done, action was spent, investigator not Active.
         let (inv_id, _loc_id, _enemy_id, state) = investigate_scenario_with_enemy(1, 1);
 
-        let result = apply_no_commits(
+        let result = take_turn_action_no_commits(
             state,
-            crate::action::Action::Player(PlayerAction::Investigate {
+            &TurnAction::Investigate {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        // Outcome is Done (skill test suppressed).
-        assert_eq!(
-            result.outcome,
-            EngineOutcome::Done,
-            "expected Done when AoO is lethal, got {:?}",
+        // Outcome is not Rejected (skill test suppressed, action consumed).
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "expected non-Rejected when AoO is lethal, got {:?}",
             result.outcome
         );
         // Action was spent.
@@ -1135,6 +1170,10 @@ mod actions_tests {
             .with_enemy(enemy)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
         (inv_id, enemy_id, state)
@@ -1146,17 +1185,16 @@ mod actions_tests {
         // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
         let (inv_id, _enemy_id, state) = resource_scenario_with_enemy(1, 1);
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Resource {
+            &TurnAction::Resource {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(
-            result.outcome,
-            EngineOutcome::Done,
-            "expected Done when AoO is lethal, got {:?}",
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "expected non-Rejected when AoO is lethal, got {:?}",
             result.outcome
         );
         // Action was still spent.
@@ -1188,17 +1226,16 @@ mod actions_tests {
         // exhausted (RR p.7), investigator took 1 damage.
         let (inv_id, enemy_id, state) = resource_scenario_with_enemy(1, 8);
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Resource {
+            &TurnAction::Resource {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(
-            result.outcome,
-            EngineOutcome::Done,
-            "expected Done after nonlethal AoO + resource gain, got {:?}",
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "expected non-Rejected after nonlethal AoO + resource gain, got {:?}",
             result.outcome
         );
         // ResourcesGained IS emitted (primary effect ran after the AoO).
@@ -1249,19 +1286,22 @@ mod actions_tests {
             .with_location(loc)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Resource {
+            &TurnAction::Resource {
                 investigator: inv_id,
-            }),
+            },
         );
 
-        assert_eq!(
-            result.outcome,
-            EngineOutcome::Done,
-            "expected Done on no-AoO resource gain, got {:?}",
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "expected non-Rejected on no-AoO resource gain, got {:?}",
             result.outcome
         );
         // Action was spent.
@@ -1329,6 +1369,10 @@ mod actions_tests {
             .with_enemy(aoo_enemy)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
             .build();
 
         (inv_id, target_id, aoo_enemy_id, state)
@@ -1341,18 +1385,17 @@ mod actions_tests {
         // target's engaged_with == Some(investigator), investigator survived.
         let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Engage {
+            &TurnAction::Engage {
                 investigator: inv_id,
                 enemy: target_id,
-            }),
+            },
         );
 
-        assert_eq!(
-            result.outcome,
-            EngineOutcome::Done,
-            "expected Done after nonlethal AoO + engage, got {:?}",
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "expected non-Rejected after nonlethal AoO + engage, got {:?}",
             result.outcome
         );
         // AoO damage landed.
@@ -1400,18 +1443,17 @@ mod actions_tests {
         // The other engaged enemy's AoO defeats the investigator: no EnemyEngaged.
         let (inv_id, target_id, _aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(1, 1);
 
-        let result = apply(
+        let result = take_turn_action(
             state,
-            Action::Player(PlayerAction::Engage {
+            &TurnAction::Engage {
                 investigator: inv_id,
                 enemy: target_id,
-            }),
+            },
         );
 
-        assert_eq!(
-            result.outcome,
-            EngineOutcome::Done,
-            "expected Done when AoO is lethal, got {:?}",
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "expected non-Rejected when AoO is lethal, got {:?}",
             result.outcome
         );
         // Action was still spent.

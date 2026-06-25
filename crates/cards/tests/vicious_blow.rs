@@ -7,14 +7,15 @@
 
 use std::sync::Once;
 
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
-    drive, test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    test_enemy, test_investigator, test_location, GameStateBuilder, TestSession,
 };
-use game_core::{assert_event, Action, EngineOutcome, PlayerAction};
+use game_core::{assert_event, EngineOutcome};
 
 const VICIOUS_BLOW: &str = "01025";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -50,6 +51,7 @@ fn board() -> GameState {
         .with_investigator(inv)
         .with_location(test_location(10, "Study"))
         .with_enemy(enemy)
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
@@ -57,23 +59,25 @@ fn board() -> GameState {
 
 use game_core::state::GameState;
 
-fn fight_action() -> Action {
-    Action::Player(PlayerAction::Fight {
+fn fight_action() -> TurnAction {
+    TurnAction::Fight {
         investigator: INV,
         enemy: ENEMY,
-    })
+    }
 }
 
 /// Committing Vicious Blow to a successful Fight deals `1 base + 1 = 2`.
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
     install();
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[CardCode::new(VICIOUS_BLOW)]);
+    let r = TestSession::new(board())
+        .take(&fight_action())
+        .resolve_choices(|c| {
+            c.commit_cards(&[CardCode::new(VICIOUS_BLOW)]);
+        })
+        .run();
 
-    let r = drive(board(), fight_action(), resolver);
-
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 2);
 }
@@ -83,12 +87,14 @@ fn committing_vicious_blow_adds_one_attack_damage() {
 #[test]
 fn fight_without_vicious_blow_deals_base_damage() {
     install();
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
+    let r = TestSession::new(board())
+        .take(&fight_action())
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
 
-    let r = drive(board(), fight_action(), resolver);
-
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 1, .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 1);
 }

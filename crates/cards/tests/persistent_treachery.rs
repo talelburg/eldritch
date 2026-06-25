@@ -13,10 +13,11 @@ use game_core::state::{
     InvestigatorId, Location, LocationId, Phase, TokenModifiers, UpkeepResume,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, fire_forced_on_round_end, run_upkeep_round_end, test_enemy,
-    test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    dispatch_turn_action_unchecked, drive, fire_forced_on_round_end, run_upkeep_round_end,
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+    ScriptedResolver, TestSession,
 };
-use game_core::{apply, Action, EngineOutcome};
+use game_core::{apply, Action, EngineOutcome, TurnAction};
 
 static INSTALL: Once = Once::new();
 
@@ -96,19 +97,25 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
 
-    let result = apply_no_commits(
-        state,
-        Action::Player(PlayerAction::Investigate {
+    let result = TestSession::new(state)
+        .take(&TurnAction::Investigate {
             investigator: InvestigatorId(1),
-        }),
-    );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result.state.locations[&LocationId(20)]
             .attachments
@@ -170,12 +177,12 @@ fn dissonant_voices_forbids_playing_an_asset() {
         .with_location(test_location(101, "Study"))
         .build();
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
             hand_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -289,19 +296,20 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
         .with_active_investigator(InvestigatorId(1))
         .with_location(test_location(1, "A"))
         .with_location(test_location(2, "B"))
+        .with_investigator_turn(InvestigatorId(1))
         .build();
     state.connect(LocationId(1), LocationId(2));
     assert_eq!(state.investigators[&InvestigatorId(1)].actions_remaining, 3);
 
     // First move this round costs 2 (base 1 + surcharge 1): 3 → 1.
-    let r = apply(
+    let r = take_turn_action(
         state,
-        Action::Player(PlayerAction::Move {
+        &TurnAction::Move {
             investigator: InvestigatorId(1),
             destination: LocationId(2),
-        }),
+        },
     );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].actions_remaining,
         1,
@@ -309,14 +317,14 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
     );
 
     // Second move this round costs 1 (surcharge already spent): 1 → 0.
-    let r = apply(
+    let r = take_turn_action(
         r.state,
-        Action::Player(PlayerAction::Move {
+        &TurnAction::Move {
             investigator: InvestigatorId(1),
             destination: LocationId(1),
-        }),
+        },
     );
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].actions_remaining,
         0,
@@ -352,9 +360,12 @@ fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
 }
 
 fn end_turn_committing_nothing(state: game_core::GameState) -> game_core::ApplyResult {
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    drive(state, Action::Player(PlayerAction::EndTurn), resolver)
+    TestSession::new(state)
+        .take(&TurnAction::EndTurn)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run()
 }
 
 #[test]
@@ -362,7 +373,7 @@ fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
     install_registry();
     // Willpower 3 + Numeric(0) = 3 vs difficulty 3 → success.
     let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(0)));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(
         r.state.investigators[&InvestigatorId(1)]
             .threat_area
@@ -389,7 +400,7 @@ fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
     install_registry();
     // Willpower 3 + Numeric(-1) = 2 vs difficulty 3 → fail.
     let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(-1)));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].threat_area.len(),
         1,
@@ -445,15 +456,17 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
 
     // Order the first forced, commit nothing to its test; order the second,
     // commit nothing to its test.
-    let mut resolver = ScriptedResolver::new();
-    resolver
-        .pick_single(game_core::engine::OptionId(0))
-        .commit_cards(&[])
-        .pick_single(game_core::engine::OptionId(0))
-        .commit_cards(&[]);
-    let r = drive(state, Action::Player(PlayerAction::EndTurn), resolver);
+    let r = TestSession::new(state)
+        .take(&TurnAction::EndTurn)
+        .resolve_choices(|c| {
+            c.pick_single(game_core::engine::OptionId(0))
+                .commit_cards(&[])
+                .pick_single(game_core::engine::OptionId(0))
+                .commit_cards(&[]);
+        })
+        .run();
 
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(
         r.state.investigators[&InvestigatorId(1)]
             .threat_area

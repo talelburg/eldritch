@@ -11,7 +11,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{test_investigator, GameStateBuilder};
+use game_core::test_support::{perform_skill_test, test_investigator, GameStateBuilder};
 use game_core::{Action, GameState, InputResponse, PlayerAction};
 
 const GUTS: &str = "01089";
@@ -40,14 +40,6 @@ fn board(copies: usize) -> GameState {
         .build()
 }
 
-fn perform_test() -> Action {
-    Action::Player(PlayerAction::PerformSkillTest {
-        investigator: INV,
-        skill: SkillKind::Willpower,
-        difficulty: 1,
-    })
-}
-
 fn commit(indices: Vec<u32>) -> Action {
     Action::Player(PlayerAction::ResolveInput {
         response: InputResponse::PickMultiple {
@@ -60,7 +52,7 @@ fn commit(indices: Vec<u32>) -> Action {
 #[test]
 fn committing_over_the_cap_is_rejected() {
     install();
-    let paused = game_core::engine::apply(board(2), perform_test());
+    let paused = perform_skill_test(board(2), INV, SkillKind::Willpower, 1);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -80,7 +72,7 @@ fn committing_over_the_cap_is_rejected() {
 #[test]
 fn committing_at_the_cap_is_allowed() {
     install();
-    let paused = game_core::engine::apply(board(1), perform_test());
+    let paused = perform_skill_test(board(1), INV, SkillKind::Willpower, 1);
     let r = game_core::engine::apply(paused.state, commit(vec![0]));
     assert_eq!(r.outcome, EngineOutcome::Done);
 }

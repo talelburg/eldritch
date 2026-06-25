@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind};
+use crate::state::{CardCode, InvestigatorId};
 
 /// A single entry in the action log.
 ///
@@ -33,8 +33,12 @@ pub enum Action {
 
 /// Input from a human player.
 ///
-/// Phase-1 minimal set; later phases add `Investigate`, `Move`, `Fight`,
-/// `Evade`, `PlayCard`, `ActivateAbility`, etc.
+/// Two wire variants after 2b (#447): session setup ([`StartScenario`](Self::StartScenario))
+/// and the menu-input channel ([`ResolveInput`](Self::ResolveInput)). Open-turn
+/// gameplay is no longer typed — the engine surfaces its legal-action
+/// enumeration as an open-turn `AwaitingInput` menu, and every gameplay action
+/// flows through `ResolveInput(PickSingle(OptionId))` against it, dispatched
+/// internally via the `TurnAction` id→action map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum PlayerAction {
@@ -47,228 +51,12 @@ pub enum PlayerAction {
     /// An empty roster seats no one; `start_scenario` rejects unless at
     /// least one investigator ends up seated.
     StartScenario { roster: Vec<RosterEntry> },
-    /// Active investigator ends their turn during the Investigation phase.
-    EndTurn,
-    /// Spend clues to advance the current act. Rules Reference p.3:
-    /// "spend the requisite number of clues" — "normally done as a
-    /// \[Fast\] player ability".
-    ///
-    /// **Prototype.** Built minimally for the Phase-4 synthetic demo: a
-    /// flat `clue_threshold`, a single-step spend with a deterministic
-    /// allocation (the acting investigator's clues first, then the rest
-    /// in `turn_order`), no `Objective –` handling, and no per-action
-    /// Fast-window gating. Real consumers (Phase 7, The Gathering) drive
-    /// its final form — see the design spec.
-    AdvanceAct {
-        /// The investigator initiating the spend (the "acting" player;
-        /// their clues are spent first when the group holds a surplus).
-        investigator: InvestigatorId,
-    },
-    /// Perform a skill test on `investigator` against `difficulty`,
-    /// using the named `skill`.
-    ///
-    /// Phase-1 foundation: resolves in one apply call as base skill +
-    /// chaos token modifier vs. difficulty. Card commits, the commit
-    /// window's `AwaitingInput`, and the after-resolution trigger
-    /// window land in #63 / #64.
-    PerformSkillTest {
-        /// Investigator taking the test.
-        investigator: InvestigatorId,
-        /// Which of the four skills the test is against.
-        skill: SkillKind,
-        /// Difficulty: total to meet or exceed for success.
-        difficulty: i8,
-    },
-    /// Move the active investigator from their current location to a
-    /// connected location. Spends 1 action.
-    ///
-    /// Validation: investigation phase, investigator is active, has
-    /// `actions_remaining >= 1`, has a `current_location`, and the
-    /// destination is in `state.locations` and connected to the current
-    /// location.
-    ///
-    /// Move *is* legal while engaged with enemies — but each ready
-    /// engaged enemy makes an attack of opportunity before the move
-    /// resolves, and engaged enemies move with the investigator.
-    /// Both behaviors land alongside enemy state in #67; this handler
-    /// covers only the bare movement.
-    Move {
-        /// Investigator performing the move. Must be the active
-        /// investigator during the Investigation phase.
-        investigator: InvestigatorId,
-        /// The destination location. Must be in `state.locations` and
-        /// connected to the investigator's current location.
-        destination: LocationId,
-    },
-    /// Engage an enemy with a combat skill test. Spends 1 action.
-    /// On success, deals 1 damage to the enemy; if damage reaches
-    /// `max_health`, the enemy is defeated and removed from play.
-    ///
-    /// Validate: Investigation phase, investigator is active,
-    /// `actions_remaining >= 1`, enemy exists, and the investigator
-    /// is currently engaged with that enemy.
-    ///
-    /// Damage > 1 (weapons, card buffs) and after-success / after-
-    /// failure triggers (#64) land downstream. `AoO` does NOT fire on
-    /// Fight (Fight is on the `AoO`-exempt list per the Rules
-    /// Reference).
-    Fight {
-        /// Investigator performing the Fight action. Must be the
-        /// active investigator during the Investigation phase.
-        investigator: InvestigatorId,
-        /// The enemy to fight. Must be currently engaged with the
-        /// investigator.
-        enemy: EnemyId,
-    },
-    /// Evade an engaged enemy with an agility skill test. Spends
-    /// 1 action. On success, the enemy disengages and exhausts.
-    ///
-    /// Validate: Investigation phase, investigator is active,
-    /// `actions_remaining >= 1`, enemy exists, and the investigator
-    /// is currently engaged with that enemy.
-    ///
-    /// `AoO` does NOT fire on Evade (also on the `AoO`-exempt list).
-    Evade {
-        /// Investigator performing the Evade action. Must be the
-        /// active investigator.
-        investigator: InvestigatorId,
-        /// The enemy to evade. Must be currently engaged with the
-        /// investigator.
-        enemy: EnemyId,
-    },
-    // The setup mulligan is no longer a dedicated action (#348 part 2c-iii-a):
-    // it round-trips through `ResolveInput(PickMultiple)` against the top
-    // `Continuation::Mulligan` frame, like every other player-facing
-    // suspension. The acting investigator is the frame's `remaining[0]`; the
-    // `PickMultiple` selection carries the hand indices to redraw (empty =
-    // "keep my hand").
-    /// Draw a card from the player deck. Standard turn-action:
-    /// spends 1 action, draws 1 card.
-    ///
-    /// **Empty-deck reshuffle:** if the deck is empty and the
-    /// discard is non-empty, shuffle the discard into the deck (via
-    /// the shared RNG, emitting `DeckShuffled`), draw, then take
-    /// 1 horror.
-    ///
-    /// **Both empty:** no shuffle, no card drawn, but the 1 horror
-    /// still applies as the safer reading of "would-draw-from-empty-
-    /// deck."
-    Draw {
-        /// Investigator drawing. Must be the active investigator
-        /// during the Investigation phase, with status `Active`.
-        investigator: InvestigatorId,
-    },
-    /// Investigate at the active investigator's current location:
-    /// spend 1 action, make an intellect test against the location's
-    /// shroud value, and on success discover 1 clue at the location.
-    ///
-    /// Card-derived investigate variants (Rite of Seeking's "Action.
-    /// Spend 1 charge: Investigate using willpower instead of intellect",
-    /// Working a Hunch's discover-without-test) are the cards' concern,
-    /// not this action.
-    Investigate {
-        /// Investigator performing the action. Must be the active
-        /// investigator during the Investigation phase.
-        investigator: InvestigatorId,
-    },
-    /// Gain 1 resource (the basic "Resource" action, Rules Reference
-    /// Investigation step 2.2.1). Spends 1 action.
-    ///
-    /// Validate: Investigation phase, investigator is active and
-    /// `Status::Active`, `actions_remaining >= 1`.
-    ///
-    /// Resource is NOT on the `AoO`-exempt list (only Fight, Evade,
-    /// Parley, Resign are), so each ready engaged enemy makes an attack
-    /// of opportunity before the resource is gained; an `AoO` that
-    /// eliminates the investigator suppresses the gain.
-    Resource {
-        /// Investigator taking the action. Must be the active
-        /// investigator during the Investigation phase.
-        investigator: InvestigatorId,
-    },
-    /// Engage an enemy at the active investigator's location that the
-    /// investigator is not already engaged with (Rules Reference p.4).
-    /// Spends 1 action; the enemy becomes engaged with the investigator.
-    ///
-    /// Validate: Investigation phase, investigator is active and
-    /// `Status::Active`, `actions_remaining >= 1`, the enemy exists, is
-    /// at the investigator's `current_location`, and is not already
-    /// engaged with the investigator.
-    ///
-    /// Engage is NOT on the `AoO`-exempt list, so OTHER ready engaged
-    /// enemies make attacks of opportunity before the engagement
-    /// resolves (the target is not engaged at that point, so it does
-    /// not). The multiplayer "engage an enemy engaged with another
-    /// investigator" clause is latent (single `engaged_with` field).
-    Engage {
-        /// Investigator performing the action. Must be the active
-        /// investigator during the Investigation phase.
-        investigator: InvestigatorId,
-        /// The enemy to engage. Must be at the investigator's location
-        /// and not already engaged with the investigator.
-        enemy: EnemyId,
-    },
-    /// Play a card from an investigator's hand. Spends no action
-    /// point at this stage — play-cost gating (resource cost,
-    /// action cost, "Fast" exemption) lives on the card and lands
-    /// with the cost-primitive DSL work (#53).
-    ///
-    /// Validation: Investigation phase, investigator is active and
-    /// `Status::Active`, `hand_index < hand.len()`, the registry is
-    /// installed, the card code resolves to known metadata, and the
-    /// card's type is one of the two hand-playable types — Asset or
-    /// Event. Every other type rejects.
-    ///
-    /// On apply: emit [`CardPlayed`](crate::Event::CardPlayed), run
-    /// every [`Trigger::OnPlay`](crate::dsl::Trigger::OnPlay) ability
-    /// through the DSL evaluator, then move the card to its
-    /// destination zone — `cards_in_play` for assets, `discard` for
-    /// events (the latter emitting
-    /// [`CardDiscarded`](crate::Event::CardDiscarded) with `from: Hand`).
-    PlayCard {
-        /// Investigator playing the card. Must be the active
-        /// investigator during the Investigation phase, with status
-        /// `Active`.
-        investigator: InvestigatorId,
-        /// Zero-based position in the investigator's hand.
-        hand_index: u8,
-    },
-    /// Activate a [`Trigger::Activated`](crate::dsl::Trigger::Activated)
-    /// ability on a specific in-play card instance.
-    ///
-    /// Validation: Investigation phase, investigator is active and
-    /// `Status::Active`, the named card instance is in
-    /// `cards_in_play`, the indexed ability exists and has an
-    /// `Activated` trigger, sufficient action points for the
-    /// trigger's `action_cost`, and every entry in
-    /// [`Ability::costs`](crate::dsl::Ability::costs) is payable
-    /// (resources available, source not yet exhausted, etc.).
-    ///
-    /// On apply: pay every cost (emitting the matching events), emit
-    /// [`AbilityActivated`](crate::Event::AbilityActivated), then
-    /// resolve the ability's effect through the DSL evaluator.
-    ActivateAbility {
-        /// Investigator activating the ability. Must be the active
-        /// investigator during the Investigation phase, with status
-        /// `Active`.
-        investigator: InvestigatorId,
-        /// Which copy of the in-play card is the source.
-        instance_id: CardInstanceId,
-        /// Zero-based index into the card's
-        /// [`abilities`](crate::dsl::Ability) vec. Must point at an
-        /// `Activated`-triggered ability.
-        ability_index: u8,
-    },
-    // The Mythos step-1.4 encounter draw is no longer a dedicated action
-    // (#348 part 2c-iii-b): it round-trips through `ResolveInput(Confirm)`
-    // against the top `Continuation::EncounterDraw` frame, like every other
-    // player-facing suspension. The acting drawer is the frame's `remaining[0]`;
-    // the per-card 5-step sub-sequence (RR p.24 step 1.4, including surge
-    // re-draws) resolves on `Confirm`, then the loop advances to the next
-    // drawer or opens the `MythosAfterDraws` window.
-    /// Respond to an `AwaitingInput` prompt the engine emitted. The
-    /// shape of `response` is dictated by the active prompt. (The
-    /// `EngineOutcome::AwaitingInput` variant lands in a later PR.)
+    /// Respond to an [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)
+    /// prompt the engine emitted. The shape of `response` is dictated by the
+    /// active prompt — the open-turn action menu and every framework suspension
+    /// (mulligan, encounter draw, skill-test commit, reaction/Fast windows,
+    /// choices, soak distribution) all round-trip through this one channel
+    /// (umbrella §3, #393).
     ResolveInput {
         /// The chosen response payload.
         response: InputResponse,

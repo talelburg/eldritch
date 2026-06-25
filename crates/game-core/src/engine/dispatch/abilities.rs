@@ -11,7 +11,7 @@ use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
 use super::Cx;
 
-/// Handler for [`PlayerAction::ActivateAbility`].
+/// Handler for `TurnAction::ActivateAbility`.
 ///
 /// Validates the named card instance, the indexed ability's trigger,
 /// and every cost-payability precondition. On success, pays every cost

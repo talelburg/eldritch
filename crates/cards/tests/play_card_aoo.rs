@@ -33,8 +33,11 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{Action, PlayerAction};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
+    GameStateBuilder,
+};
+use game_core::{Action, PlayerAction, TurnAction};
 
 /// Emergency Cache (01088): non-fast event, `OnPlay` gain 3 resources → provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -127,15 +130,16 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
     // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
     let result = soak_onto_asset(result);
@@ -196,18 +200,22 @@ fn playing_a_non_fast_event_spends_one_action() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
     let state = result.state;
 
-    assert!(matches!(result.outcome, EngineOutcome::Done));
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         state.investigators[&inv_id].actions_remaining, 2,
         "playing a non-fast card spent one action"
@@ -240,14 +248,16 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .build();
 
-    let result = apply(
+    // 0 actions remaining → PlayCard not offered; bypass the gate.
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert!(
@@ -297,23 +307,27 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
     let state = result.state;
 
-    // A fast event provokes no AoO: the play resolves without ever suspending
-    // on an AoO window (a window would have surfaced as AwaitingInput).
+    // A fast event provokes no AoO: the play resolves and returns to the
+    // open-turn menu (`AwaitingInput`). The *no-AoO* proof is the
+    // `accumulated_damage == 0` assertion below — an AoO would have soaked
+    // onto Guard Dog — not the outcome variant (the open-turn menu is itself
+    // `AwaitingInput`).
     assert!(
-        !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "a fast event provokes no AoO — the play must not suspend on a window: {:?}",
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the fast play resolves to the open-turn menu: {:?}",
         result.outcome
     );
     let dog_in_play = state.investigators[&inv_id]
@@ -367,15 +381,16 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
     let state = result.state;
 
@@ -432,17 +447,18 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
     // still in hand (it enters play only after the play completes).
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
     // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
     let result = soak_onto_asset(result);
@@ -509,15 +525,16 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
     let state = result.state;
 

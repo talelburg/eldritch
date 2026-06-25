@@ -8,15 +8,17 @@
 
 use std::sync::Once;
 
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::enumerate::legal_actions;
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, perform_skill_test_no_commits, take_turn_action, test_investigator,
+    test_location, GameStateBuilder, TestSession,
 };
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
 
 const MAGNIFYING_GLASS: &str = "01030";
 
@@ -50,6 +52,7 @@ fn state_with_mg_in_hand() -> (game_core::GameState, InvestigatorId, LocationId)
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -62,24 +65,32 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
     // 3 intellect + 1 (Magnifying Glass) + 0 (token) = 4 vs shroud 4 → succeed by 0.
     let (state, id, _loc) = state_with_mg_in_hand();
 
-    let after_play = apply(
+    let after_play = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
-    assert_eq!(after_play.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_play.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         after_play.state.investigators[&id].cards_in_play[0].code,
         CardCode::new(MAGNIFYING_GLASS),
     );
 
-    let result = apply_no_commits(
-        after_play.state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-    );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    let result = TestSession::new(after_play.state)
+        .take(&TurnAction::Investigate { investigator: id })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -90,14 +101,30 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
 #[test]
 fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
     // Same setup minus the card in play — 3 + 0 < 4 → fail by 1.
+    //
+    // MG is in hand (an Asset, not yet played) so the commit window parks
+    // (`FastWindow` idle, returns Done) rather than suspending as AwaitingInput.
+    // `apply_no_commits` drives through parked windows by skipping them;
+    // we submit via OptionId (not the typed PlayerAction::Investigate) to stay
+    // on the new dispatch path.
     let (state, id, _loc) = state_with_mg_in_hand();
     assert!(state.investigators[&id].cards_in_play.is_empty());
 
+    let actions = legal_actions(&state);
+    let idx = actions
+        .iter()
+        .position(|a| a == &TurnAction::Investigate { investigator: id })
+        .expect("Investigate must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -109,29 +136,28 @@ fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
 fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
     // The bonus is gated to `SkillTestKind::Investigate`. A bare
     // intellect test (e.g. a treachery testing intellect) goes
-    // through `PerformSkillTest` with `SkillTestKind::Plain` —
+    // through a plain skill test (`SkillTestKind::Plain`) —
     // the Magnifying Glass contribution must NOT apply. 3 + 0 < 4
     // → fail by 1, even with the card in play.
     let (state, id, _loc) = state_with_mg_in_hand();
 
-    let after_play = apply(
+    let after_play = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
-    assert_eq!(after_play.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_play.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
-    let result = apply_no_commits(
-        after_play.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }

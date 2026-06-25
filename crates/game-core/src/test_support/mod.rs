@@ -86,8 +86,13 @@ pub fn install_test_registry() {
 }
 
 pub use crate::state::GameStateBuilder;
-pub use fixtures::{awaiting_commit_input, test_enemy, test_investigator, test_location};
-pub use resolver::{apply_no_commits, drive, ChoiceResolver, ScriptedResolver, TestSession};
+pub use fixtures::{
+    awaiting_commit_input, awaiting_pick_single_input, test_enemy, test_investigator, test_location,
+};
+pub use resolver::{
+    apply_no_commits, dispatch_turn_action_unchecked, drive, drive_skill_test, perform_skill_test,
+    perform_skill_test_no_commits, take_turn_action, ChoiceResolver, ScriptedResolver, TestSession,
+};
 
 /// Test helper: fire forced triggers for an investigator entering a
 /// location, returning the `EngineOutcome`. Constructs the internal

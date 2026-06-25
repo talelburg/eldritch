@@ -11,7 +11,7 @@
 //! The "Fast" keyword means the card costs no action to play. This is
 //! a play-cost concern, not a DSL concern — the play-cost layer (lands
 //! alongside cost primitives in #53) will read a card-level `is_fast`
-//! flag. Until then, [`PlayerAction::PlayCard`](game_core::PlayerAction::PlayCard)
+//! flag. Until then, [`TurnAction::PlayCard`](game_core::TurnAction::PlayCard)
 //! doesn't gate on action cost at all, so Fast is effectively the
 //! ambient default. Document and move on.
 //!

@@ -7,11 +7,14 @@
 use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
     TokenModifiers,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
+use game_core::test_support::{
+    take_turn_action, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{Action, GameState, InputResponse, PlayerAction};
 
 const DR_MILAN: &str = "01033";
@@ -44,6 +47,7 @@ fn board() -> GameState {
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -63,10 +67,7 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
     let resources_before = state.investigators[&INV].resources;
 
     // Investigate → commit window.
-    let paused_commit = game_core::engine::apply(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: INV }),
-    );
+    let paused_commit = take_turn_action(state, &TurnAction::Investigate { investigator: INV });
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -88,7 +89,10 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(resumed.state.locations[&LOC].clues, 0, "clue discovered");
     assert_eq!(
         resumed.state.investigators[&INV].resources,
@@ -126,6 +130,7 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -133,10 +138,7 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
         .build();
 
     // Investigate → commit window → commit nothing → success.
-    let paused_commit = game_core::engine::apply(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: INV }),
-    );
+    let paused_commit = take_turn_action(state, &TurnAction::Investigate { investigator: INV });
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -171,6 +173,9 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(resumed.state.locations[&LOC].clues, 0, "clue discovered");
 }

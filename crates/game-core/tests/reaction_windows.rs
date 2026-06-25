@@ -29,7 +29,7 @@ use game_core::state::{
 use game_core::test_support::{
     apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{assert_event, assert_no_event, Action, InputResponse, PlayerAction};
+use game_core::{assert_event, assert_no_event, Action, InputResponse, PlayerAction, TurnAction};
 
 /// Mock: optional reaction "after you defeat an enemy, discover 1 clue
 /// at your location" — the Roland-shape canonical `OnEvent` test card.
@@ -144,6 +144,7 @@ fn fight_to_defeat_scenario(
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -153,10 +154,21 @@ fn fight_to_defeat_scenario(
     (inv_id, enemy_id, loc_id, state)
 }
 
-fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
-    Action::Player(PlayerAction::Fight {
+/// Resolve the open-turn `Fight` action against `state` to its `OptionId`,
+/// returning the `ResolveInput(PickSingle)` submit the enumeration round-trip
+/// expects. The state must carry an `InvestigatorTurn` frame (so the Fight is
+/// offered). Replaces the typed `PlayerAction::Fight` (removed in 2b, #447).
+fn fight_action(state: &game_core::GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
+    let target = TurnAction::Fight {
         investigator: inv,
         enemy,
+    };
+    let idx = game_core::engine::enumerate::legal_actions(state)
+        .iter()
+        .position(|a| a == &target)
+        .expect("Fight must be a legal open-turn action");
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
     })
 }
 
@@ -202,9 +214,13 @@ fn no_in_play_reaction_means_no_window_opens() {
     // to Done and never suspends on a reaction window. Sanity check that
     // the in-play scan is the gate.
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[]);
-    let result = apply_no_commits(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let result = apply_no_commits(state, action);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
@@ -229,7 +245,8 @@ fn matching_reaction_opens_window_and_suspends() {
     // Drive Fight through the commit window with empty commits, then
     // inspect the second-apply result (which lands on the queued
     // reaction-window AwaitingInput).
-    let result = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let result = fight_through_commit_window(state, action);
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -272,7 +289,8 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
     // discovered), the entry drains, the window closes, and the
     // engine returns Done.
     let (inv_id, enemy_id, loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -285,7 +303,10 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
         }),
     );
 
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         resumed.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
@@ -306,7 +327,8 @@ fn skip_closes_an_optional_only_window_without_firing() {
     // Open the window, then Skip → no effect fires; the window
     // closes; engine returns Done.
     let (inv_id, enemy_id, loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -319,7 +341,10 @@ fn skip_closes_an_optional_only_window_without_firing() {
         }),
     );
 
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_no_event!(resumed.events, Event::CluePlaced { .. });
     assert_eq!(resumed.state.investigators[&inv_id].clues, 0);
     assert_eq!(resumed.state.locations[&loc_id].clues, 3);
@@ -365,6 +390,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(attacker)
         .with_turn_order([attacker, bystander])
+        .with_investigator_turn(attacker)
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
@@ -373,9 +399,13 @@ fn by_controller_filter_excludes_unrelated_investigators() {
         .with_token_modifiers(TokenModifiers::default())
         .build();
 
-    let result = apply_no_commits(state, fight_action(attacker, enemy_id));
+    let action = fight_action(&state, attacker, enemy_id);
+    let result = apply_no_commits(state, action);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // No AfterEnemyDefeated window for the unrelated investigator — resolution
     // ran straight to Done with no reaction window left on the stack.
     assert!(result
@@ -418,6 +448,7 @@ fn unqualified_pattern_matches_any_defeat() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(attacker)
         .with_turn_order([attacker, bystander])
+        .with_investigator_turn(attacker)
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
@@ -426,7 +457,8 @@ fn unqualified_pattern_matches_any_defeat() {
         .with_token_modifiers(TokenModifiers::default())
         .build();
 
-    let paused = fight_through_commit_window(state, fight_action(attacker, enemy_id));
+    let action = fight_action(&state, attacker, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -449,7 +481,10 @@ fn unqualified_pattern_matches_any_defeat() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         resumed.state.investigators[&bystander].resources,
         byst_resources_before + 1,
@@ -461,7 +496,8 @@ fn unqualified_pattern_matches_any_defeat() {
 #[test]
 fn pick_index_out_of_bounds_rejects_window_stays_open() {
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -498,13 +534,20 @@ fn non_resolve_input_action_rejects_while_window_open() {
     // action rejects. Mirrors the commit-window and mulligan-window
     // guards.
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let rejected = game_core::engine::apply(paused.state, Action::Player(PlayerAction::EndTurn));
+    // `StartScenario` stands in as the surviving non-ResolveInput action (the
+    // typed gameplay variants were removed in 2b, #447); the gate rejects it
+    // identically while a prompt is outstanding.
+    let rejected = game_core::engine::apply(
+        paused.state,
+        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+    );
     match rejected.outcome {
         EngineOutcome::Rejected { reason } => {
             // slice 1b: one unified guard reason (the request carries specifics).
@@ -530,7 +573,8 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     // re-emits AwaitingInput with one entry remaining; PickSingle(OptionId(0))
     // again fires the second (resource); window closes.
     let (inv_id, enemy_id, loc_id, state) = fight_to_defeat_scenario(&[(TWO_REACTIONS, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -582,7 +626,10 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(after_second.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        after_second.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_second.events,
         Event::ResourcesGained { investigator, amount: 1 } if *investigator == inv_id
@@ -621,7 +668,8 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     // position (the rules-incorrect "deferred" design that landed initially)
     // requires an intentional decision (and an update here).
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "Fight must suspend at the reaction window before SkillTestEnded fires",
@@ -634,7 +682,10 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
     // Merge the events from both phases so we can pin the full
     // ordering across the suspend point.
@@ -718,6 +769,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -726,7 +778,8 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
         .build();
 
     // First apply: opens commit window.
-    let paused_commit = game_core::engine::apply(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused_commit = game_core::engine::apply(state, action);
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -756,7 +809,10 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
     // Verify the final event order from the resumed phase: the reaction effect
     // (CluePlaced, fired inside the now-closing window) precedes the
@@ -832,6 +888,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(active)
         .with_turn_order([active, other])
+        .with_investigator_turn(active)
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
@@ -840,7 +897,8 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         .with_token_modifiers(TokenModifiers::default())
         .build();
 
-    let paused = fight_through_commit_window(state, fight_action(active, enemy_id));
+    let action = fight_action(&state, active, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -880,7 +938,8 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     // fire — its effect (gain 1 resource) leaves resources unchanged
     // from the post-first-fire baseline. The window closes cleanly.
     let (inv_id, enemy_id, loc_id, state) = fight_to_defeat_scenario(&[(TWO_REACTIONS, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -916,7 +975,10 @@ fn skip_after_firing_one_drops_remaining_optionals() {
             response: InputResponse::Skip,
         }),
     );
-    assert_eq!(skipped.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        skipped.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     // The skipped optional was the resource-gain — its effect didn't fire.
     assert_eq!(
         skipped.state.investigators[&inv_id].resources, resources_after_first,
@@ -965,6 +1027,7 @@ fn reaction_trigger_in_threat_area_opens_window() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -972,7 +1035,8 @@ fn reaction_trigger_in_threat_area_opens_window() {
         .with_token_modifiers(TokenModifiers::default())
         .build();
 
-    let result = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let result = fight_through_commit_window(state, action);
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -1006,7 +1070,8 @@ fn active_reaction_window_is_the_top_continuation_frame() {
     // framework never produces, because a pending window's `awaits_input()` gates
     // the framework from advancing to open one.)
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "Fight must suspend at the reaction window, got {:?}",
@@ -1053,6 +1118,7 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -1060,7 +1126,8 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
         .with_token_modifiers(TokenModifiers::default())
         .build();
 
-    let paused = fight_through_commit_window(state, fight_action(inv_id, enemy_id));
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "threat-area reaction must open a window, got {:?}",
@@ -1074,7 +1141,10 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
         }),
     );
 
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         resumed.events,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
@@ -1118,6 +1188,7 @@ fn investigate_to_success_scenario(
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_turn_order([id])
+        .with_investigator_turn(id)
         .with_investigator(inv)
         .with_location(loc_meta)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -1140,10 +1211,17 @@ fn after_successful_investigate_fires_in_play_reaction() {
     let (id, loc, state) = investigate_to_success_scenario(&[(MILAN_REACTION, 1)]);
     let resources_before = state.investigators[&id].resources;
 
-    let paused_commit = game_core::engine::apply(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-    );
+    let investigate = {
+        let target = TurnAction::Investigate { investigator: id };
+        let idx = game_core::engine::enumerate::legal_actions(&state)
+            .iter()
+            .position(|a| a == &target)
+            .expect("Investigate must be legal");
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        })
+    };
+    let paused_commit = game_core::engine::apply(state, investigate);
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -1165,7 +1243,10 @@ fn after_successful_investigate_fires_in_play_reaction() {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
-    assert_eq!(resumed.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        resumed.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         resumed.state.investigators[&id].resources,
         resources_before + 1,
@@ -1190,17 +1271,26 @@ fn after_successful_investigate_fires_in_play_reaction() {
 fn after_successful_investigate_no_window_without_reaction() {
     let (id, loc, state) = investigate_to_success_scenario(&[]);
 
-    let paused_commit = game_core::engine::apply(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-    );
+    let investigate = {
+        let target = TurnAction::Investigate { investigator: id };
+        let idx = game_core::engine::enumerate::legal_actions(&state)
+            .iter()
+            .position(|a| a == &target)
+            .expect("Investigate must be legal");
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        })
+    };
+    let paused_commit = game_core::engine::apply(state, investigate);
     let resolved = game_core::engine::apply(paused_commit.state, commit_nothing());
 
-    assert_eq!(
+    // No reaction card is in play, so no AfterSuccessfulInvestigate window can
+    // open: the investigate resolves straight through to the open-turn menu in
+    // one apply (the clue assertions below confirm it resolved).
+    assert!(matches!(
         resolved.outcome,
-        EngineOutcome::Done,
-        "no reaction → no window → resolves in one apply",
-    );
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(resolved.state.investigators[&id].clues, 1);
     assert_eq!(resolved.state.locations[&loc].clues, 0);
     // No AfterSuccessfulInvestigate reaction window (none in play): resolution

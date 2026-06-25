@@ -7,7 +7,7 @@ mod common;
 use common::{connect, install_registry, memory_pool, recv, send, spawn_server, TEST_SCENARIO_ID};
 use game_core::scenario::ScenarioId;
 use game_core::state::InvestigatorId;
-use game_core::{EngineOutcome, PlayerAction};
+use game_core::{EngineOutcome, InputResponse, OptionId, PlayerAction};
 use protocol::{ClientMessage, ServerMessage};
 
 async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str) {
@@ -88,18 +88,24 @@ async fn rejected_action_returns_rejected_to_sender_only() {
     let _ = recv(&mut a).await;
     let _ = recv(&mut b).await;
 
-    // EndTurn is invalid from the round-0 Mythos setup state.
+    // A `ResolveInput` with no outstanding prompt is invalid from the
+    // round-0 setup state (stands in for the removed typed gameplay variants).
     send(
         &mut a,
         &ClientMessage::Submit {
-            action: PlayerAction::EndTurn,
+            action: PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(0)),
+            },
         },
     )
     .await;
 
     match recv(&mut a).await {
         ServerMessage::Rejected { reason } => {
-            assert!(reason.contains("Investigation"), "reason was: {reason}");
+            assert!(
+                reason.contains("no AwaitingInput prompt"),
+                "reason was: {reason}"
+            );
         }
         other => panic!("expected Rejected, got {other:?}"),
     }

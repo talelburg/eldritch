@@ -25,9 +25,12 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    drive, drive_skill_test, perform_skill_test_no_commits, test_investigator, test_location,
+    GameStateBuilder, ScriptedResolver,
 };
-use game_core::{assert_event, assert_event_count, assert_no_event, Action, PlayerAction};
+use game_core::{
+    assert_event, assert_event_count, assert_no_event, Action, InputResponse, PlayerAction,
+};
 
 /// Mock: success-gated `OnSkillTestResolution` → discover 1 clue at
 /// the tested location. The Deduction-shape (without kind narrowing,
@@ -99,6 +102,8 @@ fn state_with_hand_and_location(
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_turn_order([id])
+        .with_investigator_turn(id)
         .with_investigator(inv)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -107,14 +112,23 @@ fn state_with_hand_and_location(
     (state, id, loc)
 }
 
-fn intellect_test(id: InvestigatorId, difficulty: i8) -> Action {
-    Action::Player(PlayerAction::PerformSkillTest {
-        investigator: id,
-        skill: SkillKind::Intellect,
-        difficulty,
-    })
+/// Start an Intellect plain skill test (the [`perform_skill_test`] synthetic
+/// entry point) against `difficulty` and drive it through with the supplied
+/// commit codes.
+fn skill_test_with_commits(
+    state: game_core::GameState,
+    id: InvestigatorId,
+    difficulty: i8,
+    commit: &[&str],
+) -> game_core::ApplyResult {
+    let mut resolver = ScriptedResolver::new();
+    let codes: Vec<CardCode> = commit.iter().map(|c| CardCode::new(*c)).collect();
+    resolver.commit_cards(&codes);
+    drive_skill_test(state, id, SkillKind::Intellect, difficulty, resolver)
 }
 
+/// Drive a pre-built skill-test-initiating `action` (e.g. an Investigate
+/// `ResolveInput`) through with the supplied commit codes.
 fn drive_with_commits(
     state: game_core::GameState,
     action: Action,
@@ -132,9 +146,12 @@ fn success_gated_resolution_fires_on_a_passing_test() {
     // passes by 1. Committed BONUS_CLUE_SUCCESS triggers a 1-clue
     // discover at the tested location.
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_SUCCESS], 3);
-    let result = drive_with_commits(state, intellect_test(id, 2), &[BONUS_CLUE_SUCCESS]);
+    let result = skill_test_with_commits(state, id, 2, &[BONUS_CLUE_SUCCESS]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, .. }
@@ -157,9 +174,12 @@ fn success_gated_resolution_does_not_fire_on_a_failing_test() {
     // Even though BONUS_CLUE_SUCCESS is committed, its trigger is
     // gated on Success — no fire.
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_SUCCESS], 3);
-    let result = drive_with_commits(state, intellect_test(id, 99), &[BONUS_CLUE_SUCCESS]);
+    let result = skill_test_with_commits(state, id, 99, &[BONUS_CLUE_SUCCESS]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, .. }
@@ -173,9 +193,12 @@ fn success_gated_resolution_does_not_fire_on_a_failing_test() {
 #[test]
 fn failure_gated_resolution_fires_on_a_failing_test() {
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_FAILURE], 3);
-    let result = drive_with_commits(state, intellect_test(id, 99), &[BONUS_CLUE_FAILURE]);
+    let result = skill_test_with_commits(state, id, 99, &[BONUS_CLUE_FAILURE]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, .. }
@@ -188,9 +211,12 @@ fn failure_gated_resolution_fires_on_a_failing_test() {
 #[test]
 fn failure_gated_resolution_does_not_fire_on_a_passing_test() {
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_FAILURE], 3);
-    let result = drive_with_commits(state, intellect_test(id, 2), &[BONUS_CLUE_FAILURE]);
+    let result = skill_test_with_commits(state, id, 2, &[BONUS_CLUE_FAILURE]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, .. }
@@ -207,9 +233,12 @@ fn uncommitted_resolution_triggered_card_does_not_fire() {
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_SUCCESS], 3);
     // Apply with an empty commit list (apply_no_commits drives the
     // commit window with `[]`).
-    let result = apply_no_commits(state, intellect_test(id, 2));
+    let result = perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, .. } if *investigator == id
@@ -229,13 +258,12 @@ fn two_committed_success_triggers_both_fire() {
     // fire, discovering 2 clues total (1 each).
     let (state, id, loc) =
         state_with_hand_and_location(&[BONUS_CLUE_SUCCESS, BONUS_CLUE_SUCCESS], 3);
-    let result = drive_with_commits(
-        state,
-        intellect_test(id, 2),
-        &[BONUS_CLUE_SUCCESS, BONUS_CLUE_SUCCESS],
-    );
+    let result = skill_test_with_commits(state, id, 2, &[BONUS_CLUE_SUCCESS, BONUS_CLUE_SUCCESS]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(result.state.locations[&loc].clues, 1);
     assert_eq!(result.state.investigators[&id].clues, 2);
     assert_event_count!(result.events, 2, Event::CluePlaced { .. });
@@ -252,9 +280,12 @@ fn mixed_triggers_card_only_fires_the_resolution_ability() {
     // the trigger-filter inside `fire_on_skill_test_resolution` skips
     // non-matching trigger variants on the same card).
     let (state, id, loc) = state_with_hand_and_location(&[MIXED_TRIGGERS], 3);
-    let result = drive_with_commits(state, intellect_test(id, 2), &[MIXED_TRIGGERS]);
+    let result = skill_test_with_commits(state, id, 2, &[MIXED_TRIGGERS]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::SkillTestSucceeded { investigator, .. } if *investigator == id
@@ -282,13 +313,26 @@ fn investigate_canonical_event_order_with_on_resolution() {
     // alone (both name the same investigator + count = 1), so this
     // pin is essential as the spec for downstream listeners.
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_SUCCESS], 3);
-    let result = drive_with_commits(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-        &[BONUS_CLUE_SUCCESS],
-    );
+    // Submit the open-turn Investigate via the enumeration round-trip (the typed
+    // `PlayerAction::Investigate` removed in 2b, #447).
+    let investigate = {
+        use game_core::engine::enumerate::legal_actions;
+        use game_core::engine::OptionId;
+        use game_core::TurnAction;
+        let idx = legal_actions(&state)
+            .iter()
+            .position(|a| a == &TurnAction::Investigate { investigator: id })
+            .expect("Investigate must be a legal open-turn action");
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        })
+    };
+    let result = drive_with_commits(state, investigate, &[BONUS_CLUE_SUCCESS]);
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(result.state.locations[&loc].clues, 1, "lost 2 clues total");
     assert_eq!(result.state.investigators[&id].clues, 2);
 

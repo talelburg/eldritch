@@ -18,10 +18,9 @@ use game_core::state::{
     TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, test_enemy, test_investigator, test_location, GameStateBuilder,
-    ScriptedResolver,
+    test_enemy, test_investigator, test_location, GameStateBuilder, TestSession,
 };
-use game_core::{assert_event, assert_no_event, Action, PlayerAction};
+use game_core::{assert_event, assert_no_event, TurnAction};
 
 const ROLAND: &str = "01001";
 
@@ -68,6 +67,7 @@ fn seated_roland_with_enemy(
         .with_round(round)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -77,22 +77,24 @@ fn seated_roland_with_enemy(
     (inv_id, enemy_id, loc_id, state)
 }
 
-fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
-    Action::Player(PlayerAction::Fight {
-        investigator: inv,
-        enemy,
-    })
-}
-
 #[test]
 fn seated_roland_reaction_fires_with_no_in_play_injection() {
     let (inv_id, enemy_id, loc_id, state) = seated_roland_with_enemy(0);
 
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).pick_single(OptionId(0));
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+    let result = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
@@ -127,9 +129,20 @@ fn seated_roland_reaction_capped_once_per_round() {
         .investigator_card
         .bump_ability_usage(0, 0);
 
-    let result = apply_no_commits(state, fight_action(inv_id, enemy_id));
+    let result = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id

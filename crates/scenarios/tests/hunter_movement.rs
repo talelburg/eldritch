@@ -7,8 +7,10 @@ use std::sync::Once;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::Action;
+use game_core::test_support::{
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{Action, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
@@ -94,7 +96,7 @@ fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
             response: InputResponse::PickSingle(pick),
         }),
     );
-    assert_eq!(r2.outcome, EngineOutcome::Done);
+    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(!matches!(
         r2.state.continuations.last(),
         Some(game_core::state::Continuation::SpawnEngage(_))
@@ -142,21 +144,25 @@ fn hunter_movement_pick_location_replays_identically() {
 
     // Candidates are the sorted first-steps toward D: [LocationId(2), LocationId(3)],
     // so LocationId(3) is offered option id 1.
-    let actions = [
-        Action::Player(PlayerAction::EndTurn),
+
+    let mut s1 = diamond_state();
+    s1 = take_turn_action(s1, &TurnAction::EndTurn).state;
+    s1 = apply(
+        s1,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(1)),
         }),
-    ];
-
-    let mut s1 = diamond_state();
-    for a in &actions {
-        s1 = apply(s1, a.clone()).state;
-    }
+    )
+    .state;
     let mut s2 = diamond_state();
-    for a in &actions {
-        s2 = apply(s2, a.clone()).state;
-    }
+    s2 = take_turn_action(s2, &TurnAction::EndTurn).state;
+    s2 = apply(
+        s2,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(1)),
+        }),
+    )
+    .state;
     // Replay determinism is a whole-state property: replaying an
     // identical action log reproduces state bit-for-bit.
     assert_eq!(

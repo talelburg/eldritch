@@ -93,14 +93,26 @@ Burned Ruins 02205). Item 2 (capped discovery count) is independent and latent.
 
 **3. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:
-- **#447 — 2b: typed `PlayerAction` elimination** (engine half). Route open-turn
-  gameplay through `ResolveInput(PickSingle(OptionId))` only; id→action map fully
-  internal. The committed/scheduled #393 end-state (§E), pairs with #205.
+- **#447 — 2b: typed `PlayerAction` elimination ✅ shipped (PR #460).** Open-turn
+  gameplay now flows through `ResolveInput(PickSingle(OptionId))` against an
+  open-turn `AwaitingInput` action menu (the engine surfaces `legal_actions` as
+  the menu; `InvestigatorTurn::awaits_input` → true). The 11 typed gameplay
+  variants are gone — the wire surface is `StartScenario` + `ResolveInput`; an
+  internal `TurnAction` id→action map (`dispatch_turn_action`) is the sole
+  gameplay path, re-enumerated at resolve (not cached). The test-only
+  `PerformSkillTest` was removed too (→ `test_support::perform_skill_test*`). The
+  web client lost its bespoke open-turn controls — gameplay renders through
+  `AwaitingInputView`'s `PickSingle` option list (flat for now; #205 enriches).
+  **Split out:** **#458** (deterministic resume-token, §F — `ResumeToken(0)` stays
+  for now) and **#459** (StartScenario → game-creation; collapses `PlayerAction` to
+  a single `ResolveInput` variant; lands with the picker).
 - **#205 — structured input rendering** (client half). Render the right control per
   offered option from the structured `InputRequest.options`, not prompt-string
-  heuristics. Needs-design (client metadata schema).
+  heuristics. Needs-design (client metadata schema). Now unblocked: the open-turn
+  menu (and every prompt) already arrives as `InputRequest.options`.
 - **Investigator/scenario picker.** Seating (#221) + registry swap (#244) exist
-  engine-side; the browser picker driving `StartScenario` is the remaining UI.
+  engine-side; the browser picker driving game-creation is the remaining UI —
+  it lands with **#459** (the roster moves to `CreateGameRequest`).
 - **End-to-end browser playthrough** of The Gathering to a resolution.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
@@ -113,8 +125,10 @@ opportunistically).
 
 For a future author who sees the partial state and wonders what's "missing":
 - **C checkpoint** ✅ and **EmitEvent-frame** (3rd checkpoint) ✅ — both shipped.
-- **2b** (typed `PlayerAction` → `OptionId`-only) — outstanding, **#447**, lands
-  with the capstone.
+- **2b** (typed `PlayerAction` → `OptionId`-only) ✅ — shipped (PR #460). The open
+  turn is an `AwaitingInput` menu; gameplay is `ResolveInput(PickSingle(OptionId))`
+  dispatched via the internal `TurnAction` map. `PlayerAction` = `StartScenario` +
+  `ResolveInput` (single-variant end-state deferred to #459).
 - **B** (every straight-line step a frame) — **intentionally dormant**, reached
   *content-driven* (a card making a step a decision). No Core+Dunwich card forces
   it; B's marginal frames "earn nothing operationally." The visible remnant is the

@@ -12,6 +12,7 @@
 use std::sync::Once;
 
 use game_core::action::InputResponse;
+use game_core::engine::TurnAction;
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -19,7 +20,8 @@ use game_core::state::{
     Zone,
 };
 use game_core::test_support::{
-    drive, test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
+    GameStateBuilder, TestSession,
 };
 use game_core::{apply, assert_event, assert_no_event, Action, PlayerAction};
 
@@ -65,6 +67,7 @@ fn investigator_with_evidence_and_enemy(
         .with_round(0)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -74,11 +77,11 @@ fn investigator_with_evidence_and_enemy(
     (inv_id, enemy_id, loc_id, state)
 }
 
-fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> Action {
-    Action::Player(PlayerAction::Fight {
+fn fight_action(inv: InvestigatorId, enemy: EnemyId) -> TurnAction {
+    TurnAction::Fight {
         investigator: inv,
         enemy,
-    })
+    }
 }
 
 #[test]
@@ -91,7 +94,7 @@ fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
     // event was removed as redundant with the AwaitingInput channel). The
     // window opens even though no in-play card reacts: the hand match alone
     // opens it, observable as the offered "Play <Evidence> from hand" option.
-    let after_fight = apply(state, fight_action(inv_id, enemy_id));
+    let after_fight = take_turn_action(state, &fight_action(inv_id, enemy_id));
     let EngineOutcome::AwaitingInput { .. } = &after_fight.outcome else {
         panic!("Fight must suspend on the commit window; got {after_fight:?}");
     };
@@ -132,12 +135,12 @@ fn evidence_cannot_be_played_as_a_standalone_action() {
         "fixture invariant: Evidence! is the only hand card, at index 0",
     );
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert!(
@@ -160,11 +163,17 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
 
     // Commit nothing, then pick the single offered option (OptionId(0) = the
     // hand Evidence! play; there is no in-play trigger).
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).pick_single(OptionId(0));
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+    let result = TestSession::new(state)
+        .take(&fight_action(inv_id, enemy_id))
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::CardPlayed { investigator, code } if *investigator == inv_id && code.as_str() == EVIDENCE
@@ -194,9 +203,12 @@ fn evidence_fast_event_discards_exactly_once() {
     // (Slice D #423): the event must be discarded exactly once — no double-flush.
     let (inv_id, enemy_id, _loc_id, state) = investigator_with_evidence_and_enemy(2);
 
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).pick_single(OptionId(0));
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+    let result = TestSession::new(state)
+        .take(&fight_action(inv_id, enemy_id))
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
+        .run();
 
     assert_eq!(
         result
@@ -249,6 +261,7 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
         .with_round(0)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -258,11 +271,17 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
 
     // Two options: OptionId(0) = Roland's in-play reaction, OptionId(1) = hand
     // Evidence!. Pick the hand play, then skip the remaining reaction.
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).pick_single(OptionId(1)).skip();
-    let result = drive(state, fight_action(inv_id, enemy_id), resolver);
+    let result = TestSession::new(state)
+        .take(&fight_action(inv_id, enemy_id))
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(1)).skip();
+        })
+        .run();
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         result.events,
         Event::CardPlayed { investigator, code } if *investigator == inv_id && code.as_str() == EVIDENCE

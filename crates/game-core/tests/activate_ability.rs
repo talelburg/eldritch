@@ -1,4 +1,4 @@
-//! End-to-end `PlayerAction::ActivateAbility` flow with a mock
+//! End-to-end ability-activation flow with a mock
 //! `CardRegistry` covering one made-up activated ability.
 //!
 //! Lives at `crates/game-core/tests/` (a separate integration-test
@@ -18,15 +18,18 @@ use game_core::dsl::{
     activated, constant, gain_resources, modify, Ability, Cost, InvestigatorTarget, ModifierScope,
     Stat,
 };
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
     Status, TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, perform_skill_test_no_commits, take_turn_action,
+    test_investigator, GameStateBuilder,
+};
+use game_core::TurnAction;
 use game_core::{assert_event, assert_event_count, assert_no_event};
-use game_core::{Action, PlayerAction};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —
 /// economically meaningless (pay 1 to gain 1) but exercises the
@@ -114,6 +117,7 @@ fn state_with_in_play(code: &str) -> (game_core::GameState, InvestigatorId, Card
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         // Chaos bag content doesn't matter here — no skill test fires.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -129,15 +133,14 @@ fn fast_resource_loop_activates_and_resolves_effect() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     let actions_before = state.investigators[&id].actions_remaining;
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
     let inv = &result.state.investigators[&id];
     assert_eq!(
         inv.actions_remaining, actions_before,
@@ -175,15 +178,14 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
     let (state, id, instance_id) = state_with_in_play(ACTION_EXHAUST_GAIN);
     let actions_before = state.investigators[&id].actions_remaining;
 
-    let after_first = apply(
+    let after_first = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
-    assert_eq!(after_first.outcome, EngineOutcome::Done);
     let inv = &after_first.state.investigators[&id];
     assert_eq!(inv.actions_remaining, actions_before - 1);
     assert_eq!(inv.resources, 5 + 1);
@@ -199,13 +201,13 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
 
     // Second activation: source is exhausted; Cost::Exhaust check
     // rejects without mutating state.
-    let after_second = apply(
+    let after_second = dispatch_turn_action_unchecked(
         after_first.state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(
         after_second.outcome,
@@ -219,13 +221,13 @@ fn insufficient_resources_reject_without_payment() {
     let (mut state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     state.investigators.get_mut(&id).unwrap().resources = 0;
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -238,13 +240,13 @@ fn insufficient_actions_reject_action_cost_ability() {
     let (mut state, id, instance_id) = state_with_in_play(ACTION_EXHAUST_GAIN);
     state.investigators.get_mut(&id).unwrap().actions_remaining = 0;
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -258,13 +260,13 @@ fn insufficient_actions_reject_action_cost_ability() {
 fn ability_index_pointing_at_non_activated_trigger_rejects() {
     let (state, id, instance_id) = state_with_in_play(CONSTANT_ONLY);
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -274,13 +276,13 @@ fn ability_index_pointing_at_non_activated_trigger_rejects() {
 fn ability_index_out_of_bounds_rejects() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 9,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -290,13 +292,13 @@ fn ability_index_out_of_bounds_rejects() {
 fn discard_card_from_hand_cost_rejects_with_todo() {
     let (state, id, instance_id) = state_with_in_play(DISCARD_COST_ABILITY);
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     // No partial mutation: source still ready, no events fired.
@@ -324,13 +326,13 @@ fn activating_with_defeated_status_doesnt_need_registry() {
         .with_active_investigator(id)
         .build();
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_no_event!(result.events, Event::AbilityActivated { .. });
@@ -346,30 +348,26 @@ fn this_skill_test_modifier_contributes_to_next_skill_test() {
     // pushed modifier exactly clears it.
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
 
-    let after_activate = apply(
+    let after_activate = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
-    assert_eq!(after_activate.outcome, EngineOutcome::Done);
     assert_eq!(
         after_activate.state.pending_skill_modifiers.len(),
         1,
         "ThisSkillTest push should leave one pending entry",
     );
 
-    let after_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
-    assert_eq!(after_test.outcome, EngineOutcome::Done);
+    let after_test =
+        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
+    assert!(matches!(
+        after_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_test.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
@@ -390,35 +388,28 @@ fn this_skill_test_modifier_does_not_leak_into_a_second_test() {
     // test fails — proving the prior modifier didn't carry over.
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
 
-    let after_activate = apply(
+    let after_activate = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
-    assert_eq!(after_activate.outcome, EngineOutcome::Done);
 
-    let after_first_test = apply_no_commits(
-        after_activate.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
-    assert_eq!(after_first_test.outcome, EngineOutcome::Done);
+    let after_first_test =
+        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
+    assert!(matches!(
+        after_first_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
 
-    let after_second_test = apply_no_commits(
-        after_first_test.state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: id,
-            skill: SkillKind::Intellect,
-            difficulty: 4,
-        }),
-    );
-    assert_eq!(after_second_test.outcome, EngineOutcome::Done);
+    let after_second_test =
+        perform_skill_test_no_commits(after_first_test.state, id, SkillKind::Intellect, 4);
+    assert!(matches!(
+        after_second_test.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_event!(
         after_second_test.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -431,15 +422,14 @@ fn this_skill_test_modifier_carries_source_instance_id() {
     // Activated abilities push with ctx.source = Some(instance_id)
     // so future limit-once-per-test logic can key off the source.
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
-    let after_activate = apply(
+    let after_activate = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id,
             ability_index: 0,
-        }),
+        },
     );
-    assert_eq!(after_activate.outcome, EngineOutcome::Done);
     let pending = &after_activate.state.pending_skill_modifiers[0];
     assert_eq!(pending.investigator, id);
     assert_eq!(pending.delta, 1);

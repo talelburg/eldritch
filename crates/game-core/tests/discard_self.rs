@@ -14,9 +14,10 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
-    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
+    GameStateBuilder,
 };
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
@@ -160,19 +161,31 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_investigator(inv)
         .build();
 
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: inst,
+                ability_index: 0,
+            }
+        })
+        .expect("ability must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: id,
-            instance_id: inst,
-            ability_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     let inv_after = &result.state.investigators[&id];
     assert!(inv_after.cards_in_play.is_empty(), "source asset left play");
     assert_eq!(inv_after.discard, vec![CardCode::new(TRINKET)]);
@@ -197,6 +210,7 @@ fn board_with_cop(enemy_at_loc: bool) -> (game_core::GameState, InvestigatorId, 
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_location(test_location(1, "A"));
     if enemy_at_loc {
         let mut e = test_enemy(100, "Ghoul");
@@ -211,13 +225,13 @@ fn board_with_cop(enemy_at_loc: bool) -> (game_core::GameState, InvestigatorId, 
 #[test]
 fn discard_self_deal_damage_rejects_with_no_enemy_and_keeps_source_in_play() {
     let (state, id, inst) = board_with_cop(false);
-    let result = apply_no_commits(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id: inst,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(
@@ -241,13 +255,13 @@ fn discard_self_combined_with_exhaust_rejects_before_paying() {
         .with_investigator(inv)
         .build();
 
-    let result = apply_no_commits(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: id,
             instance_id: inst,
             ability_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(
@@ -260,15 +274,26 @@ fn discard_self_combined_with_exhaust_rejects_before_paying() {
 #[test]
 fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
     let (state, id, inst) = board_with_cop(true);
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: inst,
+                ability_index: 0,
+            }
+        })
+        .expect("ability must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: id,
-            instance_id: inst,
-            ability_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result.state.investigators[&id].cards_in_play.is_empty(),
         "source discarded",
@@ -288,6 +313,7 @@ fn board_with_kit(code: &str) -> (game_core::GameState, InvestigatorId, CardInst
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_investigator(inv)
         .build();
     (state, id, inst)
@@ -296,15 +322,26 @@ fn board_with_kit(code: &str) -> (game_core::GameState, InvestigatorId, CardInst
 #[test]
 fn spending_last_use_discards_a_discard_when_empty_asset() {
     let (state, id, inst) = board_with_kit(KIT);
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: inst,
+                ability_index: 0,
+            }
+        })
+        .expect("ability must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: id,
-            instance_id: inst,
-            ability_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(
         result.state.investigators[&id].cards_in_play.is_empty(),
         "depleted discard_when_empty asset discarded",
@@ -318,15 +355,26 @@ fn spending_last_use_discards_a_discard_when_empty_asset() {
 #[test]
 fn spending_last_use_keeps_a_non_discarding_asset_in_play() {
     let (state, id, inst) = board_with_kit(KIT_NODISC);
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| {
+            a == &TurnAction::ActivateAbility {
+                investigator: id,
+                instance_id: inst,
+                ability_index: 0,
+            }
+        })
+        .expect("ability must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: id,
-            instance_id: inst,
-            ability_index: 0,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert_eq!(
         result.state.investigators[&id].cards_in_play.len(),
         1,

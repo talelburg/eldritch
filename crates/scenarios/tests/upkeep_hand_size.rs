@@ -16,7 +16,8 @@ use std::sync::Once;
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::state::{CardCode, InvestigatorId, Phase};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::take_turn_action;
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
 
@@ -65,7 +66,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
-    assert_eq!(r2.outcome, EngineOutcome::Done);
+    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
 
     // Pad the hand so we're over cap at 4.5. The step-4.4 draw adds one
     // card; padding to 11 here lands us at 12 cards at the 4.5 check,
@@ -93,7 +94,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // Act 1: the round-ending EndTurn cascades Investigation → Enemy →
     // Upkeep (4.2 reset, 4.3 ready, 4.4 draw +1, 4.5 hand-size check).
     // The +1 draw pushes the hand to 12 (> cap), so 4.5 suspends.
-    let r3 = apply(state, Action::Player(PlayerAction::EndTurn));
+    let r3 = take_turn_action(state, &TurnAction::EndTurn);
 
     assert!(
         matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -203,38 +204,39 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
     let discard_count = 12u32 - u32::try_from(HAND_SIZE_LIMIT).unwrap();
     let indices: Vec<u32> = (0..discard_count).collect();
 
-    let actions = vec![
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-        Action::Player(PlayerAction::EndTurn),
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: indices.iter().copied().map(OptionId).collect(),
-            },
-        }),
-    ];
+    let selected: Vec<OptionId> = indices.iter().copied().map(OptionId).collect();
+
+    // Drive the same sequence twice to verify replay determinism.
+    let run_sequence = |initial: game_core::state::GameState| -> game_core::state::GameState {
+        let mut state = apply(
+            initial,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        )
+        .state;
+        state = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
+            }),
+        )
+        .state;
+        state = take_turn_action(state, &TurnAction::EndTurn).state;
+        apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple {
+                    selected: selected.clone(),
+                },
+            }),
+        )
+        .state
+    };
 
     // --- First pass: drive and collect final state. ---
-    let final_state = {
-        let mut state = make_initial();
-        for action in &actions {
-            let result = apply(state, action.clone());
-            state = result.state;
-        }
-        state
-    };
+    let final_state = run_sequence(make_initial());
 
     // --- Second pass: replay from the same initial state. ---
-    let replayed_state = {
-        let mut state = make_initial();
-        for action in &actions {
-            let result = apply(state, action.clone());
-            state = result.state;
-        }
-        state
-    };
+    let replayed_state = run_sequence(make_initial());
 
     // Replaying the same action sequence from the same initial state must
     // reproduce identical state bit-for-bit — the PickMultiple discard path is

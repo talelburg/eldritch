@@ -11,7 +11,10 @@ use game_core::state::{
     InvestigatorId, Phase,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
-use game_core::{legal_actions, Action, EngineOutcome, LocationId, PlayerAction};
+use game_core::{
+    legal_actions, Action, EngineOutcome, InputResponse, LocationId, OptionId, PlayerAction,
+    TurnAction,
+};
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).
@@ -56,7 +59,7 @@ fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> game_core::GameSt
 #[test]
 fn play_card_offered_for_a_playable_hand_card() {
     let state = open_turn_state(&[HOLY_ROSARY], Vec::new());
-    assert!(legal_actions(&state).contains(&PlayerAction::PlayCard {
+    assert!(legal_actions(&state).contains(&TurnAction::PlayCard {
         investigator: INV,
         hand_index: 0,
     }));
@@ -76,7 +79,7 @@ fn activate_offered_for_an_in_play_activated_ability() {
     let inst = CardInstanceId(0);
     let state = open_turn_state(&[], vec![flashlight_in_play(inst)]);
     assert!(
-        legal_actions(&state).contains(&PlayerAction::ActivateAbility {
+        legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: inst,
             ability_index: 0,
@@ -91,11 +94,21 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
     // the basic actions; each applies without Rejected (Done or AwaitingInput
     // are both acceptance).
     let state = open_turn_state(&[HOLY_ROSARY], vec![flashlight_in_play(CardInstanceId(0))]);
-    for action in legal_actions(&state) {
-        let result = game_core::apply(state.clone(), Action::Player(action.clone()));
+    // OptionId round-trip: each enumerated action dispatches via
+    // `ResolveInput(PickSingle(OptionId))` at the open turn (#447). None reject.
+    let actions = legal_actions(&state);
+    for (i, action) in actions.iter().enumerate() {
+        let result = game_core::apply(
+            state.clone(),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(
+                    u32::try_from(i).expect("action index fits u32"),
+                )),
+            }),
+        );
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "enumerated action {action:?} was rejected: {:?}",
+            "enumerated action {action:?} (OptionId {i}) was rejected: {:?}",
             result.outcome,
         );
     }
@@ -145,40 +158,48 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
     let actions = legal_actions(&state);
 
     // Every category is represented.
-    let has = |p: fn(&PlayerAction) -> bool| actions.iter().any(p);
-    assert!(actions.contains(&PlayerAction::EndTurn), "EndTurn");
-    assert!(has(|a| matches!(a, PlayerAction::Move { .. })), "Move");
+    let has = |p: fn(&TurnAction) -> bool| actions.iter().any(p);
+    assert!(actions.contains(&TurnAction::EndTurn), "EndTurn");
+    assert!(has(|a| matches!(a, TurnAction::Move { .. })), "Move");
     assert!(
-        has(|a| matches!(a, PlayerAction::Investigate { .. })),
+        has(|a| matches!(a, TurnAction::Investigate { .. })),
         "Investigate"
     );
     assert!(
-        has(|a| matches!(a, PlayerAction::Resource { .. })),
+        has(|a| matches!(a, TurnAction::Resource { .. })),
         "Resource"
     );
-    assert!(has(|a| matches!(a, PlayerAction::Draw { .. })), "Draw");
-    assert!(has(|a| matches!(a, PlayerAction::Fight { .. })), "Fight");
-    assert!(has(|a| matches!(a, PlayerAction::Evade { .. })), "Evade");
-    assert!(has(|a| matches!(a, PlayerAction::Engage { .. })), "Engage");
+    assert!(has(|a| matches!(a, TurnAction::Draw { .. })), "Draw");
+    assert!(has(|a| matches!(a, TurnAction::Fight { .. })), "Fight");
+    assert!(has(|a| matches!(a, TurnAction::Evade { .. })), "Evade");
+    assert!(has(|a| matches!(a, TurnAction::Engage { .. })), "Engage");
     assert!(
-        has(|a| matches!(a, PlayerAction::PlayCard { .. })),
+        has(|a| matches!(a, TurnAction::PlayCard { .. })),
         "PlayCard"
     );
     assert!(
-        has(|a| matches!(a, PlayerAction::ActivateAbility { .. })),
+        has(|a| matches!(a, TurnAction::ActivateAbility { .. })),
         "ActivateAbility"
     );
     assert!(
-        has(|a| matches!(a, PlayerAction::AdvanceAct { .. })),
+        has(|a| matches!(a, TurnAction::AdvanceAct { .. })),
         "AdvanceAct"
     );
 
-    // And all of them apply without Rejected.
-    for action in actions {
-        let result = game_core::apply(state.clone(), Action::Player(action.clone()));
+    // And all of them apply without Rejected — via the OptionId round-trip
+    // (`ResolveInput(PickSingle(OptionId))` at the open turn, #447).
+    for (i, action) in actions.iter().enumerate() {
+        let result = game_core::apply(
+            state.clone(),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(
+                    u32::try_from(i).expect("action index fits u32"),
+                )),
+            }),
+        );
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-            "enumerated action {action:?} was rejected: {:?}",
+            "enumerated action {action:?} (OptionId {i}) was rejected: {:?}",
             result.outcome,
         );
     }

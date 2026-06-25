@@ -12,12 +12,13 @@
 
 use std::sync::Once;
 
+use game_core::engine::TurnAction;
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{test_investigator, GameStateBuilder};
+use game_core::test_support::{take_turn_action, test_investigator, GameStateBuilder};
 use game_core::{assert_event, assert_no_event, Action, GameState, InputResponse, PlayerAction};
 
 const EMERGENCY_CACHE: &str = "01088";
@@ -41,18 +42,18 @@ fn emergency_cache_play_gains_three_resources() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_investigator(inv)
         .build();
 
-    let r = game_core::engine::apply(
+    let r = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: INV,
             hand_index: 0,
-        }),
+        },
     );
 
-    assert_eq!(r.outcome, EngineOutcome::Done);
     assert_event!(r.events, Event::ResourcesGained { amount: 3, .. });
     assert_eq!(r.state.investigators[&INV].resources, before + 3);
 }
@@ -75,14 +76,7 @@ fn guts_board(wp: i8, token: ChaosToken) -> GameState {
 }
 
 fn perform_and_commit_guts(state: GameState) -> game_core::engine::ApplyResult {
-    let paused = game_core::engine::apply(
-        state,
-        Action::Player(PlayerAction::PerformSkillTest {
-            investigator: INV,
-            skill: SkillKind::Willpower,
-            difficulty: 1,
-        }),
-    );
+    let paused = game_core::test_support::perform_skill_test(state, INV, SkillKind::Willpower, 1);
     game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {

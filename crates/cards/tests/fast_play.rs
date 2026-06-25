@@ -31,13 +31,15 @@
 
 use std::sync::Once;
 
-use game_core::action::{Action, PlayerAction};
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::EngineOutcome;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, FastActorScope, FastWindowKind, InvestigatorId,
     LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::TurnAction;
 
 fn install_cards_registry() {
     static INSTALL: Once = Once::new();
@@ -67,12 +69,12 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
             FastActorScope::Any,
         )
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
             hand_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(result.outcome, EngineOutcome::Done),
@@ -106,12 +108,12 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
             FastActorScope::Any,
         )
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(2),
             hand_index: 0,
-        }),
+        },
     );
     let reason = match result.outcome {
         EngineOutcome::Rejected { reason } => reason,
@@ -146,12 +148,12 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
             FastActorScope::Any,
         )
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(2),
             hand_index: 0,
-        }),
+        },
     );
     let reason = match result.outcome {
         EngineOutcome::Rejected { reason } => reason,
@@ -181,12 +183,12 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
             hand_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(result.outcome, EngineOutcome::Done),
@@ -216,13 +218,13 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
             FastActorScope::Any,
         )
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: InvestigatorId(2),
             instance_id: CardInstanceId(1),
             ability_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(result.outcome, EngineOutcome::Done),
@@ -251,13 +253,13 @@ fn fast_activated_ability_rejected_when_no_permissive_window() {
         .with_active_investigator(InvestigatorId(1))
         // No open window.
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: InvestigatorId(2),
             instance_id: CardInstanceId(1),
             ability_index: 0,
-        }),
+        },
     );
     let reason = match result.outcome {
         EngineOutcome::Rejected { reason } => reason,
@@ -295,12 +297,12 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
             FastActorScope::Any,
         )
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
             hand_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -343,12 +345,12 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
             FastActorScope::Any,
         )
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(2),
             hand_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -375,12 +377,12 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
         .with_active_investigator(InvestigatorId(1))
         // No open window.
         .build();
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
             hand_index: 0,
-        }),
+        },
     );
     let reason = match result.outcome {
         EngineOutcome::Rejected { reason } => reason,
