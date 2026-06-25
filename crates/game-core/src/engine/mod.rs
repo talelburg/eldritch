@@ -1193,7 +1193,7 @@ mod tests {
 
         // First EndTurn (inv1): rotates to inv2 within Investigation.
         // No phase transitions yet.
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(state, &TurnAction::EndTurn);
         let state = result.state;
         assert_eq!(state.round, 1);
         assert_eq!(state.phase, Phase::Investigation);
@@ -1218,7 +1218,7 @@ mod tests {
         // Investigation → Enemy → Upkeep → Mythos and then PAUSES at the
         // step-1.4 encounter-draw prompt for inv1. The phase chain does NOT
         // continue to Investigation — that waits for the ResolveInput(Confirm)s.
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(state, &TurnAction::EndTurn);
         assert!(
             matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
             "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
@@ -1298,7 +1298,7 @@ mod tests {
         )
         .state;
 
-        let result = apply(after_mulligan, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(after_mulligan, &TurnAction::EndTurn);
         assert!(
             matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
             "round-ending EndTurn pauses at the Mythos draw prompt, got {:?}",
