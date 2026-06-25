@@ -701,7 +701,12 @@ mod advance_act_tests {
         ];
 
         // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
-        let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: acting });
+        let result = take_turn_action(
+            state,
+            &TurnAction::AdvanceAct {
+                investigator: acting,
+            },
+        );
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.investigators[&acting].clues, 0,

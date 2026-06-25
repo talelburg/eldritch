@@ -916,9 +916,18 @@ mod actions_tests {
         // event fires and the investigator does NOT appear at the destination.
         let (inv_id, _l1, l2, _enemy_id, state) = move_scenario_with_enemy(1, 1);
 
-        let result = take_turn_action(state, &TurnAction::Move { investigator: inv_id, destination: l2 });
+        let result = take_turn_action(
+            state,
+            &TurnAction::Move {
+                investigator: inv_id,
+                destination: l2,
+            },
+        );
 
-        assert!(!matches!(result.outcome, crate::engine::EngineOutcome::Rejected { .. }));
+        assert!(!matches!(
+            result.outcome,
+            crate::engine::EngineOutcome::Rejected { .. }
+        ));
         // Action was still spent.
         assert_event!(
             result.events,
@@ -952,9 +961,18 @@ mod actions_tests {
         // No registry installed → no cancel/soak windows → no suspension.
         let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
-        let result = take_turn_action(state, &TurnAction::Move { investigator: inv_id, destination: l2 });
+        let result = take_turn_action(
+            state,
+            &TurnAction::Move {
+                investigator: inv_id,
+                destination: l2,
+            },
+        );
 
-        assert!(!matches!(result.outcome, crate::engine::EngineOutcome::Rejected { .. }));
+        assert!(!matches!(
+            result.outcome,
+            crate::engine::EngineOutcome::Rejected { .. }
+        ));
         // AoO damage landed.
         assert_event!(
             result.events,
@@ -1046,7 +1064,12 @@ mod actions_tests {
         // the investigator is still Active, and took 1 damage.
         let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
 
-        let outcome = take_turn_action(state, &TurnAction::Investigate { investigator: inv_id });
+        let outcome = take_turn_action(
+            state,
+            &TurnAction::Investigate {
+                investigator: inv_id,
+            },
+        );
 
         // Outcome should be AwaitingInput (skill-test commit window).
         assert!(
@@ -1082,7 +1105,12 @@ mod actions_tests {
         // test starts, outcome is Done, action was spent, investigator not Active.
         let (inv_id, _loc_id, _enemy_id, state) = investigate_scenario_with_enemy(1, 1);
 
-        let result = take_turn_action_no_commits(state, &TurnAction::Investigate { investigator: inv_id });
+        let result = take_turn_action_no_commits(
+            state,
+            &TurnAction::Investigate {
+                investigator: inv_id,
+            },
+        );
 
         // Outcome is not Rejected (skill test suppressed, action consumed).
         assert!(
@@ -1157,7 +1185,12 @@ mod actions_tests {
         // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
         let (inv_id, _enemy_id, state) = resource_scenario_with_enemy(1, 1);
 
-        let result = take_turn_action(state, &TurnAction::Resource { investigator: inv_id });
+        let result = take_turn_action(
+            state,
+            &TurnAction::Resource {
+                investigator: inv_id,
+            },
+        );
 
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -1193,7 +1226,12 @@ mod actions_tests {
         // exhausted (RR p.7), investigator took 1 damage.
         let (inv_id, enemy_id, state) = resource_scenario_with_enemy(1, 8);
 
-        let result = take_turn_action(state, &TurnAction::Resource { investigator: inv_id });
+        let result = take_turn_action(
+            state,
+            &TurnAction::Resource {
+                investigator: inv_id,
+            },
+        );
 
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -1254,7 +1292,12 @@ mod actions_tests {
             .with_investigator_turn(inv_id)
             .build();
 
-        let result = take_turn_action(state, &TurnAction::Resource { investigator: inv_id });
+        let result = take_turn_action(
+            state,
+            &TurnAction::Resource {
+                investigator: inv_id,
+            },
+        );
 
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -1342,7 +1385,13 @@ mod actions_tests {
         // target's engaged_with == Some(investigator), investigator survived.
         let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
-        let result = take_turn_action(state, &TurnAction::Engage { investigator: inv_id, enemy: target_id });
+        let result = take_turn_action(
+            state,
+            &TurnAction::Engage {
+                investigator: inv_id,
+                enemy: target_id,
+            },
+        );
 
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -1394,7 +1443,13 @@ mod actions_tests {
         // The other engaged enemy's AoO defeats the investigator: no EnemyEngaged.
         let (inv_id, target_id, _aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(1, 1);
 
-        let result = take_turn_action(state, &TurnAction::Engage { investigator: inv_id, enemy: target_id });
+        let result = take_turn_action(
+            state,
+            &TurnAction::Engage {
+                investigator: inv_id,
+                enemy: target_id,
+            },
+        );
 
         assert!(
             !matches!(result.outcome, EngineOutcome::Rejected { .. }),

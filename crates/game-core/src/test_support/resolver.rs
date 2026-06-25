@@ -28,16 +28,18 @@
 //! # Example
 //!
 //! ```
-//! use game_core::action::{Action, PlayerAction};
+//! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
 //! use game_core::test_support::GameStateBuilder;
 //!
-//! // A skill-test action with no investigator in state still rejects
-//! // — useful as a tiny smoke test for the fluent API without needing
-//! // a real chaos bag.
+//! // A `ResolveInput` against a bare state with no outstanding prompt
+//! // rejects — a tiny smoke test for the fluent API without needing a
+//! // real chaos bag or any setup.
 //! let result = GameStateBuilder::new()
 //!     .session()
-//!     .apply(Action::Player(PlayerAction::EndTurn))
+//!     .apply(Action::Player(PlayerAction::ResolveInput {
+//!         response: InputResponse::Skip,
+//!     }))
 //!     .run();
 //! assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
 //! ```
@@ -433,6 +435,31 @@ pub fn take_turn_action(
     )
 }
 
+/// Dispatch a [`TurnAction`](crate::engine::enumerate::TurnAction) straight to
+/// its handler, **bypassing the enumeration gate** that
+/// [`take_turn_action`] routes through.
+///
+/// [`take_turn_action`] calls `legal_actions` first and panics if the action
+/// is not offered — so it cannot reach a handler against deliberately corrupt
+/// state (the corrupt action is excluded from the enumeration). This seam runs
+/// the action through the same `Cx` build, transactional restore, and
+/// resolution-latch firing as [`apply`] (via the shared
+/// `apply_via` scaffolding), but dispatches via the internal
+/// `dispatch_turn_action` + `drive` instead of the enumeration round-trip. The
+/// single legitimate use is the
+/// `#[should_panic(expected = "state-corruption invariant violation")]` handler
+/// tests that inject a dangling `current_location` / missing-from-map and expect
+/// the handler — not the enumerator — to panic.
+pub fn dispatch_turn_action_unchecked(
+    state: GameState,
+    action: &crate::engine::enumerate::TurnAction,
+) -> ApplyResult {
+    crate::engine::apply_via(state, crate::scenario_registry::current(), |cx| {
+        let outcome = crate::engine::dispatch_turn_action(cx, action);
+        crate::engine::drive(cx, outcome)
+    })
+}
+
 /// Fluent test driver: pair a [`GameState`] with an initial action and
 /// a scripted resolver, then [`run`](Self::run) the engine through to a
 /// terminal outcome.
@@ -719,7 +746,9 @@ mod tests {
         let mut resolver = ScriptedResolver::new();
         let result = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );
@@ -736,7 +765,15 @@ mod tests {
             step += 1;
             match step {
                 1 => {
-                    assert!(matches!(action, Action::Player(PlayerAction::EndTurn)));
+                    // The initial action is the opaque payload threaded to the
+                    // (fake) applier — any surviving variant works; `ResolveInput`
+                    // is the only gameplay-bearing one post-OptionId-routing (#447).
+                    assert!(matches!(
+                        action,
+                        Action::Player(PlayerAction::ResolveInput {
+                            response: InputResponse::Skip
+                        })
+                    ));
                     ApplyResult {
                         state,
                         events: vec![],
@@ -782,7 +819,9 @@ mod tests {
         resolver.confirm().skip();
         let result = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );
@@ -804,7 +843,9 @@ mod tests {
         let mut resolver = ScriptedResolver::new();
         let _ = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );
@@ -840,7 +881,9 @@ mod tests {
         resolver.confirm();
         let result = drive_with_applier(
             empty_state(),
-            Action::Player(PlayerAction::EndTurn),
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Skip,
+            }),
             &mut resolver,
             applier,
         );

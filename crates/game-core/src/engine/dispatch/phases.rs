@@ -2165,7 +2165,9 @@ mod upkeep_phase_tests {
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::{take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{
+        take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+    };
     use crate::{assert_event, assert_event_sequence, assert_no_event};
 
     #[test]
