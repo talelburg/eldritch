@@ -2159,13 +2159,13 @@ mod mythos_phase_tests {
 #[cfg(test)]
 mod upkeep_phase_tests {
     use super::*;
-    use crate::action::{Action, PlayerAction};
-    use crate::engine::{apply, EngineOutcome};
+    use crate::engine::enumerate::TurnAction;
+    use crate::engine::EngineOutcome;
     use crate::event::Event;
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_sequence, assert_no_event};
 
     #[test]
@@ -2580,7 +2580,7 @@ mod upkeep_phase_tests {
             .with_investigator_turn(id)
             .build();
 
-        let result = apply(state, Action::Player(PlayerAction::EndTurn));
+        let result = take_turn_action(state, &TurnAction::EndTurn);
 
         // The round-ending EndTurn cascades into Mythos and pauses at the
         // step-1.4 encounter-draw prompt (AwaitingInput).
