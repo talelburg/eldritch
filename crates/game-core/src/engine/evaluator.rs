@@ -1920,10 +1920,9 @@ pub fn constant_skill_modifier(
 
 /// The controller's **elder-sign** skill-test modifier: the
 /// `IntExpr` on their investigator card's `Trigger::ElderSign { modifier }`
-/// ability, evaluated for the controller. Returns `0` when the controller has
-/// no investigator card (empty sentinel `card_code`), the card isn't in the
-/// registry, or it carries no elder-sign ability — so every investigator
-/// without an elder-sign resolves exactly as before.
+/// ability, evaluated for the controller. Returns `0` when the controller is
+/// not found, the card isn't in the registry, or it carries no elder-sign
+/// ability — so every investigator without an elder-sign resolves as 0.
 ///
 /// Called from the skill-test resolution's `TokenResolution::ElderSign` arm
 /// (`skill_test.rs`); the bonus flows through the existing `Modifier` total.
@@ -1940,9 +1939,6 @@ pub(crate) fn elder_sign_modifier(
     let Some(inv) = state.investigators.get(&controller) else {
         return 0;
     };
-    if inv.investigator_card.code.as_str().is_empty() {
-        return 0;
-    }
     let Some(abilities) = (registry.abilities_for)(&inv.investigator_card.code) else {
         return 0;
     };
@@ -4897,7 +4893,6 @@ mod tests {
         let inv_id = InvestigatorId(1);
         let loc_id = crate::state::LocationId(10);
         let mut inv = test_investigator(1);
-        inv.card_code = CardCode::new("ES");
         inv.investigator_card.code = CardCode::new("ES");
         inv.current_location = Some(loc_id);
         let mut loc = test_location(10, "Study");
@@ -4912,7 +4907,6 @@ mod tests {
         // An investigator whose card has no elder-sign ability → 0.
         let inv_id2 = InvestigatorId(2);
         let mut inv2 = test_investigator(2);
-        inv2.card_code = CardCode::new("PLAIN");
         inv2.investigator_card.code = CardCode::new("PLAIN");
         let state2 = GameStateBuilder::new().with_investigator(inv2).build();
         assert_eq!(super::elder_sign_modifier(&state2, &registry, inv_id2), 0);

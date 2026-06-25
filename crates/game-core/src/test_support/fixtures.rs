@@ -40,7 +40,6 @@ pub fn test_investigator(id: u32) -> Investigator {
     );
     Investigator {
         id: InvestigatorId(id),
-        card_code: CardCode::new(""),
         name: format!("Test Investigator {id}"),
         current_location: None,
         skills: Skills {
@@ -63,7 +62,6 @@ pub fn test_investigator(id: u32) -> Investigator {
         cards_in_play: Vec::new(),
         threat_area: Vec::new(),
         removed_from_game: Vec::new(),
-        ability_usage: std::collections::BTreeMap::new(),
         action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
         investigator_card,
     }

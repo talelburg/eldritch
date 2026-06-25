@@ -17,8 +17,8 @@
 //! `[elder_sign]`. The elder-sign is a [`Trigger::ElderSign`] carrying
 //! `IntExpr::Count(Quantity::CluesAtControllerLocation)` — "+1 for each clue
 //! on your location" — which the skill-test resolution adds to the total when
-//! Roland's elder-sign token is drawn (#118). Reached via the investigator-card
-//! bridge (`Investigator.card_code`); sunset by #448.
+//! Roland's elder-sign token is drawn (#118). Reached via
+//! `investigator_card.code` after the bridge fields were retired (#448 cp3b).
 //!
 //! The reaction compiles to a [`Trigger::OnEvent`] with the
 //! [`EventPattern::EnemyDefeated`] pattern narrowed by
@@ -47,7 +47,7 @@ pub const CODE: &str = "01001";
 ///
 /// - `[reaction]` "After you defeat an enemy: Discover 1 clue at your
 ///   location. (Limit once per round.)"
-/// - `[elder_sign]` effect: "+1 for each clue on your location." (#118)
+/// - `[elder_sign]` effect: "+1 for each clue on your location."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
