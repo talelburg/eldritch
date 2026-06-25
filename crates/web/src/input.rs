@@ -63,6 +63,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                     .iter()
                     .cloned()
                     .map(|opt: ChoiceOption| {
+                        let ChoiceOption { id, label } = opt;
                         let tx = tx.clone();
                         view! {
                             <button
@@ -71,13 +72,13 @@ pub fn AwaitingInputView() -> impl IntoView {
                                     if let Some(tx) = tx.clone() {
                                         let _ = tx.unbounded_send(ClientMessage::Submit {
                                             action: PlayerAction::ResolveInput {
-                                                response: InputResponse::PickSingle(opt.id),
+                                                response: InputResponse::PickSingle(id),
                                             },
                                         });
                                     }
                                 }
                             >
-                                {opt.label.clone()}
+                                {label}
                             </button>
                         }
                     })

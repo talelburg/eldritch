@@ -39,10 +39,9 @@ async fn mount(
 ) -> mpsc::UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
-    let tx_for_mount: OutboundTx = tx;
     leptos::mount::mount_to_body(move || {
         provide_context(store);
-        provide_context::<OutboundTx>(tx_for_mount.clone());
+        provide_context::<OutboundTx>(tx.clone());
         leptos::view! { <AwaitingInputView/> }
     });
     store.update(|s| {
@@ -70,6 +69,17 @@ fn last_section() -> web_sys::Element {
         .expect("Element")
 }
 
+/// The trimmed text content of the nth node in a `NodeList`.
+fn button_text(nodes: &web_sys::NodeList, nth: u32) -> String {
+    nodes
+        .item(nth)
+        .expect("node present")
+        .text_content()
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
+}
+
 /// Click the nth element matching `selector` inside `section`.
 fn click_in(section: &web_sys::Element, selector: &str, nth: u32) {
     let els = section.query_selector_all(selector).expect("query");
@@ -89,6 +99,10 @@ fn pick_single_id(frame: ClientMessage) -> u32 {
                     response: InputResponse::PickSingle(OptionId(id)),
                 },
         } => id,
+        // `Submit` is the only `ClientMessage` variant, so this arm catches a
+        // `Submit` carrying some *other* action than `ResolveInput/PickSingle`.
+        // Written as `@ Submit { .. }` (not a bare `_`) because
+        // clippy::match_wildcard_for_single_variants requires it.
         other @ ClientMessage::Submit { .. } => {
             panic!("expected ResolveInput/PickSingle, got {other:?}")
         }
@@ -101,20 +115,34 @@ fn pick_single_id(frame: ClientMessage) -> u32 {
 async fn pick_single_renders_prompt_and_both_option_buttons() {
     let _rx = mount(base_game(), awaiting_pick_single_input("Choose an action")).await;
     let section = last_section();
-    let html = section.inner_html();
-    assert!(html.contains("Choose an action"), "prompt missing: {html}");
-    assert!(html.contains("End turn"), "option 0 label missing: {html}");
-    assert!(
-        html.contains("Investigate"),
-        "option 1 label missing: {html}"
+
+    // Prompt text via the `.prompt` element, not a raw HTML substring.
+    let prompt = section
+        .query_selector(".prompt")
+        .expect("query")
+        .expect(".prompt element present");
+    assert_eq!(
+        prompt.text_content().unwrap_or_default(),
+        "Choose an action"
     );
-    // Exactly two `.option` buttons.
+
+    // Exactly two `.option` buttons, in order, with the expected labels.
     let buttons = section.query_selector_all(".option").expect("query");
     assert_eq!(
         buttons.length(),
         2,
         "expected 2 option buttons, got {}",
         buttons.length()
+    );
+    assert_eq!(
+        button_text(&buttons, 0),
+        "End turn",
+        "option 0 label mismatch"
+    );
+    assert_eq!(
+        button_text(&buttons, 1),
+        "Investigate",
+        "option 1 label mismatch"
     );
 }
 
@@ -145,16 +173,19 @@ async fn pick_single_clicking_second_option_submits_pick_single_1() {
 #[wasm_bindgen_test]
 async fn pick_single_does_not_render_commit_button_or_hand_list() {
     // The `.commit` and `.commit-hand` elements belong to the PickMultiple
-    // branch; they must NOT appear when options are present.
+    // branch; they must NOT appear when options are present. DOM queries are
+    // robust against compound classes / attribute-order changes.
     let _rx = mount(base_game(), awaiting_pick_single_input("Choose an action")).await;
     let section = last_section();
-    let html = section.inner_html();
     assert!(
-        !html.contains("class=\"commit\"") && !html.contains("class='commit'"),
-        "commit button should not appear in PickSingle branch: {html}"
+        section.query_selector(".commit").expect("query").is_none(),
+        "commit button should not appear in PickSingle branch"
     );
     assert!(
-        !html.contains("commit-hand"),
-        "commit-hand list should not appear in PickSingle branch: {html}"
+        section
+            .query_selector(".commit-hand")
+            .expect("query")
+            .is_none(),
+        "commit-hand list should not appear in PickSingle branch"
     );
 }
