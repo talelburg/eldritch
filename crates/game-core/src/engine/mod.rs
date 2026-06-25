@@ -3216,7 +3216,8 @@ mod tests {
         // highest-damage enemy first to prove the pick overrides EnemyId order.
         let (inv_id, _, b, state) = move_scenario();
         let mut state = state;
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 100; // survive all three
+        // TEST_INV has 8 health; total enemy damage = 1+2+4 = 7 < 8, so investigator survives.
+        // (max_health is now read from the registry, not a field — see #448 cp4.)
         for (id, dmg) in [(300, 1), (301, 2), (302, 4)] {
             let mut e = test_enemy(id, "");
             e.engaged_with = Some(inv_id);

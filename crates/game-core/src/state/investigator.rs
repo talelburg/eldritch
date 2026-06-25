@@ -18,12 +18,13 @@ pub struct InvestigatorId(pub u32);
 ///
 /// # Invariants
 ///
-/// - `damage` may exceed `max_health` transiently — when that happens
-///   the apply loop's damage helpers flip `status` to [`Status::Killed`]
-///   and emit [`Event::InvestigatorDefeated`]. Symmetric for `horror`
-///   / `max_sanity` / [`Status::Insane`]. The numeric fields are
-///   `u8` so they don't wrap; the threshold check is what defines
-///   defeat.
+/// - Physical damage is tracked via
+///   [`investigator_card.accumulated_damage`](CardInPlay::accumulated_damage);
+///   when [`damage()`](Self::damage) reaches [`max_health()`](Self::max_health)
+///   the apply loop flips `status` to [`Status::Killed`] and emits
+///   [`Event::InvestigatorDefeated`]. Symmetric for horror /
+///   [`Status::Insane`]. The accessor methods are `u8` so they don't
+///   wrap; the threshold check is what defines defeat.
 /// - Once `status != Status::Active`, the investigator is "out of
 ///   play": damage / horror helpers no-op, the engine doesn't let
 ///   them take actions, and card effects targeting investigators
@@ -43,14 +44,6 @@ pub struct Investigator {
     pub current_location: Option<LocationId>,
     /// Skill values.
     pub skills: Skills,
-    /// Maximum health (physical hit points).
-    pub max_health: u8,
-    /// Current physical damage suffered.
-    pub damage: u8,
-    /// Maximum sanity.
-    pub max_sanity: u8,
-    /// Current horror suffered.
-    pub horror: u8,
     /// Clues currently held by the investigator.
     pub clues: u8,
     /// Resources currently held.
@@ -355,12 +348,18 @@ mod investigator_card_tests {
         assert_eq!(inv.investigator_card.accumulated_horror, 0);
     }
 
+    // `identity_is_read_from_the_investigator_card` removed: it was a
+    // duplicate of `test_investigator_has_an_investigator_card_with_the_synthetic_code`
+    // (cp4 cleanup per task-7-brief).
+
     #[test]
-    fn identity_is_read_from_the_investigator_card() {
-        let inv = crate::test_support::test_investigator(1);
-        assert_eq!(
-            inv.investigator_card.code.as_str(),
-            crate::test_support::TEST_INV
+    fn defeat_reads_capacity_from_the_card_not_a_field() {
+        crate::test_support::install_test_registry();
+        let mut inv = crate::test_support::test_investigator(1);
+        inv.investigator_card.accumulated_damage = 8; // == TEST_INV health
+        assert!(
+            inv.damage() >= inv.max_health(),
+            "defeat threshold reached via accessors"
         );
     }
 }

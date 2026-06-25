@@ -268,7 +268,6 @@ mod elimination_tests {
     fn elimination_step1_removes_controlled_and_owned_cards() {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
-        inv.max_health = 1;
         inv.hand = vec![CardCode("h1".into()), CardCode("h2".into())];
         inv.deck = vec![CardCode("d1".into())];
         inv.discard = vec![CardCode("x1".into())];
@@ -312,7 +311,6 @@ mod elimination_tests {
         let id = InvestigatorId(1);
         let loc_id = LocationId(1);
         let mut inv = test_investigator(1);
-        inv.max_health = 1;
         inv.current_location = Some(loc_id);
         inv.clues = 2;
         inv.resources = 4;
@@ -357,7 +355,6 @@ mod elimination_tests {
         let loc = LocationId(1);
 
         let mut dying = test_investigator(1);
-        dying.max_health = 1;
         dying.current_location = Some(loc);
 
         let mut survivor = test_investigator(2);
@@ -410,7 +407,6 @@ mod elimination_tests {
         let loc = LocationId(1);
 
         let mut dying = test_investigator(1);
-        dying.max_health = 1;
         dying.current_location = Some(loc);
 
         let enemy = {
@@ -492,7 +488,6 @@ mod elimination_tests {
         let loc = LocationId(1);
 
         let mut dying = test_investigator(1);
-        dying.max_sanity = 1;
         dying.current_location = Some(loc);
         dying.clues = 1;
 
@@ -541,7 +536,6 @@ mod elimination_tests {
         let loc = LocationId(1);
 
         let mut dying = test_investigator(1);
-        dying.max_health = 1;
         dying.current_location = Some(loc);
 
         let mut survivor = test_investigator(2);
@@ -586,7 +580,6 @@ mod elimination_tests {
         // investigator) and zero resources without panicking.
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
-        inv.max_health = 1;
         inv.current_location = None;
         inv.clues = 3;
         inv.resources = 2;
