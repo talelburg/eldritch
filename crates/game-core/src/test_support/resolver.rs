@@ -409,6 +409,30 @@ where
     }
 }
 
+/// Drive one open-turn action by enumerating the legal actions, finding the
+/// `OptionId` whose `TurnAction` equals `action`, and submitting it as
+/// `ResolveInput(PickSingle(..))`. Panics if `action` is not currently legal
+/// (a test-authoring bug). Returns the raw `ApplyResult` — assert on the
+/// resulting **state/events**, not on `outcome == Done` (post-flip the outcome
+/// is the next open-turn menu's `AwaitingInput`).
+pub fn take_turn_action(
+    state: GameState,
+    action: &crate::engine::enumerate::TurnAction,
+) -> ApplyResult {
+    let actions = crate::engine::enumerate::legal_actions(&state);
+    let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
+        panic!("take_turn_action: {action:?} is not legal; offered: {actions:?}")
+    });
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(crate::engine::OptionId(
+                u32::try_from(idx).expect("action index fits u32"),
+            )),
+        }),
+    )
+}
+
 /// Fluent test driver: pair a [`GameState`] with an initial action and
 /// a scripted resolver, then [`run`](Self::run) the engine through to a
 /// terminal outcome.
@@ -455,6 +479,21 @@ impl TestSession {
         self
     }
 
+    /// Fluent open-turn action: see [`take_turn_action`]. Threads the resulting
+    /// state; drains any `AwaitingInput` the action itself opens via the session's
+    /// resolver script, exactly like [`TestSession::apply`].
+    pub fn take(self, action: &crate::engine::enumerate::TurnAction) -> Self {
+        let idx = crate::engine::enumerate::legal_actions(&self.state)
+            .iter()
+            .position(|a| a == action)
+            .unwrap_or_else(|| panic!("TestSession::take: {action:?} not legal"));
+        self.apply(Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(crate::engine::OptionId(
+                u32::try_from(idx).expect("action index fits u32"),
+            )),
+        }))
+    }
+
     /// Record the resolver script. The closure receives `&mut
     /// ScriptedResolver`; chain calls inside to build up the response
     /// sequence:
@@ -487,9 +526,35 @@ impl TestSession {
 mod tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine::{InputRequest, OptionId, ResumeToken};
+    use crate::engine::{EngineOutcome, InputRequest, OptionId, ResumeToken};
     use crate::state::{CardCode, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+
+    #[test]
+    fn take_turn_action_resolves_end_turn_via_optionid() {
+        use crate::engine::enumerate::TurnAction;
+        // EndTurn reads max_health / max_sanity on the investigator card.
+        crate::test_support::install_test_registry();
+        let state = crate::test_support::GameStateBuilder::default()
+            .with_investigator(crate::test_support::test_investigator(1))
+            .with_phase(crate::state::Phase::Investigation)
+            .with_active_investigator(crate::state::InvestigatorId(1))
+            .with_turn_order([crate::state::InvestigatorId(1)])
+            .with_chaos_bag(crate::state::ChaosBag::new([
+                crate::state::ChaosToken::Numeric(0),
+            ]))
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(crate::state::InvestigatorId(1))
+            .build();
+        let result = take_turn_action(state, &TurnAction::EndTurn);
+        assert!(
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "{:?}",
+            result.outcome
+        );
+    }
 
     fn empty_state() -> GameState {
         GameStateBuilder::new().build()
