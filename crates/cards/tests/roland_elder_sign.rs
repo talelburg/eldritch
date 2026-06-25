@@ -37,12 +37,13 @@ fn run_elder_sign_test(clues: u8) -> Vec<Event> {
     let loc_id = LocationId(10);
 
     let mut inv = test_investigator(1);
-    inv.card_code = CardCode::new(ROLAND);
+    // After #448 cp2a the elder-sign scanner reads investigator_card.code, not card_code.
+    inv.investigator_card.code = CardCode::new(ROLAND);
     inv.current_location = Some(loc_id);
     inv.skills.willpower = 3; // base 3
     assert!(
         inv.cards_in_play.is_empty(),
-        "the bonus must come from the investigator-card elder-sign bridge (card_code), \
+        "the bonus must come from the investigator-card elder-sign bridge (investigator_card.code), \
          not a played card — guard against a fixture change pre-populating cards_in_play",
     );
 

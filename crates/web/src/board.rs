@@ -103,8 +103,8 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <span class="inv-location">{location}</span>
                     <span class="inv-actions">"actions " {inv.actions_remaining}</span>
                     <span class="inv-resources">"resources " {inv.resources}</span>
-                    <span class="inv-health">"health " {inv.damage} "/" {inv.max_health}</span>
-                    <span class="inv-sanity">"sanity " {inv.horror} "/" {inv.max_sanity}</span>
+                    <span class="inv-health">"health " {inv.damage()} "/" {inv.max_health()}</span>
+                    <span class="inv-sanity">"sanity " {inv.horror()} "/" {inv.max_sanity()}</span>
                     <span class="inv-clues">"clues " {inv.clues}</span>
                     <span class="inv-status">{format!("{:?}", inv.status)}</span>
                     <div class="hand"><h4>"Hand"</h4><ul>{hand}</ul></div>

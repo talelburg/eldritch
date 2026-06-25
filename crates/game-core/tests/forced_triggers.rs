@@ -59,8 +59,11 @@ const END_OF_TURN_CARD: &str = "test-end-of-turn";
 /// Obscuring-Fog-shape (C4c), minus the location attachment.
 const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
+/// Returns metadata for `TEST_INV` (used by `test_investigator`) so that
+/// capacity reads (`max_health()` / `max_sanity()`) work when this registry
+/// is installed. All other codes return `None`.
+fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    game_core::test_support::metadata_for_test_inv(code)
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
@@ -141,7 +144,7 @@ fn forced_on_enter_resolves_immediately() {
     let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
     assert_event!(
         events,
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
@@ -189,7 +192,7 @@ fn move_into_forced_location_fires_its_effect() {
         result.state.investigators[&InvestigatorId(1)].current_location,
         Some(LocationId(11))
     );
-    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror(), 1);
     assert!(
         result.events.iter().any(|e| matches!(
             e,
@@ -230,7 +233,7 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
     let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
     assert!(
         events.is_empty(),
         "no events for a location with no forced abilities"
@@ -266,7 +269,7 @@ fn forced_on_enemy_phase_end_fires_agenda_ability() {
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
-        state.investigators[&InvestigatorId(1)].horror,
+        state.investigators[&InvestigatorId(1)].horror(),
         1,
         "lead investigator should have taken 1 horror from agenda forced ability"
     );
@@ -287,7 +290,7 @@ fn forced_on_phase_end_wrong_phase_fires_nothing() {
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
-        state.investigators[&InvestigatorId(1)].horror,
+        state.investigators[&InvestigatorId(1)].horror(),
         0,
         "no horror for a non-matching phase"
     );
@@ -314,7 +317,7 @@ fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
             "expected Done for phase {phase:?}"
         );
         assert_eq!(
-            state.investigators[&InvestigatorId(1)].horror,
+            state.investigators[&InvestigatorId(1)].horror(),
             0,
             "no horror for phase {phase:?} (agenda keyed to Enemy only)"
         );
@@ -346,7 +349,7 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
     assert!(events.is_empty(), "no events for agenda with no abilities");
 }
 
@@ -412,7 +415,7 @@ fn forced_on_phase_end_fires_act_ability() {
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
-        state.investigators[&InvestigatorId(1)].horror,
+        state.investigators[&InvestigatorId(1)].horror(),
         1,
         "lead investigator should have taken 1 horror from act forced ability"
     );
@@ -443,7 +446,7 @@ fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
     let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
     assert_event!(
         events,
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
@@ -462,7 +465,7 @@ fn fire_forced_at_end_of_turn_no_op_without_threat_area_card() {
     let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
     assert!(events.is_empty());
 }
 
@@ -511,7 +514,7 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
         "EndOfTurn forced effect must fire during EndTurn; events = {:?}",
         result.events
     );
-    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror(), 1);
 }
 
 // ── AfterLocationInvestigated tests ───────────────────────────────────────────
@@ -539,7 +542,7 @@ fn fire_forced_after_investigate_resolves_threat_area_ability() {
         fire_forced_after_location_investigated(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
     assert_event!(
         events,
         Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
@@ -564,7 +567,7 @@ fn fire_forced_after_investigate_no_op_without_threat_area_card() {
         fire_forced_after_location_investigated(&mut state, &mut events, InvestigatorId(1));
 
     assert_eq!(outcome, EngineOutcome::Done);
-    assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+    assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
     assert!(events.is_empty());
 }
 
@@ -615,7 +618,7 @@ fn successful_investigate_fires_after_location_investigated_forced() {
          investigate; events = {:?}",
         result.events
     );
-    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 1);
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror(), 1);
 }
 
 #[test]
@@ -659,7 +662,7 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
         result.outcome,
     );
     assert_eq!(
-        result.state.investigators[&InvestigatorId(1)].horror,
+        result.state.investigators[&InvestigatorId(1)].horror(),
         0,
         "no forced effect resolves until the lead orders them",
     );
@@ -713,7 +716,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     // One forced resolved; the second is still pending (another choice or
     // its resolution), so the move isn't done yet.
     assert_eq!(
-        after_first.state.investigators[&InvestigatorId(1)].horror,
+        after_first.state.investigators[&InvestigatorId(1)].horror(),
         1
     );
     assert!(matches!(
@@ -729,7 +732,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
         }),
     );
     assert_eq!(done.outcome, EngineOutcome::Done);
-    assert_eq!(done.state.investigators[&InvestigatorId(1)].horror, 2);
+    assert_eq!(done.state.investigators[&InvestigatorId(1)].horror(), 2);
 }
 
 // (Removed `two_simultaneous_forced_triggers_resolve_in_order`, Slice D #423: it

@@ -151,7 +151,16 @@ pub(super) struct Soaker {
 ///
 /// Fills `soakers` (already ordered by the caller, by `CardInstanceId`
 /// to match the codebase's other simultaneous loops) up to each one's
-/// remaining capacity, then the investigator absorbs the remainder.
+/// remaining capacity, then the **investigator card** absorbs the
+/// remainder. The investigator card is the always-eligible,
+/// mandatory-remainder soaker (RR: "all damage/horror that cannot be
+/// assigned to an asset must be assigned to the investigator") — it takes
+/// whatever the assets cannot, *uncapped* (overflowing its own capacity is
+/// exactly how the investigator is defeated). Its share rides
+/// `Assignment::investigator_damage/horror` (not `asset_*`) so
+/// [`place_assignment`] routes it onto `investigator_card.accumulated_*`
+/// via the numeric helpers, keeping the [`Event::DamageTaken`] /
+/// [`Event::HorrorTaken`] emission and the elimination wiring intact.
 /// Damage and horror are assigned **independently** — an asset with
 /// only health soaks damage, an asset with only sanity soaks horror.
 ///
@@ -199,7 +208,7 @@ fn find_controlled_mut(
         .find(|c| c.instance_id == inst)
 }
 
-/// Discard every controlled asset whose accumulated damage/horror has
+/// Discard every controlled **asset** whose accumulated damage/horror has
 /// reached its printed health/sanity (C5b #237).
 ///
 /// Reads printed health/sanity from the card registry; an asset whose
@@ -208,6 +217,19 @@ fn find_controlled_mut(
 /// `cards_in_play` and emit [`Event::CardDiscarded`] with
 /// `from: Zone::InPlay` (matching the discard event shape used elsewhere
 /// — see `dispatch/cards.rs`).
+///
+/// The **investigator card** is the other soaker subject to the same
+/// `accumulated >= printed capacity` defeat rule (#448), but it is
+/// deliberately *not* swept here: it lives in `investigator_card`, not
+/// `cards_in_play`, and its overflow consequence is *elimination*, not a
+/// discard. That defeat is resolved one step earlier — in
+/// [`place_assignment`] step 2, *before* this asset sweep — and the order
+/// is load-bearing: elimination (RR p.10 step 1) removes every controlled
+/// card *from the game* (`removed_from_game`, no `CardDiscarded`), so an
+/// asset that co-overflows with the investigator card is already gone
+/// from `cards_in_play` by the time this sweep runs and never emits an
+/// asset-defeat discard. Folding the investigator card into this sweep
+/// would reverse that order and emit a spurious discard — do not.
 fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
     let Some(reg) = crate::card_registry::current() else {
         return;
@@ -261,10 +283,18 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 /// Steps, in order:
 /// 1. Accumulate the soaked damage/horror onto each asset's
 ///    `accumulated_*` fields.
-/// 2. Place the investigator's share via the numeric helpers (which emit
-///    [`Event::DamageTaken`] / [`Event::HorrorTaken`] and report
-///    lethality), then apply investigator defeat if either crossed — so
-///    both stats land before any defeat check, per RR p.7.
+/// 2. Place the investigator card's share (the mandatory remainder — RR:
+///    "all damage/horror that cannot be assigned to an asset must be
+///    assigned to the investigator") via the numeric helpers, which write
+///    `investigator_card.accumulated_*` and emit [`Event::DamageTaken`] /
+///    [`Event::HorrorTaken`], then apply investigator defeat if either
+///    crossed (`accumulated >= max_health()/max_sanity()` — the same
+///    `accumulated >= printed capacity` rule as an asset, but the
+///    consequence is *elimination*, not discard). Both stats land before
+///    the defeat check, per RR p.7. This runs *before* the asset sweep so
+///    elimination's "remove controlled cards from the game" step (RR p.10)
+///    pre-empts any co-overflowing asset's discard (see
+///    [`defeat_overflowed_assets`]).
 /// 3. Defeat overflowed assets (`accumulated >= printed stat` →
 ///    discard).
 ///
@@ -357,8 +387,11 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
     if inv.status != Status::Active {
         return false;
     }
-    inv.damage = inv.damage.saturating_add(amount);
-    let lethal = inv.damage >= inv.max_health;
+    inv.investigator_card.accumulated_damage = inv
+        .investigator_card
+        .accumulated_damage
+        .saturating_add(amount);
+    let lethal = inv.damage() >= inv.max_health();
     cx.events.push(Event::DamageTaken {
         investigator,
         amount,
@@ -387,8 +420,11 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
     if inv.status != Status::Active {
         return false;
     }
-    inv.horror = inv.horror.saturating_add(amount);
-    let lethal = inv.horror >= inv.max_sanity;
+    inv.investigator_card.accumulated_horror = inv
+        .investigator_card
+        .accumulated_horror
+        .saturating_add(amount);
+    let lethal = inv.horror() >= inv.max_sanity();
     cx.events.push(Event::HorrorTaken {
         investigator,
         amount,
@@ -1368,10 +1404,12 @@ mod combat_tests {
         // of 2 damage / 1 horror against an investigator controlling no
         // soak-bearing assets must land entirely on the investigator, just
         // as the pre-rewrite direct apply_damage/horror_numeric path did.
+        crate::test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
-        inv.max_health = 10;
-        inv.max_sanity = 10;
+        let inv = test_investigator(1);
+        // max_health()/max_sanity() now read from the registry (TEST_INV = 8/8).
+        // 2 damage and 1 horror both land below capacity, so no defeat fires.
+        // The old explicit max_health = 10 / max_sanity = 10 are vestigial.
 
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events = Vec::new();
@@ -1383,8 +1421,8 @@ mod combat_tests {
         let survivors = super::soak_and_place(&mut cx, id, 2, 1);
         assert!(survivors.is_empty(), "no soakers → no survivors");
 
-        assert_eq!(state.investigators[&id].damage, 2, "all damage on inv");
-        assert_eq!(state.investigators[&id].horror, 1, "all horror on inv");
+        assert_eq!(state.investigators[&id].damage(), 2, "all damage on inv");
+        assert_eq!(state.investigators[&id].horror(), 1, "all horror on inv");
         assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == id);
         assert_event!(events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == id);
         assert!(
@@ -1503,20 +1541,19 @@ mod combat_tests {
 
     #[test]
     fn place_assignment_accumulates_on_asset_and_returns_damaged_list() {
-        // Pre-construct an Assignment placing 1 damage + 1 horror on an
-        // in-play asset and 1 damage on the investigator. No registry is
-        // installed, so the asset is NOT defeated (printed health/sanity
-        // unreadable) — accumulation + the returned damaged-survivors list
-        // are what's verified here. Defeat-on-overflow needs registry
-        // metadata and is covered by the EU5 integration test.
         use crate::state::{CardCode, CardInPlay, CardInstanceId};
         use std::collections::BTreeMap;
+        // Pre-construct an Assignment placing 1 damage + 1 horror on an
+        // in-play asset and 1 damage on the investigator. Registry installed
+        // so max_health() / max_sanity() can resolve; TEST_INV = 8/8 and the
+        // investigator damage is 1 < 8, so no defeat fires.
+        // Asset defeat-on-overflow needs the real `cards` registry and is
+        // covered by the EU5 integration test.
+        crate::test_support::install_test_registry();
 
         let id = InvestigatorId(1);
         let inst = CardInstanceId(7);
         let mut inv = test_investigator(1);
-        inv.max_health = 10;
-        inv.max_sanity = 10;
         inv.cards_in_play = vec![CardInPlay::enter_play(CardCode::new("01021"), inst)];
 
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
@@ -1543,7 +1580,8 @@ mod combat_tests {
         assert_eq!(card.accumulated_damage, 1, "asset soaked 1 damage");
         assert_eq!(card.accumulated_horror, 1, "asset soaked 1 horror");
         assert_eq!(
-            state.investigators[&id].damage, 1,
+            state.investigators[&id].damage(),
+            1,
             "investigator took overflow damage"
         );
         assert_eq!(
@@ -1556,6 +1594,7 @@ mod combat_tests {
 
     #[test]
     fn resume_enemy_attack_drains_remaining_attacker_and_advances_cursor() {
+        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, InvestigatorId};
         // EU5 deferral: firing Guard Dog's reaction end-to-end needs the real
         // `cards` registry (so `trigger_matches` finds the ability and a soak
         // window genuinely opens mid-loop) — that is the EU5 integration test.
@@ -1565,8 +1604,10 @@ mod combat_tests {
         // the attacker (exhausting it) and advances the enemy-phase cursor past
         // the (sole) investigator to `None`. One attacker, not two: with 2+
         // remaining the drain would re-prompt for the player attack order (#143),
-        // which the order-pick tests cover.
-        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, InvestigatorId};
+        // which the order-pick tests cover. The test registry (TEST_INV) is
+        // installed so max_health()/max_sanity() resolve (#448 cp2a); the test
+        // registry has no abilities so no soak reaction window fires.
+        crate::test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
         let second = EnemyId(2);
@@ -1603,7 +1644,7 @@ mod combat_tests {
         let outcome = super::resume_enemy_attack(&mut cx);
 
         // The parked attacker resolved and exhausted; the parked frame is popped.
-        // No registry → no new soak window, no re-suspend.
+        // Test registry has no abilities → no new soak window, no re-suspend.
         assert!(
             !state
                 .continuations
@@ -1676,7 +1717,8 @@ mod combat_tests {
         let _ = super::resume_enemy_attack(&mut cx);
 
         assert_eq!(
-            state.investigators[&inv_id].damage, 0,
+            state.investigators[&inv_id].damage(),
+            0,
             "cancelled attack deals no damage"
         );
         assert!(
@@ -1696,6 +1738,7 @@ mod combat_tests {
     #[test]
     fn resume_before_attack_without_cancel_deals_damage() {
         use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, InvestigatorId};
+        crate::test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
         let attacker = EnemyId(2);
@@ -1729,7 +1772,8 @@ mod combat_tests {
         let _ = super::resume_enemy_attack(&mut cx);
 
         assert_eq!(
-            state.investigators[&inv_id].damage, 1,
+            state.investigators[&inv_id].damage(),
+            1,
             "an un-cancelled attack deals its damage"
         );
         assert!(state.enemies[&attacker].exhausted, "attacker exhausted");
@@ -1738,6 +1782,7 @@ mod combat_tests {
     #[test]
     fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
         // RR p.18: a retaliate attack does not exhaust the attacker.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let mut enemy = test_enemy(100, "Retaliator");
         enemy.retaliate = true;
@@ -1762,7 +1807,8 @@ mod combat_tests {
             "retaliate must not exhaust (RR p.18)"
         );
         assert_eq!(
-            cx.state.investigators[&inv_id].damage, 1,
+            cx.state.investigators[&inv_id].damage(),
+            1,
             "retaliate dealt 1 damage"
         );
         assert_event!(events, Event::DamageTaken { .. });
@@ -1772,6 +1818,7 @@ mod combat_tests {
     #[test]
     fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
         // RR p.7: an enemy does not exhaust while making an attack of opportunity.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let mut enemy = test_enemy(100, "Ghoul");
         enemy.engaged_with = Some(inv_id);
@@ -1795,7 +1842,8 @@ mod combat_tests {
             "AoO must not exhaust the attacker (RR p.7)"
         );
         assert_eq!(
-            cx.state.investigators[&inv_id].damage, 1,
+            cx.state.investigators[&inv_id].damage(),
+            1,
             "AoO damage landed on the investigator"
         );
         // Enemy attack fires DamageTaken (no EnemyAttacked event exists); verify
@@ -1810,7 +1858,9 @@ mod combat_tests {
         // order pick, parking the AttackLoop frame as the top frame with the AoO
         // source + PickOrder stage (so it spans the whole AoO, #143). Picking the
         // higher-id enemy first proves the pick overrides EnemyId order; neither
-        // AoO attacker exhausts (RR p.7).
+        // AoO attacker exhausts (RR p.7). Registry installed so max_health() /
+        // max_sanity() resolve (#448 cp2a); total AoO damage = 3 < 8 = TEST_INV.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let mut e_a = test_enemy(5, "A"); // EnemyId(5), dmg 1
         e_a.engaged_with = Some(inv_id);
@@ -1820,11 +1870,7 @@ mod combat_tests {
         e_b.attack_damage = 2;
 
         let mut state = GameStateBuilder::new()
-            .with_investigator({
-                let mut inv = test_investigator(1);
-                inv.max_health = 100;
-                inv
-            })
+            .with_investigator(test_investigator(1))
             .with_enemy(e_a)
             .with_enemy(e_b)
             .build();
@@ -1957,5 +2003,33 @@ mod combat_tests {
         assert!(!assignment.asset_horror.contains_key(&a));
         assert_eq!(assignment.investigator_damage, 0);
         assert_eq!(assignment.investigator_horror, 0);
+    }
+
+    #[test]
+    fn damage_application_accumulates_on_the_investigator_card() {
+        crate::test_support::install_test_registry();
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let defeated = super::apply_damage_numeric(&mut cx, id, 3);
+        assert_eq!(
+            state.investigators[&id]
+                .investigator_card
+                .accumulated_damage,
+            3,
+            "damage must accumulate on the investigator_card, not the legacy field"
+        );
+        assert_eq!(
+            state.investigators[&id].damage(),
+            3,
+            "damage() accessor must read from investigator_card"
+        );
+        assert!(!defeated, "3 < 8 health — investigator not defeated");
     }
 }

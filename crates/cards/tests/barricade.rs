@@ -99,6 +99,10 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
 fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
     install();
     let mut inv = test_investigator(1);
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry; TEST_INV is only in the game-core test
+    // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
+    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(B);
     let mut a = test_location(1, "A");
     a.connections = vec![B];

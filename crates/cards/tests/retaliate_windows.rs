@@ -227,7 +227,8 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
         "retaliate's 1 damage soaked onto Guard Dog"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "investigator took no damage from the retaliate (Guard Dog soaked it)"
     );
     // Guard Dog has not yet dealt its retaliate damage to the enemy.
@@ -334,11 +335,13 @@ fn dodge_cancels_retaliate_and_skill_test_ends() {
 
     // No damage yet; Dodge still in hand.
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "no damage before Dodge resolves"
     );
     assert_eq!(
-        state.investigators[&inv_id].horror, 0,
+        state.investigators[&inv_id].horror(),
+        0,
         "no horror before Dodge resolves"
     );
     assert!(
@@ -368,11 +371,13 @@ fn dodge_cancels_retaliate_and_skill_test_ends() {
 
     // The retaliate was cancelled: no damage or horror dealt to the investigator.
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "Dodge cancelled the retaliate: no damage to the investigator"
     );
     assert_eq!(
-        state.investigators[&inv_id].horror, 0,
+        state.investigators[&inv_id].horror(),
+        0,
         "Dodge cancelled the retaliate: no horror to the investigator"
     );
     assert!(

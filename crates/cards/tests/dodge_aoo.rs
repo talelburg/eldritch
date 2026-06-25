@@ -120,6 +120,9 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 
     let mut investigator = test_investigator(1);
     investigator.current_location = Some(from);
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    investigator.investigator_card.code = CardCode::new("01003");
     investigator.hand = vec![CardCode::new(DODGE)];
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 3);
@@ -151,7 +154,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
         result.outcome
     );
     // No damage yet; move not yet completed.
-    assert_eq!(state.investigators[&inv_id].damage, 0);
+    assert_eq!(state.investigators[&inv_id].damage(), 0);
     assert_eq!(
         state.investigators[&inv_id].current_location,
         Some(from),
@@ -176,11 +179,13 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 
     // The AoO was cancelled: no damage/horror dealt.
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "the cancelled AoO dealt no damage"
     );
     assert_eq!(
-        state.investigators[&inv_id].horror, 0,
+        state.investigators[&inv_id].horror(),
+        0,
         "the cancelled AoO dealt no horror"
     );
     assert!(
@@ -272,6 +277,9 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
 
     let mut investigator = test_investigator(1);
     investigator.current_location = Some(from);
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    investigator.investigator_card.code = CardCode::new("01003");
     investigator.hand = vec![CardCode::new(DODGE)];
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 5);
@@ -318,7 +326,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
         "the un-cancelled AoO dealt its 2 damage: {:?}",
         result.events
     );
-    assert_eq!(state.investigators[&inv_id].damage, 2);
+    assert_eq!(state.investigators[&inv_id].damage(), 2);
 
     // Attacker never exhausts (AoO rule, RR p.7).
     assert!(
@@ -430,7 +438,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
         dog_in_play.accumulated_damage, 2,
         "AoO damage soaked onto Guard Dog"
     );
-    assert_eq!(state.investigators[&inv_id].damage, 0);
+    assert_eq!(state.investigators[&inv_id].damage(), 0);
     // Move not yet resolved (parked on ActionResolution).
     assert_eq!(
         state.investigators[&inv_id].current_location,

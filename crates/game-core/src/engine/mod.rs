@@ -952,6 +952,8 @@ mod tests {
         clues: u8,
         shroud: u8,
     ) -> (InvestigatorId, crate::state::LocationId, GameState) {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let loc_id = crate::state::LocationId(10);
         let mut inv = test_investigator(1);
@@ -1570,6 +1572,8 @@ mod tests {
         crate::state::LocationId,
         GameState,
     ) {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let a = crate::state::LocationId(10);
         let b = crate::state::LocationId(11);
@@ -1971,8 +1975,8 @@ mod tests {
         // Retaliate attack lands (damage + horror, simultaneously).
         assert_event!(result.events, Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id);
         assert_event!(result.events, Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id);
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 1);
         // Enemy does NOT exhaust after a retaliate attack (RR p.18).
         assert!(!result.state.enemies[&enemy_id].exhausted);
         // Failed fight dealt no damage to the enemy.
@@ -2001,7 +2005,7 @@ mod tests {
         assert_event!(result.events, Event::SkillTestSucceeded { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2024,7 +2028,7 @@ mod tests {
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2045,7 +2049,7 @@ mod tests {
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2067,7 +2071,7 @@ mod tests {
 
         assert_event!(result.events, Event::SkillTestFailed { .. });
         assert_no_event!(result.events, Event::DamageTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -2092,7 +2096,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_event!(result.events, Event::SkillTestFailed { .. });
         // Retaliate damage landed.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         // Enemy must remain ready (not exhausted) after the retaliate (RR p.18).
         assert!(!result.state.enemies[&enemy_id].exhausted);
         assert_no_event!(result.events, Event::EnemyExhausted { .. });
@@ -2481,7 +2485,7 @@ mod tests {
             "AoO DamageTaken (idx {damage_idx}) must precede InvestigatorMoved (idx {moved_idx})"
         );
         // Investigator damaged.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         // Investigator moved.
         assert_eq!(
             result.state.investigators[&inv_id].current_location,
@@ -2513,7 +2517,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
         // Exhausted enemy still follows the investigator.
         assert_eq!(result.state.enemies[&enemy_id].current_location, Some(b));
     }
@@ -2579,7 +2583,7 @@ mod tests {
 
         assert_eq!(result.outcome, EngineOutcome::Done);
         // AoO fired: investigator took 1 damage, but the resource is still gained.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_eq!(result.state.investigators[&inv_id].resources, 6);
         assert_event!(
             result.events,
@@ -2783,7 +2787,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         // The OTHER engaged enemy made the AoO; the target (not engaged at
         // AoO time) did not. Target ends engaged; investigator took 1 damage.
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_eq!(result.state.enemies[&target_id].engaged_with, Some(inv_id));
         assert_event!(
             result.events,
@@ -2969,7 +2973,7 @@ mod tests {
         );
 
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_event!(
             result.events,
             Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
@@ -3122,7 +3126,7 @@ mod tests {
         );
         // Skill test still runs after AoO.
         assert_event!(result.events, Event::SkillTestStarted { .. });
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 1);
     }
 
     #[test]
@@ -3148,8 +3152,8 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
-        assert_eq!(result.state.investigators[&inv_id].horror, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 0);
     }
 
     #[test]
@@ -3171,7 +3175,7 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
     }
 
     #[test]
@@ -3212,7 +3216,8 @@ mod tests {
         // highest-damage enemy first to prove the pick overrides EnemyId order.
         let (inv_id, _, b, state) = move_scenario();
         let mut state = state;
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 100; // survive all three
+        // TEST_INV has 8 health; total enemy damage = 1+2+4 = 7 < 8, so investigator survives.
+        // (max_health is now read from the registry, not a field — see #448 cp4.)
         for (id, dmg) in [(300, 1), (301, 2), (302, 4)] {
             let mut e = test_enemy(id, "");
             e.engaged_with = Some(inv_id);
@@ -3266,7 +3271,7 @@ mod tests {
             vec![4, 2, 1],
             "chosen order: 302 (dmg4), 301 (dmg2), 300 (dmg1)"
         );
-        assert_eq!(r3.state.investigators[&inv_id].damage, 7);
+        assert_eq!(r3.state.investigators[&inv_id].damage(), 7);
         // The Move completed once the AoO loop drained.
         assert_event!(r3.events, Event::InvestigatorMoved { .. });
     }
@@ -3293,8 +3298,8 @@ mod tests {
         assert_eq!(result.outcome, EngineOutcome::Done);
         assert_no_event!(result.events, Event::DamageTaken { .. });
         assert_no_event!(result.events, Event::HorrorTaken { .. });
-        assert_eq!(result.state.investigators[&inv_id].damage, 0);
-        assert_eq!(result.state.investigators[&inv_id].horror, 0);
+        assert_eq!(result.state.investigators[&inv_id].damage(), 0);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 0);
     }
 
     // ------------------------------------------------------------------
@@ -3303,9 +3308,9 @@ mod tests {
 
     /// Build a Move scenario with one ready engaged enemy at the
     /// origin. The investigator is configured to be defeated by the
-    /// enemy's `AoO`: `max_health = 1`, `damage = 0`, enemy
-    /// `attack_damage = 1`. Returns (inv id, origin, dest, enemy id,
-    /// state).
+    /// enemy's `AoO`: `accumulated_damage` pre-loaded to 7 (leaving 1
+    /// health remaining), enemy `attack_damage = 1`. Returns (inv id,
+    /// origin, dest, enemy id, state).
     fn move_scenario_with_lethal_aoo() -> (
         InvestigatorId,
         crate::state::LocationId,
@@ -3314,7 +3319,14 @@ mod tests {
         GameState,
     ) {
         let (inv_id, a, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
+        // Pre-load accumulated_damage so remaining health = 1 (lethal with attack_damage=1).
+        // max_health() = 8 from TEST_INV; 7 + 1 = 8 = defeated.
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .investigator_card
+            .accumulated_damage = 7;
         // attack_damage = 1 is already the default from
         // move_scenario_with_engaged_enemy, but be explicit.
         state.enemies.get_mut(&enemy_id).unwrap().attack_damage = 1;
@@ -3366,10 +3378,17 @@ mod tests {
     #[test]
     fn aoo_lethal_horror_defeats_investigator_during_investigate_and_cancels_test() {
         // Set up Investigate with an engaged enemy whose attack is
-        // pure horror. Investigator's max_sanity = 1, so 1 horror
-        // drives them insane.
+        // pure horror. Investigator has 1 sanity remaining (accumulated_horror=7),
+        // so 1 horror drives them insane.
         let (inv_id, loc_id, mut state) = investigate_scenario(2, 2);
-        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 1;
+        // Pre-load accumulated_horror so remaining sanity = 1 (lethal with attack_horror=1).
+        // max_sanity() = 8 from TEST_INV; 7 + 1 = 8 = defeated.
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .investigator_card
+            .accumulated_horror = 7;
         let enemy_id = EnemyId(400);
         let mut enemy = test_enemy(400, "Tormenting Shade");
         enemy.current_location = Some(loc_id);
@@ -3407,9 +3426,8 @@ mod tests {
         // Sanity check: AoO that doesn't reach max_health leaves the
         // investigator Active. Same as the existing AoO test but
         // explicit on the status field and absence of defeat events.
-        let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
-        // Bump max_health above the AoO damage (which is 1).
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 5;
+        // After cp2a max_health()=8 from TEST_INV registry; attack_damage=1 < 8 → survives.
+        let (inv_id, _, b, _, state) = move_scenario_with_engaged_enemy();
         let result = apply(
             state,
             Action::Player(PlayerAction::Move {
@@ -3427,12 +3445,19 @@ mod tests {
     #[test]
     fn defeated_investigator_does_not_take_further_damage() {
         // Two engaged ready enemies, both with attack_damage = 5.
-        // Investigator has max_health = 1. With 2 engaged, the Move's AoO
-        // suspends on the order pick (#143); the chosen first attacker defeats
-        // the investigator, so the active-check at the loop top early-breaks
-        // before the second attacks (no re-prompt).
+        // Investigator has 1 health remaining (accumulated_damage=7). With 2
+        // engaged, the Move's AoO suspends on the order pick (#143); the
+        // chosen first attacker defeats the investigator, so the active-check
+        // at the loop top early-breaks before the second attacks (no re-prompt).
         let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
+        // Pre-load accumulated_damage so remaining health = 1 (lethal with attack_damage=5).
+        // max_health()=8 from TEST_INV; 7 + 5 = 12 >= 8 = defeated.
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .investigator_card
+            .accumulated_damage = 7;
         state.enemies.get_mut(&EnemyId(200)).unwrap().attack_damage = 5;
         // Add a second engaged ready enemy.
         let mut e2 = test_enemy(201, "Second Ghoul");
@@ -3459,8 +3484,9 @@ mod tests {
         // InvestigatorDefeated; the second enemy never attacks (early-break).
         assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
         assert_event_count!(r2.events, 1, Event::InvestigatorDefeated { .. });
-        // Damage saturates at the first AoO's amount; the second AoO is skipped.
-        assert_eq!(r2.state.investigators[&inv_id].damage, 5);
+        // Only one AoO fired: pre-loaded 7 + first AoO's 5 = 12; if the
+        // second AoO had fired too, damage() would be 17 instead.
+        assert_eq!(r2.state.investigators[&inv_id].damage(), 12);
         // The actor was defeated mid-action → the Move's primary effect is
         // suppressed by the re-validation gate (#293 keystone).
         assert_no_event!(r2.events, Event::InvestigatorMoved { .. });
@@ -3472,9 +3498,15 @@ mod tests {
         // attack are applied simultaneously. Lethal damage MUST NOT
         // short-circuit the horror application.
         let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 5;
-        // Plenty of sanity headroom so the horror is sub-lethal.
-        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 8;
+        // Pre-load accumulated_damage so remaining health = 5 (lethal with attack_damage=5).
+        // max_health()=8 from TEST_INV; 3 + 5 = 8 = defeated.
+        // Sanity headroom: max_sanity()=8, attack_horror=1 → 0+1=1 < 8 → sub-lethal.
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .investigator_card
+            .accumulated_damage = 3;
         let enemy = state.enemies.get_mut(&enemy_id).unwrap();
         enemy.attack_damage = 5;
         enemy.attack_horror = 1;
@@ -3495,8 +3527,9 @@ mod tests {
             result.events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].damage, 5);
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        // Pre-loaded 3 + attack 5 = 8; horror 0 + 1 = 1.
+        assert_eq!(result.state.investigators[&inv_id].damage(), 8);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 1);
         // Exactly one InvestigatorDefeated, caused by Damage.
         assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
         assert_event!(
@@ -3514,8 +3547,15 @@ mod tests {
         // Symmetric to the lethal-damage case: lethal horror MUST NOT
         // short-circuit the damage application.
         let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 8;
-        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 1;
+        // Pre-load accumulated_horror so remaining sanity = 1 (lethal with attack_horror=5 would be
+        // 7+5=12 >= 8; but we want sub-lethal damage (1 < 8) and lethal horror).
+        // remaining sanity = 8 - 3 = 5, and 3 + 5 = 8 = defeated.
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .investigator_card
+            .accumulated_horror = 3;
         let enemy = state.enemies.get_mut(&enemy_id).unwrap();
         enemy.attack_damage = 1;
         enemy.attack_horror = 5;
@@ -3535,8 +3575,9 @@ mod tests {
             result.events,
             Event::HorrorTaken { investigator, amount: 5 } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
-        assert_eq!(result.state.investigators[&inv_id].horror, 5);
+        // damage: 0 + 1 = 1; horror: pre-loaded 3 + attack 5 = 8.
+        assert_eq!(result.state.investigators[&inv_id].damage(), 1);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 8);
         assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
         assert_event!(
             result.events,
@@ -3555,8 +3596,20 @@ mod tests {
         // DefeatCause::Damage (Rules Reference is silent on the
         // simultaneous-lethal case; damage-first is the convention).
         let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
-        state.investigators.get_mut(&inv_id).unwrap().max_health = 1;
-        state.investigators.get_mut(&inv_id).unwrap().max_sanity = 1;
+        // Pre-load both counters so remaining health and sanity = 1 each.
+        // max_health()=max_sanity()=8 from TEST_INV; 7+1=8 = defeated for both.
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .investigator_card
+            .accumulated_damage = 7;
+        state
+            .investigators
+            .get_mut(&inv_id)
+            .unwrap()
+            .investigator_card
+            .accumulated_horror = 7;
         let enemy = state.enemies.get_mut(&enemy_id).unwrap();
         enemy.attack_damage = 1;
         enemy.attack_horror = 1;
@@ -3568,8 +3621,9 @@ mod tests {
             }),
         );
         assert_eq!(result.outcome, EngineOutcome::Done);
-        assert_eq!(result.state.investigators[&inv_id].damage, 1);
-        assert_eq!(result.state.investigators[&inv_id].horror, 1);
+        // Pre-loaded 7 + attack 1 = 8 each.
+        assert_eq!(result.state.investigators[&inv_id].damage(), 8);
+        assert_eq!(result.state.investigators[&inv_id].horror(), 8);
         assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
         assert_event!(
             result.events,
@@ -3585,10 +3639,14 @@ mod tests {
     fn all_investigators_defeated_fires_only_when_last_active_falls() {
         // Two investigators, one defeated, then the second defeated.
         // AllInvestigatorsDefeated should fire only on the second.
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let mut i1 = test_investigator(1);
-        i1.max_health = 1;
+        // Pre-load accumulated_damage so remaining health = 1 (lethal with attack_damage=1).
+        // max_health()=8 from TEST_INV; 7+1=8=defeated.
+        i1.investigator_card.accumulated_damage = 7;
         i1.actions_remaining = 3;
         let i2 = test_investigator(2);
         // i2 stays at default 8/8.
@@ -3719,6 +3777,8 @@ mod tests {
     /// phase, active, 3 actions. The caller mutates deck/hand/discard
     /// before the test.
     fn draw_scenario() -> (InvestigatorId, GameState) {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let id = InvestigatorId(1);
         let a = crate::state::LocationId(10);
         let mut inv = test_investigator(1);
@@ -3812,7 +3872,7 @@ mod tests {
         assert_eq!(inv.hand.len(), 1);
         assert_eq!(inv.deck.len(), 2);
         assert!(inv.discard.is_empty());
-        assert_eq!(inv.horror, 1);
+        assert_eq!(inv.horror(), 1);
     }
 
     #[test]
@@ -3836,7 +3896,7 @@ mod tests {
         );
         assert_no_event!(result.events, Event::DeckShuffled { .. });
         let inv = &result.state.investigators[&id];
-        assert_eq!(inv.horror, 1);
+        assert_eq!(inv.horror(), 1);
         assert_eq!(inv.actions_remaining, 2);
         assert!(inv.hand.is_empty());
         assert!(inv.deck.is_empty());
@@ -3902,7 +3962,9 @@ mod tests {
         // flow correctly composes with the defeat helpers.
         let (id, mut state) = draw_scenario();
         let inv = state.investigators.get_mut(&id).unwrap();
-        inv.max_sanity = 1;
+        // Pre-load accumulated_horror so remaining sanity = 1 (lethal with the 1-horror penalty).
+        // max_sanity()=8 from TEST_INV; 7+1=8=defeated.
+        inv.investigator_card.accumulated_horror = 7;
         let result = apply(
             state,
             Action::Player(PlayerAction::Draw { investigator: id }),

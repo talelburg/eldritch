@@ -11,7 +11,7 @@ use crate::state::{
 
 use crate::action::RosterEntry;
 use crate::card_data::CardKind;
-use crate::state::{Investigator, Skills, Status};
+use crate::state::{CardInPlay, Investigator, Skills, Status};
 
 use super::Cx;
 
@@ -34,8 +34,12 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
 
     // Validate-first: resolve every roster entry's stats from card data
     // before mutating anything. Any failure rejects with state unchanged.
+    // Capacity (health/sanity) is no longer copied into Investigator fields
+    // (#448 cp4) — the accessors read from the registry directly via
+    // `investigator_card.code`. We still validate that the code resolves to a
+    // `CardKind::Investigator` here so seating rejects non-investigators.
     let registry = crate::card_registry::current();
-    let mut resolved: Vec<(Skills, u8, u8, String, Vec<CardCode>, CardCode)> =
+    let mut resolved: Vec<(Skills, String, Vec<CardCode>, CardCode)> =
         Vec::with_capacity(roster.len());
     for entry in roster {
         let Some(reg) = registry else {
@@ -48,13 +52,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 reason: format!("unknown investigator code {}", entry.investigator).into(),
             };
         };
-        let CardKind::Investigator {
-            skills,
-            health,
-            sanity,
-            ..
-        } = meta.kind
-        else {
+        let CardKind::Investigator { skills, .. } = meta.kind else {
             return EngineOutcome::Rejected {
                 reason: format!("card {} is not a seatable investigator", entry.investigator)
                     .into(),
@@ -62,8 +60,6 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         };
         resolved.push((
             skills,
-            health,
-            sanity,
             meta.name.clone(),
             entry.deck.clone(),
             entry.investigator.clone(),
@@ -94,20 +90,17 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // (set by setup()). None leaves them unplaced — the pre-seated path.
     let start = cx.state.starting_location;
 
-    for (idx, (skills, health, sanity, name, deck, card_code)) in resolved.into_iter().enumerate() {
+    for (idx, (skills, name, deck, card_code)) in resolved.into_iter().enumerate() {
         let id = InvestigatorId(u32::try_from(idx).unwrap_or(0) + 1);
+        let inv_card_id = cx.state.card_instance_ids.mint();
+        let investigator_card = CardInPlay::enter_play(card_code, inv_card_id);
         cx.state.investigators.insert(
             id,
             Investigator {
                 id,
-                card_code,
                 name,
                 current_location: start,
                 skills,
-                max_health: health,
-                damage: 0,
-                max_sanity: sanity,
-                horror: 0,
                 clues: 0,
                 resources: 5,
                 actions_remaining: 0,
@@ -118,8 +111,8 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 cards_in_play: Vec::new(),
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
-                ability_usage: std::collections::BTreeMap::new(),
                 action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
+                investigator_card,
             },
         );
         cx.state.turn_order.push(id);
@@ -2898,6 +2891,7 @@ mod enemy_phase_tests {
     #[test]
     fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
         use crate::engine::OptionId;
+        crate::test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
 
@@ -2910,11 +2904,7 @@ mod enemy_phase_tests {
         e_higher.attack_damage = 2;
 
         let mut state = GameStateBuilder::default()
-            .with_investigator({
-                let mut inv = test_investigator(1);
-                inv.max_health = 100; // survive both attacks
-                inv
-            })
+            .with_investigator(test_investigator(1)) // TEST_INV: 8 health; 1+2=3 total damage < 8
             .with_turn_order([inv_id])
             .with_enemy(e_higher) // inserted non-id order: BTreeMap still snapshots 2 then 10
             .with_enemy(e_lower)
@@ -2980,6 +2970,8 @@ mod enemy_phase_tests {
 
     #[test]
     fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop() {
+        // Registry needed for max_health()/max_sanity() after cp2a.
+        crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
 
         // EnemyId(1) deals the killing blow on its attack.
@@ -2995,7 +2987,9 @@ mod enemy_phase_tests {
         let mut state = GameStateBuilder::default()
             .with_investigator({
                 let mut inv = test_investigator(1);
-                inv.max_health = 1; // e1's attack defeats
+                // Pre-load accumulated_damage so remaining health = 1 (lethal with attack_damage=1).
+                // max_health()=8 from TEST_INV; 7+1=8=defeated.
+                inv.investigator_card.accumulated_damage = 7;
                 inv
             })
             .with_turn_order([inv_id])

@@ -9,7 +9,9 @@ use card_dsl::dsl::{
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::state::{Agenda, CardCode, InvestigatorId};
-use game_core::test_support::{fire_forced_on_round_end, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    fire_forced_on_round_end, metadata_for_test_inv, test_investigator, GameStateBuilder,
+};
 use game_core::{Cx, EngineOutcome, EvalContext};
 
 const AGENDA: &str = "TEST-AGENDA";
@@ -20,8 +22,10 @@ const AGENDA: &str = "TEST-AGENDA";
 /// Voices 01165's discard) so the lead orders both at round end (#213).
 const DISSONANT: &str = "TEST-DISSONANT";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
+/// Returns metadata for `TEST_INV` so capacity reads work when this registry
+/// is installed. All other codes return `None`.
+fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+    metadata_for_test_inv(code)
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
@@ -148,7 +152,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
         paused.state.agenda_doom, 0,
         "no forced resolves until ordered"
     );
-    assert_eq!(paused.state.investigators[&InvestigatorId(1)].horror, 0);
+    assert_eq!(paused.state.investigators[&InvestigatorId(1)].horror(), 0);
 
     // Resolve the first ordered forced; the second is still pending.
     let after_first = apply(
@@ -186,7 +190,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
          placed its +1 doom — the upkeep tail ran through to the next phase",
     );
     assert_eq!(
-        done.state.investigators[&InvestigatorId(1)].horror,
+        done.state.investigators[&InvestigatorId(1)].horror(),
         1,
         "threat-area round-end forced resolved",
     );

@@ -112,6 +112,8 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
     let loc = LocationId(101);
 
     let mut investigator = test_investigator(1);
+    // Real investigator code so max_health() reads from installed registry (#448 cp2a).
+    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
     investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
@@ -154,7 +156,8 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         "AoO damage from the play soaked onto Guard Dog"
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "investigator took no AoO damage"
     );
     // The "gain 3 resources" effect has NOT run yet — it resolves only after the
@@ -180,6 +183,8 @@ fn playing_a_non_fast_event_spends_one_action() {
     let loc = LocationId(101);
 
     let mut investigator = test_investigator(1);
+    // Real investigator code so max_health() reads from installed registry (#448 cp2a).
+    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 3;
     investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
@@ -223,6 +228,8 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
     let loc = LocationId(101);
 
     let mut investigator = test_investigator(1);
+    // Real investigator code so max_health() reads from installed registry (#448 cp2a).
+    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 0;
     investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
@@ -272,6 +279,8 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     let loc = LocationId(101);
 
     let mut investigator = test_investigator(1);
+    // Real investigator code so max_health() reads from installed registry (#448 cp2a).
+    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 3;
     investigator.hand = vec![CardCode::new(WORKING_A_HUNCH)];
@@ -342,6 +351,8 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
     let loc = LocationId(101);
 
     let mut investigator = test_investigator(1);
+    // Real investigator code so max_health() reads from installed registry (#448 cp2a).
+    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 3;
     investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
@@ -406,6 +417,8 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     let loc = LocationId(101);
 
     let mut investigator = test_investigator(1);
+    // Real investigator code so max_health() reads from installed registry (#448 cp2a).
+    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 3;
     investigator.hand = vec![CardCode::new(MACHETE)];
@@ -481,6 +494,8 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     let loc = LocationId(101);
 
     let mut investigator = test_investigator(1);
+    // Real investigator code so max_health() reads from installed registry (#448 cp2a).
+    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
     investigator.actions_remaining = 3;
     investigator.hand = vec![CardCode::new(MACHETE)];

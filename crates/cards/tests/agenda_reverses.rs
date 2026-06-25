@@ -30,11 +30,16 @@ fn install_registry() {
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     install_registry();
     let lead = InvestigatorId(1);
+    let mut inv = test_investigator(1);
+    // Use a real investigator code so max_sanity() can read from the installed
+    // cards registry; TEST_INV is only known to the game-core test registry
+    // (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
+    inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(inv)
         .with_turn_order([lead])
         .build();
-    assert_eq!(state.investigators[&lead].horror, 0);
+    assert_eq!(state.investigators[&lead].horror(), 0);
 
     // Firing the reverse suspends on the lead's choice (Choice frame pushed).
     let mut events = Vec::new();
@@ -53,7 +58,8 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     );
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
-        result.state.investigators[&lead].horror, 2,
+        result.state.investigators[&lead].horror(),
+        2,
         "branch 1 deals 2 horror to the lead investigator",
     );
     assert!(
@@ -100,7 +106,8 @@ fn agenda_01105_reverse_choice_random_discard_each() {
         "the discarded card landed in the discard pile",
     );
     assert_eq!(
-        result.state.investigators[&lead].horror, 0,
+        result.state.investigators[&lead].horror(),
+        0,
         "no horror branch"
     );
 }

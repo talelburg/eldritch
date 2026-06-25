@@ -3160,6 +3160,7 @@ dependencies = [
 name = "web"
 version = "0.1.0"
 dependencies = [
+ "cards",
  "console_error_panic_hook",
  "futures",
  "game-core",

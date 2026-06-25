@@ -27,6 +27,10 @@ fn body_html() -> String {
 /// carrying `state`. Ticks once so CSR effects flush, then returns the
 /// rendered body HTML.
 async fn render_state(state: game_core::state::GameState) -> String {
+    // Rendering an investigator panel reads `max_health()` / `max_sanity()`,
+    // which resolve the investigator card's capacity from the registry (#448).
+    // Install the synthetic `TEST_INV` (8/8) registry so those reads succeed.
+    game_core::test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     leptos::mount::mount_to_body(move || {
         provide_context(store);
@@ -105,8 +109,8 @@ async fn investigators_panel_renders_stats_and_hand() {
 
     let mut inv = test_investigator(1);
     inv.name = "Roland Banks".to_string();
-    inv.damage = 2; // 2/8
-    inv.horror = 1; // 1/8
+    inv.investigator_card.accumulated_damage = 2; // 2/8
+    inv.investigator_card.accumulated_horror = 1; // 1/8
     inv.clues = 3;
     inv.resources = 4;
     inv.actions_remaining = 2;

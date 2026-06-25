@@ -180,8 +180,12 @@ fn attic_forced_enter_deals_one_horror() {
     // isn't reachable until C1b's Door-on-the-Floor transition).
     let mut attic = test_location(20, "Attic");
     attic.code = CardCode("01113".into());
+    // Use Skids O'Toole (01003) as the investigator card code: a real corpus
+    // code known to cards::REGISTRY (installed here) with capacity data.
+    let mut inv = test_investigator(1);
+    inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(20))
+        .with_investigator_at(inv, LocationId(20))
         .with_location(attic)
         .build();
     let mut events = Vec::new();
@@ -189,7 +193,11 @@ fn attic_forced_enter_deals_one_horror() {
     let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(20));
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
-        state.investigators.get(&InvestigatorId(1)).unwrap().horror,
+        state
+            .investigators
+            .get(&InvestigatorId(1))
+            .unwrap()
+            .horror(),
         1,
         "entering the Attic deals 1 horror to the entering investigator",
     );
@@ -200,8 +208,12 @@ fn cellar_forced_enter_deals_one_damage() {
     install_registries();
     let mut cellar = test_location(21, "Cellar");
     cellar.code = CardCode("01114".into());
+    // Use Skids O'Toole (01003) as the investigator card code: a real corpus
+    // code known to cards::REGISTRY (installed here) with capacity data.
+    let mut inv = test_investigator(1);
+    inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(21))
+        .with_investigator_at(inv, LocationId(21))
         .with_location(cellar)
         .build();
     let mut events = Vec::new();
@@ -209,7 +221,11 @@ fn cellar_forced_enter_deals_one_damage() {
     let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(21));
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
-        state.investigators.get(&InvestigatorId(1)).unwrap().damage,
+        state
+            .investigators
+            .get(&InvestigatorId(1))
+            .unwrap()
+            .damage(),
         1,
         "entering the Cellar deals 1 damage to the entering investigator",
     );

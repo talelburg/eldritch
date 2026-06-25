@@ -58,8 +58,8 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
             agility: 2
         }
     );
-    assert_eq!(inv.max_health, 9);
-    assert_eq!(inv.max_sanity, 5);
+    assert_eq!(inv.max_health(), 9);
+    assert_eq!(inv.max_sanity(), 5);
     // Deck + hand together account for the 2 supplied cards (the 5-card
     // opening-hand draw takes only what's available).
     assert_eq!(inv.deck.len() + inv.hand.len(), deck.len());
@@ -100,7 +100,7 @@ fn seated_investigator_carries_its_card_code() {
         .investigators
         .get(&InvestigatorId(1))
         .expect("Roland seated at id 1");
-    assert_eq!(inv.card_code, CardCode::new("01001"));
+    assert_eq!(inv.investigator_card.code, CardCode::new("01001"));
 }
 
 #[test]

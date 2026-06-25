@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 game-core = { path = "../game-core" }
 protocol = { path = "../protocol" }
+cards = { path = "../cards" }
 leptos = { version = "0.8", features = ["csr"] }
 console_error_panic_hook = "0.1"
 

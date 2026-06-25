@@ -31,6 +31,9 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState
     let inv = InvestigatorId(1);
     let loc = LocationId(1);
     let mut investigator = test_investigator(1);
+    // Use Skids O'Toole (01003): a real corpus code known to cards::REGISTRY
+    // (installed here) with capacity data, so max_health()/max_sanity() work.
+    investigator.investigator_card.code = CardCode::new("01003");
     investigator.current_location = Some(loc);
     let mut state = GameStateBuilder::new()
         .with_investigator(investigator)
@@ -265,7 +268,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
 
     assert_eq!(r.outcome, EngineOutcome::Done);
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.damage, 0, "damage soaked, investigator took none");
+    assert_eq!(inv.damage(), 0, "damage soaked, investigator took none");
     let dog = inv
         .cards_in_play
         .iter()

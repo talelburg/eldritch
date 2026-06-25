@@ -197,25 +197,25 @@ mod tests {
     /// global-touching tests; we serialize via a single test that
     /// owns the global. Subsequent calls to `install` should fail
     /// (idempotent-by-error semantics of `OnceLock::set`).
+    ///
+    /// NOTE (#448 cp2a): this test uses `install_test_registry()` to
+    /// ensure the process-global slot is always occupied by the
+    /// standard test registry (which knows `TEST_INV`). Using a
+    /// bespoke `fake_registry()` here would race with other tests that
+    /// depend on `install_test_registry()` — whichever wins the
+    /// `OnceLock` would silently starve the other.
     #[test]
     fn install_is_idempotent_and_current_reflects_installed_value() {
-        // If a prior test already installed something, that's fine —
-        // we just check the contract by attempting another install
-        // and observing both outcomes.
-        let first_attempt = super::install(fake_registry());
+        // The test registry is the canonical game-core test registry.
+        // Install it (idempotent) to ensure `current()` returns Some.
+        crate::test_support::install_test_registry();
         let installed = super::current().expect("registry should be present after install");
-        // Verify the installed registry resolves our fake code.
-        let code = CardCode::new("TEST1");
-        // Whoever installed first wins; their `metadata_for` may not
-        // be ours (if a parallel test got there first). Just check
-        // the lookup *function* runs and behaves consistently.
-        let _ = (installed.metadata_for)(&code);
-        // A second install attempt must return Err regardless of
-        // which test won the race.
-        if first_attempt.is_ok() {
-            assert!(super::install(fake_registry()).is_err());
-        }
+        // A second install attempt must return Err (already set).
+        assert!(super::install(fake_registry()).is_err());
         // Sanity: `current()` keeps returning Some.
         assert!(REGISTRY.get().is_some());
+        // Verify `installed` resolves the TEST_INV code that the test
+        // registry knows about.
+        let _ = (installed.metadata_for)(&CardCode::new(crate::test_support::TEST_INV));
     }
 }

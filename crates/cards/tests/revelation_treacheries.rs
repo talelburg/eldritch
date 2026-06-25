@@ -44,8 +44,12 @@ fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
 /// Common board: one investigator at a location, the named treachery on
 /// top of the encounter deck, and a single rigged chaos token.
 fn board_with(treachery: &str, token: ChaosToken) -> game_core::GameState {
+    let mut inv = test_investigator(1);
+    // Real investigator code so max_health()/max_sanity() reads from the
+    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(20))
+        .with_investigator_at(inv, LocationId(20))
         .with_location(test_location(20, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();
@@ -61,7 +65,7 @@ fn grasping_hands_deals_one_damage_per_point_failed_then_discards() {
     let result = reveal_top(board_with("01162", ChaosToken::Numeric(-2)));
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
-        result.state.investigators[&InvestigatorId(1)].damage,
+        result.state.investigators[&InvestigatorId(1)].damage(),
         2,
         "1 damage per point failed (failed by 2)",
     );
@@ -84,7 +88,7 @@ fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
     let result = reveal_top(board_with("01162", ChaosToken::Numeric(-2)));
     assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_eq!(result.state.investigators[&InvestigatorId(1)].damage, 2);
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].damage(), 2);
     // Exactly one DamageTaken event, with amount == 2.
     game_core::assert_event_count!(result.events, 1, Event::DamageTaken { .. });
     game_core::assert_event!(
@@ -103,7 +107,7 @@ fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
     // Willpower 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2.
     let result = reveal_top(board_with("01163", ChaosToken::Numeric(-2)));
     assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror, 2);
+    assert_eq!(result.state.investigators[&InvestigatorId(1)].horror(), 2);
     // Exactly one HorrorTaken event, with amount == 2.
     game_core::assert_event_count!(result.events, 1, Event::HorrorTaken { .. });
     game_core::assert_event!(
@@ -121,7 +125,7 @@ fn crypt_chill_with_no_asset_takes_two_damage_then_discards() {
     let result = reveal_top(board_with("01167", ChaosToken::Numeric(0)));
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
-        result.state.investigators[&InvestigatorId(1)].damage,
+        result.state.investigators[&InvestigatorId(1)].damage(),
         2,
         "no asset controlled → 2 damage fallback",
     );
@@ -151,7 +155,7 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
     let result = reveal_top(state);
     assert_eq!(result.outcome, EngineOutcome::Done);
     let inv = &result.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.damage, 0, "controlled an asset → no damage");
+    assert_eq!(inv.damage(), 0, "controlled an asset → no damage");
     assert!(
         inv.cards_in_play.is_empty(),
         "the asset was discarded out of play",
@@ -205,7 +209,11 @@ fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     let inv = &result.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.damage, 0, "an asset was discarded → no damage fallback");
+    assert_eq!(
+        inv.damage(),
+        0,
+        "an asset was discarded → no damage fallback"
+    );
     // The chosen asset (Magnifying Glass) is gone; the other stays in play.
     assert!(
         inv.discard.contains(&CardCode::new("01030")),

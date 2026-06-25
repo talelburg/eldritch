@@ -52,6 +52,10 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
 
     let mut inv = test_investigator(1);
     inv.current_location = Some(loc_id);
+    // Use a real investigator code so max_health()/max_sanity() can read from
+    // the installed cards registry; TEST_INV is only in the game-core test
+    // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
+    inv.investigator_card.code = CardCode::new("01003");
     inv.hand = vec![CardCode::new(DODGE)];
     // A spare deck card so the round-ending cascade's upkeep step-4.4 draw has
     // something to draw. Without it, the empty deck reshuffles the discard —
@@ -94,7 +98,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
         result.outcome
     );
     // No damage dealt yet (the attack hasn't resolved).
-    assert_eq!(state.investigators[&inv_id].damage, 0);
+    assert_eq!(state.investigators[&inv_id].damage(), 0);
 
     // Play Dodge (the single offered candidate) → cancel the attack.
     let result = apply(
@@ -106,7 +110,8 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
     state = result.state;
 
     assert_eq!(
-        state.investigators[&inv_id].damage, 0,
+        state.investigators[&inv_id].damage(),
+        0,
         "the cancelled attack dealt no damage"
     );
     assert!(
@@ -171,7 +176,8 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
         result.events
     );
     assert_eq!(
-        state.investigators[&inv_id].damage, 2,
+        state.investigators[&inv_id].damage(),
+        2,
         "investigator carries the 2 damage"
     );
     assert!(

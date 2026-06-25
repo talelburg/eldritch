@@ -2,12 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::card::{
-    bump_usage, usage_exhausted, AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId,
-};
+use super::card::{CardCode, CardInPlay, CardInstanceId};
 use super::location::LocationId;
 use super::Skills;
-use std::collections::BTreeMap;
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -21,12 +18,13 @@ pub struct InvestigatorId(pub u32);
 ///
 /// # Invariants
 ///
-/// - `damage` may exceed `max_health` transiently — when that happens
-///   the apply loop's damage helpers flip `status` to [`Status::Killed`]
-///   and emit [`Event::InvestigatorDefeated`]. Symmetric for `horror`
-///   / `max_sanity` / [`Status::Insane`]. The numeric fields are
-///   `u8` so they don't wrap; the threshold check is what defines
-///   defeat.
+/// - Physical damage is tracked via
+///   [`investigator_card.accumulated_damage`](CardInPlay::accumulated_damage);
+///   when [`damage()`](Self::damage) reaches [`max_health()`](Self::max_health)
+///   the apply loop flips `status` to [`Status::Killed`] and emits
+///   [`Event::InvestigatorDefeated`]. Symmetric for horror /
+///   [`Status::Insane`]. The accessor methods are `u8` so they don't
+///   wrap; the threshold check is what defines defeat.
 /// - Once `status != Status::Active`, the investigator is "out of
 ///   play": damage / horror helpers no-op, the engine doesn't let
 ///   them take actions, and card effects targeting investigators
@@ -38,20 +36,6 @@ pub struct InvestigatorId(pub u32);
 pub struct Investigator {
     /// Stable identifier within this scenario.
     pub id: InvestigatorId,
-    /// The investigator's own `ArkhamDB` card code (01001 for Roland
-    /// Banks). Set at roster seating from `RosterEntry.investigator`;
-    /// the elder-sign firing path and the seated-reaction scan look the
-    /// investigator card's abilities up by this code
-    /// (`abilities_for(card_code)`). An empty sentinel (`CardCode::new("")`)
-    /// marks the pre-seated `test_support` / builder path — codepaths skip
-    /// empty codes, so those investigators carry no investigator-card
-    /// abilities. Required on the wire (#453): a payload omitting it is
-    /// rejected rather than silently degrading to the empty sentinel.
-    ///
-    /// **Bridge (#118), sunset by #448:** when the investigator card
-    /// becomes a real `CardInPlay` (health/sanity/soak), this field and
-    /// [`ability_usage`](Self::ability_usage) fold into the uniform path.
-    pub card_code: CardCode,
     /// Display name.
     pub name: String,
     /// Location the investigator is currently at, or `None` if they are
@@ -60,14 +44,6 @@ pub struct Investigator {
     pub current_location: Option<LocationId>,
     /// Skill values.
     pub skills: Skills,
-    /// Maximum health (physical hit points).
-    pub max_health: u8,
-    /// Current physical damage suffered.
-    pub damage: u8,
-    /// Maximum sanity.
-    pub max_sanity: u8,
-    /// Current horror suffered.
-    pub horror: u8,
     /// Clues currently held by the investigator.
     pub clues: u8,
     /// Resources currently held.
@@ -114,56 +90,82 @@ pub struct Investigator {
     /// pile and removed from the game. Stays empty for Active
     /// investigators. Required on the wire (#453).
     pub removed_from_game: Vec<CardCode>,
-    /// Per-ability "Limit X per \[period\]" usage records for this
-    /// investigator's **own card** abilities (Roland Banks's once-per-round
-    /// `[reaction]`). Mirrors [`CardInPlay::ability_usage`] — the investigator
-    /// card is not a `CardInPlay`, so it needs its own usage home. Keyed by
-    /// ability index within the investigator card's `abilities()`. Lazy
-    /// reset: a stale-round record reads as 0 (see [`CardInPlay::ability_usage`]
-    /// docs). Required on the wire (#453).
-    ///
-    /// **Bridge (#118), sunset by #448:** retired when the investigator card
-    /// becomes a real `CardInPlay`.
-    ///
-    /// [`CardInPlay::ability_usage`]: crate::state::CardInPlay::ability_usage
-    pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
     /// Source instances whose [`ExtraActionCost`](crate::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round
     /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
     /// instance so multiple surcharge sources track independently. Required
     /// on the wire (#453).
     pub action_surcharge_spent_this_round: std::collections::BTreeSet<CardInstanceId>,
+    /// The investigator's own card as a real in-play permanent: it holds the
+    /// investigator's health/sanity capacity (from `CardKind::Investigator`
+    /// metadata) and is the default damage/horror soaker via its
+    /// `accumulated_damage` / `accumulated_horror`. Lives here rather than in
+    /// `cards_in_play` so loops over "cards the player played" never touch it
+    /// (#448). Required on the wire.
+    pub investigator_card: CardInPlay,
 }
 
 impl Investigator {
     /// Every in-play card instance this investigator controls that can
-    /// carry a triggerable ability: cards in play, then threat-area
-    /// cards. The single definition both the reaction-window scan and
-    /// the forced instance-scan walk, so the threat area is covered by
-    /// both dispatch paths without a duplicate walk. This is the
-    /// shared scan source #212 later absorbs.
+    /// carry a triggerable ability: the **investigator card** first, then
+    /// cards in play, then threat-area cards. The single definition both
+    /// the reaction-window scan and the forced instance-scan walk, so the
+    /// investigator card and threat area are covered by both dispatch paths
+    /// without a duplicate walk (#448 cp3a folds the investigator card into
+    /// this iterator, retiring the bespoke `scan_investigator_card_reactions`
+    /// source). This is the shared scan source #212 later absorbs.
+    ///
+    /// The investigator card is deliberately *not* in `cards_in_play`, so
+    /// loops over "cards the player played" (asset queries, elimination
+    /// drain, discard-all, soak `build_soakers`) keep iterating
+    /// `cards_in_play` directly and never touch it.
     pub fn controlled_card_instances(&self) -> impl Iterator<Item = &CardInPlay> {
-        self.cards_in_play.iter().chain(self.threat_area.iter())
+        std::iter::once(&self.investigator_card)
+            .chain(self.cards_in_play.iter())
+            .chain(self.threat_area.iter())
     }
 
-    /// Whether this investigator's own-card ability at `ability_index` has
-    /// reached its per-period [`UsageLimit`](crate::dsl::UsageLimit). Mirrors
-    /// [`CardInPlay::is_usage_exhausted`] over [`ability_usage`](Self::ability_usage).
+    /// Physical damage currently on the investigator — reads
+    /// `investigator_card.accumulated_damage` (#448 cp2a).
     #[must_use]
-    pub fn is_usage_exhausted(
-        &self,
-        ability_index: u8,
-        limit: Option<crate::dsl::UsageLimit>,
-        current_round: u32,
-    ) -> bool {
-        usage_exhausted(&self.ability_usage, ability_index, limit, current_round)
+    pub fn damage(&self) -> u8 {
+        self.investigator_card.accumulated_damage
     }
 
-    /// Record one firing of this investigator's own-card ability at
-    /// `ability_index` against the current period. Mirrors
-    /// [`CardInPlay::bump_ability_usage`].
-    pub fn bump_ability_usage(&mut self, ability_index: u8, current_round: u32) {
-        bump_usage(&mut self.ability_usage, ability_index, current_round);
+    /// Horror currently on the investigator. See [`Self::damage`].
+    #[must_use]
+    pub fn horror(&self) -> u8 {
+        self.investigator_card.accumulated_horror
+    }
+
+    /// Maximum health (printed) — reads `CardKind::Investigator` metadata from
+    /// the installed registry (#448 cp2a). Panics if the registry is absent or
+    /// the investigator card's code is not a `CardKind::Investigator`.
+    #[must_use]
+    pub fn max_health(&self) -> u8 {
+        investigator_capacity(&self.investigator_card.code).0
+    }
+
+    /// Maximum sanity (printed). See [`Self::max_health`].
+    #[must_use]
+    pub fn max_sanity(&self) -> u8 {
+        investigator_capacity(&self.investigator_card.code).1
+    }
+}
+
+/// (health, sanity) printed capacity for an investigator card, from the
+/// installed registry. Panics if the registry is uninstalled or the code is
+/// not an investigator card — a state-shape invariant violation, surfaced
+/// rather than silently defaulted.
+fn investigator_capacity(code: &CardCode) -> (u8, u8) {
+    let reg = crate::card_registry::current()
+        .expect("investigator capacity read before a CardRegistry was installed");
+    match &(reg.metadata_for)(code)
+        .expect("investigator card code absent from registry")
+        .kind
+    {
+        crate::card_data::CardKind::Investigator { health, sanity, .. } => (*health, *sanity),
+        _ => panic!("investigator_card.code does not resolve to a CardKind::Investigator"),
     }
 }
 
@@ -223,20 +225,18 @@ mod threat_area_tests {
     #[test]
     fn omitting_any_required_field_is_rejected() {
         // Every field is required on the wire (#453): a payload missing one
-        // fails loudly rather than silently defaulting. `card_code` in
-        // particular — an absent identity field must not degrade to the empty
-        // sentinel (which would silently disable that investigator's
-        // elder-sign + seated reaction).
+        // fails loudly rather than silently defaulting. `investigator_card`
+        // in particular — an absent identity field must not degrade to some
+        // default that silently disables elder-sign + seated reaction.
         let inv = crate::test_support::test_investigator(1);
         let full = serde_json::to_value(&inv).expect("serialize");
         // The complete object still round-trips.
         serde_json::from_value::<Investigator>(full.clone()).expect("full object deserializes");
         // Each formerly-`#[serde(default)]` field is now mandatory.
         for field in [
-            "card_code",
+            "investigator_card",
             "threat_area",
             "removed_from_game",
-            "ability_usage",
             "action_surcharge_spent_this_round",
         ] {
             let mut v = full.clone();
@@ -252,8 +252,11 @@ mod threat_area_tests {
     }
 
     #[test]
-    fn controlled_card_instances_yields_in_play_then_threat_area() {
+    fn controlled_card_instances_yields_investigator_card_then_in_play_then_threat_area() {
+        // #448 cp3a: the investigator card is yielded first (so the unified
+        // scan fires its abilities), then `cards_in_play`, then `threat_area`.
         let mut inv = crate::test_support::test_investigator(1);
+        inv.investigator_card.code = CardCode::new("inv-card");
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("in-play"),
             CardInstanceId(1),
@@ -266,7 +269,7 @@ mod threat_area_tests {
             .controlled_card_instances()
             .map(|c| c.code.as_str())
             .collect();
-        assert_eq!(codes, vec!["in-play", "threat"]);
+        assert_eq!(codes, vec!["inv-card", "in-play", "threat"]);
     }
 }
 
@@ -276,9 +279,9 @@ mod ability_usage_tests {
     use crate::state::AbilityUsageRecord;
 
     #[test]
-    fn new_investigator_has_empty_ability_usage() {
+    fn new_investigator_card_has_empty_ability_usage() {
         let inv = crate::test_support::test_investigator(1);
-        assert!(inv.ability_usage.is_empty());
+        assert!(inv.investigator_card.ability_usage.is_empty());
     }
 
     #[test]
@@ -289,18 +292,18 @@ mod ability_usage_tests {
             period: UsagePeriod::Round,
         });
         // Ability 0, round 5: not yet fired → not exhausted.
-        assert!(!inv.is_usage_exhausted(0, limit, 5));
+        assert!(!inv.investigator_card.is_usage_exhausted(0, limit, 5));
         // Fire once in round 5 → now exhausted in round 5.
-        inv.bump_ability_usage(0, 5);
-        assert!(inv.is_usage_exhausted(0, limit, 5));
+        inv.investigator_card.bump_ability_usage(0, 5);
+        assert!(inv.investigator_card.is_usage_exhausted(0, limit, 5));
         assert_eq!(
-            inv.ability_usage.get(&0),
+            inv.investigator_card.ability_usage.get(&0),
             Some(&AbilityUsageRecord::new(5, 1))
         );
         // Round 6: lazy reset → not exhausted (stored record is stale).
-        assert!(!inv.is_usage_exhausted(0, limit, 6));
+        assert!(!inv.investigator_card.is_usage_exhausted(0, limit, 6));
         // No limit (None) is never exhausted.
-        assert!(!inv.is_usage_exhausted(0, None, 5));
+        assert!(!inv.investigator_card.is_usage_exhausted(0, None, 5));
     }
 }
 
@@ -310,5 +313,53 @@ mod removed_from_game_tests {
     fn new_investigator_has_empty_removed_pile() {
         let inv = crate::test_support::test_investigator(1);
         assert!(inv.removed_from_game.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod harm_accessor_tests {
+    // Seam test from cp1b (which delegated to legacy fields) is removed by
+    // cp2a: the accessors now read the investigator_card directly.
+    #[test]
+    fn harm_accessors_read_from_investigator_card() {
+        crate::test_support::install_test_registry();
+        let mut inv = crate::test_support::test_investigator(1);
+        // Set accumulated harm directly on the card.
+        inv.investigator_card.accumulated_damage = 2;
+        inv.investigator_card.accumulated_horror = 1;
+        assert_eq!(inv.damage(), 2);
+        assert_eq!(inv.horror(), 1);
+        // Capacity reads from the registry (TEST_INV has 8/8).
+        assert_eq!(inv.max_health(), 8);
+        assert_eq!(inv.max_sanity(), 8);
+    }
+}
+
+#[cfg(test)]
+mod investigator_card_tests {
+    #[test]
+    fn test_investigator_has_an_investigator_card_with_the_synthetic_code() {
+        let inv = crate::test_support::test_investigator(1);
+        assert_eq!(
+            inv.investigator_card.code.as_str(),
+            crate::test_support::TEST_INV
+        );
+        assert_eq!(inv.investigator_card.accumulated_damage, 0);
+        assert_eq!(inv.investigator_card.accumulated_horror, 0);
+    }
+
+    // `identity_is_read_from_the_investigator_card` removed: it was a
+    // duplicate of `test_investigator_has_an_investigator_card_with_the_synthetic_code`
+    // (cp4 cleanup per task-7-brief).
+
+    #[test]
+    fn defeat_reads_capacity_from_the_card_not_a_field() {
+        crate::test_support::install_test_registry();
+        let mut inv = crate::test_support::test_investigator(1);
+        inv.investigator_card.accumulated_damage = 8; // == TEST_INV health
+        assert!(
+            inv.damage() >= inv.max_health(),
+            "defeat threshold reached via accessors"
+        );
     }
 }

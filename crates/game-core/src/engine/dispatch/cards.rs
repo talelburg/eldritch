@@ -859,11 +859,12 @@ mod draw_one_with_deckout_tests {
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
+        crate::test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.deck.clear();
         inv.discard = vec![CardCode::new("01000"), CardCode::new("01001")];
-        inv.horror = 0;
+        // After #448 cp2a: horror accumulates on investigator_card, accessor reads it.
         let hand_before = inv.hand.len();
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
@@ -882,7 +883,8 @@ mod draw_one_with_deckout_tests {
             "drew 1"
         );
         assert_eq!(
-            state.investigators[&id].horror, 1,
+            state.investigators[&id].horror(),
+            1,
             "deck-out costs 1 horror"
         );
         assert!(events

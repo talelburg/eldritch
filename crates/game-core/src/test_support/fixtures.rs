@@ -20,12 +20,13 @@
 use crate::card_data::{ClueValue, Prey};
 use crate::engine::{EngineOutcome, InputRequest, ResumeToken};
 use crate::state::{
-    CardCode, Enemy, EnemyId, Investigator, InvestigatorId, Location, LocationId, Skills, Status,
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, Investigator, InvestigatorId, Location,
+    LocationId, Skills, Status,
 };
 
 /// A stock investigator with reasonable defaults.
 ///
-/// - 3/3/3/3 skills, 8 health, 8 sanity, no damage or horror.
+/// - 3/3/3/3 skills; capacity and harm live on `investigator_card` (`TEST_INV`: 8/8 health/sanity).
 /// - 5 starting resources, 0 clues.
 /// - 3 actions remaining.
 /// - Not placed at any location (`current_location: None`).
@@ -33,9 +34,12 @@ use crate::state::{
 /// Mutate fields directly after construction to customize.
 #[must_use]
 pub fn test_investigator(id: u32) -> Investigator {
+    let investigator_card = CardInPlay::enter_play(
+        CardCode::new(crate::test_support::TEST_INV),
+        CardInstanceId(u32::MAX - id),
+    );
     Investigator {
         id: InvestigatorId(id),
-        card_code: CardCode::new(""),
         name: format!("Test Investigator {id}"),
         current_location: None,
         skills: Skills {
@@ -44,10 +48,6 @@ pub fn test_investigator(id: u32) -> Investigator {
             combat: 3,
             agility: 3,
         },
-        max_health: 8,
-        damage: 0,
-        max_sanity: 8,
-        horror: 0,
         clues: 0,
         resources: 5,
         actions_remaining: 3,
@@ -58,8 +58,8 @@ pub fn test_investigator(id: u32) -> Investigator {
         cards_in_play: Vec::new(),
         threat_area: Vec::new(),
         removed_from_game: Vec::new(),
-        ability_usage: std::collections::BTreeMap::new(),
         action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
+        investigator_card,
     }
 }
 

@@ -25,3 +25,6 @@ Thumbs.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Subagent worktrees (never commit)
+.claude/worktrees/

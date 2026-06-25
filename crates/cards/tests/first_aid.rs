@@ -33,8 +33,9 @@ fn install() {
 fn board(supplies: u8) -> game_core::GameState {
     install();
     let mut inv = test_investigator(1);
-    inv.damage = 2;
-    inv.horror = 2;
+    // Harm accumulates on the investigator card after #448 cp2a.
+    inv.investigator_card.accumulated_damage = 2;
+    inv.investigator_card.accumulated_horror = 2;
     let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT_INST);
     kit.uses.insert(UseKind::Supplies, supplies);
     inv.cards_in_play.push(kit);
@@ -87,8 +88,8 @@ fn spends_a_supply_and_heals_one_damage_when_the_damage_branch_is_chosen() {
     // auto-binds, so this completes.
     let r = pick(r.state, 0);
     assert_eq!(r.outcome, EngineOutcome::Done);
-    assert_eq!(r.state.investigators[&INV].damage, 1, "1 damage healed");
-    assert_eq!(r.state.investigators[&INV].horror, 2, "horror untouched");
+    assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage healed");
+    assert_eq!(r.state.investigators[&INV].horror(), 2, "horror untouched");
     assert_event!(
         r.events,
         Event::Healed {
@@ -107,8 +108,8 @@ fn heals_one_horror_when_the_horror_branch_is_chosen() {
     // Branch 1 = heal horror.
     let r = pick(r.state, 1);
     assert_eq!(r.outcome, EngineOutcome::Done);
-    assert_eq!(r.state.investigators[&INV].horror, 1, "1 horror healed");
-    assert_eq!(r.state.investigators[&INV].damage, 2, "damage untouched");
+    assert_eq!(r.state.investigators[&INV].horror(), 1, "1 horror healed");
+    assert_eq!(r.state.investigators[&INV].damage(), 2, "damage untouched");
     assert_event!(
         r.events,
         Event::Healed {
@@ -139,5 +140,9 @@ fn spending_the_last_supply_discards_first_aid() {
     // left play).
     let r = pick(r.state, 0);
     assert_eq!(r.outcome, EngineOutcome::Done);
-    assert_eq!(r.state.investigators[&INV].damage, 1, "heal still applied");
+    assert_eq!(
+        r.state.investigators[&INV].damage(),
+        1,
+        "heal still applied"
+    );
 }

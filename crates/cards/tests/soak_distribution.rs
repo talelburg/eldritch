@@ -41,6 +41,9 @@ fn attack_state(
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let mut inv = test_investigator(1);
+    // Real investigator code so max_health()/max_sanity() reads from the
+    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(loc_id);
     inv.cards_in_play = assets
         .into_iter()
@@ -133,7 +136,8 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
         "1 damage soaked onto Guard Dog"
     );
     assert_eq!(
-        r3.state.investigators[&inv].damage, 1,
+        r3.state.investigators[&inv].damage(),
+        1,
         "1 damage taken by the investigator"
     );
     // Guard Dog took damage and survived → its retaliate window opens (not a
@@ -160,7 +164,8 @@ fn player_may_decline_to_soak_taking_all_damage() {
     let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
 
     assert_eq!(
-        r3.state.investigators[&inv].damage, 2,
+        r3.state.investigators[&inv].damage(),
+        2,
         "investigator took all 2 damage"
     );
     assert_eq!(
@@ -193,7 +198,8 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
         r2.outcome
     );
     assert_eq!(
-        r2.state.investigators[&inv].damage, 1,
+        r2.state.investigators[&inv].damage(),
+        1,
         "the overflow point went to the investigator"
     );
     assert!(

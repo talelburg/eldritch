@@ -61,9 +61,15 @@ fn board() -> game_core::GameState {
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
+    // Use Skids O'Toole (01003, 8 health / 6 sanity) — real code so
+    // max_health()/max_sanity() can read from the installed cards registry
+    // (#448 cp2a), no implemented abilities so no reaction windows fire.
+    inv.investigator_card.code = CardCode::new("01003");
 
     let mut inv2 = test_investigator(2);
     inv2.current_location = Some(LOC_B);
+    // Same reason as inv above.
+    inv2.investigator_card.code = CardCode::new("01003");
 
     let mut loc_a = test_location(10, "Cellar");
     loc_a.connections = vec![LOC_B];
@@ -119,7 +125,8 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
         "enemy at the blasted location was defeated and removed",
     );
     assert_eq!(
-        r.state.investigators[&INV].damage, 3,
+        r.state.investigators[&INV].damage(),
+        3,
         "the controller blasted its own location and took 3",
     );
     // LOC_B (not chosen): untouched.
@@ -128,7 +135,8 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
         "enemy at LOC_B untouched"
     );
     assert_eq!(
-        r.state.investigators[&INV2].damage, 0,
+        r.state.investigators[&INV2].damage(),
+        0,
         "investigator at LOC_B untouched",
     );
 
@@ -151,6 +159,8 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
+    // Real investigator code so max_health() reads from the cards registry (#448 cp2a).
+    inv.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
 
     let loc_a = test_location(10, "Cellar"); // no connections
     let mut enemy_a = test_enemy(100, "Ghoul A");
@@ -173,7 +183,7 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
         "single candidate → no suspend"
     );
     assert_eq!(r.state.enemies[&ENEMY_A].damage, 3, "enemy took 3");
-    assert_eq!(r.state.investigators[&INV].damage, 3, "controller took 3");
+    assert_eq!(r.state.investigators[&INV].damage(), 3, "controller took 3");
     assert_eq!(
         r.state.investigators[&INV].discard,
         vec![CardCode::new(DYNAMITE)],

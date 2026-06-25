@@ -45,8 +45,12 @@ fn install() {
 fn board(intellect: i8, damage: u8) -> game_core::GameState {
     install();
     let mut inv = test_investigator(1);
+    // Real investigator code so max_health()/max_sanity() reads from the
+    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
+    inv.investigator_card.code = CardCode::new("01003");
     inv.skills.intellect = intellect;
-    inv.damage = damage;
+    // Harm accumulates on the investigator card after #448 cp2a.
+    inv.investigator_card.accumulated_damage = damage;
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(MEDICAL_TEXTS),
         BOOK_INST,
@@ -88,7 +92,7 @@ fn success_heals_one_damage_from_the_chosen_investigator() {
             ..
         }
     );
-    assert_eq!(r.state.investigators[&INV].damage, 1, "1 damage healed");
+    assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage healed");
 }
 
 #[test]
@@ -104,5 +108,5 @@ fn failure_deals_one_damage_to_the_chosen_investigator() {
             amount: 1,
         }
     );
-    assert_eq!(r.state.investigators[&INV].damage, 1, "1 damage dealt");
+    assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage dealt");
 }

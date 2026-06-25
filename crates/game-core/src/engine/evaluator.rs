@@ -1485,8 +1485,8 @@ fn heal_effect(
         };
     };
     let current = match kind {
-        HarmKind::Damage => &mut inv.damage,
-        HarmKind::Horror => &mut inv.horror,
+        HarmKind::Damage => &mut inv.investigator_card.accumulated_damage,
+        HarmKind::Horror => &mut inv.investigator_card.accumulated_horror,
     };
     let healed = (*current).min(count);
     *current -= healed;
@@ -1920,10 +1920,9 @@ pub fn constant_skill_modifier(
 
 /// The controller's **elder-sign** skill-test modifier: the
 /// `IntExpr` on their investigator card's `Trigger::ElderSign { modifier }`
-/// ability, evaluated for the controller. Returns `0` when the controller has
-/// no investigator card (empty sentinel `card_code`), the card isn't in the
-/// registry, or it carries no elder-sign ability — so every investigator
-/// without an elder-sign resolves exactly as before.
+/// ability, evaluated for the controller. Returns `0` when the controller is
+/// not found, the card isn't in the registry, or it carries no elder-sign
+/// ability — so every investigator without an elder-sign resolves as 0.
 ///
 /// Called from the skill-test resolution's `TokenResolution::ElderSign` arm
 /// (`skill_test.rs`); the bonus flows through the existing `Modifier` total.
@@ -1940,10 +1939,7 @@ pub(crate) fn elder_sign_modifier(
     let Some(inv) = state.investigators.get(&controller) else {
         return 0;
     };
-    if inv.card_code.as_str().is_empty() {
-        return 0;
-    }
-    let Some(abilities) = (registry.abilities_for)(&inv.card_code) else {
+    let Some(abilities) = (registry.abilities_for)(&inv.investigator_card.code) else {
         return 0;
     };
     let ctx = EvalContext::for_controller(controller);
@@ -2105,8 +2101,10 @@ pub fn pending_action_surcharge(
 
 /// Shared core of [`constant_skill_modifier`] and
 /// [`unconditional_constant_stat_modifier`]: sum the `delta` of every
-/// `Trigger::Constant` `Effect::Modify` on `controller`'s cards in play
-/// whose scope and stat both satisfy the given predicates. Silently skips
+/// `Trigger::Constant` `Effect::Modify` on every instance `controller`
+/// controls — the investigator card, cards in play, and the threat area
+/// (via [`controlled_card_instances`](crate::state::Investigator::controlled_card_instances),
+/// #448 cp3a) — whose scope and stat both satisfy the given predicates. Silently skips
 /// cards whose code the registry can't resolve (same policy as the
 /// callers — the deck-import gate keeps unimplemented codes out of play).
 fn sum_constant_modify(
@@ -2120,7 +2118,7 @@ fn sum_constant_modify(
         return 0;
     };
     let mut total: i8 = 0;
-    for in_play in &inv.cards_in_play {
+    for in_play in inv.controlled_card_instances() {
         let Some(abilities) = (registry.abilities_for)(&in_play.code) else {
             continue;
         };
@@ -3946,6 +3944,7 @@ mod tests {
 
     #[test]
     fn heal_reduces_horror_saturating_and_emits_event() {
+        crate::test_support::install_test_registry();
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
@@ -3953,7 +3952,8 @@ mod tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .horror = 1;
+            .investigator_card
+            .accumulated_horror = 1;
         let mut events = Vec::new();
         let outcome = run(
             &mut Cx {
@@ -3965,7 +3965,7 @@ mod tests {
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].horror, 0);
+        assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
         assert_event!(
             events,
             Event::Healed {
@@ -3978,6 +3978,7 @@ mod tests {
 
     #[test]
     fn heal_target_chosen_at_your_location_auto_binds() {
+        crate::test_support::install_test_registry();
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_investigator(test_investigator(2))
@@ -3998,7 +3999,8 @@ mod tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .damage = 2;
+            .investigator_card
+            .accumulated_damage = 2;
         let mut events = Vec::new();
         let outcome = run(
             &mut Cx {
@@ -4014,7 +4016,7 @@ mod tests {
         );
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(
-            state.investigators[&InvestigatorId(1)].damage,
+            state.investigators[&InvestigatorId(1)].damage(),
             1,
             "sole co-located target healed"
         );
@@ -4078,6 +4080,14 @@ mod tests {
             ))]),
             "intellect-plus-2" => Some(vec![constant(modify(
                 Stat::Intellect,
+                2,
+                ModifierScope::WhileInPlay,
+            ))]),
+            // A standalone fake investigator card carrying a constant +2
+            // willpower — used to prove the unified `controlled_card_instances()`
+            // scan now sums the investigator card (not just `cards_in_play`).
+            "inv-willpower-plus-2" => Some(vec![constant(modify(
+                Stat::Willpower,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
@@ -4362,6 +4372,31 @@ mod tests {
         assert_eq!(
             constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
             0
+        );
+    }
+
+    #[test]
+    fn a_seated_investigator_card_constant_modifier_is_summed() {
+        // The investigator card lives in `investigator_card`, NOT in
+        // `cards_in_play`. After cp3a the constant-modifier scan walks
+        // `controlled_card_instances()`, which yields the investigator card
+        // first, so its `Trigger::Constant` modifier must be summed without any
+        // `cards_in_play` injection.
+        let (mut state, id) = state_with_cards_in_play(&[]);
+        state
+            .investigators
+            .get_mut(&id)
+            .unwrap()
+            .investigator_card
+            .code = CardCode::new("inv-willpower-plus-2");
+        let reg = fake_registry();
+        assert!(
+            state.investigators[&id].cards_in_play.is_empty(),
+            "the modifier must come from the investigator card, not cards_in_play"
+        );
+        assert_eq!(
+            constant_skill_modifier(&state, &reg, id, SkillKind::Willpower, SkillTestKind::Plain),
+            2
         );
     }
 
@@ -4676,7 +4711,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 2);
         assert_event!(
             events,
             Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1)
@@ -4700,7 +4735,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].horror, 1);
+        assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
         assert_event!(
             events,
             Event::HorrorTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
@@ -4709,13 +4744,15 @@ mod tests {
 
     #[test]
     fn deal_damage_at_max_health_defeats_investigator() {
-        // Build an investigator with a known low max_health (3), then
-        // apply exactly 3 damage via Effect::Deal and assert the
-        // investigator is Killed and InvestigatorDefeated is emitted.
         use crate::state::Status;
+        // Apply damage that exactly reaches max_health (8 from TEST_INV) via
+        // Effect::Deal and assert the investigator is Killed and
+        // InvestigatorDefeated is emitted. Pre-load 5 accumulated_damage so
+        // 5 + 3 = 8 = defeated with a 3-damage deal.
+        crate::test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
-        inv.max_health = 3;
+        inv.investigator_card.accumulated_damage = 5;
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events = Vec::new();
         let outcome = run(
@@ -4755,7 +4792,7 @@ mod tests {
         eval_ctx.set_failed_by(2);
         let outcome = run(&mut cx, &effect, eval_ctx);
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&InvestigatorId(1)].damage, 2);
+        assert_eq!(state.investigators[&InvestigatorId(1)].damage(), 2);
         // Deal evaluates the IntExpr once and applies the result in a single hit;
         // fail-by 2 → amount 2 → one DamageTaken event with amount 2.
         assert_event!(events, Event::DamageTaken { investigator, amount: 2 } if *investigator == InvestigatorId(1));
@@ -4856,7 +4893,7 @@ mod tests {
         let inv_id = InvestigatorId(1);
         let loc_id = crate::state::LocationId(10);
         let mut inv = test_investigator(1);
-        inv.card_code = CardCode::new("ES");
+        inv.investigator_card.code = CardCode::new("ES");
         inv.current_location = Some(loc_id);
         let mut loc = test_location(10, "Study");
         loc.clues = 2;
@@ -4870,7 +4907,7 @@ mod tests {
         // An investigator whose card has no elder-sign ability → 0.
         let inv_id2 = InvestigatorId(2);
         let mut inv2 = test_investigator(2);
-        inv2.card_code = CardCode::new("PLAIN");
+        inv2.investigator_card.code = CardCode::new("PLAIN");
         let state2 = GameStateBuilder::new().with_investigator(inv2).build();
         assert_eq!(super::elder_sign_modifier(&state2, &registry, inv_id2), 0);
     }
