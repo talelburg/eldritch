@@ -9,7 +9,8 @@ use std::sync::Once;
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::state::{CardCode, GameState, InvestigatorId};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::take_turn_action;
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_CHOICE_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
@@ -31,10 +32,10 @@ fn at_mythos_draw_with_choice_treachery() -> GameState {
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
         }),
-        Action::Player(PlayerAction::EndTurn),
     ] {
         state = apply(state, action).state;
     }
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
     synthetic::with_encounter_deck(&mut state, vec![CardCode::new(SYNTH_CHOICE_TREACHERY_CODE)]);
     state
 }

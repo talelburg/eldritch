@@ -4,11 +4,12 @@
 //! with the real registry. End-to-end defeat->Won via a real Fight is
 //! C7b (#245).
 
-use game_core::action::{Action, PlayerAction};
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::scenario::Resolution;
 use game_core::state::{Act, CardCode, InvestigatorId, Phase};
-use game_core::test_support::{test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
+};
 
 fn act3_state() -> game_core::state::GameState {
     let _ = game_core::card_registry::install(cards::REGISTRY);
@@ -77,10 +78,8 @@ fn advance_act_rejected_for_round_end_advance_act() {
         resolution: None,
     }];
 
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-    );
+    let result =
+        dispatch_turn_action_unchecked(state, &TurnAction::AdvanceAct { investigator: inv });
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.act_index, 0, "act did not advance");
     assert_eq!(result.state.investigators[&inv].clues, 9, "no clues spent");

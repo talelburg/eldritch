@@ -16,9 +16,9 @@ use game_core::state::{
     LocationId, Phase,
 };
 use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    drive, take_turn_action, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{apply, Action, EngineOutcome, InputResponse, PlayerAction};
+use game_core::{apply, Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
 
 const COVER_UP: &str = "01007";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -91,6 +91,7 @@ fn investigate_state(cover_up_clues: u8) -> GameState {
         .with_location(location)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_rng_seed(1)
         .build()
@@ -99,10 +100,7 @@ fn investigate_state(cover_up_clues: u8) -> GameState {
 /// Investigate + commit-nothing, returning the state paused at the
 /// clue-discovery interrupt (or resolved if none was offered).
 fn investigate_to_interrupt(state: GameState) -> (GameState, EngineOutcome) {
-    let r = apply(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: INV }),
-    );
+    let r = take_turn_action(state, &TurnAction::Investigate { investigator: INV });
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     let r = apply(
         r.state,
@@ -172,6 +170,7 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
         .with_investigator(investigator)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_scenario_id(ScenarioId::new("unknown"))
         .build();
     state.act_deck = vec![Act {
@@ -185,9 +184,9 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
 #[test]
 fn game_end_emits_mental_trauma_when_cover_up_has_clues() {
     install();
-    let r = apply(
+    let r = take_turn_action(
         resolving_state(3),
-        Action::Player(PlayerAction::AdvanceAct { investigator: INV }),
+        &TurnAction::AdvanceAct { investigator: INV },
     );
     assert!(r
         .events
@@ -210,9 +209,9 @@ fn game_end_emits_mental_trauma_when_cover_up_has_clues() {
 #[test]
 fn game_end_emits_no_trauma_when_cover_up_empty() {
     install();
-    let r = apply(
+    let r = take_turn_action(
         resolving_state(0),
-        Action::Player(PlayerAction::AdvanceAct { investigator: INV }),
+        &TurnAction::AdvanceAct { investigator: INV },
     );
     assert!(r
         .events

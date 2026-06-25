@@ -15,7 +15,8 @@ use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId};
-use game_core::{assert_event, Action, InputResponse, PlayerAction};
+use game_core::test_support::take_turn_action;
+use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 
 const ROLAND: &str = "01001";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -109,7 +110,7 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
 
     // Drive: end Roland's turn → tick into the Enemy phase → the engaged
     // enemy attacks → Roland defeated → all-defeated → Resolution::Lost.
-    let result = apply(state, Action::Player(PlayerAction::EndTurn));
+    let result = take_turn_action(state, &TurnAction::EndTurn);
 
     assert_event!(result.events, Event::AllInvestigatorsDefeated);
     assert_event!(result.events, Event::ScenarioResolved { .. });
@@ -150,17 +151,13 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
 
     // --- Act 1 (real): spend clues to advance → the reverse builds the board
     // and relocates Roland to the Hallway (the act-2 contributor location).
-    let advanced = apply(
-        state,
-        Action::Player(PlayerAction::AdvanceAct { investigator: INV }),
-    );
-    assert_eq!(advanced.outcome, EngineOutcome::Done);
+    let advanced = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
     assert_eq!(advanced.state.act_index, 1, "act 1 advanced to act 2");
 
     // --- Act 2 (real): end the round → the C3d round-end clue-spend window
     // opens (Roland holds 3 clues in the Hallway) → Confirm spends them →
     // act 2 advances and its reverse spawns the real Ghoul Priest (01116).
-    let round_end = apply(advanced.state, Action::Player(PlayerAction::EndTurn));
+    let round_end = take_turn_action(advanced.state, &TurnAction::EndTurn);
     assert!(
         matches!(round_end.outcome, EngineOutcome::AwaitingInput { .. }),
         "EndTurn should open the act-2 round-end window, got {:?}",
@@ -222,12 +219,12 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     // --- Drive the defeating Fight against the real spawned Priest: combat 4
     // + Numeric(0) ≥ fight 4 → success → deal 1 → defeated → act 3 advances →
     // Resolution::Won { R1 }.
-    let paused = apply(
+    let paused = take_turn_action(
         state,
-        Action::Player(PlayerAction::Fight {
+        &TurnAction::Fight {
             investigator: INV,
             enemy: priest_id,
-        }),
+        },
     );
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),

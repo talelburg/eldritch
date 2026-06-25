@@ -5,7 +5,7 @@
 use std::sync::Once;
 
 use game_core::action::{Action, PlayerAction};
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
@@ -13,9 +13,10 @@ use game_core::state::{
     Phase, SkillKind, TokenResolution,
 };
 use game_core::test_support::{
-    apply_no_commits, drive, test_enemy, test_investigator, test_location, GameStateBuilder,
-    ScriptedResolver,
+    apply_no_commits, dispatch_turn_action_unchecked, drive, test_enemy, test_investigator,
+    test_location, GameStateBuilder, ScriptedResolver,
 };
+use game_core::TurnAction;
 use scenarios::REGISTRY;
 
 static INSTALL: Once = Once::new();
@@ -321,11 +322,11 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::G
 }
 
 fn advance_to_resolution(state: game_core::state::GameState) -> game_core::engine::ApplyResult {
-    let r = apply(
+    let r = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::AdvanceAct {
+        &TurnAction::AdvanceAct {
             investigator: InvestigatorId(1),
-        }),
+        },
     );
     assert_eq!(r.outcome, EngineOutcome::Done);
     r

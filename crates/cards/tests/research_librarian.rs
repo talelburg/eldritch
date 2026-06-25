@@ -13,9 +13,12 @@
 use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
+use game_core::test_support::{
+    take_turn_action, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 const LIBRARIAN: &str = "01032";
@@ -46,16 +49,17 @@ fn board(deck: Vec<CardCode>) -> game_core::GameState {
         .with_location(test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .build()
 }
 
 fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply(
+    take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: INV,
             hand_index: 0,
-        }),
+        },
     )
 }
 

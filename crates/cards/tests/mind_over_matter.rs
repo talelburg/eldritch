@@ -13,8 +13,11 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
     FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
+    GameStateBuilder,
+};
+use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
 
 const MOM: &str = "01036";
 const OVERPOWER: &str = "01091"; // combat skill icons
@@ -56,27 +59,28 @@ fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> game_core::GameState
         .with_enemy(enemy)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()
 }
 
 fn play_card(state: game_core::GameState, hand_index: u8) -> game_core::engine::ApplyResult {
-    apply(
+    take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: INV,
             hand_index,
-        }),
+        },
     )
 }
 
 fn fight(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply(
+    take_turn_action(
         state,
-        Action::Player(PlayerAction::Fight {
+        &TurnAction::Fight {
             investigator: INV,
             enemy: ENEMY,
-        }),
+        },
     )
 }
 
@@ -193,7 +197,13 @@ fn mind_over_matter_rejected_outside_your_turn() {
             FastActorScope::Any,
         )
         .build();
-    let r = play_card(state, 0);
+    let r = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::PlayCard {
+            investigator: INV,
+            hand_index: 0,
+        },
+    );
     assert!(
         matches!(r.outcome, EngineOutcome::Rejected { .. }),
         "'Play only during your turn' rejects MoM in the Mythos window: {:?}",
@@ -230,17 +240,18 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
         .with_enemy(enemy)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
     let r = play_card(state, 0); // MoM
-    let r = apply(
+    let r = take_turn_action(
         r.state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: WEAPON_INST,
             ability_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),

@@ -8,15 +8,17 @@
 
 use std::sync::Once;
 
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::enumerate::legal_actions;
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, take_turn_action, test_investigator, test_location, GameStateBuilder,
+    TestSession,
 };
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
 
 const MAGNIFYING_GLASS: &str = "01030";
 
@@ -50,6 +52,7 @@ fn state_with_mg_in_hand() -> (game_core::GameState, InvestigatorId, LocationId)
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -62,12 +65,12 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
     // 3 intellect + 1 (Magnifying Glass) + 0 (token) = 4 vs shroud 4 → succeed by 0.
     let (state, id, _loc) = state_with_mg_in_hand();
 
-    let after_play = apply(
+    let after_play = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
     assert_eq!(
@@ -75,10 +78,12 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
         CardCode::new(MAGNIFYING_GLASS),
     );
 
-    let result = apply_no_commits(
-        after_play.state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-    );
+    let result = TestSession::new(after_play.state)
+        .take(&TurnAction::Investigate { investigator: id })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
         result.events,
@@ -90,12 +95,25 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
 #[test]
 fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
     // Same setup minus the card in play — 3 + 0 < 4 → fail by 1.
+    //
+    // MG is in hand (an Asset, not yet played) so the commit window parks
+    // (`FastWindow` idle, returns Done) rather than suspending as AwaitingInput.
+    // `apply_no_commits` drives through parked windows by skipping them;
+    // we submit via OptionId (not the typed PlayerAction::Investigate) to stay
+    // on the new dispatch path.
     let (state, id, _loc) = state_with_mg_in_hand();
     assert!(state.investigators[&id].cards_in_play.is_empty());
 
+    let actions = legal_actions(&state);
+    let idx = actions
+        .iter()
+        .position(|a| a == &TurnAction::Investigate { investigator: id })
+        .expect("Investigate must be legal");
     let result = apply_no_commits(
         state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        }),
     );
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
@@ -114,12 +132,12 @@ fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
     // → fail by 1, even with the card in play.
     let (state, id, _loc) = state_with_mg_in_hand();
 
-    let after_play = apply(
+    let after_play = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
 

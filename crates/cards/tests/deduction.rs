@@ -17,9 +17,11 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver, TestSession,
 };
-use game_core::{assert_event, assert_event_count, assert_no_event, Action, PlayerAction};
+use game_core::{
+    assert_event, assert_event_count, assert_no_event, Action, PlayerAction, TurnAction,
+};
 
 const DEDUCTION: &str = "01039";
 
@@ -50,6 +52,7 @@ fn state_with_deduction(
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -57,13 +60,15 @@ fn state_with_deduction(
     (state, id, loc)
 }
 
-fn drive_committing_deduction(
-    state: game_core::GameState,
-    action: Action,
-) -> game_core::ApplyResult {
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[CardCode::new(DEDUCTION)]);
-    drive(state, action, resolver)
+fn drive_committing_deduction(state: game_core::GameState) -> game_core::ApplyResult {
+    TestSession::new(state)
+        .take(&TurnAction::Investigate {
+            investigator: InvestigatorId(1),
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[CardCode::new(DEDUCTION)]);
+        })
+        .run()
 }
 
 #[test]
@@ -76,10 +81,7 @@ fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon(
     // same location here). Location ends with 0 of 2 clues;
     // controller carries 2.
     let (state, id, loc) = state_with_deduction(2, 4);
-    let result = drive_committing_deduction(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-    );
+    let result = drive_committing_deduction(state);
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
@@ -103,10 +105,7 @@ fn failed_investigate_does_not_fire_deductions_bonus() {
     // Shroud 99 — even with Deduction's 1 intellect icon, 3 + 0 + 1 = 4
     // << 99 → fail by 95. No bonus clue should fire.
     let (state, id, loc) = state_with_deduction(2, 99);
-    let result = drive_committing_deduction(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-    );
+    let result = drive_committing_deduction(state);
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
@@ -137,13 +136,16 @@ fn non_investigate_test_does_not_fire_deductions_bonus() {
     // its clue (no action follow-up either — bare PerformSkillTest's
     // follow-up is `None`).
     let (state, id, loc) = state_with_deduction(1, 4);
-    let result = drive_committing_deduction(
+    let mut resolver = ScriptedResolver::new();
+    resolver.commit_cards(&[CardCode::new(DEDUCTION)]);
+    let result = drive(
         state,
         Action::Player(PlayerAction::PerformSkillTest {
             investigator: id,
             skill: SkillKind::Intellect,
             difficulty: 4,
         }),
+        resolver,
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -162,13 +164,12 @@ fn uncommitted_deduction_does_not_fire_its_bonus() {
     // Deduction in hand but not committed → no icon contribution, no
     // bonus. 3 + 0 < 4 → fail by 1, hand unchanged.
     let (state, id, loc) = state_with_deduction(1, 4);
-    let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]);
-    let result = drive(
-        state,
-        Action::Player(PlayerAction::Investigate { investigator: id }),
-        resolver,
-    );
+    let result = TestSession::new(state)
+        .take(&TurnAction::Investigate { investigator: id })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(

@@ -16,7 +16,8 @@ use std::sync::Once;
 
 use game_core::engine::{apply, EngineOutcome};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Phase};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::take_turn_action;
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
 
@@ -78,7 +79,7 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
 
     // EndTurn: Investigation → Enemy → Upkeep → Mythos, pausing at the
     // step-1.4 encounter-draw prompt (AwaitingInput).
-    let r3 = apply(r2.state, Action::Player(PlayerAction::EndTurn));
+    let r3 = take_turn_action(r2.state, &TurnAction::EndTurn);
 
     assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r3.state.phase, Phase::Mythos, "cascade must land in Mythos");
@@ -131,33 +132,27 @@ fn upkeep_round_replay_is_deterministic() {
         base
     };
 
-    // --- First pass: drive and collect the action log. ---
-    let actions = vec![
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-        Action::Player(PlayerAction::EndTurn),
-    ];
-
-    let final_state = {
-        let mut state = make_initial();
-        for action in &actions {
-            let result = apply(state, action.clone());
-            state = result.state;
-        }
-        state
+    // Drive the same sequence twice to verify replay determinism.
+    let run_sequence = |initial: game_core::state::GameState| -> game_core::state::GameState {
+        let mut state = apply(
+            initial,
+            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+        )
+        .state;
+        state = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickMultiple { selected: vec![] },
+            }),
+        )
+        .state;
+        take_turn_action(state, &TurnAction::EndTurn).state
     };
+
+    let final_state = run_sequence(make_initial());
 
     // --- Second pass: replay from the same initial state. ---
-    let replayed_state = {
-        let mut state = make_initial();
-        for action in &actions {
-            let result = apply(state, action.clone());
-            state = result.state;
-        }
-        state
-    };
+    let replayed_state = run_sequence(make_initial());
 
     // Replaying the same action log reproduces state bit-for-bit.
     assert_eq!(

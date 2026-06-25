@@ -27,7 +27,10 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, Continuation, FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::{assert_event, assert_event_sequence, Action, InputResponse, PlayerAction};
+use game_core::test_support::take_turn_action;
+use game_core::{
+    assert_event, assert_event_sequence, Action, InputResponse, PlayerAction, TurnAction,
+};
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_FAST_EVENT_CODE, SYNTH_SURGE_TREACHERY_CODE, SYNTH_TREACHERY_CODE,
     TEST_REGISTRY,
@@ -65,7 +68,7 @@ fn drive(
 /// Returns the state after `EndTurn` has ticked through all phases
 /// and landed in Mythos with `mythos_draw_pending = Some(InvestigatorId(1))`.
 fn setup_at_mythos_draw(state: game_core::state::GameState) -> game_core::state::GameState {
-    let (state, _) = drive(
+    let (mut state, _) = drive(
         state,
         vec![
             // Round 1 begins; mulligan window opens.
@@ -74,12 +77,12 @@ fn setup_at_mythos_draw(state: game_core::state::GameState) -> game_core::state:
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
-            // Sole investigator ends their turn → auto-advance through
-            // Investigation → Enemy → Upkeep → Mythos (round 2).
-            // Pauses with mythos_draw_pending = Some(inv1).
-            Action::Player(PlayerAction::EndTurn),
         ],
     );
+    // Sole investigator ends their turn → auto-advance through
+    // Investigation → Enemy → Upkeep → Mythos (round 2).
+    // Pauses with mythos_draw_pending = Some(inv1).
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
     state
 }
 
@@ -281,10 +284,12 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
-            Action::Player(PlayerAction::EndTurn),
-            Action::Player(PlayerAction::EndTurn),
         ],
     );
+    // inv1 ends turn → rotates to inv2.
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
+    // inv2 is the last in turn_order → ticks through phases into Mythos.
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
@@ -408,7 +413,7 @@ fn mythos_phase_multi_investigator_player_order() {
     let inv2 = InvestigatorId(2);
 
     // StartScenario + mulligan both investigators.
-    let (state, _) = drive(
+    let (mut state, _) = drive(
         base,
         vec![
             Action::Player(PlayerAction::StartScenario { roster: vec![] }),
@@ -418,12 +423,12 @@ fn mythos_phase_multi_investigator_player_order() {
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
-            // inv1 ends turn → rotates to inv2.
-            Action::Player(PlayerAction::EndTurn),
-            // inv2 is the last in turn_order → ticks through phases into Mythos.
-            Action::Player(PlayerAction::EndTurn),
         ],
     );
+    // inv1 ends turn → rotates to inv2.
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
+    // inv2 is the last in turn_order → ticks through phases into Mythos.
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
 
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(
@@ -538,12 +543,12 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
-            // inv1 ends turn → rotates to inv2.
-            Action::Player(PlayerAction::EndTurn),
-            // inv2 is last in turn_order → auto-advances into Mythos.
-            Action::Player(PlayerAction::EndTurn),
         ],
     );
+    // inv1 ends turn → rotates to inv2.
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
+    // inv2 is last in turn_order → auto-advances into Mythos.
+    state = take_turn_action(state, &TurnAction::EndTurn).state;
 
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(

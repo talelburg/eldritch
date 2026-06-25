@@ -44,8 +44,10 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
     InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::{
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -136,6 +138,7 @@ fn fight_state(
         .with_investigator(inv)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(enemy)
         // Single `Numeric(0)` token → total = combat(1) + 0 = 1 < fight(5) → fail.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -154,12 +157,12 @@ fn submit_empty_commit(
     enemy: EnemyId,
 ) -> game_core::engine::ApplyResult {
     // Step 1: initiate the Fight — suspends at the commit window.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::Fight {
+        &TurnAction::Fight {
             investigator,
             enemy,
-        }),
+        },
     );
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),

@@ -35,8 +35,10 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, InvestigatorId,
     LocationId, Phase, UseKind,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::{
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 
 /// First Aid (01019): Guardian Item, `[action] Spend 1 supply: Heal …`. A
 /// non-fight action ability → provokes an `AoO`.
@@ -132,18 +134,19 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Activate First Aid (ability 0). Action-cost, non-fight → provokes an AoO
     // after the supply cost is paid and before the heal effect resolves.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: kit,
             ability_index: 0,
-        }),
+        },
     );
     // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
     // K5b): assign both AoO damage points onto Guard Dog to reproduce the soak.
@@ -226,18 +229,19 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         // The Fight starts a Combat skill test, which needs a non-empty bag.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: blade,
             ability_index: 0,
-        }),
+        },
     );
     let state = result.state;
 
@@ -296,18 +300,19 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Beat Cop ability 1 is the `[fast]` deal-1-damage (ability 0 is its
     // constant +1 combat).
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: cop,
             ability_index: 1,
-        }),
+        },
     );
     let state = result.state;
 
@@ -368,18 +373,19 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
     // Activate First Aid → AoO → Dodge is in hand, so the BeforeEnemyAttack
     // cancel window opens.
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: kit,
             ability_index: 0,
-        }),
+        },
     );
     let state = result.state;
 
@@ -461,16 +467,17 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
         .with_enemy(attacker)
         .build();
 
-    let result = apply(
+    let result = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: inv_id,
             instance_id: kit,
             ability_index: 0,
-        }),
+        },
     );
     let state = result.state;
 

@@ -8,8 +8,10 @@ use game_core::engine::OptionId;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{Action, EngineOutcome, InputResponse, PlayerAction};
+use game_core::test_support::{
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 
@@ -125,7 +127,7 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     );
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
-    let r1 = game_core::engine::apply(state, Action::Player(PlayerAction::EndTurn));
+    let r1 = take_turn_action(state, &TurnAction::EndTurn);
     // First point → Guard Dog; still contested → second prompt → self.
     let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
     let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
@@ -158,7 +160,7 @@ fn player_may_decline_to_soak_taking_all_damage() {
         engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
     );
 
-    let r1 = game_core::engine::apply(state, Action::Player(PlayerAction::EndTurn));
+    let r1 = take_turn_action(state, &TurnAction::EndTurn);
     // Both points to the investigator — decline to soak.
     let r2 = resolve(r1.state, pick(&r1.outcome, "Investigator"));
     let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
@@ -185,7 +187,7 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
     // Pre-damage Guard Dog to 2 (health 3) → 1 remaining capacity.
     state.investigators.get_mut(&inv).unwrap().cards_in_play[0].accumulated_damage = 2;
 
-    let r1 = game_core::engine::apply(state, Action::Player(PlayerAction::EndTurn));
+    let r1 = take_turn_action(state, &TurnAction::EndTurn);
     // First point → Guard Dog (its last point of capacity).
     let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
 

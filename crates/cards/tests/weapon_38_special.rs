@@ -7,13 +7,14 @@
 use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, InvestigatorId, Phase,
     TokenModifiers, UseKind,
 };
-use game_core::test_support::{apply_no_commits, test_enemy, test_investigator, GameStateBuilder};
-use game_core::{assert_event, assert_no_event, Action, PlayerAction};
+use game_core::test_support::{test_enemy, test_investigator, GameStateBuilder, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 const SPECIAL: &str = "01006";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -56,6 +57,7 @@ fn board(loc_clues: u8) -> game_core::GameState {
         .with_enemy(enemy)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
@@ -71,14 +73,16 @@ fn ammo(state: &game_core::GameState) -> u8 {
 }
 
 fn fire(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ActivateAbility {
+    TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: WEAPON_INST,
             ability_index: 0,
-        }),
-    )
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run()
 }
 
 #[test]

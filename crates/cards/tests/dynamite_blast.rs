@@ -16,8 +16,10 @@ use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{apply, Action, InputResponse, OptionId, PlayerAction};
+use game_core::test_support::{
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{apply, Action, InputResponse, OptionId, PlayerAction, TurnAction};
 
 const DYNAMITE: &str = "01024";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -35,12 +37,12 @@ fn install() {
 }
 
 fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply(
+    take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: INV,
             hand_index: 0,
-        }),
+        },
     )
 }
 
@@ -93,6 +95,7 @@ fn board() -> game_core::GameState {
         .with_enemy(enemy_b)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .build()
 }
 
@@ -174,6 +177,7 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
         .with_enemy(enemy_a)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .build();
 
     let r = play(state);

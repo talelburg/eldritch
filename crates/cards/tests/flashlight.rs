@@ -12,16 +12,17 @@
 
 use std::sync::Once;
 
+use game_core::assert_event;
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
     SkillKind, TokenModifiers, UseKind,
 };
 use game_core::test_support::{
-    apply_no_commits, test_investigator, test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder, TestSession,
 };
-use game_core::{assert_event, Action, PlayerAction};
 
 const FLASHLIGHT: &str = "01087";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -57,6 +58,7 @@ fn board(intellect: i8, shroud: u8, revealed: bool) -> game_core::GameState {
         .with_location(location)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
@@ -71,14 +73,16 @@ fn supplies(state: &game_core::GameState) -> Option<u8> {
 }
 
 fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ActivateAbility {
+    TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: TORCH_INST,
             ability_index: 0,
-        }),
-    )
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run()
 }
 
 #[test]
@@ -115,8 +119,16 @@ fn reduced_shroud_clamps_at_zero() {
 #[test]
 fn rejects_without_a_revealed_location_before_spending_a_supply() {
     // Validate-first: an unrevealed location is not investigatable, so the
-    // activation rejects before the supply cost is paid.
-    let r = activate(board(2, 4, false));
+    // activation rejects before the supply cost is paid. The ability is not
+    // offered (unrevealed location → not legal), so bypass the gate.
+    let r = dispatch_turn_action_unchecked(
+        board(2, 4, false),
+        &TurnAction::ActivateAbility {
+            investigator: INV,
+            instance_id: TORCH_INST,
+            ability_index: 0,
+        },
+    );
     assert!(matches!(r.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(
         supplies(&r.state),

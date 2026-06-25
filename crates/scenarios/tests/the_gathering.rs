@@ -10,9 +10,10 @@ use game_core::engine::{apply, EngineOutcome};
 use game_core::scenario::Resolution;
 use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
-    fire_forced_on_enter, test_investigator, test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, fire_forced_on_enter, take_turn_action, test_investigator,
+    test_location, GameStateBuilder,
 };
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::{the_gathering, REGISTRY};
 
 static INSTALL: Once = Once::new();
@@ -94,15 +95,12 @@ fn drives_act_1_then_act_2_via_round_end_window() {
 
     // Act 1: the normal Investigation-phase clue spend. Board builds and the
     // investigator relocates to the Hallway (01112) — the act-2 contributors.
-    state = apply_checked(
-        state,
-        &Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-    );
+    state = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }).state;
     assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
 
     // End the round: the cascade reaches step 4.6 and opens act 2's round-end
     // window (Hallway investigator holds >= 3 clues).
-    let r = apply(state, Action::Player(PlayerAction::EndTurn));
+    let r = take_turn_action(state, &TurnAction::EndTurn);
     assert!(
         matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
         "round end opens the act-2 clue-spend window, got {:?}",
@@ -246,10 +244,8 @@ fn advancing_act_1_rebuilds_the_board() {
     state.active_investigator = Some(inv);
     state.phase = Phase::Investigation;
 
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-    );
+    let result =
+        dispatch_turn_action_unchecked(state, &TurnAction::AdvanceAct { investigator: inv });
     assert_eq!(result.outcome, EngineOutcome::Done);
 
     // Board rebuilt: four locations in play, Study gone, set-aside empty.

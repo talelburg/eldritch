@@ -13,8 +13,10 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{apply, assert_event, Action, PlayerAction};
+use game_core::test_support::{
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+};
+use game_core::{assert_event, TurnAction};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter
@@ -66,14 +68,15 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
         .with_location(test_location(1, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .build();
 
-    let r = apply(
+    let r = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: INV,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(r.outcome, EngineOutcome::Done);
     // Exactly one Barricade: attached to the location, none in hand/discard.
@@ -136,10 +139,7 @@ fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
 
 #[test]
 fn non_elite_hunter_cannot_enter_the_barricaded_location() {
-    let r = apply(
-        map_with_barricade_at_b(GHOUL_MINION),
-        Action::Player(PlayerAction::EndTurn),
-    );
+    let r = take_turn_action(map_with_barricade_at_b(GHOUL_MINION), &TurnAction::EndTurn);
     assert_eq!(
         r.state.enemies[&EnemyId(100)].current_location,
         Some(A),
@@ -149,10 +149,7 @@ fn non_elite_hunter_cannot_enter_the_barricaded_location() {
 
 #[test]
 fn elite_hunter_enters_the_barricaded_location() {
-    let r = apply(
-        map_with_barricade_at_b(GHOUL_PRIEST),
-        Action::Player(PlayerAction::EndTurn),
-    );
+    let r = take_turn_action(map_with_barricade_at_b(GHOUL_PRIEST), &TurnAction::EndTurn);
     assert_eq!(
         r.state.enemies[&EnemyId(100)].current_location,
         Some(B),
@@ -176,6 +173,7 @@ fn leaving_the_barricaded_location_discards_barricade() {
         .with_location(b)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .build();
     state
         .locations
@@ -184,12 +182,12 @@ fn leaving_the_barricaded_location_discards_barricade() {
         .attachments
         .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
 
-    let r = apply(
+    let r = take_turn_action(
         state,
-        Action::Player(PlayerAction::Move {
+        &TurnAction::Move {
             investigator: INV,
             destination: B,
-        }),
+        },
     );
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert!(

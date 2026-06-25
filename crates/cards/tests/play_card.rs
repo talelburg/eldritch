@@ -15,13 +15,14 @@
 
 use std::sync::Once;
 
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{CardCode, InvestigatorId, Phase, Status, Zone};
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
-use game_core::PlayerAction;
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
-use game_core::{Action, LocationId};
+use game_core::{LocationId, TurnAction};
 
 /// Holy Rosary (01059) — Mystic asset, +1 willpower constant.
 const HOLY_ROSARY: &str = "01059";
@@ -89,12 +90,12 @@ fn play_state(hand: Vec<&str>) -> (game_core::GameState, InvestigatorId, Locatio
 fn play_holy_rosary_emits_card_played_and_lands_in_play() {
     let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -130,12 +131,12 @@ fn asset_enters_play_with_instance_id_from_state_counter() {
     let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
     assert_eq!(state.card_instance_ids.peek(), 0, "counter starts at 0");
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(result.outcome, EngineOutcome::Done);
 
@@ -162,21 +163,21 @@ fn two_copies_of_magnifying_glass_get_distinct_instance_ids() {
 
     let (state, id, _loc) = play_state(vec![MAGNIFYING_GLASS, MAGNIFYING_GLASS]);
 
-    let after_first = apply(
+    let after_first = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(after_first.outcome, EngineOutcome::Done);
 
-    let after_second = apply(
+    let after_second = dispatch_turn_action_unchecked(
         after_first.state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(after_second.outcome, EngineOutcome::Done);
 
@@ -201,12 +202,12 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
     // a separate no-op test below).
     state.locations.get_mut(&loc_id).unwrap().clues = 1;
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -266,12 +267,12 @@ fn play_working_a_hunch_on_empty_location_is_still_done() {
     let (state, id, loc_id) = play_state(vec![WORKING_A_HUNCH]);
     assert_eq!(state.locations[&loc_id].clues, 0);
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -294,12 +295,12 @@ fn play_working_a_hunch_on_empty_location_is_still_done() {
 #[test]
 fn play_unknown_card_code_is_rejected() {
     let (state, id, _loc) = play_state(vec![UNKNOWN_CODE]);
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -317,12 +318,12 @@ fn play_non_event_or_asset_card_is_rejected() {
     // story) all reject. Roland Banks (01001) is the in-corpus
     // sample for the non-playable case.
     let (state, id, _loc) = play_state(vec![ROLAND_BANKS]);
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -340,12 +341,12 @@ fn play_unimplemented_card_is_rejected() {
     // will refuse decks containing unimplemented cards; PlayCard
     // double-checks rather than silently no-op.
     let (state, id, _loc) = play_state(vec![UNIMPLEMENTED_ASSET]);
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
@@ -365,12 +366,12 @@ fn normal_event_play_discards_exactly_once() {
     // and pending_played_event must be cleared on Done.
     let (state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -414,12 +415,12 @@ fn asset_play_enters_play_through_the_frame() {
     // cards_in_play and be removed from hand, and no CardDiscarded fires.
     let (state, id, _loc) = play_state(vec![MACHETE]);
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -454,12 +455,12 @@ fn play_card_after_defeat_is_rejected() {
         .with_active_investigator(id)
         .build();
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());

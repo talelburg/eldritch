@@ -14,7 +14,7 @@ use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::Resolution;
 use game_core::state::{CardCode, GameState, InvestigatorId, LocationId, Phase};
-use game_core::{assert_event, Action, InputResponse, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_TREACHERY_CODE, TEST_REGISTRY,
 };
@@ -41,6 +41,28 @@ fn apply_checked(state: GameState, action: &Action) -> (GameState, Vec<Event>) {
         r.outcome,
     );
     (r.state, r.events)
+}
+
+/// Drive a single open-turn action via the enumeration path (same as
+/// `take_turn_action`) and record the resulting `ResolveInput(PickSingle)`
+/// wire action in `log`, so the log can be replayed identically.
+fn take_checked(
+    state: GameState,
+    action: &TurnAction,
+    log: &mut Vec<Action>,
+) -> (GameState, Vec<Event>) {
+    let legal = game_core::engine::legal_actions(&state);
+    let idx = legal
+        .iter()
+        .position(|a| a == action)
+        .unwrap_or_else(|| panic!("take_checked: {action:?} is not legal; offered: {legal:?}"));
+    let wire = Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(game_core::engine::OptionId(
+            u32::try_from(idx).expect("idx fits u32"),
+        )),
+    });
+    log.push(wire.clone());
+    apply_checked(state, &wire)
 }
 
 /// Apply `actions` in order from `initial`, concatenating all emitted
@@ -100,31 +122,87 @@ fn won_walk_full_cycle_replays_identically() {
     // EndTurn cascades through Enemy/Upkeep -> pauses at round-2 Mythos
     // 1.4 -> DrawEncounterCard finishes Mythos -> round 2 Investigate
     // (4th clue, +commit) -> AdvanceAct x2 (act 0 -> 1 -> Won).
+    //
+    // The log is built dynamically: open-turn actions are driven via
+    // take_checked, which enumerates legal actions, picks the right option
+    // id, and records the resulting ResolveInput(PickSingle) wire action so
+    // the log can be replayed identically (replay_with_roundtrip).
     let commit_nothing = Action::Player(PlayerAction::ResolveInput {
         response: InputResponse::PickMultiple { selected: vec![] },
     });
-    let log = vec![
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-        Action::Player(PlayerAction::Investigate { investigator: inv }),
-        commit_nothing.clone(), // commit window for investigate 1
-        Action::Player(PlayerAction::Investigate { investigator: inv }),
-        commit_nothing.clone(), // commit window for investigate 2
-        Action::Player(PlayerAction::Investigate { investigator: inv }),
-        commit_nothing.clone(), // commit window for investigate 3
-        Action::Player(PlayerAction::EndTurn),
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-        Action::Player(PlayerAction::Investigate { investigator: inv }),
-        commit_nothing.clone(), // commit window for investigate 4
-        Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-        Action::Player(PlayerAction::AdvanceAct { investigator: inv }),
-    ];
+    let draw_encounter = Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::Confirm,
+    });
 
-    let (final_state, events) = drive(make_initial(), &log);
+    let mut log: Vec<Action> = Vec::new();
+    let mut state = make_initial();
+    let mut events: Vec<Event> = Vec::new();
+
+    macro_rules! push_apply {
+        ($action:expr) => {{
+            let a = $action;
+            log.push(a.clone());
+            let (s, ev) = apply_checked(state, &a);
+            state = s;
+            events.extend(ev);
+        }};
+    }
+
+    // StartScenario + mulligan.
+    push_apply!(Action::Player(PlayerAction::StartScenario {
+        roster: vec![]
+    }));
+    push_apply!(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickMultiple { selected: vec![] },
+    }));
+
+    // Investigate x3 (each with a commit window).
+    for _ in 0..3 {
+        let (s, ev) = take_checked(
+            state,
+            &TurnAction::Investigate { investigator: inv },
+            &mut log,
+        );
+        state = s;
+        events.extend(ev);
+        push_apply!(commit_nothing.clone());
+    }
+
+    // EndTurn → cascades through phases, pauses at Mythos 1.4.
+    let (s, ev) = take_checked(state, &TurnAction::EndTurn, &mut log);
+    state = s;
+    events.extend(ev);
+
+    // DrawEncounterCard (Confirm).
+    push_apply!(draw_encounter.clone());
+
+    // Round 2: Investigate (4th clue) + commit window.
+    let (s, ev) = take_checked(
+        state,
+        &TurnAction::Investigate { investigator: inv },
+        &mut log,
+    );
+    state = s;
+    events.extend(ev);
+    push_apply!(commit_nothing.clone());
+
+    // AdvanceAct x2 (act 0 → 1 → Won).
+    let (s, ev) = take_checked(
+        state,
+        &TurnAction::AdvanceAct { investigator: inv },
+        &mut log,
+    );
+    state = s;
+    events.extend(ev);
+    let (s, ev) = take_checked(
+        state,
+        &TurnAction::AdvanceAct { investigator: inv },
+        &mut log,
+    );
+    state = s;
+    events.extend(ev);
+
+    let final_state = state;
 
     // Cycled all four phases across the two rounds.
     assert_event!(events, Event::PhaseEnded { phase } if *phase == Phase::Investigation);
@@ -184,9 +262,7 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     // 12 iterations is ~2x headroom: doom +1 per Mythos and the two
     // agendas sum to a threshold of 4, so the loss latches by ~round 5.
     for _ in 0..12 {
-        let act = Action::Player(PlayerAction::EndTurn);
-        let (next, ev) = apply_checked(state, &act);
-        log.push(act);
+        let (next, ev) = take_checked(state, &TurnAction::EndTurn, &mut log);
         state = next;
         events.extend(ev);
         if state.resolution.is_some() {

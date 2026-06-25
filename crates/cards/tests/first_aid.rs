@@ -9,11 +9,14 @@ use std::sync::Once;
 
 use game_core::dsl::HarmKind;
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
+use game_core::test_support::{
+    take_turn_action, test_investigator, test_location, GameStateBuilder,
+};
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 const FIRST_AID: &str = "01019";
@@ -46,6 +49,7 @@ fn board(supplies: u8) -> game_core::GameState {
         .with_location(test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .build()
 }
 
@@ -58,13 +62,13 @@ fn supplies(state: &game_core::GameState) -> Option<u8> {
 }
 
 fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply(
+    take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: KIT_INST,
             ability_index: 0,
-        }),
+        },
     )
 }
 

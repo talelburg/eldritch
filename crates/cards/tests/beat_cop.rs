@@ -6,12 +6,16 @@
 use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{apply, assert_event, assert_no_event, Action, PlayerAction};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
+    GameStateBuilder,
+};
+use game_core::{assert_event, assert_no_event};
 
 const BEAT_COP: &str = "01018";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -39,7 +43,8 @@ fn board(enemy_present: bool) -> game_core::GameState {
         .with_investigator_at(inv, LOC)
         .with_location(test_location(10, "Study"))
         .with_active_investigator(INV)
-        .with_turn_order([INV]);
+        .with_turn_order([INV])
+        .with_investigator_turn(INV);
     if enemy_present {
         let mut enemy = test_enemy(100, "Ghoul");
         enemy.max_health = 3;
@@ -49,21 +54,15 @@ fn board(enemy_present: bool) -> game_core::GameState {
     builder.build()
 }
 
-fn activate_fast(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply(
-        state,
-        Action::Player(PlayerAction::ActivateAbility {
-            investigator: INV,
-            instance_id: COP_INST,
-            ability_index: 1, // index 1 = the [fast] discard-damage ability
-        }),
-    )
-}
+const ACTIVATE_ABILITY: TurnAction = TurnAction::ActivateAbility {
+    investigator: INV,
+    instance_id: COP_INST,
+    ability_index: 1, // index 1 = the [fast] discard-damage ability
+};
 
 #[test]
 fn discards_self_and_deals_one_damage_to_the_co_located_enemy() {
-    let r = activate_fast(board(true));
-    assert_eq!(r.outcome, EngineOutcome::Done);
+    let r = take_turn_action(board(true), &ACTIVATE_ABILITY);
     assert_event!(r.events, Event::EnemyDamaged { amount: 1, .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 1);
     // Beat Cop paid its own discard as the cost.
@@ -86,7 +85,9 @@ fn discards_self_and_deals_one_damage_to_the_co_located_enemy() {
 
 #[test]
 fn rejects_with_no_enemy_at_location_and_keeps_beat_cop_in_play() {
-    let r = activate_fast(board(false));
+    // The ability has no valid target (no enemy) — bypass the legal-actions
+    // gate since the action won't be offered.
+    let r = dispatch_turn_action_unchecked(board(false), &ACTIVATE_ABILITY);
     assert!(matches!(r.outcome, EngineOutcome::Rejected { .. }));
     // Pre-cost target check (#301) rejects before paying ⇒ Beat Cop survives.
     assert_no_event!(r.events, Event::CardDiscarded { .. });

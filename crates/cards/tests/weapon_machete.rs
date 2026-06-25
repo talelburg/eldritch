@@ -12,15 +12,17 @@
 use std::sync::Once;
 
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, InvestigatorId,
     LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, dispatch_turn_action_unchecked, take_turn_action, test_enemy,
+    test_investigator, test_location, GameStateBuilder, TestSession,
 };
-use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
+use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction};
 
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -52,6 +54,7 @@ fn board(enemy_count: u32) -> game_core::GameState {
         .with_location(location)
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default());
 
@@ -68,14 +71,16 @@ fn board(enemy_count: u32) -> game_core::GameState {
 }
 
 fn activate_machete(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ActivateAbility {
+    TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: MACHETE_INST,
             ability_index: 0,
-        }),
-    )
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run()
 }
 
 /// With exactly one enemy engaged, a successful Machete Fight deals
@@ -97,13 +102,13 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
     let state = board(2);
 
     // Step 1: activate → should suspend for enemy target pick (NOT rejected).
-    let r1 = apply(
+    let r1 = take_turn_action(
         state,
-        Action::Player(PlayerAction::ActivateAbility {
+        &TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: MACHETE_INST,
             ability_index: 0,
-        }),
+        },
     );
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -153,7 +158,14 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
 fn no_co_located_enemy_activation_is_rejected_precost() {
     let state = board(0);
     let actions_before = state.investigators[&INV].actions_remaining;
-    let r = activate_machete(state);
+    let r = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::ActivateAbility {
+            investigator: INV,
+            instance_id: MACHETE_INST,
+            ability_index: 0,
+        },
+    );
     assert!(
         matches!(r.outcome, EngineOutcome::Rejected { .. }),
         "expected Rejected; got {:?}",

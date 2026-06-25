@@ -10,13 +10,15 @@
 
 use std::sync::Once;
 
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{apply_no_commits, test_investigator, GameStateBuilder};
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::test_support::{
+    apply_no_commits, take_turn_action, test_investigator, GameStateBuilder,
+};
+use game_core::{assert_event, Action, PlayerAction, TurnAction};
 
 const HOLY_ROSARY: &str = "01059";
 
@@ -43,6 +45,7 @@ fn state_with_rosary_in_hand() -> (game_core::GameState, InvestigatorId) {
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
+        .with_investigator_turn(id)
         // Single-token bag → token-modifier is always 0; the skill
         // test outcome is decided entirely by the base + constant
         // contribution vs. difficulty.
@@ -60,12 +63,12 @@ fn willpower_test_succeeds_at_difficulty_4_after_playing_holy_rosary() {
     let (state, id) = state_with_rosary_in_hand();
 
     // Play Holy Rosary out of hand.
-    let after_play = apply(
+    let after_play = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
     let in_play = &after_play.state.investigators[&id].cards_in_play;
@@ -94,12 +97,12 @@ fn willpower_test_fails_at_difficulty_5_even_with_holy_rosary() {
     // +1 isn't a free pass: 3 + 1 + 0 < 5 still fails.
     let (state, id) = state_with_rosary_in_hand();
 
-    let after_play = apply(
+    let after_play = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
 
@@ -126,12 +129,12 @@ fn intellect_test_unaffected_by_holy_rosary_in_play() {
     // the rosary being in play.
     let (state, id) = state_with_rosary_in_hand();
 
-    let after_play = apply(
+    let after_play = take_turn_action(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
     assert_eq!(after_play.outcome, EngineOutcome::Done);
 

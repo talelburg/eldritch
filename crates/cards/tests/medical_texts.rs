@@ -14,17 +14,16 @@
 
 use std::sync::Once;
 
+use game_core::assert_event;
 use game_core::dsl::HarmKind;
 use game_core::engine::EngineOutcome;
+use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
     TokenModifiers,
 };
-use game_core::test_support::{
-    apply_no_commits, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{assert_event, Action, PlayerAction};
+use game_core::test_support::{test_investigator, test_location, GameStateBuilder, TestSession};
 
 const MEDICAL_TEXTS: &str = "01035";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -62,20 +61,23 @@ fn board(intellect: i8, damage: u8) -> game_core::GameState {
         .with_location(test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
+        .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
 }
 
 fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    apply_no_commits(
-        state,
-        Action::Player(PlayerAction::ActivateAbility {
+    TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: INV,
             instance_id: BOOK_INST,
             ability_index: 0,
-        }),
-    )
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run()
 }
 
 #[test]

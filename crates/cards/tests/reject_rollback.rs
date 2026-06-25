@@ -13,10 +13,11 @@ use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{gain_resources, modify, on_play, seq, Ability};
 use game_core::dsl::{InvestigatorTarget, ModifierScope, Stat};
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
-use game_core::{Action, PlayerAction};
+use game_core::test_support::{
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+};
 
 /// Code for the synthetic probe card. Not in the real corpus; only the
 /// hand-rolled registry below resolves it.
@@ -94,12 +95,12 @@ fn mid_resolution_reject_leaves_state_and_events_untouched() {
     // Capture the pre-action state to compare against byte-for-byte.
     let before = state.clone();
 
-    let result = apply(
+    let result = dispatch_turn_action_unchecked(
         state,
-        Action::Player(PlayerAction::PlayCard {
+        &TurnAction::PlayCard {
             investigator: id,
             hand_index: 0,
-        }),
+        },
     );
 
     assert!(
