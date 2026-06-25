@@ -61,8 +61,6 @@ fn board() -> game_core::GameState {
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry (#448 cp2a). Roland Banks (01001): 9/5.
     // Use Skids O'Toole (01003, 8 health / 6 sanity) — real code so
     // max_health()/max_sanity() can read from the installed cards registry
     // (#448 cp2a), no implemented abilities so no reaction windows fire.
