@@ -1470,7 +1470,10 @@ mod tests {
             })
             .collect();
         let result = seat_and_open(state, &roster);
-        assert!(matches!(result.outcome, EngineOutcome::AwaitingInput { .. }));
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
 
         // Each investigator drew 5 cards and has 3 left in deck.
         let ids = [InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
@@ -3962,7 +3965,6 @@ mod tests {
         assert!(result.events.is_empty());
     }
 
-
     #[test]
     fn mulligan_with_out_of_bounds_index_is_rejected() {
         let (_id, state) = mulligan_scenario();
@@ -4625,11 +4627,12 @@ mod tests {
     // NOTE: `non_resolve_input_action_rejects_while_skill_test_paused` was
     // removed here: it used the `StartScenario` variant as a proxy for "any
     // non-ResolveInput action" to exercise the pending-prompt gate in
-    // `apply_player_action`. After migrating seating to `seat_and_open`
-    // (which bypasses that gate), no other non-`ResolveInput` action remains
-    // in the wire surface to proxy with. The gate's rejection branch is covered
-    // by `crates/game-core/tests/reaction_windows.rs::non_resolve_input_action_rejects_while_window_open`,
-    // and the wrong-response-kind rejection is pinned in
+    // `apply_player_action`. Once `PlayerAction` collapsed to a single
+    // `ResolveInput` variant (#459), the gate's `!matches!(action, ResolveInput)`
+    // condition became dead and the gate itself was removed — there is no
+    // non-`ResolveInput` action left to proxy with. Pending-prompt protection is
+    // now structural: `resolve_input` rejects a `ResolveInput` that arrives with
+    // no outstanding prompt, and the wrong-response-kind rejection is pinned in
     // `resolve_input_with_wrong_response_variant_rejects`.
 
     #[test]
@@ -4937,7 +4940,10 @@ mod tests {
             result.outcome
         );
         assert_eq!(result.state.round, 1);
-        assert!(result.state.investigators.contains_key(&crate::state::InvestigatorId(1)));
+        assert!(result
+            .state
+            .investigators
+            .contains_key(&crate::state::InvestigatorId(1)));
     }
 
     #[test]
@@ -4947,11 +4953,17 @@ mod tests {
         crate::test_support::install_test_registry();
 
         let setup = GameStateBuilder::new().build();
-        let roster = vec![RosterEntry { investigator: CardCode::new("99999"), deck: vec![] }];
+        let roster = vec![RosterEntry {
+            investigator: CardCode::new("99999"),
+            deck: vec![],
+        }];
 
         let result = seat_and_open(setup, &roster);
 
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
-        assert_eq!(result.state.round, 0, "rejected seating leaves state unchanged");
+        assert_eq!(
+            result.state.round, 0,
+            "rejected seating leaves state unchanged"
+        );
     }
 }
