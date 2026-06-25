@@ -66,28 +66,18 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         ));
     }
 
-    // A scenario requires at least one investigator (pre-seated or
-    // roster-seated). In production setup() seats none, so this makes the
-    // roster mandatory: an empty roster rejects. The pre-seated test path
-    // (>=1 already present, empty roster) passes — temporary scaffolding
-    // until TODO(#224) migrates tests to roster seating and tightens this
-    // to require a non-empty roster.
-    if cx.state.investigators.is_empty() && resolved.is_empty() {
+    // A scenario requires at least one investigator. Seating is the sole
+    // seater (#224): the roster is mandatory, an empty roster rejects.
+    if resolved.is_empty() {
         return EngineOutcome::Rejected {
-            reason: "a scenario requires at least one investigator".into(),
+            reason: "a scenario requires a non-empty roster".into(),
         };
     }
 
     // --- mutate (all validations passed) ---
     // Seat resolved investigators. Ids are sequential (1-based) in roster
-    // order. This ASSUMES an empty investigator set when the roster is
-    // non-empty — true for production (setup() seats nobody) and every
-    // test (pre-seated states pass an empty roster). Mixing a non-empty
-    // roster with pre-seated investigators would overwrite id 1; #224
-    // removes the pre-seated path and makes the roster the sole seater,
-    // retiring this assumption.
-    // Seated investigators start at the scenario's starting location
-    // (set by setup()). None leaves them unplaced — the pre-seated path.
+    // order. Seated investigators start at the scenario's starting location
+    // (set by setup()). None leaves them unplaced.
     let start = cx.state.starting_location;
 
     for (idx, (skills, name, deck, card_code)) in resolved.into_iter().enumerate() {
@@ -3843,8 +3833,7 @@ mod hand_size_tests {
 #[cfg(test)]
 mod start_scenario_tests {
     use super::*;
-    use crate::action::{Action, PlayerAction, RosterEntry};
-    use crate::engine::apply;
+    use crate::action::RosterEntry;
     use crate::seat_and_open;
     use crate::state::CardCode;
     use crate::state::GameStateBuilder;
@@ -3895,22 +3884,15 @@ mod start_scenario_tests {
     }
 
     #[test]
-    fn start_scenario_empty_roster_passes_through_with_preseated_investigator() {
-        let id = crate::state::InvestigatorId(1);
-        let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+    fn seat_and_open_rejects_an_empty_roster() {
+        install_test_registry();
+        let state = GameStateBuilder::new().build();
+        let result = seat_and_open(state, &[]);
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "an empty roster must reject, got {:?}",
+            result.outcome
         );
-        // One Active investigator → StartScenario opens the mulligan prompt.
-        assert!(matches!(
-            result.outcome,
-            EngineOutcome::AwaitingInput { .. }
-        ));
-        assert_eq!(result.state.round, 1);
     }
 
     // A non-empty roster whose entry cannot be resolved to investigator
