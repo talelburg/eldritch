@@ -189,7 +189,11 @@ fn attic_forced_enter_deals_one_horror() {
     let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(20));
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
-        state.investigators.get(&InvestigatorId(1)).unwrap().horror,
+        state
+            .investigators
+            .get(&InvestigatorId(1))
+            .unwrap()
+            .horror(),
         1,
         "entering the Attic deals 1 horror to the entering investigator",
     );
@@ -209,7 +213,11 @@ fn cellar_forced_enter_deals_one_damage() {
     let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(21));
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
-        state.investigators.get(&InvestigatorId(1)).unwrap().damage,
+        state
+            .investigators
+            .get(&InvestigatorId(1))
+            .unwrap()
+            .damage(),
         1,
         "entering the Cellar deals 1 damage to the entering investigator",
     );

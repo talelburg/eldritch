@@ -91,7 +91,7 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
     // Seed: Roland one hit from death (health 9 → damage 8).
     {
         let roland = state.investigators.get_mut(&INV).expect("Roland seated");
-        roland.damage = roland.max_health - 1;
+        roland.damage = roland.max_health() - 1;
     }
     let loc = state.investigators[&INV]
         .current_location
