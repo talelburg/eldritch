@@ -2,7 +2,9 @@
 //! drawn, final total vs difficulty, pass/fail by N — from the events the store
 //! retained ([`crate::store::ClientState::last_events`] +
 //! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)).
-//! Pairs with the Confirm button rendered by [`crate::input::AwaitingInputView`].
+//! Pairs with the Confirm button rendered by `AwaitingInputView` (the
+//! wasm-only `crate::input` module, so not linked here — the host `cargo doc`
+//! build excludes it).
 
 use game_core::state::{ChaosToken, TokenResolution};
 use game_core::{Event, FailureReason};
@@ -31,9 +33,7 @@ pub struct SkillTestSummary {
 pub fn summarize(events: &[Event], difficulty: Option<i8>) -> Option<SkillTestSummary> {
     let difficulty = difficulty?;
     let token = events.iter().find_map(|e| match e {
-        Event::ChaosTokenRevealed { token, resolution } => {
-            Some(token_display(*token, *resolution))
-        }
+        Event::ChaosTokenRevealed { token, resolution } => Some(token_display(*token, *resolution)),
         _ => None,
     });
     for e in events {
