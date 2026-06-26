@@ -84,12 +84,21 @@ enemy; you just forfeit the sole-engaged damage bonus).
   `pending_played_event` is only partially met (forcing it needs a custom deserializer,
   deferred). His signature is in the "done" criteria.
 
-**2. #368 — before-discover eligibility (p1-next, needs-design).** Lift the
-hardcoded scan-suppression stand-ins (Cover Up 01007 `card.clues == 0`; act 01109
-round-end clue-threshold) into a declarative **trigger-level eligibility
-`Condition`** (RR p.2: an ability can't initiate if its effect won't change game
-state). Two consumers already; designed when the 3rd lands (Lone Wolf 02188,
-Burned Ruins 02205). Item 2 (capped discovery count) is independent and latent.
+**2. #368 — trigger-level eligibility ✅ shipped (PR #472, also closes #470).**
+The hardcoded scan-suppression stand-ins (Cover Up 01007 `card.clues == 0`; act
+01109 round-end clue-threshold — the latter actually *missing* from the offer
+scan post-#434, i.e. bug #470) are lifted into a per-ability **native eligibility
+predicate** evaluated at reaction-scan time (RR p.2: an ability can't initiate if
+its effect won't change game state). Resolved as a native hook (`Ability.
+eligibility` tag → `CardRegistry::native_eligibility_for` →
+`fn(&GameState, &EvalContext) -> bool`), **not** a declarative `Condition`: both
+live consumers are single-consumer + heterogeneous, so declarative DSL vocab
+would be speculative — promote to a `Condition` when a predicate recurs (Lone
+Wolf 02188, Burned Ruins 02205). The Barrier's offer + resolve share one
+`round_end_advance_affordable` helper so they can't drift. **Item 2 (capped
+discovery count) moved to #471** — it becomes live only once Deduction 01039 is
+fixed to modify a single discovery's count (FAQ-confirmed) rather than spawn a
+second discovery.
 
 **3. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:
