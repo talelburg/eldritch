@@ -66,12 +66,16 @@ Insert a cursor step between `DetermineOutcome` and `FireOnCommit`:
   fires the `SkillTestResolved` timing point. Change only its pre-advance
   target from `FireOnCommit` to `AcknowledgeOutcome`.
 - The `advance` arm for `AcknowledgeOutcome`:
-  - If `interactive_acknowledge` is **off**: pre-advance to `FireOnCommit` and
+  - If `interactive_acknowledge` is **off**: advance to `FireOnCommit` and
     `continue` (no pause — behaviour identical to today).
-  - If **on**: pre-advance the cursor to `FireOnCommit`, then return
-    `AwaitingInput { request: InputRequest::confirm(<short prompt>),
-    resume_token }`. The prompt string is a minimal generic label (e.g.
-    "Acknowledge skill-test result"); the rich panel is the client's job.
+  - If **on**: return `AwaitingInput { request: InputRequest::confirm(<short
+    prompt>), resume_token }` **without** advancing — the cursor stays at
+    `AcknowledgeOutcome` across the suspension, mirroring the `AwaitingCommit` /
+    `finish_skill_test` handshake. `acknowledge_outcome` advances the cursor to
+    `FireOnCommit` on the `Confirm` resume, which lets it validate-first against
+    the cursor (reject a `Confirm` arriving at the wrong step). The prompt string
+    is a minimal generic label (e.g. "Acknowledge skill-test result"); the rich
+    panel is the client's job.
 
 Because `DetermineOutcome`'s success/failure events and `Resolving`'s
 `ChaosTokenRevealed` are emitted in the same drive as the pause, they land in
@@ -86,9 +90,10 @@ if needed.
 hook. Today it only accepts `PickMultiple` (the commit). Generalise it to
 dispatch on the frame's cursor:
 
-- cursor `AwaitingCommit` + `PickMultiple` → `finish_skill_test` (today).
-- cursor `AcknowledgeOutcome` + `Confirm` → re-drive (`advance`) from the
-  already-pre-advanced `FireOnCommit` cursor.
+- `PickMultiple` → `finish_skill_test` (self-validates cursor `AwaitingCommit`).
+- `Confirm` → `acknowledge_outcome` (self-validates cursor `AcknowledgeOutcome`,
+  advances it to `FireOnCommit`, returns `Done` so the outer `drive` runs the
+  consequences).
 - otherwise → `Rejected` with a clear reason (mirroring the existing
   wrong-response arm).
 

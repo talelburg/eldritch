@@ -58,6 +58,14 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         } => {
             state.game = Some(*s);
             state.outcome = Some(outcome);
+            // Capture difficulty from `SkillTestStarted` (an earlier batch than the
+            // resolution). Exact in current scope — `InFlightSkillTest.difficulty`
+            // is never mutated post-creation, so it equals the margin basis. The
+            // alternative is reading `game.current_skill_test().difficulty` off the
+            // still-live in-flight frame; that would be immune to (a) a reconnect
+            // mid-pause (`Hello` clears this cache) and (b) a future difficulty-
+            // modifying card that mutates the in-flight difficulty mid-test.
+            // Revisit if either lands.
             if let Some(difficulty) = events.iter().find_map(|e| match e {
                 game_core::Event::SkillTestStarted { difficulty, .. } => Some(*difficulty),
                 _ => None,

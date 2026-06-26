@@ -97,17 +97,24 @@ async fn renders_token_total_and_outcome_after_resolution() {
 
 #[wasm_bindgen_test]
 async fn renders_nothing_before_any_resolution() {
+    // Other tests on the same page accumulate panels in the DOM, so assert on the
+    // before/after delta for THIS mount rather than an absolute count.
+    let count = || {
+        leptos::prelude::document()
+            .query_selector_all(".skill-test-result")
+            .expect("query")
+            .length()
+    };
+    let before = count();
     let store = RwSignal::new(ClientState::default());
     leptos::mount::mount_to_body(move || {
         provide_context(store);
         leptos::view! { <SkillTestResultView/> }
     });
     leptos::task::tick().await;
-    // No batch fed: the empty store yields no summary (other tests on the same
-    // page may have rendered a panel, so assert on the store, not the DOM).
-    let st = store.get_untracked();
-    assert!(
-        web::skill_test_result::summarize(&st.last_events, st.last_skill_test_difficulty).is_none(),
-        "an empty store yields no summary"
+    assert_eq!(
+        count(),
+        before,
+        "an empty store renders no result panel section"
     );
 }
