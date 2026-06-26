@@ -231,6 +231,17 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other,    // re-prompt, or a suspended continuation
                 }
             }
+            // A framework Fast window on top (empty reaction candidates, so it
+            // failed the guarded arm above): surface its eligible fast plays as a
+            // skippable choice, or close it when none remain (#476). Re-examined
+            // after each fast play resolves — the re-open loop — until the player
+            // Skips or runs out of plays.
+            Some(Continuation::FastWindow { .. }) => {
+                match reaction_windows::drive_fast_window(cx) {
+                    EngineOutcome::Done => {} // closed (no eligible plays); loop on
+                    other => return other,    // the skippable prompt, or a continuation prompt
+                }
+            }
             // A skill test re-exposed on top (a mid-test window/effect closed):
             // step its driver. By the invariant it is top — no `rposition` /
             // `win_idx > st` self-location.

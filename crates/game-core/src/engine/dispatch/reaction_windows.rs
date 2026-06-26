@@ -1656,6 +1656,33 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
 /// hand-index / ability-index) order — the same shape the open-turn menu
 /// dispatches via `dispatch_turn_action`, so the #476 fast-window prompt reuses
 /// that dispatch path verbatim. Empty when the registry isn't installed.
+/// Drive a framework Fast window that is on top of the stack (#476): surface the
+/// currently-eligible fast plays as a **skippable** `PickSingle`, or close the
+/// window (running its continuation) when none remain. Called by the `drive`
+/// loop's `FastWindow` arm — both when the window first parks and each time it is
+/// re-exposed after a fast play resolves (the re-open loop). The window stays on
+/// top across the prompt; `resume_window` dispatches the pick, or closes on Skip.
+pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
+    let plays = enumerate_fast_plays(cx.state);
+    if plays.is_empty() {
+        // Nothing (more) to play: close + run the window's continuation.
+        return close_reaction_window(cx);
+    }
+    let options = plays
+        .iter()
+        .enumerate()
+        .map(|(i, a)| ChoiceOption {
+            id: OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
+            label: a.label(cx.state),
+        })
+        .collect::<Vec<_>>();
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single("Fast window — play a card or pass", options)
+            .skippable(),
+        resume_token: ResumeToken(0),
+    }
+}
+
 pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
     let mut out = Vec::new();
     let Some(reg) = crate::card_registry::current() else {
