@@ -381,6 +381,27 @@ pub struct SkillSubstitution {
     pub for_skills: Vec<SkillKind>,
 }
 
+/// Which deck an [`AdvanceReverse`](Continuation::AdvanceReverse) frame advances.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdvanceDeck {
+    /// The act deck (`act_index` / clue thresholds).
+    Act,
+    /// The agenda deck (`agenda_index` / doom thresholds).
+    Agenda,
+}
+
+/// Step cursor for the [`AdvanceReverse`](Continuation::AdvanceReverse) frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdvanceStep {
+    /// Push the observable `…Advanced` event; if interactive acknowledgment is
+    /// on, suspend with a `Confirm` here (the cursor stays until resumed).
+    AwaitAck,
+    /// Fire the leaving card's Forced on-advance reverse via `emit_event`.
+    FireReverse,
+    /// The reverse has resolved: bump the deck cursor and pop the frame.
+    Finalize,
+}
+
 /// A frame on the [`GameState::continuations`] suspend/resume stack
 /// (umbrella §1 / Axis-B): a typed resume point, not a closure, so it
 /// serializes for replay/persistence like every other state field.
@@ -425,6 +446,25 @@ pub enum Continuation {
         fast_actors: FastActorScope,
         /// The framework step this window gates (and its event-payload kind).
         kind: FastWindowKind,
+    },
+    /// An act/agenda is advancing (#482). A small resumable sub-process that
+    /// pushes the observable `…Advanced` event, optionally pauses for a gated
+    /// acknowledge `Confirm`, fires the leaving card's Forced on-advance reverse
+    /// (which may itself suspend — 01105's interactive `ChooseOne`), then bumps
+    /// the deck cursor *after* the reverse resolves (RR order). Driven by the
+    /// `drive` loop and resumed via `resolve_input` (mirrors the `SkillTest`
+    /// frame). Replaces the former synchronous `advance_agenda`/`advance_act`
+    /// emit-then-bump, whose post-forced bookkeeping stranded a suspending
+    /// reverse.
+    AdvanceReverse {
+        /// Which deck is advancing.
+        deck: AdvanceDeck,
+        /// Cursor index of the leaving card (before the bump).
+        from: usize,
+        /// Printed code of the leaving card (its reverse fires).
+        leaving_code: CardCode,
+        /// Where in the sub-process we are.
+        step: AdvanceStep,
     },
     /// A skill test is mid-resolution. Carries the in-flight test's data
     /// directly (the former `GameState::in_flight_skill_test` singleton, folded
@@ -915,6 +955,11 @@ pub enum MythosResume {
     /// (round bump, `PhaseStarted`, steps 1.1–1.4) and replaces this with the
     /// running anchor.
     Entry,
+    /// After step 1.2/1.3 (doom + agenda advance, incl. a suspending reverse)
+    /// have resolved: run the step-1.4 encounter draws. `mythos_phase` parks the
+    /// anchor here and the 1.4 draws run from `anchor_on_child_pop` once any
+    /// `AdvanceReverse` frame above the anchor pops (#482).
+    Draws,
     /// Post-step-1.4 (encounter draws done) window closed; run `mythos_phase_end`.
     AfterDraws,
 }
