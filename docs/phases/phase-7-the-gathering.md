@@ -102,13 +102,19 @@ the now-stable set of input shapes:
   gameplay path, re-enumerated at resolve (not cached). The test-only
   `PerformSkillTest` was removed too (→ `test_support::perform_skill_test*`). The
   web client lost its bespoke open-turn controls — gameplay renders through
-  `AwaitingInputView`'s `PickSingle` option list (flat for now; #205 enriches).
+  `AwaitingInputView`'s `PickSingle` option list (flat labels; richer per-option
+  metadata beyond `label` was explicitly out of #205's scope — a future enrichment).
   **Split out:** **#458** (deterministic resume-token, §F — `ResumeToken(0)` stays
   for now) and **#459 ✅ shipped (PR #461)** — see the picker bullet below.
-- **#205 — structured input rendering** (client half). Render the right control per
-  offered option from the structured `InputRequest.options`, not prompt-string
-  heuristics. Needs-design (client metadata schema). Now unblocked: the open-turn
-  menu (and every prompt) already arrives as `InputRequest.options`.
+- **#205 — structured input rendering ✅ shipped (PR #462).** `InputRequest` gained an
+  `InputKind { PickSingle, PickMultiple, Confirm }` discriminator (variant names mirror
+  `InputResponse` 1:1) plus an orthogonal `skippable: bool`; the ambiguous
+  `prompt`/`choice` constructors were replaced by `pick_single`/`pick_multiple`/`confirm`
+  + a chainable `.skippable()`, and every engine prompt site declares its kind.
+  `AwaitingInputView` switches on `kind` (Confirm → a Confirm button — the gate fix) and
+  renders a Skip button whenever `skippable` (the reaction/fast-window decline path, which
+  previously had no control). Richer per-option metadata beyond `label` is **not** in
+  scope — this PR is the discriminator only.
 - **Investigator/scenario picker ✅ shipped (PR #461 — #459 + #224).** Seating moved
   out of `PlayerAction::StartScenario` into the non-logged engine fn `seat_and_open`;
   the server seats at game-creation and persists the seated, mulligan-pending state as
@@ -124,14 +130,18 @@ the now-stable set of input shapes:
   and the ~37 `StartScenario` test sites migrated to `seat_and_open` (game-core's own
   tests seat synthetic `TEST_INV` via the test registry, preserving crate layering).
 - **End-to-end browser playthrough** of The Gathering to a resolution — the sole
-  remaining gate item, now **blocked on #205**. The picker → seating → mulligan →
-  investigation → Mythos flow all works in-browser (PR #461), but the playthrough
-  stalls at the first **Mythos encounter draw**: that prompt expects
-  `InputResponse::Confirm`, yet `AwaitingInputView` renders every empty-`options`
-  prompt as the legacy `PickMultiple` "Commit" control (no expected-response
-  discriminator on `InputRequest`), so it rejects. Purely a client-rendering gap —
-  the engine/persistence path is sound. #205 (the `InputKind` discriminator) is the
-  fix; see its issue comment for the root cause + design sketch.
+  remaining gate item. The Mythos-encounter-draw stall is **resolved** by #205's
+  `InputKind` discriminator (PR #462): the draw now renders a Confirm button and resolves,
+  and skippable windows render a Skip control. The picker → seating → mulligan →
+  investigation → Mythos flow all works in-browser (PR #461). What remains is *exercising*
+  the full playthrough to a resolution end-to-end — no known engine/client blocker.
+
+  > **Dev-loop note (not a gate blocker):** the wire-format change in #205 means a stale
+  > server binary + freshly-rebuilt client silently hangs at `<no game>` — the client drops
+  > the un-parseable old-shape `Hello` (`transport.rs` `if let Ok(msg)`), leaving `game:
+  > None`. Restart both processes after a wire change. Surfacing a visible
+  > version-mismatch status instead of the silent drop is a possible future hardening
+  > (out of #205 scope).
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
