@@ -23,7 +23,11 @@ pub fn App() -> impl IntoView {
             <BoardView/>
             {
                 #[cfg(target_arch = "wasm32")]
-                { view! { <crate::picker::PickerView/><crate::input::AwaitingInputView/> }.into_any() }
+                { view! {
+                    <crate::picker::PickerView/>
+                    <crate::skill_test_result::SkillTestResultView/>
+                    <crate::input::AwaitingInputView/>
+                }.into_any() }
                 #[cfg(not(target_arch = "wasm32"))]
                 { ().into_any() }
             }
