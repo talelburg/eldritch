@@ -256,3 +256,35 @@ async fn resolution_banner_renders_lost() {
         "lost reason missing: {html}"
     );
 }
+
+#[wasm_bindgen_test]
+async fn version_mismatch_status_renders_actionable_message() {
+    use web::store::ConnStatus;
+    let store = RwSignal::new(ClientState::default());
+    leptos::mount::mount_to_body(move || {
+        provide_context(store);
+        leptos::view! { <BoardView/> }
+    });
+    store.update(|s| s.status = ConnStatus::VersionMismatch);
+    leptos::task::tick().await;
+
+    // Scope to the last mounted .status line (DOM accumulates across tests).
+    let lines = leptos::prelude::document()
+        .query_selector_all(".status")
+        .expect("query_selector_all");
+    let html = lines
+        .item(lines.length() - 1)
+        .expect("at least one .status line")
+        .dyn_ref::<web_sys::Element>()
+        .expect("Element")
+        .inner_html();
+
+    assert!(
+        html.contains("version mismatch"),
+        "status line must name the version mismatch: {html}"
+    );
+    assert!(
+        html.contains("restart the server"),
+        "status line must tell the user what to do: {html}"
+    );
+}

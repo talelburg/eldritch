@@ -15,6 +15,9 @@ pub enum ConnStatus {
     Failed,
     /// No saved game and no roster chosen yet — render the picker.
     AwaitingRoster,
+    /// A server frame failed to deserialize — the client and server binaries
+    /// disagree on the wire format. Terminal: restart the server and reload.
+    VersionMismatch,
 }
 
 /// Everything the UI renders. `game`/`outcome`/`last_rejection` come
