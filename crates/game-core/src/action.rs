@@ -124,7 +124,7 @@ pub enum InputResponse {
     /// Decline / skip the prompted optional action.
     Skip,
     /// Pick one option from a structured choice prompt
-    /// ([`InputRequest::choice`](crate::engine::InputRequest::choice)),
+    /// ([`InputRequest::pick_single`](crate::engine::InputRequest::pick_single)),
     /// echoing back its [`OptionId`](crate::engine::OptionId). The
     /// single-selection family (umbrella §3): the Axis-A choice machinery, and
     /// the location/investigator-pick windows (hunter move/engage, spawn engage)

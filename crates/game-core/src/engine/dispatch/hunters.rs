@@ -418,7 +418,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
         .continuations
         .push(crate::state::Continuation::HunterMove(choice));
     EngineOutcome::AwaitingInput {
-        request: InputRequest::choice(prompt, options),
+        request: InputRequest::pick_single(prompt, options),
         resume_token: ResumeToken(0),
     }
 }

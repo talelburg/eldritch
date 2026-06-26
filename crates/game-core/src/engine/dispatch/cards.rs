@@ -290,7 +290,7 @@ pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> En
         .continuations
         .push(crate::state::Continuation::Mulligan { remaining });
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
+        request: InputRequest::pick_multiple(format!(
             "Setup mulligan: {next:?} may mulligan; submit InputResponse::PickMultiple with the \
              hand indices (as option ids) to redraw (an empty selection keeps the hand).",
         )),

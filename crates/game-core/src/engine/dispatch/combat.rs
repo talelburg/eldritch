@@ -894,7 +894,7 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
          ({rd} damage / {rh} horror left)"
     );
     EngineOutcome::AwaitingInput {
-        request: InputRequest::choice(prompt, super::hunters::candidate_options(&targets)),
+        request: InputRequest::pick_single(prompt, super::hunters::candidate_options(&targets)),
         resume_token: ResumeToken(0),
     }
 }
@@ -1136,7 +1136,7 @@ fn suspend_order_pick(
         stage: AttackLoopStage::PickOrder,
     });
     EngineOutcome::AwaitingInput {
-        request: InputRequest::choice(prompt, options),
+        request: InputRequest::pick_single(prompt, options),
         resume_token: ResumeToken(0),
     }
 }

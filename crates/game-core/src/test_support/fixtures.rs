@@ -128,7 +128,7 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
 #[must_use]
 pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(prompt),
+        request: InputRequest::pick_multiple(prompt),
         resume_token: ResumeToken(0),
     }
 }
@@ -144,7 +144,7 @@ pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
 #[must_use]
 pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::choice(
+        request: InputRequest::pick_single(
             prompt,
             vec![
                 ChoiceOption {

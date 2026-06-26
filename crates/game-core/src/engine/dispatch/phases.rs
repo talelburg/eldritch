@@ -1115,7 +1115,7 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
             HandSizeDiscard { remaining },
         ));
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
+        request: InputRequest::pick_multiple(format!(
             "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
              submit InputResponse::PickMultiple with the hand indices (as option ids) to \
              discard down to {HAND_SIZE_LIMIT}.",
@@ -1743,10 +1743,12 @@ mod mythos_phase_tests {
             events: &mut events,
         });
 
-        assert!(
-            matches!(outcome, EngineOutcome::AwaitingInput { .. }),
-            "mythos_phase opens the first encounter-draw prompt, got {outcome:?}"
-        );
+        let EngineOutcome::AwaitingInput { request, .. } = &outcome else {
+            panic!("mythos_phase opens the first encounter-draw prompt, got {outcome:?}");
+        };
+        // The draw is a binary acknowledge: kind Confirm, not skippable.
+        assert_eq!(request.kind, crate::engine::InputKind::Confirm);
+        assert!(!request.skippable);
         assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
         assert!(
             events.iter().any(|e| matches!(

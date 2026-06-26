@@ -60,41 +60,100 @@ pub struct ChoiceOption {
     pub label: String,
 }
 
+/// Which [`InputResponse`](crate::action::InputResponse) variant the host must
+/// echo back for a prompt. The variant names mirror `InputResponse` 1:1, so the
+/// `kind` *is* the expected response — the host renders the matching control
+/// without inspecting the prompt text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum InputKind {
+    /// Pick exactly one offered [`option`](InputRequest::options) →
+    /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
+    PickSingle,
+    /// Pick a subset (possibly empty) →
+    /// [`InputResponse::PickMultiple`](crate::action::InputResponse::PickMultiple).
+    PickMultiple,
+    /// A binary acknowledge with no choice →
+    /// [`InputResponse::Confirm`](crate::action::InputResponse::Confirm).
+    Confirm,
+}
+
 /// A prompt the engine emits when it needs player input.
 ///
-/// Carries free-form [`prompt`](Self::prompt) text plus, for the
-/// single-selection choice contract (Axis A + the Axis-C reaction-window
-/// migration), a structured [`options`](Self::options) list. Remaining
-/// prompt-only callers (commit windows, hand-size discard) leave `options`
-/// empty via [`InputRequest::prompt`].
+/// Carries free-form [`prompt`](Self::prompt) text, a [`kind`](Self::kind)
+/// discriminator naming the [`InputResponse`](crate::action::InputResponse) the
+/// host must send back, an optional structured [`options`](Self::options) list
+/// (for [`PickSingle`](InputKind::PickSingle)), and a
+/// [`skippable`](Self::skippable) flag for windows that may also be passed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InputRequest {
     /// Human-readable text describing what the player must choose.
     pub prompt: String,
-    /// Structured options for a single-selection choice. Empty for the
-    /// legacy free-form prompts that have not migrated to the structured
-    /// contract.
+    /// Offered options for a [`PickSingle`](InputKind::PickSingle) prompt.
+    /// Empty for [`PickMultiple`](InputKind::PickMultiple) (host derives
+    /// hand-card candidates) and [`Confirm`](InputKind::Confirm).
     pub options: Vec<ChoiceOption>,
+    /// Which response variant the host must send back.
+    pub kind: InputKind,
+    /// When true the host also offers a Skip/Pass control →
+    /// [`InputResponse::Skip`](crate::action::InputResponse::Skip). Orthogonal
+    /// to `kind` (e.g. a `PickSingle` reaction window that may also be passed).
+    pub skippable: bool,
 }
 
 impl InputRequest {
-    /// A legacy prompt-only request (no structured options).
+    /// A single-selection choice over `options` →
+    /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
     #[must_use]
-    pub fn prompt(text: impl Into<String>) -> Self {
-        Self {
-            prompt: text.into(),
-            options: Vec::new(),
-        }
-    }
-
-    /// A structured single-selection choice request.
-    #[must_use]
-    pub fn choice(text: impl Into<String>, options: Vec<ChoiceOption>) -> Self {
+    pub fn pick_single(text: impl Into<String>, options: Vec<ChoiceOption>) -> Self {
         Self {
             prompt: text.into(),
             options,
+            kind: InputKind::PickSingle,
+            skippable: false,
         }
+    }
+
+    /// A subset-selection prompt →
+    /// [`InputResponse::PickMultiple`](crate::action::InputResponse::PickMultiple).
+    ///
+    /// `options` is left empty: every current consumer (skill-test commit,
+    /// setup mulligan, hand-size discard) picks a subset of the *prompted
+    /// investigator's hand*, and the host derives candidates from the hand,
+    /// treating each `OptionId(i)` as hand index `i`. This hand-index
+    /// convention only holds while `PickMultiple` decisions are hand-scoped; a
+    /// future subset-pick over non-hand candidates (e.g. revealed cards,
+    /// enemies) would need to carry them in `options` and render from there,
+    /// like [`pick_single`](Self::pick_single).
+    #[must_use]
+    pub fn pick_multiple(text: impl Into<String>) -> Self {
+        Self {
+            prompt: text.into(),
+            options: Vec::new(),
+            kind: InputKind::PickMultiple,
+            skippable: false,
+        }
+    }
+
+    /// A binary acknowledge prompt →
+    /// [`InputResponse::Confirm`](crate::action::InputResponse::Confirm).
+    #[must_use]
+    pub fn confirm(text: impl Into<String>) -> Self {
+        Self {
+            prompt: text.into(),
+            options: Vec::new(),
+            kind: InputKind::Confirm,
+            skippable: false,
+        }
+    }
+
+    /// Mark this prompt skippable (host renders a Skip/Pass control →
+    /// [`InputResponse::Skip`](crate::action::InputResponse::Skip)).
+    #[must_use]
+    pub fn skippable(mut self) -> Self {
+        self.skippable = true;
+        self
     }
 }
 
@@ -114,8 +173,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn choice_input_request_round_trips() {
-        let req = InputRequest::choice(
+    fn pick_single_sets_kind_and_not_skippable() {
+        let req = InputRequest::pick_single(
+            "Choose one",
+            vec![ChoiceOption {
+                id: OptionId(0),
+                label: "A".into(),
+            }],
+        );
+        assert_eq!(req.kind, InputKind::PickSingle);
+        assert!(!req.skippable);
+        assert_eq!(req.options.len(), 1);
+    }
+
+    #[test]
+    fn pick_multiple_sets_kind_and_empty_options() {
+        let req = InputRequest::pick_multiple("Commit cards");
+        assert_eq!(req.kind, InputKind::PickMultiple);
+        assert!(!req.skippable);
+        assert!(req.options.is_empty());
+    }
+
+    #[test]
+    fn confirm_sets_kind_and_empty_options() {
+        let req = InputRequest::confirm("Draw");
+        assert_eq!(req.kind, InputKind::Confirm);
+        assert!(!req.skippable);
+        assert!(req.options.is_empty());
+    }
+
+    #[test]
+    fn skippable_flips_only_the_flag() {
+        let base = InputRequest::pick_single("w", vec![]);
+        let skip = InputRequest::pick_single("w", vec![]).skippable();
+        assert!(!base.skippable);
+        assert!(skip.skippable);
+        assert_eq!(skip.kind, InputKind::PickSingle);
+    }
+
+    #[test]
+    fn input_request_round_trips_with_kind_and_skippable() {
+        let req = InputRequest::pick_single(
             "Choose one",
             vec![
                 ChoiceOption {
@@ -127,17 +225,12 @@ mod tests {
                     label: "Each discards 1".into(),
                 },
             ],
-        );
+        )
+        .skippable();
         let json = serde_json::to_string(&req).expect("serialize");
         let back: InputRequest = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, req);
-        assert_eq!(back.options.len(), 2);
-        assert_eq!(back.options[1].id, OptionId(1));
-    }
-
-    #[test]
-    fn prompt_only_request_has_no_options() {
-        let req = InputRequest::prompt("Submit a response");
-        assert!(req.options.is_empty());
+        assert_eq!(back.kind, InputKind::PickSingle);
+        assert!(back.skippable);
     }
 }

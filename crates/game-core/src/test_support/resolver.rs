@@ -701,7 +701,9 @@ mod tests {
     }
 
     fn req(prompt: &str) -> InputRequest {
-        InputRequest::prompt(prompt)
+        // The resolver returns scripted responses regardless of `kind`; the
+        // constructor choice here is arbitrary.
+        InputRequest::confirm(prompt)
     }
 
     #[test]

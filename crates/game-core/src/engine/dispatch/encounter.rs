@@ -455,7 +455,7 @@ pub(super) fn spawn_enemy_at(
                     },
                 ));
             EngineOutcome::AwaitingInput {
-                request: InputRequest::choice(
+                request: InputRequest::pick_single(
                     format!(
                         "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
                          engage among {tied:?}"
@@ -586,7 +586,7 @@ pub(super) fn prompt_encounter_draw(cx: &Cx) -> EngineOutcome {
         .current_encounter_drawer()
         .expect("prompt_encounter_draw: no EncounterDraw frame on the stack");
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
+        request: InputRequest::confirm(format!(
             "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
         )),
         resume_token: ResumeToken(0),
