@@ -182,9 +182,9 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| obscuring_fog::native_effect_for(tag))
 }
 
-/// Dispatch a native eligibility-predicate tag to its card-local handler.
-/// Per-card branches are added by their consumer tasks; `None` for now.
+/// Dispatch a native eligibility-predicate tag to its card-local handler;
+/// returns `None` for unregistered tags.
 #[must_use]
-pub fn native_eligibility_for(_tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
-    None
+pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
+    cover_up::native_eligibility_for(tag)
 }

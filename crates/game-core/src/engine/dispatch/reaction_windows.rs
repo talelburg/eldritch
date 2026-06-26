@@ -262,13 +262,6 @@ fn scan_pending_triggers(
                     continue;
                 }
             }
-            // Potential-gate stand-in for Cover Up (RR p.2 "an ability cannot
-            // initiate if its effect won't change the game state"; TODO(#368)):
-            // only a source still holding clues to discard can replace the
-            // discovery — an emptied Cover Up would otherwise prompt forever.
-            if matches!(event, TimingEvent::WouldDiscoverClues { .. }) && card.clues == 0 {
-                continue;
-            }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
             };
