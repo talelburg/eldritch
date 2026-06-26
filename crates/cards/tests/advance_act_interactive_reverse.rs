@@ -1,7 +1,7 @@
 //! #482 act-path proof: an *interactive* act on-advance reverse (a synthetic
-//! Forced ChooseOne) resolves cleanly through the AdvanceReverse frame — it does
-//! not strand, mirroring the agenda path. No such card exists in the corpus, so
-//! we install a mock registry that gives act code "_iact" a ChooseOne reverse.
+//! Forced `ChooseOne`) resolves cleanly through the `AdvanceReverse` frame — it
+//! does not strand, mirroring the agenda path. No such card exists in the corpus,
+//! so we install a mock registry that gives act code `_iact` a `ChooseOne` reverse.
 
 use card_dsl::dsl::{
     choose_one, deal_horror, forced_on_event, Ability, EventPattern, EventTiming,

@@ -1,7 +1,7 @@
 //! #482 regression: advancing The Gathering's agenda 01105 via the real Mythos
 //! doom-to-threshold cascade. Its Forced reverse is the lead's interactive
-//! ChooseOne, which suspends. The cascade must let it resolve before the 1.4
-//! draws — no stranded Effect frame / anchor_on_child_pop panic.
+//! `ChooseOne`, which suspends. The cascade must let it resolve before the 1.4
+//! draws — no stranded `Effect` frame / `anchor_on_child_pop` panic.
 
 use game_core::action::RosterEntry;
 use game_core::engine::{seat_and_open, ApplyResult, EngineOutcome};
@@ -17,8 +17,8 @@ fn install_registries() {
 }
 
 /// Seat Roland, set agenda doom to threshold-1, give the lead a card (so the
-/// random-discard branch is legal and the ChooseOne genuinely suspends), and
-/// `interactive_acknowledge` per the arg. Returns the result right after EndTurn.
+/// random-discard branch is legal and the `ChooseOne` genuinely suspends), and
+/// `interactive_acknowledge` per the arg. Returns the result right after `EndTurn`.
 fn drive_to_mythos_advance(interactive: bool) -> ApplyResult {
     let roster = vec![RosterEntry {
         investigator: CardCode("01001".into()),

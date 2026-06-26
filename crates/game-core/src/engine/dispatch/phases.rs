@@ -757,6 +757,41 @@ fn advance_phase_entry(
 /// body. Suspension-agnostic: a body that itself suspends returns
 /// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
 /// `&mut cx`.
+/// Mythos step 1.4 (#482): re-park the anchor at `AfterDraws`, then seed + open
+/// the encounter draws. Reached from `anchor_on_child_pop`'s `MythosPhase{Draws}`
+/// arm — i.e. once any `AdvanceReverse` frame (the agenda's on-advance reverse +
+/// acknowledge) above the anchor has popped, so the agenda effect resolves before
+/// any encounter is drawn (RR order).
+fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
+    cx.state.continuations.pop();
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::MythosPhase {
+            resume: crate::state::MythosResume::AfterDraws,
+        });
+    // Per Rules Reference p.10 (Elimination), eliminated investigators (Killed,
+    // Insane, Resigned) do not draw — seed Active only.
+    let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
+    if remaining.is_empty() {
+        // No Active drawers: open + auto-skip the post-1.4 window inline (its
+        // continuation runs mythos_phase_end → Investigation).
+        let outcome = super::reaction_windows::open_fast_window(
+            cx,
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+        );
+        debug_assert_eq!(
+            outcome,
+            EngineOutcome::Done,
+            "open_fast_window(MythosAfterDraws) unexpectedly suspended",
+        );
+        return EngineOutcome::Done;
+    }
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EncounterDraw { remaining });
+    super::encounter::prompt_encounter_draw(cx)
+}
+
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
     use crate::state::{
         Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
@@ -871,37 +906,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         }
         Some(Continuation::MythosPhase {
             resume: MythosResume::Draws,
-        }) => {
-            // 1.4 encounter draws (#482): re-park the anchor at AfterDraws, then
-            // run the draws. Reached once any AdvanceReverse frame (the agenda's
-            // on-advance reverse) above the anchor has popped — so the agenda's
-            // reverse + acknowledge resolve before any encounter is drawn.
-            cx.state.continuations.pop();
-            cx.state.continuations.push(Continuation::MythosPhase {
-                resume: MythosResume::AfterDraws,
-            });
-            // Per Rules Reference p.10 (Elimination), eliminated investigators
-            // (Killed, Insane, Resigned) do not draw — seed Active only.
-            let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
-            if remaining.is_empty() {
-                // No Active drawers: open + auto-skip the post-1.4 window inline
-                // (its continuation runs mythos_phase_end → Investigation).
-                let outcome = super::reaction_windows::open_fast_window(
-                    cx,
-                    FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-                );
-                debug_assert_eq!(
-                    outcome,
-                    EngineOutcome::Done,
-                    "open_fast_window(MythosAfterDraws) unexpectedly suspended",
-                );
-                return EngineOutcome::Done;
-            }
-            cx.state
-                .continuations
-                .push(crate::state::Continuation::EncounterDraw { remaining });
-            super::encounter::prompt_encounter_draw(cx)
-        }
+        }) => run_mythos_draws(cx),
         Some(Continuation::MythosPhase {
             resume: MythosResume::AfterDraws,
         }) => {
