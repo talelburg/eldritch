@@ -1088,7 +1088,10 @@ mod tests {
             result.outcome
         );
         assert!(
-            result.events.iter().any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            result
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
             "the test resolved to the end: {:?}",
             result.events
         );

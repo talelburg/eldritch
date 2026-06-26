@@ -704,6 +704,9 @@ fn open_skill_test_player_window(
 ///   drain pending modifiers, tear down the frame, return `Done`.
 ///
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
+// One arm per `SkillTestStep` (RR ST.3–ST.8); the length is inherent to the
+// fixed step sequence, not extractable without scattering the driver.
+#[allow(clippy::too_many_lines)]
 pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     loop {
         // A sub-frame queued by the previous step sits *above* this `SkillTest`
@@ -1772,7 +1775,10 @@ mod tests {
             None,
             0,
         );
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "commit prompt");
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit prompt"
+        );
 
         // Commit nothing -> resolution runs, then suspends at the acknowledge step.
         let out = finish_skill_test(&mut cx, &[]);
@@ -1780,20 +1786,30 @@ mod tests {
         let EngineOutcome::AwaitingInput { request, .. } = &out else {
             panic!("expected the acknowledge Confirm prompt, got {out:?}");
         };
-        assert_eq!(request.kind, InputKind::Confirm, "acknowledge is a Confirm prompt");
+        assert_eq!(
+            request.kind,
+            InputKind::Confirm,
+            "acknowledge is a Confirm prompt"
+        );
         // The result is already logged when the player is asked to acknowledge.
         // Read through `cx.events` here: `cx` is still borrowed mutably for the
         // Confirm resume below, so the outer `events` binding is unavailable.
         assert!(
-            cx.events.iter().any(|e| matches!(e, Event::ChaosTokenRevealed { .. })),
+            cx.events
+                .iter()
+                .any(|e| matches!(e, Event::ChaosTokenRevealed { .. })),
             "token revealed before the ack"
         );
         assert!(
-            cx.events.iter().any(|e| matches!(e, Event::SkillTestSucceeded { .. })),
+            cx.events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestSucceeded { .. })),
             "outcome logged before the ack"
         );
         assert!(
-            !cx.events.iter().any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            !cx.events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
             "teardown waits on the acknowledgment"
         );
 
@@ -1802,7 +1818,9 @@ mod tests {
         let out = super::super::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
-            events.iter().any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
             "after Confirm the test resolved to the end: {events:?}"
         );
     }
@@ -1837,11 +1855,20 @@ mod tests {
             None,
             0,
         );
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "commit prompt");
+        assert!(
+            matches!(out, EngineOutcome::AwaitingInput { .. }),
+            "commit prompt"
+        );
         let out = finish_skill_test(&mut cx, &[]);
         let out = super::super::drive(&mut cx, out);
-        assert_eq!(out, EngineOutcome::Done, "no acknowledge pause when the flag is off");
-        assert!(events.iter().any(|e| matches!(e, Event::SkillTestEnded { .. })));
+        assert_eq!(
+            out,
+            EngineOutcome::Done,
+            "no acknowledge pause when the flag is off"
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::SkillTestEnded { .. })));
     }
 
     /// `acknowledge_outcome` rejects (state untouched) when there is no in-flight
