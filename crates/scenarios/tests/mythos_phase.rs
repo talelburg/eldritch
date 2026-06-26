@@ -29,7 +29,7 @@ use game_core::state::{
 };
 use game_core::test_support::{take_turn_action, TEST_INV};
 use game_core::{
-    assert_event, assert_event_sequence, Action, InputResponse, PlayerAction, TurnAction,
+    assert_event, assert_event_sequence, Action, InputKind, InputResponse, PlayerAction, TurnAction,
 };
 use scenarios::test_fixtures::synth_cards::{
     SYNTH_ENEMY_CODE, SYNTH_FAST_EVENT_CODE, SYNTH_SURGE_TREACHERY_CODE, SYNTH_TREACHERY_CODE,
@@ -715,8 +715,9 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
 ///
 /// This test puts a synthetic Fast event in inv1's hand, drives
 /// `DrawEncounterCard` to trigger `open_fast_window`, and asserts that
-/// the window STAYS OPEN (not auto-skipped): it remains on
-/// `state.open_windows` and the phase has not yet advanced.
+/// the window STAYS OPEN (not auto-skipped) and — post-#476 — surfaces the
+/// eligible Fast event as a **skippable** `PickSingle` prompt rather than idling
+/// silently as `Done`.
 #[test]
 fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
     let base = synthetic::setup();
@@ -741,12 +742,22 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
         }),
     );
 
-    // DrawEncounterCard should complete normally (Done) — the window
-    // opens but doesn't block the draw action's completion.
-    assert_eq!(
-        result.outcome,
-        EngineOutcome::Done,
-        "DrawEncounterCard should return Done even when window stays open"
+    // #476: the MythosAfterDraws window now surfaces the eligible Fast event as a
+    // skippable choice instead of idling as Done — the player can play it or pass.
+    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+        panic!(
+            "MythosAfterDraws must prompt the eligible Fast play, got {:?}",
+            result.outcome
+        );
+    };
+    assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
+    assert!(
+        request.skippable,
+        "the fast window is skippable (pass): {request:?}"
+    );
+    assert!(
+        !request.options.is_empty(),
+        "the prompt lists the eligible Fast event: {request:?}"
     );
 
     // The window must remain on the stack — it was NOT auto-skipped.
@@ -799,14 +810,19 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
         .hand
         .push(CardCode(SYNTH_FAST_EVENT_CODE.into()));
 
-    // Advance through the draw to land in the open-window state.
+    // Advance through the draw to land in the open-window state (post-#476 a
+    // skippable fast-window prompt, not Done-idle).
     let draw_result = apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
         }),
     );
-    assert_eq!(draw_result.outcome, EngineOutcome::Done);
+    assert!(
+        matches!(draw_result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the draw lands on the skippable fast-window prompt, got {:?}",
+        draw_result.outcome
+    );
     assert!(
         !draw_result.state.open_windows().is_empty(),
         "window must be open before Skip test"
@@ -820,18 +836,21 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
         }),
     );
 
-    assert_eq!(
-        skip_result.outcome,
-        EngineOutcome::Done,
-        "Skip must return Done after closing MythosAfterDraws"
+    // MythosAfterDraws is closed; investigation_phase then opens
+    // InvestigationBegins. Because there's a Fast card in hand, that window also
+    // surfaces a skippable prompt (#476) rather than idling.
+    let EngineOutcome::AwaitingInput { request, .. } = &skip_result.outcome else {
+        panic!(
+            "Skip closes MythosAfterDraws and InvestigationBegins prompts the Fast play, got {:?}",
+            skip_result.outcome
+        );
+    };
+    assert!(
+        request.skippable,
+        "the InvestigationBegins fast window is skippable: {request:?}"
     );
 
-    // MythosAfterDraws is closed; investigation_phase then opens
-    // InvestigationBegins. Because there's a Fast card in hand,
-    // InvestigationBegins does NOT auto-skip — it stays on the stack.
-    // (Defect B was: MythosAfterDraws could NOT be closed via Skip at all;
-    // that defect is still fixed — only the old "open_windows empty" shape
-    // changes now that investigation_phase opens its own window.)
+    // MythosAfterDraws is gone; InvestigationBegins is the one open window.
     assert_eq!(
         skip_result.state.open_windows().len(),
         1,

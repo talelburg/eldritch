@@ -31,8 +31,8 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, FastActorScope, FastWindowKind, InvestigatorId,
-    LocationId, Phase, PhaseStep,
+    CardCode, CardInPlay, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
+    InvestigatorId, LocationId, MythosResume, Phase, PhaseStep,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
@@ -46,12 +46,15 @@ fn install_cards_registry() {
 
 #[test]
 fn fast_asset_playable_by_owner_during_permissive_window() {
-    // Owner-as-active-investigator with a window open during a
-    // non-Investigation phase: the strict pre-#103 gate would reject
-    // (phase != Investigation), but the loosened gate must accept
-    // because the window permits and the owner IS the active
-    // investigator. This is the rules-correct positive case for
-    // Fast assets.
+    // Owner-as-active-investigator with a real permissive window (MythosAfterDraws)
+    // open during a non-Investigation phase: the strict pre-#103 gate would reject
+    // (phase != Investigation), but the loosened gate must accept because the
+    // window permits and the owner IS the active investigator. This is the
+    // rules-correct positive case for Fast assets. (#476: the window now surfaces
+    // the play as a choice and auto-closes once nothing remains, so the post-play
+    // drive cascades through the MythosPhase anchor to the next phase — hence the
+    // realistic anchor; the assertion is that the play executed, not the exact
+    // post-cascade outcome.)
     let mut a = test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
@@ -59,8 +62,11 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
         .with_investigator(a)
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
+        .with_phase_anchor(Continuation::MythosPhase {
+            resume: MythosResume::AfterDraws,
+        })
         .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
             FastActorScope::Any,
         )
         .build();
@@ -72,14 +78,20 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
         },
     );
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
+        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "Magnifying Glass plays Fast for the owner (= active investigator) during a \
          permissive window in Mythos: {:?}",
         result.outcome,
     );
     let a_after = result.state.investigators.get(&InvestigatorId(1)).unwrap();
     assert_eq!(a_after.hand.len(), 0, "card should have left hand");
-    assert_eq!(a_after.cards_in_play.len(), 1, "card should be in play");
+    assert!(
+        a_after
+            .cards_in_play
+            .iter()
+            .any(|c| c.code == CardCode::new("01030")),
+        "Magnifying Glass should be in play",
+    );
 }
 
 #[test]
@@ -202,10 +214,13 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
     let state = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
-        .with_phase(Phase::Investigation)
+        .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
+        .with_phase_anchor(Continuation::MythosPhase {
+            resume: MythosResume::AfterDraws,
+        })
         .with_open_window(
-            FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
             FastActorScope::Any,
         )
         .build();
@@ -217,12 +232,15 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
             ability_index: 0,
         },
     );
+    // The ability activates (resource spent). After it, Hyperawareness is still
+    // 0-cost-eligible (B has resources left), so the #476 fast window re-prompts
+    // rather than reaching Done — assert the activation executed, not the exact
+    // post-activation outcome.
     assert!(
-        matches!(result.outcome, EngineOutcome::Done),
+        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "Hyperawareness [fast] ability should activate from non-active investigator: {:?}",
         result.outcome,
     );
-    // Verify the resource was spent.
     let b_after = result.state.investigators.get(&InvestigatorId(2)).unwrap();
     assert_eq!(b_after.resources, 4, "1 resource should have been spent");
 }
