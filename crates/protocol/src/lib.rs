@@ -173,7 +173,10 @@ mod tests {
         use game_core::state::CardCode;
         let req = CreateGameRequest {
             scenario_id: "the-gathering".into(),
-            roster: vec![RosterEntry { investigator: CardCode::new("01001"), deck: vec![] }],
+            roster: vec![RosterEntry {
+                investigator: CardCode::new("01001"),
+                deck: vec![],
+            }],
         };
         let json = serde_json::to_string(&req).expect("serialize");
         let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");

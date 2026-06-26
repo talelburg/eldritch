@@ -46,7 +46,7 @@ fn seated_roland() -> GameState {
         investigator: CardCode::new(ROLAND),
         deck: vec![CardCode::new("01088"); 8],
     }];
-    // StartScenario opens the mulligan prompt (AwaitingInput); each
+    // seat_and_open opens the mulligan prompt (AwaitingInput); each
     // investigator then submits a single mulligan (ResolveInput) before the
     // turn's actions begin.
     let started = seat_and_open(state, &roster);

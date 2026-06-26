@@ -54,7 +54,9 @@ async fn post_games_unknown_scenario_is_bad_request() {
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"scenario_id":"no-such-scenario","roster":[]}"#))
+        .body(Body::from(
+            r#"{"scenario_id":"no-such-scenario","roster":[]}"#,
+        ))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
 

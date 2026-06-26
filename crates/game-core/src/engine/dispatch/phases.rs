@@ -1389,7 +1389,7 @@ mod investigation_phase_tests {
             "Investigation phase kicks off and rotates to the lead after mulligan completes"
         );
         // PhaseStarted(Investigation) fires at mulligan completion (not
-        // during StartScenario).
+        // during scenario setup).
         assert!(
             events.iter().any(|e| matches!(
                 e,

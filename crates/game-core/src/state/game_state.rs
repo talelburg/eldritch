@@ -56,7 +56,7 @@ pub struct GameState {
     pub set_aside_enemies: Vec<CardCode>,
     /// Where roster-seated investigators are placed at scenario start.
     /// `setup()` sets it (e.g. The Gathering -> the Study); the
-    /// `StartScenario` seating step reads it. `None` leaves seated
+    /// scenario setup (via `seat_and_open`) reads it. `None` leaves seated
     /// investigators unplaced (`current_location: None`) — the legacy
     /// pre-seated test path, where `setup()` already placed them.
     pub starting_location: Option<LocationId>,

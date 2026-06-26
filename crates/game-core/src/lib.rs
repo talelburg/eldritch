@@ -48,9 +48,8 @@ pub use engine::{
     place_in_threat_area, reshuffle_encounter_discard, resolve_choice_count,
     resolve_encounter_card, reveal_location, round_end_advance, seat_and_open,
     shortest_first_steps, shortest_first_steps_with, spawn_set_aside_enemy,
-    suspend_for_native_choice, take_damage,
-    ApplyResult, ChoiceOption, ChoiceResolution, Cx, EngineOutcome, EvalContext, InputRequest,
-    OptionId, ResumeToken, TurnAction,
+    suspend_for_native_choice, take_damage, ApplyResult, ChoiceOption, ChoiceResolution, Cx,
+    EngineOutcome, EvalContext, InputRequest, OptionId, ResumeToken, TurnAction,
 };
 pub use event::{Event, FailureReason, TraumaKind};
 pub use rng::RngState;

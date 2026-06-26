@@ -237,55 +237,135 @@ git commit -m "protocol: CreateGameRequest carries the roster (#459)"
 
 ---
 
-## Task 3: `GameSession::create` seats into the seed + server tests migrate
+## Task 3: `GameSession::create` seats into the seed; `load` restores the seed outcome; server tests migrate
+
+**Why this task grew (controller note, 2026-06-26):** with seating moved into the seed, the seed itself is `AwaitingInput` (the setup mulligan), but `GameSession::load` initializes `outcome = Done` and only updates it by replaying *logged actions*. Seating is no longer a logged action, so a freshly-created game restarted **before its first input** would load as `Done`, dropping the mulligan prompt — a real bug, and `resume.rs::restart_rebuilds_awaiting_input_via_replay` would fail. There is no pure `state → pending-outcome` reconstruction in the engine (each frame builds its `InputRequest` imperatively during `drive`). The minimal correct fix: **persist the create-time outcome with the seed** and have `load` initialize from it (replayed actions overwrite it exactly as today). This needs schema migration `0002`.
+
+**Server-test reality (read before migrating):** the server tests use a **mock** scenario `test-scenario` (`TEST_SCENARIO_ID`), not The Gathering. `crates/server/tests/common/mod.rs` provides `memory_pool()`, `install_registry()`, `connect/send/recv/spawn_server`; `crates/server/tests/game_session.rs` has its **own** copy of `test_setup`/`install_registry`/`memory_pool` (not `common`). Both `test_setup`s pre-seed `test_investigator(1)`. Post-change, `create` seats from the roster at creation, so: (a) `test_setup` must **drop** the pre-seeded investigator + `with_turn_order` (seating builds turn order); (b) `install_registry` must **also** install the synthetic card registry so roster codes resolve — add `game_core::test_support::install_test_registry();`; (c) tests pass a `TEST_INV` roster. After `create`, the session is **round 1, mulligan-pending (`AwaitingInput`)** — there is no longer a round-0 "no prompt" state, and no `StartScenario`-to-reach-the-mulligan step.
 
 **Files:**
-- Modify: `crates/server/src/session.rs:18-84` (`SessionError`, `create`)
-- Modify: `crates/server/src/lifecycle.rs:17-32` (thread roster, map 422)
-- Test/Modify: `crates/server/tests/{game_session,resume,ws,closing_demo}.rs`
+- Create: `crates/server/migrations/0002_seed_outcome.sql`
+- Modify: `crates/server/src/store.rs` (`insert_game` + `load_game` carry `seed_outcome`)
+- Modify: `crates/server/src/session.rs` (`SessionError::Seating`, `create` seats + persists outcome, `load` inits outcome from seed)
+- Modify: `crates/server/src/lifecycle.rs` (thread roster, map 422)
+- Modify: `crates/server/tests/game_session.rs`, `crates/server/tests/common/mod.rs`, `crates/server/tests/{ws,resume,closing_demo}.rs`
 
 **Interfaces:**
-- Consumes: `game_core::seat_and_open` (Task 1), `protocol::CreateGameRequest.roster` (Task 2).
-- Produces: `GameSession::create(db, game_id, scenario_id, roster: Vec<RosterEntry>) -> Result<Self, SessionError>`; `SessionError::Seating(String)`.
+- Consumes: `game_core::seat_and_open` (Task 1), `protocol::CreateGameRequest.roster` (Task 2), `game_core::test_support::{install_test_registry, TEST_INV}`.
+- Produces: `GameSession::create(db, game_id, scenario_id, roster: Vec<RosterEntry>) -> Result<Self, SessionError>`; `SessionError::Seating(String)`; `store::insert_game(.., seed_outcome: &str, ..)`; `store::load_game -> Option<(scenario_id, seed_state, seed_outcome)>`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test — restart restores a mulligan-pending seed (the bug)**
 
-Add to `crates/server/tests/game_session.rs` (it already installs registries via `common`; confirm `cards::REGISTRY` is installed in `common` — if not, install it in the test). Use a real Roland roster:
+In `crates/server/tests/game_session.rs`, first migrate the local `test_setup`/`install_registry` (drop the pre-seeded investigator + turn_order; add the synthetic registry):
 
 ```rust
-#[tokio::test]
-async fn create_seats_the_roster_into_the_seed() {
-    let pool = common::test_pool().await; // existing helper
-    let roster = vec![game_core::action::RosterEntry {
-        investigator: game_core::state::CardCode::new("01001"),
+use game_core::state::{ChaosBag, ChaosToken};
+
+fn test_setup() -> GameState {
+    GameStateBuilder::new()
+        .with_scenario_id(ScenarioId::new(TEST_SCENARIO_ID))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_rng_seed(42)
+        .build()
+}
+
+fn install_registry() {
+    let _ = game_core::scenario_registry::install(ScenarioRegistry { module_for });
+    game_core::test_support::install_test_registry();
+}
+
+fn roster() -> Vec<game_core::action::RosterEntry> {
+    vec![game_core::action::RosterEntry {
+        investigator: game_core::state::CardCode::new(game_core::test_support::TEST_INV),
         deck: vec![],
-    }];
-    let session = server::GameSession::create(
-        pool.clone(), "seated", game_core::scenario::ScenarioId::new(common::TEST_SCENARIO_ID), roster,
-    )
-    .await
-    .expect("create");
-
-    // Seed is already seated + mulligan-pending.
-    assert!(session.state.investigators.contains_key(&game_core::state::InvestigatorId(1)));
-    assert!(matches!(session.outcome, game_core::EngineOutcome::AwaitingInput { .. }));
-
-    // load replays a ResolveInput-only log and reproduces it bit-for-bit.
-    let loaded = server::GameSession::load(pool, &"seated".into()).await.expect("load").expect("exists");
-    assert_eq!(loaded.state, session.state);
+    }]
 }
 ```
 
-> Adjust `common::test_pool` / `TEST_SCENARIO_ID` to the actual helper names in `crates/server/tests/common/mod.rs`. `TEST_SCENARIO_ID` must be `"the-gathering"` (the real module) so a Roland code resolves — if `common` uses a synthetic scenario, point this test at the gathering module and ensure `cards::REGISTRY` + `scenarios::REGISTRY` are installed.
+Then the new test (this is the regression test for the load bug — a game with **zero** logged actions whose seed is `AwaitingInput`):
+
+```rust
+#[tokio::test]
+async fn load_restores_awaiting_input_seed_with_empty_log() {
+    install_registry();
+    let pool = memory_pool().await;
+    let session = GameSession::create(pool.clone(), "seeded", ScenarioId::new(TEST_SCENARIO_ID), roster())
+        .await
+        .expect("create");
+    // create seats at creation → mulligan-pending, no actions logged yet.
+    assert!(matches!(session.outcome, EngineOutcome::AwaitingInput { .. }));
+    assert!(session.state.investigators.contains_key(&InvestigatorId(1)));
+
+    let loaded = GameSession::load(pool, &GameId::new("seeded")).await.unwrap().expect("exists");
+    assert_eq!(loaded.state, session.state, "load reproduces the seeded state");
+    assert!(
+        matches!(loaded.outcome, EngineOutcome::AwaitingInput { .. }),
+        "load must restore the seed's AwaitingInput outcome from an empty log, got {:?}",
+        loaded.outcome
+    );
+}
+```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p server create_seats_the_roster_into_the_seed`
-Expected: FAIL — `create` takes 3 args, not 4.
+Run: `cargo test -p server load_restores_awaiting_input_seed_with_empty_log`
+Expected: FAIL — `create` takes 3 args (compile error). After the signature lands (later steps), the substantive failure is `loaded.outcome` = `Done`.
 
-- [ ] **Step 3: Add `SessionError::Seating`**
+- [ ] **Step 3: Schema migration `0002`**
 
-In `crates/server/src/session.rs`, extend the enum:
+Create `crates/server/migrations/0002_seed_outcome.sql`:
+
+```sql
+-- The seed GameState may itself be paused at AwaitingInput (seating now runs
+-- at creation: the seed is seated + mulligan-pending, #459). The action log is
+-- ResolveInput-only and may be empty, so `load` cannot reconstruct the seed's
+-- outcome by replay — persist it alongside the seed.
+ALTER TABLE games ADD COLUMN seed_outcome TEXT NOT NULL DEFAULT '"Done"';
+```
+
+> `'"Done"'` is the JSON of `EngineOutcome::Done` — confirmed: the enum has no `#[serde(rename_all)]`, so the unit variant serializes to the bare string `"Done"` (capital D). The default only covers hypothetical legacy rows (none exist — in-memory test DBs migrate fresh); every row `create` writes carries the real outcome.
+
+- [ ] **Step 4: `store` carries `seed_outcome`**
+
+In `crates/server/src/store.rs`:
+
+```rust
+pub(crate) async fn insert_game(
+    db: &SqlitePool,
+    game_id: &GameId,
+    scenario_id: &ScenarioId,
+    seed_state: &str,
+    seed_outcome: &str,
+    created_at: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO games (game_id, scenario_id, seed_state, seed_outcome, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(game_id.as_str())
+    .bind(scenario_id.as_str())
+    .bind(seed_state)
+    .bind(seed_outcome)
+    .bind(created_at)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Fetch a game's `(scenario_id, seed_state, seed_outcome)`, or `None`.
+pub(crate) async fn load_game(
+    db: &SqlitePool,
+    game_id: &GameId,
+) -> Result<Option<(String, String, String)>, sqlx::Error> {
+    sqlx::query_as("SELECT scenario_id, seed_state, seed_outcome FROM games WHERE game_id = ?")
+        .bind(game_id.as_str())
+        .fetch_optional(db)
+        .await
+}
+```
+
+- [ ] **Step 5: `create` seats + persists the outcome; `SessionError::Seating`**
+
+In `crates/server/src/session.rs`, add the error variant:
 
 ```rust
     /// Seating the roster at creation was rejected by the engine (empty
@@ -294,32 +374,49 @@ In `crates/server/src/session.rs`, extend the enum:
     Seating(String),
 ```
 
-- [ ] **Step 4: Seat in `create`**
-
-Replace the body of `create` from `let state = (module.setup)();` onward:
+Rewrite `create` (signature gains `roster: Vec<game_core::action::RosterEntry>`; import `RosterEntry`/`EngineOutcome` as needed):
 
 ```rust
         let setup = (module.setup)();
         let result = game_core::seat_and_open(setup, &roster);
         let outcome = match result.outcome {
-            game_core::EngineOutcome::Rejected { reason } => {
-                return Err(SessionError::Seating(reason.to_string()));
-            }
+            EngineOutcome::Rejected { reason } => return Err(SessionError::Seating(reason.to_string())),
             other => other,
         };
         let state = result.state;
         let seed_state = serde_json::to_string(&state)?;
+        let seed_outcome = serde_json::to_string(&outcome)?;
         let game_id = game_id.into();
-        store::insert_game(&db, &game_id, &scenario_id, &seed_state, &unix_millis_string()).await?;
+        store::insert_game(&db, &game_id, &scenario_id, &seed_state, &seed_outcome, &unix_millis_string()).await?;
 
         Ok(Self { game_id, state, outcome, seq: 0, db })
 ```
 
-Update the signature to add `roster: Vec<game_core::action::RosterEntry>` and import `RosterEntry` / `EngineOutcome` as needed. Update the doc-comment: the seed is now *seated* (no longer "the scenario's `setup()` output").
+Update the doc-comment: the seed is now *seated + possibly mulligan-pending*, not raw `setup()`.
 
-- [ ] **Step 5: Thread the roster through the HTTP handler**
+- [ ] **Step 6: `load` initializes outcome from the seed**
 
-In `crates/server/src/lifecycle.rs`, pass `request.roster` and map the new error:
+In `load`, destructure the third column and seed the outcome:
+
+```rust
+        let Some((_scenario_id, seed_state, seed_outcome)) = store::load_game(&db, game_id).await? else {
+            return Ok(None);
+        };
+        let mut state: GameState = serde_json::from_str(&seed_state)?;
+        let mut outcome: EngineOutcome = serde_json::from_str(&seed_outcome)?;
+        let mut seq: i64 = 0;
+        for action_json in store::load_actions(&db, game_id).await? {
+            let action: Action = serde_json::from_str(&action_json)?;
+            let result = game_core::apply(state, action);
+            state = result.state;
+            outcome = result.outcome;
+            seq += 1;
+        }
+```
+
+- [ ] **Step 7: Thread the roster + 422 through the HTTP handler**
+
+In `crates/server/src/lifecycle.rs`:
 
 ```rust
     match GameSession::create(state.db.clone(), random_game_id(), scenario_id, request.roster).await {
@@ -330,30 +427,46 @@ In `crates/server/src/lifecycle.rs`, pass `request.roster` and map the new error
     }
 ```
 
-- [ ] **Step 6: Migrate the other server tests**
+- [ ] **Step 8: Run the regression test green**
 
-In `crates/server/tests/{game_session,resume,ws,closing_demo}.rs`, every `GameSession::create(pool, id, ScenarioId::new(...))` call gains a 4th arg. For tests that drove setup via a later `StartScenario` submit over WS / `session.apply`, pass the roster to `create` and **delete** the `StartScenario` submit (seating now happens at create). Use a Roland roster against the gathering module, or a `TEST_INV` roster if the test installs only the synthetic registry:
+Run: `cargo test -p server load_restores_awaiting_input_seed_with_empty_log`
+Expected: PASS.
 
-```rust
-let roster = vec![game_core::action::RosterEntry {
-    investigator: game_core::state::CardCode::new("01001"), deck: vec![],
-}];
-let session = GameSession::create(pool.clone(), "g2", ScenarioId::new(TEST_SCENARIO_ID), roster).await?;
-// (removed: session.apply(PlayerAction::StartScenario { .. }))
-```
+- [ ] **Step 9: Migrate the remaining `game_session.rs` tests**
 
-The `game_session.rs` "unknown scenario" test (`no-such-scenario`) passes `vec![]` for the roster — it must still 400 on the scenario lookup *before* seating (the scenario lookup precedes `seat_and_open` in `create`, so an unknown scenario never reaches the empty-roster check).
+- `create_persists_seed_and_exposes_setup_state` → the seed is no longer raw `test_setup()`. Replace `assert_eq!(session.state, test_setup())` with seated-state assertions: `assert!(session.state.investigators.contains_key(&InvestigatorId(1)))`, `assert_eq!(session.state.round, 1)`, and keep the `games` row-count check. Add the `roster()` arg to `create`.
+- `create_rejects_unknown_scenario` → add `vec![]` roster arg; still expects `UnknownScenario` (scenario lookup precedes seating).
+- `apply_persists_accepted_action_and_advances_state` → `create` now lands at the mulligan. The accepted action is the mulligan resolve: `session.apply(PlayerAction::ResolveInput { response: InputResponse::PickMultiple { selected: vec![] } })`. Assert not `Rejected` and **1 action persisted**. (Replace the `round == 1` assertion — round is already 1 post-create — with an assertion that the mulligan advanced, e.g. `session.state.current_mulligan()` is no longer `Some(InvestigatorId(1))`.)
+- `apply_rejects_invalid_action_without_persisting` → post-`create` a prompt IS outstanding (the mulligan). Submit a **non-`ResolveInput`** action to trip the pending-prompt gate — but `StartScenario` is deleted in Task 7, so instead submit a reliably-rejected `ResolveInput`: a mulligan response selecting a card not in hand, `InputResponse::PickMultiple { selected: vec![CardInstanceId(999_999)] }`. **Verify it actually rejects** (run the test; if the mulligan tolerates unknown ids, fall back to resolving the mulligan first then submitting an out-of-range `PickSingle(OptionId(u32::MAX))` against the open-turn menu). Assert `Rejected`, `events.is_empty()`, state unchanged, and **0** newly-persisted actions beyond what preceded.
+- `load_replays_log_to_reproduce_live_state` → add `roster()` to `create`; replace the `StartScenario` apply with the mulligan resolve `ResolveInput(PickMultiple{selected: vec![]})`; keep the `loaded.state == session.state` and missing-id assertions. This now also exercises the ResolveInput-only log.
 
-- [ ] **Step 7: Run the server suite**
+- [ ] **Step 10: Migrate `common/mod.rs` + ws/resume/closing_demo**
 
-Run: `cargo test -p server`
-Expected: PASS (all migrated tests).
+In `crates/server/tests/common/mod.rs`: apply the same `test_setup` (drop pre-seeding) + `install_registry` (add `install_test_registry()`) changes, and add a `pub fn roster()` returning the `TEST_INV` roster.
 
-- [ ] **Step 8: Commit**
+- `ws.rs`:
+  - `seed_game` gains the `roster()` arg.
+  - `connect_receives_hello_with_current_state` → the seeded Hello is now round 1, mulligan-pending: assert `state.round == 1` and `matches!(outcome, EngineOutcome::AwaitingInput { .. })` (drop the `Done`/round-0 assertions).
+  - `accepted_action_broadcasts_applied_to_all_clients` → the game is already at the mulligan after seed; the accepted action to broadcast is the mulligan resolve `ResolveInput(PickMultiple{selected: vec![]})`. Assert both clients receive `Applied` with a non-`Rejected` outcome. Drop the `current_mulligan() == Some(InvestigatorId(1))` post-assertion (the mulligan is being resolved, not opened); if a positive post-state assertion is wanted, assert the outcome is `AwaitingInput` (the open-turn menu) or `Done`.
+  - `rejected_action_returns_rejected_to_sender_only` → submit a reliably-rejected `ResolveInput` (same approach as `apply_rejects_invalid_action_without_persisting`). Assert `Rejected` to A (drop the brittle `reason.contains("no AwaitingInput prompt")` substring — the reason differs now; match the `Rejected` variant only) and silence to B.
+- `resume.rs`: `create` already lands at the mulligan, so the `start_to_mulligan()` `StartScenario` submit is obsolete.
+  - Delete `start_to_mulligan()`. `seed` gains `roster()`.
+  - `reconnect_delivers_in_flight_awaiting_input` → after seed, connection A's **first Hello** is already `AwaitingInput` (no send needed); B's Hello is `AwaitingInput`. Assert both Hellos carry `AwaitingInput`.
+  - `restart_rebuilds_awaiting_input_via_replay` → after seed, do **not** send anything; the restart's Hello must be `AwaitingInput` purely from the persisted seed outcome (this is the test Step 1 generalizes — it now proves the seed-outcome persistence, not log replay). Keep the assertion.
+  - `resolve_input_resumes_and_completes` → after seed, the mulligan is already pending; send the `ResolveInput(PickMultiple{selected: vec![]})` directly (drop the `start_to_mulligan` send + its `Applied` recv). Assert the resolve is accepted (not `Rejected`).
+  - `non_resolve_action_while_awaiting_input_is_rejected` → the prompt is already outstanding after seed; submit a reliably-rejected `ResolveInput` (the mulligan-mismatch from above) directly and assert `Rejected`. (The old test used `StartScenario` as the non-ResolveInput rep — gone in Task 7; use the rejected-ResolveInput instead.)
+- `closing_demo.rs` (server): inspect and apply the same rules — `create` gains `roster()`; any `StartScenario` submit becomes the mulligan resolve or is dropped; assertions updated to the seated/mulligan-pending reality.
+
+- [ ] **Step 11: Run the server suite**
+
+Run: `RUSTFLAGS="-D warnings" cargo test -p server`
+Expected: PASS. If any reliably-rejected-action choice doesn't actually reject, fix it (the assertion must be non-vacuous: confirm the outcome is `Rejected`, not merely "not broadcast").
+
+- [ ] **Step 12: Commit**
 
 ```bash
 git add crates/server
-git commit -m "server: seat the roster into the seed at creation; 422 on bad roster (#459)"
+git commit -m "server: seat the roster into the seed at creation; persist + restore seed outcome; 422 on bad roster (#459)"
 ```
 
 ---
@@ -471,12 +584,14 @@ Apply the recipe/examples per file. Run: `RUSTFLAGS="-D warnings" cargo test -p 
 
 - [ ] **Step 3: Migrate `crates/game-core/tests/{act_round_end,reaction_windows}.rs`**
 
-These run in separate processes and install their own mock registries — compose `metadata_for_test_inv` so `TEST_INV` resolves (see `test_support` docs), then seat a `TEST_INV` roster. Run: `cargo test -p game-core --test act_round_end --test reaction_windows` → PASS.
+These run in separate processes and install their own mock registries — compose `metadata_for_test_inv` so `TEST_INV` resolves (see `test_support` docs), then seat a `TEST_INV` roster for the genuine **seating-setup** sites. Run: `cargo test -p game-core --test act_round_end --test reaction_windows` → PASS.
+
+**LEAVE the pending-prompt-gate proxy tests on `StartScenario` — do NOT migrate them.** Two tests use `StartScenario { roster: vec![] }` only as a stand-in *"any non-`ResolveInput` action"* to prove the engine's pending-prompt gate rejects a non-`ResolveInput` action while a prompt is outstanding: `act_round_end.rs:~129` and `reaction_windows.rs::non_resolve_input_action_rejects_while_window_open` (`~549`). `seat_and_open` is **not** a player action and is not gated, so it cannot stand in here. Leave these two exactly as-is (still on `StartScenario`); Task 7 disposes of them when it deletes the variant and the now-dead gate. Identify them by the giveaway comment "stands in as the surviving non-ResolveInput action." Report which sites you left untouched and why.
 
 - [ ] **Step 4: Full workspace test**
 
 Run: `RUSTFLAGS="-D warnings" cargo test --all --all-features`
-Expected: PASS (`StartScenario` still defined; nothing references it except its own arm + the not-yet-inverted empty-roster test).
+Expected: PASS (`StartScenario` still defined; remaining references: its own dispatch arm + doc, the not-yet-inverted empty-roster test, and the two pending-prompt-gate proxy tests left in Step 3).
 
 - [ ] **Step 5: Commit**
 
@@ -551,13 +666,20 @@ git commit -m "engine: require a non-empty roster — single seating path (#224)
 
 ## Task 7: Delete `PlayerAction::StartScenario`
 
-Nothing references the variant now except its own dispatch arm and doc-comments.
+**⚠ ORDERING: this runs AFTER Task 8 (web picker).** By now the web client no longer references `PlayerAction::StartScenario` (Task 8 deleted `controls.rs`). The only remaining references are the engine production dispatch arm + doc-comments, the empty-roster test (already inverted by Task 6), and the **pending-prompt-gate proxy tests** Tasks 4/5 deliberately left on it (see Step 0). Confirm with `grep -rn "PlayerAction::StartScenario" crates/` before starting: expect only `action.rs` (the variant), `dispatch/mod.rs` (arm + doc), `dispatch/phases.rs` (a doc ref), and the two proxy tests in `crates/game-core/tests/`.
 
 **Files:**
 - Modify: `crates/game-core/src/action.rs:42-64` (delete variant, update enum doc)
-- Modify: `crates/game-core/src/engine/dispatch/mod.rs:156-159` (delete arm), `:119` (doc)
+- Modify: `crates/game-core/src/engine/dispatch/mod.rs:124-159` (delete arm; **resolve the now-dead pending-prompt gate**), `:119` (doc)
 - Modify: `crates/game-core/src/engine/dispatch/phases.rs` (rename `start_scenario` doc to note it's reached via `seat_and_open`, not a player action)
+- Modify: `crates/game-core/tests/{reaction_windows,act_round_end}.rs` (delete the gate-proxy tests — Step 0)
 - Modify: `crates/protocol/src/lib.rs` (doc references, if any)
+
+- [ ] **Step 0: Resolve the pending-prompt gate + its proxy tests**
+
+`apply_player_action` (`dispatch/mod.rs:~136-149`) has a gate: `if continuations.last().is_some_and(awaits_input) && !matches!(action, ResolveInput { .. }) { Rejected }`. Once `PlayerAction` has only `ResolveInput`, `!matches!(action, ResolveInput { .. })` is **always false** — the gate is dead. Two test sites prove it via a `StartScenario` stand-in (left in place by Tasks 4/5): `crates/game-core/tests/reaction_windows.rs::non_resolve_input_action_rejects_while_window_open` and the analogous test in `crates/game-core/tests/act_round_end.rs` (`~125-130`, comment "stands in as the surviving non-ResolveInput action").
+
+Do this: **delete both proxy tests** (the behavior they assert — "a non-`ResolveInput` action is rejected while a prompt is outstanding" — is unreachable once no such action exists; there is nothing left to submit). Then **remove the dead gate** from `apply_player_action`: drop the `if … Rejected` block. The pending-prompt protection it provided is now structural — `resolve_input` itself validates the response against the live frame, and there is no other action variant to guard against. Leave a one-line comment where the gate was, noting it was removed because `PlayerAction` collapsed to a single `ResolveInput` variant (#447/#459). If you instead believe the gate must stay (e.g. as defense against a future variant behind `#[non_exhaustive]`), keep it but you must add `#[allow(...)]`/a comment for any clippy always-false lint and KEEP a way to test it — **do not leave dead-but-untested code**. Default to removal.
 
 - [ ] **Step 1: Delete the variant**
 
@@ -578,7 +700,7 @@ Update the surrounding doc-comment (drop the `StartScenario` mention; the wire s
 - [ ] **Step 3: Build + run**
 
 Run: `RUSTFLAGS="-D warnings" cargo build --all && cargo test -p game-core --lib`
-Expected: PASS. A non-exhaustive single-variant enum still compiles; the `match` is exhaustive without a wildcard.
+Expected: PASS. A non-exhaustive single-variant enum still compiles; the `match` is exhaustive without a wildcard. With the gate removed there is no always-false clippy lint to suppress. Also run `cargo test -p game-core --test reaction_windows --test act_round_end` to confirm the proxy-test deletions left those binaries green.
 
 - [ ] **Step 4: Doc check**
 
@@ -598,12 +720,14 @@ git commit -m "engine: delete PlayerAction::StartScenario — action log is Reso
 
 Replace the auto-create + `StartScenario` button with a picker that collects the roster and drives creation.
 
+**⚠ ORDERING: run this task BEFORE Task 7 (variant deletion).** `crates/web/src/controls.rs` is `#[cfg(target_arch = "wasm32")]` and submits `PlayerAction::StartScenario`. Deleting the variant (Task 7) before this task removes that usage would break the 3 wasm CI jobs (`wasm-build`, `wasm-test`, `wasm-clippy`). After this task, the ONLY `PlayerAction::StartScenario` references left anywhere are the engine production arm + the 2 proxy tests — exactly Task 7's premise. (Note: `legality.rs` has its OWN web-local `ActionControl::StartScenario` enum — unrelated to the engine variant — and is deleted here because its only consumer is `controls.rs`.)
+
 **Files:**
 - Create: `crates/web/src/picker.rs` (component + `ROLAND_DEFAULT_DECK`)
 - Modify: `crates/web/src/store.rs:9-16` (`ConnStatus::AwaitingRoster`)
 - Modify: `crates/web/src/transport.rs` (gate creation; `CreateGameRequest` from the picker)
-- Modify: `crates/web/src/app.rs`, `crates/web/src/lib.rs` (mount `PickerView`, drop `ActionControls`)
-- Delete: `crates/web/src/controls.rs`, `crates/web/tests/controls.rs`
+- Modify: `crates/web/src/app.rs`, `crates/web/src/lib.rs` (mount `PickerView`, drop `ActionControls` + `legality`)
+- Delete: `crates/web/src/controls.rs`, `crates/web/tests/controls.rs`, **`crates/web/src/legality.rs`** (only `controls.rs` consumed `enabled_controls`/`ActionControl`; verify with `grep -rn "legality\|ActionControl\|enabled_controls" crates/web` after deletion — must be empty)
 - Create: `crates/web/tests/picker.rs`
 
 **Interfaces:**

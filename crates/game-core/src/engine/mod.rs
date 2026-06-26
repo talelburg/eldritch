@@ -361,7 +361,7 @@ mod tests {
 
         assert!(
             matches!(start_result.outcome, EngineOutcome::AwaitingInput { .. }),
-            "StartScenario opens the mulligan prompt (AwaitingInput), got {:?}",
+            "seat_and_open opens the mulligan prompt (AwaitingInput), got {:?}",
             start_result.outcome
         );
         assert_eq!(start_result.state.round, 1);
@@ -370,7 +370,7 @@ mod tests {
         assert_eq!(
             start_result.state.current_mulligan(),
             Some(id),
-            "mulligan loop must prompt the first investigator after StartScenario"
+            "mulligan loop must prompt the first investigator after seat_and_open"
         );
         assert_eq!(
             start_result.state.active_investigator, None,
@@ -3820,8 +3820,8 @@ mod tests {
 
     /// Build a Mulligan scenario: one investigator with a known hand
     /// of 5 cards + a remaining deck of 5, the `Mulligan` frame staged.
-    /// Bypasses `StartScenario` so tests can control the exact hand
-    /// composition.
+    /// Bypasses scenario setup (via `seat_and_open`) so tests can control
+    /// the exact hand composition.
     fn mulligan_scenario() -> (InvestigatorId, GameState) {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
@@ -4625,14 +4625,14 @@ mod tests {
     }
 
     // NOTE: `non_resolve_input_action_rejects_while_skill_test_paused` was
-    // removed here: it used the `StartScenario` variant as a proxy for "any
-    // non-ResolveInput action" to exercise the pending-prompt gate in
-    // `apply_player_action`. Once `PlayerAction` collapsed to a single
-    // `ResolveInput` variant (#459), the gate's `!matches!(action, ResolveInput)`
-    // condition became dead and the gate itself was removed — there is no
-    // non-`ResolveInput` action left to proxy with. Pending-prompt protection is
-    // now structural: `resolve_input` rejects a `ResolveInput` that arrives with
-    // no outstanding prompt, and the wrong-response-kind rejection is pinned in
+    // removed here: it used a variant as a proxy for "any non-ResolveInput action"
+    // to exercise the pending-prompt gate in `apply_player_action`. Once
+    // `PlayerAction` collapsed to a single `ResolveInput` variant (#459), the
+    // gate's `!matches!(action, ResolveInput)` condition became dead and the gate
+    // itself was removed — there is no non-`ResolveInput` action left to proxy
+    // with. Pending-prompt protection is now structural: `resolve_input` rejects a
+    // `ResolveInput` that arrives with no outstanding prompt, and the
+    // wrong-response-kind rejection is pinned in
     // `resolve_input_with_wrong_response_variant_rejects`.
 
     #[test]

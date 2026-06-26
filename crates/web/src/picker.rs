@@ -42,7 +42,10 @@ pub const ROLAND_DEFAULT_DECK: &[&str] = &[
 pub fn roland_roster() -> Vec<RosterEntry> {
     vec![RosterEntry {
         investigator: CardCode::new("01001"),
-        deck: ROLAND_DEFAULT_DECK.iter().map(|c| CardCode::new(*c)).collect(),
+        deck: ROLAND_DEFAULT_DECK
+            .iter()
+            .map(|c| CardCode::new(*c))
+            .collect(),
     }]
 }
 

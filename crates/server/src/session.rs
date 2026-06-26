@@ -135,8 +135,7 @@ impl GameSession {
     /// is already `AwaitingInput` (the setup mulligan) — loads correctly.
     /// Each replayed action overwrites `outcome` exactly as today.
     pub async fn load(db: SqlitePool, game_id: &GameId) -> Result<Option<Self>, SessionError> {
-        let Some((_scenario_id, seed_state, seed_outcome)) =
-            store::load_game(&db, game_id).await?
+        let Some((_scenario_id, seed_state, seed_outcome)) = store::load_game(&db, game_id).await?
         else {
             return Ok(None);
         };

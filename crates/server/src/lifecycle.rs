@@ -20,7 +20,14 @@ pub(crate) async fn create_game(
     Json(request): Json<CreateGameRequest>,
 ) -> Result<(StatusCode, Json<CreateGameResponse>), StatusCode> {
     let scenario_id = ScenarioId::new(request.scenario_id);
-    match GameSession::create(state.db.clone(), random_game_id(), scenario_id, request.roster).await {
+    match GameSession::create(
+        state.db.clone(),
+        random_game_id(),
+        scenario_id,
+        request.roster,
+    )
+    .await
+    {
         Ok(session) => Ok((
             StatusCode::CREATED,
             Json(CreateGameResponse {

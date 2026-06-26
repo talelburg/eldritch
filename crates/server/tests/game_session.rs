@@ -74,14 +74,20 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
     .await
     .expect("create");
     // create seats at creation → mulligan-pending, no actions logged yet.
-    assert!(matches!(session.outcome, EngineOutcome::AwaitingInput { .. }));
+    assert!(matches!(
+        session.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
     assert!(session.state.investigators.contains_key(&InvestigatorId(1)));
 
     let loaded = GameSession::load(pool, &GameId::new("seeded"))
         .await
         .unwrap()
         .expect("exists");
-    assert_eq!(loaded.state, session.state, "load reproduces the seeded state");
+    assert_eq!(
+        loaded.state, session.state,
+        "load reproduces the seeded state"
+    );
     assert!(
         matches!(loaded.outcome, EngineOutcome::AwaitingInput { .. }),
         "load must restore the seed's AwaitingInput outcome from an empty log, got {:?}",
@@ -94,10 +100,14 @@ async fn create_persists_seed_and_exposes_setup_state() {
     install_registry();
     let pool = memory_pool().await;
 
-    let session =
-        GameSession::create(pool.clone(), "game-1", ScenarioId::new(TEST_SCENARIO_ID), roster())
-            .await
-            .expect("create session");
+    let session = GameSession::create(
+        pool.clone(),
+        "game-1",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+    )
+    .await
+    .expect("create session");
 
     // create seats the roster: the investigator is present and round is 1.
     assert!(session.state.investigators.contains_key(&InvestigatorId(1)));
@@ -165,10 +175,14 @@ async fn create_rejects_bad_roster() {
 async fn apply_persists_accepted_action_and_advances_state() {
     install_registry();
     let pool = memory_pool().await;
-    let mut session =
-        GameSession::create(pool.clone(), "g2", ScenarioId::new(TEST_SCENARIO_ID), roster())
-            .await
-            .unwrap();
+    let mut session = GameSession::create(
+        pool.clone(),
+        "g2",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+    )
+    .await
+    .unwrap();
 
     // create lands at round-1 mulligan-pending; resolve the mulligan (keep
     // the whole hand — empty redraw).
@@ -199,10 +213,14 @@ async fn apply_persists_accepted_action_and_advances_state() {
 async fn apply_rejects_invalid_action_without_persisting() {
     install_registry();
     let pool = memory_pool().await;
-    let mut session =
-        GameSession::create(pool.clone(), "g3", ScenarioId::new(TEST_SCENARIO_ID), roster())
-            .await
-            .unwrap();
+    let mut session = GameSession::create(
+        pool.clone(),
+        "g3",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+    )
+    .await
+    .unwrap();
 
     // Post-create the mulligan is pending. Selecting a non-existent hand
     // index (OptionId(999_999)) is rejected by the mulligan handler since
@@ -223,7 +241,10 @@ async fn apply_rejects_invalid_action_without_persisting() {
     assert!(events.is_empty());
     // State must be unchanged: round is still 1 and investigator still in
     // the mulligan queue.
-    assert_eq!(session.state.round, 1, "state must be unchanged on rejection");
+    assert_eq!(
+        session.state.round, 1,
+        "state must be unchanged on rejection"
+    );
 
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM actions WHERE game_id = ?")
         .bind("g3")
@@ -237,10 +258,14 @@ async fn apply_rejects_invalid_action_without_persisting() {
 async fn load_replays_log_to_reproduce_live_state() {
     install_registry();
     let pool = memory_pool().await;
-    let mut session =
-        GameSession::create(pool.clone(), "g4", ScenarioId::new(TEST_SCENARIO_ID), roster())
-            .await
-            .unwrap();
+    let mut session = GameSession::create(
+        pool.clone(),
+        "g4",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+    )
+    .await
+    .unwrap();
     // Resolve the mulligan so the log has one action.
     session
         .apply(PlayerAction::ResolveInput {

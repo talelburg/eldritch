@@ -1,7 +1,7 @@
 //! Integration tests for Upkeep phase content.
 //!
-//! Drives full apply cycles through `StartScenario` → `Mulligan` →
-//! `EndTurn`, verifying the Upkeep cascade (ready exhausted cards,
+//! Drives full apply cycles through scenario setup (via `seat_and_open`) →
+//! `Mulligan` → `EndTurn`, verifying the Upkeep cascade (ready exhausted cards,
 //! draw 1, gain 1 resource, round bump) and replay determinism.
 //!
 //! Lives in `crates/scenarios/tests/` for the same reasons as

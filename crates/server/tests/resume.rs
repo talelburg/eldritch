@@ -11,8 +11,9 @@
 
 mod common;
 
-use common::{connect, install_registry, memory_pool, recv, roster, send, spawn_server,
-             TEST_SCENARIO_ID};
+use common::{
+    connect, install_registry, memory_pool, recv, roster, send, spawn_server, TEST_SCENARIO_ID,
+};
 use game_core::scenario::ScenarioId;
 use game_core::{EngineOutcome, InputResponse, OptionId, PlayerAction};
 use protocol::{ClientMessage, ServerMessage};

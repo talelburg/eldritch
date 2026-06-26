@@ -4,8 +4,8 @@
 //! Hallway/Attic/Cellar/Parlor are set aside (`set_aside_locations`) and
 //! enter play via Act 1's (01108) Forced on-advance reverse, which also
 //! relocates investigators to the Hallway and removes the Study).
-//! `setup()` builds the world; the `StartScenario` roster step seats
-//! investigators at the starting location (the Study, `01111`) via
+//! `setup()` builds the world; the scenario setup (via `seat_and_open`)
+//! seats investigators at the starting location (the Study, `01111`) via
 //! `GameState.starting_location`.
 //!
 //! Faithful where it can be (agenda doom 3/7/10; the verified Standard
@@ -158,7 +158,7 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> SymbolOutcome {
 /// Build the initial [`GameState`]: the Study in play (isolated), the
 /// four set-aside locations (Hallway/Attic/Cellar/Parlor, pre-connected),
 /// the act/agenda decks, the Standard chaos bag, and `starting_location`.
-/// No investigators — the `StartScenario` roster step seats them.
+/// No investigators — they are seated via `seat_and_open` at scenario setup.
 pub fn setup() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_chaos_bag(standard_chaos_bag())
@@ -245,10 +245,11 @@ pub fn setup() -> GameState {
     ];
 
     // Encounter deck: each gathered set's enemy/treachery cards at their
-    // printed quantity, in deterministic construction order. `StartScenario`
-    // shuffles it with the scenario-start RNG (Rules Reference: the
-    // encounter deck is shuffled at setup), so this seeding order isn't
-    // load-bearing for play — only for replay determinism before the shuffle.
+    // printed quantity, in deterministic construction order. The scenario
+    // setup (via `seat_and_open`) shuffles it with the scenario-start RNG
+    // (Rules Reference: the encounter deck is shuffled at setup), so this
+    // seeding order isn't load-bearing for play — only for replay determinism
+    // before the shuffle.
     for &code in ENCOUNTER_DECK_CODES {
         for _ in 0..encounter_quantity(code) {
             state.encounter_deck.push_back(CardCode(code.into()));

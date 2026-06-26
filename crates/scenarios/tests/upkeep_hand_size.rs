@@ -1,8 +1,8 @@
 //! #111 acceptance: upkeep step 4.5 discards down to the hand-size cap.
 //!
-//! Drives a full apply cycle through `StartScenario` → `Mulligan` →
-//! `EndTurn`, padding the sole investigator's hand so that — after the
-//! step-4.4 draw — they hold more than the cap at step 4.5. The
+//! Drives a full apply cycle through scenario setup (via `seat_and_open`) →
+//! `Mulligan` → `EndTurn`, padding the sole investigator's hand so that —
+//! after the step-4.4 draw — they hold more than the cap at step 4.5. The
 //! round-ending `EndTurn` must cascade into upkeep and pause with
 //! `AwaitingInput`; resolving the prompt with `PickMultiple` must land
 //! the hand at exactly the cap and let the round proceed.
