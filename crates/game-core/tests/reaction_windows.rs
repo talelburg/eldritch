@@ -12,8 +12,6 @@
 //! exercise edge cases (multi-controller defeats, two abilities on one
 //! card, `by_controller: false`) that no real Phase-3 card hits.
 
-use std::sync::OnceLock;
-
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
@@ -101,15 +99,13 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+#[ctor::ctor]
 fn install_mock_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-        });
+    let _ = game_core::card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 
@@ -120,7 +116,6 @@ fn install_mock_registry() {
 fn fight_to_defeat_scenario(
     in_play_cards: &[(&str, u32)],
 ) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
-    install_mock_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
@@ -364,7 +359,6 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     // attacker. The trigger is `by_controller: true`, so it must NOT
     // match the defeat (the active investigator made the kill, not
     // the controller of ROLAND_REACTION). No window opens.
-    install_mock_registry();
     let attacker = InvestigatorId(1);
     let bystander = InvestigatorId(2);
     let enemy_id = EnemyId(100);
@@ -423,7 +417,6 @@ fn unqualified_pattern_matches_any_defeat() {
     // ANY investigator triggers it. Here the trigger's controller
     // (investigator 2) isn't the attacker, but the window still
     // opens and the effect fires on resolve.
-    install_mock_registry();
     let attacker = InvestigatorId(1);
     let bystander = InvestigatorId(2);
     let enemy_id = EnemyId(100);
@@ -700,7 +693,6 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // `EnemyDefeated` reaction window — that reaction is response to
     // the defeat impact, which already resolved by the time we get
     // to OnSkillTestResolution.
-    install_mock_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
@@ -822,7 +814,6 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     // trigger first, followed by the other investigator's, per
     // Arkham's active-investigator-first / turn-order priority for
     // reaction windows.
-    install_mock_registry();
     let active = InvestigatorId(1);
     let other = InvestigatorId(2);
     let enemy_id = EnemyId(100);
@@ -966,7 +957,6 @@ fn reaction_trigger_in_threat_area_opens_window() {
     // reaction ability on a threat-area card is offered just like one
     // in play. Build the standard fight-to-defeat scenario but seat
     // ROLAND_REACTION in the threat area.
-    install_mock_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
@@ -1057,7 +1047,6 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     // (instance id 7). The scan already finds it there; now verify
     // the fire path also resolves it: PickSingle(OptionId(0)) discovers 1 clue,
     // the window closes, and Done is returned.
-    install_mock_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
@@ -1133,7 +1122,6 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
 fn investigate_to_success_scenario(
     in_play_cards: &[(&str, u32)],
 ) -> (InvestigatorId, LocationId, game_core::GameState) {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let loc = LocationId(10);
     let mut inv = test_investigator(1);

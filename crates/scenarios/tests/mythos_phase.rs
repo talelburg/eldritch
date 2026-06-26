@@ -19,8 +19,6 @@
 //! draws never trigger — so the scenario resolution hook stays
 //! dormant regardless.
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
@@ -39,12 +37,9 @@ use scenarios::test_fixtures::synth_cards::{
 };
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_test_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 /// Build the standard single-investigator sequence up to the point
@@ -78,7 +73,6 @@ fn setup_at_mythos_draw(state: game_core::state::GameState) -> game_core::state:
 
 #[test]
 fn mythos_phase_resolves_single_treachery() {
-    install_test_registry();
     let mut base = synthetic::setup();
     // Deck: exactly one synth treachery (already seeded by setup()).
     // Ensure discard is empty.
@@ -141,7 +135,6 @@ fn mythos_phase_resolves_single_treachery() {
 
 #[test]
 fn mythos_phase_surge_chains_into_next_card() {
-    install_test_registry();
     let base = synthetic::setup();
 
     let mut state = setup_at_mythos_draw(base);
@@ -195,7 +188,6 @@ fn mythos_phase_surge_chains_into_next_card() {
 
 #[test]
 fn mythos_phase_resolves_single_spawn_enemy() {
-    install_test_registry();
     // seat_and_open (called inside setup_at_mythos_draw) places the investigator
     // at starting_location = LocationId(10), so the spawned enemy engages them.
     let mut base = synthetic::setup();
@@ -252,7 +244,6 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // engages the chosen investigator and resumes inv1's Mythos draw
     // chain — which, the enemy being non-surge, advances the cursor to
     // inv2 and stays in Mythos.
-    install_test_registry();
     // Both investigators are seated at LocationId(10) (starting_location) by
     // seat_and_open; no pre-seating needed.
     let base = synthetic::setup();
@@ -389,7 +380,6 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
 
 #[test]
 fn mythos_phase_multi_investigator_player_order() {
-    install_test_registry();
     // Build a two-investigator state from setup() (both seated at
     // starting_location by seat_and_open).
     let mut base = synthetic::setup();
@@ -482,7 +472,6 @@ fn mythos_phase_multi_investigator_player_order() {
 
 #[test]
 fn mythos_phase_full_round_chain() {
-    install_test_registry();
     let base = synthetic::setup();
     // Deck already seeded with one synth treachery by setup().
 
@@ -535,7 +524,6 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
     //   - inv2's DrawEncounterCard: draws the third card (plain treachery),
     //     1× CardRevealed, discard grows by 1 more (3 total).
     //     Phase transitions to Investigation; mythos_draw_pending = None.
-    install_test_registry();
 
     // Both investigators seated at starting_location by seat_and_open.
     let base = synthetic::setup();
@@ -669,7 +657,6 @@ fn mythos_phase_multi_investigator_surge_does_not_spill() {
 
 #[test]
 fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
-    install_test_registry();
     let mut base = synthetic::setup();
     // Drain the seeded deck and ensure discard is also empty.
     base.encounter_deck.clear();
@@ -732,7 +719,6 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
 /// `state.open_windows` and the phase has not yet advanced.
 #[test]
 fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
-    install_test_registry();
     let base = synthetic::setup();
 
     let mut state = setup_at_mythos_draw(base);
@@ -803,7 +789,6 @@ fn mythos_after_draws_window_stays_open_when_fast_event_in_hand() {
 /// left it stuck — Slice C-plumbing replaced that with top-frame dispatch.)
 #[test]
 fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
-    install_test_registry();
     let base = synthetic::setup();
 
     let mut state = setup_at_mythos_draw(base);

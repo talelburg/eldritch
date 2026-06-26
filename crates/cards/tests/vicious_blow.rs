@@ -5,8 +5,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
@@ -21,11 +19,9 @@ const VICIOUS_BLOW: &str = "01025";
 const INV: InvestigatorId = InvestigatorId(1);
 const ENEMY: EnemyId = EnemyId(100);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: the controller (combat 3) engaged with one enemy (fight 2,
@@ -69,7 +65,6 @@ fn fight_action() -> TurnAction {
 /// Committing Vicious Blow to a successful Fight deals `1 base + 1 = 2`.
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
-    install();
     let r = TestSession::new(board())
         .take(&fight_action())
         .resolve_choices(|c| {
@@ -86,7 +81,6 @@ fn committing_vicious_blow_adds_one_attack_damage() {
 /// confirms the +1 comes from the card, not the action.
 #[test]
 fn fight_without_vicious_blow_deals_base_damage() {
-    install();
     let r = TestSession::new(board())
         .take(&fight_action())
         .resolve_choices(|c| {

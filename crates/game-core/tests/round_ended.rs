@@ -1,8 +1,6 @@
 //! `ForcedTriggerPoint::RoundEnded`: an agenda's `OnEvent(RoundEnded)`
 //! Forced ability fires at the end of the round (step 4.6).
 
-use std::sync::OnceLock;
-
 use card_dsl::dsl::{
     deal_horror, forced_on_event, native, Ability, EventPattern, EventTiming, InvestigatorTarget,
 };
@@ -55,21 +53,18 @@ fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
     (tag == "test:set-doom").then_some(set_doom as NativeEffectFn)
 }
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: mock_native_for,
-            native_eligibility_for: |_| None,
-        });
+    let _ = card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: mock_native_for,
+        native_eligibility_for: |_| None,
     });
 }
 
 #[test]
 fn round_ended_fires_agenda_forced_ability() {
-    install();
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_turn_order([InvestigatorId(1)])
@@ -100,8 +95,6 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     use game_core::state::{CardInPlay, CardInstanceId, LocationId, Phase};
     use game_core::test_support::test_location;
     use game_core::{apply, Action, PlayerAction, TurnAction};
-
-    install();
 
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(10));

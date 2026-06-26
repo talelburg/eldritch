@@ -26,8 +26,6 @@
 //! clue …" A fast event → `AoO`-exempt.
 #![allow(clippy::too_many_lines)]
 
-use std::sync::Once;
-
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
@@ -48,11 +46,9 @@ const WORKING_A_HUNCH: &str = "01037";
 /// Machete (01020): non-fast Guardian weapon asset → playing it provokes.
 const MACHETE: &str = "01020";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Resolve a soak-distribution prompt (#44/K5b — an `AoO` against an investigator
@@ -108,8 +104,6 @@ fn engaged_attacker(
 /// resources" effect resolves.
 #[test]
 fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
-    install_real_registry();
-
     let dog = CardInstanceId(1);
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
@@ -181,8 +175,6 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
 /// resolved effect together.
 #[test]
 fn playing_a_non_fast_event_spends_one_action() {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
@@ -230,8 +222,6 @@ fn playing_a_non_fast_event_spends_one_action() {
 /// Playing a non-fast card with no actions left is rejected (validate-first).
 #[test]
 fn playing_a_non_fast_card_with_no_actions_is_rejected() {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
@@ -282,8 +272,6 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
 /// provokes no `AoO` and spends no action; its effect (discover 1 clue) resolves.
 #[test]
 fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
-    install_real_registry();
-
     let dog = CardInstanceId(1);
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
@@ -359,8 +347,6 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
 /// discard).
 #[test]
 fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
@@ -425,8 +411,6 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
 /// onto Guard Dog); after the soak window closes, the asset enters play.
 #[test]
 fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
-    install_real_registry();
-
     let dog = CardInstanceId(1);
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
@@ -504,8 +488,6 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 /// nor stranded in a live hand.
 #[test]
 fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 

@@ -14,8 +14,6 @@
 //! in its own integration-test process without colliding with the
 //! mock-registry tests in `crates/game-core/tests/reaction_windows.rs`.
 
-use std::sync::Once;
-
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -36,11 +34,9 @@ const ROLAND: &str = "01001";
 /// against `PendingTrigger.instance_id`.
 const ROLAND_INSTANCE: u32 = 1;
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Build a Fight-ready scenario with Roland engaged with an enemy at
@@ -52,7 +48,6 @@ fn roland_at_location_with_enemy(
     location_clues: u8,
     round: u32,
 ) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
-    install_real_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
@@ -286,7 +281,6 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
 /// downstream code goes through) sees the same shape.
 #[test]
 fn registry_returns_reaction_with_once_per_round_limit() {
-    install_real_registry();
     let abilities =
         (cards::REGISTRY.abilities_for)(&CardCode::new(ROLAND)).expect("Roland is registered");
     assert_eq!(abilities.len(), 2);

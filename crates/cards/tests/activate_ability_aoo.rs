@@ -27,8 +27,6 @@
 //! …" A Fight ability → `AoO`-exempt (RR p.5).
 #![allow(clippy::too_many_lines)]
 
-use std::sync::Once;
-
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -53,11 +51,9 @@ const BEAT_COP: &str = "01018";
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
@@ -115,8 +111,6 @@ fn first_aid_and_guard_dog(
 /// through `drive_aoo`.
 #[test]
 fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
-    install_real_registry();
-
     let dog = CardInstanceId(1);
     let kit = CardInstanceId(2);
     let inv_id = InvestigatorId(1);
@@ -207,8 +201,6 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
 /// soaks nothing.
 #[test]
 fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
-    install_real_registry();
-
     let dog = CardInstanceId(1);
     let blade = CardInstanceId(2);
     let inv_id = InvestigatorId(1);
@@ -281,8 +273,6 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
 /// `AoO` damage.
 #[test]
 fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
-    install_real_registry();
-
     let cop = CardInstanceId(1);
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
@@ -355,8 +345,6 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
 /// effect after the `AoO` window closes.
 #[test]
 fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
-    install_real_registry();
-
     let kit = CardInstanceId(2);
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
@@ -449,8 +437,6 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 /// choice opens), though the supply spent as the activation cost stays spent.
 #[test]
 fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
-    install_real_registry();
-
     let kit = CardInstanceId(2);
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);

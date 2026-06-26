@@ -4,8 +4,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
@@ -22,11 +20,9 @@ const LOC: game_core::state::LocationId = game_core::state::LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
 const WEAPON_INST: CardInstanceId = CardInstanceId(0);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: .38 Special in play with 4 ammo, the active investigator (combat
@@ -34,7 +30,6 @@ fn install() {
 /// (health 3). Fight 5 distinguishes the modifier branches: +3 → total 8
 /// hits, +1 → total 4 misses. A `Numeric(0)` chaos bag is deterministic.
 fn board(loc_clues: u8) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.skills.combat = 3;
     let mut weapon = CardInPlay::enter_play(CardCode::new(SPECIAL), WEAPON_INST);

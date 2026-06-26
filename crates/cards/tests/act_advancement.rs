@@ -11,8 +11,12 @@ use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
 };
 
-fn act3_state() -> game_core::state::GameState {
+#[ctor::ctor]
+fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
+}
+
+fn act3_state() -> game_core::state::GameState {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new().with_turn_order([inv]).build();
     // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
@@ -62,7 +66,6 @@ fn defeating_other_enemy_does_not_advance_act_3() {
 /// registry, so it lives here rather than as a game-core lib unit test.
 #[test]
 fn advance_act_rejected_for_round_end_advance_act() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
     let inv = InvestigatorId(1);
     let mut investigator = test_investigator(1);
     investigator.clues = 9; // plenty — reject must be the objective, not affordability

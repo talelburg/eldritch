@@ -10,8 +10,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
@@ -28,17 +26,14 @@ const GUTS: &str = "01089"; // a skill — not a Tome asset (filler)
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: the active investigator at `LOC` with Research Librarian in hand
 /// (index 0) and `deck` as their deck.
 fn board(deck: Vec<CardCode>) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.hand = vec![CardCode::new(LIBRARIAN)];
     inv.deck = deck;

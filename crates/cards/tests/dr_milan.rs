@@ -4,8 +4,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::state::{
@@ -21,11 +19,9 @@ const DR_MILAN: &str = "01033";
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: the investigator at a 1-clue location of shroud 2 with **base
@@ -33,7 +29,6 @@ fn install() {
 /// Milan's +1 intellect the Investigate (1 vs 2) would fail; with it
 /// (2 vs 2) it succeeds — so the constant ability is load-bearing here.
 fn board() -> GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC);
     inv.skills.intellect = 1;
@@ -108,7 +103,6 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
     // Milan 01033's *reaction* window opens (RR p.2). Observable: at the
     // moment the reaction window suspends, Obscuring Fog is already gone —
     // pre-T5b it was still attached (the forced fired a later driver step).
-    install();
     let obscuring_fog = "01168";
 
     let mut inv = test_investigator(1);

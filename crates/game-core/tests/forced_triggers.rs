@@ -12,8 +12,6 @@
 //! location-entry forced ability is implemented. Until then, mock
 //! cards are the only way to exercise the full path.
 
-use std::sync::OnceLock;
-
 use game_core::action::InputResponse;
 use game_core::assert_event;
 use game_core::card_data::CardMetadata;
@@ -117,15 +115,13 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+#[ctor::ctor]
 fn install_mock_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-        });
+    let _ = game_core::card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 
@@ -159,8 +155,6 @@ fn move_action(
 
 #[test]
 fn forced_on_enter_resolves_immediately() {
-    install_mock_registry();
-
     let mut loc = test_location(10, "Attic");
     loc.code = CardCode(HORROR_ATTIC.into());
 
@@ -183,8 +177,6 @@ fn forced_on_enter_resolves_immediately() {
 
 #[test]
 fn move_into_forced_location_fires_its_effect() {
-    install_mock_registry();
-
     // Location A (id 10) — plain starting location, connected to B.
     let mut from = test_location(10, "Hallway");
     from.connections = vec![LocationId(11)];
@@ -243,8 +235,6 @@ fn move_into_forced_location_fires_its_effect() {
 
 #[test]
 fn forced_on_enter_no_op_when_location_has_no_abilities() {
-    install_mock_registry();
-
     // "plain-loc" is not HORROR_ATTIC — mock registry returns None.
     let mut loc = test_location(10, "Plain Room");
     loc.code = CardCode("plain-loc".into());
@@ -287,8 +277,6 @@ fn state_with_doom_agenda() -> game_core::state::GameState {
 
 #[test]
 fn forced_on_enemy_phase_end_fires_agenda_ability() {
-    install_mock_registry();
-
     let mut state = state_with_doom_agenda();
     let mut events = Vec::new();
     let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
@@ -307,8 +295,6 @@ fn forced_on_enemy_phase_end_fires_agenda_ability() {
 
 #[test]
 fn forced_on_phase_end_wrong_phase_fires_nothing() {
-    install_mock_registry();
-
     // The agenda ability is keyed to Enemy; firing Mythos should be a no-op.
     let mut state = state_with_doom_agenda();
     let mut events = Vec::new();
@@ -330,8 +316,6 @@ fn forced_on_phase_end_wrong_phase_fires_nothing() {
 /// exercises the `dsl_phase` mapping's negative side.
 #[test]
 fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
-    install_mock_registry();
-
     for phase in [Phase::Mythos, Phase::Investigation, Phase::Upkeep] {
         let mut state = state_with_doom_agenda();
         let mut events = Vec::new();
@@ -356,8 +340,6 @@ fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
 
 #[test]
 fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
-    install_mock_registry();
-
     let inv = test_investigator(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -381,8 +363,6 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
 
 #[test]
 fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
-    install_mock_registry();
-
     // Empty decks — common fixture shape for tests not modeling scenarios.
     let inv = test_investigator(1);
     let mut state = GameStateBuilder::new()
@@ -400,8 +380,6 @@ fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
 
 #[test]
 fn forced_on_phase_end_no_op_when_no_lead_investigator() {
-    install_mock_registry();
-
     // No turn_order set → no lead investigator → early return.
     let mut state = state_with_doom_agenda();
     state.turn_order.clear();
@@ -415,8 +393,6 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
 
 #[test]
 fn forced_on_phase_end_fires_act_ability() {
-    install_mock_registry();
-
     let inv = test_investigator(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -457,7 +433,6 @@ fn forced_on_phase_end_fires_act_ability() {
 fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
     use game_core::state::{CardInPlay, CardInstanceId};
 
-    install_mock_registry();
     let mut inv = test_investigator(1);
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode(END_OF_TURN_CARD.into()),
@@ -481,7 +456,6 @@ fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
 
 #[test]
 fn fire_forced_at_end_of_turn_no_op_without_threat_area_card() {
-    install_mock_registry();
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_turn_order([InvestigatorId(1)])
@@ -502,7 +476,6 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
     // turn.
     use game_core::state::{CardInPlay, CardInstanceId};
 
-    install_mock_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(10));
     inv.actions_remaining = 0;
@@ -564,7 +537,6 @@ fn fire_forced_after_investigate_resolves_threat_area_ability() {
     use game_core::state::{CardInPlay, CardInstanceId};
     use game_core::test_support::fire_forced_after_location_investigated;
 
-    install_mock_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(10));
     inv.threat_area.push(CardInPlay::enter_play(
@@ -593,7 +565,6 @@ fn fire_forced_after_investigate_resolves_threat_area_ability() {
 fn fire_forced_after_investigate_no_op_without_threat_area_card() {
     use game_core::test_support::fire_forced_after_location_investigated;
 
-    install_mock_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(10));
     let mut state = GameStateBuilder::new()
@@ -619,7 +590,6 @@ fn successful_investigate_fires_after_location_investigated_forced() {
     use game_core::state::{CardInPlay, CardInstanceId, ChaosBag, ChaosToken, TokenModifiers};
     use game_core::test_support::apply_no_commits;
 
-    install_mock_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(10));
     inv.skills.intellect = 3;
@@ -685,7 +655,6 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
     // `AwaitingInput` instead of auto-resolving both in a fixed order. Driven
     // through `apply` (Move into a location with two forced on-enter abilities,
     // a terminal emit site) so the suspension round-trips.
-    install_mock_registry();
 
     let mut from = test_location(10, "Hallway");
     from.connections = vec![LocationId(11)];
@@ -724,7 +693,6 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
 fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     // Resume the choice: pick each forced trigger in turn; both resolve, the
     // move completes (terminal site → Done), total 2 horror.
-    install_mock_registry();
 
     let mut from = test_location(10, "Hallway");
     from.connections = vec![LocationId(11)];

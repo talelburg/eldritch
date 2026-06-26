@@ -12,8 +12,6 @@
 //! We install [`TEST_REGISTRY`] but intentionally do **not** install the
 //! scenario registry, mirroring `mythos_phase.rs`.
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::seat_and_open;
@@ -23,12 +21,9 @@ use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_test_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 // ------------------------------------------------------------------
@@ -37,8 +32,6 @@ fn install_test_registry() {
 
 #[test]
 fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
-    install_test_registry();
-
     let inv1 = InvestigatorId(1);
     // Seed 6 cards via the roster: seat_and_open draws 5 for the opening
     // hand, leaving 1 in the deck for the Upkeep draw.
@@ -115,8 +108,6 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
 
 #[test]
 fn upkeep_round_replay_is_deterministic() {
-    install_test_registry();
-
     let inv1 = InvestigatorId(1);
     // 6 deck cards: seat_and_open draws 5, leaving 1 for the upkeep draw.
     let deck: Vec<CardCode> = (0..6u32)

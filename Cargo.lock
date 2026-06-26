@@ -252,6 +252,7 @@ name = "cards"
 version = "0.1.0"
 dependencies = [
  "card-dsl",
+ "ctor",
  "game-core",
  "serde",
 ]
@@ -469,6 +470,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "ctor"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -745,6 +756,7 @@ name = "game-core"
 version = "0.1.0"
 dependencies = [
  "card-dsl",
+ "ctor",
  "rand_chacha 0.10.0",
  "serde",
  "serde_json",
@@ -1974,6 +1986,7 @@ name = "scenarios"
 version = "0.1.0"
 dependencies = [
  "cards",
+ "ctor",
  "game-core",
  "serde_json",
 ]

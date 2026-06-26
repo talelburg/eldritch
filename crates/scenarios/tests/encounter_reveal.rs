@@ -20,8 +20,6 @@
 //! with `cards::REGISTRY` installs in other test binaries (e.g.
 //! `crates/cards/tests/play_card.rs`).
 
-use std::sync::Once;
-
 use game_core::action::EngineRecord;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
@@ -32,17 +30,13 @@ use game_core::{assert_event, Action};
 use scenarios::test_fixtures::synth_cards::{SYNTH_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_test_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 #[test]
 fn revealing_synth_treachery_runs_revelation_and_discards() {
-    install_test_registry();
     let inv1 = InvestigatorId(1);
     // This test exercises EngineRecord::EncounterCardRevealed directly (not
     // via a player action), so we seed the investigator manually rather than
@@ -101,7 +95,6 @@ fn revealing_synth_treachery_runs_revelation_and_discards() {
 
 #[test]
 fn rejects_when_encounter_deck_and_discard_both_empty() {
-    install_test_registry();
     let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
     {

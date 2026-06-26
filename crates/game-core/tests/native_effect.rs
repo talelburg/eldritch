@@ -3,8 +3,6 @@
 //! Exercised via the forced-trigger path (the real apply route) since
 //! `apply_effect` is `pub(crate)`.
 
-use std::sync::OnceLock;
-
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
@@ -54,15 +52,13 @@ fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
     }
 }
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: mock_native_for,
-            native_eligibility_for: |_| None,
-        });
+    let _ = card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: mock_native_for,
+        native_eligibility_for: |_| None,
     });
 }
 
@@ -84,7 +80,6 @@ fn state_with_agenda(code: &str) -> GameState {
 
 #[test]
 fn native_effect_runs_via_registry() {
-    install();
     let mut state = state_with_agenda(AGENDA);
     let mut events = Vec::new();
     let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
@@ -94,7 +89,6 @@ fn native_effect_runs_via_registry() {
 
 #[test]
 fn native_effect_rejects_unknown_tag() {
-    install();
     let mut state = state_with_agenda(AGENDA_BAD);
     let mut events = Vec::new();
     let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);

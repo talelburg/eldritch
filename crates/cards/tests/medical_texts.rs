@@ -12,8 +12,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::assert_event;
 use game_core::dsl::HarmKind;
 use game_core::engine::EngineOutcome;
@@ -30,11 +28,9 @@ const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 const BOOK_INST: CardInstanceId = CardInstanceId(0);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: Medical Texts in play; the active investigator with `intellect`
@@ -42,7 +38,6 @@ fn install() {
 /// makes the intellect(2) test deterministic — intellect 3 succeeds, 1 fails,
 /// both off the difficulty boundary.
 fn board(intellect: i8, damage: u8) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     // Real investigator code so max_health()/max_sanity() reads from the
     // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).

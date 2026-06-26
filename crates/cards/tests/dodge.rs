@@ -10,8 +10,6 @@
 //! Dodge 01023: "Fast. Play when an enemy attacks an investigator at your
 //! location. Cancel that attack."
 
-use std::sync::Once;
-
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{CardCode, Enemy, EnemyId, InvestigatorId, LocationId, Phase};
@@ -21,11 +19,9 @@ use game_core::{Action, GameState, InputResponse, PlayerAction, TurnAction};
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// An engaged ready enemy at `loc` dealing 2 damage / 0 horror.
@@ -45,7 +41,6 @@ fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
 /// it is not a framework Fast play), then the attack loop opens the
 /// `BeforeEnemyAttack` cancel window and offers Dodge.
 fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
-    install_real_registry();
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let enemy_id = EnemyId(7);

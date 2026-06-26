@@ -36,8 +36,6 @@
 //!   - Guard Dog's ability triggers only on damage, not horror.
 #![allow(clippy::too_many_lines)]
 
-use std::sync::Once;
-
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -55,11 +53,9 @@ const DODGE: &str = "01023";
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, damage-retaliate.
 const GUARD_DOG: &str = "01021";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Resolve a soak-distribution prompt (#44/K5b — a retaliate attack against an
@@ -120,8 +116,6 @@ fn fight_state(
     hand: Vec<CardCode>,
     cards_in_play: Vec<CardInPlay>,
 ) -> (game_core::GameState, InvestigatorId, LocationId) {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
 

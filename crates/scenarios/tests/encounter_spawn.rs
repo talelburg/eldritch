@@ -27,8 +27,6 @@
 //! installs in other test binaries (e.g.
 //! `crates/cards/tests/play_card.rs`).
 
-use std::sync::Once;
-
 use game_core::action::EngineRecord;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
@@ -39,17 +37,13 @@ use game_core::{assert_event_sequence, Action};
 use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, SYNTH_LOC_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_test_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 #[test]
 fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
-    install_test_registry();
     let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
     // Manually seed the investigator at the synth location — this test uses
@@ -117,7 +111,6 @@ fn revealing_synth_enemy_spawns_at_specific_location_engaged_with_drawer() {
 
 #[test]
 fn revealing_synth_enemy_with_two_investigators_at_loc_suspends_for_lead_pick() {
-    install_test_registry();
     let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
     // Manually seed both investigators at LocationId(10) — this test uses

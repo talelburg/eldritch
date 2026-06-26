@@ -10,8 +10,6 @@
 //! `OnCommit` ability yet — Vicious Blow 01025 (the consumer, #240) is the
 //! first; until then this mock skill exercises the full commit path.
 
-use std::sync::OnceLock;
-
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::dsl::{boost_attack_damage, on_commit, Ability};
 use game_core::engine::{EngineOutcome, OptionId};
@@ -21,6 +19,7 @@ use game_core::state::{
 };
 use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
+use std::sync::OnceLock;
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";
@@ -64,15 +63,13 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+#[ctor::ctor]
 fn install_mock_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-        });
+    let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 
@@ -80,7 +77,6 @@ fn install_mock_registry() {
 /// health 10 so the dealt damage is observable, not clamped), the mock
 /// skill in hand, a `Numeric(0)` chaos bag for a deterministic success.
 fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
 

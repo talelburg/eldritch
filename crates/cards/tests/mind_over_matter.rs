@@ -5,8 +5,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -27,11 +25,9 @@ const LOC: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
 const WEAPON_INST: CardInstanceId = CardInstanceId(900);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Active investigator at `LOC` engaged with a fight-3 enemy. `combat` /
@@ -39,7 +35,6 @@ fn install() {
 /// outcome (combat fails the fight-3 test, intellect passes). `hand` is the
 /// investigator's starting hand.
 fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.skills.combat = combat;
     inv.skills.intellect = intellect;
@@ -182,7 +177,6 @@ fn substituted_intellect_test_ignores_committed_combat_icons() {
 
 #[test]
 fn mind_over_matter_rejected_outside_your_turn() {
-    install();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC);
     inv.hand = vec![CardCode::new(MOM)];
@@ -216,7 +210,6 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
     // combat 1 + weapon +1 = 2 < fight 3 (would fail); substituting drops the
     // weapon's combat bonus and tests intellect 4 ≥ 3 → success, and the
     // weapon's +1 damage is still dealt (base 1 + 1 = 2).
-    install();
     let mut inv = test_investigator(1);
     inv.skills.combat = 1;
     inv.skills.intellect = 4;

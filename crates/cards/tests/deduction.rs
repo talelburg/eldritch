@@ -9,8 +9,6 @@
 //! icon + the resolution-time bonus both work end-to-end with the
 //! real card and real registry.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -24,11 +22,9 @@ use game_core::{assert_event, assert_event_count, assert_no_event, TurnAction};
 
 const DEDUCTION: &str = "01039";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Build a state with Deduction in hand, the active investigator at
@@ -38,7 +34,6 @@ fn state_with_deduction(
     initial_clues: u8,
     shroud: u8,
 ) -> (game_core::GameState, InvestigatorId, LocationId) {
-    install_real_registry();
     let id = InvestigatorId(1);
     let loc = LocationId(10);
     let mut inv = test_investigator(1);

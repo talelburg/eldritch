@@ -8,8 +8,6 @@
 //! (a controlled chaos bag, a minimal roster deck, seeded health/act state)
 //! are called out at their use sites.
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, seat_and_open, EngineOutcome};
 use game_core::event::Event;
@@ -21,12 +19,10 @@ use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 const ROLAND: &str = "01001";
 const INV: InvestigatorId = InvestigatorId(1);
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// The Gathering set up + solo Roland seated and past the mulligan, ready
@@ -34,7 +30,6 @@ fn install() {
 /// Standard bag (which contains `AutoFail`) is replaced with a single-token
 /// `Numeric(0)` bag so skill tests resolve predictably.
 fn seated_roland() -> GameState {
-    install();
     let mut state = scenarios::the_gathering::setup();
     // Stand-in: deterministic chaos bag (production serves Standard).
     state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);

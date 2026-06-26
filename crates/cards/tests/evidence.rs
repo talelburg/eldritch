@@ -9,8 +9,6 @@
 //! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
 //! own integration-test process.
 
-use std::sync::Once;
-
 use game_core::action::InputResponse;
 use game_core::engine::TurnAction;
 use game_core::engine::{EngineOutcome, OptionId};
@@ -28,11 +26,9 @@ use game_core::{apply, assert_event, assert_no_event, Action, PlayerAction};
 /// `ArkhamDB` code for original-Core Evidence!.
 const EVIDENCE: &str = "01022";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Solo investigator (NOT Roland — no in-play reaction) engaged with a 1-HP
@@ -42,7 +38,6 @@ fn install_real_registry() {
 fn investigator_with_evidence_and_enemy(
     location_clues: u8,
 ) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
-    install_real_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
@@ -238,7 +233,6 @@ fn evidence_fast_event_discards_exactly_once() {
 #[test]
 fn window_offers_both_in_play_reaction_and_hand_evidence() {
     use game_core::state::{CardInPlay, CardInstanceId};
-    install_real_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);

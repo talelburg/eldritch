@@ -13,8 +13,6 @@
 //!   install a registry, exercising only validation paths that
 //!   short-circuit before the registry lookup).
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{CardCode, InvestigatorId, Phase, Status, Zone};
@@ -53,21 +51,17 @@ const UNKNOWN_CODE: &str = "99999";
 /// Install the real card registry exactly once for this integration-
 /// test binary. Idempotent at the `OnceLock` level; this `Once`
 /// wrapper additionally avoids the futile second `install` call.
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        // It's fine if this is `Err` — another test in this binary
-        // already installed. The function-pointer struct is `Copy`
-        // and stateless, so re-install attempts are harmless.
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    // It's fine if this is `Err` — another test in this binary
+    // already installed. The function-pointer struct is `Copy`
+    // and stateless, so re-install attempts are harmless.
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Build a one-investigator scenario state at the controller's
 /// location, mid-investigation, with `hand` already in hand.
 fn play_state(hand: Vec<&str>) -> (game_core::GameState, InvestigatorId, LocationId) {
-    install_real_registry();
-
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let mut inv = test_investigator(1);
@@ -443,7 +437,6 @@ fn asset_play_enters_play_through_the_frame() {
 fn play_card_after_defeat_is_rejected() {
     // Belt-and-suspenders: even with REGISTRY installed, the status
     // check should reject before the registry lookup runs.
-    install_real_registry();
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];

@@ -7,8 +7,6 @@
 //! is now *played* via `PickSingle` (a replacement reaction: discard-from-self
 //! then `Effect::Cancel` the discovery), or declined via `Skip`.
 
-use std::sync::Once;
-
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{Resolution, ScenarioId};
@@ -22,11 +20,9 @@ use game_core::test_support::{
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_COVER_UP_CODE, TEST_REGISTRY};
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -80,7 +76,6 @@ fn investigate_to_interrupt(state: GameState) -> (GameState, EngineOutcome) {
 
 #[test]
 fn playing_cover_up_replaces_discovery_with_discard() {
-    install();
     let (state, outcome) = investigate_to_interrupt(investigate_state(2, 3));
     assert!(
         matches!(outcome, EngineOutcome::AwaitingInput { .. }),
@@ -116,7 +111,6 @@ fn playing_cover_up_replaces_discovery_with_discard() {
 
 #[test]
 fn skip_discovers_normally() {
-    install();
     let (state, outcome) = investigate_to_interrupt(investigate_state(2, 3));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
 
@@ -140,7 +134,6 @@ fn skip_discovers_normally() {
 
 #[test]
 fn no_interrupt_when_cover_up_has_no_clues() {
-    install();
     // Cover Up with 0 clues: the reaction has no game-state potential, so
     // it is not offered — the commit window resolves straight to Done.
     let (state, outcome) = investigate_to_interrupt(investigate_state(2, 0));
@@ -201,7 +194,6 @@ fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -
 
 #[test]
 fn playing_cover_up_discards_the_full_replaced_count() {
-    install();
     // count=2, Cover Up holds 3 → discover nothing, discard exactly 2.
     let r = apply(
         paused_before_discover_window(2, 5, 3),
@@ -226,7 +218,6 @@ fn playing_cover_up_discards_the_full_replaced_count() {
 
 #[test]
 fn playing_cover_up_caps_discard_at_held_clue_count() {
-    install();
     // count=3 but Cover Up only holds 1 → discard is capped at 1 (no
     // underflow), and the discovery is still fully replaced.
     let r = apply(
@@ -272,7 +263,6 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
 
 #[test]
 fn game_end_emits_trauma_when_cover_up_has_clues() {
-    install();
     let r = dispatch_turn_action_unchecked(
         resolving_state(3),
         &TurnAction::AdvanceAct { investigator: INV },
@@ -300,7 +290,6 @@ fn game_end_emits_trauma_when_cover_up_has_clues() {
 
 #[test]
 fn game_end_emits_no_trauma_when_cover_up_empty() {
-    install();
     let r = dispatch_turn_action_unchecked(
         resolving_state(0),
         &TurnAction::AdvanceAct { investigator: INV },

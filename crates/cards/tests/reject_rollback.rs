@@ -63,10 +63,10 @@ fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
     }))
 }
 
-/// Install the hand-rolled probe registry for this binary. `install` is
-/// idempotent at the `OnceLock` level (first call wins; later calls
-/// return `Err`, discarded here), so no `Once` guard is needed for this
-/// single-test binary.
+/// Install the hand-rolled probe registry before the test harness `main`, so
+/// it's present no matter which test runs first (#473). `install` is idempotent
+/// at the `OnceLock` level (first call wins; later calls return `Err`, ignored).
+#[ctor::ctor]
 fn install_probe_registry() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: probe_metadata,
@@ -78,8 +78,6 @@ fn install_probe_registry() {
 
 #[test]
 fn mid_resolution_reject_leaves_state_and_events_untouched() {
-    install_probe_registry();
-
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let mut inv = test_investigator(1);

@@ -7,20 +7,15 @@
 //! doom-to-threshold cascade — the firing wiring lives in `advance_agenda`
 //! and is unit-tested there; here we prove the *card effects* resolve.
 
-use std::sync::Once;
-
 use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId};
 use game_core::test_support::{
     fire_forced_on_agenda_advance, test_investigator, test_location, GameStateBuilder,
 };
 use game_core::{apply, Action, EngineOutcome, InputResponse, OptionId, PlayerAction};
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// 01105's reverse is the lead's interactive `ChooseOne` (Axis A #334): it
@@ -28,7 +23,6 @@ fn install_registry() {
 /// "lead takes 2 horror") resolves through `apply` + `ResolveInput`.
 #[test]
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
-    install_registry();
     let lead = InvestigatorId(1);
     let mut inv = test_investigator(1);
     // Use a real investigator code so max_sanity() can read from the installed
@@ -72,7 +66,6 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
 /// moves one card from the lead's seeded hand into their discard.
 #[test]
 fn agenda_01105_reverse_choice_random_discard_each() {
-    install_registry();
     let lead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
@@ -121,7 +114,6 @@ fn agenda_01105_reverse_choice_random_discard_each() {
 /// Ghoul Minion (01160, the Ghoul enemy)].
 #[test]
 fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
-    install_registry();
     let lead = InvestigatorId(1);
     let loc = test_location(20, "Here");
     let mut state = GameStateBuilder::new()
@@ -171,7 +163,6 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
 /// — a faithful no-op draw).
 #[test]
 fn agenda_01106_reverse_discards_non_ghoul_cards() {
-    install_registry();
     let lead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))

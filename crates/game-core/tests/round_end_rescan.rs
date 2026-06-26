@@ -14,8 +14,6 @@
 //! the `at` forced does **not** fire (no clue gained). Skipping leaves `TESTX` in
 //! play, so the `at` forced fires (one clue). The difference is the re-scan.
 
-use std::sync::OnceLock;
-
 use card_dsl::dsl::{
     forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
 };
@@ -79,22 +77,19 @@ fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: mock_native_for,
-            native_eligibility_for: |_| None,
-        });
+    let _ = card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: mock_native_for,
+        native_eligibility_for: |_| None,
     });
 }
 
 /// Upkeep, the test act current, the lead holding `TESTX` (the `at`-forced
 /// source) in their threat area with 0 clues.
 fn rescan_state() -> GameState {
-    install();
     let inv = InvestigatorId(1);
     let mut investigator = test_investigator(1);
     investigator.clues = 0;

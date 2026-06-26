@@ -4,8 +4,6 @@
 //! process so it can install the process-global registry against the real
 //! corpus.
 
-use std::sync::Once;
-
 use game_core::action::{EngineRecord, InputResponse, PlayerAction};
 use game_core::engine::OptionId;
 use game_core::state::{
@@ -19,12 +17,9 @@ use game_core::test_support::{
 };
 use game_core::{apply, Action, EngineOutcome, TurnAction};
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1, committing no cards
@@ -55,8 +50,6 @@ fn board_with(treachery: &str) -> game_core::GameState {
 
 #[test]
 fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
-    install_registry();
-
     // Reveal: attaches to the investigator's location, not discarded.
     let result = reveal_top(board_with("01168"));
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -132,8 +125,6 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
 
 #[test]
 fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
-    install_registry();
-
     let result = reveal_top(board_with("01165"));
     assert_eq!(result.outcome, EngineOutcome::Done);
     let inv = &result.state.investigators[&InvestigatorId(1)];
@@ -160,7 +151,6 @@ fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
 
 #[test]
 fn dissonant_voices_forbids_playing_an_asset() {
-    install_registry();
     // Investigator mid-investigation with a playable asset (Holy Rosary,
     // 01059) in hand and Dissonant Voices in their threat area.
     let mut inv = test_investigator(1);
@@ -197,7 +187,6 @@ fn dissonant_voices_forbids_playing_an_asset() {
 
 #[test]
 fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
-    install_registry();
     // Both Dissonant Voices (threat area) and agenda 01107 carry an
     // `At`-`RoundEnded` forced ability. Two simultaneous forced at one timing
     // point let the lead order them (#213), so the real round-end coordinator
@@ -283,7 +272,6 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
 
 #[test]
 fn frozen_in_fear_surcharges_first_move_each_round_only() {
-    install_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(1));
     inv.threat_area.push(CardInPlay::enter_play(
@@ -370,7 +358,6 @@ fn end_turn_committing_nothing(state: game_core::GameState) -> game_core::ApplyR
 
 #[test]
 fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
-    install_registry();
     // Willpower 3 + Numeric(0) = 3 vs difficulty 3 → success.
     let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(0)));
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
@@ -397,7 +384,6 @@ fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
 
 #[test]
 fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
-    install_registry();
     // Willpower 3 + Numeric(-1) = 2 vs difficulty 3 → fail.
     let r = end_turn_committing_nothing(frozen_in_fear_board(ChaosToken::Numeric(-1)));
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
@@ -425,7 +411,6 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     // window, and once it resolves the forced run resumes the second sibling —
     // rather than abandoning it. After both resolve, the end-of-turn tail runs
     // (rotation to the next investigator).
-    install_registry();
 
     let mut inv1 = test_investigator(1);
     inv1.threat_area.push(CardInPlay::enter_play(
@@ -498,8 +483,6 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
 
 #[test]
 fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
-    install_registry();
-
     // First copy attaches.
     let result = reveal_top(board_with("01168"));
     let mut state = result.state;

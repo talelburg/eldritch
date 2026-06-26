@@ -10,8 +10,6 @@
 //! Hyperawareness will be the first. Until then, mock cards are the
 //! only way to exercise the full activation flow.
 
-use std::sync::OnceLock;
-
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
@@ -90,15 +88,13 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+#[ctor::ctor]
 fn install_mock_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-        });
+    let _ = game_core::card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 
@@ -106,8 +102,6 @@ fn install_mock_registry() {
 /// in the Investigation phase, the controller active and Active,
 /// 3 actions remaining, 5 starting resources (per the test fixture).
 fn state_with_in_play(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
-    install_mock_registry();
-
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
     let mut inv = test_investigator(1);
@@ -311,7 +305,6 @@ fn discard_card_from_hand_cost_rejects_with_todo() {
 fn activating_with_defeated_status_doesnt_need_registry() {
     // Belt-and-suspenders: even with registry installed, the status
     // check rejects before the registry lookup runs.
-    install_mock_registry();
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
     let mut inv = test_investigator(1);

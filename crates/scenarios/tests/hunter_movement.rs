@@ -2,8 +2,6 @@
 //! registry + Mythos draw path (option A), plus hunter-movement replay
 //! equality across a `PickSingle` round-trip.
 
-use std::sync::Once;
-
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
@@ -14,16 +12,13 @@ use game_core::{Action, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install_test_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 #[test]
 fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
-    install_test_registry();
     let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
     // Manually seed both investigators at LocationId(10) — this test drives
