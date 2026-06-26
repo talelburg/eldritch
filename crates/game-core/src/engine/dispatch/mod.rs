@@ -231,6 +231,17 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     other => return other,    // re-prompt, or a suspended continuation
                 }
             }
+            // A framework Fast window on top (empty reaction candidates, so it
+            // failed the guarded arm above): surface its eligible fast plays as a
+            // skippable choice, or close it when none remain (#476). Re-examined
+            // after each fast play resolves — the re-open loop — until the player
+            // Skips or runs out of plays.
+            Some(Continuation::FastWindow { .. }) => {
+                match reaction_windows::drive_fast_window(cx) {
+                    EngineOutcome::Done => {} // closed (no eligible plays); loop on
+                    other => return other,    // the skippable prompt, or a continuation prompt
+                }
+            }
             // A skill test re-exposed on top (a mid-test window/effect closed):
             // step its driver. By the invariant it is top — no `rposition` /
             // `win_idx > st` self-location.
@@ -464,15 +475,34 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     if has_candidates {
         return reaction_windows::resume_reaction_window(cx, response);
     }
-    if matches!(response, InputResponse::Skip) {
-        return reaction_windows::close_reaction_window(cx);
-    }
-    EngineOutcome::Rejected {
-        reason: format!(
-            "ResolveInput: a Fast-play window is open (no pending triggers); \
-             submit InputResponse::Skip to close it, got {response:?}",
-        )
-        .into(),
+    // A framework Fast window (no reaction candidates): the player either plays an
+    // eligible fast card / ability (PickSingle into the re-enumerated list) or
+    // passes (Skip). After a pick, dispatch the play and return — the `drive` loop
+    // re-examines the still-top FastWindow and re-emits (play another) or closes
+    // (#476).
+    match response {
+        InputResponse::Skip => reaction_windows::close_reaction_window(cx),
+        InputResponse::PickSingle(opt) => {
+            let i = opt.0;
+            let plays = reaction_windows::enumerate_fast_plays(cx.state);
+            let Some(action) = plays.get(i as usize).cloned() else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "ResolveInput: fast-window PickSingle({i}) out of range (0..{})",
+                        plays.len(),
+                    )
+                    .into(),
+                };
+            };
+            dispatch_turn_action(cx, &action)
+        }
+        other => EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: a Fast-play window is open; submit PickSingle(OptionId) to play, \
+                 or Skip to pass, got {other:?}",
+            )
+            .into(),
+        },
     }
 }
 

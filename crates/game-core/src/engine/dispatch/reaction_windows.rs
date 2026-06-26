@@ -15,6 +15,7 @@ use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{Ability, EventPattern, EventTiming, Trigger, TriggerKind};
+use crate::engine::enumerate::TurnAction;
 use crate::engine::TimingEvent;
 use crate::state::TimingMode;
 use crate::state::{
@@ -1642,18 +1643,63 @@ pub(crate) fn check_activate_ability(
 /// that don't touch card data) — same fallback as
 /// [`scan_pending_triggers`].
 pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
+    !enumerate_fast_plays(state).is_empty()
+}
+
+/// Drive a framework Fast window that is on top of the stack (#476): surface the
+/// currently-eligible fast plays as a **skippable** `PickSingle`, or close the
+/// window (running its continuation) when none remain. Called by the `drive`
+/// loop's `FastWindow` arm — both when the window first parks and each time it is
+/// re-exposed after a fast play resolves (the re-open loop). The window stays on
+/// top across the prompt; `resume_window` dispatches the pick, or closes on Skip.
+pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
+    let plays = enumerate_fast_plays(cx.state);
+    if plays.is_empty() {
+        // Nothing (more) to play: close + run the window's continuation.
+        return close_reaction_window(cx);
+    }
+    let options = plays
+        .iter()
+        .enumerate()
+        .map(|(i, a)| ChoiceOption {
+            id: OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
+            label: a.label(cx.state),
+        })
+        .collect::<Vec<_>>();
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single("Fast window — play a card or pass", options)
+            .skippable(),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Collect every fast play currently eligible across all investigators: Fast
+/// cards in hand ([`check_play_card`] `Ok` + `is_fast`) and 0-action
+/// [`Trigger::Activated`] abilities on cards in play ([`check_activate_ability`]
+/// `Ok`). MUST be called with the `FastWindow` on top of the stack so
+/// `check_play_card`'s `permits_fast` gate applies to the right window (#476).
+///
+/// Returns the plays as [`TurnAction`]s in deterministic (investigator,
+/// hand-index / ability-index) order — the same shape the open-turn menu
+/// dispatches via `dispatch_turn_action`, so the #476 fast-window prompt reuses
+/// that dispatch path verbatim. Empty when the registry isn't installed.
+pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
+    let mut out = Vec::new();
     let Some(reg) = crate::card_registry::current() else {
-        return false;
+        return out;
     };
     for (&inv_id, inv) in &state.investigators {
         // Fast events / Fast assets in hand.
         for hand_idx_usize in 0..inv.hand.len() {
-            let Ok(hand_idx) = u8::try_from(hand_idx_usize) else {
+            let Ok(hand_index) = u8::try_from(hand_idx_usize) else {
                 break;
             };
-            if let Ok(result) = check_play_card(state, inv_id, hand_idx) {
+            if let Ok(result) = check_play_card(state, inv_id, hand_index) {
                 if result.is_fast {
-                    return true;
+                    out.push(TurnAction::PlayCard {
+                        investigator: inv_id,
+                        hand_index,
+                    });
                 }
             }
         }
@@ -1666,16 +1712,20 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
                 let Trigger::Activated { action_cost: 0 } = ability.trigger else {
                     continue;
                 };
-                let Ok(ab_idx_u8) = u8::try_from(ab_idx) else {
+                let Ok(ability_index) = u8::try_from(ab_idx) else {
                     break;
                 };
-                if check_activate_ability(state, inv_id, card.instance_id, ab_idx_u8).is_ok() {
-                    return true;
+                if check_activate_ability(state, inv_id, card.instance_id, ability_index).is_ok() {
+                    out.push(TurnAction::ActivateAbility {
+                        investigator: inv_id,
+                        instance_id: card.instance_id,
+                        ability_index,
+                    });
                 }
             }
         }
     }
-    false
+    out
 }
 
 #[cfg(test)]
@@ -1951,5 +2001,20 @@ mod open_fast_window_tests {
             events.is_empty(),
             "EnemyDefeated continuation must be a no-op; events = {events:?}"
         );
+    }
+
+    /// With no fast-playable card or 0-cost ability available, the enumeration is
+    /// empty (the auto-skip path). The positive case — a real Fast card becoming
+    /// a `PlayCard` candidate — is covered by the Task 5 integration regression,
+    /// because game-core's test registry exposes no playable cards.
+    #[test]
+    fn enumerate_fast_plays_empty_when_nothing_eligible() {
+        let inv = crate::state::InvestigatorId(1);
+        let state = GameStateBuilder::new()
+            .with_phase(crate::state::Phase::Investigation)
+            .with_active_investigator(inv)
+            .with_investigator(test_investigator(1))
+            .build();
+        assert!(enumerate_fast_plays(&state).is_empty());
     }
 }

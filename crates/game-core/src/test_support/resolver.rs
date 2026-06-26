@@ -338,16 +338,21 @@ fn drive_to_terminal_no_commits(first: ApplyResult) -> ApplyResult {
                 outcome,
             };
         }
-        // The only `AwaitingInput`s in a no-commits drive are the commit window
-        // (PickMultiple) and the #478 acknowledge pause (Confirm); a `Done`-idle
-        // with an open window is a parked Fast player window to decline. Anything
-        // else is terminal.
+        // The `AwaitingInput`s in a no-commits drive are: the commit window
+        // (PickMultiple), the #478 acknowledge pause (Confirm), and any skippable
+        // window (a #476 fast-window prompt, a reaction window) which the
+        // no-commits drive declines with Skip. A `Done`-idle with an open window is
+        // a parked window to decline. Anything else is terminal.
         let next = if let EngineOutcome::AwaitingInput { request, .. } = &outcome {
-            match request.kind {
-                InputKind::Confirm => InputResponse::Confirm,
-                _ => InputResponse::PickMultiple {
-                    selected: Vec::new(),
-                },
+            if request.skippable {
+                InputResponse::Skip
+            } else {
+                match request.kind {
+                    InputKind::Confirm => InputResponse::Confirm,
+                    _ => InputResponse::PickMultiple {
+                        selected: Vec::new(),
+                    },
+                }
             }
         } else if matches!(outcome, EngineOutcome::Done) && !state.open_windows().is_empty() {
             InputResponse::Skip
