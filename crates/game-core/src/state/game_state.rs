@@ -1667,6 +1667,19 @@ impl GameState {
         }
     }
 
+    /// The investigator currently prompted to discard down to the hand-size
+    /// limit, if an upkeep hand-size discard is in progress; `None` otherwise.
+    /// Reads the top [`Continuation::HandSizeDiscard`] frame's `remaining[0]`
+    /// — the frame is only the top while the discard is pending, so `.last()`
+    /// is correct (mirrors [`current_mulligan`](Self::current_mulligan)).
+    #[must_use]
+    pub fn current_hand_size_discard(&self) -> Option<InvestigatorId> {
+        match self.continuations.last() {
+            Some(Continuation::HandSizeDiscard(h)) => h.remaining.first().copied(),
+            _ => None,
+        }
+    }
+
     /// The investigator currently prompted to draw their Mythos step-1.4
     /// encounter card, if an encounter-draw loop is in progress; `None`
     /// otherwise. Reads the topmost [`Continuation::EncounterDraw`] frame's
@@ -2529,6 +2542,25 @@ mod action_resolution_frame_tests {
             !f.is_phase_anchor(),
             "a mid-action frame is not a phase anchor"
         );
+    }
+
+    #[test]
+    fn current_hand_size_discard_reads_the_frame() {
+        // No frame → None.
+        assert_eq!(
+            crate::state::GameStateBuilder::new()
+                .build()
+                .current_hand_size_discard(),
+            None
+        );
+        // Top HandSizeDiscard frame → its first remaining investigator.
+        let mut state = crate::state::GameStateBuilder::new().build();
+        state
+            .continuations
+            .push(Continuation::HandSizeDiscard(HandSizeDiscard {
+                remaining: vec![InvestigatorId(2), InvestigatorId(3)],
+            }));
+        assert_eq!(state.current_hand_size_discard(), Some(InvestigatorId(2)));
     }
 }
 

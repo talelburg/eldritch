@@ -177,3 +177,23 @@ async fn mulligan_submits_selected_redraw_index() {
         .expect("a frame after tick — did tick flush the click handler?");
     assert_eq!(commit_indices(frame), vec![0]);
 }
+
+#[wasm_bindgen_test]
+async fn hand_size_discard_renders_the_prompted_hand() {
+    // Upkeep hand-size discard: NO active investigator, but a HandSizeDiscard
+    // frame names inv 1; the prompted hand must still render (#468).
+    let mut inv = test_investigator(1);
+    inv.hand = vec![CardCode::new("01088"), CardCode::new("01089")];
+    let base = GameStateBuilder::new().with_investigator(inv).build(); // NO active investigator
+    let state =
+        game_core::test_support::fixtures::at_hand_size_discard(base, vec![InvestigatorId(1)]);
+
+    let _rx = mount(state).await;
+    let section = last_section();
+    let cards = section.query_selector_all(".hand-card").expect("query");
+    assert_eq!(
+        cards.length(),
+        2,
+        "the prompted investigator's 2 hand cards must render during hand-size discard"
+    );
+}
