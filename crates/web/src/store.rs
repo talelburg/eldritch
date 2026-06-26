@@ -13,6 +13,8 @@ pub enum ConnStatus {
     Connected,
     Reconnecting,
     Failed,
+    /// No saved game and no roster chosen yet — render the picker.
+    AwaitingRoster,
 }
 
 /// Everything the UI renders. `game`/`outcome`/`last_rejection` come

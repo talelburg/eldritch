@@ -24,17 +24,22 @@ fn install_test_registry() {
 #[test]
 fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
     install_test_registry();
+    let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
+    // Manually seed both investigators at LocationId(10) — this test drives
+    // the Mythos draw path directly, not via seat_and_open.
+    {
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(10));
+        state.investigators.insert(inv1, inv);
+        state.turn_order = vec![inv1];
+        state.active_investigator = Some(inv1);
+    }
     // Second investigator co-located at the synth spawn location (10).
     let mut inv2 = test_investigator(2);
     inv2.current_location = Some(LocationId(10));
     state.investigators.insert(InvestigatorId(2), inv2);
     state.turn_order.push(InvestigatorId(2));
-    state
-        .investigators
-        .get_mut(&InvestigatorId(1))
-        .unwrap()
-        .current_location = Some(LocationId(10));
     // Drive through the real Mythos draw path: stage the EncounterDraw loop
     // frame for inv1 so the ResolveInput(Confirm) below resumes it (#348).
     state.phase = Phase::Mythos;

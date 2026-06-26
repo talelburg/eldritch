@@ -1,7 +1,7 @@
 //! Integration tests for Upkeep phase content.
 //!
-//! Drives full apply cycles through `StartScenario` → `Mulligan` →
-//! `EndTurn`, verifying the Upkeep cascade (ready exhausted cards,
+//! Drives full apply cycles through scenario setup (via `seat_and_open`) →
+//! `Mulligan` → `EndTurn`, verifying the Upkeep cascade (ready exhausted cards,
 //! draw 1, gain 1 resource, round bump) and replay determinism.
 //!
 //! Lives in `crates/scenarios/tests/` for the same reasons as
@@ -14,9 +14,11 @@
 
 use std::sync::Once;
 
+use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
+use game_core::seat_and_open;
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Phase};
-use game_core::test_support::take_turn_action;
+use game_core::test_support::{take_turn_action, TEST_INV};
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
@@ -37,32 +39,31 @@ fn install_test_registry() {
 fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
     install_test_registry();
 
-    let mut base = synthetic::setup();
-    // Seed 6 cards into the investigator's deck before StartScenario.
-    // StartScenario draws 5 for the opening hand, leaving 1 in the deck
-    // for the Upkeep draw.
     let inv1 = InvestigatorId(1);
+    // Seed 6 cards via the roster: seat_and_open draws 5 for the opening
+    // hand, leaving 1 in the deck for the Upkeep draw.
+    let deck = (0..6u32)
+        .map(|i| CardCode::new(format!("01{i:03}")))
+        .collect();
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck,
+    }];
+
+    // seat_and_open → seed exhausted asset → mulligan (keep hand).
+    let mut r1 = seat_and_open(synthetic::setup(), &roster);
+    assert!(
+        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
+        "seat_and_open opens the mulligan prompt, got {:?}",
+        r1.outcome
+    );
+    // Seed one exhausted asset after seating so we can verify ready-all fires.
     {
-        let inv = base.investigators.get_mut(&inv1).unwrap();
-        for i in 0..6u32 {
-            inv.deck.push(CardCode::new(format!("01{i:03}")));
-        }
-        // Seed one exhausted asset so we can verify ready-all fires.
+        let inv = r1.state.investigators.get_mut(&inv1).unwrap();
         let mut card = CardInPlay::enter_play(CardCode::new("01010"), CardInstanceId(1));
         card.exhausted = true;
         inv.cards_in_play.push(card);
     }
-
-    // StartScenario → mulligan (keep hand).
-    let r1 = apply(
-        base,
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-    );
-    assert!(
-        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "StartScenario opens the mulligan prompt, got {:?}",
-        r1.outcome
-    );
 
     let r2 = apply(
         r1.state,
@@ -116,31 +117,27 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
 fn upkeep_round_replay_is_deterministic() {
     install_test_registry();
 
-    // Build the same initial state as the full-round test.
-    let make_initial = || {
-        let mut base = synthetic::setup();
-        let inv1 = InvestigatorId(1);
+    let inv1 = InvestigatorId(1);
+    // 6 deck cards: seat_and_open draws 5, leaving 1 for the upkeep draw.
+    let deck: Vec<CardCode> = (0..6u32)
+        .map(|i| CardCode::new(format!("01{i:03}")))
+        .collect();
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck,
+    }];
+
+    // Drive the same sequence twice to verify replay determinism.
+    let run_sequence = |initial: game_core::state::GameState| -> game_core::state::GameState {
+        let mut r = seat_and_open(initial, &roster);
         {
-            let inv = base.investigators.get_mut(&inv1).unwrap();
-            for i in 0..6u32 {
-                inv.deck.push(CardCode::new(format!("01{i:03}")));
-            }
+            let inv = r.state.investigators.get_mut(&inv1).unwrap();
             let mut card = CardInPlay::enter_play(CardCode::new("01010"), CardInstanceId(1));
             card.exhausted = true;
             inv.cards_in_play.push(card);
         }
-        base
-    };
-
-    // Drive the same sequence twice to verify replay determinism.
-    let run_sequence = |initial: game_core::state::GameState| -> game_core::state::GameState {
-        let mut state = apply(
-            initial,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        )
-        .state;
-        state = apply(
-            state,
+        let state = apply(
+            r.state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
@@ -149,10 +146,10 @@ fn upkeep_round_replay_is_deterministic() {
         take_turn_action(state, &TurnAction::EndTurn).state
     };
 
-    let final_state = run_sequence(make_initial());
+    let final_state = run_sequence(synthetic::setup());
 
     // --- Second pass: replay from the same initial state. ---
-    let replayed_state = run_sequence(make_initial());
+    let replayed_state = run_sequence(synthetic::setup());
 
     // Replaying the same action log reproduces state bit-for-bit.
     assert_eq!(

@@ -17,11 +17,13 @@
 
 use std::sync::Once;
 
+use game_core::action::RosterEntry;
 use game_core::engine::apply;
 use game_core::event::Event;
 use game_core::scenario::Resolution;
-use game_core::state::{GameState, InvestigatorId, Phase};
-use game_core::test_support::take_turn_action;
+use game_core::seat_and_open;
+use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
+use game_core::test_support::{take_turn_action, TEST_INV};
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::REGISTRY;
@@ -56,17 +58,18 @@ fn drive(initial_state: GameState, actions: Vec<Action>) -> (GameState, Vec<Even
 fn synthetic_scenario_resolves_won_via_act_advance() {
     install_registry();
     let inv = InvestigatorId(1);
-    let state = scenarios::test_fixtures::synthetic::setup();
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck: vec![],
+    }];
 
-    // StartScenario + close the mulligan window -> Investigation, round 1.
+    // seat_and_open + close the mulligan window -> Investigation, round 1.
+    let state = seat_and_open(scenarios::test_fixtures::synthetic::setup(), &roster).state;
     let (mut state, _) = drive(
         state,
-        vec![
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        ],
+        vec![Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        })],
     );
     assert_eq!(state.phase, Phase::Investigation);
 
@@ -93,15 +96,17 @@ fn synthetic_scenario_resolves_lost_via_doom() {
     let mut base = scenarios::test_fixtures::synthetic::setup();
     base.encounter_discard.clear();
 
-    // Setup + close mulligan -> Investigation, round 1.
+    // seat_and_open + close mulligan -> Investigation, round 1.
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck: vec![],
+    }];
+    let state = seat_and_open(base, &roster).state;
     let (mut state, _) = drive(
-        base,
-        vec![
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickMultiple { selected: vec![] },
-            }),
-        ],
+        state,
+        vec![Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        })],
     );
 
     // Each round: EndTurn cascades into Mythos, which adds doom (and may

@@ -20,15 +20,16 @@ use super::Cx;
 /// rulebook.
 pub(super) const ACTIONS_PER_TURN: u8 = 3;
 
+/// Internal scenario setup: seat the roster, shuffle decks, push the initial
+/// phase anchors. Called by [`super::seat_and_open`] (the non-logged engine
+/// entry point); never reached via a `PlayerAction` — the action log is
+/// `ResolveInput`-only after #447/#459.
 pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
-    // The GameState constructor places the world in its initial shape;
-    // this action is the explicit "session has begun" marker that lands
-    // in the action log. Replaying it on an already-started state is a
-    // bug, not a no-op — reject so callers notice rather than silently
-    // double-emitting `ScenarioStarted`.
+    // Replaying on an already-started state is a bug, not a no-op — reject so
+    // callers notice rather than silently double-emitting `ScenarioStarted`.
     if cx.state.round != 0 {
         return EngineOutcome::Rejected {
-            reason: "StartScenario applied to a state that is already in progress".into(),
+            reason: "start_scenario called on a state that is already in progress".into(),
         };
     }
 
@@ -66,28 +67,18 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
         ));
     }
 
-    // A scenario requires at least one investigator (pre-seated or
-    // roster-seated). In production setup() seats none, so this makes the
-    // roster mandatory: an empty roster rejects. The pre-seated test path
-    // (>=1 already present, empty roster) passes — temporary scaffolding
-    // until TODO(#224) migrates tests to roster seating and tightens this
-    // to require a non-empty roster.
-    if cx.state.investigators.is_empty() && resolved.is_empty() {
+    // A scenario requires at least one investigator. Seating is the sole
+    // seater (#224): the roster is mandatory, an empty roster rejects.
+    if resolved.is_empty() {
         return EngineOutcome::Rejected {
-            reason: "a scenario requires at least one investigator".into(),
+            reason: "a scenario requires a non-empty roster".into(),
         };
     }
 
     // --- mutate (all validations passed) ---
     // Seat resolved investigators. Ids are sequential (1-based) in roster
-    // order. This ASSUMES an empty investigator set when the roster is
-    // non-empty — true for production (setup() seats nobody) and every
-    // test (pre-seated states pass an empty roster). Mixing a non-empty
-    // roster with pre-seated investigators would overwrite id 1; #224
-    // removes the pre-seated path and makes the roster the sole seater,
-    // retiring this assumption.
-    // Seated investigators start at the scenario's starting location
-    // (set by setup()). None leaves them unplaced — the pre-seated path.
+    // order. Seated investigators start at the scenario's starting location
+    // (set by setup()). None leaves them unplaced.
     let start = cx.state.starting_location;
 
     for (idx, (skills, name, deck, card_code)) in resolved.into_iter().enumerate() {
@@ -1398,7 +1389,7 @@ mod investigation_phase_tests {
             "Investigation phase kicks off and rotates to the lead after mulligan completes"
         );
         // PhaseStarted(Investigation) fires at mulligan completion (not
-        // during StartScenario).
+        // during scenario setup).
         assert!(
             events.iter().any(|e| matches!(
                 e,
@@ -3843,19 +3834,17 @@ mod hand_size_tests {
 #[cfg(test)]
 mod start_scenario_tests {
     use super::*;
-    use crate::action::{Action, PlayerAction, RosterEntry};
-    use crate::engine::apply;
+    use crate::action::RosterEntry;
+    use crate::seat_and_open;
     use crate::state::CardCode;
     use crate::state::GameStateBuilder;
     use crate::test_support::fixtures::test_investigator;
+    use crate::test_support::{install_test_registry, TEST_INV};
 
     #[test]
     fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
         let state = GameStateBuilder::new().build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
+        let result = seat_and_open(state, &[]);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty(), "no events on reject");
@@ -3896,22 +3885,15 @@ mod start_scenario_tests {
     }
 
     #[test]
-    fn start_scenario_empty_roster_passes_through_with_preseated_investigator() {
-        let id = crate::state::InvestigatorId(1);
-        let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
+    fn seat_and_open_rejects_an_empty_roster() {
+        install_test_registry();
+        let state = GameStateBuilder::new().build();
+        let result = seat_and_open(state, &[]);
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "an empty roster must reject, got {:?}",
+            result.outcome
         );
-        // One Active investigator → StartScenario opens the mulligan prompt.
-        assert!(matches!(
-            result.outcome,
-            EngineOutcome::AwaitingInput { .. }
-        ));
-        assert_eq!(result.state.round, 1);
     }
 
     // A non-empty roster whose entry cannot be resolved to investigator
@@ -3923,24 +3905,22 @@ mod start_scenario_tests {
     // fake. Either way it rejects; the registry-backed happy and
     // unknown-code paths are pinned deterministically by the
     // `crates/cards` integration test, which installs `cards::REGISTRY`.
-    /// `StartScenario` shuffles the shared encounter deck (like the player
+    /// `seat_and_open` shuffles the shared encounter deck (like the player
     /// decks) with the scenario-start RNG: the deck's multiset is preserved
     /// and `EncounterDeckShuffled` fires.
     #[test]
     fn start_scenario_shuffles_the_encounter_deck() {
         use crate::state::CardCode;
-        let id = crate::state::InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
+        install_test_registry();
+        let mut state = GameStateBuilder::new().build();
         let codes = ["e1", "e2", "e3", "e4", "e5"];
         state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();
+        let roster = vec![RosterEntry {
+            investigator: CardCode::new(TEST_INV),
+            deck: vec![],
+        }];
 
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
+        let result = seat_and_open(state, &roster);
 
         assert!(matches!(
             result.outcome,
@@ -3964,10 +3944,7 @@ mod start_scenario_tests {
             investigator: CardCode::new("01001"),
             deck: vec![],
         }];
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster }),
-        );
+        let result = seat_and_open(state, &roster);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty());

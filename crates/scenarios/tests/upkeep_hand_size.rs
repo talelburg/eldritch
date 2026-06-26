@@ -1,8 +1,8 @@
 //! #111 acceptance: upkeep step 4.5 discards down to the hand-size cap.
 //!
-//! Drives a full apply cycle through `StartScenario` → `Mulligan` →
-//! `EndTurn`, padding the sole investigator's hand so that — after the
-//! step-4.4 draw — they hold more than the cap at step 4.5. The
+//! Drives a full apply cycle through scenario setup (via `seat_and_open`) →
+//! `Mulligan` → `EndTurn`, padding the sole investigator's hand so that —
+//! after the step-4.4 draw — they hold more than the cap at step 4.5. The
 //! round-ending `EndTurn` must cascade into upkeep and pause with
 //! `AwaitingInput`; resolving the prompt with `PickMultiple` must land
 //! the hand at exactly the cap and let the round proceed.
@@ -14,9 +14,11 @@
 
 use std::sync::Once;
 
+use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome, OptionId};
+use game_core::seat_and_open;
 use game_core::state::{CardCode, InvestigatorId, Phase};
-use game_core::test_support::take_turn_action;
+use game_core::test_support::{take_turn_action, TEST_INV};
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
@@ -38,25 +40,22 @@ const HAND_SIZE_LIMIT: usize = 8;
 fn upkeep_prompts_and_discards_down_to_eight() {
     install_test_registry();
 
-    let mut base = synthetic::setup();
     let inv1 = InvestigatorId(1);
-    {
-        let inv = base.investigators.get_mut(&inv1).unwrap();
-        // Seed 6 cards into the deck: StartScenario draws 5 for the
-        // opening hand, leaving 1 for the step-4.4 upkeep draw.
-        for i in 0..6u32 {
-            inv.deck.push(CardCode::new(format!("01{i:03}")));
-        }
-    }
+    // Seed 6 cards via the roster: seat_and_open draws 5 for the opening
+    // hand, leaving 1 for the step-4.4 upkeep draw.
+    let deck = (0..6u32)
+        .map(|i| CardCode::new(format!("01{i:03}")))
+        .collect();
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck,
+    }];
 
-    // StartScenario → mulligan (keep hand).
-    let r1 = apply(
-        base,
-        Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-    );
+    // seat_and_open → mulligan (keep hand).
+    let r1 = seat_and_open(synthetic::setup(), &roster);
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "StartScenario opens the mulligan prompt, got {:?}",
+        "seat_and_open opens the mulligan prompt, got {:?}",
         r1.outcome
     );
 
@@ -177,42 +176,25 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
 
     let inv1 = InvestigatorId(1);
 
-    // Build an initial state whose hand already contains 6 padding cards
-    // (arbitrary codes unknown to the test registry — the discard path
-    // never does a registry lookup). With 6 deck cards, StartScenario
-    // draws 5 → hand reaches 11; upkeep step 4.4 draws the last deck
-    // card → 12 cards, triggering the hand-size prompt. The full action
-    // sequence is thus fixed and requires no mid-sequence state mutation.
-    let make_initial = || {
-        let mut base = synthetic::setup();
-        {
-            let inv = base.investigators.get_mut(&inv1).unwrap();
-            // 6 deck cards: StartScenario draws 5, leaving 1 for the upkeep draw.
-            for i in 0..6u32 {
-                inv.deck.push(CardCode::new(format!("01{i:03}")));
-            }
-            // 6 hand cards pre-seeded: combined with the 5 drawn by StartScenario,
-            // the hand reaches 11 before the upkeep draw.
-            for _ in 0..6u32 {
-                inv.hand.push(CardCode::new("01999"));
-            }
-        }
-        base
-    };
+    // 6 deck cards via roster: seat_and_open draws 5 → hand has 5;
+    // upkeep step 4.4 draws the last → 12 cards after padding, triggering
+    // the hand-size prompt.
+    let deck: Vec<CardCode> = (0..6u32)
+        .map(|i| CardCode::new(format!("01{i:03}")))
+        .collect();
+    let roster = vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck,
+    }];
 
     // discard_count = 12 - HAND_SIZE_LIMIT = 4; indices 0..4.
     let discard_count = 12u32 - u32::try_from(HAND_SIZE_LIMIT).unwrap();
     let indices: Vec<u32> = (0..discard_count).collect();
-
     let selected: Vec<OptionId> = indices.iter().copied().map(OptionId).collect();
 
     // Drive the same sequence twice to verify replay determinism.
     let run_sequence = |initial: game_core::state::GameState| -> game_core::state::GameState {
-        let mut state = apply(
-            initial,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        )
-        .state;
+        let mut state = seat_and_open(initial, &roster).state;
         state = apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
@@ -220,6 +202,14 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
             }),
         )
         .state;
+        // Pad hand to 11 so that the upkeep draw (4.4) pushes it to 12,
+        // triggering the hand-size discard prompt at 4.5.
+        {
+            let inv = state.investigators.get_mut(&inv1).unwrap();
+            while inv.hand.len() < 11 {
+                inv.hand.push(CardCode::new("01999"));
+            }
+        }
         state = take_turn_action(state, &TurnAction::EndTurn).state;
         apply(
             state,
@@ -233,10 +223,10 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
     };
 
     // --- First pass: drive and collect final state. ---
-    let final_state = run_sequence(make_initial());
+    let final_state = run_sequence(synthetic::setup());
 
     // --- Second pass: replay from the same initial state. ---
-    let replayed_state = run_sequence(make_initial());
+    let replayed_state = run_sequence(synthetic::setup());
 
     // Replaying the same action sequence from the same initial state must
     // reproduce identical state bit-for-bit — the PickMultiple discard path is

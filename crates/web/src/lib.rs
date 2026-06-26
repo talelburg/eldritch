@@ -6,7 +6,6 @@
 
 pub mod app;
 pub mod board;
-pub mod legality;
 pub mod store;
 pub mod url;
 
@@ -17,4 +16,4 @@ pub mod transport;
 pub mod input;
 
 #[cfg(target_arch = "wasm32")]
-pub mod controls;
+pub mod picker;

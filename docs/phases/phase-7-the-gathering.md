@@ -104,16 +104,34 @@ the now-stable set of input shapes:
   web client lost its bespoke open-turn controls — gameplay renders through
   `AwaitingInputView`'s `PickSingle` option list (flat for now; #205 enriches).
   **Split out:** **#458** (deterministic resume-token, §F — `ResumeToken(0)` stays
-  for now) and **#459** (StartScenario → game-creation; collapses `PlayerAction` to
-  a single `ResolveInput` variant; lands with the picker).
+  for now) and **#459 ✅ shipped (PR #461)** — see the picker bullet below.
 - **#205 — structured input rendering** (client half). Render the right control per
   offered option from the structured `InputRequest.options`, not prompt-string
   heuristics. Needs-design (client metadata schema). Now unblocked: the open-turn
   menu (and every prompt) already arrives as `InputRequest.options`.
-- **Investigator/scenario picker.** Seating (#221) + registry swap (#244) exist
-  engine-side; the browser picker driving game-creation is the remaining UI —
-  it lands with **#459** (the roster moves to `CreateGameRequest`).
-- **End-to-end browser playthrough** of The Gathering to a resolution.
+- **Investigator/scenario picker ✅ shipped (PR #461 — #459 + #224).** Seating moved
+  out of `PlayerAction::StartScenario` into the non-logged engine fn `seat_and_open`;
+  the server seats at game-creation and persists the seated, mulligan-pending state as
+  the seed (`CreateGameRequest` carries the roster; a bad roster → **422**, no orphan
+  row). `PlayerAction` collapsed to a single `ResolveInput` variant — the **action log
+  is `ResolveInput`-only**, and the setup shuffle is baked into the frozen seed
+  `RngState` (replay no longer re-runs setup RNG). Migration `0002` persists the seed's
+  `EngineOutcome` so `load` restores an `AwaitingInput` seed from an empty log. The
+  browser **picker** (`picker.rs`) collects an investigator + scenario and drives
+  creation (`ConnStatus::AwaitingRoster`; Roland seats with a placeholder default deck
+  of implemented cards); the old Start-scenario button (`controls.rs`/`legality.rs`) is
+  deleted. **#224** folded in: a non-empty roster is mandatory (single seating path),
+  and the ~37 `StartScenario` test sites migrated to `seat_and_open` (game-core's own
+  tests seat synthetic `TEST_INV` via the test registry, preserving crate layering).
+- **End-to-end browser playthrough** of The Gathering to a resolution — the sole
+  remaining gate item, now **blocked on #205**. The picker → seating → mulligan →
+  investigation → Mythos flow all works in-browser (PR #461), but the playthrough
+  stalls at the first **Mythos encounter draw**: that prompt expects
+  `InputResponse::Confirm`, yet `AwaitingInputView` renders every empty-`options`
+  prompt as the legacy `PickMultiple` "Commit" control (no expected-response
+  discriminator on `InputRequest`), so it rejects. Purely a client-rendering gap —
+  the engine/persistence path is sound. #205 (the `InputKind` discriminator) is the
+  fix; see its issue comment for the root cause + design sketch.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
@@ -200,6 +218,21 @@ a snapshot bump + regen, no impl. Single-use card logic is `Effect::Native { tag
 (promote to a shared `Effect` variant only at ≥2 reuses). Scenario chaos-symbol /
 reference-card effects live on the `ScenarioModule.resolve_symbol` hook, not card
 `abilities()`.
+
+**Seating & the seed (PR #461).** Seating is **not** a player action — it's the engine
+fn `seat_and_open(setup_state, &roster) -> ApplyResult` (wraps the internal
+`start_scenario` + `drive` via `apply_via`). Hosts call it at game-creation and persist
+the **seated, mulligan-pending** result as the seed; the action log is `ResolveInput`-only.
+Two consequences a future persistence/replay PR must respect: (1) the setup shuffle is
+baked into the seed's frozen `RngState`, so replay never re-runs setup RNG — don't
+re-seed; (2) the seed can itself be `AwaitingInput`, so the seed's `EngineOutcome` is
+persisted alongside `seed_state` (server migration `0002` / `seed_outcome` column) and
+`load` initializes the outcome from it before replaying — there is no `state → pending
+outcome` reconstruction, so a paused seed with an empty log would otherwise load as
+`Done`. A roster is mandatory (`seat_and_open` rejects an empty one); seating always
+seats investigators `Active`, so "mulligan excludes an eliminated investigator" is
+defensive (covered by a direct `active_investigators_in_turn_order` unit test, not via
+seating).
 
 ## Future slices (after the gate)
 

@@ -11,10 +11,8 @@ use std::collections::VecDeque;
 
 use game_core::event::Event;
 use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
-use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId,
-};
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
+use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, LocationId};
+use game_core::test_support::{test_location, GameStateBuilder};
 
 use super::synth_cards::{SYNTH_LOC_CODE, SYNTH_TREACHERY_CODE};
 
@@ -22,21 +20,22 @@ use super::synth_cards::{SYNTH_LOC_CODE, SYNTH_TREACHERY_CODE};
 /// [`crate::REGISTRY`].
 pub const ID: &str = "synthetic";
 
-/// Build the initial [`GameState`] for this fixture: one investigator
-/// placed at one location (with `code` set to
-/// [`synth_cards::SYNTH_LOC_CODE`], stocked with 4 clues), a +0 chaos
-/// bag, `scenario_id` set, `turn_order` populated, encounter deck seeded
-/// with one copy of [`synth_cards::SYNTH_TREACHERY_CODE`]. Phase =
-/// Mythos, round = 0 — ready for
-/// [`PlayerAction::StartScenario`](game_core::PlayerAction::StartScenario).
+/// Build the initial [`GameState`] for this fixture: one location (with
+/// `code` set to [`synth_cards::SYNTH_LOC_CODE`], stocked with 4 clues),
+/// a +0 chaos bag, `scenario_id` set, `starting_location` pointing at
+/// that location, and the encounter deck seeded with one copy of
+/// [`synth_cards::SYNTH_TREACHERY_CODE`]. Phase = Mythos, round = 0 —
+/// ready for [`game_core::seat_and_open`] (no investigator pre-seated;
+/// callers provide the roster).
 ///
-/// The state is **playable to a resolution as-is** (no extra seeding):
-/// placement + clues + a non-empty chaos bag are exactly what the
-/// Investigate → discover-clue → `AdvanceAct` (Won) path needs, which is
-/// what the browser demo and `tests/closing_demo.rs` exercise. A real
-/// scenario's setup does the same (seats investigators, prints clue
-/// counts on locations, fills the chaos bag); the bare `GameStateBuilder` /
-/// `test_location` defaults (unplaced, 0 clues, empty bag) do not.
+/// The state is **playable to a resolution** once an investigator is
+/// seated via `seat_and_open`: placement + clues + a non-empty chaos
+/// bag are exactly what the Investigate → discover-clue → `AdvanceAct`
+/// (Won) path needs, which is what the browser demo and
+/// `tests/closing_demo.rs` exercise. A real scenario's setup does the
+/// same (seats investigators, prints clue counts on locations, fills the
+/// chaos bag); the bare `GameStateBuilder` / `test_location` defaults
+/// (unplaced, 0 clues, empty bag) do not.
 ///
 /// The encounter-deck seeding gives the #126 / #127 integration
 /// tests something to draw from; integration tests that want to
@@ -63,13 +62,7 @@ pub fn setup() -> GameState {
     location.clues = 4;
 
     let mut state = GameStateBuilder::new()
-        // Place the investigator at the demo location: scenario setup
-        // seats investigators at a starting location, and Investigate /
-        // Move reject on a `None` current_location. `test_location(10, …)`
-        // → `LocationId(10)`.
-        .with_investigator_at(test_investigator(1), LocationId(10))
         .with_location(location)
-        .with_turn_order([InvestigatorId(1)])
         // A skill test rejects on an empty chaos bag; a single +0 token
         // lets Investigate (intellect 3) clear the location's shroud 2,
         // so the Won path is reliably walkable. Real scenarios fill the
@@ -77,6 +70,11 @@ pub fn setup() -> GameState {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_scenario_id(ScenarioId::new(ID))
         .build();
+    // seat_and_open places roster investigators at starting_location and
+    // reveals it (revealing here would overwrite the manually-set clues
+    // since printed_clues defaults to Fixed(0), so we point starting_location
+    // at the already-revealed demo location instead).
+    state.starting_location = Some(LocationId(10));
     state
         .encounter_deck
         .push_back(CardCode(SYNTH_TREACHERY_CODE.into()));

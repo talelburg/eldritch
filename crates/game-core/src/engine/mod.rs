@@ -143,6 +143,21 @@ pub fn apply_with_scenario_registry(
     })
 }
 
+/// Create a freshly seated game: run scenario setup's roster seating over
+/// `setup_state` and drive to the first `AwaitingInput` (the setup mulligan).
+///
+/// This is the non-logged seating path (#459). The returned
+/// [`ApplyResult::state`] is already seated, shuffled, and mulligan-pending —
+/// hosts persist it as the seed, so the action log is `ResolveInput`-only and
+/// replay never re-runs setup RNG. Validation mirrors a player action: an
+/// empty roster, an unknown/non-investigator code, or an already-started
+/// state rejects with state unchanged.
+pub fn seat_and_open(setup_state: GameState, roster: &[crate::action::RosterEntry]) -> ApplyResult {
+    apply_via(setup_state, crate::scenario_registry::current(), |cx| {
+        dispatch::seat_and_open(cx, roster)
+    })
+}
+
 /// The shared `apply` scaffolding, parameterized by the dispatch step.
 ///
 /// Builds the [`Cx`], runs `dispatch` to produce the outcome, then applies the
@@ -284,7 +299,7 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::action::{Action, EngineRecord, InputResponse, PlayerAction};
+    use crate::action::{Action, EngineRecord, InputResponse, PlayerAction, RosterEntry};
     use crate::engine::enumerate::TurnAction;
     use crate::event::{Event, FailureReason};
     use crate::state::EnemyId;
@@ -299,7 +314,7 @@ mod tests {
     };
     use crate::{assert_event, assert_event_count, assert_no_event};
 
-    use super::{apply, EngineOutcome, OptionId};
+    use super::{apply, seat_and_open, EngineOutcome, OptionId};
 
     /// Drive one open-turn action through the `ResolveInput(PickSingle)` routing
     /// path, draining the skill-test commit window automatically (like
@@ -326,28 +341,27 @@ mod tests {
 
     #[test]
     fn start_scenario_advances_to_investigation_with_round_one() {
-        // StartScenario opens the mulligan window; the Investigation phase
+        // seat_and_open opens the mulligan window; the Investigation phase
         // does NOT begin until the last mulligan completes (Rules Reference
         // p.27: no action windows during setup; the game begins after
-        // mulligans). After StartScenario alone, active_investigator is
+        // mulligans). After seat_and_open alone, active_investigator is
         // None and no PhaseStarted(Investigation) fires yet.
         //
         // The full round-1 kickoff (active investigator set, PhaseStarted
         // fired) is covered by
         // `investigation_phase_tests::mulligan_completion_kicks_off_investigation_phase`.
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().build();
+        let roster = vec![RosterEntry {
+            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            deck: vec![],
+        }];
+        let start_result = seat_and_open(state, &roster);
         let id = InvestigatorId(1);
-        let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
-        let start_result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
 
         assert!(
             matches!(start_result.outcome, EngineOutcome::AwaitingInput { .. }),
-            "StartScenario opens the mulligan prompt (AwaitingInput), got {:?}",
+            "seat_and_open opens the mulligan prompt (AwaitingInput), got {:?}",
             start_result.outcome
         );
         assert_eq!(start_result.state.round, 1);
@@ -356,7 +370,7 @@ mod tests {
         assert_eq!(
             start_result.state.current_mulligan(),
             Some(id),
-            "mulligan loop must prompt the first investigator after StartScenario"
+            "mulligan loop must prompt the first investigator after seat_and_open"
         );
         assert_eq!(
             start_result.state.active_investigator, None,
@@ -422,11 +436,10 @@ mod tests {
 
     #[test]
     fn start_scenario_on_already_started_state_is_rejected() {
+        // seat_and_open calls start_scenario which rejects when round != 0;
+        // the roster check never runs, so an empty slice is enough.
         let state = GameStateBuilder::new().with_round(7).build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
+        let result = seat_and_open(state, &[]);
 
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 7);
@@ -1080,26 +1093,27 @@ mod tests {
     fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
-        let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_turn_order([inv1, inv2])
-            .build();
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().build();
+        let roster = vec![
+            RosterEntry {
+                investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+                deck: vec![],
+            };
+            2
+        ];
 
-        // StartScenario: round 0 → 1, phase Investigation (mulligan window
+        // seat_and_open: round 0 → 1, phase Investigation (mulligan window
         // open). The Investigation phase does NOT begin until the last
         // investigator mulligans — active_investigator is None here.
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
+        let result = seat_and_open(state, &roster);
         let state = result.state;
         assert_eq!(state.round, 1);
         assert_eq!(state.phase, Phase::Investigation);
         assert_eq!(
             state.current_mulligan(),
             Some(inv1),
-            "mulligan loop must prompt the first investigator after StartScenario"
+            "mulligan loop must prompt the first investigator after seat_and_open"
         );
         assert_eq!(
             state.active_investigator, None,
@@ -1205,19 +1219,16 @@ mod tests {
         // PAUSE. It does NOT complete the full cycle — that requires the
         // subsequent ResolveInput(Confirm) (needs registry, covered by
         // crates/scenarios/tests/mythos_phase.rs).
-        let id = InvestigatorId(1);
-        let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
-
-        // StartScenario: round 0 → 1, mulligan window opens.
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().build();
+        let roster = vec![RosterEntry {
+            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            deck: vec![],
+        }];
+        // seat_and_open: round 0 → 1, mulligan window opens.
         // active_investigator is None until mulligan completion.
-        let after_start = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        )
-        .state;
+        let after_start = seat_and_open(state, &roster).state;
+        let id = InvestigatorId(1);
         assert_eq!(after_start.round, 1);
         assert_eq!(
             after_start.active_investigator, None,
@@ -1294,20 +1305,16 @@ mod tests {
 
     #[test]
     fn start_scenario_shuffles_each_deck_and_deals_initial_hand() {
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().with_rng_seed(42).build();
+        let roster = vec![RosterEntry {
+            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            deck: make_test_deck(10),
+        }];
+        let result = seat_and_open(state, &roster);
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
-        inv.deck = make_test_deck(10);
-        let state = GameStateBuilder::new()
-            .with_investigator(inv)
-            .with_turn_order([id])
-            .with_rng_seed(42)
-            .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
 
-        // StartScenario deals hands, then opens the mulligan prompt
+        // seat_and_open deals hands, then opens the mulligan prompt
         // (AwaitingInput) — the deal happens before the prompt.
         assert!(matches!(
             result.outcome,
@@ -1338,15 +1345,14 @@ mod tests {
 
     #[test]
     fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().build();
+        let roster = vec![RosterEntry {
+            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            deck: vec![],
+        }];
+        let result = seat_and_open(state, &roster);
         let id = InvestigatorId(1);
-        let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([id])
-            .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
 
         assert!(matches!(
             result.outcome,
@@ -1368,18 +1374,14 @@ mod tests {
     fn start_scenario_with_short_deck_draws_only_what_remains() {
         // Deck of 3, INITIAL_HAND_SIZE is 5: draw 3, deck empties, no
         // panic.
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().with_rng_seed(7).build();
+        let roster = vec![RosterEntry {
+            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            deck: make_test_deck(3),
+        }];
+        let result = seat_and_open(state, &roster);
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
-        inv.deck = make_test_deck(3);
-        let state = GameStateBuilder::new()
-            .with_investigator(inv)
-            .with_turn_order([id])
-            .with_rng_seed(7)
-            .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
 
         assert!(matches!(
             result.outcome,
@@ -1395,28 +1397,20 @@ mod tests {
 
     #[test]
     fn deck_shuffle_is_deterministic_across_replay() {
-        let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
-        inv.deck = make_test_deck(20);
-        let state_a = GameStateBuilder::new()
-            .with_investigator(inv.clone())
-            .with_turn_order([id])
-            .with_rng_seed(123)
-            .build();
-        let state_b = GameStateBuilder::new()
-            .with_investigator(inv)
-            .with_turn_order([id])
-            .with_rng_seed(123)
-            .build();
+        crate::test_support::install_test_registry();
+        let deck = make_test_deck(20);
+        let state_a = GameStateBuilder::new().with_rng_seed(123).build();
+        let state_b = GameStateBuilder::new().with_rng_seed(123).build();
+        let make_roster = || {
+            vec![RosterEntry {
+                investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+                deck: deck.clone(),
+            }]
+        };
 
-        let result_a = apply(
-            state_a,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
-        let result_b = apply(
-            state_b,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
+        let result_a = seat_and_open(state_a, &make_roster());
+        let result_b = seat_and_open(state_b, &make_roster());
+        let id = InvestigatorId(1);
 
         assert_eq!(
             result_a.state.investigators[&id].deck,
@@ -1462,24 +1456,27 @@ mod tests {
     }
 
     #[test]
-    fn start_scenario_handles_sparse_investigator_ids_deterministically() {
-        // Investigator ids 1, 5, 9 — non-contiguous. BTreeMap
-        // iteration is sorted, so shuffle order is deterministic.
-        // Each investigator gets their own deck + hand independently.
-        let ids = [InvestigatorId(1), InvestigatorId(5), InvestigatorId(9)];
-        let mut tg = GameStateBuilder::new().with_rng_seed(2026);
-        for id in ids {
-            let mut inv = test_investigator(id.0);
-            inv.deck = make_test_deck(8);
-            tg = tg.with_investigator(inv);
-        }
-        let result = apply(
-            tg.build(),
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
-        assert_eq!(result.outcome, EngineOutcome::Done);
+    fn start_scenario_handles_multiple_investigators_deterministically() {
+        // Three investigators seated from the roster. Roster order determines
+        // id assignment (1, 2, 3 sequentially); each gets their own deck +
+        // hand independently. BTreeMap iteration is sorted so shuffle order
+        // is deterministic.
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().with_rng_seed(2026).build();
+        let roster: Vec<RosterEntry> = (0..3)
+            .map(|_| RosterEntry {
+                investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+                deck: make_test_deck(8),
+            })
+            .collect();
+        let result = seat_and_open(state, &roster);
+        assert!(matches!(
+            result.outcome,
+            EngineOutcome::AwaitingInput { .. }
+        ));
 
         // Each investigator drew 5 cards and has 3 left in deck.
+        let ids = [InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
         for id in ids {
             let inv_after = &result.state.investigators[&id];
             assert_eq!(inv_after.hand.len(), 5);
@@ -3823,8 +3820,8 @@ mod tests {
 
     /// Build a Mulligan scenario: one investigator with a known hand
     /// of 5 cards + a remaining deck of 5, the `Mulligan` frame staged.
-    /// Bypasses `StartScenario` so tests can control the exact hand
-    /// composition.
+    /// Bypasses scenario setup (via `seat_and_open`) so tests can control
+    /// the exact hand composition.
     fn mulligan_scenario() -> (InvestigatorId, GameState) {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
@@ -3969,41 +3966,6 @@ mod tests {
     }
 
     #[test]
-    fn start_scenario_mulligan_loop_skips_defeated_investigator() {
-        // The loop is seeded from `active_investigators_in_turn_order`, so a
-        // defeated investigator never enters the `remaining` queue: with inv1
-        // Killed, the loop prompts inv2 directly. (Replaces the former
-        // "defeated investigator mulligan rejected" test — the folded
-        // `ResolveInput` carries no investigator, so there is no
-        // wrong-investigator rejection path; the defeated investigator is
-        // instead structurally excluded from the queue.)
-        let inv1 = InvestigatorId(1);
-        let inv2 = InvestigatorId(2);
-        let mut a = test_investigator(1);
-        a.status = Status::Killed;
-        let b = test_investigator(2);
-        let state = GameStateBuilder::new()
-            .with_investigator(a)
-            .with_investigator(b)
-            .with_turn_order([inv1, inv2])
-            .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
-        assert!(
-            matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-            "StartScenario opens the mulligan prompt, got {:?}",
-            result.outcome
-        );
-        assert_eq!(
-            result.state.current_mulligan(),
-            Some(inv2),
-            "the defeated inv1 is skipped; the loop prompts inv2"
-        );
-    }
-
-    #[test]
     fn mulligan_with_out_of_bounds_index_is_rejected() {
         let (_id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[10]));
@@ -4021,20 +3983,17 @@ mod tests {
 
     #[test]
     fn start_scenario_seeds_mulligan_loop() {
+        crate::test_support::install_test_registry();
+        let state = GameStateBuilder::new().build();
+        let roster = vec![RosterEntry {
+            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            deck: make_test_deck(10),
+        }];
+        let result = seat_and_open(state, &roster);
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
-        inv.deck = make_test_deck(10);
-        let state = GameStateBuilder::new()
-            .with_investigator(inv)
-            .with_turn_order([id])
-            .build();
-        let result = apply(
-            state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
         assert!(
             matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-            "StartScenario opens the mulligan prompt, got {:?}",
+            "seat_and_open opens the mulligan prompt, got {:?}",
             result.outcome
         );
         assert_eq!(result.state.current_mulligan(), Some(id));
@@ -4665,40 +4624,16 @@ mod tests {
         assert!(bad.state.has_skill_test_in_flight());
     }
 
-    #[test]
-    fn non_resolve_input_action_rejects_while_skill_test_paused() {
-        // While a test is paused at its commit window, the engine
-        // rejects every other player action (mirrors the
-        // mulligan_pending guard). `StartScenario` stands in for "any
-        // non-ResolveInput action": the outstanding-prompt guard fires
-        // before any action-specific dispatch, so the reason is the
-        // prompt guard's, not StartScenario's.
-        let id = InvestigatorId(1);
-        let state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
-            .with_investigator(test_investigator(1))
-            .with_active_investigator(id)
-            .with_chaos_bag(bag_only_zero())
-            .build();
-        let paused = perform_skill_test(state, id, SkillKind::Intellect, 3);
-        let rejected = apply(
-            paused.state,
-            Action::Player(PlayerAction::StartScenario { roster: vec![] }),
-        );
-        match rejected.outcome {
-            EngineOutcome::Rejected { reason } => {
-                // slice 1b collapsed the per-suspension guards into one rule with
-                // a unified reason; the specific InputResponse rides the request.
-                assert!(
-                    reason.contains("a prompt is outstanding") && reason.contains("ResolveInput"),
-                    "unexpected reason: {reason}",
-                );
-            }
-            other => panic!("expected Rejected, got {other:?}"),
-        }
-        // The pause must survive the rejected action.
-        assert!(rejected.state.has_skill_test_in_flight());
-    }
+    // NOTE: `non_resolve_input_action_rejects_while_skill_test_paused` was
+    // removed here: it used a variant as a proxy for "any non-ResolveInput action"
+    // to exercise the pending-prompt gate in `apply_player_action`. Once
+    // `PlayerAction` collapsed to a single `ResolveInput` variant (#459), the
+    // gate's `!matches!(action, ResolveInput)` condition became dead and the gate
+    // itself was removed — there is no non-`ResolveInput` action left to proxy
+    // with. Pending-prompt protection is now structural: `resolve_input` rejects a
+    // `ResolveInput` that arrives with no outstanding prompt, and the
+    // wrong-response-kind rejection is pinned in
+    // `resolve_input_with_wrong_response_variant_rejects`.
 
     #[test]
     fn resolve_input_with_wrong_response_variant_rejects() {
@@ -4983,5 +4918,52 @@ mod tests {
         );
         assert!(result.state.victory_display.is_empty());
         assert_no_event!(result.events, Event::EnteredVictoryDisplay { .. });
+    }
+
+    #[test]
+    fn seat_and_open_opens_mulligan_for_a_synthetic_roster() {
+        use crate::action::RosterEntry;
+        use crate::state::CardCode;
+        crate::test_support::install_test_registry();
+
+        let setup = GameStateBuilder::new().build(); // round 0, no investigators
+        let roster = vec![RosterEntry {
+            investigator: CardCode::new(crate::test_support::TEST_INV),
+            deck: vec![],
+        }];
+
+        let result = seat_and_open(setup, &roster);
+
+        assert!(
+            matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+            "seat_and_open opens the mulligan prompt, got {:?}",
+            result.outcome
+        );
+        assert_eq!(result.state.round, 1);
+        assert!(result
+            .state
+            .investigators
+            .contains_key(&crate::state::InvestigatorId(1)));
+    }
+
+    #[test]
+    fn seat_and_open_rejects_an_unknown_investigator_code() {
+        use crate::action::RosterEntry;
+        use crate::state::CardCode;
+        crate::test_support::install_test_registry();
+
+        let setup = GameStateBuilder::new().build();
+        let roster = vec![RosterEntry {
+            investigator: CardCode::new("99999"),
+            deck: vec![],
+        }];
+
+        let result = seat_and_open(setup, &roster);
+
+        assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+        assert_eq!(
+            result.state.round, 0,
+            "rejected seating leaves state unchanged"
+        );
     }
 }

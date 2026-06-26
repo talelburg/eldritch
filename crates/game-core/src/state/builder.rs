@@ -218,9 +218,9 @@ impl GameStateBuilder {
     /// (front = currently prompted). By default no mulligan is staged so
     /// tests don't accidentally exercise Mulligan paths; opt in when a test
     /// wants to resume the mulligan loop directly via `ResolveInput` without
-    /// going through `StartScenario`. The queue must list the investigators in
-    /// `turn_order` (set via [`with_turn_order`](Self::with_turn_order)) so the
-    /// loop advances correctly. Stages a [`Continuation::Mulligan`] frame at
+    /// going through scenario setup (via `seat_and_open`). The queue must list
+    /// the investigators in `turn_order` (set via [`with_turn_order`](Self::with_turn_order))
+    /// so the loop advances correctly. Stages a [`Continuation::Mulligan`] frame at
     /// [`build`](Self::build).
     pub fn with_mulligan_remaining(
         mut self,

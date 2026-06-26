@@ -26,7 +26,8 @@ use game_core::action::EngineRecord;
 use game_core::card_data::CardType;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId};
+use game_core::state::{CardCode, InvestigatorId, Phase};
+use game_core::test_support::test_investigator;
 use game_core::{assert_event, Action};
 use scenarios::test_fixtures::synth_cards::{SYNTH_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
@@ -42,16 +43,26 @@ fn install_test_registry() {
 #[test]
 fn revealing_synth_treachery_runs_revelation_and_discards() {
     install_test_registry();
-    let state = synthetic::setup();
-    let pre_resources = state.investigators[&InvestigatorId(1)].resources;
+    let inv1 = InvestigatorId(1);
+    // This test exercises EngineRecord::EncounterCardRevealed directly (not
+    // via a player action), so we seed the investigator manually rather than
+    // going through seat_and_open.
+    let mut state = synthetic::setup();
+    {
+        let mut inv = test_investigator(1);
+        inv.current_location = state.starting_location;
+        state.investigators.insert(inv1, inv);
+        state.turn_order = vec![inv1];
+        state.active_investigator = Some(inv1);
+        state.phase = Phase::Mythos;
+    }
+    let pre_resources = state.investigators[&inv1].resources;
     let pre_deck_len = state.encounter_deck.len();
     assert!(pre_deck_len >= 1, "fixture must seed at least one card");
 
     let result = apply(
         state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
+        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );
 
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -60,13 +71,13 @@ fn revealing_synth_treachery_runs_revelation_and_discards() {
     assert_event!(
         result.events,
         Event::CardRevealed { investigator, code, card_type }
-            if *investigator == InvestigatorId(1)
+            if *investigator == inv1
                 && *code == CardCode(SYNTH_TREACHERY_CODE.into())
                 && *card_type == CardType::Treachery
     );
 
     // Revelation effect ran: controller gained 1 resource.
-    let post_resources = result.state.investigators[&InvestigatorId(1)].resources;
+    let post_resources = result.state.investigators[&inv1].resources;
     assert_eq!(
         post_resources,
         pre_resources + 1,
@@ -91,16 +102,23 @@ fn revealing_synth_treachery_runs_revelation_and_discards() {
 #[test]
 fn rejects_when_encounter_deck_and_discard_both_empty() {
     install_test_registry();
+    let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
+    {
+        let mut inv = test_investigator(1);
+        inv.current_location = state.starting_location;
+        state.investigators.insert(inv1, inv);
+        state.turn_order = vec![inv1];
+        state.active_investigator = Some(inv1);
+        state.phase = Phase::Mythos;
+    }
     // Drain the deck (and ensure discard stays empty).
     state.encounter_deck.clear();
     assert!(state.encounter_discard.is_empty());
 
     let result = apply(
         state,
-        Action::Engine(EngineRecord::EncounterCardRevealed {
-            investigator: InvestigatorId(1),
-        }),
+        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );
 
     match result.outcome {

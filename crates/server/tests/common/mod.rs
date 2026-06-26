@@ -8,8 +8,7 @@ use std::net::SocketAddr;
 use futures_util::{SinkExt, StreamExt};
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::GameStateBuilder;
-use game_core::state::{ChaosBag, ChaosToken, GameState, InvestigatorId};
-use game_core::test_support::fixtures::test_investigator;
+use game_core::state::{ChaosBag, ChaosToken, GameState};
 use game_core::{Event, Resolution};
 use protocol::{ClientMessage, ServerMessage};
 use sqlx::sqlite::SqlitePoolOptions;
@@ -20,13 +19,9 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 pub const TEST_SCENARIO_ID: &str = "test-scenario";
 
 fn test_setup() -> GameState {
-    // Round-0 Mythos state: `StartScenario` is accepted (and opens the
-    // setup mulligan → `AwaitingInput`, exercised by the resume/closing
-    // tests); a `ResolveInput` with no prompt outstanding is rejected
-    // (exercised by the reject tests).
+    // Bare scenario seed — seating runs at creation via `seat_and_open`,
+    // so the pre-seeded investigator and turn order are NOT injected here.
     GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
-        .with_turn_order([InvestigatorId(1)])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_scenario_id(ScenarioId::new(TEST_SCENARIO_ID))
         .with_rng_seed(42)
@@ -45,9 +40,19 @@ fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
     (id.as_str() == TEST_SCENARIO_ID).then_some(&TEST_MODULE)
 }
 
-/// Install the mock scenario registry (idempotent within a process).
+/// Install the mock scenario registry + the synthetic card registry
+/// (idempotent: second install is a no-op).
 pub fn install_registry() {
     let _ = game_core::scenario_registry::install(ScenarioRegistry { module_for });
+    game_core::test_support::install_test_registry();
+}
+
+/// A one-investigator roster using the synthetic `TEST_INV` code.
+pub fn roster() -> Vec<game_core::action::RosterEntry> {
+    vec![game_core::action::RosterEntry {
+        investigator: game_core::state::CardCode::new(game_core::test_support::TEST_INV),
+        deck: vec![],
+    }]
 }
 
 /// A migrated single-connection in-memory pool.

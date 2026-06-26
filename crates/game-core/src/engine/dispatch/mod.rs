@@ -115,46 +115,19 @@ fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
 
 /// Apply a [`PlayerAction`] to the state, pushing events.
 ///
-/// After 2b (#447) the wire surface is two variants:
-/// [`StartScenario`](PlayerAction::StartScenario) (session setup) and
-/// [`ResolveInput`](PlayerAction::ResolveInput) (the open-turn action menu plus
-/// every framework suspension). The pending-prompt gate below rejects a
-/// non-`ResolveInput` action whenever a prompt is outstanding — including the
-/// open-turn menu, which now `awaits_input`.
+/// After #447/#459 the wire surface is a single variant:
+/// [`ResolveInput`](PlayerAction::ResolveInput) — the open-turn action menu and
+/// every framework suspension (mulligan, encounter draw, skill-test commit,
+/// reaction/Fast windows, choices, soak distribution) all round-trip through
+/// this one channel. Session setup is the non-logged `seat_and_open` entry
+/// point; it never crosses this function.
+///
+/// The former pending-prompt gate (`!matches!(action, ResolveInput{..})`) was
+/// removed in #459: with only `ResolveInput` existing the condition was always
+/// false (dead code). Pending-prompt protection is now structural —
+/// `resolve_input` validates the response against the live frame.
 pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
-    // A pending prompt gates every action but `ResolveInput` (slice 1b, #393).
-    // After the §1 continuation-stack work and the phase-anchor slices, the
-    // frame awaiting input is always the top of the stack, and *every* non-anchor
-    // frame on top is such a prompt — reaction/Fast window, skill-test commit,
-    // choice, substitution prompt, hunter/spawn pick, hand-size discard, act
-    // round-end, mulligan, encounter draw. Post-2b (#447) the open turn (an
-    // `InvestigatorTurn` frame) also `awaits_input` — its action menu is a prompt
-    // — so `ResolveInput` is the only action that ever passes this gate while a
-    // frame awaits input. This single rule replaces the former eight
-    // per-suspension guard blocks; the specific expected `InputResponse` rides
-    // the `AwaitingInput` request the client already holds.
-    if cx
-        .state
-        .continuations
-        .last()
-        .is_some_and(crate::state::Continuation::awaits_input)
-        && !matches!(action, PlayerAction::ResolveInput { .. })
-    {
-        return EngineOutcome::Rejected {
-            reason: "a prompt is outstanding; submit a PlayerAction::ResolveInput with the \
-                     InputResponse the AwaitingInput request describes (PickSingle / \
-                     PickMultiple / Confirm / Skip) before any other action"
-                .into(),
-        };
-    }
-
-    // The typed gameplay variants are gone (2b, #447): open-turn gameplay flows
-    // through `ResolveInput(PickSingle(OptionId))` against the `InvestigatorTurn`
-    // menu, dispatched internally via `dispatch_turn_action`. The wire surface is
-    // just session-setup (`StartScenario`) + the menu-input channel
-    // (`ResolveInput`).
     let outcome = match action {
-        PlayerAction::StartScenario { roster } => phases::start_scenario(cx, roster),
         PlayerAction::ResolveInput { response } => resolve_input(cx, response),
     };
 
@@ -393,6 +366,16 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
             cards::resume_play_card(cx, investigator, hand_index, &code)
         }
     }
+}
+
+/// Seat a roster and drive to the first `AwaitingInput` (the setup mulligan),
+/// without going through a logged `PlayerAction`. The engine entry point
+/// [`crate::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
+/// Used at game creation (server `GameSession::create`); the action log that
+/// follows is `ResolveInput`-only.
+pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[crate::action::RosterEntry]) -> EngineOutcome {
+    let outcome = phases::start_scenario(cx, roster);
+    drive(cx, outcome)
 }
 
 /// Apply an [`EngineRecord`] to the state, pushing events.

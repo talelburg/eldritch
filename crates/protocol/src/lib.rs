@@ -2,6 +2,7 @@
 //! client and the server. The server is authoritative; clients submit
 //! [`PlayerAction`]s and render the state the server broadcasts.
 
+use game_core::action::RosterEntry;
 use game_core::state::GameState;
 use game_core::{EngineOutcome, Event, PlayerAction};
 use serde::{Deserialize, Serialize};
@@ -95,6 +96,10 @@ impl From<&str> for GameId {
 pub struct CreateGameRequest {
     /// The scenario module to set up.
     pub scenario_id: String,
+    /// The investigators to seat at creation, each paired with the deck the
+    /// player chose. Seated into the persisted seed (#459); a rejected
+    /// seating fails creation with no game row.
+    pub roster: Vec<RosterEntry>,
 }
 
 /// Response to a successful `POST /games`.
@@ -160,5 +165,22 @@ mod tests {
             ServerMessage::Applied { state: s, .. } => assert_eq!(*s, state),
             other => panic!("expected Applied, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn create_game_request_round_trips_with_a_roster() {
+        use game_core::action::RosterEntry;
+        use game_core::state::CardCode;
+        let req = CreateGameRequest {
+            scenario_id: "the-gathering".into(),
+            roster: vec![RosterEntry {
+                investigator: CardCode::new("01001"),
+                deck: vec![],
+            }],
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let back: CreateGameRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.roster.len(), 1);
+        assert_eq!(back.scenario_id, "the-gathering");
     }
 }

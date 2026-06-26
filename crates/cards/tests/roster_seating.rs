@@ -5,11 +5,11 @@
 
 use std::sync::Once;
 
-use game_core::action::{PlayerAction, RosterEntry};
-use game_core::engine::{apply, EngineOutcome};
+use game_core::action::RosterEntry;
+use game_core::engine::EngineOutcome;
+use game_core::seat_and_open;
 use game_core::state::{CardCode, InvestigatorId, Skills};
 use game_core::test_support::GameStateBuilder;
-use game_core::Action;
 
 /// Install the real card registry exactly once for this integration-test
 /// binary. Idempotent at the `OnceLock` level; the `Once` wrapper avoids
@@ -31,16 +31,13 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
     }];
     let state = GameStateBuilder::new().build();
 
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::StartScenario { roster }),
-    );
+    let result = seat_and_open(state, &roster);
 
-    // StartScenario seats the roster and opens the setup mulligan prompt
+    // seat_and_open seats the roster and opens the setup mulligan prompt
     // (AwaitingInput) for the first investigator (#348).
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "StartScenario opens the mulligan prompt, got {:?}",
+        "seat_and_open opens the mulligan prompt, got {:?}",
         result.outcome
     );
     let inv = result
@@ -74,10 +71,7 @@ fn rejects_non_investigator_code() {
         deck: vec![],
     }];
     let state = GameStateBuilder::new().build();
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::StartScenario { roster }),
-    );
+    let result = seat_and_open(state, &roster);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());
@@ -91,10 +85,7 @@ fn seated_investigator_carries_its_card_code() {
         deck: vec![],
     }];
     let state = GameStateBuilder::new().build();
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::StartScenario { roster }),
-    );
+    let result = seat_and_open(state, &roster);
     let inv = result
         .state
         .investigators
@@ -111,10 +102,7 @@ fn rejects_unknown_code() {
         deck: vec![],
     }];
     let state = GameStateBuilder::new().build();
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::StartScenario { roster }),
-    );
+    let result = seat_and_open(state, &roster);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());

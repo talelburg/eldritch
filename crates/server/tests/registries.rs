@@ -47,12 +47,14 @@ async fn post_games_creates_the_gathering_against_installed_registries() {
     let pool = memory_pool().await;
     let app = server::app(server::AppState::new(pool));
 
+    // Seat Roland Banks (01001) — a real investigator from the production
+    // card registry.
     let request = Request::builder()
         .method("POST")
         .uri("/games")
         .header("content-type", "application/json")
         .body(Body::from(format!(
-            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}"}}"#
+            r#"{{"scenario_id":"{GATHERING_SCENARIO_ID}","roster":[{{"investigator":"01001","deck":[]}}]}}"#
         )))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
