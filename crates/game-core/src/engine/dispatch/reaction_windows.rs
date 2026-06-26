@@ -1646,16 +1646,6 @@ pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
     !enumerate_fast_plays(state).is_empty()
 }
 
-/// Collect every fast play currently eligible across all investigators: Fast
-/// cards in hand ([`check_play_card`] `Ok` + `is_fast`) and 0-action
-/// [`Trigger::Activated`] abilities on cards in play ([`check_activate_ability`]
-/// `Ok`). MUST be called with the `FastWindow` on top of the stack so
-/// `check_play_card`'s `permits_fast` gate applies to the right window (#476).
-///
-/// Returns the plays as [`TurnAction`]s in deterministic (investigator,
-/// hand-index / ability-index) order — the same shape the open-turn menu
-/// dispatches via `dispatch_turn_action`, so the #476 fast-window prompt reuses
-/// that dispatch path verbatim. Empty when the registry isn't installed.
 /// Drive a framework Fast window that is on top of the stack (#476): surface the
 /// currently-eligible fast plays as a **skippable** `PickSingle`, or close the
 /// window (running its continuation) when none remain. Called by the `drive`
@@ -1683,6 +1673,16 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
+/// Collect every fast play currently eligible across all investigators: Fast
+/// cards in hand ([`check_play_card`] `Ok` + `is_fast`) and 0-action
+/// [`Trigger::Activated`] abilities on cards in play ([`check_activate_ability`]
+/// `Ok`). MUST be called with the `FastWindow` on top of the stack so
+/// `check_play_card`'s `permits_fast` gate applies to the right window (#476).
+///
+/// Returns the plays as [`TurnAction`]s in deterministic (investigator,
+/// hand-index / ability-index) order — the same shape the open-turn menu
+/// dispatches via `dispatch_turn_action`, so the #476 fast-window prompt reuses
+/// that dispatch path verbatim. Empty when the registry isn't installed.
 pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
     let mut out = Vec::new();
     let Some(reg) = crate::card_registry::current() else {
