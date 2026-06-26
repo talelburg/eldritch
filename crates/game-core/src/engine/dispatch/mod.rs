@@ -476,9 +476,11 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     }
 }
 
-/// Resume a skill test parked at its commit window: the active investigator
-/// submits their commit list via [`InputResponse::PickMultiple`] (each
-/// [`OptionId`](crate::engine::OptionId) is a hand index).
+/// Resume a skill test parked at one of its two suspension points: the commit
+/// window (the active investigator submits their commit list via
+/// [`InputResponse::PickMultiple`], each [`OptionId`](crate::engine::OptionId) a
+/// hand index) or the #478 acknowledgment pause (the player dismisses the result
+/// with [`InputResponse::Confirm`]). Each resume validates the cursor it expects.
 fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     match response {
         InputResponse::PickMultiple { selected } => {
@@ -489,10 +491,13 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             // driver.
             skill_test::finish_skill_test(cx, &indices)
         }
+        // The cosmetic acknowledgment pause (#478) is the SkillTest frame's other
+        // suspension point; a Confirm advances past it into the ST.7 consequences.
+        InputResponse::Confirm => skill_test::acknowledge_outcome(cx),
         other => EngineOutcome::Rejected {
             reason: format!(
-                "ResolveInput: skill-test commit window expects InputResponse::PickMultiple, \
-                 got {other:?}",
+                "ResolveInput: the skill-test window expects InputResponse::PickMultiple \
+                 (commit) or InputResponse::Confirm (acknowledge), got {other:?}",
             )
             .into(),
         },

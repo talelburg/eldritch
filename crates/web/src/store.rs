@@ -28,6 +28,15 @@ pub struct ClientState {
     pub outcome: Option<EngineOutcome>,
     pub status: ConnStatus,
     pub last_rejection: Option<String>,
+    /// The most recent `Applied` batch's events, retained for views that render
+    /// from event history (the #478 skill-test result panel). Cleared by `Hello`.
+    pub last_events: Vec<game_core::Event>,
+    /// Difficulty of the most recently *started* skill test, captured from
+    /// `Event::SkillTestStarted` (which arrives in an earlier batch than the
+    /// resolution). The result panel pairs it with the resolution batch's
+    /// `SkillTestSucceeded`/`Failed` margin to show total-vs-difficulty.
+    /// Cleared by `Hello`.
+    pub last_skill_test_difficulty: Option<i8>,
 }
 
 /// Fold one server message into the client state. Data only — never
@@ -39,12 +48,31 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.game = Some(*s);
             state.outcome = Some(outcome);
             state.last_rejection = None;
+            state.last_events = Vec::new();
+            state.last_skill_test_difficulty = None;
         }
         ServerMessage::Applied {
-            state: s, outcome, ..
+            state: s,
+            events,
+            outcome,
         } => {
             state.game = Some(*s);
             state.outcome = Some(outcome);
+            // Capture difficulty from `SkillTestStarted` (an earlier batch than the
+            // resolution). Exact in current scope — `InFlightSkillTest.difficulty`
+            // is never mutated post-creation, so it equals the margin basis. The
+            // alternative is reading `game.current_skill_test().difficulty` off the
+            // still-live in-flight frame; that would be immune to (a) a reconnect
+            // mid-pause (`Hello` clears this cache) and (b) a future difficulty-
+            // modifying card that mutates the in-flight difficulty mid-test.
+            // Revisit if either lands.
+            if let Some(difficulty) = events.iter().find_map(|e| match e {
+                game_core::Event::SkillTestStarted { difficulty, .. } => Some(*difficulty),
+                _ => None,
+            }) {
+                state.last_skill_test_difficulty = Some(difficulty);
+            }
+            state.last_events = events;
         }
         ServerMessage::Rejected { reason } => {
             state.last_rejection = Some(reason);
@@ -117,6 +145,53 @@ mod tests {
         assert!(s.game.is_some());
         assert_eq!(s.outcome, Some(EngineOutcome::Done));
         assert_eq!(s.last_rejection.as_deref(), Some("stale"));
+    }
+
+    #[test]
+    fn applied_retains_events_and_captures_difficulty() {
+        use game_core::state::{InvestigatorId, SkillKind};
+        use game_core::Event;
+
+        let mut s = ClientState::default();
+        reduce(
+            &mut s,
+            ServerMessage::Applied {
+                state: Box::new(sample_state()),
+                events: vec![Event::SkillTestStarted {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    difficulty: 3,
+                }],
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert_eq!(s.last_skill_test_difficulty, Some(3));
+        assert_eq!(s.last_events.len(), 1);
+    }
+
+    #[test]
+    fn hello_clears_retained_events_and_difficulty() {
+        let mut s = ClientState {
+            last_skill_test_difficulty: Some(3),
+            ..Default::default()
+        };
+        // seed a non-empty last_events too
+        s.last_events.push(game_core::Event::ScenarioStarted);
+        reduce(
+            &mut s,
+            ServerMessage::Hello {
+                state: Box::new(sample_state()),
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert!(
+            s.last_events.is_empty(),
+            "Hello clears the retained event batch"
+        );
+        assert_eq!(
+            s.last_skill_test_difficulty, None,
+            "Hello clears the retained difficulty"
+        );
     }
 
     #[test]

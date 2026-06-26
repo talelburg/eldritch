@@ -47,7 +47,7 @@
 use std::collections::VecDeque;
 
 use crate::action::{Action, InputResponse, PlayerAction};
-use crate::engine::{apply, ApplyResult, EngineOutcome, InputRequest};
+use crate::engine::{apply, ApplyResult, EngineOutcome, InputKind, InputRequest};
 use crate::state::{CardCode, GameState, InvestigatorId, LocationId};
 
 /// Provide a response for an `AwaitingInput` prompt during a
@@ -338,12 +338,16 @@ fn drive_to_terminal_no_commits(first: ApplyResult) -> ApplyResult {
                 outcome,
             };
         }
-        // The only other `AwaitingInput` in a no-commits drive is a commit
-        // window; a `Done`-idle with an open window is a parked Fast player
-        // window to decline. Anything else is terminal.
-        let next = if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-            InputResponse::PickMultiple {
-                selected: Vec::new(),
+        // The only `AwaitingInput`s in a no-commits drive are the commit window
+        // (PickMultiple) and the #478 acknowledge pause (Confirm); a `Done`-idle
+        // with an open window is a parked Fast player window to decline. Anything
+        // else is terminal.
+        let next = if let EngineOutcome::AwaitingInput { request, .. } = &outcome {
+            match request.kind {
+                InputKind::Confirm => InputResponse::Confirm,
+                _ => InputResponse::PickMultiple {
+                    selected: Vec::new(),
+                },
             }
         } else if matches!(outcome, EngineOutcome::Done) && !state.open_windows().is_empty() {
             InputResponse::Skip
@@ -1057,5 +1061,39 @@ mod tests {
     #[should_panic(expected = "call .apply(action) before .run()")]
     fn test_session_run_without_apply_panics() {
         let _ = GameStateBuilder::new().session().run();
+    }
+
+    /// Flag on: a no-commits drive auto-answers the acknowledge `Confirm` and
+    /// resolves the skill test to teardown (exercises both the helper and the
+    /// dispatch-level Confirm routing end-to-end through `apply`).
+    #[test]
+    fn flag_on_no_commits_drive_auto_confirms_acknowledge() {
+        use crate::event::Event;
+        use crate::state::{ChaosToken, InvestigatorId, SkillKind};
+        use crate::test_support::{test_investigator, GameStateBuilder};
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        state.interactive_acknowledge = true;
+
+        let result = perform_skill_test_no_commits(state, inv, SkillKind::Willpower, 2);
+
+        assert!(
+            matches!(result.outcome, EngineOutcome::Done),
+            "drive auto-confirmed the acknowledge and reached a terminal outcome: {:?}",
+            result.outcome
+        );
+        assert!(
+            result
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            "the test resolved to the end: {:?}",
+            result.events
+        );
     }
 }

@@ -236,6 +236,16 @@ pub struct GameState {
     /// revealed + no clues); victory-point enemies enter as defeated
     /// (C3). Phase 9 sums these cards' corpus victory values for XP.
     pub victory_display: Vec<CardCode>,
+    /// When set, the engine suspends with an `AwaitingInput { InputKind::Confirm }`
+    /// at skill-test resolution (after the result events are emitted, before the
+    /// ST.7 consequence resolves) so an interactive host can show the player the
+    /// result and wait for an acknowledgment (#478). A *cosmetic* pause — it
+    /// makes no game decision — so it is gated: the server sets it for human play,
+    /// while tests and non-interactive/headless consumers leave it `false` and
+    /// resolve straight through. `#[serde(default)]` keeps already-persisted game
+    /// seeds (written before this field existed) deserializable.
+    #[serde(default)]
+    pub interactive_acknowledge: bool,
 }
 
 /// One agenda card's mechanically-relevant state: the doom needed to
@@ -1195,6 +1205,18 @@ pub enum SkillTestStep {
     /// off [`InFlightSkillTest::resolved`]; pre-advances to
     /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
     DetermineOutcome,
+    /// Cosmetic acknowledgment pause (#478). The result events
+    /// (`ChaosTokenRevealed`, `SkillTestSucceeded`/`Failed`) are already emitted
+    /// at [`DetermineOutcome`](Self::DetermineOutcome); when
+    /// [`GameState::interactive_acknowledge`](crate::state::GameState::interactive_acknowledge)
+    /// is set, `advance` suspends here with an `AwaitingInput { InputKind::Confirm }`
+    /// so an interactive host can show the player the result before the ST.7
+    /// consequence resolves. The cursor stays here across the suspension;
+    /// `acknowledge_outcome` advances it to [`FireOnCommit`](Self::FireOnCommit)
+    /// on the Confirm resume (mirroring the `AwaitingCommit` / `finish_skill_test`
+    /// handshake). When the flag is off, `advance` advances straight to
+    /// `FireOnCommit` without pausing.
+    AcknowledgeOutcome,
     /// RR ST.7 head — push the committed cards' [`Trigger::OnCommit`] effects
     /// (Vicious Blow 01025's `BoostAttackDamage`). These are conditional on
     /// success ("If this skill test is successful during an attack…") so they

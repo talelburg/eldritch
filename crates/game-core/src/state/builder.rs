@@ -382,6 +382,7 @@ impl GameStateBuilder {
             act_index: 0,
             resolution: None,
             victory_display: Vec::new(),
+            interactive_acknowledge: false,
         }
     }
 }
@@ -400,6 +401,16 @@ mod set_aside_locations_tests {
     fn build_starts_with_empty_set_aside_locations() {
         let state = GameStateBuilder::new().build();
         assert!(state.set_aside_locations.is_empty());
+    }
+
+    #[test]
+    fn build_defaults_interactive_acknowledge_off() {
+        let state = GameStateBuilder::new().build();
+        assert!(
+            !state.interactive_acknowledge,
+            "interactive acknowledgment is opt-in; off by default so non-interactive \
+             consumers and existing tests never pause"
+        );
     }
 }
 
