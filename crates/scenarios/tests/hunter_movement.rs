@@ -147,6 +147,13 @@ fn hunter_movement_pick_location_replays_identically() {
             .build()
     }
 
+    // Reading investigator capacity (#448, `investigator_capacity`) during the
+    // end-turn → enemy-phase cascade needs an installed registry. The shared
+    // `install_test_registry` is `Once`-guarded, so this is safe regardless of
+    // which test in this binary runs first / wins the race — without it, this
+    // test panics when run in isolation or when it loses the install race (#473).
+    install_test_registry();
+
     // Candidates are the sorted first-steps toward D: [LocationId(2), LocationId(3)],
     // so LocationId(3) is offered option id 1.
 
