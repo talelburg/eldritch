@@ -93,6 +93,19 @@ fn commit_indices(frame: ClientMessage) -> Vec<u32> {
 }
 
 #[wasm_bindgen_test]
+async fn pick_multiple_button_reads_confirm() {
+    // #469: the button is a neutral "Confirm" (not "Commit") for every
+    // PickMultiple context; the prompt carries the per-context meaning.
+    let _rx = mount(two_card_game()).await;
+    let section = last_section();
+    let btn = section
+        .query_selector(".commit")
+        .expect("query")
+        .expect(".commit button present");
+    assert_eq!(btn.text_content().unwrap_or_default().trim(), "Confirm");
+}
+
+#[wasm_bindgen_test]
 async fn renders_prompt_and_hand_cards() {
     let _rx = mount(two_card_game()).await;
     let section = last_section();

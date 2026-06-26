@@ -201,7 +201,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                         <section class="awaiting-input">
                             <p class="prompt">{request.prompt}</p>
                             <ul class="commit-hand">{cards}</ul>
-                            <button class="commit" on:click=on_commit>"Commit"</button>
+                            <button class="commit" on:click=on_commit>"Confirm"</button>
                             {skip_button()}
                         </section>
                     }

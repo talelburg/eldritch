@@ -191,6 +191,18 @@ pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> Engine
     }
 }
 
+/// Put `state` at the upkeep hand-size discard prompt by pushing a
+/// [`Continuation::HandSizeDiscard`] frame for `remaining`. A fixture because
+/// [`HandSizeDiscard`] is `#[non_exhaustive]`, so downstream test crates
+/// (the web client's wasm tests, #468) can't build the frame directly.
+#[must_use]
+pub fn at_hand_size_discard(mut state: GameState, remaining: Vec<InvestigatorId>) -> GameState {
+    state
+        .continuations
+        .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
+    state
+}
+
 #[cfg(test)]
 mod tests {
     use super::awaiting_commit_input;
@@ -206,16 +218,4 @@ mod tests {
             other => panic!("expected AwaitingInput, got {other:?}"),
         }
     }
-}
-
-/// Put `state` at the upkeep hand-size discard prompt by pushing a
-/// [`Continuation::HandSizeDiscard`] frame for `remaining`. A fixture because
-/// [`HandSizeDiscard`] is `#[non_exhaustive]`, so downstream test crates
-/// (the web client's wasm tests, #468) can't build the frame directly.
-#[must_use]
-pub fn at_hand_size_discard(mut state: GameState, remaining: Vec<InvestigatorId>) -> GameState {
-    state
-        .continuations
-        .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
-    state
 }
