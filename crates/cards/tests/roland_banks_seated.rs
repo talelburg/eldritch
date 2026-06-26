@@ -9,8 +9,6 @@
 //!
 //! Integration test so it can install `cards::REGISTRY` in its own process.
 
-use std::sync::Once;
-
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -24,11 +22,9 @@ use game_core::{assert_event, assert_no_event, TurnAction};
 
 const ROLAND: &str = "01001";
 
+#[ctor::ctor]
 fn install_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Roland engaged with a 1-HP enemy, his investigator card represented ONLY by
@@ -37,7 +33,6 @@ fn install_registry() {
 fn seated_roland_with_enemy(
     round: u32,
 ) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
-    install_registry();
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);

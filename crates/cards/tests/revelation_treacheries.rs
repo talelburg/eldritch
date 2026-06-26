@@ -7,8 +7,6 @@
 //! mechanism are unit-tested in game-core (#286); here we prove the
 //! *card effects* resolve end-to-end against real corpus metadata.
 
-use std::sync::Once;
-
 use game_core::action::EngineRecord;
 use game_core::event::Event;
 use game_core::state::{
@@ -19,12 +17,9 @@ use game_core::test_support::{
 };
 use game_core::{Action, EngineOutcome};
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1, auto-committing no
@@ -60,7 +55,6 @@ fn board_with(treachery: &str, token: ChaosToken) -> game_core::GameState {
 
 #[test]
 fn grasping_hands_deals_one_damage_per_point_failed_then_discards() {
-    install_registry();
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage.
     let result = reveal_top(board_with("01162", ChaosToken::Numeric(-2)));
     assert_eq!(result.outcome, EngineOutcome::Done);
@@ -81,7 +75,6 @@ fn grasping_hands_deals_one_damage_per_point_failed_then_discards() {
 
 #[test]
 fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
-    install_registry();
     // #426: Count(SkillTestFailedBy) deals all N damage in one Deal evaluation,
     // emitting a single DamageTaken { amount: 2 } event — not two separate
     // DamageTaken { amount: 1 } events.
@@ -100,7 +93,6 @@ fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
 
 #[test]
 fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
-    install_registry();
     // #426: Count(SkillTestFailedBy) deals all N horror in one Deal evaluation,
     // emitting a single HorrorTaken { amount: 2 } event — not two separate
     // HorrorTaken { amount: 1 } events.
@@ -119,7 +111,6 @@ fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
 
 #[test]
 fn crypt_chill_with_no_asset_takes_two_damage_then_discards() {
-    install_registry();
     // Willpower 3 + Numeric(0) = 3 vs difficulty 4 → fail; no asset in
     // play → take 2 damage instead.
     let result = reveal_top(board_with("01167", ChaosToken::Numeric(0)));
@@ -137,7 +128,6 @@ fn crypt_chill_with_no_asset_takes_two_damage_then_discards() {
 
 #[test]
 fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
-    install_registry();
     // AutoFail forces the test to fail regardless of Holy Rosary's
     // +1-willpower buff, so the failure branch reliably runs.
     let mut state = board_with("01167", ChaosToken::AutoFail);
@@ -172,7 +162,6 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
 
 #[test]
 fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
-    install_registry();
     // Two controlled assets ⇒ the fail branch suspends for the controller's
     // choice (Axis A #334). AutoFail forces the failure.
     let mut state = board_with("01167", ChaosToken::AutoFail);
@@ -237,7 +226,6 @@ fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
 
 #[test]
 fn ancient_evils_places_doom_on_the_current_agenda_then_discards() {
-    install_registry();
     // No skill test — Numeric token is unused by this revelation.
     let mut state = board_with("01166", ChaosToken::Numeric(0));
     state.agenda_deck = vec![Agenda {

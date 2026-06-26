@@ -4,8 +4,6 @@
 //! real card metadata/abilities, so they install `cards::REGISTRY` and live here
 //! rather than in `game-core`'s registry-less unit tests.
 
-use std::sync::Once;
-
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, InvestigationResume,
     InvestigatorId, Phase,
@@ -21,18 +19,15 @@ const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supp
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// A single-investigator open-turn state (`InvestigatorTurn` frame on top of the
 /// `InvestigationPhase` anchor) with `hand` in hand and `in_play` in play, 3
 /// actions, 9 resources, on a revealed location, non-empty chaos bag.
 fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> game_core::GameState {
-    install_real_registry();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC);
     // Real investigator code so max_health()/max_sanity() reads from the

@@ -10,8 +10,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::TurnAction;
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
@@ -25,16 +23,13 @@ const EMERGENCY_CACHE: &str = "01088";
 const GUTS: &str = "01089";
 const INV: InvestigatorId = InvestigatorId(1);
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 #[test]
 fn emergency_cache_play_gains_three_resources() {
-    install();
     let mut inv = test_investigator(1);
     inv.hand = vec![CardCode::new(EMERGENCY_CACHE)];
     let before = inv.resources;
@@ -89,7 +84,6 @@ fn perform_and_commit_guts(state: GameState) -> game_core::engine::ApplyResult {
 
 #[test]
 fn guts_draws_a_card_on_a_successful_test() {
-    install();
     // willpower 3 + Numeric(0) vs difficulty 1 → success → draw 1.
     let r = perform_and_commit_guts(guts_board(3, ChaosToken::Numeric(0)));
     assert_eq!(r.outcome, EngineOutcome::Done);
@@ -98,7 +92,6 @@ fn guts_draws_a_card_on_a_successful_test() {
 
 #[test]
 fn guts_draws_nothing_on_a_failed_test() {
-    install();
     // AutoFail → failure → no draw.
     let r = perform_and_commit_guts(guts_board(3, ChaosToken::AutoFail));
     assert_eq!(r.outcome, EngineOutcome::Done);

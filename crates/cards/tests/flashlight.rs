@@ -10,8 +10,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::assert_event;
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
@@ -29,18 +27,15 @@ const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 const TORCH_INST: CardInstanceId = CardInstanceId(0);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: Flashlight in play with 3 supplies; the active investigator at a
 /// revealed `shroud`-shroud location holding 1 clue, with `intellect`
 /// intellect. A `Numeric(0)` chaos bag makes the Investigate deterministic.
 fn board(intellect: i8, shroud: u8, revealed: bool) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.skills.intellect = intellect;
     let mut torch = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), TORCH_INST);

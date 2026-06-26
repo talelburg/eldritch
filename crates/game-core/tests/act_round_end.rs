@@ -3,8 +3,6 @@
 //! opens act 01109's `When`-`RoundEnded` reaction as a board candidate;
 //! `ResolveInput(PickSingle)` fires the advance / `Skip` declines.
 
-use std::sync::OnceLock;
-
 use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::card_data::CardMetadata;
@@ -41,22 +39,19 @@ fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: mock_native_for,
-            native_eligibility_for: |_| None,
-        });
+    let _ = card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: mock_native_for,
+        native_eligibility_for: |_| None,
     });
 }
 
 /// Act 2 (01109) current, a Hallway investigator with `clues`, phase Upkeep with
 /// its anchor. Act 3 (01110) is the terminal-Won successor.
 fn upkeep_round_end_state(clues: u8) -> GameState {
-    install();
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))

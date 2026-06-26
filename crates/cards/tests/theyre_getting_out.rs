@@ -5,8 +5,6 @@
 //! resolves before this agenda's "at the end of the round" doom (RR `when`
 //! before `at`).
 
-use std::sync::OnceLock;
-
 use game_core::action::InputResponse;
 use game_core::engine::TimingEvent;
 use game_core::state::{
@@ -19,11 +17,9 @@ use game_core::test_support::{
 };
 use game_core::{EngineOutcome, Event};
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 fn ghoul(id: u32, at: LocationId) -> Enemy {
@@ -54,7 +50,6 @@ fn board_with_agenda() -> GameState {
 
 #[test]
 fn enemy_phase_end_moves_ghoul_toward_parlor() {
-    install();
     let mut state = board_with_agenda();
     state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
     let mut events = Vec::new();
@@ -72,7 +67,6 @@ fn enemy_phase_end_moves_ghoul_toward_parlor() {
 
 #[test]
 fn round_end_places_doom_per_ghoul_in_hallway_or_parlor() {
-    install();
     let mut state = board_with_agenda();
     state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2)));
     state.enemies.insert(EnemyId(2), ghoul(2, LocationId(5)));
@@ -84,7 +78,6 @@ fn round_end_places_doom_per_ghoul_in_hallway_or_parlor() {
 
 #[test]
 fn round_end_act_when_window_opens_before_agenda_at_doom() {
-    install();
     // Act 01109 ("The Barrier") carries the "when the round ends" clue-spend
     // window; agenda 01107 carries the "at the end of the round" doom. Per the
     // RR "At" entry, `when` resolves before `at`, so the act window must open

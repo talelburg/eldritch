@@ -10,8 +10,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
@@ -26,17 +24,14 @@ const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 const BOOK_INST: CardInstanceId = CardInstanceId(0);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: Old Book of Lore in play, the active investigator alone at `LOC` with
 /// a known 4-card deck (top 3 distinct, plus a 4th below the searched region).
 fn board() -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(OLD_BOOK), BOOK_INST));

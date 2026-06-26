@@ -31,8 +31,6 @@
 //! no `AoO` carve-out — Guard Dog retaliates against `AoO` attacks.
 #![allow(clippy::too_many_lines)]
 
-use std::sync::Once;
-
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -47,11 +45,9 @@ const DODGE: &str = "01023";
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, damage-retaliate.
 const GUARD_DOG: &str = "01021";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// The soak-distribution `PickSingle` `OptionId` for the soaker asset (#44/K5b —
@@ -106,8 +102,6 @@ fn engaged_attacker(
 ///   `resume_action_resolution` → `move_primary_effect` → `Done`.
 #[test]
 fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exhausted() {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let from = LocationId(101);
     let dest = LocationId(102);
@@ -264,8 +258,6 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 /// `ActionResolution` frame.
 #[test]
 fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let from = LocationId(101);
     let dest = LocationId(102);
@@ -370,8 +362,6 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
 /// `drive` once the window closes.
 #[test]
 fn guard_dog_retaliates_against_aoo_and_move_completes() {
-    install_real_registry();
-
     let dog = CardInstanceId(1);
     let inv_id = InvestigatorId(1);
     let from = LocationId(101);

@@ -3,8 +3,6 @@
 //! `cards::REGISTRY`. The activated ability is at index 1 (index 0 is the
 //! constant `+1 [combat]`). Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
@@ -23,17 +21,14 @@ const LOC: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
 const COP_INST: CardInstanceId = CardInstanceId(0);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: Beat Cop in play, the active investigator at `LOC`, and (when
 /// `enemy_present`) a 3-health enemy co-located at `LOC`.
 fn board(enemy_present: bool) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST));

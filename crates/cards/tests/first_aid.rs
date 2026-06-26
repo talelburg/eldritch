@@ -5,8 +5,6 @@
 //! the "if no supplies, discard it" depletion-discard come from corpus
 //! metadata (#302). Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::dsl::HarmKind;
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
@@ -24,17 +22,14 @@ const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 const KIT_INST: CardInstanceId = CardInstanceId(0);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board: First Aid in play with `supplies` supplies; the active investigator
 /// at `LOC` carrying 2 damage and 2 horror to heal from.
 fn board(supplies: u8) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     // Harm accumulates on the investigator card after #448 cp2a.
     inv.investigator_card.accumulated_damage = 2;

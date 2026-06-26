@@ -8,8 +8,6 @@
 //! weapon ability yet — Roland's .38 Special (C5c) is the first; until
 //! then a mock card exercises the full path.
 
-use std::sync::OnceLock;
-
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use game_core::dsl::{activated, fight, Ability, Cost, IntExpr};
 use game_core::engine::EngineOutcome;
@@ -23,6 +21,7 @@ use game_core::test_support::{
     GameStateBuilder,
 };
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use std::sync::OnceLock;
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -79,15 +78,13 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+#[ctor::ctor]
 fn install_mock_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-        });
+    let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 
@@ -113,7 +110,6 @@ fn board_with_enemies(
     enemy_count: u32,
     engaged: bool,
 ) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let weapon_inst = CardInstanceId(0);
 
@@ -153,7 +149,6 @@ fn ammo_remaining(state: &game_core::GameState, inv: InvestigatorId, weapon: Car
 
 #[test]
 fn play_card_seeds_the_ammo_pool_from_metadata() {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.hand.push(CardCode::new(WEAPON));
@@ -291,7 +286,6 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
     // The scope is co-located (`At(Here)`), NOT global: an enemy elsewhere is
     // no target, even though it exists. Guards against widening past the basic
     // Fight action (#451).
-    install_mock_registry();
     let id = InvestigatorId(1);
     let weapon_inst = CardInstanceId(0);
     let other = LocationId(2);

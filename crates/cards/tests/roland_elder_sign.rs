@@ -8,8 +8,6 @@
 //! Integration test so it installs the real `cards::REGISTRY` (which carries
 //! Roland's `Trigger::ElderSign` ability) in its own process.
 
-use std::sync::Once;
-
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
@@ -21,18 +19,15 @@ use game_core::EngineOutcome;
 
 const ROLAND: &str = "01001";
 
+#[ctor::ctor]
 fn install_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Drive a Willpower-3 test at difficulty 3 with the `ElderSign` token, Roland
 /// seated (`card_code` set, NOT in `cards_in_play`) at a location holding
 /// `clues`. Returns the resolved events for outcome assertions.
 fn run_elder_sign_test(clues: u8) -> Vec<Event> {
-    install_registry();
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
 

@@ -12,8 +12,6 @@
 //! synthetic enemy `CardMetadata` with `spawn: None` (spawns at the drawer's
 //! location) and no abilities (no Revelation).
 
-use std::sync::OnceLock;
-
 use game_core::action::{Action, EngineRecord};
 use game_core::card_data::{CardKind, CardMetadata, HealthValue, Prey};
 use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
@@ -23,6 +21,7 @@ use game_core::test_support::{
     drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
 use game_core::EngineOutcome;
+use std::sync::OnceLock;
 
 const ENEMY: &str = "_synth_enemy";
 
@@ -64,22 +63,18 @@ fn mock_native_for(_: &str) -> Option<NativeEffectFn> {
     None
 }
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: mock_native_for,
-            native_eligibility_for: |_| None,
-        });
+    let _ = card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: mock_native_for,
+        native_eligibility_for: |_| None,
     });
 }
 
 #[test]
 fn enemy_encounter_card_spawns_via_the_disposition_frame() {
-    install();
-
     let mut state = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LocationId(1))
         .with_location(test_location(1, "Here"))

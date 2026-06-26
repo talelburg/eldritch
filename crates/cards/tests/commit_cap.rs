@@ -5,8 +5,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
@@ -17,11 +15,9 @@ use game_core::{Action, GameState, InputResponse, PlayerAction};
 const GUTS: &str = "01089";
 const INV: InvestigatorId = InvestigatorId(1);
 
+#[ctor::ctor]
 fn install() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Investigator holding `copies` copies of Guts, mid-Investigation, with a
@@ -51,7 +47,6 @@ fn commit(indices: Vec<u32>) -> Action {
 /// Committing two copies of a `Max 1 committed` card to one test is rejected.
 #[test]
 fn committing_over_the_cap_is_rejected() {
-    install();
     let paused = perform_skill_test(board(2), INV, SkillKind::Willpower, 1);
     assert!(matches!(
         paused.outcome,
@@ -71,7 +66,6 @@ fn committing_over_the_cap_is_rejected() {
 /// Committing a single copy is within the cap and resolves normally.
 #[test]
 fn committing_at_the_cap_is_allowed() {
-    install();
     let paused = perform_skill_test(board(1), INV, SkillKind::Willpower, 1);
     let r = game_core::engine::apply(paused.state, commit(vec![0]));
     assert_eq!(r.outcome, EngineOutcome::Done);

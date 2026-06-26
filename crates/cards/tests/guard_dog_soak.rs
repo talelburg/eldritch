@@ -21,8 +21,6 @@
 //! Guard Dog 01021: "[reaction] When an enemy attack deals damage to Guard
 //! Dog: Deal 1 damage to the attacking enemy." Health 3, sanity 1, Ally.
 
-use std::sync::Once;
-
 use game_core::engine::{apply, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -41,11 +39,9 @@ const GUARD_DOG: &str = "01021";
 /// vs Ally slot) and never reacts — used for the self-binding case.
 const BULLETPROOF_VEST: &str = "01094";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// An engaged enemy at the investigator's location dealing `attack_damage`
@@ -76,8 +72,6 @@ fn soak_state(
     assets: Vec<(&str, CardInstanceId)>,
     enemies: Vec<Enemy>,
 ) -> (game_core::GameState, InvestigatorId, LocationId) {
-    install_real_registry();
-
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
 
@@ -602,8 +596,6 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     let inv_id = InvestigatorId(1);
     let from = LocationId(101);
     let dest = LocationId(102);
-
-    install_real_registry();
 
     let mut study = test_location(101, "Study");
     study.connections = vec![dest];

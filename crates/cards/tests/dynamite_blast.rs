@@ -12,8 +12,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
@@ -29,11 +27,9 @@ const LOC_B: LocationId = LocationId(11);
 const ENEMY_A: EnemyId = EnemyId(100);
 const ENEMY_B: EnemyId = EnemyId(101);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
@@ -59,7 +55,6 @@ fn pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyRes
 /// enemy sit at `LOC_A`; a second investigator and a 5-health enemy sit at the
 /// connecting `LOC_B`.
 fn board() -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
@@ -158,7 +153,6 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
 #[test]
 fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     // A single location with no connections → one candidate → auto, no suspend.
-    install();
     let mut inv = test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];

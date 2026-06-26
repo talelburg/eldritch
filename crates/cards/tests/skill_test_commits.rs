@@ -13,8 +13,6 @@
 //! tests (which deliberately don't install one and would see
 //! `metadata_for == None`, contributing zero icons).
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -31,11 +29,9 @@ const UNEXPECTED_COURAGE: &str = "01093";
 /// icons contribute 0" control.
 const OVERPOWER: &str = "01091";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Hand contents for the test. Builds a state with the named cards in
@@ -43,7 +39,6 @@ fn install_real_registry() {
 /// `Numeric(0)` chaos bag (so the token-modifier contribution is
 /// always 0).
 fn state_with_hand(hand: &[&str]) -> (game_core::GameState, InvestigatorId) {
-    install_real_registry();
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();

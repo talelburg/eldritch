@@ -2,8 +2,6 @@
 //! across themselves and eligible soakers, one point at a time (RR p.7),
 //! driven through the real `apply` enemy-phase path against the corpus registry.
 
-use std::sync::Once;
-
 use game_core::engine::OptionId;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, InvestigatorId, LocationId, Phase,
@@ -15,11 +13,9 @@ use game_core::{Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 
+#[ctor::ctor]
 fn install_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// One engaged ready enemy at the investigator's location dealing `damage` / 0 horror.
@@ -39,7 +35,6 @@ fn attack_state(
     assets: Vec<(&str, CardInstanceId)>,
     enemy: Enemy,
 ) -> (game_core::GameState, InvestigatorId) {
-    install_registry();
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let mut inv = test_investigator(1);

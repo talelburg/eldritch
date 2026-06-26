@@ -6,8 +6,6 @@
 //! intellect to investigate tests but not to other intellect tests."
 //! This file closes that loop with the real card and real registry.
 
-use std::sync::Once;
-
 use game_core::engine::enumerate::legal_actions;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -22,11 +20,9 @@ use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, Tur
 
 const MAGNIFYING_GLASS: &str = "01030";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Build a state with Magnifying Glass in hand, the controller in the
@@ -36,8 +32,6 @@ fn install_real_registry() {
 /// cleanly cross / miss difficulty 4 depending on whether the bonus
 /// applies.
 fn state_with_mg_in_hand() -> (game_core::GameState, InvestigatorId, LocationId) {
-    install_real_registry();
-
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let mut inv = test_investigator(1);

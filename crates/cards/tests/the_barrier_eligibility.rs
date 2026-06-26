@@ -9,9 +9,13 @@ use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Location
 use game_core::test_support::{test_investigator, test_location};
 use game_core::EvalContext;
 
+#[ctor::ctor]
+fn install() {
+    let _ = card_registry::install(cards::REGISTRY);
+}
+
 #[test]
 fn barrier_advance_eligibility_gates_on_hallway_affordability() {
-    let _ = card_registry::install(cards::REGISTRY);
     let reg = card_registry::current().expect("registry installed");
     let pred = (reg.native_eligibility_for)("01109:can_advance")
         .expect("01109:can_advance is registered by The Barrier");

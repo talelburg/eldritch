@@ -29,8 +29,6 @@
 //! own process so `install(cards::REGISTRY)` does not collide with the
 //! other integration test binaries.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, FastActorScope, FastWindowKind, InvestigatorId,
@@ -41,11 +39,9 @@ use game_core::test_support::{
 };
 use game_core::TurnAction;
 
+#[ctor::ctor]
 fn install_cards_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 #[test]
@@ -56,7 +52,6 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
     // because the window permits and the owner IS the active
     // investigator. This is the rules-correct positive case for
     // Fast assets.
-    install_cards_registry();
     let mut a = test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
@@ -93,7 +88,6 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
     // owner (i.e. on the owner's turn — the active investigator). A
     // non-owner attempting the Fast play remains illegal even if an
     // open window's `fast_actors` scope permits the actor.
-    install_cards_registry();
     let a = test_investigator(1);
     let mut b = test_investigator(2);
     b.resources = 5;
@@ -133,7 +127,6 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
 
 #[test]
 fn non_fast_asset_still_rejected_when_not_active_investigator() {
-    install_cards_registry();
     let a = test_investigator(1);
     let mut b = test_investigator(2);
     b.resources = 5;
@@ -174,7 +167,6 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
 
 #[test]
 fn fast_asset_still_playable_by_active_investigator_during_investigation() {
-    install_cards_registry();
     let mut a = test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
@@ -199,7 +191,6 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
 
 #[test]
 fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
-    install_cards_registry();
     let a = test_investigator(1);
     let mut b = test_investigator(2);
     b.resources = 5; // Hyperawareness's [fast] cost is 1 resource per use.
@@ -238,7 +229,6 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
 
 #[test]
 fn fast_activated_ability_rejected_when_no_permissive_window() {
-    install_cards_registry();
     let a = test_investigator(1);
     let mut b = test_investigator(2);
     b.resources = 5;
@@ -279,7 +269,6 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     // so even a permissive window in the Mythos phase is rejected — per the FAQ,
     // "'your turn' is within the Investigation phase." (Was previously, wrongly,
     // accepted while the clause was unenforced.)
-    install_cards_registry();
     let loc = LocationId(101);
     let mut a = test_investigator(1);
     a.resources = 5;
@@ -325,7 +314,6 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
     // cannot play it — it is not inv 2's turn. The `play_only_during_turn`
     // gate (#322) requires the *active* investigator, so a non-owner is
     // rejected even in a permissive window.
-    install_cards_registry();
     let a = test_investigator(1);
     let loc = LocationId(101);
     let mut b = test_investigator(2);
@@ -367,7 +355,6 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     //
     // Magnifying Glass (01030) text: "Fast.\nYou get +1 [intellect]
     // while investigating."
-    install_cards_registry();
     let mut a = test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast asset.

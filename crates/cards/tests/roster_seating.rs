@@ -3,8 +3,6 @@
 //! it can install `cards::REGISTRY` in its own process (per CLAUDE.md test
 //! layering).
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::EngineOutcome;
 use game_core::seat_and_open;
@@ -14,16 +12,13 @@ use game_core::test_support::GameStateBuilder;
 /// Install the real card registry exactly once for this integration-test
 /// binary. Idempotent at the `OnceLock` level; the `Once` wrapper avoids
 /// the futile second `install` call.
+#[ctor::ctor]
 fn install_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 #[test]
 fn seats_roland_with_corpus_stats_and_payload_deck() {
-    install_registry();
     let deck = vec![CardCode::new("01030"), CardCode::new("01030")];
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
@@ -64,7 +59,6 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
 
 #[test]
 fn rejects_non_investigator_code() {
-    install_registry();
     // 01030 (Magnifying Glass) is an Asset, not an investigator.
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01030"),
@@ -79,7 +73,6 @@ fn rejects_non_investigator_code() {
 
 #[test]
 fn seated_investigator_carries_its_card_code() {
-    install_registry();
     let roster = vec![RosterEntry {
         investigator: CardCode::new("01001"),
         deck: vec![],
@@ -96,7 +89,6 @@ fn seated_investigator_carries_its_card_code() {
 
 #[test]
 fn rejects_unknown_code() {
-    install_registry();
     let roster = vec![RosterEntry {
         investigator: CardCode::new("99999"),
         deck: vec![],

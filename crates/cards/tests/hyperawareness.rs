@@ -9,8 +9,6 @@
 //! - The skill-test resolution path that sums pending modifiers
 //!   alongside constants and the base skill (#92).
 
-use std::sync::Once;
-
 use game_core::assert_event;
 use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::event::Event;
@@ -28,11 +26,9 @@ const HYPERAWARENESS: &str = "01034";
 const INTELLECT_ABILITY: u8 = 0;
 const AGILITY_ABILITY: u8 = 1;
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Build a state with one Hyperawareness already in play (instance
@@ -41,8 +37,6 @@ fn install_real_registry() {
 /// play (rather than playing from hand) because the activation flow
 /// is what this file tests; `PlayCard` is exercised elsewhere.
 fn state_with_hyperawareness() -> (game_core::GameState, InvestigatorId, CardInstanceId) {
-    install_real_registry();
-
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
     let mut inv = test_investigator(1);

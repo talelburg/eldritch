@@ -7,8 +7,6 @@
 //! After #426 the damage is one `Deal { amount: N }` not N×`Deal { amount: 1 }`;
 //! the per-point prompt loop still fires via the `DamageAssignment` frame.
 
-use std::sync::Once;
-
 use game_core::action::EngineRecord;
 use game_core::engine::OptionId;
 use game_core::state::{
@@ -19,11 +17,9 @@ use game_core::test_support::{
 };
 use game_core::{Action, EngineOutcome};
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Investigator 1 at a location, controlling `soaker` (instance 1), with
@@ -75,7 +71,6 @@ fn dog_damage(result: &game_core::ApplyResult) -> Option<u8> {
 
 #[test]
 fn grasping_hands_distributes_both_points_onto_guard_dog() {
-    install_registry();
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage, dealt
     // as a single Deal { amount: 2 }. Two per-point prompts still fire via the
     // DamageAssignment frame. The player assigns both to Guard Dog
@@ -101,7 +96,6 @@ fn grasping_hands_distributes_both_points_onto_guard_dog() {
 
 #[test]
 fn grasping_hands_player_splits_across_soaker_and_self() {
-    install_registry();
     // Same 2-damage fail, but the player soaks one point onto Guard Dog (option
     // 1) and takes the other themselves (option 0). Under the old auto-soak (K5a)
     // both would land on the dog; the split proves the distribution is the
@@ -122,7 +116,6 @@ fn grasping_hands_player_splits_across_soaker_and_self() {
 
 #[test]
 fn rotting_remains_horror_distributes_onto_beat_cop() {
-    install_registry();
     // Willpower 3 + Numeric(-1) = 2 vs difficulty 3 → fail by 1 → 1 horror. Beat
     // Cop (sanity 2) is eligible, so the point is contested → one prompt; the
     // player assigns it to Beat Cop (option 1).

@@ -6,8 +6,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -26,11 +24,9 @@ const A: LocationId = LocationId(1);
 const B: LocationId = LocationId(2);
 const ATT_INST: CardInstanceId = CardInstanceId(900);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// A ready, unengaged hunter (code `code`) at location `at`, with the printed
@@ -58,7 +54,6 @@ fn hunter(id: u32, code: &str, at: LocationId) -> Enemy {
 
 #[test]
 fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
-    install();
     let mut inv = test_investigator(1);
     inv.current_location = Some(A);
     inv.hand = vec![CardCode::new(BARRICADE)];
@@ -100,7 +95,6 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
 /// Linear map A—B with a Barricade attached at B; the investigator (prey) at B;
 /// a hunter at A. Driven via `EndTurn` into the Enemy phase.
 fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry; TEST_INV is only in the game-core test
@@ -159,7 +153,6 @@ fn elite_hunter_enters_the_barricaded_location() {
 
 #[test]
 fn leaving_the_barricaded_location_discards_barricade() {
-    install();
     let mut inv = test_investigator(1);
     inv.current_location = Some(A);
     let mut a = test_location(1, "A");

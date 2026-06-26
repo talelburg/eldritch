@@ -9,8 +9,6 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
@@ -29,18 +27,15 @@ const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 const MACHETE_INST: CardInstanceId = CardInstanceId(0);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Board with Machete in play, `enemy_count` enemies engaged with the actor.
 ///
 /// `combat 4 vs fight 3` with a `Numeric(0)` bag → always succeeds.
 fn board(enemy_count: u32) -> game_core::GameState {
-    install();
     let mut inv = test_investigator(1);
     inv.skills.combat = 4;
     let machete = CardInPlay::enter_play(CardCode::new(MACHETE), MACHETE_INST);

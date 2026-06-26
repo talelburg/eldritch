@@ -2,8 +2,6 @@
 //! ability. Mock registry in its own integration binary (own process +
 //! `OnceLock<CardRegistry>`), mirroring `weapon_fight.rs`.
 
-use std::sync::OnceLock;
-
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use game_core::dsl::{
     activated, deal_damage_to_enemy, gain_resources, Ability, Cost, EnemyTarget, InvestigatorTarget,
@@ -18,6 +16,7 @@ use game_core::test_support::{
     GameStateBuilder,
 };
 use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use std::sync::OnceLock;
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
@@ -138,21 +137,18 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+#[ctor::ctor]
 fn install_mock_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-        });
+    let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 
 #[test]
 fn discard_self_removes_source_from_play_and_runs_the_effect() {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
     let mut inv = test_investigator(1);
@@ -201,7 +197,6 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
 }
 
 fn board_with_cop(enemy_at_loc: bool) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
     let mut inv = test_investigator(1);
@@ -244,7 +239,6 @@ fn discard_self_deal_damage_rejects_with_no_enemy_and_keeps_source_in_play() {
 
 #[test]
 fn discard_self_combined_with_exhaust_rejects_before_paying() {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
     let mut inv = test_investigator(1);
@@ -304,7 +298,6 @@ fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
 
 /// Build a board with a 1-supply `code` asset in play (instance 0, seeded pool).
 fn board_with_kit(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
     let mut inv = test_investigator(1);

@@ -6,8 +6,6 @@
 //! shapes mirror the C5a synthetic test (`scenarios::tests::cover_up_interrupt`),
 //! now driven through the real card.
 
-use std::sync::Once;
-
 use game_core::action::EngineRecord;
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{Resolution, ScenarioId};
@@ -24,11 +22,9 @@ const COVER_UP: &str = "01007";
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// A Cover-Up instance carrying `clues`, pre-placed in the threat area.
@@ -42,7 +38,6 @@ fn cover_up(clues: u8) -> CardInPlay {
 
 #[test]
 fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
-    install();
     let mut state = GameStateBuilder::new()
         .with_investigator_at(test_investigator(1), LOC)
         .with_location(test_location(10, "Study"))
@@ -113,7 +108,6 @@ fn investigate_to_interrupt(state: GameState) -> (GameState, EngineOutcome) {
 
 #[test]
 fn playing_cover_up_discards_instead_of_discovering() {
-    install();
     let (state, outcome) = investigate_to_interrupt(investigate_state(3));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     // Play Cover Up (the single offered candidate) in the before-discover
@@ -137,7 +131,6 @@ fn playing_cover_up_discards_instead_of_discovering() {
 
 #[test]
 fn skip_discovers_normally() {
-    install();
     let (state, outcome) = investigate_to_interrupt(investigate_state(3));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     let r = apply(
@@ -183,7 +176,6 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
 
 #[test]
 fn game_end_emits_mental_trauma_when_cover_up_has_clues() {
-    install();
     let r = take_turn_action(
         resolving_state(3),
         &TurnAction::AdvanceAct { investigator: INV },
@@ -208,7 +200,6 @@ fn game_end_emits_mental_trauma_when_cover_up_has_clues() {
 
 #[test]
 fn game_end_emits_no_trauma_when_cover_up_empty() {
-    install();
     let r = take_turn_action(
         resolving_state(0),
         &TurnAction::AdvanceAct { investigator: INV },

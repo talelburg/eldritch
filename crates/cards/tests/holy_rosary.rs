@@ -8,8 +8,6 @@
 //! modifier query (#92). Setup uses `PlayCard` to land the rosary in
 //! `cards_in_play` so the action log mirrors a real session.
 
-use std::sync::Once;
-
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -22,11 +20,9 @@ use game_core::{assert_event, TurnAction};
 
 const HOLY_ROSARY: &str = "01059";
 
+#[ctor::ctor]
 fn install_real_registry() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Build a state where the controller has Holy Rosary in hand, is the
@@ -35,8 +31,6 @@ fn install_real_registry() {
 /// trivially `skill + 0 vs. difficulty`), and starts with 3 willpower
 /// + 3 intellect from the fixture defaults.
 fn state_with_rosary_in_hand() -> (game_core::GameState, InvestigatorId) {
-    install_real_registry();
-
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];

@@ -7,8 +7,6 @@
 //! install a mock registry without colliding with other `tests/*.rs`. Mirrors
 //! `on_skill_test_resolution.rs`.
 
-use std::sync::OnceLock;
-
 use game_core::assert_event;
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
@@ -52,22 +50,19 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     })
 }
 
+#[ctor::ctor]
 fn install_mock_registry() {
-    static INSTALL: OnceLock<()> = OnceLock::new();
-    INSTALL.get_or_init(|| {
-        let _ = game_core::card_registry::install(CardRegistry {
-            metadata_for: mock_metadata_for,
-            abilities_for: mock_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-        });
+    let _ = game_core::card_registry::install(CardRegistry {
+        metadata_for: mock_metadata_for,
+        abilities_for: mock_abilities_for,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 
 /// Build a state with the investigator at `LocationId(10)`, a single-`Numeric(0)`
 /// chaos bag, and the given threat-area card codes in play.
 fn state_with_threat_area(threat: &[&str]) -> (game_core::GameState, InvestigatorId) {
-    install_mock_registry();
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.current_location = Some(LocationId(10));
