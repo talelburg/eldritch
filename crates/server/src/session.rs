@@ -72,7 +72,11 @@ impl GameSession {
             .and_then(|registry| (registry.module_for)(&scenario_id))
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
 
-        let setup = (module.setup)();
+        let mut setup = (module.setup)();
+        // Human play surfaces skill-test results with a Confirm-to-dismiss step
+        // (#478); the engine gates that pause on this flag (default off for tests
+        // and non-interactive consumers). The flag persists through seating.
+        setup.interactive_acknowledge = true;
         let result = game_core::seat_and_open(setup, &roster);
         let outcome = match result.outcome {
             EngineOutcome::Rejected { reason } => {

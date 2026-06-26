@@ -286,3 +286,16 @@ async fn load_replays_log_to_reproduce_live_state() {
     let missing = GameSession::load(pool, &GameId::new("nope")).await.unwrap();
     assert!(missing.is_none());
 }
+
+#[tokio::test]
+async fn create_enables_interactive_acknowledge() {
+    install_registry();
+    let pool = memory_pool().await;
+    let session = GameSession::create(pool, "ack", ScenarioId::new(TEST_SCENARIO_ID), roster())
+        .await
+        .expect("create");
+    assert!(
+        session.state.interactive_acknowledge,
+        "human-play sessions pause to acknowledge skill-test results (#478)"
+    );
+}
