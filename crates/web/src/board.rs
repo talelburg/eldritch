@@ -21,6 +21,7 @@ pub fn BoardView() -> impl IntoView {
         ConnStatus::Reconnecting => "reconnecting",
         ConnStatus::Failed => "failed",
         ConnStatus::AwaitingRoster => "awaiting-roster",
+        ConnStatus::VersionMismatch => "version mismatch — restart the server and reload",
     };
     let rejection = move || store.get().last_rejection.unwrap_or_default();
 
