@@ -123,9 +123,15 @@ the now-stable set of input shapes:
   deleted. **#224** folded in: a non-empty roster is mandatory (single seating path),
   and the ~37 `StartScenario` test sites migrated to `seat_and_open` (game-core's own
   tests seat synthetic `TEST_INV` via the test registry, preserving crate layering).
-- **End-to-end browser playthrough** of The Gathering to a resolution — now the sole
-  remaining gate item (the picker + open-turn UI are in place; pairs with #205's
-  richer rendering).
+- **End-to-end browser playthrough** of The Gathering to a resolution — the sole
+  remaining gate item, now **blocked on #205**. The picker → seating → mulligan →
+  investigation → Mythos flow all works in-browser (PR #461), but the playthrough
+  stalls at the first **Mythos encounter draw**: that prompt expects
+  `InputResponse::Confirm`, yet `AwaitingInputView` renders every empty-`options`
+  prompt as the legacy `PickMultiple` "Commit" control (no expected-response
+  discriminator on `InputRequest`), so it rejects. Purely a client-rendering gap —
+  the engine/persistence path is sound. #205 (the `InputKind` discriminator) is the
+  fix; see its issue comment for the root cause + design sketch.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
