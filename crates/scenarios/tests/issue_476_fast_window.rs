@@ -1,9 +1,9 @@
 //! #476 regression: a framework Fast window no longer strands. Real registries,
 //! Roland (01001), Rotting Remains (01163) on the encounter deck, a forced
 //! Cultist bag, and Magnifying Glass (01030, a Fast asset) in hand. After the
-//! Mythos draw + failed willpower test resolve, the InvestigatorTurnBegins Fast
-//! window finds a fast play eligible and surfaces a SKIPPABLE PickSingle (not a
-//! Done-idle strand). Skipping reaches the open turn; picking the option plays
+//! Mythos draw + failed willpower test resolve, the `InvestigatorTurnBegins` Fast
+//! window finds a fast play eligible and surfaces a SKIPPABLE `PickSingle` (not a
+//! `Done`-idle strand). Skipping reaches the open turn; picking the option plays
 //! the asset.
 
 use game_core::action::RosterEntry;
@@ -21,7 +21,7 @@ fn install_registries() {
 
 /// Drive to the post-Mythos-draw fast window: Roland holds Magnifying Glass,
 /// fails the Rotting Remains willpower test (Cultist -1), and the
-/// InvestigatorTurnBegins fast window prompts. Returns the state + outcome there.
+/// `InvestigatorTurnBegins` fast window prompts. Returns the state + outcome there.
 fn to_fast_window() -> (GameState, EngineOutcome) {
     let roster = vec![RosterEntry {
         investigator: CardCode("01001".into()),
