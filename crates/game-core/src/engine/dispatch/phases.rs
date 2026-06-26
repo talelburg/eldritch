@@ -750,13 +750,6 @@ fn advance_phase_entry(
     }
 }
 
-/// Run the top `*Phase` anchor's continuation after one of its framework
-/// windows closed (slice 1a, #393), or advance it from `Entry` (slice 1b, via
-/// [`advance_phase_entry`]). The window has already been popped by the close
-/// path, so the anchor is now the top frame; its `resume` selects the relocated
-/// body. Suspension-agnostic: a body that itself suspends returns
-/// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
-/// `&mut cx`.
 /// Mythos step 1.4 (#482): re-park the anchor at `AfterDraws`, then seed + open
 /// the encounter draws. Reached from `anchor_on_child_pop`'s `MythosPhase{Draws}`
 /// arm — i.e. once any `AdvanceReverse` frame (the agenda's on-advance reverse +
@@ -792,6 +785,13 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     super::encounter::prompt_encounter_draw(cx)
 }
 
+/// Run the top `*Phase` anchor's continuation after one of its framework
+/// windows closed (slice 1a, #393), or advance it from `Entry` (slice 1b, via
+/// [`advance_phase_entry`]). The window has already been popped by the close
+/// path, so the anchor is now the top frame; its `resume` selects the relocated
+/// body. Suspension-agnostic: a body that itself suspends returns
+/// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
+/// `&mut cx`.
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
     use crate::state::{
         Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,

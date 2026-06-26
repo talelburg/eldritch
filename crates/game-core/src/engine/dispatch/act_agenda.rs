@@ -83,16 +83,15 @@ pub fn place_doom_on_current_agenda(cx: &mut Cx) {
     check_doom_threshold(cx);
 }
 
-/// Advance the agenda deck one step: emit [`Event::AgendaAdvanced`],
-/// reset doom (Rules Reference p.24: "remove all doom from play"), and
-/// move the cursor to the next agenda.
+/// Advance the agenda deck one step (#482): push an
+/// [`AdvanceReverse`](crate::state::Continuation::AdvanceReverse) frame and let
+/// the `drive` loop run it — emit [`Event::AgendaAdvanced`], optionally pause for
+/// the gated acknowledge, fire the leaving agenda's Forced reverse (which may
+/// suspend), then reset doom + move the cursor at `Finalize` (RR order; the
+/// past-the-end terminal guard lives in `advance_reverse::finalize`).
 ///
-/// Only ever called for a *non-terminal* agenda (one whose `resolution`
-/// is `None`). A non-terminal agenda must have a successor; reaching the
-/// end of the deck without a resolution firing is malformed scenario
-/// data (the final agenda must carry a `(→R#)` resolution point), so the
-/// missing-successor case is `unreachable!()` — mirrors the surge-chain
-/// malformation guards from #69.
+/// Only ever called for a *non-terminal* agenda (`resolution` is `None`); a
+/// terminal agenda latches its resolution via `request_resolution` instead.
 pub(super) fn advance_agenda(cx: &mut Cx) {
     let from = cx.state.agenda_index;
     let leaving_code = cx.state.agenda_deck[from].code.clone();
@@ -292,12 +291,13 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
     EngineOutcome::Done
 }
 
-/// Advance the act deck one step: emit [`Event::ActAdvanced`], fire the
-/// leaving act's Forced on-advance reverse effect via the registry, then
-/// move the cursor. Only called for a non-terminal act; the
-/// missing-successor case is `unreachable!()` (a terminal act must carry a
-/// resolution point — malformed scenario data otherwise). Mirrors
-/// [`advance_agenda`].
+/// Advance the act deck one step (#482): push an
+/// [`AdvanceReverse`](crate::state::Continuation::AdvanceReverse) frame for the
+/// `drive` loop to run — emit [`Event::ActAdvanced`], optionally pause for the
+/// gated acknowledge, fire the leaving act's Forced reverse (which may suspend),
+/// then move the cursor at `Finalize` (RR order; the past-the-end terminal guard
+/// lives in `advance_reverse::finalize`). Mirrors [`advance_agenda`]. Only called
+/// for a non-terminal act.
 ///
 /// Invariant: the leaving act's on-advance Forced effect must not itself
 /// re-advance the act (no in-scope card does; a re-advance from that
