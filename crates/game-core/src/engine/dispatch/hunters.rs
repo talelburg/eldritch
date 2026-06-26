@@ -719,6 +719,7 @@ mod measure_value_tests {
             metadata_for: no_metadata,
             abilities_for: fake_abilities,
             native_effect_for: |_| None,
+            native_eligibility_for: |_| None,
         }
     }
 

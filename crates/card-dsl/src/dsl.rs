@@ -558,6 +558,13 @@ pub struct Ability {
     /// serde treats a missing `Option` field as `None`, the genuine
     /// absent-by-design case.
     pub usage_limit: Option<UsageLimit>,
+    /// Native eligibility-predicate tag (resolved via the registry's
+    /// `native_eligibility_for`). When set, the reaction/fast scan suppresses
+    /// this ability unless the predicate holds (RR p.2: an ability can't
+    /// initiate if its effect won't change game state). `None` for the common
+    /// no-gate case; stays implicitly optional on the wire (#453 per-field
+    /// carve-out, like `usage_limit`).
+    pub eligibility: Option<String>,
 }
 
 impl Ability {
@@ -569,6 +576,14 @@ impl Ability {
     #[must_use]
     pub fn with_usage_limit(mut self, limit: UsageLimit) -> Self {
         self.usage_limit = Some(limit);
+        self
+    }
+
+    /// Attach a native eligibility-predicate tag (see [`Self::eligibility`]).
+    /// Builder-style sugar, chainable off the `on_event(...)` constructors.
+    #[must_use]
+    pub fn with_eligibility(mut self, tag: impl Into<String>) -> Self {
+        self.eligibility = Some(tag.into());
         self
     }
 }
@@ -1208,6 +1223,7 @@ pub fn constant(effect: Effect) -> Ability {
         costs: Vec::new(),
         effect,
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1222,6 +1238,7 @@ pub fn on_play(effect: Effect) -> Ability {
         costs: Vec::new(),
         effect,
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1234,6 +1251,7 @@ pub fn on_commit(effect: Effect) -> Ability {
         costs: Vec::new(),
         effect,
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1248,6 +1266,7 @@ pub fn on_skill_test_resolution(outcome: TestOutcome, effect: Effect) -> Ability
         costs: Vec::new(),
         effect,
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1270,6 +1289,7 @@ pub fn on_event(
         costs: Vec::new(),
         effect,
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1299,6 +1319,7 @@ pub fn revelation(effect: Effect) -> Ability {
         costs: Vec::new(),
         effect,
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1318,6 +1339,7 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
         costs,
         effect,
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1338,6 +1360,7 @@ pub fn elder_sign(modifier: IntExpr) -> Ability {
         costs: Vec::new(),
         effect: Effect::Seq(Vec::new()),
         usage_limit: None,
+        eligibility: None,
     }
 }
 
@@ -1593,6 +1616,15 @@ pub fn skill_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn with_eligibility_sets_the_tag_and_default_is_none() {
+        let bare = reaction_on_event(EventPattern::RoundEnded, EventTiming::When, Effect::Cancel);
+        assert_eq!(bare.eligibility, None);
+        let gated = reaction_on_event(EventPattern::RoundEnded, EventTiming::When, Effect::Cancel)
+            .with_eligibility("01109:can_advance");
+        assert_eq!(gated.eligibility.as_deref(), Some("01109:can_advance"));
+    }
 
     /// Holy Rosary's "while in play, +1 willpower" ability.
     #[test]

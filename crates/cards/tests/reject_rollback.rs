@@ -72,6 +72,7 @@ fn install_probe_registry() {
         metadata_for: probe_metadata,
         abilities_for: probe_abilities,
         native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
     });
 }
 

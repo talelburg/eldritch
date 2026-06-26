@@ -97,6 +97,7 @@ fn install_mock_registry() {
             metadata_for: mock_metadata_for,
             abilities_for: mock_abilities_for,
             native_effect_for: |_| None,
+            native_eligibility_for: |_| None,
         });
     });
 }

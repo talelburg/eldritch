@@ -4143,6 +4143,7 @@ mod tests {
             metadata_for: mock_registry,
             abilities_for: fake_abilities_for,
             native_effect_for: |_| None,
+            native_eligibility_for: |_| None,
         }
     }
 
@@ -4888,6 +4889,7 @@ mod tests {
             metadata_for,
             abilities_for,
             native_effect_for: |_| None,
+            native_eligibility_for: |_| None,
         };
 
         let inv_id = InvestigatorId(1);

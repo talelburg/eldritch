@@ -372,6 +372,7 @@ pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for,
     abilities_for,
     native_effect_for,
+    native_eligibility_for: |_| None,
 };
 
 #[cfg(test)]
