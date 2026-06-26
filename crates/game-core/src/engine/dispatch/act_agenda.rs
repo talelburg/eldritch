@@ -96,30 +96,20 @@ pub fn place_doom_on_current_agenda(cx: &mut Cx) {
 pub(super) fn advance_agenda(cx: &mut Cx) {
     let from = cx.state.agenda_index;
     let leaving_code = cx.state.agenda_deck[from].code.clone();
-    cx.events.push(crate::event::Event::AgendaAdvanced { from });
-    // Resolve the leaving agenda's Forced on-advance reverse effect before
-    // the next agenda becomes current — the mirror of `advance_act`'s
-    // `ActAdvanced` firing (`advance_agenda` fired nothing before #281).
-    // The Gathering's reverses (01105 lead discard/horror, 01106
-    // dig-until-Ghoul) resolve here. `()` return can't propagate a
-    // 2+-trigger reject; `debug_assert!` guards it (mirror of `advance_act`).
-    let forced = super::emit::emit_event(
-        cx,
-        &super::emit::TimingEvent::AgendaAdvanced { code: leaving_code },
-    );
-    debug_assert!(
-        matches!(forced, EngineOutcome::Done),
-        "advance_agenda on-advance forced did not resolve to Done: {forced:?} (2+ needs #213)"
-    );
-    cx.state.agenda_doom = 0;
-    cx.state.agenda_index += 1;
-    if cx.state.agenda_index >= cx.state.agenda_deck.len() {
-        unreachable!(
-            "advance_agenda: agenda {from} advanced past the end of the deck without a \
-             resolution firing — a terminal agenda must carry a resolution point; this is \
-             malformed scenario data"
-        );
-    }
+    // Defer to the resumable AdvanceReverse sub-process (#482): it pushes the
+    // observable event, optionally pauses for the gated acknowledge, fires the
+    // leaving agenda's Forced reverse (which may suspend — 01105's ChooseOne),
+    // then bumps the cursor at Finalize (RR order — after the reverse resolves).
+    // The drive loop owns it from here; the past-the-end terminal guard now lives
+    // in `advance_reverse::finalize`.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::AdvanceReverse {
+            deck: crate::state::AdvanceDeck::Agenda,
+            from,
+            leaving_code,
+            step: crate::state::AdvanceStep::AwaitAck,
+        });
 }
 
 /// The investigators who may contribute clues to advance the act, in the
@@ -315,28 +305,19 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
 pub(crate) fn advance_act(cx: &mut Cx) {
     let from = cx.state.act_index;
     let leaving_code = cx.state.act_deck[from].code.clone();
-    cx.events.push(crate::event::Event::ActAdvanced { from });
-    // Resolve the leaving act's Forced on-advance reverse effect (the
-    // board world-build) before the next act becomes current — Rules
-    // Reference p.3: flip the card, follow the reverse, then the next
-    // card becomes current. `()` return can't propagate a 2+-trigger
-    // reject; `debug_assert!` guards it (mirror of `upkeep_phase_end`).
-    let forced = super::emit::emit_event(
-        cx,
-        &super::emit::TimingEvent::ActAdvanced { code: leaving_code },
-    );
-    debug_assert!(
-        matches!(forced, EngineOutcome::Done),
-        "advance_act on-advance forced did not resolve to Done: {forced:?} (2+ needs #213)"
-    );
-    cx.state.act_index += 1;
-    if cx.state.act_index >= cx.state.act_deck.len() {
-        unreachable!(
-            "advance_act: act {from} advanced past the end of the deck without a resolution \
-             firing — a terminal act must carry a resolution point; this is malformed \
-             scenario data"
-        );
-    }
+    // Mirror of advance_agenda (#482): defer to the resumable AdvanceReverse
+    // sub-process (observable event → gated acknowledge → leaving act's Forced
+    // reverse, which may suspend → bump the cursor at Finalize, RR order). The
+    // drive loop owns it; the past-the-end terminal guard lives in
+    // `advance_reverse::finalize`.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::AdvanceReverse {
+            deck: crate::state::AdvanceDeck::Act,
+            from,
+            leaving_code,
+            step: crate::state::AdvanceStep::AwaitAck,
+        });
 }
 
 /// Set the scenario-resolution latch. First-writer-wins: a resolution
@@ -405,6 +386,15 @@ mod doom_agenda_tests {
             state: &mut state,
             events: &mut events,
         });
+        // The advance is deferred to an AdvanceReverse frame (#482); drive it
+        // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
+        crate::engine::dispatch::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
         // Doom reached threshold (1) → agenda advanced + doom reset.
         assert_eq!(state.agenda_index, 1, "agenda advanced at threshold");
         assert_eq!(state.agenda_doom, 0, "doom reset on advance");
@@ -435,6 +425,14 @@ mod doom_agenda_tests {
             state: &mut state,
             events: &mut events,
         });
+        // The advance is deferred to an AdvanceReverse frame (#482); drive it.
+        crate::engine::dispatch::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
         assert_eq!(state.agenda_index, 1);
         assert_eq!(state.agenda_doom, 0, "doom resets on advance");
         assert!(
