@@ -1205,6 +1205,18 @@ pub enum SkillTestStep {
     /// off [`InFlightSkillTest::resolved`]; pre-advances to
     /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
     DetermineOutcome,
+    /// Cosmetic acknowledgment pause (#478). The result events
+    /// (`ChaosTokenRevealed`, `SkillTestSucceeded`/`Failed`) are already emitted
+    /// at [`DetermineOutcome`](Self::DetermineOutcome); when
+    /// [`GameState::interactive_acknowledge`](crate::state::GameState::interactive_acknowledge)
+    /// is set, `advance` suspends here with an `AwaitingInput { InputKind::Confirm }`
+    /// so an interactive host can show the player the result before the ST.7
+    /// consequence resolves. The cursor stays here across the suspension;
+    /// `acknowledge_outcome` advances it to [`FireOnCommit`](Self::FireOnCommit)
+    /// on the Confirm resume (mirroring the `AwaitingCommit` / `finish_skill_test`
+    /// handshake). When the flag is off, `advance` advances straight to
+    /// `FireOnCommit` without pausing.
+    AcknowledgeOutcome,
     /// RR ST.7 head — push the committed cards' [`Trigger::OnCommit`] effects
     /// (Vicious Blow 01025's `BoostAttackDamage`). These are conditional on
     /// success ("If this skill test is successful during an attack…") so they

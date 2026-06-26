@@ -257,6 +257,35 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
     EngineOutcome::Done
 }
 
+/// Resume the cosmetic acknowledgment pause (#478): the player has Confirmed the
+/// skill-test result. Validate-first — the in-flight test's cursor must be at
+/// [`SkillTestStep::AcknowledgeOutcome`] — then advance it to
+/// [`SkillTestStep::FireOnCommit`] and return [`EngineOutcome::Done`] so the
+/// caller's `drive` loop runs the ST.7 consequences. Mirrors
+/// [`finish_skill_test`]'s park-and-return-`Done` shape; on a bad cursor or no
+/// in-flight test it rejects with state and events untouched.
+pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
+    let Some(t) = cx.state.current_skill_test() else {
+        return EngineOutcome::Rejected {
+            reason: "skill-test acknowledge: no in-flight skill test to resume".into(),
+        };
+    };
+    if !matches!(t.continuation, SkillTestStep::AcknowledgeOutcome) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "skill-test acknowledge: not at the acknowledge step (continuation {:?})",
+                t.continuation,
+            )
+            .into(),
+        };
+    }
+    cx.state
+        .current_skill_test_mut()
+        .expect("the SkillTest frame was present immediately above")
+        .continuation = SkillTestStep::FireOnCommit;
+    EngineOutcome::Done
+}
+
 /// Run the computation half of a skill test (RR ST.3–ST.6): reveal the chaos
 /// token (ST.3), apply the symbol's unconditional `immediate` side-effects
 /// (ST.4) as pushed [`Effect::Deal`](crate::dsl::Effect::Deal), and compute the
@@ -450,7 +479,7 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// forced/reaction scans (and an empty candidate set) decide whether any window
 /// actually opens, so a test no card listens to costs nothing. Returns the
 /// `emit_event` outcome so the caller yields if a 2+ forced run suspends.
-/// Pre-advances the cursor to [`FireOnCommit`](SkillTestStep::FireOnCommit)
+/// Pre-advances the cursor to [`AcknowledgeOutcome`](SkillTestStep::AcknowledgeOutcome)
 /// **before** the emit, so a suspending reaction window resumes past this step.
 fn determine_outcome_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let (skill, kind) = {
@@ -488,7 +517,7 @@ fn determine_outcome_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
-        .continuation = SkillTestStep::FireOnCommit;
+        .continuation = SkillTestStep::AcknowledgeOutcome;
     let outcome = if succeeded {
         crate::dsl::TestOutcome::Success
     } else {
@@ -739,6 +768,26 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome;
                 }
+            }
+            SkillTestStep::AcknowledgeOutcome => {
+                // RR-neutral cosmetic pause (#478). The result events were emitted
+                // at DetermineOutcome; if interactive acknowledgment is enabled,
+                // suspend with a Confirm so the player registers the result before
+                // the ST.7 consequence resolves. The cursor stays at
+                // AcknowledgeOutcome across the suspension — `acknowledge_outcome`
+                // advances it on the Confirm resume (the AwaitingCommit /
+                // finish_skill_test handshake). When off, advance straight to
+                // FireOnCommit so non-interactive drives are unchanged.
+                if cx.state.interactive_acknowledge {
+                    return EngineOutcome::AwaitingInput {
+                        request: InputRequest::confirm("Acknowledge the skill-test result."),
+                        resume_token: ResumeToken(0),
+                    };
+                }
+                cx.state
+                    .current_skill_test_mut()
+                    .expect("the SkillTest frame must persist across driver steps")
+                    .continuation = SkillTestStep::FireOnCommit;
             }
             SkillTestStep::FireOnCommit => {
                 // RR ST.7 head. Pre-advances the cursor to ApplyFollowUp, then
@@ -1688,6 +1737,128 @@ mod tests {
                 .any(|c| matches!(c, Continuation::SkillTest(_))),
             "the SkillTest frame was torn down",
         );
+    }
+
+    /// Flag on: a skill test pauses at the acknowledge step with a `Confirm`
+    /// prompt — after the result events are emitted, before teardown — and a
+    /// Confirm drives it to completion (#478).
+    #[test]
+    fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
+        use crate::state::ChaosToken;
+        use crate::InputKind;
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        state.interactive_acknowledge = true;
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            None,
+            None,
+            None,
+            0,
+        );
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "commit prompt");
+
+        // Commit nothing -> resolution runs, then suspends at the acknowledge step.
+        let out = finish_skill_test(&mut cx, &[]);
+        let out = super::super::drive(&mut cx, out);
+        let EngineOutcome::AwaitingInput { request, .. } = &out else {
+            panic!("expected the acknowledge Confirm prompt, got {out:?}");
+        };
+        assert_eq!(request.kind, InputKind::Confirm, "acknowledge is a Confirm prompt");
+        // The result is already logged when the player is asked to acknowledge.
+        // Read through `cx.events` here: `cx` is still borrowed mutably for the
+        // Confirm resume below, so the outer `events` binding is unavailable.
+        assert!(
+            cx.events.iter().any(|e| matches!(e, Event::ChaosTokenRevealed { .. })),
+            "token revealed before the ack"
+        );
+        assert!(
+            cx.events.iter().any(|e| matches!(e, Event::SkillTestSucceeded { .. })),
+            "outcome logged before the ack"
+        );
+        assert!(
+            !cx.events.iter().any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            "teardown waits on the acknowledgment"
+        );
+
+        // Confirm -> drive into teardown.
+        let out = acknowledge_outcome(&mut cx);
+        let out = super::super::drive(&mut cx, out);
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(
+            events.iter().any(|e| matches!(e, Event::SkillTestEnded { .. })),
+            "after Confirm the test resolved to the end: {events:?}"
+        );
+    }
+
+    /// Flag off (default): no acknowledge pause — the test resolves straight
+    /// through, exactly as before #478 (guards against test churn).
+    #[test]
+    fn no_acknowledge_pause_when_flag_off() {
+        use crate::state::ChaosToken;
+
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(inv)
+            .build();
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        let out = start_skill_test(
+            &mut cx,
+            inv,
+            SkillKind::Willpower,
+            SkillTestKind::Plain,
+            2,
+            SkillTestFollowUp::None,
+            None,
+            None,
+            None,
+            0,
+        );
+        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "commit prompt");
+        let out = finish_skill_test(&mut cx, &[]);
+        let out = super::super::drive(&mut cx, out);
+        assert_eq!(out, EngineOutcome::Done, "no acknowledge pause when the flag is off");
+        assert!(events.iter().any(|e| matches!(e, Event::SkillTestEnded { .. })));
+    }
+
+    /// `acknowledge_outcome` rejects (state untouched) when there is no in-flight
+    /// test to acknowledge.
+    #[test]
+    fn acknowledge_outcome_rejects_without_in_flight_test() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = acknowledge_outcome(&mut cx);
+        assert!(matches!(out, EngineOutcome::Rejected { .. }), "got {out:?}");
+        assert!(events.is_empty(), "rejection emits no events");
     }
 
     /// The commit hop parks the resolution for the loop rather than driving it
