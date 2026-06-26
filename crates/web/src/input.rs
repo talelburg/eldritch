@@ -201,7 +201,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                         <section class="awaiting-input">
                             <p class="prompt">{request.prompt}</p>
                             <ul class="commit-hand">{cards}</ul>
-                            <button class="commit" on:click=on_commit>"Commit"</button>
+                            <button class="commit" on:click=on_commit>"Confirm"</button>
                             {skip_button()}
                         </section>
                     }
@@ -224,10 +224,12 @@ pub fn AwaitingInputView() -> impl IntoView {
 /// The prompted investigator's hand as card-code strings (empty when no
 /// investigator is being prompted).
 ///
-/// Falls back to the setup mulligan's prompted investigator
-/// ([`GameState::current_mulligan`]) when there is no active investigator:
-/// during the setup mulligan loop `active_investigator` is not yet set, but
-/// the `PickMultiple` redraw still targets that investigator's hand (#348).
+/// Falls back to the prompted investigator when there is no active
+/// investigator: during the setup mulligan loop
+/// ([`GameState::current_mulligan`], #348) and during the upkeep hand-size
+/// discard ([`GameState::current_hand_size_discard`], #468) `active_investigator`
+/// is not set, but the `PickMultiple` redraw/discard still targets that
+/// investigator's hand.
 ///
 /// Solo-scope assumption: the skill-test performer equals
 /// `active_investigator`. The authoritative "whose hand commits" is
@@ -237,6 +239,7 @@ pub fn AwaitingInputView() -> impl IntoView {
 fn active_hand(game: &GameState) -> Vec<String> {
     game.active_investigator
         .or_else(|| game.current_mulligan())
+        .or_else(|| game.current_hand_size_discard())
         .and_then(|id| game.investigators.get(&id))
         .map(|inv| inv.hand.iter().map(ToString::to_string).collect())
         .unwrap_or_default()

@@ -285,15 +285,13 @@ pub(super) fn draw_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> 
 /// and [`resume_mulligan`] (re-prompt after a queue pop). `remaining` must be
 /// non-empty; callers ensure this.
 pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
-    let next = remaining[0];
     cx.state
         .continuations
         .push(crate::state::Continuation::Mulligan { remaining });
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_multiple(format!(
-            "Setup mulligan: {next:?} may mulligan; submit InputResponse::PickMultiple with the \
-             hand indices (as option ids) to redraw (an empty selection keeps the hand).",
-        )),
+        request: InputRequest::pick_multiple(
+            "Mulligan: choose cards to redraw (an empty selection keeps your hand).",
+        ),
         resume_token: ResumeToken(0),
     }
 }

@@ -582,7 +582,7 @@ fn fire_on_resolution_step(
 /// `resume_substitution_choice` (which call `advance`), so the commit
 /// `AwaitingInput` propagates up the call stack, halting any enclosing forced run
 /// (the commit `ResolveInput` resumes via `finish_skill_test`).
-fn emit_commit_window(cx: &Cx, investigator: InvestigatorId) -> EngineOutcome {
+fn emit_commit_window(cx: &Cx, _investigator: InvestigatorId) -> EngineOutcome {
     let (skill, difficulty) = {
         let t = cx
             .state
@@ -592,9 +592,8 @@ fn emit_commit_window(cx: &Cx, investigator: InvestigatorId) -> EngineOutcome {
     };
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
-            "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
-             (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
-             hand indices as option ids. Empty selection commits no cards.",
+            "Commit cards to the {skill:?} test (difficulty {difficulty}). \
+             An empty selection commits no cards.",
         )),
         resume_token: ResumeToken(0),
     }

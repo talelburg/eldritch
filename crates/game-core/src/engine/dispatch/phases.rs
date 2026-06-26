@@ -1108,7 +1108,6 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
 ///
 /// `remaining` must be non-empty; callers ensure this before calling.
 fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
-    let next = remaining[0];
     cx.state
         .continuations
         .push(crate::state::Continuation::HandSizeDiscard(
@@ -1116,9 +1115,8 @@ fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> Engine
         ));
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
-            "Upkeep step 4.5: {next:?} has more than {HAND_SIZE_LIMIT} cards in hand; \
-             submit InputResponse::PickMultiple with the hand indices (as option ids) to \
-             discard down to {HAND_SIZE_LIMIT}.",
+            "You have more than {HAND_SIZE_LIMIT} cards in hand — choose cards to discard \
+             down to {HAND_SIZE_LIMIT}.",
         )),
         resume_token: ResumeToken(0),
     }
@@ -2162,6 +2160,32 @@ mod upkeep_phase_tests {
         take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
     };
     use crate::{assert_event, assert_event_sequence, assert_no_event};
+
+    #[test]
+    fn hand_size_discard_prompt_is_player_facing() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let outcome = park_hand_size_discard(
+            &mut crate::engine::Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            vec![InvestigatorId(1)],
+        );
+        let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+            panic!("park_hand_size_discard suspends on the discard prompt");
+        };
+        for forbidden in ["InputResponse", "option ids", "InvestigatorId("] {
+            assert!(
+                !request.prompt.contains(forbidden),
+                "prompt must be player-facing, found {forbidden:?} in: {}",
+                request.prompt
+            );
+        }
+        assert!(request.prompt.contains("discard down to 8"));
+    }
 
     #[test]
     fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
