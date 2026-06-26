@@ -46,6 +46,9 @@ async fn run(
 
     loop {
         match connect_once(&store, &game_id, &mut rx).await {
+            // A wire-format skew: the status is already set to VersionMismatch.
+            // Stop the loop entirely — retrying just hits the same stale server.
+            ConnectOutcome::VersionMismatch => return,
             // Opened, but the server closed before any Hello: a valid game
             // always sends Hello immediately, so the id is unknown to the
             // server (e.g. a DB reset). Discard it and create a fresh game.
@@ -83,6 +86,11 @@ enum ConnectOutcome {
     /// Connected, saw `Hello`, then the socket closed: a normal
     /// disconnect. Keep the id and reconnect.
     Disconnected,
+    /// A server frame failed to deserialize — the client and server binaries
+    /// disagree on the wire format. Terminal: do not retry (a retry hits the
+    /// same stale server). The status is set to `VersionMismatch` before this
+    /// is returned.
+    VersionMismatch,
 }
 
 /// Resolve a game id: reuse a saved one, else await a roster from the picker
@@ -141,6 +149,7 @@ async fn connect_once(
     let (mut write, read) = ws.split();
     let mut read = read.fuse();
     let mut saw_hello = false;
+    let mut version_mismatch = false;
 
     loop {
         select! {
@@ -149,6 +158,12 @@ async fn connect_once(
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
                         saw_hello |= matches!(msg, ServerMessage::Hello { .. });
                         store.update(|s| reduce(s, msg));
+                    } else {
+                        // A frame we can't parse from a server that IS talking
+                        // to us is a wire-format skew, not a transient glitch.
+                        store.update(|s| s.status = ConnStatus::VersionMismatch);
+                        version_mismatch = true;
+                        break;
                     }
                 }
                 Some(Ok(Message::Bytes(_))) => {}
@@ -163,7 +178,9 @@ async fn connect_once(
             }
         }
     }
-    if saw_hello {
+    if version_mismatch {
+        ConnectOutcome::VersionMismatch
+    } else if saw_hello {
         ConnectOutcome::Disconnected
     } else {
         ConnectOutcome::StaleId
