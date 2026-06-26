@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 use game_core::card_data::{
     CardKind, CardMetadata, Class, HealthValue, Prey, SkillIcons, Spawn, SpawnLocation,
 };
-use game_core::card_registry::{CardRegistry, NativeEffectFn};
+use game_core::card_registry::{CardRegistry, EligibilityFn, NativeEffectFn};
 use game_core::dsl::{
     choose_one, forced_on_event, gain_resources, native, on_play, reaction_on_event, revelation,
     Ability, Effect, EventPattern, EventTiming, InvestigatorTarget,
@@ -88,6 +88,11 @@ pub const SYNTH_COVER_UP_DISCARD_TAG: &str = "_synth_cover_up:discard_clues";
 /// Native-effect tag: suffer 1 mental trauma at game end if the synthetic
 /// Cover Up still holds clues (C5a #236).
 pub const SYNTH_COVER_UP_TRAUMA_TAG: &str = "_synth_cover_up:trauma";
+
+/// Eligibility tag: the synthetic Cover Up's discover-replacement reaction may
+/// be offered only while it still holds clues (RR p.2 potential gate; #368).
+/// Mirrors the real Cover Up's `01007:has_clues`.
+pub const SYNTH_COVER_UP_HAS_CLUES_TAG: &str = "_synth_cover_up:has_clues";
 
 /// Static metadata for the synthetic treachery. Only `code`/`name`/the
 /// `Treachery` kind carry meaning for the tests.
@@ -337,7 +342,8 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 // Discard from self, then cancel the discovery (Axis D #336) —
                 // mirrors the real Cover Up 01007 (`cover_up`).
                 Effect::Seq(vec![native(SYNTH_COVER_UP_DISCARD_TAG), Effect::Cancel]),
-            ),
+            )
+            .with_eligibility(SYNTH_COVER_UP_HAS_CLUES_TAG),
             forced_on_event(
                 EventPattern::GameEnd,
                 EventTiming::After,
@@ -360,6 +366,28 @@ fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
     }
 }
 
+/// True while the synthetic Cover Up instance (the firing source) still holds
+/// clues to discard — read-only mirror of [`synth_cover_up_discard`]'s lookup.
+fn synth_cover_up_has_clues(state: &game_core::state::GameState, ctx: &EvalContext) -> bool {
+    let Some(source) = ctx.source else {
+        return false;
+    };
+    state.investigators.get(&ctx.controller).is_some_and(|inv| {
+        inv.threat_area
+            .iter()
+            .chain(inv.cards_in_play.iter())
+            .any(|c| c.instance_id == source && c.clues > 0)
+    })
+}
+
+/// `native_eligibility_for` function pointer used by [`TEST_REGISTRY`].
+fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
+    match tag {
+        SYNTH_COVER_UP_HAS_CLUES_TAG => Some(synth_cover_up_has_clues as EligibilityFn),
+        _ => None,
+    }
+}
+
 /// Ready-made [`CardRegistry`] backed by this module's synthetic
 /// cards. Integration tests install this via
 /// [`game_core::card_registry::install`] instead of `cards::REGISTRY`
@@ -372,6 +400,7 @@ pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for,
     abilities_for,
     native_effect_for,
+    native_eligibility_for,
 };
 
 #[cfg(test)]

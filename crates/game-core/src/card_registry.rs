@@ -37,7 +37,7 @@ use std::sync::OnceLock;
 use crate::card_data::CardMetadata;
 use crate::dsl::Ability;
 use crate::engine::{Cx, EngineOutcome, EvalContext};
-use crate::state::CardCode;
+use crate::state::{CardCode, GameState};
 
 /// A card-local Rust effect: mutates state and emits events through the
 /// effect-resolution context, returning the resolution outcome. Provided
@@ -46,6 +46,14 @@ use crate::state::CardCode;
 ///
 /// [`Effect::Native`]: crate::dsl::Effect::Native
 pub type NativeEffectFn = fn(&mut Cx, &EvalContext) -> EngineOutcome;
+
+/// A card-local read-only eligibility predicate: returns whether a reaction
+/// ability whose [`Ability::eligibility`](crate::dsl::Ability::eligibility) names
+/// this tag may be offered (RR p.2: an ability can't initiate if its effect
+/// won't change game state). Receives the same [`EvalContext`] native effects do
+/// (controller + source). Dispatched from the reaction scan via
+/// [`CardRegistry::native_eligibility_for`].
+pub type EligibilityFn = fn(&GameState, &EvalContext) -> bool;
 
 /// Bundle of card-lookup function pointers.
 ///
@@ -65,6 +73,10 @@ pub struct CardRegistry {
     ///
     /// [`Effect::Native`]: crate::dsl::Effect::Native
     pub native_effect_for: fn(&str) -> Option<NativeEffectFn>,
+    /// Look up a card-local eligibility predicate by its
+    /// [`Ability::eligibility`](crate::dsl::Ability::eligibility) tag. Returns
+    /// `None` for unregistered tags.
+    pub native_eligibility_for: fn(&str) -> Option<EligibilityFn>,
 }
 
 static REGISTRY: OnceLock<CardRegistry> = OnceLock::new();
@@ -159,6 +171,7 @@ mod tests {
             metadata_for: fake_metadata_for,
             abilities_for: fake_abilities_for,
             native_effect_for: |_| None,
+            native_eligibility_for: |_| None,
         }
     }
 

@@ -181,3 +181,10 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| crypt_chill::native_effect_for(tag))
         .or_else(|| obscuring_fog::native_effect_for(tag))
 }
+
+/// Dispatch a native eligibility-predicate tag to its card-local handler;
+/// returns `None` for unregistered tags.
+#[must_use]
+pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
+    cover_up::native_eligibility_for(tag).or_else(|| the_barrier::native_eligibility_for(tag))
+}

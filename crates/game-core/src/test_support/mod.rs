@@ -81,6 +81,7 @@ pub fn install_test_registry() {
             metadata_for,
             abilities_for,
             native_effect_for: |_| None,
+            native_eligibility_for: |_| None,
         });
     });
 }

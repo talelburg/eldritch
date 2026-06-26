@@ -89,6 +89,11 @@ fn registry_native_effect_for(tag: &str) -> Option<game_core::card_registry::Nat
     impls::native_effect_for(tag)
 }
 
+/// Adapter from an eligibility tag to its card-local predicate.
+fn registry_native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
+    impls::native_eligibility_for(tag)
+}
+
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
 /// implementations. The host installs it once at startup with
 /// [`game_core::card_registry::install`]; engine code then calls
@@ -97,6 +102,7 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
     native_effect_for: registry_native_effect_for,
+    native_eligibility_for: registry_native_eligibility_for,
 };
 
 #[cfg(test)]

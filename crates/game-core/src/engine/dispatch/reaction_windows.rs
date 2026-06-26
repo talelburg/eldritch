@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
-use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
+use crate::dsl::{Ability, EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::engine::TimingEvent;
 use crate::state::TimingMode;
 use crate::state::{
@@ -162,6 +162,30 @@ fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> boo
 ///
 /// Returns an empty vec when the registry isn't installed (tests that
 /// don't touch card data) or no cards match.
+/// Whether a reaction `ability` may be offered, per its
+/// [`Ability::eligibility`] tag (RR p.2: an ability can't initiate if its
+/// effect won't change game state). No tag → eligible. A tag with no
+/// resolvable predicate (registry absent / unknown tag) → suppressed, so a
+/// half-installed host never offers a gated reaction it can't evaluate.
+fn ability_eligible(
+    state: &GameState,
+    ability: &Ability,
+    source: CandidateSource,
+    controller: InvestigatorId,
+) -> bool {
+    let Some(tag) = ability.eligibility.as_deref() else {
+        return true;
+    };
+    let Some(reg) = card_registry::current() else {
+        return false;
+    };
+    let Some(pred) = (reg.native_eligibility_for)(tag) else {
+        return false;
+    };
+    let ctx = EvalContext::for_controller_with_optional_source(controller, source.instance());
+    pred(state, &ctx)
+}
+
 fn scan_pending_triggers(
     state: &GameState,
     event: &TimingEvent,
@@ -238,13 +262,6 @@ fn scan_pending_triggers(
                     continue;
                 }
             }
-            // Potential-gate stand-in for Cover Up (RR p.2 "an ability cannot
-            // initiate if its effect won't change the game state"; TODO(#368)):
-            // only a source still holding clues to discard can replace the
-            // discovery — an emptied Cover Up would otherwise prompt forever.
-            if matches!(event, TimingEvent::WouldDiscoverClues { .. }) && card.clues == 0 {
-                continue;
-            }
             let Some(abilities) = (reg.abilities_for)(&card.code) else {
                 continue;
             };
@@ -274,6 +291,16 @@ fn scan_pending_triggers(
                 // instance counter has already reached the cap this
                 // round. Rules Reference page 14.
                 if card.is_usage_exhausted(ability_index, ability.usage_limit, state.round) {
+                    continue;
+                }
+                // Eligibility gate (RR p.2): suppress a reaction whose effect
+                // can't change state (e.g. an emptied Cover Up 01007).
+                if !ability_eligible(
+                    state,
+                    ability,
+                    CandidateSource::InPlay(card.instance_id),
+                    id,
+                ) {
                     continue;
                 }
                 // Reaction candidates always have a source instance — an
@@ -337,6 +364,12 @@ fn scan_act_agenda_reactions(
                 || *timing != bucket
                 || !trigger_matches(event, pattern, *timing, lead)
             {
+                continue;
+            }
+            // Eligibility gate (RR p.2): suppress an act/agenda reaction whose
+            // effect can't change state (e.g. The Barrier 01109's round-end
+            // advance when the Hallway group can't afford the clue threshold).
+            if !ability_eligible(state, ability, CandidateSource::Board, lead) {
                 continue;
             }
             let ability_index = u8::try_from(idx)
