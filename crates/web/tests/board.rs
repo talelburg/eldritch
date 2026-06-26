@@ -288,3 +288,27 @@ async fn version_mismatch_status_renders_actionable_message() {
         "status line must tell the user what to do: {html}"
     );
 }
+
+#[wasm_bindgen_test]
+async fn board_renders_a_new_game_button() {
+    let store = RwSignal::new(ClientState::default());
+    leptos::mount::mount_to_body(move || {
+        provide_context(store);
+        leptos::view! { <BoardView/> }
+    });
+    leptos::task::tick().await;
+
+    // Scope to the last mounted .board (DOM accumulates across tests).
+    let boards = leptos::prelude::document()
+        .query_selector_all(".board")
+        .expect("query_selector_all");
+    let last = boards
+        .item(boards.length() - 1)
+        .expect("at least one .board section")
+        .dyn_into::<web_sys::Element>()
+        .expect("Element");
+    assert!(
+        last.query_selector(".new-game").expect("query").is_some(),
+        "BoardView must render a .new-game button"
+    );
+}

@@ -204,3 +204,13 @@ fn clear_saved_id() {
         let _ = ls.remove_item(GAME_ID_KEY);
     }
 }
+
+/// Forget the saved game id and reload, so `bootstrap()` re-enters the picker
+/// (no saved id → `await_roster`). The server-side game persists; this only
+/// drops the local pointer. Pairs with the "New game" button in `BoardView`.
+pub fn start_new_game() {
+    clear_saved_id();
+    if let Some(w) = web_sys::window() {
+        let _ = w.location().reload();
+    }
+}

@@ -43,6 +43,24 @@ pub fn BoardView() -> impl IntoView {
         <section class="board">
             <p class="status">"status: " {status}</p>
             <p class="rejection">"rejection: " {rejection}</p>
+            {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    view! {
+                        <button
+                            class="new-game"
+                            on:click=move |_| crate::transport::start_new_game()
+                        >
+                            "New game"
+                        </button>
+                    }
+                    .into_any()
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ().into_any()
+                }
+            }
             {board}
         </section>
     }
