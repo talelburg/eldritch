@@ -110,7 +110,7 @@ fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
             label: a.label(state),
         })
         .collect();
-    crate::engine::InputRequest::choice("Choose an action", options)
+    crate::engine::InputRequest::pick_single("Choose an action", options)
 }
 
 /// Apply a [`PlayerAction`] to the state, pushing events.

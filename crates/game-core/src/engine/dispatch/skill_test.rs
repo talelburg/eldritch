@@ -125,7 +125,7 @@ pub(in crate::engine) fn start_skill_test(
             .push(crate::state::Continuation::SubstitutionPrompt { investigator });
         let use_skill = SkillKind::Intellect; // sole substitution in scope
         return EngineOutcome::AwaitingInput {
-            request: InputRequest::choice(
+            request: InputRequest::pick_single(
                 format!(
                     "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \
                      (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
@@ -591,7 +591,7 @@ fn emit_commit_window(cx: &Cx, investigator: InvestigatorId) -> EngineOutcome {
         (t.skill, t.difficulty)
     };
     EngineOutcome::AwaitingInput {
-        request: InputRequest::prompt(format!(
+        request: InputRequest::pick_multiple(format!(
             "Commit cards from hand for {investigator:?}'s {skill:?} skill test \
              (difficulty {difficulty}); submit InputResponse::PickMultiple with the \
              hand indices as option ids. Empty selection commits no cards.",

@@ -10,7 +10,10 @@
 use futures::channel::mpsc;
 use game_core::state::GameStateBuilder;
 use game_core::state::InvestigatorId;
-use game_core::test_support::fixtures::{awaiting_pick_single_input, test_investigator};
+use game_core::test_support::fixtures::{
+    awaiting_confirm_input, awaiting_pick_single_input, awaiting_skippable_pick_single_input,
+    test_investigator,
+};
 use game_core::{InputResponse, OptionId, PlayerAction};
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
@@ -109,6 +112,30 @@ fn pick_single_id(frame: ClientMessage) -> u32 {
     }
 }
 
+/// True if the frame is `ResolveInput(Confirm)`.
+fn is_confirm(frame: &ClientMessage) -> bool {
+    matches!(
+        frame,
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput {
+                response: InputResponse::Confirm
+            },
+        }
+    )
+}
+
+/// True if the frame is `ResolveInput(Skip)`.
+fn is_skip(frame: &ClientMessage) -> bool {
+    matches!(
+        frame,
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput {
+                response: InputResponse::Skip
+            },
+        }
+    )
+}
+
 // ---- Tests ------------------------------------------------------------------
 
 #[wasm_bindgen_test]
@@ -168,6 +195,76 @@ async fn pick_single_clicking_second_option_submits_pick_single_1() {
         .try_recv()
         .expect("a frame after tick — click handler must have fired");
     assert_eq!(pick_single_id(frame), 1, "expected OptionId(1)");
+}
+
+#[wasm_bindgen_test]
+async fn confirm_renders_confirm_button_and_submits_confirm() {
+    let mut rx = mount(
+        base_game(),
+        awaiting_confirm_input("Draw an encounter card"),
+    )
+    .await;
+    let section = last_section();
+
+    let confirm = section.query_selector(".confirm").expect("query");
+    assert!(
+        confirm.is_some(),
+        "Confirm prompt must render a .confirm button"
+    );
+    // No hand-commit UI for a Confirm prompt.
+    assert!(section
+        .query_selector(".commit-hand")
+        .expect("query")
+        .is_none());
+
+    click_in(&section, ".confirm", 0);
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after clicking Confirm");
+    assert!(
+        is_confirm(&frame),
+        "expected ResolveInput(Confirm), got {frame:?}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn skippable_window_renders_skip_button_and_submits_skip() {
+    let mut rx = mount(
+        base_game(),
+        awaiting_skippable_pick_single_input("Reaction window"),
+    )
+    .await;
+    let section = last_section();
+
+    assert!(
+        section.query_selector(".skip").expect("query").is_some(),
+        "skippable prompt must render a .skip button"
+    );
+    // The option list is still present for a PickSingle window.
+    assert_eq!(
+        section
+            .query_selector_all(".option")
+            .expect("query")
+            .length(),
+        1
+    );
+
+    click_in(&section, ".skip", 0);
+    leptos::task::tick().await;
+    let frame = rx.try_recv().expect("a frame after clicking Skip");
+    assert!(
+        is_skip(&frame),
+        "expected ResolveInput(Skip), got {frame:?}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn non_skippable_pick_single_has_no_skip_button() {
+    let _rx = mount(base_game(), awaiting_pick_single_input("Choose an action")).await;
+    let section = last_section();
+    assert!(
+        section.query_selector(".skip").expect("query").is_none(),
+        "a non-skippable prompt must not render a .skip button"
+    );
 }
 
 #[wasm_bindgen_test]

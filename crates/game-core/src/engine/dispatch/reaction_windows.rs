@@ -583,15 +583,19 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
             .pending_candidates()
             .expect("open_queued_reaction_window: top window has candidates"),
     );
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::choice(
-            format!(
-                "Resolution window: {} option(s). \
-                 Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
-                options.len(),
-            ),
-            options,
+    let mut request = InputRequest::pick_single(
+        format!(
+            "Resolution window: {} option(s). \
+             Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
+            options.len(),
         ),
+        options,
+    );
+    if !window.is_forced() {
+        request = request.skippable();
+    }
+    EngineOutcome::AwaitingInput {
+        request,
         // No multi-window state to disambiguate — routing keys off
         // the top of `state.open_windows`. Conventional 0 like the
         // commit-window's resume token.
@@ -883,15 +887,19 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
         ", or InputResponse::Skip to close"
     };
     let options = build_resolution_options(candidates);
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::choice(
-            format!(
-                "Resolution window: {} option(s). \
-                 Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
-                options.len(),
-            ),
-            options,
+    let mut request = InputRequest::pick_single(
+        format!(
+            "Resolution window: {} option(s). \
+             Submit InputResponse::PickSingle(OptionId) to resolve one{skip_hint}.",
+            options.len(),
         ),
+        options,
+    );
+    if !window.is_forced() {
+        request = request.skippable();
+    }
+    EngineOutcome::AwaitingInput {
+        request,
         resume_token: ResumeToken(0),
     }
 }

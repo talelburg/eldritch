@@ -46,7 +46,7 @@ pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) ->
         })
         .collect();
     EngineOutcome::AwaitingInput {
-        request: InputRequest::choice(prompt, options),
+        request: InputRequest::pick_single(prompt, options),
         resume_token: ResumeToken(0),
     }
 }

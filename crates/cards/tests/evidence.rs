@@ -111,6 +111,13 @@ fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
                 request.options.iter().any(|o| o.label.contains(EVIDENCE)),
                 "after-defeat window must offer the Evidence! hand play; request = {request:?}",
             );
+            // A non-forced reaction window is a PickSingle the player may pass:
+            // the client must offer a Skip control.
+            assert_eq!(request.kind, game_core::InputKind::PickSingle);
+            assert!(
+                request.skippable,
+                "a non-forced reaction window must be skippable; request = {request:?}",
+            );
         }
         other => panic!("after-defeat window must open (AwaitingInput); got {other:?}"),
     }
