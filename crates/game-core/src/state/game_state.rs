@@ -236,6 +236,16 @@ pub struct GameState {
     /// revealed + no clues); victory-point enemies enter as defeated
     /// (C3). Phase 9 sums these cards' corpus victory values for XP.
     pub victory_display: Vec<CardCode>,
+    /// When set, the engine suspends with an `AwaitingInput { InputKind::Confirm }`
+    /// at skill-test resolution (after the result events are emitted, before the
+    /// ST.7 consequence resolves) so an interactive host can show the player the
+    /// result and wait for an acknowledgment (#478). A *cosmetic* pause — it
+    /// makes no game decision — so it is gated: the server sets it for human play,
+    /// while tests and non-interactive/headless consumers leave it `false` and
+    /// resolve straight through. `#[serde(default)]` keeps already-persisted game
+    /// seeds (written before this field existed) deserializable.
+    #[serde(default)]
+    pub interactive_acknowledge: bool,
 }
 
 /// One agenda card's mechanically-relevant state: the doom needed to
