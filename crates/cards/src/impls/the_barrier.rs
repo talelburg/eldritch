@@ -46,10 +46,11 @@
 use card_dsl::dsl::{
     forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
 };
-use game_core::card_registry::NativeEffectFn;
+use game_core::card_registry::{EligibilityFn, NativeEffectFn};
+use game_core::state::GameState;
 use game_core::{
-    location_id_by_code, reveal_location, round_end_advance, spawn_set_aside_enemy, Cx,
-    EngineOutcome, EvalContext,
+    location_id_by_code, reveal_location, round_end_advance, round_end_advance_affordable,
+    spawn_set_aside_enemy, Cx, EngineOutcome, EvalContext,
 };
 
 /// `ArkhamDB` code for Act 2, "The Barrier".
@@ -63,6 +64,12 @@ const REVERSE: &str = "01109:reverse";
 /// spend the requisite number of clues to advance").
 pub(crate) const ROUND_END_ADVANCE: &str = "01109:round_end_advance";
 
+/// Eligibility tag: the round-end advance may be offered only when the Hallway
+/// group can afford the act's clue threshold (RR p.2 potential gate). Restores
+/// the affordability gate the offer scan lost in the #434 coordinator remodel
+/// (#470).
+const CAN_ADVANCE: &str = "01109:can_advance";
+
 /// Printed codes the reverse touches.
 const GHOUL_PRIEST: &str = "01116";
 const HALLWAY: &str = "01112";
@@ -73,7 +80,10 @@ const PARLOR: &str = "01115";
 ///   Hallway may, as a group, spend the requisite number of clues to advance":
 ///   a `When`-timed `RoundEnded` reaction. The round-end `When` window offers
 ///   this as a single candidate (`PickSingle` = advance, Skip = decline); the
-///   native spends + advances. Affordability is gated in the reaction scan.
+///   native spends + advances. Affordability is gated by the `01109:can_advance`
+///   eligibility predicate (shared with the resolve-side
+///   [`round_end_advance_affordable`]), so the candidate isn't offered when the
+///   Hallway group can't afford the clue threshold (#470).
 /// - the **reverse** — a Forced on-advance ability (reveal the Parlor + spawn
 ///   the Priest) that fires when the act advances.
 #[must_use]
@@ -88,7 +98,8 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::RoundEnded,
             EventTiming::When,
             native(ROUND_END_ADVANCE),
-        ),
+        )
+        .with_eligibility(CAN_ADVANCE),
     ]
 }
 
@@ -100,6 +111,21 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
         ROUND_END_ADVANCE => Some(advance_via_clue_spend as NativeEffectFn),
         _ => None,
     }
+}
+
+/// Resolve 01109's eligibility tag. The round-end advance is offered only when
+/// the Hallway (01112) group can afford the act's clue threshold.
+pub(crate) fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
+    match tag {
+        CAN_ADVANCE => Some(can_advance as EligibilityFn),
+        _ => None,
+    }
+}
+
+/// True when the Hallway group can afford the current act's clue threshold —
+/// the offer-side gate shared with the resolve-side `round_end_advance`.
+fn can_advance(state: &GameState, _ctx: &EvalContext) -> bool {
+    round_end_advance_affordable(state, HALLWAY)
 }
 
 /// Front-objective native: spend the act's `clue_threshold` from Hallway

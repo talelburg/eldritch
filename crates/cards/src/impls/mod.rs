@@ -186,5 +186,5 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
 /// returns `None` for unregistered tags.
 #[must_use]
 pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
-    cover_up::native_eligibility_for(tag)
+    cover_up::native_eligibility_for(tag).or_else(|| the_barrier::native_eligibility_for(tag))
 }

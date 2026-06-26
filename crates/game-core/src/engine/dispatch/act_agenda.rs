@@ -258,34 +258,45 @@ pub(crate) fn spend_clues_from(state: &mut GameState, ids: &[InvestigatorId], am
     debug_assert_eq!(remaining, 0, "spend_clues_from called without enough clues");
 }
 
+/// Whether the current act's round-end group clue-spend advance is affordable:
+/// investigators at `contributor_location_code` hold at least the current act's
+/// `clue_threshold`. Shared by the offer-side eligibility predicate (act 01109's
+/// `01109:can_advance`) and the resolve-side [`round_end_advance`], so the two
+/// can't drift. `false` when there is no current act or the location isn't in
+/// play (the "investigators in the Hallway" condition is subsumed — 0
+/// contributors ⇒ 0 clues ⇒ not affordable).
+#[must_use]
+pub fn round_end_advance_affordable(state: &GameState, contributor_location_code: &str) -> bool {
+    let Some(act) = state.act_deck.get(state.act_index) else {
+        return false;
+    };
+    let threshold = act.clue_threshold;
+    let Some(loc) = crate::engine::location_id_by_code(state, contributor_location_code) else {
+        return false;
+    };
+    clues_held(state, &investigators_at(state, loc)) >= u32::from(threshold)
+}
+
 /// Round-end group clue-spend act advance — the generic mechanics behind act
 /// 01109's "investigators in the Hallway may, as a group, spend the requisite
 /// number of clues to advance" (the only card-specific datum is the contributor
-/// location, passed in). Resolves `contributor_location_code` to its in-play
-/// location and, if the investigators there hold at least the **current act's**
-/// `clue_threshold`, spends it from them (turn order) and advances the act.
+/// location, passed in). If [`round_end_advance_affordable`], spends the act's
+/// `clue_threshold` from the contributors (turn order) and advances the act.
 ///
-/// Affordability is gated by the round-end `When` reaction scan (the candidate
-/// is offered only when affordable), so the insufficient-clues branch is a
-/// defensive reject. Exposed for the `cards` registry's 01109 native handler.
+/// Affordability is gated at the offer side by act 01109's `01109:can_advance`
+/// eligibility predicate (which calls [`round_end_advance_affordable`]), so the
+/// insufficient-clues branch here is a defensive backstop. Exposed for the
+/// `cards` registry's 01109 native handler.
 pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
-    let Some(act) = cx.state.act_deck.get(cx.state.act_index) else {
-        return EngineOutcome::Rejected {
-            reason: "round_end_advance: no current act".into(),
-        };
-    };
-    let threshold = act.clue_threshold;
-    let Some(loc) = crate::engine::location_id_by_code(cx.state, contributor_location_code) else {
-        return EngineOutcome::Rejected {
-            reason: "round_end_advance: contributor location not in play".into(),
-        };
-    };
-    let contributors = investigators_at(cx.state, loc);
-    if clues_held(cx.state, &contributors) < u32::from(threshold) {
+    if !round_end_advance_affordable(cx.state, contributor_location_code) {
         return EngineOutcome::Rejected {
             reason: "round_end_advance: contributors no longer hold enough clues".into(),
         };
     }
+    let threshold = cx.state.act_deck[cx.state.act_index].clue_threshold;
+    let loc = crate::engine::location_id_by_code(cx.state, contributor_location_code)
+        .expect("affordable ⇒ contributor location in play");
+    let contributors = investigators_at(cx.state, loc);
     spend_clues_from(cx.state, &contributors, threshold);
     advance_act(cx);
     EngineOutcome::Done
@@ -509,6 +520,48 @@ mod advance_act_tests {
     use crate::state::{InvestigatorId, Phase};
     use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
+
+    #[test]
+    fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
+        use crate::state::{Act, CardCode, LocationId};
+        use crate::test_support::test_location;
+
+        // A location coded "HALL"; the investigator stands on it.
+        let mut hall = test_location(1, "Hallway");
+        hall.code = CardCode("HALL".into());
+        let mut investigator = test_investigator(1);
+        investigator.current_location = Some(LocationId(1));
+        let mut state = GameStateBuilder::new()
+            .with_location(hall)
+            .with_investigator(investigator)
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.act_deck = vec![Act {
+            code: CardCode("_act".into()),
+            clue_threshold: 3,
+            resolution: None,
+        }];
+        state.act_index = 0;
+
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .clues = 2;
+        assert!(
+            !super::round_end_advance_affordable(&state, "HALL"),
+            "2 < 3 → not affordable"
+        );
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .clues = 3;
+        assert!(
+            super::round_end_advance_affordable(&state, "HALL"),
+            "3 >= 3 → affordable"
+        );
+    }
 
     #[test]
     fn advance_act_rejects_when_clues_insufficient() {
