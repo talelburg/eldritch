@@ -5,8 +5,6 @@
 //! suspend, but only the skill-test driver's teardown ever flushed it, so a
 //! choice-only Revelation never reached `encounter_discard`.
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::seat_and_open;
@@ -16,18 +14,15 @@ use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_CHOICE_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 /// Synthetic setup → mulligan → the sole investigator's round-ending `EndTurn`
 /// cascades to the Mythos step-1.4 encounter-draw prompt. Seed the encounter
 /// deck (after `seat_and_open`'s shuffle) with only the choice-treachery on top.
 fn at_mythos_draw_with_choice_treachery() -> GameState {
-    install();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(TEST_INV),
         deck: vec![],

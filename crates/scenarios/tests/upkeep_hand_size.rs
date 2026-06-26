@@ -12,8 +12,6 @@
 //! we install [`TEST_REGISTRY`] without colliding with other test
 //! binaries, and `game-core` unit tests can't reach a real registry.
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::seat_and_open;
@@ -23,12 +21,9 @@ use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_test_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 /// The hand-size cap enforced at upkeep step 4.5.
@@ -38,8 +33,6 @@ const HAND_SIZE_LIMIT: usize = 8;
 #[test]
 #[allow(clippy::too_many_lines)] // end-to-end upkeep walkthrough; length is inherent
 fn upkeep_prompts_and_discards_down_to_eight() {
-    install_test_registry();
-
     let inv1 = InvestigatorId(1);
     // Seed 6 cards via the roster: seat_and_open draws 5 for the opening
     // hand, leaving 1 for the step-4.4 upkeep draw.
@@ -172,8 +165,6 @@ fn upkeep_prompts_and_discards_down_to_eight() {
 
 #[test]
 fn upkeep_hand_size_discard_replay_is_deterministic() {
-    install_test_registry();
-
     let inv1 = InvestigatorId(1);
 
     // 6 deck cards via roster: seat_and_open draws 5 → hand has 5;

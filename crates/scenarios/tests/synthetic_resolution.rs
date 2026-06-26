@@ -15,8 +15,6 @@
 //!   collide with `game-core`'s unit tests (which exercise the
 //!   parameterized `apply_with_scenario_registry` helper instead).
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::apply;
 use game_core::event::Event;
@@ -28,16 +26,13 @@ use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::REGISTRY;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::scenario_registry::install(REGISTRY);
-        // The Lost-via-doom test draws the synthetic encounter card during
-        // Mythos step 1.4, which resolves against the card registry; install
-        // the synthetic `TEST_REGISTRY` so the on-draw effect resolves.
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::scenario_registry::install(REGISTRY);
+    // The Lost-via-doom test draws the synthetic encounter card during
+    // Mythos step 1.4, which resolves against the card registry; install
+    // the synthetic `TEST_REGISTRY` so the on-draw effect resolves.
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 /// Drive a sequence of actions from an initial state, collecting all
@@ -56,7 +51,6 @@ fn drive(initial_state: GameState, actions: Vec<Action>) -> (GameState, Vec<Even
 
 #[test]
 fn synthetic_scenario_resolves_won_via_act_advance() {
-    install_registry();
     let inv = InvestigatorId(1);
     let roster = vec![RosterEntry {
         investigator: CardCode::new(TEST_INV),
@@ -92,7 +86,6 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
 
 #[test]
 fn synthetic_scenario_resolves_lost_via_doom() {
-    install_registry();
     let mut base = scenarios::test_fixtures::synthetic::setup();
     base.encounter_discard.clear();
 

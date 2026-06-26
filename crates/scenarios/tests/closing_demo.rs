@@ -8,8 +8,6 @@
 //! `game-core`'s unit tests, and so it can reach the real
 //! `scenarios::REGISTRY` + synthetic card corpus.
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
@@ -23,13 +21,10 @@ use scenarios::test_fixtures::synth_cards::{
 };
 use scenarios::REGISTRY;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::scenario_registry::install(REGISTRY);
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::scenario_registry::install(REGISTRY);
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 /// Apply one action, asserting it is not `Rejected` so a mis-ordered
@@ -111,7 +106,6 @@ fn replay_with_roundtrip(make_initial: impl Fn() -> GameState, log: &[Action]) -
 
 #[test]
 fn won_walk_full_cycle_replays_identically() {
-    install_registry();
     let inv = InvestigatorId(1);
 
     // make_initial folds seat_and_open in: the log starts from the post-seat
@@ -234,7 +228,6 @@ fn won_walk_full_cycle_replays_identically() {
 
 #[test]
 fn lost_walk_spawn_attack_doom_replays_identically() {
-    install_registry();
     let inv = InvestigatorId(1);
 
     // make_initial folds seat_and_open in (investigator is placed at

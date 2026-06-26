@@ -2,8 +2,6 @@
 //! registry + Mythos draw path (option A), plus hunter-movement replay
 //! equality across a `PickSingle` round-trip.
 
-use std::sync::Once;
-
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
@@ -14,16 +12,13 @@ use game_core::{Action, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
-static INSTALL: Once = Once::new();
+#[ctor::ctor]
 fn install_test_registry() {
-    INSTALL.call_once(|| {
-        let _ = game_core::card_registry::install(TEST_REGISTRY);
-    });
+    let _ = game_core::card_registry::install(TEST_REGISTRY);
 }
 
 #[test]
 fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
-    install_test_registry();
     let inv1 = InvestigatorId(1);
     let mut state = synthetic::setup();
     // Manually seed both investigators at LocationId(10) — this test drives
@@ -146,13 +141,6 @@ fn hunter_movement_pick_location_replays_identically() {
             .with_investigator_turn(InvestigatorId(1))
             .build()
     }
-
-    // Reading investigator capacity (#448, `investigator_capacity`) during the
-    // end-turn → enemy-phase cascade needs an installed registry. The shared
-    // `install_test_registry` is `Once`-guarded, so this is safe regardless of
-    // which test in this binary runs first / wins the race — without it, this
-    // test panics when run in isolation or when it loses the install race (#473).
-    install_test_registry();
 
     // Candidates are the sorted first-steps toward D: [LocationId(2), LocationId(3)],
     // so LocationId(3) is offered option id 1.

@@ -3,8 +3,6 @@
 //! through the real card registry. Own process so it can install the
 //! process-global registries against the real `cards` corpus.
 
-use std::sync::Once;
-
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, seat_and_open, EngineOutcome};
 use game_core::scenario::Resolution;
@@ -16,13 +14,10 @@ use game_core::test_support::{
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::{the_gathering, REGISTRY};
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_registries() {
-    INSTALL.call_once(|| {
-        let _ = game_core::scenario_registry::install(REGISTRY);
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::scenario_registry::install(REGISTRY);
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 /// Apply one action, asserting it is not `Rejected`.
@@ -57,7 +52,6 @@ fn setup_and_seat() -> game_core::state::GameState {
 
 #[test]
 fn roster_seating_places_investigator_at_study() {
-    install_registries();
     let state = setup_and_seat();
     let roland = state
         .investigators
@@ -75,7 +69,6 @@ fn roster_seating_places_investigator_at_study() {
 
 #[test]
 fn drives_act_1_then_act_2_via_round_end_window() {
-    install_registries();
     let inv = InvestigatorId(1);
     let mut state = setup_and_seat();
 
@@ -169,7 +162,6 @@ fn drives_act_1_then_act_2_via_round_end_window() {
 
 #[test]
 fn attic_forced_enter_deals_one_horror() {
-    install_registries();
     // A bare board with the Attic (01113); fire the forced
     // EnteredLocation trigger directly via the test helper (live entry
     // isn't reachable until C1b's Door-on-the-Floor transition).
@@ -200,7 +192,6 @@ fn attic_forced_enter_deals_one_horror() {
 
 #[test]
 fn cellar_forced_enter_deals_one_damage() {
-    install_registries();
     let mut cellar = test_location(21, "Cellar");
     cellar.code = CardCode("01114".into());
     // Use Skids O'Toole (01003) as the investigator card code: a real corpus
@@ -228,7 +219,6 @@ fn cellar_forced_enter_deals_one_damage() {
 
 #[test]
 fn advancing_act_1_rebuilds_the_board() {
-    install_registries();
     let mut state = the_gathering::setup();
 
     // Seat one investigator at the Study with the 2 clues Act 1 needs.

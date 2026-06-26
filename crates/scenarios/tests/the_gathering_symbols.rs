@@ -15,15 +15,11 @@ use game_core::test_support::{
 };
 use game_core::TurnAction;
 use scenarios::REGISTRY;
-use std::sync::Once;
 
-static INSTALL: Once = Once::new();
-
+#[ctor::ctor]
 fn install_registries() {
-    INSTALL.call_once(|| {
-        let _ = game_core::scenario_registry::install(REGISTRY);
-        let _ = game_core::card_registry::install(cards::REGISTRY);
-    });
+    let _ = game_core::scenario_registry::install(REGISTRY);
+    let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
 fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState {
@@ -61,7 +57,6 @@ fn perform(state: game_core::state::GameState, difficulty: i8) -> game_core::eng
 
 #[test]
 fn skull_subtracts_ghoul_count_at_location() {
-    install_registries();
     // 0 ghouls: Skull → Modifier(0)
     let r0 = perform(gathering_state(ChaosToken::Skull, 0), 0);
     assert!(
@@ -92,7 +87,6 @@ fn skull_subtracts_ghoul_count_at_location() {
 
 #[test]
 fn cultist_is_minus_one_and_horror_only_on_failure() {
-    install_registries();
     // Fail: difficulty 99 >> skill 3 + (-1) = 2
     let fail = perform(gathering_state(ChaosToken::Cultist, 0), 99);
     assert!(
@@ -126,7 +120,6 @@ fn cultist_is_minus_one_and_horror_only_on_failure() {
 
 #[test]
 fn tablet_is_minus_two_and_damage_iff_ghoul_present() {
-    install_registries();
     // Ghoul present: Tablet → Modifier(-2) + DamageTaken(1)
     let with_ghoul = perform(gathering_state(ChaosToken::Tablet, 1), 0);
     assert!(
@@ -162,7 +155,6 @@ fn tablet_is_minus_two_and_damage_iff_ghoul_present() {
 
 #[test]
 fn tablet_immediate_damage_precedes_the_determination() {
-    install_registries();
     // RR ST.4 (apply chaos symbol effect) precedes ST.6 (determine
     // success/failure): Tablet's immediate Damage(1) must land in the event log
     // BEFORE SkillTestSucceeded/Failed. (Difficulty 0; willpower 3 + (-2) = 1
@@ -205,7 +197,6 @@ fn tablet_immediate_damage_precedes_the_determination() {
 
 #[test]
 fn cultist_on_fail_horror_follows_the_determination() {
-    install_registries();
     // RR: a chaos symbol's result-conditional effect ("if this test is failed")
     // resolves at ST.7, AFTER the ST.6 determination (and after the outcome
     // timing point). Cultist's on_fail Horror(1) must follow SkillTestFailed in
@@ -230,7 +221,6 @@ fn cultist_on_fail_horror_follows_the_determination() {
 
 #[test]
 fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
-    install_registries();
     // Tablet + ghoul deals immediate Damage(1) at ST.4. With Guard Dog (01021,
     // health 3) controlled, that non-attack damage is distributed interactively
     // (one PickSingle prompt) — the symbol effect suspends mid-ST.4. Resuming
@@ -319,7 +309,6 @@ fn advance_to_resolution(state: game_core::state::GameState) -> game_core::engin
 
 #[test]
 fn cleared_revealed_victory_location_enters_victory_display() {
-    install_registries();
     let r = advance_to_resolution(resolvable_state_with_attic(true, 0));
     assert!(
         r.state.victory_display.contains(&CardCode("01113".into())),
@@ -338,7 +327,6 @@ fn cleared_revealed_victory_location_enters_victory_display() {
 
 #[test]
 fn unrevealed_or_clued_victory_location_is_not_placed() {
-    install_registries();
     let clued = advance_to_resolution(resolvable_state_with_attic(true, 2));
     assert!(
         clued.state.victory_display.is_empty(),
@@ -355,7 +343,6 @@ fn unrevealed_or_clued_victory_location_is_not_placed() {
 
 #[test]
 fn two_cleared_victory_locations_both_enter_display() {
-    install_registries();
     let inv = InvestigatorId(1);
     let mut investigator = test_investigator(1);
     investigator.clues = 1;
