@@ -1,21 +1,27 @@
 //! `AwaitingInput` resolution UI (P6.6, wasm-only). Renders the engine's
 //! pending prompt and a control to resolve it.
 //!
-//! Two rendering branches:
+//! The control is chosen by the request's [`InputKind`](game_core::InputKind)
+//! discriminator (#205) — never by inspecting the prompt text or whether
+//! `options` is empty:
 //!
-//! - **`PickSingle` option-list** (`request.options` non-empty, #447): one
-//!   button per [`ChoiceOption`]; click submits
+//! - **`PickSingle`** — one button per [`ChoiceOption`]; click submits
 //!   `ResolveInput(PickSingle(id))`.
-//! - **`PickMultiple` commit window** (`request.options` empty): the
-//!   legacy hand-card commit UI for skill-test commit / mulligan prompts
-//!   (P6.6 / #205).
+//! - **`Confirm`** — a single "Confirm" button → `ResolveInput(Confirm)`
+//!   (e.g. the Mythos encounter draw).
+//! - **`PickMultiple`** — the hand-card commit UI for skill-test commit /
+//!   mulligan / hand-size discard → `ResolveInput(PickMultiple { selected })`.
+//!
+//! Orthogonally, when `request.skippable` is set (e.g. a non-forced reaction
+//! window), a "Skip" button → `ResolveInput(Skip)` renders alongside whichever
+//! control the `kind` selected.
 //!
 //! Nothing renders when the latest outcome is not `AwaitingInput`.
 
 use std::collections::BTreeSet;
 
 use game_core::state::GameState;
-use game_core::{ChoiceOption, EngineOutcome, InputResponse, OptionId, PlayerAction};
+use game_core::{ChoiceOption, EngineOutcome, InputKind, InputResponse, OptionId, PlayerAction};
 use leptos::prelude::*;
 use protocol::ClientMessage;
 
@@ -26,14 +32,14 @@ use crate::transport::OutboundTx;
 /// submits via the `OutboundTx` provided by the transport (absent in
 /// render-only contexts, so read as `Option`).
 ///
-/// Dispatches to one of two rendering branches based on whether the
-/// [`InputRequest`](game_core::InputRequest) carries structured
-/// [`options`](game_core::InputRequest::options):
-///
-/// - Non-empty `options` → [`PickSingle`](InputResponse::PickSingle)
-///   option-list (one button per option, #447).
-/// - Empty `options` → [`PickMultiple`](InputResponse::PickMultiple)
-///   hand-card commit UI (skill-test commit / mulligan, #205).
+/// Dispatches on the [`InputRequest`](game_core::InputRequest)'s
+/// [`kind`](game_core::InputRequest::kind): a `PickSingle` option-list, a
+/// `Confirm` button, or the `PickMultiple` hand-card commit UI — plus a "Skip"
+/// button when [`skippable`](game_core::InputRequest::skippable) (#205).
+// Three parallel `view!` rendering arms (PickSingle / Confirm / PickMultiple)
+// plus the Skip control; the length is inherent to the per-kind dispatch, not
+// extractable without fighting leptos's closure captures.
+#[allow(clippy::too_many_lines)]
 #[component]
 pub fn AwaitingInputView() -> impl IntoView {
     let store = use_store();
@@ -55,93 +61,162 @@ pub fn AwaitingInputView() -> impl IntoView {
                 return ().into_any();
             };
 
-            // Branch 1: structured PickSingle option-list (#447).
-            if !request.options.is_empty() {
+            // A Skip/Pass control, rendered (independent of `kind`) whenever the
+            // request is skippable — e.g. a non-forced reaction window.
+            let skippable = request.skippable;
+            let skip_button = {
                 let tx = tx.clone();
-                let buttons: Vec<_> = request
-                    .options
-                    .iter()
-                    .cloned()
-                    .map(|opt: ChoiceOption| {
-                        let ChoiceOption { id, label } = opt;
-                        let tx = tx.clone();
-                        view! {
+                move || {
+                    if !skippable {
+                        return ().into_any();
+                    }
+                    let tx = tx.clone();
+                    view! {
+                        <button
+                            class="skip"
+                            on:click=move |_| {
+                                if let Some(tx) = tx.clone() {
+                                    let _ = tx.unbounded_send(ClientMessage::Submit {
+                                        action: PlayerAction::ResolveInput {
+                                            response: InputResponse::Skip,
+                                        },
+                                    });
+                                }
+                            }
+                        >
+                            "Skip"
+                        </button>
+                    }
+                    .into_any()
+                }
+            };
+
+            match request.kind {
+                // One button per offered option → ResolveInput(PickSingle(id)).
+                InputKind::PickSingle => {
+                    let tx = tx.clone();
+                    let buttons: Vec<_> = request
+                        .options
+                        .iter()
+                        .cloned()
+                        .map(|opt: ChoiceOption| {
+                            let ChoiceOption { id, label } = opt;
+                            let tx = tx.clone();
+                            view! {
+                                <button
+                                    class="option"
+                                    on:click=move |_| {
+                                        if let Some(tx) = tx.clone() {
+                                            let _ = tx.unbounded_send(ClientMessage::Submit {
+                                                action: PlayerAction::ResolveInput {
+                                                    response: InputResponse::PickSingle(id),
+                                                },
+                                            });
+                                        }
+                                    }
+                                >
+                                    {label}
+                                </button>
+                            }
+                        })
+                        .collect();
+                    view! {
+                        <section class="awaiting-input">
+                            <p class="prompt">{request.prompt.clone()}</p>
+                            <div class="option-list">{buttons}</div>
+                            {skip_button()}
+                        </section>
+                    }
+                    .into_any()
+                }
+                // A single acknowledge button → ResolveInput(Confirm).
+                InputKind::Confirm => {
+                    let tx = tx.clone();
+                    view! {
+                        <section class="awaiting-input">
+                            <p class="prompt">{request.prompt.clone()}</p>
                             <button
-                                class="option"
+                                class="confirm"
                                 on:click=move |_| {
                                     if let Some(tx) = tx.clone() {
                                         let _ = tx.unbounded_send(ClientMessage::Submit {
                                             action: PlayerAction::ResolveInput {
-                                                response: InputResponse::PickSingle(id),
+                                                response: InputResponse::Confirm,
                                             },
                                         });
                                     }
                                 }
                             >
-                                {label}
+                                "Confirm"
                             </button>
+                            {skip_button()}
+                        </section>
+                    }
+                    .into_any()
+                }
+                // Hand-card multi-select → ResolveInput(PickMultiple { selected }).
+                // The host derives candidates from the prompted hand, treating
+                // each OptionId(i) as hand index i (see InputRequest::pick_multiple).
+                InputKind::PickMultiple => {
+                    let cards: Vec<_> = active_hand(&game)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, code)| {
+                            let i = u32::try_from(idx).expect("hand fits in u32");
+                            view! {
+                                <li>
+                                    <button
+                                        class="hand-card"
+                                        class:selected=move || selected.get().contains(&i)
+                                        on:click=move |_| selected.update(|s| {
+                                            if !s.remove(&i) {
+                                                s.insert(i);
+                                            }
+                                        })
+                                    >
+                                        {code}
+                                    </button>
+                                </li>
+                            }
+                        })
+                        .collect();
+
+                    let tx = tx.clone();
+                    let on_commit = move |_| {
+                        let selected_ids: Vec<OptionId> =
+                            selected.get().into_iter().map(OptionId).collect();
+                        if let Some(tx) = tx.clone() {
+                            let _ = tx.unbounded_send(ClientMessage::Submit {
+                                action: PlayerAction::ResolveInput {
+                                    response: InputResponse::PickMultiple {
+                                        selected: selected_ids,
+                                    },
+                                },
+                            });
                         }
-                    })
-                    .collect();
-                return view! {
+                        selected.set(BTreeSet::new());
+                    };
+
+                    view! {
+                        <section class="awaiting-input">
+                            <p class="prompt">{request.prompt}</p>
+                            <ul class="commit-hand">{cards}</ul>
+                            <button class="commit" on:click=on_commit>"Commit"</button>
+                            {skip_button()}
+                        </section>
+                    }
+                    .into_any()
+                }
+                // `InputKind` is `#[non_exhaustive]`; a future kind the client
+                // doesn't yet render falls back to the prompt + any Skip control.
+                _ => view! {
                     <section class="awaiting-input">
-                        <p class="prompt">{request.prompt.clone()}</p>
-                        <div class="option-list">{buttons}</div>
+                        <p class="prompt">{request.prompt}</p>
+                        {skip_button()}
                     </section>
                 }
-                .into_any();
+                .into_any(),
             }
-
-            // Branch 2: legacy PickMultiple hand-card commit window (skill-test
-            // commit / mulligan). `request.options` is empty for all prompt-only
-            // callers that have not yet migrated to the structured contract.
-            let cards: Vec<_> = active_hand(&game)
-                .into_iter()
-                .enumerate()
-                .map(|(idx, code)| {
-                    let i = u32::try_from(idx).expect("hand fits in u32");
-                    view! {
-                        <li>
-                            <button
-                                class="hand-card"
-                                class:selected=move || selected.get().contains(&i)
-                                on:click=move |_| selected.update(|s| {
-                                    if !s.remove(&i) {
-                                        s.insert(i);
-                                    }
-                                })
-                            >
-                                {code}
-                            </button>
-                        </li>
-                    }
-                })
-                .collect();
-
-            let tx = tx.clone();
-            let on_commit = move |_| {
-                let selected_ids: Vec<OptionId> =
-                    selected.get().into_iter().map(OptionId).collect();
-                if let Some(tx) = tx.clone() {
-                    let _ = tx.unbounded_send(ClientMessage::Submit {
-                        action: PlayerAction::ResolveInput {
-                            response: InputResponse::PickMultiple {
-                                selected: selected_ids,
-                            },
-                        },
-                    });
-                }
-                selected.set(BTreeSet::new());
-            };
-
-            view! {
-                <section class="awaiting-input">
-                    <p class="prompt">{request.prompt}</p>
-                    <ul class="commit-hand">{cards}</ul>
-                    <button class="commit" on:click=on_commit>"Commit"</button>
-                </section>
-            }
-            .into_any()
         }}
     }
 }

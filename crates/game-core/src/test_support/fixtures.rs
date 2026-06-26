@@ -161,6 +161,36 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     }
 }
 
+/// A sample [`Confirm`](crate::InputKind::Confirm)
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
+/// fixtures. Models the Mythos encounter-draw prompt.
+#[must_use]
+pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::confirm(prompt),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// A sample skippable [`PickSingle`](crate::InputKind::PickSingle)
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
+/// fixtures. Models a non-forced reaction window: one option plus a Skip
+/// affordance.
+#[must_use]
+pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(
+            prompt,
+            vec![ChoiceOption {
+                id: OptionId(0),
+                label: "Resolve".into(),
+            }],
+        )
+        .skippable(),
+        resume_token: ResumeToken(0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::awaiting_commit_input;
