@@ -194,4 +194,60 @@ mod tests {
              not be dropped at suspend",
         );
     }
+
+    #[test]
+    fn single_branch_choose_one_surfaces_under_interactive_flag() {
+        use crate::state::InvestigatorId;
+        use crate::test_support::GameStateBuilder;
+
+        // One ChooseOne branch: today it auto-binds. With interactive_acknowledge
+        // on it must surface as a one-option pick (#466).
+        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+
+        let mut state = GameStateBuilder::default().build();
+        state.interactive_acknowledge = true;
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            push_effect(&mut cx, &effect, ctx);
+            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+        };
+        match out {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(
+                    request.options.len(),
+                    1,
+                    "lone branch surfaces as one option"
+                );
+            }
+            other => panic!("expected a one-option suspend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn single_branch_choose_one_auto_binds_when_flag_off() {
+        use crate::state::InvestigatorId;
+        use crate::test_support::GameStateBuilder;
+
+        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let mut state = GameStateBuilder::default().build(); // flag defaults false
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            push_effect(&mut cx, &effect, ctx);
+            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+        };
+        assert!(
+            matches!(out, EngineOutcome::Done),
+            "flag off: auto-binds, no suspend"
+        );
+    }
 }

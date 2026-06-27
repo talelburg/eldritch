@@ -159,4 +159,40 @@ mod tests {
         assert!(native_effect_for(CRYPT_CHILL_FAIL).is_some());
         assert!(native_effect_for("nope").is_none());
     }
+
+    #[test]
+    fn single_asset_discard_surfaces_under_interactive_flag() {
+        use game_core::state::{CardCode, CardInPlay};
+        use game_core::test_support::{test_investigator, GameStateBuilder};
+
+        // Exactly one discardable asset (Machete 01020) in play. With
+        // interactive_acknowledge on, the fail branch must surface the discard as
+        // a one-option pick rather than auto-discarding silently (#466).
+        let mut inv = test_investigator(1);
+        inv.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new("01020"),
+            CardInstanceId(1),
+        ));
+        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        state.interactive_acknowledge = true;
+        let mut events: Vec<Event> = Vec::new();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            super::crypt_chill_fail(&mut cx, &ctx)
+        };
+        match out {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(
+                    request.options.len(),
+                    1,
+                    "lone asset surfaces as one option"
+                );
+            }
+            other => panic!("expected a one-option discard suspend, got {other:?}"),
+        }
+    }
 }
