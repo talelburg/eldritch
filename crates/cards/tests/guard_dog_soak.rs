@@ -39,7 +39,7 @@ const GUARD_DOG: &str = "01021";
 /// vs Ally slot) and never reacts — used for the self-binding case.
 const BULLETPROOF_VEST: &str = "01094";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

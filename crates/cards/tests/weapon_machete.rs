@@ -27,7 +27,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 const MACHETE_INST: CardInstanceId = CardInstanceId(0);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

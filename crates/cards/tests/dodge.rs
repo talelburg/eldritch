@@ -19,7 +19,7 @@ use game_core::{Action, GameState, InputResponse, PlayerAction, TurnAction};
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

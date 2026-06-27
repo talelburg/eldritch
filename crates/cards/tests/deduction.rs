@@ -22,7 +22,7 @@ use game_core::{assert_event, assert_event_count, assert_no_event, TurnAction};
 
 const DEDUCTION: &str = "01039";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

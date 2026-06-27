@@ -46,7 +46,7 @@ const WORKING_A_HUNCH: &str = "01037";
 /// Machete (01020): non-fast Guardian weapon asset → playing it provokes.
 const MACHETE: &str = "01020";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

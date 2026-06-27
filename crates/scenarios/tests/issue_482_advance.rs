@@ -10,7 +10,7 @@ use game_core::test_support::take_turn_action;
 use game_core::{apply, Action, InputKind, InputResponse, OptionId, PlayerAction, TurnAction};
 use scenarios::{the_gathering, REGISTRY};
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registries() {
     let _ = game_core::scenario_registry::install(REGISTRY);
     let _ = game_core::card_registry::install(cards::REGISTRY);

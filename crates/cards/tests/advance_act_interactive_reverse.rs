@@ -36,7 +36,7 @@ fn metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(CardRegistry {
         metadata_for,

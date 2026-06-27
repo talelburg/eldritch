@@ -30,7 +30,7 @@ use game_core::{assert_event, Action};
 use scenarios::test_fixtures::synth_cards::{SYNTH_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_test_registry() {
     let _ = game_core::card_registry::install(TEST_REGISTRY);
 }

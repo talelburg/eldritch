@@ -17,7 +17,7 @@ use game_core::{Action, InputResponse, OptionId, PlayerAction};
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(1);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

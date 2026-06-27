@@ -24,7 +24,7 @@ const A: LocationId = LocationId(1);
 const B: LocationId = LocationId(2);
 const ATT_INST: CardInstanceId = CardInstanceId(900);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

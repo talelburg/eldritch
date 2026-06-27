@@ -17,7 +17,7 @@ use game_core::test_support::{
 };
 use game_core::{EngineOutcome, Event};
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

@@ -26,7 +26,7 @@ use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::REGISTRY;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registry() {
     let _ = game_core::scenario_registry::install(REGISTRY);
     // The Lost-via-doom test draws the synthetic encounter card during

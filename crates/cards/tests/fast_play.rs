@@ -39,7 +39,7 @@ use game_core::test_support::{
 };
 use game_core::TurnAction;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_cards_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

@@ -66,7 +66,7 @@ fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
 /// Install the hand-rolled probe registry before the test harness `main`, so
 /// it's present no matter which test runs first (#473). `install` is idempotent
 /// at the `OnceLock` level (first call wins; later calls return `Err`, ignored).
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_probe_registry() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: probe_metadata,

@@ -22,7 +22,7 @@ use game_core::{assert_event, assert_no_event, TurnAction};
 
 const ROLAND: &str = "01001";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

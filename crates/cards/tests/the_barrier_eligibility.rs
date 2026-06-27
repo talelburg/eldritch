@@ -9,7 +9,7 @@ use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Location
 use game_core::test_support::{test_investigator, test_location};
 use game_core::EvalContext;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = card_registry::install(cards::REGISTRY);
 }

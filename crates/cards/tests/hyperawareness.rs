@@ -26,7 +26,7 @@ const HYPERAWARENESS: &str = "01034";
 const INTELLECT_ABILITY: u8 = 0;
 const AGILITY_ABILITY: u8 = 1;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

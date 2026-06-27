@@ -17,7 +17,7 @@ use game_core::test_support::{
 };
 use game_core::{apply, Action, EngineOutcome, TurnAction};
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

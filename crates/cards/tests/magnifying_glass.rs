@@ -20,7 +20,7 @@ use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, Tur
 
 const MAGNIFYING_GLASS: &str = "01030";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

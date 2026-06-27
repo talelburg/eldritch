@@ -26,7 +26,7 @@ const GUTS: &str = "01089"; // a skill — not a Tome asset (filler)
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

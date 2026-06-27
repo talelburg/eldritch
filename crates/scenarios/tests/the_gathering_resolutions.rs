@@ -19,7 +19,7 @@ use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 const ROLAND: &str = "01001";
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
     let _ = game_core::card_registry::install(cards::REGISTRY);
