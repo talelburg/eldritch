@@ -106,32 +106,36 @@ if candidates.len() >= 2 {
 }
 ```
 
-`open_forced_resolution` (`reaction_windows.rs:123`) builds a `ChoiceOption` per
-forced candidate ("forced — cannot skip; the lead orders them") and resolves them
-in the picked order. That is exactly a "which forced effect to resolve next"
-choice — and for a single candidate it is the acknowledge we want.
+**The synchronous-return constraint.** The 2+ path (`open_forced_resolution`,
+`reaction_windows.rs:123`) returns `AwaitingInput` *directly* from `emit_event`. Its
+callers must therefore be frame-resumable; the comment in `emit.rs` notes the
+others `debug_assert!(Done)`. The single-forced path is different on purpose:
+`fire_forced_triggers` → `resolve_one` *pushes* the effect root frame and returns
+**`Done`**, letting the global `drive` loop own any later suspend — so emit callers
+that do post-emit work (the move action, etc.) stay correct. Re-routing single
+forced through `open_forced_resolution` would make `emit_event` return
+`AwaitingInput` for the n=1 case and break every such caller. So Mechanism B must
+preserve the push-frame-then-`Done` shape.
 
-Change: route **n ≥ 1** through `open_forced_resolution` **when interactive**, and
-let that path present a single candidate as a one-option choice:
+**The change: a dedicated one-option frame, pushed by `resolve_one`.** When
+`interactive_acknowledge` is on, `resolve_one` pushes a new
+`Continuation::AcknowledgeForced { source }` frame **above** the forced effect's
+root frame, then returns `Done` exactly as today. The `drive` loop reaches the
+`AcknowledgeForced` frame first and suspends with a **one-option `PickSingle`**
+labelled from the source; on resume it pops the frame, and the `drive` loop then
+resolves the effect frame beneath. The pick precedes resolution → "confirm before
+the effect" holds. With the flag off, `resolve_one` pushes nothing extra and the
+effect resolves synchronously (today's behavior), so non-interactive consumers and
+tests are unaffected.
 
-```rust
-let candidates = collect_forced_hits(state, &point, After);
-let interactive = cx.state.interactive_acknowledge;
-match candidates.len() {
-    0 => fire_forced_triggers(cx, &point, After), // nothing forced (→ reaction)
-    1 if !interactive => fire_forced_triggers(cx, &point, After), // today's path
-    _ => open_forced_resolution(cx, event, candidates), // ≥2 always; 1 when interactive
-}
-```
-
-`open_forced_resolution` / its window-resume must present a single-candidate set as
-a one-option `PickSingle` rather than auto-firing (the analog of Mechanism A's n=1
-change). The pick precedes resolution → "confirm before the effect" holds. With the
-flag off, a single forced effect still fires synchronously (today's behavior), so
-non-interactive consumers and tests are unaffected.
-
-This covers the original #466 examples (Attic, Cellar) and any future no-choice
-forced ability uniformly, with no per-card work.
+This is the same idiom the engine already uses for a "pause, then continue"
+framework step — the `AdvanceReverse`/`AwaitAck` frame (#482) — and it is the
+single-candidate analog of Mechanism A's n=1 change (a lone option surfaces as a
+one-option `PickSingle`). Reusing the 2+ forced-ordering window for n=1 was
+considered and rejected: it would violate the emit synchronous-return contract and
+require adapting the 1900-line window machinery to a case it never sees, for no
+behavioral gain. It covers the original #466 examples (Attic, Cellar) and any
+future no-choice forced ability uniformly, with no per-card work.
 
 ### Prompt copy
 
