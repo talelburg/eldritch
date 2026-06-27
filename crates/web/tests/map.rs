@@ -158,6 +158,42 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
 }
 
 #[wasm_bindgen_test]
+async fn revealed_location_shows_revealed_not_unrevealed() {
+    let mut loc = test_location(20, "Study Revealed");
+    loc.revealed = true; // default, but explicit
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    let text = node_text("Study Revealed");
+    assert!(
+        text.contains("revealed"),
+        "revealed location must contain 'revealed'; text = {text:?}"
+    );
+    assert!(
+        !text.contains("unrevealed"),
+        "revealed location must NOT contain 'unrevealed'; text = {text:?}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn unrevealed_location_shows_unrevealed() {
+    let mut loc = test_location(21, "Parlor Unrevealed");
+    loc.revealed = false;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    let text = node_text("Parlor Unrevealed");
+    assert!(
+        text.contains("unrevealed"),
+        "unrevealed location must contain 'unrevealed'; text = {text:?}"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn unengaged_enemy_renders_inside_its_location_node() {
     let mut enemy = test_enemy(100, "Mock Ghoul");
     enemy.current_location = Some(LocationId(10));

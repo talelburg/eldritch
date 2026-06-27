@@ -265,6 +265,41 @@ async fn version_mismatch_status_renders_actionable_message() {
 }
 
 #[wasm_bindgen_test]
+async fn map_and_investigators_are_inside_board_main() {
+    let state = GameStateBuilder::new()
+        .with_investigator(test_investigator(1))
+        .with_location(test_location(1, "Study"))
+        .build();
+    let _ = render_state(state).await;
+
+    // Scope to the last mounted .game so DOM accumulation from earlier tests
+    // does not pollute this assertion.
+    let document = leptos::prelude::document();
+    let games = document
+        .query_selector_all(".game")
+        .expect("query_selector_all");
+    let last_game = games
+        .item(games.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("last .game is an Element");
+
+    assert!(
+        last_game
+            .query_selector(".board-main .map")
+            .expect("query ok")
+            .is_some(),
+        ".map must be a descendant of .board-main"
+    );
+    assert!(
+        last_game
+            .query_selector(".board-main .investigators")
+            .expect("query ok")
+            .is_some(),
+        ".investigators must be a descendant of .board-main"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn board_renders_a_new_game_button() {
     let store = RwSignal::new(ClientState::default());
     leptos::mount::mount_to_body(move || {

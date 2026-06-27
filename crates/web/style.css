@@ -15,8 +15,10 @@
 .map-lines { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
 .map-line { stroke: #999; stroke-width: 2; }
 .map-location { position: absolute; z-index: 1; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.25rem; font-size: 0.8rem; overflow: hidden; }
+.map-location.unrevealed { opacity: 0.6; }
 .loc-head { font-weight: 600; margin-bottom: 0.15rem; }
 .inv-token { color: #157a3a; }
 .enemy-token { color: #a3261b; }
 .threat ul { list-style: none; padding-left: 0; margin: 0; }
 .enemy-engaged { color: #a3261b; font-size: 0.85rem; }
+.board-main { display: flex; gap: 1rem; align-items: flex-start; }

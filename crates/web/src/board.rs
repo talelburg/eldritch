@@ -31,8 +31,10 @@ pub fn BoardView() -> impl IntoView {
             <div class="game">
                 {resolution_banner(&game)}
                 {phase_bar(&game)}
-                {crate::map::location_map(&game)}
-                {investigators_panel(&game)}
+                <div class="board-main">
+                    {crate::map::location_map(&game)}
+                    {investigators_panel(&game)}
+                </div>
             </div>
         }
         .into_any(),
