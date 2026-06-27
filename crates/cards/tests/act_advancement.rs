@@ -60,6 +60,45 @@ fn defeating_other_enemy_does_not_advance_act_3() {
     );
 }
 
+/// Act 01110 ("What Have You Done?") advances only via its Forced
+/// `EnemyDefeated` objective (the Ghoul Priest), so its corpus clue threshold is
+/// `null` -> 0. The deliberate clue-spend `AdvanceAct` action must be rejected
+/// for it — otherwise the player could "spend 0 clues to advance" and instantly
+/// latch the terminal Won resolution, bypassing the Ghoul Priest fight (#486).
+/// The legitimate defeat path stays covered by
+/// `defeating_ghoul_priest_advances_act_3_to_won` above.
+#[test]
+fn advance_act_action_rejected_for_act_3_objective() {
+    let inv = InvestigatorId(1);
+    let mut investigator = test_investigator(1);
+    investigator.clues = 5; // plenty — reject must be the objective, not affordability
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(investigator)
+        .with_active_investigator(inv)
+        .with_turn_order([inv])
+        .build();
+    // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
+    state.act_deck = vec![Act {
+        code: CardCode("01110".into()),
+        clue_threshold: 0,
+        resolution: Some(Resolution::Won { id: "R1".into() }),
+    }];
+
+    let result =
+        dispatch_turn_action_unchecked(state, &TurnAction::AdvanceAct { investigator: inv });
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "AdvanceAct must be rejected for Act 3's non-clue objective"
+    );
+    assert!(
+        result.state.resolution.is_none(),
+        "rejected AdvanceAct must not latch the Won resolution (no instant win)"
+    );
+    assert_eq!(result.state.act_index, 0, "act did not advance");
+    assert_eq!(result.state.investigators[&inv].clues, 5, "no clues spent");
+}
+
 /// Act 01109 ("The Barrier") advances only at the end of the round (its
 /// `When`-`RoundEnded` group objective), so the `AdvanceAct` *action* is rejected.
 /// Registry-based detection (`act_advances_at_round_end`, #434) — needs the real

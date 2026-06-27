@@ -49,18 +49,22 @@ fn install() {
 #[test]
 fn interactive_act_reverse_resolves_cleanly() {
     let inv = InvestigatorId(1);
+    let mut investigator = test_investigator(1);
+    investigator.clues = 1; // funds the AdvanceAct clue-spend (threshold 1 below)
     let mut state = GameStateBuilder::new()
         .with_phase(game_core::state::Phase::Investigation)
         .with_active_investigator(inv)
         .with_turn_order([inv])
-        .with_investigator(test_investigator(1))
+        .with_investigator(investigator)
         .build();
-    // Two acts: the leaving one (_iact, threshold 0 so AdvanceAct is affordable)
-    // carries the interactive reverse; a successor so the advance is non-terminal.
+    // Two acts: the leaving one (_iact) carries the interactive reverse; a
+    // successor so the advance is non-terminal. _iact has a positive clue
+    // threshold (the AdvanceAct action requires one — #486) and the
+    // investigator is funded for it above.
     state.act_deck = vec![
         Act {
             code: CardCode(IACT.into()),
-            clue_threshold: 0,
+            clue_threshold: 1,
             resolution: None,
         },
         Act {
