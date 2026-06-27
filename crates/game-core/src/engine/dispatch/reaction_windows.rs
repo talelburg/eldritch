@@ -174,6 +174,15 @@ fn ability_eligible(
     source: CandidateSource,
     controller: InvestigatorId,
 ) -> bool {
+    let ctx = EvalContext::for_controller_with_optional_source(controller, source.instance());
+    // Generic RR p.2/p.3 initiation gate: the effect must have the potential to
+    // change the game state (Roland 01001's clue discovery at a 0-clue location,
+    // #495). Conservative — only provable no-ops are suppressed.
+    if !crate::engine::evaluator::effect_can_change_state(state, ctx, &ability.effect) {
+        return false;
+    }
+    // The native eligibility tag refines opaque `Native` effects the generic gate
+    // can't introspect (#368: Cover Up 01007, act 01109). No tag → eligible.
     let Some(tag) = ability.eligibility.as_deref() else {
         return true;
     };
@@ -183,7 +192,6 @@ fn ability_eligible(
     let Some(pred) = (reg.native_eligibility_for)(tag) else {
         return false;
     };
-    let ctx = EvalContext::for_controller_with_optional_source(controller, source.instance());
     pred(state, &ctx)
 }
 
@@ -454,6 +462,13 @@ fn scan_hand_fast_events(
                     continue;
                 }
                 if !trigger_matches(event, pattern, *timing, id) {
+                    continue;
+                }
+                // RR initiation gate: a Fast event can't be played if its effect
+                // can't change game state — same rule as the in-play reaction scan
+                // (#495). Covers Evidence! 01022 (Roland's reaction sourced from
+                // hand: discover 1 clue at your location) at a 0-clue location.
+                if !ability_eligible(state, ability, CandidateSource::Hand, id) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -1242,6 +1257,38 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
 /// Used by [`play_card`] (which then runs the mutation block on the
 /// `Ok` payload) and by `any_fast_play_eligible` (which only
 /// inspects `Ok` vs `Err`).
+/// RR p.11 (#495): an event card may be played only if its `OnPlay` effect has
+/// the potential to change the game state right now (Working a Hunch 01037 at a
+/// 0-clue location is unplayable). Events only — assets and other card types
+/// always change state by entering play. Uses the same conservative
+/// `effect_can_change_state` evaluator as the reaction/forced initiation gates,
+/// so only provable no-ops are blocked. `Ok(())` when playable.
+fn check_event_play_changes_state(
+    state: &GameState,
+    investigator: InvestigatorId,
+    code: &CardCode,
+    card_type: CardType,
+    abilities: &[Ability],
+) -> Result<(), Cow<'static, str>> {
+    if card_type != CardType::Event {
+        return Ok(());
+    }
+    let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
+    let changes_state = abilities.iter().any(|a| {
+        matches!(a.trigger, Trigger::OnPlay)
+            && crate::engine::evaluator::effect_can_change_state(state, ctx, &a.effect)
+    });
+    if changes_state {
+        Ok(())
+    } else {
+        Err(format!(
+            "PlayCard: {code}'s effect cannot change the game state right now, so it \
+             cannot be played (RR p.11)."
+        )
+        .into())
+    }
+}
+
 pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1319,6 +1366,9 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
+    // RR p.11 initiation gate (#495): an event can't be played if its OnPlay
+    // effect can't change game state — open-turn menu OR Fast window route here.
+    check_event_play_changes_state(state, investigator, &code, card_type, &abilities)?;
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);

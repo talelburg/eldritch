@@ -1822,6 +1822,59 @@ fn resolve_investigator_target(
     }
 }
 
+/// Whether `effect`, resolved against the current `state` and binding `ctx`, has
+/// the potential to change the game state.
+///
+/// This is the generic encoding of the Rules Reference initiation rule (RR p.2:
+/// "If a forced ability does not have the potential to change the game state, the
+/// ability does not initiate"; RR p.3: "A triggered ability can only be initiated
+/// if its effect has the potential to change the game state…"). It gates both the
+/// forced-trigger scan and the reaction/fast-window scan, so a no-op ability —
+/// forced or triggered — never initiates.
+///
+/// **Conservative by construction:** returns `true` unless it can *prove* the
+/// effect is inert. A meaningful ability is therefore never wrongly suppressed;
+/// only provable no-ops are. The proven-no-op set starts with `DiscoverClue`
+/// (Roland 01001 at a 0-clue location, #495) and grows one arm per recurring
+/// pattern. Opaque [`Effect::Native`] effects fall through to `true` — their
+/// no-op detection stays with the card's `eligibility` predicate (#368).
+pub(crate) fn effect_can_change_state(
+    state: &GameState,
+    ctx: EvalContext,
+    effect: &Effect,
+) -> bool {
+    match effect {
+        // Discovering 0 clues moves nothing. Otherwise the discovery is inert iff
+        // its source location resolves to one with no clues — or genuinely doesn't
+        // resolve (a between-locations `YourLocation`, an out-of-test
+        // `TestedLocation`). A `Chosen` target is *not yet grounded* at initiation
+        // time, so its `Err` is "unknown", not "inert" — assume eligible (no
+        // corpus card uses `DiscoverClue { Chosen }` yet; this keeps the
+        // conservative invariant honest if one lands).
+        Effect::DiscoverClue { from, count } => {
+            *count > 0
+                && match from {
+                    LocationTarget::Chosen(_) => true,
+                    _ => resolve_location_target(state, ctx, *from)
+                        .ok()
+                        .and_then(|id| state.locations.get(&id))
+                        .is_some_and(|loc| loc.clues > 0),
+                }
+        }
+        // A sequence changes state iff any step can (an empty `Seq` is inert).
+        Effect::Seq(steps) => steps
+            .iter()
+            .any(|step| effect_can_change_state(state, ctx, step)),
+        // A choice changes state iff some branch can (the controller could pick it).
+        Effect::ChooseOne(branches) => branches
+            .iter()
+            .any(|branch| effect_can_change_state(state, ctx, branch)),
+        // Conservative default: anything not provably inert is assumed to change
+        // state, so meaningful abilities are never suppressed.
+        _ => true,
+    }
+}
+
 fn resolve_location_target(
     state: &GameState,
     ctx: EvalContext,
@@ -2230,15 +2283,86 @@ mod tests {
     use crate::{assert_event, assert_no_event};
 
     use super::{
-        constant_skill_modifier, effective_shroud, eval_condition, eval_int_expr, eval_quantity,
-        push_effect, step_effect_frame, unconditional_constant_stat_modifier, EngineOutcome,
-        EvalContext,
+        constant_skill_modifier, effect_can_change_state, effective_shroud, eval_condition,
+        eval_int_expr, eval_quantity, push_effect, step_effect_frame,
+        unconditional_constant_stat_modifier, EngineOutcome, EvalContext,
     };
     use crate::dsl::Condition;
     use crate::engine::Cx;
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))
+    }
+
+    /// A state with investigator 1 standing on location 10, which holds `clues`.
+    fn state_with_clues_at_location(clues: u8) -> crate::state::GameState {
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(10));
+        let mut loc = test_location(10, "Study");
+        loc.clues = clues;
+        GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .build()
+    }
+
+    #[test]
+    fn discover_clue_can_change_state_only_with_clues_present() {
+        // #495 / RR p.2: discovering a clue at your location changes state iff
+        // there is a clue to discover.
+        let discover = discover_clue(LocationTarget::YourLocation, 1);
+
+        let with_clues = state_with_clues_at_location(2);
+        assert!(effect_can_change_state(&with_clues, ctx(1), &discover));
+
+        let no_clues = state_with_clues_at_location(0);
+        assert!(!effect_can_change_state(&no_clues, ctx(1), &discover));
+    }
+
+    #[test]
+    fn discover_zero_count_cannot_change_state() {
+        let discover = discover_clue(LocationTarget::YourLocation, 0);
+        let with_clues = state_with_clues_at_location(2);
+        assert!(!effect_can_change_state(&with_clues, ctx(1), &discover));
+    }
+
+    #[test]
+    fn seq_can_change_state_iff_any_step_can() {
+        let no_clues = state_with_clues_at_location(0);
+        // Both steps inert (discover at 0-clue location) → Seq inert.
+        let inert = seq(vec![
+            discover_clue(LocationTarget::YourLocation, 1),
+            discover_clue(LocationTarget::YourLocation, 1),
+        ]);
+        assert!(!effect_can_change_state(&no_clues, ctx(1), &inert));
+        // One step meaningful (gain resources, conservatively state-changing).
+        let mixed = seq(vec![
+            discover_clue(LocationTarget::YourLocation, 1),
+            gain_resources(InvestigatorTarget::You, 1),
+        ]);
+        assert!(effect_can_change_state(&no_clues, ctx(1), &mixed));
+    }
+
+    #[test]
+    fn choose_one_can_change_state_iff_any_branch_can() {
+        let no_clues = state_with_clues_at_location(0);
+        let choice = Effect::ChooseOne(vec![
+            discover_clue(LocationTarget::YourLocation, 1),
+            gain_resources(InvestigatorTarget::You, 1),
+        ]);
+        assert!(effect_can_change_state(&no_clues, ctx(1), &choice));
+    }
+
+    #[test]
+    fn unknown_effects_are_conservatively_state_changing() {
+        // Default arm: anything we can't prove inert is assumed to change state,
+        // so a meaningful ability is never wrongly suppressed.
+        let no_clues = state_with_clues_at_location(0);
+        assert!(effect_can_change_state(
+            &no_clues,
+            ctx(1),
+            &gain_resources(InvestigatorTarget::You, 1)
+        ));
     }
 
     /// Bounded effect driver — the deleted production `drive_effect_to_base`,

@@ -274,6 +274,59 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     );
 }
 
+#[test]
+fn reaction_not_offered_when_location_has_no_clues() {
+    // #495 / RR p.2: "Discover 1 clue at your location" can't change the game
+    // state at a 0-clue location, so the reaction must not initiate — the engine
+    // must not even open the (skippable) reaction window. Only a commit is
+    // scripted; if the window opened, the run would end on a skippable reaction
+    // prompt instead of the open-turn menu.
+    let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(0, 0);
+
+    let result = TestSession::new(state)
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
+
+    // The defeat still happened.
+    assert_event!(
+        result.events,
+        Event::EnemyDefeated { enemy: e, by: Some(by) } if *e == enemy_id && *by == inv_id
+    );
+    // No reaction window was opened: the pending input is the open-turn menu, not
+    // a skippable reaction prompt.
+    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+        panic!(
+            "expected AwaitingInput (open turn), got {:?}",
+            result.outcome
+        );
+    };
+    assert!(
+        !request.skippable,
+        "no reaction window should open at a 0-clue location; got a skippable \
+         window: {request:?}"
+    );
+    // Nothing discovered; counter untouched (the reaction never fired).
+    assert_no_event!(result.events, Event::CluePlaced { .. });
+    assert_eq!(result.state.locations[&loc_id].clues, 0);
+    assert_eq!(result.state.investigators[&inv_id].clues, 0);
+    let roland_card = result.state.investigators[&inv_id]
+        .cards_in_play
+        .iter()
+        .find(|c| c.code.as_str() == ROLAND)
+        .expect("Roland's investigator card stayed in play");
+    assert!(
+        roland_card.ability_usage.is_empty(),
+        "a suppressed reaction must not record a use; ability_usage = {:?}",
+        roland_card.ability_usage,
+    );
+}
+
 /// Belt-and-suspenders sanity check: the real registry returns
 /// Roland's abilities with the once-per-round usage limit set.
 /// Card-level unit tests verify this against `super::abilities()`;

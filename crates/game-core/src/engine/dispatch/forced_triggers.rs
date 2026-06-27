@@ -414,6 +414,20 @@ pub(super) fn collect_forced_hits(
             }
         }
     }
+    // RR p.2: a forced ability that lacks the potential to change the game state
+    // does not initiate. Drop such hits here — the single chokepoint feeding both
+    // the lone-hit path (`fire_forced_triggers`) and the 2+ ordered run
+    // (`open_forced_resolution`) — so a no-op forced neither resolves nor (post-
+    // #466) prompts. Conservative: only provable no-ops are dropped (#495).
+    hits.retain(|hit| {
+        let Some(abilities) = (reg.abilities_for)(&hit.code) else {
+            return false;
+        };
+        let effect = &abilities[hit.ability_index as usize].effect;
+        let ctx =
+            EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance());
+        crate::engine::evaluator::effect_can_change_state(state, ctx, effect)
+    });
     hits
 }
 
