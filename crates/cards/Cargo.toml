@@ -18,5 +18,5 @@ serde = { version = "1", features = ["derive"] }
 [dev-dependencies]
 # Installs the card registry before the test harness `main`, so every test in a
 # binary sees it installed — no per-test call to forget, no OnceLock race (#473).
-ctor = "0.2"
+ctor = "1.0"
 

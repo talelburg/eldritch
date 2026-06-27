@@ -19,4 +19,4 @@ rand_chacha = { version = "0.10", default-features = false }
 serde_json = "1"
 # Installs the test registry before the test harness `main`, so every test in a
 # binary sees it installed — no per-test call to forget, no OnceLock race (#473).
-ctor = "0.2"
+ctor = "1.0"
