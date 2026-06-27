@@ -512,10 +512,14 @@ where
 
 /// Drive one open-turn action by enumerating the legal actions, finding the
 /// `OptionId` whose `TurnAction` equals `action`, and submitting it as
-/// `ResolveInput(PickSingle(..))`. Panics if `action` is not currently legal
-/// (a test-authoring bug). Returns the raw `ApplyResult` — assert on the
+/// `ResolveInput(PickSingle(..))`. Returns the raw `ApplyResult` — assert on the
 /// resulting **state/events**, not on `outcome == Done` (post-flip the outcome
 /// is the next open-turn menu's `AwaitingInput`).
+///
+/// # Panics
+///
+/// Panics if `action` is not currently legal (a test-authoring bug) — the
+/// rejection message lists the offered actions.
 pub fn take_turn_action(
     state: GameState,
     action: &crate::engine::enumerate::TurnAction,
@@ -630,6 +634,10 @@ impl TestSession {
     /// Fluent open-turn action: see [`take_turn_action`]. Threads the resulting
     /// state; drains any `AwaitingInput` the action itself opens via the session's
     /// resolver script, exactly like [`TestSession::apply`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `action` is not currently legal (a test-authoring bug).
     pub fn take(self, action: &crate::engine::enumerate::TurnAction) -> Self {
         let idx = crate::engine::enumerate::legal_actions(&self.state)
             .iter()
@@ -661,7 +669,11 @@ impl TestSession {
         self
     }
 
-    /// Execute. Panics if [`apply`](Self::apply) was not called.
+    /// Execute the recorded action through the resolver script.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`apply`](Self::apply) was not called to record an action first.
     pub fn run(self) -> ApplyResult {
         let action = self
             .action

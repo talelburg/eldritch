@@ -281,7 +281,12 @@ impl GameStateBuilder {
     /// mid-phase (the real driver pushes the anchor at phase entry, beneath any
     /// framework windows). Tests that drive `end_turn` / open phase windows
     /// without going through the phase driver use this to satisfy the anchor
-    /// invariant. Panics if `c` is not a `*Phase` anchor variant.
+    /// invariant.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `c` is not a `*Phase` anchor variant (`MythosPhase` /
+    /// `InvestigationPhase` / `EnemyPhase` / `UpkeepPhase`).
     pub fn with_phase_anchor(mut self, c: Continuation) -> Self {
         assert!(
             matches!(

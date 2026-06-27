@@ -90,8 +90,12 @@ pub fn provide_store() -> StoreSignal {
     signal
 }
 
-/// Read the store signal from context. Panics if not provided — a
-/// programmer error (every view lives under `provide_store`).
+/// Read the store signal from context.
+///
+/// # Panics
+///
+/// Panics if no store signal is in context — a programmer error (every view
+/// lives under [`provide_store`]).
 pub fn use_store() -> StoreSignal {
     use_context::<StoreSignal>().expect("store signal provided at App root")
 }

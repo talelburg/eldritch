@@ -118,6 +118,13 @@ pub(in crate::engine) fn draw_cards(cx: &mut Cx, investigator: InvestigatorId, c
 /// crate root) so card-local natives can drive "discard at random from hand"
 /// without reaching into the crate-private RNG (agenda 01105's random-discard
 /// branch, Axis A #334).
+///
+/// # Panics
+///
+/// Panics if `investigator` vanishes from the state mid-call — the index draw
+/// re-`get`s the investigator already checked present above, so this is a
+/// state-corruption invariant, not a reachable input error (a missing
+/// investigator returns `None` at the top).
 pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Option<CardCode> {
     let inv = cx.state.investigators.get_mut(&investigator)?;
     if inv.hand.is_empty() {

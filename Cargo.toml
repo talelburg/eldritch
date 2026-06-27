@@ -28,11 +28,13 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-# Allow some pedantic lints that fire too noisily for early-stage code:
+# Two pedantic lints we deliberately don't enforce — stylistic preferences, not
+# a maturity concession: `module_name_repetitions` would force churny renames
+# (e.g. `card::CardCode`), and `must_use_candidate` is noise (we hand-apply
+# `#[must_use]` where it earns its keep). The doc lints (`missing_errors_doc` /
+# `missing_panics_doc`) are enforced — see the `# Errors` / `# Panics` sections.
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
 
 [profile.release]
 lto = "thin"

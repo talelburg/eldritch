@@ -42,6 +42,12 @@ pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode) -> CardInPlay {
 /// No-op (returns `None`) if the investigator isn't in state — callers
 /// in dispatch have already validated the investigator exists, but the
 /// helper stays total so a misuse can't panic.
+///
+/// # Panics
+///
+/// Does not panic in practice: the `get_mut` re-fetches the investigator just
+/// confirmed present, with no intervening mutation, so the `expect` is a
+/// state-corruption invariant guard.
 pub fn place_in_threat_area(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -74,6 +80,12 @@ pub fn place_in_threat_area(
 /// **No limit enforcement** — "Limit 1 per location" is printed on
 /// specific cards (Obscuring Fog 01168), not a property of all
 /// attachments, so the limit lives in the card's Revelation, not here.
+///
+/// # Panics
+///
+/// Does not panic in practice: the `get_mut` re-fetches the location just
+/// confirmed present, with no intervening mutation, so the `expect` is a
+/// state-corruption invariant guard.
 pub fn attach_to_location(
     cx: &mut Cx,
     location: LocationId,

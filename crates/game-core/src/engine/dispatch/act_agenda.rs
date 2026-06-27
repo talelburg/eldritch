@@ -293,6 +293,14 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
 /// eligibility predicate (which calls [`round_end_advance_affordable`]), so the
 /// insufficient-clues branch here is a defensive backstop. Exposed for the
 /// `cards` registry's 01109 native handler.
+///
+/// # Panics
+///
+/// Panics if `contributor_location_code` is not a location in play. This is
+/// unreachable in practice: the affordability check above returns early unless
+/// the location is present, so reaching the `expect` would mean
+/// [`round_end_advance_affordable`] and [`location_id_by_code`](crate::engine::location_id_by_code)
+/// disagree about the same code.
 pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> EngineOutcome {
     if !round_end_advance_affordable(cx.state, contributor_location_code) {
         return EngineOutcome::Rejected {
