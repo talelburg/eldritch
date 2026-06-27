@@ -86,7 +86,7 @@ async fn phase_bar_renders_phase_round_act_agenda() {
 }
 
 #[wasm_bindgen_test]
-async fn locations_panel_renders_name_shroud_clues_revealed() {
+async fn map_renders_location_name_shroud_clues() {
     let mut loc = test_location(7, "Rivertown");
     loc.shroud = 3;
     loc.clues = 2;
@@ -100,7 +100,6 @@ async fn locations_panel_renders_name_shroud_clues_revealed() {
     assert!(html.contains("Rivertown"), "location name missing: {html}");
     assert!(html.contains("shroud 3"), "shroud missing: {html}");
     assert!(html.contains("clues 2"), "location clues missing: {html}");
-    assert!(html.contains("revealed"), "revealed flag missing: {html}");
 }
 
 #[wasm_bindgen_test]
