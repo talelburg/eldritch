@@ -538,6 +538,25 @@ impl CardMetadata {
         )
     }
 
+    /// The printed resource cost to play this card from hand (Rules Reference
+    /// p.7, "Costs"). `Some(n)` is a fixed cost; `None` means either an X-cost
+    /// card or a card type that is never played for a cost (Skill, encounter
+    /// cards, …). Callers in the play path reach this only for Asset/Event (the
+    /// only playable types), where `None` therefore denotes an X-cost.
+    #[must_use]
+    pub fn play_cost(&self) -> Option<i8> {
+        match self.kind {
+            CardKind::Asset { cost, .. } | CardKind::Event { cost, .. } => cost,
+            CardKind::Investigator { .. }
+            | CardKind::Skill { .. }
+            | CardKind::Enemy { .. }
+            | CardKind::Treachery { .. }
+            | CardKind::Location { .. }
+            | CardKind::Act { .. }
+            | CardKind::Agenda { .. } => None,
+        }
+    }
+
     /// Surge keyword (Rules Reference p.19). Only Enemy/Treachery
     /// encounter cards carry it; everything else is `false`.
     #[must_use]
@@ -630,6 +649,68 @@ mod is_fast_tests {
         };
         assert!(event(true).play_only_during_turn());
         assert!(!event(false).play_only_during_turn());
+    }
+
+    #[test]
+    fn play_cost_reads_asset_and_event_cost_and_none_elsewhere() {
+        let asset = |cost| CardMetadata {
+            code: "01017".into(),
+            name: "Physical Training".into(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".into(),
+            kind: CardKind::Asset {
+                class: Class::Guardian,
+                cost,
+                xp: None,
+                slots: vec![],
+                health: None,
+                sanity: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: false,
+                deck_limit: 2,
+                uses: None,
+                play_only_during_turn: false,
+            },
+        };
+        // Fixed cost reads through; X-cost (`None`) reads through as `None`.
+        assert_eq!(asset(Some(2)).play_cost(), Some(2));
+        assert_eq!(asset(None).play_cost(), None);
+
+        let event = CardMetadata {
+            code: "01088".into(),
+            name: "Emergency Cache".into(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".into(),
+            kind: CardKind::Event {
+                class: Class::Neutral,
+                cost: Some(0),
+                xp: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: false,
+                deck_limit: 3,
+                play_only_during_turn: false,
+            },
+        };
+        assert_eq!(event.play_cost(), Some(0));
+
+        // A non-playable card type has no play cost.
+        let skill = CardMetadata {
+            code: "01089".into(),
+            name: "Guts".into(),
+            traits: vec![],
+            text: None,
+            pack_code: "core".into(),
+            kind: CardKind::Skill {
+                class: Class::Survivor,
+                xp: None,
+                skill_icons: SkillIcons::default(),
+                deck_limit: 2,
+                commit_limit: None,
+            },
+        };
+        assert_eq!(skill.play_cost(), None);
     }
 
     #[test]

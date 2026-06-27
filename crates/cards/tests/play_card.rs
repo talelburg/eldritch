@@ -458,3 +458,99 @@ fn play_card_after_defeat_is_rejected() {
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
 }
+
+// --- Resource-cost payment (#501) -----------------------------------------
+//
+// Playing a card is paying its cost (RR p.22, Initiation Sequence): a card
+// cannot be played unless its resource cost can be paid in full, and on a
+// successful play the cost is deducted before attacks of opportunity resolve.
+// Holy Rosary (01059) costs 2 resources (verified against the corpus).
+
+#[test]
+fn play_card_rejected_when_resources_below_cost() {
+    let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
+    state.investigators.get_mut(&id).unwrap().resources = 1;
+
+    let result = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        },
+    );
+
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "playing a cost-2 card with 1 resource must be rejected",
+    );
+    let inv = &result.state.investigators[&id];
+    assert_eq!(inv.resources, 1, "resources unchanged on a rejected play");
+    assert_eq!(inv.hand.len(), 1, "card stays in hand on a rejected play");
+    assert!(inv.cards_in_play.is_empty(), "nothing enters play");
+    assert!(result.events.is_empty(), "no events on rejection");
+}
+
+#[test]
+fn play_card_deducts_resource_cost_and_emits_resources_paid() {
+    let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
+    state.investigators.get_mut(&id).unwrap().resources = 5;
+
+    let result = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        },
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_eq!(
+        result.state.investigators[&id].resources, 3,
+        "5 - cost 2 = 3 after a successful play",
+    );
+    assert_event_count!(
+        result.events,
+        1,
+        Event::ResourcesPaid { investigator, amount }
+            if *investigator == id && *amount == 2
+    );
+}
+
+#[test]
+fn play_card_at_exactly_its_cost_succeeds() {
+    let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
+    state.investigators.get_mut(&id).unwrap().resources = 2;
+
+    let result = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        },
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_eq!(
+        result.state.investigators[&id].resources, 0,
+        "paying the full cost empties the pool",
+    );
+}
+
+#[test]
+fn play_zero_cost_card_is_free_and_emits_no_resources_paid() {
+    // Emergency Cache (01088) costs 0: affordable even at 0 resources, and a
+    // 0-resource deduction emits no ResourcesPaid event.
+    let (mut state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
+    state.investigators.get_mut(&id).unwrap().resources = 0;
+
+    let result = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        },
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_no_event!(result.events, Event::ResourcesPaid { .. });
+}

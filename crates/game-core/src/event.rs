@@ -130,8 +130,8 @@ pub enum Event {
         /// Amount gained.
         amount: u8,
     },
-    /// An investigator paid / lost resources (e.g. as a `Cost::Resources`
-    /// payment for an activated ability).
+    /// An investigator paid / lost resources (a `Cost::Resources` payment for an
+    /// activated ability, or a card's printed play cost on `PlayCard`).
     ResourcesPaid {
         /// Who paid resources.
         investigator: InvestigatorId,
