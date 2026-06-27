@@ -155,7 +155,26 @@ pub(crate) fn fire_forced_triggers(
         hits.len(),
     );
     match hits.first() {
-        Some(hit) => resolve_one(cx, hit),
+        Some(hit) => {
+            let out = resolve_one(cx, hit);
+            // #466: in interactive play, surface the lone forced effect as a
+            // one-option pick *before* it resolves. resolve_one already pushed the
+            // effect root frame and returned Done; push the ack *above* it so the
+            // `drive` loop hits the ack first (suspend), and on resume pops it —
+            // then resolves the effect. fire_forced_triggers still returns Done
+            // (push-frame contract), so emit callers stay correct. Scoped to this
+            // single-hit path: the 2+ ordered run resolves via the forced-window's
+            // own path (never `resolve_one`), so its ordering pick is the only
+            // confirmation (no per-effect ack).
+            if cx.state.interactive_acknowledge && matches!(out, EngineOutcome::Done) {
+                cx.state
+                    .continuations
+                    .push(crate::state::Continuation::AcknowledgeForced {
+                        source: hit.code.clone(),
+                    });
+            }
+            out
+        }
         None => EngineOutcome::Done,
     }
 }
