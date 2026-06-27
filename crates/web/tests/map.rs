@@ -11,6 +11,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::store::{reduce, ClientState};
+use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -57,6 +58,50 @@ fn node_text(loc_name: &str) -> String {
         .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default()
+}
+
+/// Count of `<line class="map-line">` elements in the LAST mounted `.map`
+/// section. Scoped to the last section so that DOM accumulation from earlier
+/// test mounts does not carry over stale lines into a fresh assertion.
+fn line_count() -> u32 {
+    let maps = document().query_selector_all(".map").expect("query ok");
+    let len = maps.length();
+    if len == 0 {
+        return 0;
+    }
+    let last_map = maps
+        .item(len - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("last .map is an Element");
+    last_map
+        .query_selector_all("line.map-line")
+        .expect("query ok")
+        .length()
+}
+
+#[wasm_bindgen_test]
+async fn connected_locations_draw_a_line() {
+    let mut state = GameStateBuilder::new()
+        .with_location(test_location(10, "Hallway"))
+        .with_location(test_location(11, "Attic"))
+        .with_investigator(test_investigator(1))
+        .build();
+    state.connect(LocationId(10), LocationId(11));
+    mount_state(state).await;
+    assert!(
+        line_count() >= 1,
+        "a connected pair must draw at least one line"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn isolated_location_draws_no_line() {
+    let state = GameStateBuilder::new()
+        .with_location(test_location(10, "Study")) // no connections
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    assert_eq!(line_count(), 0, "an isolated location draws no lines");
 }
 
 #[wasm_bindgen_test]

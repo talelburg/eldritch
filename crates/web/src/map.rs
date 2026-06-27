@@ -74,10 +74,52 @@ const CELL_H: u16 = 150;
 const NODE_W: u16 = 170;
 const NODE_H: u16 = 120;
 
+/// Center pixel of a node at grid cell `(col, row)`.
+fn node_center((col, row): (u16, u16)) -> (u16, u16) {
+    (col * CELL_W + NODE_W / 2, row * CELL_H + NODE_H / 2)
+}
+
+/// One `<line>` per undirected pair of connected, in-play locations, between
+/// node centers. A peer not in `positions` (set-aside, not yet in play) is
+/// skipped. Dedups by ordered `LocationId` pair so each edge draws once.
+fn connection_lines(
+    game: &GameState,
+    positions: &BTreeMap<LocationId, (u16, u16)>,
+) -> Vec<impl IntoView> {
+    let mut seen: BTreeSet<(u32, u32)> = BTreeSet::new();
+    let mut lines = Vec::new();
+    for loc in game.locations.values() {
+        let Some(&a) = positions.get(&loc.id) else {
+            continue;
+        };
+        for peer in &loc.connections {
+            let Some(&b) = positions.get(peer) else {
+                continue; // peer not in play
+            };
+            let key = (loc.id.0.min(peer.0), loc.id.0.max(peer.0));
+            if !seen.insert(key) {
+                continue;
+            }
+            let (x1, y1) = node_center(a);
+            let (x2, y2) = node_center(b);
+            lines.push(view! {
+                <line class="map-line" x1=x1 y1=y1 x2=x2 y2=y2 />
+            });
+        }
+    }
+    lines
+}
+
+/// Pixel `(width, height)` spanning all placed nodes (one extra cell of slack).
+fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
+    let max_col = positions.values().map(|(c, _)| *c).max().unwrap_or(0);
+    let max_row = positions.values().map(|(_, r)| *r).max().unwrap_or(0);
+    ((max_col + 1) * CELL_W, (max_row + 1) * CELL_H)
+}
+
 /// The map panel: one absolutely-positioned container node per in-play location,
 /// holding the investigators and unengaged enemies in it. Connection lines are
-/// added by [`connection_lines`] (Task 4). Read-only — pure derivation of
-/// `game`.
+/// drawn by [`connection_lines`]. Read-only — pure derivation of `game`.
 pub fn location_map(game: &GameState) -> impl IntoView {
     let locs: Vec<_> = game
         .locations
@@ -130,7 +172,14 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         })
         .collect();
 
-    view! { <section class="map">{nodes}</section> }
+    let lines = connection_lines(game, &positions);
+    let (w, h) = map_extent(&positions);
+    view! {
+        <section class="map" style=format!("width:{w}px;height:{h}px;")>
+            <svg class="map-lines" width=w height=h>{lines}</svg>
+            {nodes}
+        </section>
+    }
 }
 
 #[cfg(test)]
