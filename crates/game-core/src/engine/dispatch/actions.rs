@@ -498,6 +498,12 @@ pub(super) fn move_primary_effect(
     if !matches!(left, EngineOutcome::Done) {
         return left;
     }
+    // Framework engagement on entering (RR engagement rules): "Each time an
+    // investigator enters a location, each ready enemy at that location
+    // automatically engages that investigator." Runs after the move is applied
+    // and before the entered-location forced window, so an "after you enter"
+    // forced ability sees the engagement already established (#496).
+    engage_ready_enemies_on_enter(cx, investigator, destination);
     // Terminal step: the entered location's Forced on-enter abilities fire,
     // and their outcome becomes the move's outcome. This runs *after* the
     // move is applied, so if it returns Rejected (e.g. 2+ simultaneous
@@ -511,6 +517,42 @@ pub(super) fn move_primary_effect(
             location: destination,
         },
     )
+}
+
+/// Auto-engage on entering: every ready (`!exhausted`), currently-unengaged
+/// enemy at `location` engages `investigator`, in deterministic `EnemyId` order
+/// (RR engagement rules: "Each time an investigator enters a location, each
+/// ready enemy at that location automatically engages that investigator.").
+///
+/// An enemy already engaged with another investigator keeps its current
+/// engagement (an enemy engages only one investigator); an enemy that moved here
+/// engaged with the entering investigator is skipped (already engaged). No
+/// player choice is involved — every qualifying enemy engages the one investigator
+/// who entered — so this stays synchronous.
+///
+/// The **Aloof** carve-out (an Aloof enemy does not automatically engage) is not
+/// yet modeled — consistent with the spawn, Hunter, and Upkeep-reengage paths,
+/// which also don't gate on Aloof (shared deferral, #144/#150). No Aloof enemy
+/// appears in a currently-implemented scenario.
+///
+/// Scope: this handles the *enter* trigger only. The broader continuous rule
+/// (a ready, unengaged enemy co-located with an investigator for any other
+/// reason — readied, disengaged, or relocated onto the investigator — engages)
+/// is covered for its existing triggers by the Upkeep-readied (#150) and
+/// elimination-reengage paths; no other enter-like trigger exists yet.
+fn engage_ready_enemies_on_enter(cx: &mut Cx, investigator: InvestigatorId, location: LocationId) {
+    let to_engage: Vec<EnemyId> = cx
+        .state
+        .enemies
+        .iter()
+        .filter(|(_, e)| {
+            e.current_location == Some(location) && !e.exhausted && e.engaged_with.is_none()
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    for enemy_id in to_engage {
+        super::hunters::engage_enemy_with(cx, enemy_id, investigator);
+    }
 }
 
 /// Validate the preconditions shared by every action-point-spending
@@ -1004,6 +1046,149 @@ mod actions_tests {
         );
         // AoO does not exhaust the attacker (RR p.7).
         assert!(!result.state.enemies[&enemy_id].exhausted);
+    }
+
+    /// Build a two-location map (L1 → L2) with a ready, unengaged enemy waiting
+    /// at the destination L2. The investigator starts Active at L1 with actions
+    /// to spend and full health, mid-Investigation. The L2 enemy isn't engaged
+    /// with the mover, so the move opens no attack of opportunity.
+    fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, crate::state::GameState)
+    {
+        let inv_id = InvestigatorId(1);
+        let l1 = LocationId(10);
+        let l2 = LocationId(11);
+        let enemy_id = EnemyId(100);
+
+        crate::test_support::install_test_registry();
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(l1);
+        inv.actions_remaining = 3;
+
+        let mut loc1 = test_location(10, "L1");
+        loc1.connections = vec![l2];
+        let mut loc2 = test_location(11, "L2");
+        loc2.connections = vec![l1];
+
+        let mut enemy = test_enemy(100, "Icy Ghoul");
+        enemy.current_location = Some(l2);
+        enemy.engaged_with = None;
+        enemy.exhausted = false;
+
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc1)
+            .with_location(loc2)
+            .with_enemy(enemy)
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(inv_id)
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv_id)
+            .build();
+
+        (inv_id, l2, enemy_id, state)
+    }
+
+    #[test]
+    fn entering_a_location_engages_a_ready_enemy_there() {
+        // RR engagement: "Each time an investigator enters a location, each ready
+        // enemy at that location automatically engages that investigator." (Icy
+        // Ghoul 01119 waiting at the Cellar — no Aloof keyword.)
+        let (inv_id, l2, enemy_id, state) = move_into_enemy_scenario();
+
+        let result = take_turn_action(
+            state,
+            &TurnAction::Move {
+                investigator: inv_id,
+                destination: l2,
+            },
+        );
+
+        assert!(!matches!(
+            result.outcome,
+            crate::engine::EngineOutcome::Rejected { .. }
+        ));
+        assert_eq!(
+            result.state.investigators[&inv_id].current_location,
+            Some(l2),
+            "investigator entered L2",
+        );
+        assert_eq!(
+            result.state.enemies[&enemy_id].engaged_with,
+            Some(inv_id),
+            "the ready enemy at the destination must engage the entering investigator",
+        );
+        assert_event!(
+            result.events,
+            Event::EnemyEngaged { enemy, investigator }
+                if *enemy == enemy_id && *investigator == inv_id
+        );
+    }
+
+    #[test]
+    fn entering_a_location_does_not_engage_an_exhausted_enemy() {
+        // Only *ready* enemies engage on entry (RR). An exhausted enemy stays
+        // unengaged.
+        let (inv_id, l2, enemy_id, mut state) = move_into_enemy_scenario();
+        state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
+
+        let result = take_turn_action(
+            state,
+            &TurnAction::Move {
+                investigator: inv_id,
+                destination: l2,
+            },
+        );
+
+        assert_eq!(
+            result.state.enemies[&enemy_id].engaged_with, None,
+            "an exhausted (non-ready) enemy must not auto-engage on entry",
+        );
+        assert_no_event!(result.events, Event::EnemyEngaged { .. });
+    }
+
+    #[test]
+    fn entering_engages_all_ready_enemies_and_leaves_already_engaged_alone() {
+        // RR phrases it as *each* ready enemy: every ready, unengaged enemy at
+        // the destination engages the entering investigator. An enemy already
+        // engaged with another investigator keeps that engagement (an enemy
+        // engages only one investigator).
+        let (inv_id, l2, enemy_a, mut state) = move_into_enemy_scenario();
+        let other = InvestigatorId(2);
+        let enemy_b = EnemyId(101);
+        let enemy_c = EnemyId(102);
+
+        // A second ready, unengaged enemy at the destination.
+        let mut b = test_enemy(101, "Ghoul B");
+        b.current_location = Some(l2);
+        b.engaged_with = None;
+        b.exhausted = false;
+        // A third enemy at the destination already engaged with someone else.
+        let mut c = test_enemy(102, "Ghoul C");
+        c.current_location = Some(l2);
+        c.engaged_with = Some(other);
+        c.exhausted = false;
+        state.enemies.insert(enemy_b, b);
+        state.enemies.insert(enemy_c, c);
+
+        let result = take_turn_action(
+            state,
+            &TurnAction::Move {
+                investigator: inv_id,
+                destination: l2,
+            },
+        );
+
+        // Both ready, unengaged enemies engage the entering investigator.
+        assert_eq!(result.state.enemies[&enemy_a].engaged_with, Some(inv_id),);
+        assert_eq!(result.state.enemies[&enemy_b].engaged_with, Some(inv_id),);
+        // The already-engaged enemy is untouched.
+        assert_eq!(
+            result.state.enemies[&enemy_c].engaged_with,
+            Some(other),
+            "an enemy already engaged elsewhere is not stolen by the entering investigator",
+        );
     }
 
     /// Build an Investigate scenario: investigator at a revealed location with
