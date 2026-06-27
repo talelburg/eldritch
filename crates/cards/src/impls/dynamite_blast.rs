@@ -160,4 +160,40 @@ mod tests {
     fn registry_dispatches_to_this_modules_abilities() {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));
     }
+
+    #[test]
+    fn single_location_blast_surfaces_under_interactive_flag() {
+        use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
+
+        // Sole candidate (controller's location, no connections). With
+        // interactive_acknowledge on, the blast target must surface as a
+        // one-option pick rather than auto-targeting silently (#466).
+        let loc = test_location(1, "Lonely Spot"); // no connections by default
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(1));
+        let mut state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(loc)
+            .build();
+        state.interactive_acknowledge = true;
+        let mut events: Vec<game_core::Event> = Vec::new();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            super::dynamite_blast(&mut cx, &ctx)
+        };
+        match out {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(
+                    request.options.len(),
+                    1,
+                    "lone location surfaces as one option"
+                );
+            }
+            other => panic!("expected a one-option blast suspend, got {other:?}"),
+        }
+    }
 }

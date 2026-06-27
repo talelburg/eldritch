@@ -195,4 +195,39 @@ mod tests {
             other => panic!("expected a one-option discard suspend, got {other:?}"),
         }
     }
+
+    #[test]
+    fn single_asset_auto_discards_when_flag_off() {
+        use game_core::state::{CardCode, CardInPlay};
+        use game_core::test_support::{test_investigator, GameStateBuilder};
+
+        // Flag off (default): the lone asset auto-discards silently, as today —
+        // the n=1 regression guard local to this card (#466).
+        let mut inv = test_investigator(1);
+        inv.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new("01020"),
+            CardInstanceId(1),
+        ));
+        let mut state = GameStateBuilder::new().with_investigator(inv).build();
+        let mut events: Vec<Event> = Vec::new();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            super::crypt_chill_fail(&mut cx, &ctx)
+        };
+        assert!(
+            matches!(out, EngineOutcome::Done),
+            "flag off: auto-discard, no suspend"
+        );
+        let inv = &state.investigators[&InvestigatorId(1)];
+        assert!(inv.cards_in_play.is_empty(), "the asset was discarded");
+        assert_eq!(
+            inv.discard,
+            vec![CardCode::new("01020")],
+            "asset moved to discard"
+        );
+    }
 }

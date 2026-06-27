@@ -596,4 +596,32 @@ mod tests {
             "the AcknowledgeForced frame must be popped on resume"
         );
     }
+
+    #[test]
+    fn acknowledge_forced_rejects_non_pick_response() {
+        use crate::action::InputResponse;
+        use crate::state::Continuation;
+        use crate::test_support::GameStateBuilder;
+
+        // Validate-first: a Confirm/Skip (not the single PickSingle) is rejected
+        // and leaves the frame in place.
+        let mut state = GameStateBuilder::default().build();
+        state.continuations.push(Continuation::AcknowledgeForced {
+            source: CardCode("01113".into()),
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = super::resume_acknowledge_forced(&mut cx, &InputResponse::Confirm);
+        assert!(matches!(out, EngineOutcome::Rejected { .. }));
+        assert!(
+            matches!(
+                cx.state.continuations.last(),
+                Some(Continuation::AcknowledgeForced { .. })
+            ),
+            "a rejected resume must leave the frame in place"
+        );
+    }
 }
