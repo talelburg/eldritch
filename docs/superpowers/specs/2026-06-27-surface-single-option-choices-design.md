@@ -117,16 +117,26 @@ forced through `open_forced_resolution` would make `emit_event` return
 `AwaitingInput` for the n=1 case and break every such caller. So Mechanism B must
 preserve the push-frame-then-`Done` shape.
 
-**The change: a dedicated one-option frame, pushed by `resolve_one`.** When
-`interactive_acknowledge` is on, `resolve_one` pushes a new
-`Continuation::AcknowledgeForced { source }` frame **above** the forced effect's
-root frame, then returns `Done` exactly as today. The `drive` loop reaches the
-`AcknowledgeForced` frame first and suspends with a **one-option `PickSingle`**
-labelled from the source; on resume it pops the frame, and the `drive` loop then
-resolves the effect frame beneath. The pick precedes resolution → "confirm before
-the effect" holds. With the flag off, `resolve_one` pushes nothing extra and the
-effect resolves synchronously (today's behavior), so non-interactive consumers and
-tests are unaffected.
+**The change: a dedicated one-option frame, pushed on the single-hit path.** When
+`interactive_acknowledge` is on, `fire_forced_triggers` (the 0/1-hit path) pushes a
+new `Continuation::AcknowledgeForced { source }` frame **above** the forced
+effect's root frame after `resolve_one` pushes it, then returns `Done` exactly as
+today. The `drive` loop reaches the `AcknowledgeForced` frame first and suspends
+with a **one-option `PickSingle`** labelled from the source; on resume it pops the
+frame, and the `drive` loop then resolves the effect frame beneath. The pick
+precedes resolution → "confirm before the effect" holds. With the flag off,
+nothing extra is pushed and the effect resolves synchronously (today's behavior),
+so non-interactive consumers and tests are unaffected.
+
+**No double-confirm on 2+ forced.** The ack lives on the single-hit path only.
+`resolve_one` is called *exclusively* from `fire_forced_triggers`; the 2+
+simultaneous-forced run resolves its candidates through the forced-resolution
+window's own path (`reaction_windows.rs:864/894`), never `resolve_one`. So when the
+player orders 2+ forced effects, that ordering pick *is* the confirmation and no
+per-effect ack is added — exactly the desired behavior. Placing the push in
+`fire_forced_triggers` (docstring: "at most one hit reaches here") rather than
+`resolve_one` makes this scoping self-evident and keeps `resolve_one` a pure
+resolution primitive.
 
 This is the same idiom the engine already uses for a "pause, then continue"
 framework step — the `AdvanceReverse`/`AwaitAck` frame (#482) — and it is the

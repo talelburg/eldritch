@@ -412,32 +412,44 @@ git commit -m "engine: AcknowledgeForced continuation frame (one-option forced-e
 
 ---
 
-### Task 4: Push `AcknowledgeForced` from `resolve_one` when interactive
+### Task 4: Push `AcknowledgeForced` from `fire_forced_triggers` (single-hit path) when interactive
 
 **Files:**
-- Modify: `crates/game-core/src/engine/dispatch/forced_triggers.rs:456-477` (`resolve_one`)
+- Modify: `crates/game-core/src/engine/dispatch/forced_triggers.rs:157-160` (`fire_forced_triggers`'s `match hits.first()` tail)
 - Test: `crates/game-core/src/engine/dispatch/forced_triggers.rs` (`#[cfg(test)] mod`)
 
 **Interfaces:**
-- Consumes: `Continuation::AcknowledgeForced` and the drive/resume from Task 3; `interactive_acknowledge`.
+- Consumes: `Continuation::AcknowledgeForced` and the drive/resume from Task 3; `interactive_acknowledge`; `resolve_one` (unchanged — stays a pure resolution primitive).
 
-- [ ] **Step 1: Modify `resolve_one` to push the ack frame above the effect when interactive**
+**Why here, not in `resolve_one`:** `resolve_one` is called *only* from `fire_forced_triggers` (the 0/1-hit path; the 2+ ordered run resolves candidates via `reaction_windows.rs:864/894`, never `resolve_one`). Placing the ack in `fire_forced_triggers` — whose docstring already states "at most one hit reaches here" — scopes it to the lone-forced case at the call site, so the 2+ ordered run never gets a per-effect ack (its ordering pick *is* the confirmation), and `resolve_one` stays ack-free if ever reused.
 
-In `crates/game-core/src/engine/dispatch/forced_triggers.rs`, change the tail of `resolve_one` (currently `push_effect(cx, &effect, ctx); EngineOutcome::Done`) to:
+- [ ] **Step 1: Modify `fire_forced_triggers` to push the ack frame above the effect when interactive**
+
+In `crates/game-core/src/engine/dispatch/forced_triggers.rs`, replace the closing `match` (`:157-160`):
 
 ```rust
-    push_effect(cx, &effect, ctx);
-    // #466: in interactive play, surface the forced effect as a one-option pick
-    // *before* it resolves. Pushed above the effect frame so the `drive` loop
-    // hits it first, suspends, and on resume pops it — then resolves the effect.
-    // resolve_one still returns Done (push-frame contract), so emit callers that
-    // do post-emit work stay correct.
-    if cx.state.interactive_acknowledge {
-        cx.state
-            .continuations
-            .push(crate::state::Continuation::AcknowledgeForced { source: hit.code.clone() });
+    match hits.first() {
+        Some(hit) => {
+            let out = resolve_one(cx, hit);
+            // #466: in interactive play, surface the lone forced effect as a
+            // one-option pick *before* it resolves. resolve_one already pushed the
+            // effect root frame and returned Done; push the ack *above* it so the
+            // `drive` loop hits the ack first (suspend), and on resume pops it —
+            // then resolves the effect. fire_forced_triggers still returns Done
+            // (push-frame contract), so emit callers stay correct. Scoped to the
+            // single-hit path: the 2+ ordered run never reaches here, so its
+            // ordering pick is the only confirmation (no per-effect ack).
+            if cx.state.interactive_acknowledge && matches!(out, EngineOutcome::Done) {
+                cx.state
+                    .continuations
+                    .push(crate::state::Continuation::AcknowledgeForced {
+                        source: hit.code.clone(),
+                    });
+            }
+            out
+        }
+        None => EngineOutcome::Done,
     }
-    EngineOutcome::Done
 ```
 
 - [ ] **Step 2: Write a test — a single forced hit pushes the ack frame under the flag**
