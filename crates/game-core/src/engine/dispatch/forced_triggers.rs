@@ -476,3 +476,105 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     push_effect(cx, &effect, ctx);
     EngineOutcome::Done
 }
+
+/// Display name for the card a forced ability is printed on, for the
+/// [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced) prompt.
+/// Resolved via the registry; falls back to the raw code when no
+/// registry/metadata is available (tests).
+fn forced_source_name(code: &CardCode) -> String {
+    crate::card_registry::current()
+        .and_then(|r| (r.metadata_for)(code))
+        .map_or_else(|| code.0.clone(), |m| m.name.clone())
+}
+
+/// Drive a [`Continuation::AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
+/// frame (#466): suspend with a one-option `PickSingle` naming the source. The
+/// pick precedes the forced effect's resolution ("confirm before the effect").
+/// Mirrors `advance_reverse::drive`'s `AwaitAck` suspend.
+pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
+    use crate::engine::{ChoiceOption, InputRequest, OptionId, ResumeToken};
+    let Some(crate::state::Continuation::AcknowledgeForced { source }) =
+        cx.state.continuations.last()
+    else {
+        return EngineOutcome::Rejected {
+            reason: "drive_acknowledge_forced: top frame is not AcknowledgeForced".into(),
+        };
+    };
+    let name = forced_source_name(source);
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(
+            format!("Forced — {name}"),
+            vec![ChoiceOption {
+                id: OptionId(0),
+                label: "Resolve".into(),
+            }],
+        ),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume an [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
+/// frame: validate the single option, pop the frame, and return `Done` so the
+/// `drive` loop resolves the forced effect beneath.
+pub(crate) fn resume_acknowledge_forced(
+    cx: &mut Cx,
+    response: &crate::action::InputResponse,
+) -> EngineOutcome {
+    use crate::engine::OptionId;
+    if !matches!(
+        response,
+        crate::action::InputResponse::PickSingle(OptionId(0))
+    ) {
+        return EngineOutcome::Rejected {
+            reason: "resume_acknowledge_forced: expected the single forced-resolution option"
+                .into(),
+        };
+    }
+    debug_assert!(matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::AcknowledgeForced { .. })
+    ));
+    cx.state.continuations.pop();
+    EngineOutcome::Done
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acknowledge_forced_suspends_then_pops_on_pick() {
+        use crate::action::InputResponse;
+        use crate::engine::OptionId;
+        use crate::state::Continuation;
+        use crate::test_support::GameStateBuilder;
+
+        let mut state = GameStateBuilder::default().build();
+        state.continuations.push(Continuation::AcknowledgeForced {
+            source: CardCode("01113".into()),
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        // Drive: one-option suspend.
+        let out = super::drive_acknowledge_forced(&mut cx);
+        match out {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+            }
+            other => panic!("expected one-option suspend, got {other:?}"),
+        }
+
+        // Resume with the single option: frame pops, returns Done.
+        let out =
+            super::resume_acknowledge_forced(&mut cx, &InputResponse::PickSingle(OptionId(0)));
+        assert!(matches!(out, EngineOutcome::Done));
+        assert!(
+            cx.state.continuations.is_empty(),
+            "the AcknowledgeForced frame must be popped on resume"
+        );
+    }
+}

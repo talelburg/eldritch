@@ -256,6 +256,11 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                 EngineOutcome::Done => {}
                 other => return other,
             },
+            // #466: a one-option forced-effect acknowledge always suspends; on
+            // resume it pops and the effect frame beneath resolves.
+            Some(Continuation::AcknowledgeForced { .. }) => {
+                return forced_triggers::drive_acknowledge_forced(cx)
+            }
             Some(Continuation::SkillTest(_)) => match skill_test::advance(cx) {
                 EngineOutcome::Done => {}
                 other => return other,
@@ -612,6 +617,11 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // The #482 advance acknowledge pause: a Confirm resumes the AdvanceReverse
         // frame past its AwaitAck step into firing the leaving card's reverse.
         Some(Continuation::AdvanceReverse { .. }) => advance_reverse::resume(cx, response),
+        // #466: the one-option forced-effect acknowledge — its PickSingle pops the
+        // frame so the `drive` loop resolves the effect beneath.
+        Some(Continuation::AcknowledgeForced { .. }) => {
+            forced_triggers::resume_acknowledge_forced(cx, response)
+        }
         // An order-pick suspension parks the `AttackLoop` frame as the top frame
         // (it *is* the prompt) — route its `PickSingle` to the order resume
         // (#143). Every other `AttackLoop` stage sits beneath a reaction window
