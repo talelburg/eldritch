@@ -1865,7 +1865,11 @@ impl GameState {
     /// in-game investigator count, which isn't known at `setup()`; so the
     /// `Enemy` is minted from the corpus when a card effect brings it into
     /// play (see [`spawn_set_aside_enemy`](crate::engine::spawn_set_aside_enemy)).
-    /// Panics on non-Enemy metadata — a setup-time invariant.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `metadata` is not [`CardKind::Enemy`] — a setup-time invariant
+    /// (the scenario passes an enemy card).
     pub fn add_set_aside_enemy(&mut self, metadata: &CardMetadata) {
         assert!(
             matches!(metadata.kind, CardKind::Enemy { .. }),
@@ -1887,8 +1891,12 @@ impl GameState {
 
     /// Wire a **bidirectional** connection between two locations (each gains
     /// the other in its `connections`). Resolves both ids across the in-play
-    /// and set-aside zones. `expect`s each to exist — a build-time invariant
-    /// (callers connect freshly-minted ids).
+    /// and set-aside zones.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either `a` or `b` is not a location in the in-play or set-aside
+    /// zones — a build-time invariant (callers connect freshly-minted ids).
     pub fn connect(&mut self, a: LocationId, b: LocationId) {
         self.location_mut(a)
             .unwrap_or_else(|| panic!("connect: location {a:?} not found"))

@@ -159,6 +159,12 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> SymbolOutcome {
 /// four set-aside locations (Hallway/Attic/Cellar/Parlor, pre-connected),
 /// the act/agenda decks, the Standard chaos bag, and `starting_location`.
 /// No investigators — they are seated via `seat_and_open` at scenario setup.
+///
+/// # Panics
+///
+/// Panics if any of The Gathering's location/act/agenda codes is missing from
+/// the card corpus — a build-time invariant (the scenario and the pinned
+/// snapshot ship together).
 pub fn setup() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_chaos_bag(standard_chaos_bag())

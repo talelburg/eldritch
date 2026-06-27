@@ -11,6 +11,11 @@ use sqlx::SqlitePool;
 /// `database_url` is a standard `SQLite` URL, e.g. `sqlite:eldritch.db` or
 /// `sqlite::memory:`. Migrations are applied separately via
 /// [`MIGRATOR`]; this only establishes the pool.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] if `database_url` is not a valid `SQLite` URL or the
+/// pool cannot open a connection (e.g. the file's directory is not writable).
 pub async fn connect_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
     let options = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
     SqlitePoolOptions::new().connect_with(options).await
