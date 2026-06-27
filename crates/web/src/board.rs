@@ -148,8 +148,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <span class="inv-status">{format!("{:?}", inv.status)}</span>
                     <div class="hand"><h4>"Hand"</h4><ul>{hand}</ul></div>
                     <div class="in-play"><h4>"In play"</h4><ul>{in_play}</ul></div>
-                    <div class="threat"><h4>"Threat area"</h4><ul>{threat}</ul></div>
-                    <div class="engaged"><h4>"Engaged enemies"</h4><ul>{engaged}</ul></div>
+                    <div class="threat"><h4>"Threat area"</h4><ul>{threat}{engaged}</ul></div>
                 </article>
             }
         })
