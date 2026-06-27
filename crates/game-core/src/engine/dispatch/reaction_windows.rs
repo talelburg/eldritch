@@ -1334,6 +1334,28 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
+    // RR p.11 initiation gate: "An event card cannot be played unless the
+    // resolution of its effect has the potential to change the game state."
+    // (#495.) An event whose OnPlay effect is inert right now — Working a Hunch
+    // 01037 (discover 1 clue at your location) at a 0-clue location — is not
+    // playable, in the open-turn menu OR a Fast window (both route through here).
+    // Gates events only: assets/other cards always change state by entering play.
+    // Uses the same conservative evaluator as the reaction/forced gates, so only
+    // provable no-ops are blocked.
+    if card_type == CardType::Event {
+        let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
+        let on_play_can_change_state = abilities.iter().any(|a| {
+            matches!(a.trigger, Trigger::OnPlay)
+                && crate::engine::evaluator::effect_can_change_state(state, ctx, &a.effect)
+        });
+        if !on_play_can_change_state {
+            return Err(format!(
+                "PlayCard: {code}'s effect cannot change the game state right now, so it \
+                 cannot be played (RR p.11)."
+            )
+            .into());
+        }
+    }
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);

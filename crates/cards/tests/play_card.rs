@@ -19,7 +19,7 @@ use game_core::state::{CardCode, InvestigatorId, Phase, Status, Zone};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
+use game_core::{assert_event_count, assert_event_sequence, assert_no_event};
 use game_core::{LocationId, TurnAction};
 
 /// Holy Rosary (01059) — Mystic asset, +1 willpower constant.
@@ -253,11 +253,12 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
 }
 
 #[test]
-fn play_working_a_hunch_on_empty_location_is_still_done() {
-    // The rulebook says "if there are no clues, no clues are
-    // discovered." DSL DiscoverClue treats empty-location as a no-op
-    // and returns Done — so the play still resolves cleanly and the
-    // card still discards.
+fn play_working_a_hunch_on_empty_location_is_rejected() {
+    // RR p.11 (#495): "An event card cannot be played unless the resolution of
+    // its effect has the potential to change the game state." Working a Hunch's
+    // only effect is "discover 1 clue at your location"; at a 0-clue location it
+    // would discover nothing, so the play is **rejected** — not played-and-
+    // fizzled. The card stays in hand, nothing is discarded, no clue moves.
     let (state, id, loc_id) = play_state(vec![WORKING_A_HUNCH]);
     assert_eq!(state.locations[&loc_id].clues, 0);
 
@@ -269,21 +270,20 @@ fn play_working_a_hunch_on_empty_location_is_still_done() {
         },
     );
 
-    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "playing a clue-discovery event at a 0-clue location must be rejected, got {:?}",
+        result.outcome,
+    );
     let inv = &result.state.investigators[&id];
-    assert_eq!(inv.discard, vec![CardCode::new(WORKING_A_HUNCH)]);
-    assert_eq!(inv.clues, 0, "no clues to discover");
-    // DSL DiscoverClue is a no-op on an empty location — it doesn't
-    // emit CluePlaced for a 0-clue discover.
+    assert_eq!(
+        inv.hand,
+        vec![CardCode::new(WORKING_A_HUNCH)],
+        "rejected play leaves the card in hand"
+    );
+    assert!(inv.discard.is_empty(), "rejected play discards nothing");
     assert_no_event!(result.events, Event::CluePlaced { .. });
-    assert_event!(
-        result.events,
-        Event::CardPlayed { code, .. } if code.as_str() == WORKING_A_HUNCH
-    );
-    assert_event!(
-        result.events,
-        Event::CardDiscarded { from: Zone::Hand, code, .. } if code.as_str() == WORKING_A_HUNCH
-    );
+    assert_no_event!(result.events, Event::CardPlayed { .. });
 }
 
 #[test]
