@@ -174,6 +174,15 @@ fn ability_eligible(
     source: CandidateSource,
     controller: InvestigatorId,
 ) -> bool {
+    let ctx = EvalContext::for_controller_with_optional_source(controller, source.instance());
+    // Generic RR p.2/p.3 initiation gate: the effect must have the potential to
+    // change the game state (Roland 01001's clue discovery at a 0-clue location,
+    // #495). Conservative — only provable no-ops are suppressed.
+    if !crate::engine::evaluator::effect_can_change_state(state, ctx, &ability.effect) {
+        return false;
+    }
+    // The native eligibility tag refines opaque `Native` effects the generic gate
+    // can't introspect (#368: Cover Up 01007, act 01109). No tag → eligible.
     let Some(tag) = ability.eligibility.as_deref() else {
         return true;
     };
@@ -183,7 +192,6 @@ fn ability_eligible(
     let Some(pred) = (reg.native_eligibility_for)(tag) else {
         return false;
     };
-    let ctx = EvalContext::for_controller_with_optional_source(controller, source.instance());
     pred(state, &ctx)
 }
 
