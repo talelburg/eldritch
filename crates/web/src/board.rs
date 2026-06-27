@@ -1,6 +1,6 @@
 //! Read-only render of `GameState` into the DOM (P6.5). Panels are plain
-//! helper fns; `BoardView` is the only component. Cards render as their
-//! card/location names via `crate::names` (the client installs `cards::REGISTRY`).
+//! helper fns; `BoardView` is the only component. Cards and locations render as
+//! their names via `crate::names` (the client installs `cards::REGISTRY`).
 
 use game_core::state::{GameState, InvestigatorId};
 use game_core::Resolution;
@@ -98,7 +98,7 @@ fn locations_panel(game: &GameState) -> impl IntoView {
 
 /// One panel per investigator: name, location, actions, resources,
 /// health (`damage/max_health`), sanity (`horror/max_sanity`), clues,
-/// status; hand and cards-in-play as text lists of card codes.
+/// status; hand and cards-in-play as text lists of card names.
 fn investigators_panel(game: &GameState) -> impl IntoView {
     let panels: Vec<_> = game
         .investigators
