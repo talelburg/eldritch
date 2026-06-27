@@ -174,7 +174,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                                             }
                                         })
                                     >
-                                        {code}
+                                        {crate::names::card_name(&game_core::state::CardCode::new(code))}
                                     </button>
                                 </li>
                             }
