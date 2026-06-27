@@ -31,7 +31,7 @@ pub fn BoardView() -> impl IntoView {
             <div class="game">
                 {resolution_banner(&game)}
                 {phase_bar(&game)}
-                {locations_panel(&game)}
+                {crate::map::location_map(&game)}
                 {investigators_panel(&game)}
                 {enemies_panel(&game)}
             </div>
@@ -68,6 +68,7 @@ pub fn BoardView() -> impl IntoView {
 
 /// One row per location: name, shroud, clues, and a revealed flag.
 /// Iterates the `BTreeMap` in `LocationId` order (deterministic).
+#[allow(dead_code)]
 fn locations_panel(game: &GameState) -> impl IntoView {
     let rows: Vec<_> = game
         .locations

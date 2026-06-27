@@ -4,7 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use game_core::state::{CardCode, LocationId};
+use game_core::state::{CardCode, GameState, LocationId};
+use leptos::prelude::*;
 
 /// Authored grid cell `(col, row)` for a known location code — the layout the
 /// client ships for scenarios it knows. The Gathering: the Study sits isolated
@@ -66,9 +67,75 @@ fn advance_cell((col, row): (u16, u16)) -> (u16, u16) {
     }
 }
 
+/// Pixel geometry for the grid. A node occupies `NODE_W`×`NODE_H`; cells are
+/// larger to leave gaps for the connection lines.
+const CELL_W: u16 = 200;
+const CELL_H: u16 = 150;
+const NODE_W: u16 = 170;
+const NODE_H: u16 = 120;
+
+/// The map panel: one absolutely-positioned container node per in-play location,
+/// holding the investigators and unengaged enemies in it. Connection lines are
+/// added by [`connection_lines`] (Task 4). Read-only — pure derivation of
+/// `game`.
+pub fn location_map(game: &GameState) -> impl IntoView {
+    let locs: Vec<_> = game
+        .locations
+        .values()
+        .map(|l| (l.id, l.code.clone()))
+        .collect();
+    let positions = layout_positions(&locs);
+
+    let nodes: Vec<_> = game
+        .locations
+        .values()
+        .map(|loc| {
+            let (col, row) = positions[&loc.id];
+            let (left, top) = (col * CELL_W, row * CELL_H);
+            let invs: Vec<_> = game
+                .investigators
+                .values()
+                .filter(|i| i.current_location == Some(loc.id))
+                .map(|i| {
+                    view! {
+                        <div class="inv-token">
+                            {i.name.clone()} " " {i.damage()} "/" {i.max_health()} " hp · "
+                            {i.horror()} "/" {i.max_sanity()} " san · clues " {i.clues}
+                        </div>
+                    }
+                })
+                .collect();
+            let enemies: Vec<_> = game
+                .enemies
+                .values()
+                .filter(|e| e.current_location == Some(loc.id) && e.engaged_with.is_none())
+                .map(|e| {
+                    view! {
+                        <div class="enemy-token">
+                            {e.name.clone()} " " {e.damage} "/" {e.max_health}
+                        </div>
+                    }
+                })
+                .collect();
+            let style = format!("left:{left}px;top:{top}px;width:{NODE_W}px;height:{NODE_H}px;");
+            view! {
+                <div class="map-location" data-loc=loc.name.clone() style=style>
+                    <div class="loc-head">
+                        {loc.name.clone()} " (shroud " {loc.shroud} " · clues " {loc.clues} ")"
+                    </div>
+                    {invs}
+                    {enemies}
+                </div>
+            }
+        })
+        .collect();
+
+    view! { <section class="map">{nodes}</section> }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{location_grid_pos, layout_positions};
+    use super::{layout_positions, location_grid_pos};
     use game_core::state::{CardCode, LocationId};
 
     #[test]
