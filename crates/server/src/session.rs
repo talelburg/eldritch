@@ -8,6 +8,7 @@
 //! replaying that log over the seed, reproducing state bit-for-bit.
 
 use game_core::action::RosterEntry;
+use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
 use game_core::{Action, EngineOutcome, Event, PlayerAction};
@@ -73,6 +74,14 @@ impl GameSession {
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
 
         let mut setup = (module.setup)();
+        // Seed the setup shuffle with fresh host entropy (#467). The scenario's
+        // setup() builds with a fixed builder seed (game-core is no-I/O, so it
+        // can't source randomness itself); without this override every game would
+        // share one shuffle/draw order. seat_and_open runs the shuffle below, and
+        // the resulting post-shuffle RngState is frozen into seed_state, so replay
+        // stays deterministic from the seed alone (the seed needs no separate
+        // recording).
+        setup.rng = RngState::new(crate::id::random_seed());
         // Human play surfaces skill-test results with a Confirm-to-dismiss step
         // (#478); the engine gates that pause on this flag (default off for tests
         // and non-interactive consumers). The flag persists through seating.

@@ -288,6 +288,31 @@ async fn load_replays_log_to_reproduce_live_state() {
 }
 
 #[tokio::test]
+async fn create_randomizes_the_setup_seed_per_game() {
+    // #467: every game must get a fresh RNG seed so the setup shuffle/draw
+    // order differs across games. The mock scenario's setup() pins a fixed
+    // builder seed (42); create() must override it with host entropy, so two
+    // games created from the same module hold distinct frozen seeds.
+    install_registry();
+    let pool = memory_pool().await;
+    let one = GameSession::create(
+        pool.clone(),
+        "g1",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        roster(),
+    )
+    .await
+    .expect("create g1");
+    let two = GameSession::create(pool, "g2", ScenarioId::new(TEST_SCENARIO_ID), roster())
+        .await
+        .expect("create g2");
+    assert_ne!(
+        one.state.rng.seed, two.state.rng.seed,
+        "each created game must get a distinct random setup seed"
+    );
+}
+
+#[tokio::test]
 async fn create_enables_interactive_acknowledge() {
     install_registry();
     let pool = memory_pool().await;
