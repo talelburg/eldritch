@@ -194,6 +194,54 @@ async fn unrevealed_location_shows_unrevealed() {
 }
 
 #[wasm_bindgen_test]
+async fn unrevealed_location_hides_shroud_and_clues() {
+    let mut loc = test_location(30, "Cellar Unrevealed");
+    loc.revealed = false;
+    loc.shroud = 4;
+    loc.clues = 3;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    let text = node_text("Cellar Unrevealed");
+    assert!(
+        text.contains("unrevealed"),
+        "unrevealed location must contain 'unrevealed'; text = {text:?}"
+    );
+    assert!(
+        !text.contains("shroud"),
+        "unrevealed location must NOT contain 'shroud'; text = {text:?}"
+    );
+    assert!(
+        !text.contains("clues"),
+        "unrevealed location must NOT contain 'clues'; text = {text:?}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn revealed_location_shows_shroud_and_clues() {
+    let mut loc = test_location(31, "Attic Revealed");
+    loc.revealed = true;
+    loc.shroud = 2;
+    loc.clues = 5;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    let text = node_text("Attic Revealed");
+    assert!(
+        text.contains("shroud"),
+        "revealed location must contain 'shroud'; text = {text:?}"
+    );
+    assert!(
+        text.contains("clues"),
+        "revealed location must contain 'clues'; text = {text:?}"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn unengaged_enemy_renders_inside_its_location_node() {
     let mut enemy = test_enemy(100, "Mock Ghoul");
     enemy.current_location = Some(LocationId(10));

@@ -171,11 +171,14 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             } else {
                 "unrevealed"
             };
+            let head = if loc.revealed {
+                format!("{} (shroud {} · clues {})", loc.name, loc.shroud, loc.clues)
+            } else {
+                loc.name.clone()
+            };
             view! {
                 <div class=node_class data-loc=loc.name.clone() style=style>
-                    <div class="loc-head">
-                        {loc.name.clone()} " (shroud " {loc.shroud} " · clues " {loc.clues} ")"
-                    </div>
+                    <div class="loc-head">{head}</div>
                     <span class="loc-revealed">{revealed_label}</span>
                     {invs}
                     {enemies}
