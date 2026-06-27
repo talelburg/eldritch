@@ -464,6 +464,13 @@ fn scan_hand_fast_events(
                 if !trigger_matches(event, pattern, *timing, id) {
                     continue;
                 }
+                // RR initiation gate: a Fast event can't be played if its effect
+                // can't change game state — same rule as the in-play reaction scan
+                // (#495). Covers Evidence! 01022 (Roland's reaction sourced from
+                // hand: discover 1 clue at your location) at a 0-clue location.
+                if !ability_eligible(state, ability, CandidateSource::Hand, id) {
+                    continue;
+                }
                 let ability_index = u8::try_from(idx)
                     .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
                 plays.push(ResolutionCandidate {

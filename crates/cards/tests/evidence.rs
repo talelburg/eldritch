@@ -126,6 +126,47 @@ fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
 }
 
 #[test]
+fn evidence_not_offered_when_location_has_no_clues() {
+    // #495: Evidence!'s "Discover 1 clue at your location" can't change the game
+    // state at a 0-clue location, so it must not be offered as a Fast play after
+    // a defeat (RR: an event can't be played if its effect can't change the game
+    // state). Mirror of the in-play Roland suppression — same ability, sourced
+    // from hand.
+    let (inv_id, enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(0);
+
+    let after_fight = take_turn_action(state, &fight_action(inv_id, enemy_id));
+    let result = apply(
+        after_fight.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    );
+
+    // The defeat happened, but no after-defeat window offering Evidence! opened:
+    // the pending input is the open-turn menu, which never lists the hand play.
+    assert_event!(result.events, Event::EnemyDefeated { enemy: e, .. } if *e == enemy_id);
+    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+        panic!(
+            "expected AwaitingInput (open turn), got {:?}",
+            result.outcome
+        );
+    };
+    assert!(
+        !request.options.iter().any(|o| o.label.contains(EVIDENCE)),
+        "Evidence! must not be offered at a 0-clue location; request = {request:?}",
+    );
+    assert_no_event!(result.events, Event::CluePlaced { .. });
+    assert_eq!(result.state.locations[&loc_id].clues, 0);
+    assert!(
+        result.state.investigators[&inv_id]
+            .hand
+            .iter()
+            .any(|c| c.as_str() == EVIDENCE),
+        "Evidence! stays in hand (never played)",
+    );
+}
+
+#[test]
 fn evidence_cannot_be_played_as_a_standalone_action() {
     // #304 acceptance: Evidence! is illegal outside its named window. Playing
     // it via the ordinary PlayCard action (here, during the turn with no defeat)

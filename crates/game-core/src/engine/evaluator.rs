@@ -1844,15 +1844,22 @@ pub(crate) fn effect_can_change_state(
     effect: &Effect,
 ) -> bool {
     match effect {
-        // Discovering 0 clues — or discovering at a location with no clues, or
-        // one that can't be resolved (a between-locations controller) — moves
-        // nothing.
+        // Discovering 0 clues moves nothing. Otherwise the discovery is inert iff
+        // its source location resolves to one with no clues — or genuinely doesn't
+        // resolve (a between-locations `YourLocation`, an out-of-test
+        // `TestedLocation`). A `Chosen` target is *not yet grounded* at initiation
+        // time, so its `Err` is "unknown", not "inert" — assume eligible (no
+        // corpus card uses `DiscoverClue { Chosen }` yet; this keeps the
+        // conservative invariant honest if one lands).
         Effect::DiscoverClue { from, count } => {
             *count > 0
-                && resolve_location_target(state, ctx, *from)
-                    .ok()
-                    .and_then(|id| state.locations.get(&id))
-                    .is_some_and(|loc| loc.clues > 0)
+                && match from {
+                    LocationTarget::Chosen(_) => true,
+                    _ => resolve_location_target(state, ctx, *from)
+                        .ok()
+                        .and_then(|id| state.locations.get(&id))
+                        .is_some_and(|loc| loc.clues > 0),
+                }
         }
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
