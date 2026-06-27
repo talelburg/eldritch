@@ -22,10 +22,13 @@ pub enum ChoiceResolution {
     Suspend,
 }
 
-/// Map a legal-option count to the resolve convention.
-pub fn resolve_choice_count(n: usize) -> ChoiceResolution {
+/// Map a legal-option count to the resolve convention. When `interactive` is set
+/// (human play, `interactive_acknowledge`), a single option surfaces as a
+/// one-option pick (`Suspend`) instead of auto-binding silently (#466).
+pub fn resolve_choice_count(n: usize, interactive: bool) -> ChoiceResolution {
     match n {
         0 => ChoiceResolution::Empty,
+        1 if interactive => ChoiceResolution::Suspend,
         1 => ChoiceResolution::Auto(0),
         _ => ChoiceResolution::Suspend,
     }
@@ -113,17 +116,43 @@ mod tests {
 
     #[test]
     fn resolve_zero_options_is_reject() {
-        assert!(matches!(resolve_choice_count(0), ChoiceResolution::Empty));
+        assert!(matches!(
+            resolve_choice_count(0, false),
+            ChoiceResolution::Empty
+        ));
+        assert!(matches!(
+            resolve_choice_count(0, true),
+            ChoiceResolution::Empty
+        ));
     }
 
     #[test]
-    fn resolve_one_option_auto_binds_index_zero() {
-        assert!(matches!(resolve_choice_count(1), ChoiceResolution::Auto(0)));
+    fn resolve_one_option_auto_binds_when_not_interactive() {
+        assert!(matches!(
+            resolve_choice_count(1, false),
+            ChoiceResolution::Auto(0)
+        ));
     }
 
     #[test]
-    fn resolve_two_options_suspends() {
-        assert!(matches!(resolve_choice_count(2), ChoiceResolution::Suspend));
+    fn resolve_one_option_suspends_when_interactive() {
+        // #466: a lone option surfaces as a one-option pick in human play.
+        assert!(matches!(
+            resolve_choice_count(1, true),
+            ChoiceResolution::Suspend
+        ));
+    }
+
+    #[test]
+    fn resolve_two_options_suspends_regardless_of_flag() {
+        assert!(matches!(
+            resolve_choice_count(2, false),
+            ChoiceResolution::Suspend
+        ));
+        assert!(matches!(
+            resolve_choice_count(2, true),
+            ChoiceResolution::Suspend
+        ));
     }
 
     #[test]
@@ -163,6 +192,62 @@ mod tests {
             Some(2),
             "the active skill-test margin must ride the suspended Leaf frame's context, \
              not be dropped at suspend",
+        );
+    }
+
+    #[test]
+    fn single_branch_choose_one_surfaces_under_interactive_flag() {
+        use crate::state::InvestigatorId;
+        use crate::test_support::GameStateBuilder;
+
+        // One ChooseOne branch: today it auto-binds. With interactive_acknowledge
+        // on it must surface as a one-option pick (#466).
+        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+
+        let mut state = GameStateBuilder::default().build();
+        state.interactive_acknowledge = true;
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            push_effect(&mut cx, &effect, ctx);
+            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+        };
+        match out {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(
+                    request.options.len(),
+                    1,
+                    "lone branch surfaces as one option"
+                );
+            }
+            other => panic!("expected a one-option suspend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn single_branch_choose_one_auto_binds_when_flag_off() {
+        use crate::state::InvestigatorId;
+        use crate::test_support::GameStateBuilder;
+
+        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let mut state = GameStateBuilder::default().build(); // flag defaults false
+        let mut events = Vec::new();
+        let out = {
+            let mut cx = Cx {
+                state: &mut state,
+                events: &mut events,
+            };
+            push_effect(&mut cx, &effect, ctx);
+            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+        };
+        assert!(
+            matches!(out, EngineOutcome::Done),
+            "flag off: auto-binds, no suspend"
         );
     }
 }
