@@ -79,7 +79,7 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         return discard_asset_instance(cx, controller, instance);
     }
 
-    match resolve_choice_count(assets.len()) {
+    match resolve_choice_count(assets.len(), cx.state.interactive_acknowledge) {
         // Cannot discard an asset → take 2 damage instead (the printed
         // fallback; defeat handled by the kernel helper).
         ChoiceResolution::Empty => {

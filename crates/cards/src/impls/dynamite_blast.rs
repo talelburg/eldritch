@@ -90,7 +90,7 @@ fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         return blast_location(cx, controller, loc);
     }
 
-    match resolve_choice_count(locations.len()) {
+    match resolve_choice_count(locations.len(), cx.state.interactive_acknowledge) {
         // Controller is between locations — no legal target.
         ChoiceResolution::Empty => EngineOutcome::Rejected {
             reason: "01024 blast: controller has no location to target".into(),

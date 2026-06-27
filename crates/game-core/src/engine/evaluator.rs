@@ -541,7 +541,7 @@ fn step_choose_one(
             )));
         EngineOutcome::Done
     };
-    match resolve_choice_count(branches.len()) {
+    match resolve_choice_count(branches.len(), cx.state.interactive_acknowledge) {
         ChoiceResolution::Empty => EngineOutcome::Rejected {
             reason: "Effect::ChooseOne with no branches".into(),
         },
@@ -685,30 +685,31 @@ fn apply_search_deck(
         .collect();
 
     // 3. Choice convention — but 0 ⇒ find nothing (not reject).
-    let chosen_deck_index: Option<usize> = match resolve_choice_count(eligible.len()) {
-        ChoiceResolution::Empty => None,
-        ChoiceResolution::Auto(i) => Some(eligible[i].0),
-        ChoiceResolution::Suspend => {
-            if let Some(OptionId(i)) = eval_ctx.chosen_option() {
-                match eligible.get(i as usize) {
-                    Some((idx, _)) => Some(*idx),
-                    None => {
-                        return EngineOutcome::Rejected {
-                            reason: format!(
-                                "SearchDeck: pick {i} out of range (0..{})",
-                                eligible.len()
-                            )
-                            .into(),
+    let chosen_deck_index: Option<usize> =
+        match resolve_choice_count(eligible.len(), cx.state.interactive_acknowledge) {
+            ChoiceResolution::Empty => None,
+            ChoiceResolution::Auto(i) => Some(eligible[i].0),
+            ChoiceResolution::Suspend => {
+                if let Some(OptionId(i)) = eval_ctx.chosen_option() {
+                    match eligible.get(i as usize) {
+                        Some((idx, _)) => Some(*idx),
+                        None => {
+                            return EngineOutcome::Rejected {
+                                reason: format!(
+                                    "SearchDeck: pick {i} out of range (0..{})",
+                                    eligible.len()
+                                )
+                                .into(),
+                            }
                         }
                     }
+                } else {
+                    let labels = eligible.iter().map(|(_, c)| c.0.clone()).collect();
+                    suspend_leaf_in_place(cx, node, eval_ctx);
+                    return awaiting_choice("Search: choose a card to take", labels);
                 }
-            } else {
-                let labels = eligible.iter().map(|(_, c)| c.0.clone()).collect();
-                suspend_leaf_in_place(cx, node, eval_ctx);
-                return awaiting_choice("Search: choose a card to take", labels);
             }
-        }
-    };
+        };
 
     // 4. Take chosen → hand.
     if let Some(idx) = chosen_deck_index {
@@ -1599,11 +1600,12 @@ fn resolve_grounded_choice<Id: Copy>(
     prompt: &'static str,
     label: impl Fn(&Id) -> String,
     bind: impl Fn(Id) -> EvalContext,
+    interactive: bool,
 ) -> Result<EvalContext, EngineOutcome> {
     use crate::engine::dispatch::choice::{
         awaiting_choice, resolve_choice_count, ChoiceResolution,
     };
-    match resolve_choice_count(candidates.len()) {
+    match resolve_choice_count(candidates.len(), interactive) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
             reason: empty_reason.into(),
         }),
@@ -1650,6 +1652,7 @@ fn ground_investigator_choice(
             ctx.set_chosen_option(None);
             ctx
         },
+        cx.state.interactive_acknowledge,
     )
 }
 
@@ -1674,6 +1677,7 @@ fn ground_location_choice(
             ctx.set_chosen_option(None);
             ctx
         },
+        cx.state.interactive_acknowledge,
     )
 }
 
@@ -1698,6 +1702,7 @@ fn ground_enemy_choice(
             ctx.set_chosen_option(None);
             ctx
         },
+        cx.state.interactive_acknowledge,
     )
 }
 
@@ -1737,6 +1742,7 @@ fn ground_fight_target_choice(
             ctx.set_chosen_option(None);
             ctx
         },
+        cx.state.interactive_acknowledge,
     )
 }
 
