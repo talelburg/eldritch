@@ -466,6 +466,14 @@ pub enum Continuation {
         /// Where in the sub-process we are.
         step: AdvanceStep,
     },
+    /// A no-choice forced ability is about to resolve and the game is in
+    /// interactive mode (`interactive_acknowledge`): surface it as a one-option
+    /// pick so the player "performs" it before it lands (#466). Pushed by
+    /// `fire_forced_triggers` (the single-hit path) *above* the forced effect's
+    /// root frame; the `drive` loop suspends here, and on resume pops, letting the
+    /// effect frame beneath resolve. `source` is the card the forced ability is
+    /// printed on (for the prompt's display name).
+    AcknowledgeForced { source: CardCode },
     /// A skill test is mid-resolution. Carries the in-flight test's data
     /// directly (the former `GameState::in_flight_skill_test` singleton, folded
     /// onto the frame — #348). Pushed at test start; popped when the test fully
