@@ -471,6 +471,12 @@ fn scan_hand_fast_events(
                 if !ability_eligible(state, ability, CandidateSource::Hand, id) {
                     continue;
                 }
+                // RR p.22 affordability: don't offer a Fast event whose resource
+                // cost can't be paid (Evidence! 01022 costs 1; not offered at 0
+                // resources). The play path (play_fast_event) pays it (#501).
+                if check_play_resource_cost_payable(state, id, code).is_err() {
+                    continue;
+                }
                 let ability_index = u8::try_from(idx)
                     .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
                 plays.push(ResolutionCandidate {
@@ -848,10 +854,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// Appendix I step 4) and the window beneath resumes its candidate scan (Slice D
 /// #423).
 ///
-/// Charges no resource cost, matching [`super::cards::play_card`] (Slice 1
-/// does not model play-cost resources). The caller has already removed the
-/// candidate from the run, so a suspending effect's resume drives the
-/// remaining siblings, not this play again.
+/// Pays the event's resource cost (RR p.22) via [`super::cards::pay_play_cost`]
+/// before announcing the play, matching [`super::cards::play_card`] — a Fast
+/// play skips the *action* cost, not the *resource* cost (#501). Affordability
+/// was established at scan time ([`scan_hand_fast_events`] filters unaffordable
+/// Fast events out of the window). The caller has already removed the candidate
+/// from the run, so a suspending effect's resume drives the remaining siblings,
+/// not this play again.
 fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcome {
     let controller = candidate.controller;
     // Find the event in the controller's hand by code (first match — copies
@@ -867,6 +876,10 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
                  {controller:?}'s hand between scan and play"
             )
         });
+    // Pay the resource cost before announcing the play (RR p.22): Fast plays
+    // skip the action cost, not the resource cost. Affordability was filtered at
+    // scan time (#501).
+    super::cards::pay_play_cost(cx, controller, &candidate.code);
     super::cards::begin_event_play(cx, controller, hand_idx);
 
     // Look up the matched OnEvent ability's effect from the registry.
@@ -1432,6 +1445,10 @@ pub(crate) fn check_play_card(
     // Playing a card is an action (RR p.5), so a non-fast play needs an action
     // point (validate-first; `play_card` spends it). Fast plays are not actions.
     check_play_action_available(state, investigator, is_fast, &code)?;
+    // Playing a card is paying its cost (RR p.22, Initiation Sequence): the
+    // resource cost must be established as payable before initiation. Both Fast
+    // and non-Fast plays pay it — Fast only skips the *action* cost (#501).
+    check_play_resource_cost_payable(state, investigator, &code)?;
     Ok(super::PlayCheckResult {
         destination,
         abilities,
@@ -1464,6 +1481,57 @@ fn check_play_action_available(
         .into());
     }
     Ok(())
+}
+
+/// Playing a card is paying its resource cost in full (RR p.22, Initiation
+/// Sequence — the cost must be established as payable before initiation, and is
+/// then paid before attacks of opportunity resolve). Returns the reject reason
+/// when `investigator` cannot pay `code`'s printed cost. A 0-cost card is always
+/// affordable.
+///
+/// Cards with no fixed printed cost (`play_cost()` is `None` — an X-cost card,
+/// or a permanent) are **not yet modeled** — rejected loudly rather than
+/// silently played for free. No implemented card hits this: such cards are
+/// unplayable stubs refused earlier by `resolve_play_target`, and permanents
+/// enter play at setup rather than via `PlayCard`. The branch is currently
+/// unreachable in the corpus; it guards a future implemented X-cost card
+/// (deferral split from #501).
+///
+/// Short-circuits to `Ok` when the registry isn't installed — the metadata-free
+/// validation paths the engine's own unit tests exercise; the real play path
+/// always has a registry installed by the time it reaches here.
+fn check_play_resource_cost_payable(
+    state: &GameState,
+    investigator: InvestigatorId,
+    code: &CardCode,
+) -> Result<(), Cow<'static, str>> {
+    let Some(meta) = card_registry::current().and_then(|reg| (reg.metadata_for)(code)) else {
+        return Ok(());
+    };
+    let resources = state
+        .investigators
+        .get(&investigator)
+        .map_or(0, |inv| inv.resources);
+    match meta.play_cost() {
+        // Printed costs are non-negative; `try_from` clamps a (nonexistent)
+        // negative cost to 0 = free, never a panic.
+        Some(cost) => {
+            let cost = u8::try_from(cost).unwrap_or(0);
+            if resources < cost {
+                return Err(format!(
+                    "PlayCard: playing {code} costs {cost} resource(s); \
+                     {investigator:?} has {resources}"
+                )
+                .into());
+            }
+            Ok(())
+        }
+        None => Err(format!(
+            "PlayCard: {code} has no fixed printed cost (X-cost or permanent), \
+             which is not yet modeled — deferred from #501."
+        )
+        .into()),
+    }
 }
 
 /// True if `effect` initiates a Fight at its top level.

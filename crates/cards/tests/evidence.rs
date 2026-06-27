@@ -272,6 +272,69 @@ fn evidence_fast_event_discards_exactly_once() {
 }
 
 #[test]
+fn playing_evidence_from_hand_pays_its_resource_cost() {
+    // Evidence! (01022) costs 1 resource. Playing it from its after-defeat
+    // window deducts the cost (RR p.22, Initiation Sequence) — a Fast play
+    // skips the *action* cost, not the *resource* cost. The fixture starts at
+    // the default 5 resources.
+    let (inv_id, enemy_id, _loc_id, state) = investigator_with_evidence_and_enemy(2);
+    assert_eq!(
+        state.investigators[&inv_id].resources, 5,
+        "fixture invariant: 5 starting resources",
+    );
+
+    let result = TestSession::new(state)
+        .take(&fight_action(inv_id, enemy_id))
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
+        .run();
+
+    assert_event!(
+        result.events,
+        Event::ResourcesPaid { investigator, amount } if *investigator == inv_id && *amount == 1
+    );
+    assert_eq!(
+        result.state.investigators[&inv_id].resources, 4,
+        "5 - cost 1 = 4 after playing Evidence!",
+    );
+}
+
+#[test]
+fn evidence_not_offered_when_resources_below_cost() {
+    // Evidence! costs 1; with 0 resources the cost can't be paid, so the
+    // after-defeat window must not offer it (RR p.22: the cost must be
+    // established as payable before initiation). Mirror of the #495 change-
+    // game-state suppression, but on affordability.
+    let (inv_id, enemy_id, _loc_id, mut state) = investigator_with_evidence_and_enemy(2);
+    state.investigators.get_mut(&inv_id).unwrap().resources = 0;
+
+    let after_fight = take_turn_action(state, &fight_action(inv_id, enemy_id));
+    let result = apply(
+        after_fight.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    );
+
+    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+        panic!("expected AwaitingInput, got {:?}", result.outcome);
+    };
+    assert!(
+        !request.options.iter().any(|o| o.label.contains(EVIDENCE)),
+        "Evidence! must not be offered with insufficient resources; request = {request:?}",
+    );
+    assert!(
+        result.state.investigators[&inv_id]
+            .hand
+            .iter()
+            .any(|c| c.as_str() == EVIDENCE),
+        "Evidence! stays in hand (never played)",
+    );
+    assert_no_event!(result.events, Event::CluePlaced { .. });
+}
+
+#[test]
 fn window_offers_both_in_play_reaction_and_hand_evidence() {
     use game_core::state::{CardInPlay, CardInstanceId};
     let inv_id = InvestigatorId(1);

@@ -176,6 +176,39 @@ pub(crate) fn grant_resources(cx: &mut Cx, investigator: InvestigatorId, amount:
     });
 }
 
+/// Pay `code`'s printed resource cost for `investigator` (RR p.22, Initiation
+/// Sequence): saturating-subtract the cost from the wallet and emit
+/// [`Event::ResourcesPaid`]. A 0-cost card is a no-op (no event), mirroring
+/// [`grant_resources`]'s zero-amount behavior. The cost is read from the
+/// registry by `code`; absent metadata (registry-free unit tests) or a 0 cost
+/// pays nothing.
+///
+/// The caller has already validated affordability
+/// (`check_play_resource_cost_payable`), so the `saturating_sub` never silently
+/// underflows a real shortfall — it's belt-and-suspenders.
+///
+/// Caller guarantees `investigator` exists in `state.investigators`.
+pub(super) fn pay_play_cost(cx: &mut Cx, investigator: InvestigatorId, code: &CardCode) {
+    let cost = card_registry::current()
+        .and_then(|reg| (reg.metadata_for)(code))
+        .and_then(crate::card_data::CardMetadata::play_cost)
+        .and_then(|c| u8::try_from(c).ok())
+        .unwrap_or(0);
+    if cost == 0 {
+        return;
+    }
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("pay_play_cost: caller guarantees investigator exists");
+    inv.resources = inv.resources.saturating_sub(cost);
+    cx.events.push(Event::ResourcesPaid {
+        investigator,
+        amount: cost,
+    });
+}
+
 /// Reshuffle the discard pile back into the deck for the named
 /// investigator. Used by [`draw`] when the deck runs empty. Drains
 /// `discard` into `deck`, then calls [`shuffle_player_deck`] (which
@@ -572,6 +605,11 @@ pub(super) fn play_card(
     if !is_fast {
         super::actions::spend_one_action(cx, investigator);
     }
+    // Pay the resource cost (RR p.22): both Fast and non-Fast plays pay it —
+    // Fast only skips the *action* cost. Affordability was validated in
+    // `check_play_card`; the deduction happens before the card is announced and
+    // before any attack of opportunity resolves (#501).
+    pay_play_cost(cx, investigator, &code);
     // The card is announced (`CardPlayed`): an event commences play via the
     // shared `begin_event_play` (leaves hand, stashed for discard-on-completion);
     // an asset emits `CardPlayed` now and enters play after its `OnPlay` effect
