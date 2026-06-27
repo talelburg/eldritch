@@ -1257,6 +1257,38 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
 /// Used by [`play_card`] (which then runs the mutation block on the
 /// `Ok` payload) and by `any_fast_play_eligible` (which only
 /// inspects `Ok` vs `Err`).
+/// RR p.11 (#495): an event card may be played only if its `OnPlay` effect has
+/// the potential to change the game state right now (Working a Hunch 01037 at a
+/// 0-clue location is unplayable). Events only — assets and other card types
+/// always change state by entering play. Uses the same conservative
+/// `effect_can_change_state` evaluator as the reaction/forced initiation gates,
+/// so only provable no-ops are blocked. `Ok(())` when playable.
+fn check_event_play_changes_state(
+    state: &GameState,
+    investigator: InvestigatorId,
+    code: &CardCode,
+    card_type: CardType,
+    abilities: &[Ability],
+) -> Result<(), Cow<'static, str>> {
+    if card_type != CardType::Event {
+        return Ok(());
+    }
+    let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
+    let changes_state = abilities.iter().any(|a| {
+        matches!(a.trigger, Trigger::OnPlay)
+            && crate::engine::evaluator::effect_can_change_state(state, ctx, &a.effect)
+    });
+    if changes_state {
+        Ok(())
+    } else {
+        Err(format!(
+            "PlayCard: {code}'s effect cannot change the game state right now, so it \
+             cannot be played (RR p.11)."
+        )
+        .into())
+    }
+}
+
 pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1334,28 +1366,9 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
-    // RR p.11 initiation gate: "An event card cannot be played unless the
-    // resolution of its effect has the potential to change the game state."
-    // (#495.) An event whose OnPlay effect is inert right now — Working a Hunch
-    // 01037 (discover 1 clue at your location) at a 0-clue location — is not
-    // playable, in the open-turn menu OR a Fast window (both route through here).
-    // Gates events only: assets/other cards always change state by entering play.
-    // Uses the same conservative evaluator as the reaction/forced gates, so only
-    // provable no-ops are blocked.
-    if card_type == CardType::Event {
-        let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
-        let on_play_can_change_state = abilities.iter().any(|a| {
-            matches!(a.trigger, Trigger::OnPlay)
-                && crate::engine::evaluator::effect_can_change_state(state, ctx, &a.effect)
-        });
-        if !on_play_can_change_state {
-            return Err(format!(
-                "PlayCard: {code}'s effect cannot change the game state right now, so it \
-                 cannot be played (RR p.11)."
-            )
-            .into());
-        }
-    }
+    // RR p.11 initiation gate (#495): an event can't be played if its OnPlay
+    // effect can't change game state — open-turn menu OR Fast window route here.
+    check_event_play_changes_state(state, investigator, &code, card_type, &abilities)?;
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
