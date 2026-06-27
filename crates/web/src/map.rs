@@ -119,7 +119,8 @@ fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
 
 /// The map panel: one absolutely-positioned container node per in-play location,
 /// holding the investigators and unengaged enemies in it. Connection lines are
-/// drawn by [`connection_lines`]. Read-only — pure derivation of `game`.
+/// drawn by a private helper; SVG lines sit behind the nodes. Read-only —
+/// pure derivation of `game`.
 pub fn location_map(game: &GameState) -> impl IntoView {
     let locs: Vec<_> = game
         .locations

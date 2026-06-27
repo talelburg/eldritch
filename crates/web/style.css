@@ -9,3 +9,15 @@
 .investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 16rem; }
 .investigator span { font-size: 0.9rem; }
 .card { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+
+/* Spatial board map (#497). Nodes are absolutely positioned at computed
+   left/top (set inline); the SVG line layer sits behind them. */
+.map { position: relative; margin: 1rem 0; }
+.map-lines { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
+.map-line { stroke: #999; stroke-width: 2; }
+.map-location { position: absolute; z-index: 1; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.25rem; font-size: 0.8rem; overflow: hidden; }
+.loc-head { font-weight: 600; margin-bottom: 0.15rem; }
+.inv-token { color: #157a3a; }
+.enemy-token { color: #a3261b; }
+.threat ul { list-style: none; padding-left: 0; margin: 0; }
+.enemy-engaged { color: #a3261b; font-size: 0.85rem; }

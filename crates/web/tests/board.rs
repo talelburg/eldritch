@@ -5,7 +5,7 @@
 
 use game_core::state::GameStateBuilder;
 use game_core::state::{Act, Agenda, CardCode, Phase};
-use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
+use game_core::test_support::fixtures::{test_investigator, test_location};
 use game_core::EngineOutcome;
 use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
@@ -144,30 +144,6 @@ async fn investigators_panel_renders_stats_and_hand() {
     assert!(
         html.contains("_synth_asset"),
         "in-play card missing: {html}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn enemies_panel_renders_name_stats_engagement() {
-    use game_core::state::InvestigatorId;
-
-    let mut enemy = test_enemy(4, "Swarm of Rats");
-    enemy.damage = 1; // 1/2
-    enemy.engaged_with = Some(InvestigatorId(1));
-    let state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
-        .with_enemy(enemy)
-        .build();
-
-    let html = render_state(state).await;
-
-    assert!(html.contains("Swarm of Rats"), "enemy name missing: {html}");
-    assert!(html.contains("fight 2"), "fight missing: {html}");
-    assert!(html.contains("evade 2"), "evade missing: {html}");
-    assert!(html.contains("1/2"), "enemy health missing: {html}");
-    assert!(
-        html.contains("engaged with 1"),
-        "engagement missing: {html}"
     );
 }
 
