@@ -151,6 +151,23 @@ pub(crate) fn check_advance_act(
         );
     }
     let threshold = state.act_deck[state.act_index].clue_threshold;
+    // The AdvanceAct action is the deliberate clue-spend advance, which is only
+    // meaningful for an act that advances by spending clues (threshold >= 1). A
+    // zero threshold (corpus `null`) marks a non-clue objective — e.g. The
+    // Gathering's Act 3 (01110), which advances via its Forced EnemyDefeated on
+    // the Ghoul Priest. Offering the action there would let the player "spend 0
+    // clues to advance", bypassing the objective (#486 — an instant win on a
+    // terminal-Won act). Unlike `act_advances_at_round_end` (registry-based, so
+    // it silently fails open with no registry installed), this is a self-contained
+    // invariant. Act 01109's round-end objective carries a positive threshold and
+    // stays excluded by `act_advances_at_round_end` above.
+    if threshold == 0 {
+        return Err(
+            "this act advances on a non-clue objective, not via the AdvanceAct \
+                    action"
+                .into(),
+        );
+    }
     let total_clues: u32 = clue_contributors(state, investigator)
         .into_iter()
         .filter_map(|id| state.investigators.get(&id))
@@ -589,6 +606,60 @@ mod advance_act_tests {
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
             "AdvanceAct must not be legal when clues < threshold"
+        );
+    }
+
+    #[test]
+    fn advance_act_action_rejected_for_zero_clue_threshold_objective() {
+        use crate::state::{Act, CardCode};
+        // A non-clue-objective act (clue_threshold 0 — e.g. The Gathering's
+        // Act 3 01110, which advances when the Ghoul Priest is defeated). The
+        // deliberate clue-spend AdvanceAct action is nonsensical here ("spend 0
+        // clues to advance" / "spend 0 clues to instantly win"), so it must be
+        // neither offered nor accepted — even with no registry installed (this
+        // is a pure game-core unit test, so none is).
+        let inv = InvestigatorId(1);
+        let mut investigator = test_investigator(1);
+        investigator.clues = 5; // plenty — reject must be the objective, not affordability
+        let mut state = GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(investigator)
+            .with_active_investigator(inv)
+            .with_turn_order([inv])
+            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(inv)
+            .build();
+        state.act_deck = vec![Act {
+            code: CardCode("01110".into()),
+            clue_threshold: 0,
+            resolution: Some(crate::scenario::Resolution::Won { id: "R1".into() }),
+        }];
+
+        assert!(
+            !legal_actions(&state)
+                .iter()
+                .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
+            "AdvanceAct must not be offered for a zero-threshold objective act"
+        );
+        // Bypass the legality menu (the assert above already proves it's not
+        // offered) to confirm the handler itself rejects, leaving state unchanged.
+        let result = crate::test_support::dispatch_turn_action_unchecked(
+            state,
+            &TurnAction::AdvanceAct { investigator: inv },
+        );
+        assert!(
+            matches!(result.outcome, EngineOutcome::Rejected { .. }),
+            "AdvanceAct must be rejected for a zero-threshold objective act"
+        );
+        assert!(
+            result.state.resolution.is_none(),
+            "rejected AdvanceAct must not latch the act's Won resolution"
+        );
+        assert_eq!(
+            result.state.investigators[&inv].clues, 5,
+            "rejected AdvanceAct must not spend clues"
         );
     }
 
