@@ -189,6 +189,16 @@ churn in this PR; noted as a follow-up.
   separate UI investment, not pursued here.
 - **2+ simultaneous-forced ordering UX** is unchanged (already surfaced).
 - **`interactive_acknowledge` rename** — deferred (see The flag).
+- **Remaining single-option auto-binds outside `resolve_choice_count`** — combat
+  soak distribution, single-enemy attack-order, and other bespoke frame-local n=1
+  shortcuts. The elegant end-state is one uniform "single option ⇒ one-option
+  suspend when interactive" rule (retiring the dedicated `AcknowledgeForced` frame
+  and the per-frame n=1 checks), but it depends on the **pure frame-driven model**
+  — the dormant "B end-state" of #393 — because the remaining sites resolve through
+  emit callers that assume a `Done` return (some `let _ = emit_event(...)`).
+  **Action: file a follow-up issue** and cross-reference #393. This is *why* #466
+  splits into the flag-aware `resolve_choice_count` + a dedicated forced frame
+  rather than one unified mechanism.
 
 ## Testing
 

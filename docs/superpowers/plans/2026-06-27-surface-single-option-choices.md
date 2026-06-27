@@ -551,10 +551,33 @@ gh issue create --title "Descriptive player-facing text for forced/auto-resolved
 - [ ] **Step 2: Note the framework-harm case on #429**
 
 ```bash
-gh issue comment 429 --body "From #466: the draw-from-empty-deck horror penalty is pure-framework harm (no card forced ability), so #466's AcknowledgeForced (which hooks card forced abilities via resolve_one) does not reach it. When this interactive soak/harm work lands, it should likewise surface an acknowledge before the harm, for parity with #466."
+gh issue comment 429 --body "From #466: the draw-from-empty-deck horror penalty is pure-framework harm (no card forced ability), so #466's AcknowledgeForced (which hooks card forced abilities via fire_forced_triggers) does not reach it. When this interactive soak/harm work lands, it should likewise surface an acknowledge before the harm, for parity with #466."
 ```
 
-- [ ] **Step 3: No commit** (issue/comment only).
+- [ ] **Step 3: File the remaining-single-option-auto-binds follow-up (with the frame-model blocker note)**
+
+```bash
+gh issue create --title "Surface remaining single-option auto-binds (combat soak, attack-order, …) as choices when interactive" \
+  --label engine,ui,p2-later \
+  --body "Follow-up from #466. #466 surfaced single options two ways: (1) resolve_choice_count became flag-aware (ChooseOne, Effect::Fight target, asset/location discard, deck search), and (2) a dedicated Continuation::AcknowledgeForced frame surfaces no-choice forced effects (Attic/Cellar) before they resolve.
+
+Remaining single-option auto-binds live in **bespoke frame logic not routed through resolve_choice_count**, so they still resolve silently under interactive_acknowledge:
+- combat damage/horror **soak distribution** (combat.rs ~:874/:902) when only one soak target exists;
+- single-enemy **attack-order** (no AttackLoopStage::PickOrder is opened for one enemy);
+- any other frame-local n=1 shortcut.
+
+**Elegant end-state:** one uniform rule — a single legal option becomes a one-option PickSingle when interactive_acknowledge is on — applied everywhere, routing all single-option situations through the shared choice mechanism (return Suspend-with-1-option). That would retire the dedicated AcknowledgeForced frame and the per-frame n=1 shortcuts in favor of one mechanism.
+
+**Blocker:** that uniform mechanism depends on the **pure frame-driven model** — the dormant 'B end-state' of #393 ('every straight-line step is a frame'). The remaining sites either resolve synchronously through emit callers that assume a Done return (some use \`let _ = emit_event(...)\`) or carry bespoke n=1 auto-binds; converting them to frame-driven single-option suspends is the prerequisite. Until then, #466's dedicated frame + flag-aware resolve_choice_count is the pragmatic split."
+```
+
+- [ ] **Step 4: Cross-reference the blocker on the (closed) frame-model arc #393**
+
+```bash
+gh issue comment 393 --body "Note for the dormant 'B end-state' (every straight-line step a frame): #466 had to use a dedicated AcknowledgeForced frame for no-choice forced-effect surfacing because the elegant uniform 'single option ⇒ suspend with one option when interactive' mechanism is blocked on the frame-driven conversion — emit callers that assume a Done return (some \`let _ = emit_event(...)\`) can't yet absorb a single-forced suspend. Tracked as the #466 follow-up for the remaining single-option auto-binds."
+```
+
+- [ ] **Step 5: No commit** (issues/comments only).
 
 ---
 
