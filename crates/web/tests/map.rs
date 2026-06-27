@@ -2,7 +2,7 @@
 //! feed a constructed `GameState`, assert on the rendered DOM. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::state::{GameStateBuilder, LocationId};
+use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
 use game_core::EngineOutcome;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
@@ -88,9 +88,10 @@ async fn connected_locations_draw_a_line() {
         .build();
     state.connect(LocationId(10), LocationId(11));
     mount_state(state).await;
-    assert!(
-        line_count() >= 1,
-        "a connected pair must draw at least one line"
+    assert_eq!(
+        line_count(),
+        1,
+        "a connected pair must draw exactly one line"
     );
 }
 
@@ -117,6 +118,42 @@ async fn investigator_renders_inside_its_location_node() {
         node_text("Study").contains("Test Investigator 1"),
         "investigator token must render inside its location node; Study node = {:?}",
         node_text("Study"),
+    );
+}
+
+#[wasm_bindgen_test]
+async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    let mut enemy = test_enemy(100, "Mock Ghoul");
+    enemy.current_location = Some(LocationId(10));
+    enemy.engaged_with = Some(InvestigatorId(1));
+    let state = GameStateBuilder::new()
+        .with_location(test_location(10, "Study"))
+        .with_investigator(inv)
+        .with_enemy(enemy)
+        .build();
+    mount_state(state).await;
+
+    // Not in the location node (engaged enemies leave the location box)…
+    assert!(
+        !node_text("Study").contains("Mock Ghoul"),
+        "engaged enemy must NOT render in the location node; node = {:?}",
+        node_text("Study"),
+    );
+    // …but present in the investigator detail panel (query last to avoid DOM accumulation).
+    let investigators = document()
+        .query_selector_all(".investigators")
+        .expect("query_selector_all ok");
+    let len = investigators.length();
+    let panel = investigators
+        .item(len.saturating_sub(1))
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|el| el.text_content())
+        .unwrap_or_default();
+    assert!(
+        panel.contains("Mock Ghoul"),
+        "engaged enemy must render in the detail panel; panel = {panel:?}",
     );
 }
 
