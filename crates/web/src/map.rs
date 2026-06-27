@@ -2,6 +2,10 @@
 //! connection lines. Read-only; a pure derivation of `GameState`. The map and
 //! its layout helpers live here; `board.rs` calls `location_map`.
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use game_core::state::{CardCode, LocationId};
+
 /// Authored grid cell `(col, row)` for a known location code — the layout the
 /// client ships for scenarios it knows. The Gathering: the Study sits isolated
 /// to the left; the Hallway is the hub, with the Attic above, the Parlor below,
@@ -18,19 +22,89 @@ pub(crate) fn location_grid_pos(code: &str) -> Option<(u16, u16)> {
     }
 }
 
+/// Number of columns the fallback flows across before wrapping to a new row.
+/// Generous — the fallback is a degraded path for scenarios without an authored
+/// layout; authored cells stay well within this.
+const FALLBACK_COLS: u16 = 6;
+
+/// Resolve a `(col, row)` grid cell for every in-play location: its authored
+/// cell from [`location_grid_pos`], or — for codes without one — the next free
+/// cell in row-major order, skipping cells already taken (authored or
+/// previously assigned). Deterministic in `locations` order, so the layout is
+/// stable across renders.
+pub(crate) fn layout_positions(
+    locations: &[(LocationId, CardCode)],
+) -> BTreeMap<LocationId, (u16, u16)> {
+    // All authored cells are reserved up front so a fallback never lands on one.
+    let mut taken: BTreeSet<(u16, u16)> = locations
+        .iter()
+        .filter_map(|(_, code)| location_grid_pos(code.as_str()))
+        .collect();
+    let mut cursor: (u16, u16) = (0, 0);
+    let mut out = BTreeMap::new();
+    for (id, code) in locations {
+        let pos = location_grid_pos(code.as_str()).unwrap_or_else(|| {
+            while taken.contains(&cursor) {
+                cursor = advance_cell(cursor);
+            }
+            let p = cursor;
+            taken.insert(p);
+            cursor = advance_cell(cursor);
+            p
+        });
+        out.insert(*id, pos);
+    }
+    out
+}
+
+/// Row-major next cell, wrapping after [`FALLBACK_COLS`] columns.
+fn advance_cell((col, row): (u16, u16)) -> (u16, u16) {
+    if col + 1 >= FALLBACK_COLS {
+        (0, row + 1)
+    } else {
+        (col + 1, row)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::location_grid_pos;
+    use super::{location_grid_pos, layout_positions};
+    use game_core::state::{CardCode, LocationId};
 
     #[test]
     fn known_gathering_codes_have_authored_cells() {
         assert_eq!(location_grid_pos("01112"), Some((2, 1)));
         assert_eq!(location_grid_pos("01113"), Some((2, 0)));
         assert_eq!(location_grid_pos("01111"), Some((0, 1)));
+        assert_eq!(location_grid_pos("01114"), Some((3, 1))); // Cellar
+        assert_eq!(location_grid_pos("01115"), Some((2, 2))); // Parlor
     }
 
     #[test]
     fn unknown_code_has_no_authored_cell() {
         assert_eq!(location_grid_pos("99999"), None);
+    }
+
+    #[test]
+    fn authored_code_uses_its_cell_unknown_gets_a_free_one() {
+        let locs = vec![
+            (LocationId(1), CardCode::new("01112")), // authored (2, 1)
+            (LocationId(2), CardCode::new("99999")), // fallback
+        ];
+        let pos = layout_positions(&locs);
+        assert_eq!(pos[&LocationId(1)], (2, 1));
+        // The fallback location gets *some* cell, and it must not collide with
+        // the authored cell.
+        assert_ne!(pos[&LocationId(2)], (2, 1));
+    }
+
+    #[test]
+    fn two_unknown_codes_get_distinct_cells() {
+        let locs = vec![
+            (LocationId(1), CardCode::new("aaaaa")),
+            (LocationId(2), CardCode::new("bbbbb")),
+        ];
+        let pos = layout_positions(&locs);
+        assert_ne!(pos[&LocationId(1)], pos[&LocationId(2)]);
     }
 }
