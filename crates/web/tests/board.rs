@@ -5,7 +5,7 @@
 
 use game_core::state::GameStateBuilder;
 use game_core::state::{Act, Agenda, CardCode, Phase};
-use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
+use game_core::test_support::fixtures::{test_investigator, test_location};
 use game_core::EngineOutcome;
 use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
@@ -86,7 +86,7 @@ async fn phase_bar_renders_phase_round_act_agenda() {
 }
 
 #[wasm_bindgen_test]
-async fn locations_panel_renders_name_shroud_clues_revealed() {
+async fn map_renders_location_name_shroud_clues() {
     let mut loc = test_location(7, "Rivertown");
     loc.shroud = 3;
     loc.clues = 2;
@@ -100,7 +100,6 @@ async fn locations_panel_renders_name_shroud_clues_revealed() {
     assert!(html.contains("Rivertown"), "location name missing: {html}");
     assert!(html.contains("shroud 3"), "shroud missing: {html}");
     assert!(html.contains("clues 2"), "location clues missing: {html}");
-    assert!(html.contains("revealed"), "revealed flag missing: {html}");
 }
 
 #[wasm_bindgen_test]
@@ -144,30 +143,6 @@ async fn investigators_panel_renders_stats_and_hand() {
     assert!(
         html.contains("_synth_asset"),
         "in-play card missing: {html}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn enemies_panel_renders_name_stats_engagement() {
-    use game_core::state::InvestigatorId;
-
-    let mut enemy = test_enemy(4, "Swarm of Rats");
-    enemy.damage = 1; // 1/2
-    enemy.engaged_with = Some(InvestigatorId(1));
-    let state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
-        .with_enemy(enemy)
-        .build();
-
-    let html = render_state(state).await;
-
-    assert!(html.contains("Swarm of Rats"), "enemy name missing: {html}");
-    assert!(html.contains("fight 2"), "fight missing: {html}");
-    assert!(html.contains("evade 2"), "evade missing: {html}");
-    assert!(html.contains("1/2"), "enemy health missing: {html}");
-    assert!(
-        html.contains("engaged with 1"),
-        "engagement missing: {html}"
     );
 }
 
@@ -286,6 +261,41 @@ async fn version_mismatch_status_renders_actionable_message() {
     assert!(
         html.contains("restart the server"),
         "status line must tell the user what to do: {html}"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn map_and_investigators_are_inside_board_main() {
+    let state = GameStateBuilder::new()
+        .with_investigator(test_investigator(1))
+        .with_location(test_location(1, "Study"))
+        .build();
+    let _ = render_state(state).await;
+
+    // Scope to the last mounted .game so DOM accumulation from earlier tests
+    // does not pollute this assertion.
+    let document = leptos::prelude::document();
+    let games = document
+        .query_selector_all(".game")
+        .expect("query_selector_all");
+    let last_game = games
+        .item(games.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("last .game is an Element");
+
+    assert!(
+        last_game
+            .query_selector(".board-main .map")
+            .expect("query ok")
+            .is_some(),
+        ".map must be a descendant of .board-main"
+    );
+    assert!(
+        last_game
+            .query_selector(".board-main .investigators")
+            .expect("query ok")
+            .is_some(),
+        ".investigators must be a descendant of .board-main"
     );
 }
 

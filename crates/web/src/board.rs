@@ -2,7 +2,7 @@
 //! helper fns; `BoardView` is the only component. Cards and locations render as
 //! their names via `crate::names` (the client installs `cards::REGISTRY`).
 
-use game_core::state::{GameState, InvestigatorId};
+use game_core::state::GameState;
 use game_core::Resolution;
 use leptos::prelude::*;
 
@@ -31,9 +31,10 @@ pub fn BoardView() -> impl IntoView {
             <div class="game">
                 {resolution_banner(&game)}
                 {phase_bar(&game)}
-                {locations_panel(&game)}
-                {investigators_panel(&game)}
-                {enemies_panel(&game)}
+                <div class="board-main">
+                    {crate::map::location_map(&game)}
+                    {investigators_panel(&game)}
+                </div>
             </div>
         }
         .into_any(),
@@ -66,36 +67,6 @@ pub fn BoardView() -> impl IntoView {
     }
 }
 
-/// One row per location: name, shroud, clues, and a revealed flag.
-/// Iterates the `BTreeMap` in `LocationId` order (deterministic).
-fn locations_panel(game: &GameState) -> impl IntoView {
-    let rows: Vec<_> = game
-        .locations
-        .values()
-        .map(|loc| {
-            let revealed = if loc.revealed {
-                "revealed"
-            } else {
-                "unrevealed"
-            };
-            view! {
-                <li class="location">
-                    <span class="loc-name">{loc.name.clone()}</span>
-                    <span class="loc-shroud">"shroud " {loc.shroud}</span>
-                    <span class="loc-clues">"clues " {loc.clues}</span>
-                    <span class="loc-revealed">{revealed}</span>
-                </li>
-            }
-        })
-        .collect();
-    view! {
-        <section class="locations">
-            <h2>"Locations"</h2>
-            <ul>{rows}</ul>
-        </section>
-    }
-}
-
 /// One panel per investigator: name, location, actions, resources,
 /// health (`damage/max_health`), sanity (`horror/max_sanity`), clues,
 /// status; hand and cards-in-play as text lists of card names.
@@ -118,6 +89,23 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                 .iter()
                 .map(|c| view! { <li class="card">{crate::names::card_name(&c.code)}</li> })
                 .collect();
+            let threat: Vec<_> = inv
+                .threat_area
+                .iter()
+                .map(|c| view! { <li class="card">{crate::names::card_name(&c.code)}</li> })
+                .collect();
+            let engaged: Vec<_> = game
+                .enemies
+                .values()
+                .filter(|e| e.engaged_with == Some(inv.id))
+                .map(|e| {
+                    view! {
+                        <li class="enemy-engaged">
+                            {e.name.clone()} " " {e.damage} "/" {e.max_health}
+                        </li>
+                    }
+                })
+                .collect();
             view! {
                 <article class="investigator">
                     <h3 class="inv-name">{inv.name.clone()}</h3>
@@ -130,6 +118,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <span class="inv-status">{format!("{:?}", inv.status)}</span>
                     <div class="hand"><h4>"Hand"</h4><ul>{hand}</ul></div>
                     <div class="in-play"><h4>"In play"</h4><ul>{in_play}</ul></div>
+                    <div class="threat"><h4>"Threat area"</h4><ul>{threat}{engaged}</ul></div>
                 </article>
             }
         })
@@ -138,41 +127,6 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
         <section class="investigators">
             <h2>"Investigators"</h2>
             {panels}
-        </section>
-    }
-}
-
-/// One row per enemy: name, fight/evade, health (`damage/max_health`),
-/// location, and engagement.
-fn enemies_panel(game: &GameState) -> impl IntoView {
-    let rows: Vec<_> = game
-        .enemies
-        .values()
-        .map(|e| {
-            let engaged = match e.engaged_with {
-                Some(InvestigatorId(id)) => format!("engaged with {id}"),
-                None => "unengaged".to_string(),
-            };
-            let location = e.current_location.map_or_else(
-                || "—".to_string(),
-                |id| crate::names::location_name(game, id),
-            );
-            view! {
-                <li class="enemy">
-                    <span class="enemy-name">{e.name.clone()}</span>
-                    <span class="enemy-fight">"fight " {e.fight}</span>
-                    <span class="enemy-evade">"evade " {e.evade}</span>
-                    <span class="enemy-health">"health " {e.damage} "/" {e.max_health}</span>
-                    <span class="enemy-location">{location}</span>
-                    <span class="enemy-engaged">{engaged}</span>
-                </li>
-            }
-        })
-        .collect();
-    view! {
-        <section class="enemies">
-            <h2>"Enemies"</h2>
-            <ul>{rows}</ul>
         </section>
     }
 }
