@@ -1,8 +1,8 @@
 //! Read-only render of `GameState` into the DOM (P6.5). Panels are plain
-//! helper fns; `BoardView` is the only component. Cards render as their
-//! `CardCode` strings — the client has no card-name source.
+//! helper fns; `BoardView` is the only component. Cards and locations render as
+//! their names via `crate::names` (the client installs `cards::REGISTRY`).
 
-use game_core::state::{GameState, InvestigatorId, LocationId};
+use game_core::state::{GameState, InvestigatorId};
 use game_core::Resolution;
 use leptos::prelude::*;
 
@@ -98,24 +98,25 @@ fn locations_panel(game: &GameState) -> impl IntoView {
 
 /// One panel per investigator: name, location, actions, resources,
 /// health (`damage/max_health`), sanity (`horror/max_sanity`), clues,
-/// status; hand and cards-in-play as text lists of card codes.
+/// status; hand and cards-in-play as text lists of card names.
 fn investigators_panel(game: &GameState) -> impl IntoView {
     let panels: Vec<_> = game
         .investigators
         .values()
         .map(|inv| {
-            let location = inv
-                .current_location
-                .map_or_else(|| "—".to_string(), |LocationId(id)| format!("loc {id}"));
+            let location = inv.current_location.map_or_else(
+                || "—".to_string(),
+                |id| crate::names::location_name(game, id),
+            );
             let hand: Vec<_> = inv
                 .hand
                 .iter()
-                .map(|code| view! { <li class="card">{code.to_string()}</li> })
+                .map(|code| view! { <li class="card">{crate::names::card_name(code)}</li> })
                 .collect();
             let in_play: Vec<_> = inv
                 .cards_in_play
                 .iter()
-                .map(|c| view! { <li class="card">{c.code.to_string()}</li> })
+                .map(|c| view! { <li class="card">{crate::names::card_name(&c.code)}</li> })
                 .collect();
             view! {
                 <article class="investigator">
@@ -152,9 +153,10 @@ fn enemies_panel(game: &GameState) -> impl IntoView {
                 Some(InvestigatorId(id)) => format!("engaged with {id}"),
                 None => "unengaged".to_string(),
             };
-            let location = e
-                .current_location
-                .map_or_else(|| "—".to_string(), |LocationId(id)| format!("loc {id}"));
+            let location = e.current_location.map_or_else(
+                || "—".to_string(),
+                |id| crate::names::location_name(game, id),
+            );
             view! {
                 <li class="enemy">
                     <span class="enemy-name">{e.name.clone()}</span>
