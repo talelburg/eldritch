@@ -427,52 +427,26 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     cx.events.push(Event::PhaseStarted {
         phase: Phase::Mythos,
     });
-    // Push the Mythos phase anchor (slice 1a, #393). It sits beneath the
-    // phase's framework windows; the post-1.4 MythosAfterDraws window's close
-    // routes to its on_child_pop. AfterDraws is the only Mythos boundary, so
-    // the resume is fixed at entry.
+    // Push the Mythos phase anchor parked at `Draws` (#482): steps 1.2/1.3 below
+    // may push an `AdvanceReverse` frame whose reverse suspends (01105's
+    // ChooseOne); the 1.4 draws run from this anchor's `Draws` resume
+    // (anchor_on_child_pop) once that frame pops, never before — RR order has the
+    // agenda's on-advance effect resolve before the encounter draws.
     cx.state
         .continuations
         .push(crate::state::Continuation::MythosPhase {
-            resume: crate::state::MythosResume::AfterDraws,
+            resume: crate::state::MythosResume::Draws,
         });
 
     // 1.2 Place 1 doom on the current agenda.
     super::act_agenda::place_doom_on_agenda(cx);
 
-    // 1.3 Check doom threshold.
+    // 1.3 Check doom threshold (may push an AdvanceReverse frame above the anchor).
     super::act_agenda::check_doom_threshold(cx);
 
-    // 1.4 Each investigator draws 1 encounter card.
-    //     Push the `EncounterDraw` loop frame; the actual draws are
-    //     player-driven via `ResolveInput(Confirm)` against the top frame
-    //     (#348), and `resume_encounter_draw` advances the queue after each
-    //     chain. Per Rules Reference p.10 (Elimination), eliminated
-    //     investigators (Killed, Insane, Resigned) do not draw — the queue is
-    //     seeded with the Active investigators only.
-    let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
-    if remaining.is_empty() {
-        // No Active investigators to draw (turn_order is empty or all
-        // investigators are eliminated). Open the post-1.4 window
-        // immediately; open_fast_window's auto-skip path triggers
-        // because nothing is eligible, runs the MythosAfterDraws
-        // continuation (mythos_phase_end), which transitions to
-        // Investigation. All in this same apply.
-        let outcome = super::reaction_windows::open_fast_window(
-            cx,
-            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-        );
-        debug_assert_eq!(
-            outcome,
-            EngineOutcome::Done,
-            "open_fast_window(MythosAfterDraws) unexpectedly suspended; this window has no suspending continuation",
-        );
-        return EngineOutcome::Done;
-    }
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::EncounterDraw { remaining });
-    super::encounter::prompt_encounter_draw(cx)
+    // 1.4 runs from the anchor's `Draws` resume, after any advance sub-process
+    // resolves. Cede to the loop.
+    EngineOutcome::Done
 }
 
 /// Test helper (slice 1b, #393): advance to the next phase via the main loop,
@@ -776,6 +750,41 @@ fn advance_phase_entry(
     }
 }
 
+/// Mythos step 1.4 (#482): re-park the anchor at `AfterDraws`, then seed + open
+/// the encounter draws. Reached from `anchor_on_child_pop`'s `MythosPhase{Draws}`
+/// arm — i.e. once any `AdvanceReverse` frame (the agenda's on-advance reverse +
+/// acknowledge) above the anchor has popped, so the agenda effect resolves before
+/// any encounter is drawn (RR order).
+fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
+    cx.state.continuations.pop();
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::MythosPhase {
+            resume: crate::state::MythosResume::AfterDraws,
+        });
+    // Per Rules Reference p.10 (Elimination), eliminated investigators (Killed,
+    // Insane, Resigned) do not draw — seed Active only.
+    let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
+    if remaining.is_empty() {
+        // No Active drawers: open + auto-skip the post-1.4 window inline (its
+        // continuation runs mythos_phase_end → Investigation).
+        let outcome = super::reaction_windows::open_fast_window(
+            cx,
+            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+        );
+        debug_assert_eq!(
+            outcome,
+            EngineOutcome::Done,
+            "open_fast_window(MythosAfterDraws) unexpectedly suspended",
+        );
+        return EngineOutcome::Done;
+    }
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EncounterDraw { remaining });
+    super::encounter::prompt_encounter_draw(cx)
+}
+
 /// Run the top `*Phase` anchor's continuation after one of its framework
 /// windows closed (slice 1a, #393), or advance it from `Entry` (slice 1b, via
 /// [`advance_phase_entry`]). The window has already been popped by the close
@@ -895,6 +904,9 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             });
             EngineOutcome::Done
         }
+        Some(Continuation::MythosPhase {
+            resume: MythosResume::Draws,
+        }) => run_mythos_draws(cx),
         Some(Continuation::MythosPhase {
             resume: MythosResume::AfterDraws,
         }) => {
@@ -1736,10 +1748,20 @@ mod mythos_phase_tests {
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
         let mut events = Vec::new();
 
-        let outcome = mythos_phase(&mut Cx {
+        // mythos_phase parks the anchor at Draws (#482); the 1.4 draws run when
+        // the drive loop processes that anchor (no agenda deck ⇒ no advance to
+        // wait on, so this completes in the same drive).
+        mythos_phase(&mut Cx {
             state: &mut state,
             events: &mut events,
         });
+        let outcome = super::super::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
 
         let EngineOutcome::AwaitingInput { request, .. } = &outcome else {
             panic!("mythos_phase opens the first encounter-draw prompt, got {outcome:?}");
@@ -1807,10 +1829,18 @@ mod mythos_phase_tests {
             .build();
         state.turn_order = vec![InvestigatorId(1)];
         let mut events = Vec::new();
-        let outcome = mythos_phase(&mut Cx {
+        mythos_phase(&mut Cx {
             state: &mut state,
             events: &mut events,
         });
+        // Draws run from the anchor's Draws resume (#482); drive to reach them.
+        let outcome = super::super::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(
             state
@@ -1939,6 +1969,14 @@ mod mythos_phase_tests {
             state: &mut state,
             events: &mut events,
         });
+        // The 1.4 draws (queue seeding) run from the Draws anchor (#482); drive.
+        super::super::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
 
         assert_eq!(
             state.current_encounter_drawer(),
@@ -1972,6 +2010,15 @@ mod mythos_phase_tests {
             state: &mut state,
             events: &mut events,
         });
+        // No Active drawers: the Draws anchor opens + auto-skips MythosAfterDraws,
+        // cascading to Investigation — all once the loop processes it (#482).
+        super::super::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
 
         assert_eq!(state.current_encounter_drawer(), None);
         assert_eq!(

@@ -4830,6 +4830,9 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(out, EngineOutcome::Done);
+        // The advance is deferred to an AdvanceReverse frame (#482); drive it
+        // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
+        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.act_index, 1);
         assert!(state.resolution.is_none());
     }

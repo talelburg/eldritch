@@ -18,6 +18,9 @@ use super::Cx;
 mod abilities;
 pub(crate) mod act_agenda;
 pub(crate) mod actions;
+// pub(super): the #482 resumable act/agenda-advance sub-process; driven by the
+// `drive` loop and resumed via `resolve_input`.
+pub(super) mod advance_reverse;
 // pub(super): engine/mod.rs re-exports `suspend_for_native_choice` (pub) for
 // the `cards` crate's native-leaf picks (Crypt Chill 01167, Axis A #334).
 pub(super) mod choice;
@@ -245,6 +248,14 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
             // A skill test re-exposed on top (a mid-test window/effect closed):
             // step its driver. By the invariant it is top — no `rposition` /
             // `win_idx > st` self-location.
+            // An act/agenda advance sub-process on top (#482): drive its step
+            // machine (acknowledge → reverse → finalize). A reverse it fires
+            // lands above this frame and the loop drives it first; the frame is
+            // re-exposed at Finalize when the reverse pops.
+            Some(Continuation::AdvanceReverse { .. }) => match advance_reverse::drive(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
             Some(Continuation::SkillTest(_)) => match skill_test::advance(cx) {
                 EngineOutcome::Done => {}
                 other => return other,
@@ -598,6 +609,9 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 .into(),
         },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
+        // The #482 advance acknowledge pause: a Confirm resumes the AdvanceReverse
+        // frame past its AwaitAck step into firing the leaving card's reverse.
+        Some(Continuation::AdvanceReverse { .. }) => advance_reverse::resume(cx, response),
         // An order-pick suspension parks the `AttackLoop` frame as the top frame
         // (it *is* the prompt) — route its `PickSingle` to the order resume
         // (#143). Every other `AttackLoop` stage sits beneath a reaction window
