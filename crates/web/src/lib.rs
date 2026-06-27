@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod board;
+pub mod names;
 pub mod skill_test_result;
 pub mod store;
 pub mod url;
