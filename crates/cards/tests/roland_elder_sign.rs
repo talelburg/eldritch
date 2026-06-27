@@ -19,7 +19,7 @@ use game_core::EngineOutcome;
 
 const ROLAND: &str = "01001";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

@@ -52,7 +52,7 @@ fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
     }
 }
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: mock_metadata_for,

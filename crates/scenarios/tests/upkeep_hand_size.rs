@@ -21,7 +21,7 @@ use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::test_fixtures::synthetic;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_test_registry() {
     let _ = game_core::card_registry::install(TEST_REGISTRY);
 }

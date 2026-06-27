@@ -25,7 +25,7 @@ const LOC: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
 const WEAPON_INST: CardInstanceId = CardInstanceId(900);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

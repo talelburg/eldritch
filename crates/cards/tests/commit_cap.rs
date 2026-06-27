@@ -15,7 +15,7 @@ use game_core::{Action, GameState, InputResponse, PlayerAction};
 const GUTS: &str = "01089";
 const INV: InvestigatorId = InvestigatorId(1);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

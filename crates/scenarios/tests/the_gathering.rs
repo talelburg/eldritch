@@ -14,7 +14,7 @@ use game_core::test_support::{
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::{the_gathering, REGISTRY};
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registries() {
     let _ = game_core::scenario_registry::install(REGISTRY);
     let _ = game_core::card_registry::install(cards::REGISTRY);

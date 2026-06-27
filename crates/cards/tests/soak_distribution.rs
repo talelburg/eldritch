@@ -13,7 +13,7 @@ use game_core::{Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

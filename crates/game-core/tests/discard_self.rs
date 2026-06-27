@@ -137,7 +137,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_mock_registry() {
     let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
         metadata_for: mock_metadata_for,

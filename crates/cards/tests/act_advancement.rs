@@ -11,7 +11,7 @@ use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
 };
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

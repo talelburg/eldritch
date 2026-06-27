@@ -19,7 +19,7 @@ const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supp
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

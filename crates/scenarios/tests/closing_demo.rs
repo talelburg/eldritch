@@ -21,7 +21,7 @@ use scenarios::test_fixtures::synth_cards::{
 };
 use scenarios::REGISTRY;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registry() {
     let _ = game_core::scenario_registry::install(REGISTRY);
     let _ = game_core::card_registry::install(TEST_REGISTRY);

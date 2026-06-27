@@ -29,7 +29,7 @@ const UNEXPECTED_COURAGE: &str = "01093";
 /// icons contribute 0" control.
 const OVERPOWER: &str = "01091";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

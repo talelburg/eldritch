@@ -14,7 +14,7 @@ use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_CHOICE_TREACHERY_CODE, TEST_REGISTRY};
 use scenarios::test_fixtures::synthetic;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(TEST_REGISTRY);
 }

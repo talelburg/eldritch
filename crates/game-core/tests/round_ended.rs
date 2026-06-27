@@ -53,7 +53,7 @@ fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
     (tag == "test:set-doom").then_some(set_doom as NativeEffectFn)
 }
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: mock_metadata_for,

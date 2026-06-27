@@ -19,7 +19,7 @@ const DR_MILAN: &str = "01033";
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

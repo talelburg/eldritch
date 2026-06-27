@@ -39,7 +39,7 @@ fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: mock_metadata_for,

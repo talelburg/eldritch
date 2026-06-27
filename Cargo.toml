@@ -19,7 +19,11 @@ repository = "https://github.com/talelburg/eldritch"
 rust-version = "1.95"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny`, not `forbid`: the `ctor` crate (test-only, used to install registries
+# before integration tests run) requires `#[ctor::ctor(unsafe)]`, whose expansion
+# opts in via `#[allow(unsafe_code)]` — which `forbid` (being absolute) rejects.
+# `deny` still errors on any unsafe by default; the only opt-in is the ctor macro.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

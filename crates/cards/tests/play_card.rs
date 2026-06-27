@@ -51,7 +51,7 @@ const UNKNOWN_CODE: &str = "99999";
 /// Install the real card registry exactly once for this integration-
 /// test binary. Idempotent at the `OnceLock` level; this `Once`
 /// wrapper additionally avoids the futile second `install` call.
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     // It's fine if this is `Err` — another test in this binary
     // already installed. The function-pointer struct is `Copy`

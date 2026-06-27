@@ -34,7 +34,7 @@ const ROLAND: &str = "01001";
 /// against `PendingTrigger.instance_id`.
 const ROLAND_INSTANCE: u32 = 1;
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

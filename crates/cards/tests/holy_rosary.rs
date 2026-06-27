@@ -20,7 +20,7 @@ use game_core::{assert_event, TurnAction};
 
 const HOLY_ROSARY: &str = "01059";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

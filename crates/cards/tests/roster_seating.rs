@@ -12,7 +12,7 @@ use game_core::test_support::GameStateBuilder;
 /// Install the real card registry exactly once for this integration-test
 /// binary. Idempotent at the `OnceLock` level; the `Once` wrapper avoids
 /// the futile second `install` call.
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }

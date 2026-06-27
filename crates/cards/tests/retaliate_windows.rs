@@ -53,7 +53,7 @@ const DODGE: &str = "01023";
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, damage-retaliate.
 const GUARD_DOG: &str = "01021";
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }
