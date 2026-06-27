@@ -174,7 +174,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                                             }
                                         })
                                     >
-                                        {crate::names::card_name(&game_core::state::CardCode::new(code))}
+                                        {crate::names::card_name(&code)}
                                     </button>
                                 </li>
                             }
@@ -221,7 +221,7 @@ pub fn AwaitingInputView() -> impl IntoView {
     }
 }
 
-/// The prompted investigator's hand as card-code strings (empty when no
+/// The prompted investigator's hand as card codes (empty when no
 /// investigator is being prompted).
 ///
 /// Falls back to the prompted investigator when there is no active
@@ -236,11 +236,11 @@ pub fn AwaitingInputView() -> impl IntoView {
 /// `in_flight_skill_test.investigator`; the two coincide in solo but need
 /// not in a delegated/multiplayer test, so input routing is revisited in
 /// #205.
-fn active_hand(game: &GameState) -> Vec<String> {
+fn active_hand(game: &GameState) -> Vec<game_core::state::CardCode> {
     game.active_investigator
         .or_else(|| game.current_mulligan())
         .or_else(|| game.current_hand_size_discard())
         .and_then(|id| game.investigators.get(&id))
-        .map(|inv| inv.hand.iter().map(ToString::to_string).collect())
+        .map(|inv| inv.hand.clone())
         .unwrap_or_default()
 }
