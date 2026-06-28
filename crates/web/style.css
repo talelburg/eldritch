@@ -25,3 +25,14 @@
 .threat ul { list-style: none; padding-left: 0; margin: 0; }
 .enemy-engaged { color: #a3261b; font-size: 0.85rem; }
 .board-main { display: flex; gap: 1rem; align-items: flex-start; }
+
+/* Event log panel (#505): fixed-width column left of the board, scrolls with
+   the newest entry pinned to the bottom. Monospace so raw Debug lines align. */
+.layout { display: flex; gap: 1rem; align-items: flex-start; }
+.event-log { flex: 0 0 auto; width: 22rem; }
+.event-log h2 { font-size: 1rem; margin: 0 0 0.25rem; }
+.log-scroll { max-height: 80vh; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; }
+.log-batch { border-top: 1px solid #eee; padding: 0.25rem 0; }
+.log-batch:first-child { border-top: none; }
+.log-action { font-weight: 600; color: #2a4d69; }
+.log-event { white-space: pre-wrap; word-break: break-word; color: #333; }

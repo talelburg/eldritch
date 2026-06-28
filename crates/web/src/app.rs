@@ -20,7 +20,10 @@ pub fn App() -> impl IntoView {
     view! {
         <main>
             <h1>"Eldritch"</h1>
-            <BoardView/>
+            <div class="layout">
+                <crate::event_log::EventLogView/>
+                <BoardView/>
+            </div>
             {
                 #[cfg(target_arch = "wasm32")]
                 { view! {
