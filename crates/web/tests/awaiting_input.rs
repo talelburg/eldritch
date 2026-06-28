@@ -286,3 +286,42 @@ async fn pick_single_does_not_render_commit_button_or_hand_list() {
         "commit-hand list should not appear in PickSingle branch"
     );
 }
+
+#[wasm_bindgen_test]
+async fn picking_an_option_sets_the_pending_log_header() {
+    let store = RwSignal::new(ClientState::default());
+    let (tx, _rx) = mpsc::unbounded::<ClientMessage>();
+    leptos::mount::mount_to_body(move || {
+        provide_context(store);
+        provide_context::<OutboundTx>(tx.clone());
+        leptos::view! { <AwaitingInputView/> }
+    });
+    // A PickSingle prompt whose first option has a known label.
+    store.update(|s| {
+        reduce(
+            s,
+            ServerMessage::Hello {
+                state: Box::new(base_game()),
+                outcome: awaiting_pick_single_input("Choose an action"),
+            },
+        );
+    });
+    leptos::task::tick().await;
+
+    // Click the first rendered option button.
+    let section = last_section();
+    let buttons = section.query_selector_all(".option").expect("options");
+    buttons
+        .item(0)
+        .expect("an option button")
+        .dyn_into::<web_sys::HtmlElement>()
+        .expect("HtmlElement")
+        .click();
+    leptos::task::tick().await;
+
+    let header = store.with_untracked(|s| s.pending_label.clone());
+    assert!(
+        header.is_some(),
+        "clicking an option must set the event-log header"
+    );
+}

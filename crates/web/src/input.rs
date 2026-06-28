@@ -76,6 +76,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                             class="skip"
                             on:click=move |_| {
                                 if let Some(tx) = tx.clone() {
+                                    store.update(|s| s.pending_label = Some("Skip".to_string()));
                                     let _ = tx.unbounded_send(ClientMessage::Submit {
                                         action: PlayerAction::ResolveInput {
                                             response: InputResponse::Skip,
@@ -102,11 +103,13 @@ pub fn AwaitingInputView() -> impl IntoView {
                         .map(|opt: ChoiceOption| {
                             let ChoiceOption { id, label } = opt;
                             let tx = tx.clone();
+                            let header = label.clone();
                             view! {
                                 <button
                                     class="option"
                                     on:click=move |_| {
                                         if let Some(tx) = tx.clone() {
+                                            store.update(|s| s.pending_label = Some(header.clone()));
                                             let _ = tx.unbounded_send(ClientMessage::Submit {
                                                 action: PlayerAction::ResolveInput {
                                                     response: InputResponse::PickSingle(id),
@@ -139,6 +142,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                                 class="confirm"
                                 on:click=move |_| {
                                     if let Some(tx) = tx.clone() {
+                                        store.update(|s| s.pending_label = Some("Confirm".to_string()));
                                         let _ = tx.unbounded_send(ClientMessage::Submit {
                                             action: PlayerAction::ResolveInput {
                                                 response: InputResponse::Confirm,
@@ -186,6 +190,8 @@ pub fn AwaitingInputView() -> impl IntoView {
                         let selected_ids: Vec<OptionId> =
                             selected.get().into_iter().map(OptionId).collect();
                         if let Some(tx) = tx.clone() {
+                            let header = format!("Commit {} card(s)", selected_ids.len());
+                            store.update(|s| s.pending_label = Some(header));
                             let _ = tx.unbounded_send(ClientMessage::Submit {
                                 action: PlayerAction::ResolveInput {
                                     response: InputResponse::PickMultiple {
