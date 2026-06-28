@@ -1,0 +1,211 @@
+# Event log panel (left of the board) — design
+
+**Date:** 2026-06-28
+**Issue:** [#505](https://github.com/talelburg/eldritch/issues/505)
+**Status:** approved (brainstorm) — pending implementation plan
+
+## Goal
+
+Add a read-only event-log view to the **left of the board** that shows the full
+game's event history, newest at the bottom, grouped by the action that produced
+each batch. A developer-facing debugging aid: "what happened, when, and was it a
+bug?"
+
+## Decisions (settled in brainstorm)
+
+- **Entry format: raw `Debug` (`{:?}`).** Every event renders verbatim with all
+  fields, e.g. `EnemyEngaged { enemy: EnemyId(100), investigator: InvestigatorId(1) }`.
+  No human-readable mapping to maintain; faithful and complete. Codes/ids show
+  raw (no card-name enrichment).
+- **History: full game, accumulated.** Every event since the game started,
+  cleared on `Hello` (new game / reconnect). Newest batch at the **bottom**;
+  the scroll container **auto-scrolls to the bottom** on update.
+- **Grouping: by action, headed with the menu-choice label.** Each `Applied`
+  batch is one group. The header is the **human label of the menu choice the
+  player submitted** (e.g. `▸ Play 01059 from hand`, `▸ Move to Cellar`), not the
+  raw wire action.
+
+### Why the header comes from the client, not the protocol
+
+Every player action over the wire is a single opaque variant —
+`PlayerAction::ResolveInput { response }`, where `response` is
+`Confirm | Skip | PickSingle(OptionId) | PickMultiple { selected }`. There is **no
+`Move`/`PlayCard` action on the wire**; those are engine-internal `TurnAction`s.
+So a protocol-carried action would render as
+`ResolveInput { response: PickSingle(OptionId(2)) }` — opaque (the `OptionId` only
+means something against the menu that was on screen).
+
+The genuinely useful label — the chosen menu option's text — is known **on the
+client** at submit time (`InputRequest::options: Vec<ChoiceOption { id, label }>`).
+So the client captures it when it submits and pairs it with the resulting batch.
+No protocol or server change is needed.
+
+This pairing is exact in solo play: there are **zero server-initiated applies**
+(`crates/server/src/ws.rs` calls `session.apply()` only in response to a client
+`Submit { action }` — no timers, no auto-advance), and the UI is turn-based (one
+submit in flight at a time), so the next `Applied` the client receives is the
+result of the submit it just made. (Multiplayer — another client's action
+arriving with no local pending label — is out of scope; it falls back to a
+generic header.)
+
+### Framework events
+
+Framework events (Mythos/Upkeep/enemy-phase) are **not** special-cased. They
+cascade synchronously from whatever submit drove them, pausing at each
+`AwaitingInput`. So ending a turn produces a batch headed by that submit's label
+(e.g. `▸ End turn`), then each continuation pause is its own batch headed by the
+choice that resumed it (e.g. `▸ Skip`). The engine already emits
+`PhaseStarted`/`PhaseEnded`/`TurnEnded`/`AgendaAdvanced`/… as ordinary events, so
+framework boundaries are legible inline. No phase sub-segmentation.
+
+## Architecture / components
+
+A thin client-only slice: store accumulation + a new view + layout. No protocol
+or server changes.
+
+### 1. Client store — `crates/web/src/store.rs`
+
+Add an accumulated log and a one-shot pending header:
+
+```rust
+/// One applied submit's worth of events, for the event-log view.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LogBatch {
+    /// Human label of the menu choice that produced this batch
+    /// (e.g. "Play 01059 from hand"); a generic fallback when unknown.
+    pub header: String,
+    pub events: Vec<Event>,
+}
+
+pub struct ClientState {
+    // ...existing fields...
+    /// Full accumulated event history, grouped per applied submit, oldest
+    /// first. Cleared by `Hello` (new game / reconnect), like `last_events`.
+    pub log: Vec<LogBatch>,
+    /// The header label for the *next* `Applied` batch, set by the input view
+    /// at submit time and consumed (taken) when that batch arrives. Cleared on
+    /// `Rejected` (the submit produced no batch) and `Hello`.
+    pub pending_label: Option<String>,
+}
+```
+
+Reducer changes (`reduce`):
+- `Applied { events, .. }`: `let header = state.pending_label.take().unwrap_or_else(|| "(action)".into()); state.log.push(LogBatch { header, events: events.clone() });` then keep the existing `last_events = events` (the skill-test panel still reads it) and difficulty capture. One events-vec clone per submit — negligible.
+- `Rejected { .. }`: also `state.pending_label = None;` (the rejected submit yields no batch, so its label must not bleed onto the next one) — alongside the existing `last_rejection` set.
+- `Hello { .. }`: `state.log = Vec::new(); state.pending_label = None;` (alongside the existing clears).
+
+This reducer is the **primary testable unit** (runs on the native test target —
+`store` is compiled on both targets).
+
+### 2. View — `crates/web/src/event_log.rs` (new, both targets)
+
+`EventLogView` reads the store and renders the log oldest-first (newest at the
+bottom):
+
+```
+<aside class="event-log">
+  <h2>"Event log"</h2>
+  <div class="log-scroll" node_ref=scroll_ref>
+    // for each batch, oldest first:
+    <div class="log-batch">
+      <div class="log-action">"▸ " {batch.header}</div>
+      <div class="log-event">{event_line}</div>   // one per event, "{:?}"
+    </div>
+  </div>
+</aside>
+```
+
+`event_log` is declared `pub mod event_log;` (both targets). The component body
+is target-agnostic except the **auto-scroll** effect — a
+`#[cfg(target_arch = "wasm32")]` effect keyed on the total batch/event count that
+sets `scroll_ref.scrollTop = scrollHeight` so the newest line is visible. The
+scroll effect (needs a real DOM) is the one piece not unit-tested; the store
+reducer carries the native coverage.
+
+### 3. Input view captures the header — `crates/web/src/input.rs`
+
+`AwaitingInputView` is the sole gameplay submit site (wasm-only). At each of its
+four submit sites the pending label is set inline immediately before sending:
+
+- **Skip** → `pending_label = Some("Skip".to_string())`
+- **PickSingle** option button → `pending_label = Some(label.clone())` where
+  `label` is the chosen `ChoiceOption`'s label already in scope in the button
+  closure
+- **Confirm** → `pending_label = Some("Confirm".to_string())`
+- **PickMultiple** commit → `pending_label = Some(format!("Commit {} card(s)", n))`
+
+There is no shared helper: each site sets `pending_label` directly. `store` (an
+`RwSignal`, `Copy`) is captured into the click closures.
+
+### 4. Layout — `crates/web/src/app.rs` + `crates/web/style.css`
+
+The full-width header sits above a flex row of `[event log | main column]`; the
+main column stacks the board with the input/picker/skill-test panels below it:
+
+```rust
+view! {
+    <main>
+        <h1>"Eldritch"</h1>
+        <div class="layout">
+            <crate::event_log::EventLogView/>
+            <div class="main-column">
+                <BoardView/>
+                // picker / skill-test / input overlays (wasm-only)
+            </div>
+        </div>
+    </main>
+}
+```
+
+`EventLogView` and the main column both render on native (the overlays inside the
+column stay `#[cfg(target_arch = "wasm32")]`-gated). CSS:
+`.layout { display: flex; gap: 1rem; align-items: flex-start; }`,
+`.event-log { flex: 0 0 auto; width: 22rem; }`,
+`.main-column { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }`,
+`.log-scroll { max-height: 80vh; overflow-y: auto; font-family: monospace;
+font-size: 0.8rem; }`, with light per-batch separation and a distinct
+`.log-action` weight. Exact values are cosmetic and may be tuned during build.
+
+The auto-scroll effect defers its `scrollTop = scrollHeight` to the next
+animation frame (`request_animation_frame`), so it measures the container height
+*after* the new rows are laid out — reading it inline races the reactive DOM
+update and lands short of the true bottom.
+
+## Data flow
+
+```
+prompt (AwaitingInput) shown by AwaitingInputView
+  → user picks option → set store.pending_label = <chosen label> (inline at submit site)
+  → Submit{ResolveInput{response}} → server apply → broadcast Applied{state, events, outcome}
+  → client transport → store.reduce(Applied): header = pending_label.take(); push LogBatch{header, events}
+  → EventLogView re-renders (oldest→newest) → auto-scroll to bottom
+```
+
+## Testing
+
+- **Store reducer** (`store.rs`, native): `Applied` appends a `LogBatch` whose
+  `header` is the taken `pending_label` (and the generic fallback when it is
+  `None`); consecutive `Applied`s accumulate in order; `Rejected` clears
+  `pending_label` without pushing a batch; `Hello` clears `log` and
+  `pending_label`; `last_events`/difficulty behavior unchanged.
+- **PickSingle live path** (`awaiting_input.rs` wasm test): clicking an option
+  button sets `pending_label` to the exact option label (e.g. `"End turn"` for
+  `OptionId(0)` in the standard fixture); tested end-to-end via DOM click.
+- **Gauntlet:** fmt/clippy/test/doc + wasm-build/wasm-clippy/wasm-test (the new
+  component must compile to wasm; the scroll effect is wasm-only).
+
+## Out of scope (YAGNI)
+
+- No filtering, search, or collapsing.
+- No per-event timestamps (insertion order is the signal).
+- No card-name / id enrichment in event bodies (raw codes per the format
+  decision); headers use the menu label the client already has.
+- No phase sub-segmentation within a batch (inline phase events suffice).
+- No persistence across reload (log is rebuilt from `Hello` onward).
+- No multiplayer header attribution (a non-local submit's batch gets the generic
+  fallback header).
+
+## Open questions
+
+None blocking. Cosmetic CSS values (width, max-height, separators) are tunable
+during implementation.

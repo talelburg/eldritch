@@ -20,17 +20,22 @@ pub fn App() -> impl IntoView {
     view! {
         <main>
             <h1>"Eldritch"</h1>
-            <BoardView/>
-            {
-                #[cfg(target_arch = "wasm32")]
-                { view! {
-                    <crate::picker::PickerView/>
-                    <crate::skill_test_result::SkillTestResultView/>
-                    <crate::input::AwaitingInputView/>
-                }.into_any() }
-                #[cfg(not(target_arch = "wasm32"))]
-                { ().into_any() }
-            }
+            <div class="layout">
+                <crate::event_log::EventLogView/>
+                <div class="main-column">
+                    <BoardView/>
+                    {
+                        #[cfg(target_arch = "wasm32")]
+                        { view! {
+                            <crate::picker::PickerView/>
+                            <crate::skill_test_result::SkillTestResultView/>
+                            <crate::input::AwaitingInputView/>
+                        }.into_any() }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        { ().into_any() }
+                    }
+                </div>
+            </div>
         </main>
     }
 }

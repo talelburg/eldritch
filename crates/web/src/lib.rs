@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod board;
+pub mod event_log;
 pub mod map;
 pub mod names;
 pub mod skill_test_result;
