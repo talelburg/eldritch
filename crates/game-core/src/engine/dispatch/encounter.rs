@@ -1257,6 +1257,7 @@ mod spawn_enemy_tests {
             text: None,
             traits: Vec::new(),
             pack_code: "_synth".into(),
+            weakness: false,
             kind: CardKind::Enemy {
                 fight,
                 evade,
