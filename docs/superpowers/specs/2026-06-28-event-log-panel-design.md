@@ -1,6 +1,7 @@
 # Event log panel (left of the board) — design
 
 **Date:** 2026-06-28
+**Issue:** [#505](https://github.com/talelburg/eldritch/issues/505)
 **Status:** approved (brainstorm) — pending implementation plan
 
 ## Goal
