@@ -139,7 +139,8 @@ There is no shared helper: each site sets `pending_label` directly. `store` (an
 
 ### 4. Layout — `crates/web/src/app.rs` + `crates/web/style.css`
 
-Wrap the log and board in a flex row, log first (left):
+The full-width header sits above a flex row of `[event log | main column]`; the
+main column stacks the board with the input/picker/skill-test panels below it:
 
 ```rust
 view! {
@@ -147,20 +148,28 @@ view! {
         <h1>"Eldritch"</h1>
         <div class="layout">
             <crate::event_log::EventLogView/>
-            <BoardView/>
+            <div class="main-column">
+                <BoardView/>
+                // picker / skill-test / input overlays (wasm-only)
+            </div>
         </div>
-        // picker / skill-test / input overlays unchanged
     </main>
 }
 ```
 
-`EventLogView` renders on both targets (like `BoardView`), so it sits outside the
-existing `#[cfg(target_arch = "wasm32")]` overlay block. CSS:
+`EventLogView` and the main column both render on native (the overlays inside the
+column stay `#[cfg(target_arch = "wasm32")]`-gated). CSS:
 `.layout { display: flex; gap: 1rem; align-items: flex-start; }`,
 `.event-log { flex: 0 0 auto; width: 22rem; }`,
+`.main-column { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }`,
 `.log-scroll { max-height: 80vh; overflow-y: auto; font-family: monospace;
 font-size: 0.8rem; }`, with light per-batch separation and a distinct
 `.log-action` weight. Exact values are cosmetic and may be tuned during build.
+
+The auto-scroll effect defers its `scrollTop = scrollHeight` to the next
+animation frame (`request_animation_frame`), so it measures the container height
+*after* the new rows are laid out — reading it inline races the reactive DOM
+update and lands short of the true bottom.
 
 ## Data flow
 

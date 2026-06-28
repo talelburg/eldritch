@@ -12,14 +12,19 @@ pub fn EventLogView() -> impl IntoView {
     let store = use_store();
     let scroll_ref = NodeRef::<leptos::html::Div>::new();
 
-    // Auto-scroll to the newest line whenever the batch count changes.
+    // Keep the panel pinned to the newest line. Re-runs whenever a batch is
+    // appended; the scroll is deferred to the next animation frame so it reads
+    // `scroll_height` *after* the new rows are laid out (reading it inline races
+    // the reactive DOM update and lands short of the true bottom).
     #[cfg(target_arch = "wasm32")]
     {
         Effect::new(move |_| {
             let _ = store.with(|s| s.log.len());
-            if let Some(el) = scroll_ref.get() {
-                el.set_scroll_top(el.scroll_height());
-            }
+            request_animation_frame(move || {
+                if let Some(el) = scroll_ref.get() {
+                    el.set_scroll_top(el.scroll_height());
+                }
+            });
         });
     }
 
