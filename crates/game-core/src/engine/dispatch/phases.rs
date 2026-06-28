@@ -99,6 +99,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 deck,
                 hand: Vec::new(),
                 discard: Vec::new(),
+                setaside: Vec::new(),
                 cards_in_play: Vec::new(),
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
@@ -126,11 +127,13 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     cx.events.push(Event::ScenarioStarted);
 
     // For each investigator (sorted by id for determinism), shuffle
-    // their deck and deal an initial hand of up to 5.
+    // their deck, deal an initial hand of up to 5, then set aside any
+    // weaknesses per Rules Reference setup step 8.
     let inv_ids: Vec<InvestigatorId> = cx.state.investigators.keys().copied().collect();
     for inv_id in inv_ids {
         super::cards::shuffle_player_deck(cx, inv_id);
         super::cards::draw_cards(cx, inv_id, super::cards::INITIAL_HAND_SIZE);
+        super::cards::replace_opening_hand_weaknesses(cx, inv_id);
     }
 
     // Shuffle the shared encounter deck with the same scenario-start RNG

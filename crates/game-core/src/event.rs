@@ -341,6 +341,22 @@ pub enum Event {
         /// How many cards were redrawn.
         redrawn_count: u8,
     },
+    /// A weakness card was set aside from an investigator's opening hand
+    /// during scenario setup (Rules Reference step 8: "Each weakness card
+    /// drawn during this step is ignored, set aside (without resolving
+    /// it), and replaced by drawing another card from the deck.").
+    ///
+    /// Emitted by `replace_opening_hand_weaknesses` (in
+    /// `engine::dispatch::cards`) for each weakness pulled from the hand
+    /// before drawing a replacement. The weakness moves to
+    /// `investigator.setaside`; once the mulligan loop drains it is
+    /// shuffled back into the owner's deck.
+    WeaknessSetAside {
+        /// The investigator whose opening hand contained the weakness.
+        investigator: InvestigatorId,
+        /// The weakness card code that was set aside.
+        code: CardCode,
+    },
     /// Every investigator in `state.investigators` is now non-Active.
     /// Fires immediately after the [`InvestigatorDefeated`] that
     /// flipped the last active investigator. Scenario-resolution
