@@ -16,6 +16,102 @@ use super::Cx;
 /// each investigator draws 5 cards before mulligan.
 pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 
+/// Whether `code` is a weakness per the installed registry. Returns `false`
+/// when no registry is installed or the card code has no metadata —
+/// the engine's registry-free unit tests behave as if no card is a weakness.
+fn is_weakness_code(code: &CardCode) -> bool {
+    crate::card_registry::current()
+        .and_then(|reg| (reg.metadata_for)(code))
+        .is_some_and(card_dsl::CardMetadata::is_weakness)
+}
+
+/// Replace weaknesses currently in `investigator`'s hand per Rules Reference
+/// setup step 8: move each to `setaside` (emitting
+/// [`Event::WeaknessSetAside`](crate::event::Event::WeaknessSetAside))
+/// and draw replacements, looping until the hand holds no weakness or the
+/// deck is exhausted.
+///
+/// # Contract
+///
+/// - Caller guarantees `investigator` exists in `cx.state.investigators`.
+/// - The loop terminates: if the deck runs out mid-replacement, the call
+///   returns without panic. The hand then holds no weakness — UNLESS the deck
+///   exhausted on a replacement draw that was itself a weakness (RR's "replaced
+///   by drawing another card" has no card left to draw). That needs a deck of
+///   almost entirely weaknesses, which a legal deck never is; the guard exists
+///   only so a pathological deck can't spin the loop forever.
+/// - Registry-free (no registry installed): `is_weakness_code` always returns
+///   `false`, so this function is a no-op, preserving the engine's
+///   registry-free unit test behavior.
+pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: InvestigatorId) {
+    loop {
+        // Scan the hand for weakness indices. Collect before mutating.
+        let weakness_indices: Vec<usize> = cx
+            .state
+            .investigators
+            .get(&investigator)
+            .expect("replace_opening_hand_weaknesses: investigator exists")
+            .hand
+            .iter()
+            .enumerate()
+            .filter(|(_, code)| is_weakness_code(code))
+            .map(|(i, _)| i)
+            .collect();
+
+        if weakness_indices.is_empty() {
+            break;
+        }
+
+        let n = weakness_indices.len();
+
+        // Remove weaknesses high-to-low so earlier indices remain valid.
+        // Codes are collected in reverse-removal order; reverse at the end
+        // to restore hand-order before emitting events.
+        let mut removed_codes: Vec<CardCode> = Vec::with_capacity(n);
+        {
+            let inv = cx
+                .state
+                .investigators
+                .get_mut(&investigator)
+                .expect("replace_opening_hand_weaknesses: investigator exists");
+            for &i in weakness_indices.iter().rev() {
+                let code = inv.hand.remove(i);
+                inv.setaside.push(code.clone());
+                removed_codes.push(code);
+            }
+        }
+        removed_codes.reverse(); // restore hand order (lowest index first)
+
+        for code in &removed_codes {
+            cx.events.push(Event::WeaknessSetAside {
+                investigator,
+                code: code.clone(),
+            });
+        }
+
+        // Draw replacements: draw_cards stops at deck end, so n_drawn ≤ n.
+        draw_cards(
+            cx,
+            investigator,
+            u8::try_from(n).expect("hand size fits u8 (≤ INITIAL_HAND_SIZE ≤ 8)"),
+        );
+
+        // Guard: if the deck is now empty we stop. Without this break the
+        // loop could spin forever when replacements are themselves weaknesses
+        // and the deck is exhausted.
+        let deck_empty = cx
+            .state
+            .investigators
+            .get(&investigator)
+            .expect("replace_opening_hand_weaknesses: investigator exists")
+            .deck
+            .is_empty();
+        if deck_empty {
+            break;
+        }
+    }
+}
+
 /// Handler for [`EngineRecord::DeckShuffled`].
 ///
 /// Permutes the named investigator's player deck via the deterministic
@@ -419,6 +515,9 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
     if redrawn_count > 0 {
         shuffle_player_deck(cx, investigator);
         draw_cards(cx, investigator, redrawn_count);
+        // RR setup step 8 applies to the mulligan redraw too: any weakness
+        // drawn as a replacement is set aside and replaced again.
+        replace_opening_hand_weaknesses(cx, investigator);
     }
     cx.events.push(Event::MulliganPerformed {
         investigator,
@@ -431,6 +530,37 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
     // Pop the current Mulligan frame (validated above; it is the top frame).
     cx.state.continuations.pop();
     if remaining.is_empty() {
+        // All mulligans complete. Flush every investigator's set-aside
+        // weaknesses back into their deck (RR setup step 8: "Upon completion
+        // of this step, shuffle each of these weakness cards back into its
+        // owner's deck."). Drain `setaside` into `deck` and reshuffle.
+        // Process in deterministic id order.
+        let mut ids_with_setaside: Vec<crate::state::InvestigatorId> = cx
+            .state
+            .investigators
+            .iter()
+            .filter(|(_, inv)| !inv.setaside.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        ids_with_setaside.sort_unstable();
+        for id in ids_with_setaside {
+            let cards: Vec<crate::state::CardCode> = cx
+                .state
+                .investigators
+                .get_mut(&id)
+                .expect("id from investigators")
+                .setaside
+                .drain(..)
+                .collect();
+            cx.state
+                .investigators
+                .get_mut(&id)
+                .expect("id from investigators")
+                .deck
+                .extend(cards);
+            shuffle_player_deck(cx, id);
+        }
+
         // Setup complete — "the game begins" (Rules Reference p.27). Round 1
         // skips Mythos (p.24), so the first phase to begin is Investigation.
         // Begin it HERE (the kickoff moved off `apply_player_action`): setup has

@@ -83,6 +83,21 @@ pub struct Investigator {
     ///
     /// [`cards_in_play`]: Self::cards_in_play
     pub threat_area: Vec<CardInPlay>,
+    /// Weaknesses set aside from the opening hand during scenario setup
+    /// (Rules Reference step 8: "Each weakness card drawn during this step
+    /// is ignored, set aside (without resolving it), and replaced by
+    /// drawing another card from the deck."). Transient: populated by
+    /// `replace_opening_hand_weaknesses` (in `engine::dispatch::cards`)
+    /// during the setup draw and mulligan redraw, then drained back into
+    /// `deck` (and shuffled) once the mulligan loop fully drains.
+    /// Empty for all investigators once the Investigation phase begins.
+    ///
+    /// `#[serde(default)]`: this field is always empty in wire-serialized
+    /// game-in-progress states (setup is complete before any client sees the
+    /// state), so older payloads without the field deserialize to the correct
+    /// empty-vector default rather than failing.
+    #[serde(default)]
+    pub setaside: Vec<CardCode>,
     /// Cards removed from the game (Rules Reference p.10, "Elimination,"
     /// step 1). When this investigator is eliminated, every card they
     /// control in play (`cards_in_play`) and every card they own in an
