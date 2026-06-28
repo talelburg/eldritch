@@ -20,6 +20,16 @@ pub enum ConnStatus {
     VersionMismatch,
 }
 
+/// One applied submit's worth of events, for the event-log view (#505).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LogBatch {
+    /// Human label of the menu choice that produced this batch
+    /// (e.g. "Play 01059 from hand"); a generic fallback when unknown.
+    pub header: String,
+    /// The events emitted by that submit, in order.
+    pub events: Vec<game_core::Event>,
+}
+
 /// Everything the UI renders. `game`/`outcome`/`last_rejection` come
 /// from `reduce`; `status` is driven by the transport.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -37,6 +47,13 @@ pub struct ClientState {
     /// `SkillTestSucceeded`/`Failed` margin to show total-vs-difficulty.
     /// Cleared by `Hello`.
     pub last_skill_test_difficulty: Option<i8>,
+    /// Full accumulated event history, grouped per applied submit, oldest
+    /// first. Cleared by `Hello`. The event-log panel (#505) renders this.
+    pub log: Vec<LogBatch>,
+    /// Header label for the *next* `Applied` batch, set by the input view at
+    /// submit time and taken when that batch arrives. Cleared on `Rejected`
+    /// (the submit produced no batch) and `Hello`.
+    pub pending_label: Option<String>,
 }
 
 /// Fold one server message into the client state. Data only — never
@@ -50,6 +67,8 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.last_rejection = None;
             state.last_events = Vec::new();
             state.last_skill_test_difficulty = None;
+            state.log = Vec::new();
+            state.pending_label = None;
         }
         ServerMessage::Applied {
             state: s,
@@ -72,10 +91,19 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             }) {
                 state.last_skill_test_difficulty = Some(difficulty);
             }
+            let header = state
+                .pending_label
+                .take()
+                .unwrap_or_else(|| "(action)".into());
+            state.log.push(LogBatch {
+                header,
+                events: events.clone(),
+            });
             state.last_events = events;
         }
         ServerMessage::Rejected { reason } => {
             state.last_rejection = Some(reason);
+            state.pending_label = None;
         }
     }
 }
@@ -215,5 +243,95 @@ mod tests {
         assert_eq!(s.last_rejection.as_deref(), Some("not your turn"));
         assert_eq!(s.game, before);
         assert_eq!(s.outcome, Some(EngineOutcome::Done));
+    }
+
+    #[test]
+    fn applied_pushes_a_log_batch_using_pending_label() {
+        let mut s = ClientState {
+            pending_label: Some("Move to Cellar".into()),
+            ..Default::default()
+        };
+        reduce(
+            &mut s,
+            ServerMessage::Applied {
+                state: Box::new(sample_state()),
+                events: vec![game_core::Event::ScenarioStarted],
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert_eq!(s.log.len(), 1);
+        assert_eq!(s.log[0].header, "Move to Cellar");
+        assert_eq!(s.log[0].events, vec![game_core::Event::ScenarioStarted]);
+        assert_eq!(s.pending_label, None, "pending_label is consumed");
+    }
+
+    #[test]
+    fn applied_without_pending_label_uses_generic_header() {
+        let mut s = ClientState::default();
+        reduce(
+            &mut s,
+            ServerMessage::Applied {
+                state: Box::new(sample_state()),
+                events: Vec::new(),
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert_eq!(s.log.len(), 1);
+        assert_eq!(s.log[0].header, "(action)");
+    }
+
+    #[test]
+    fn consecutive_applied_accumulate_in_order() {
+        let mut s = ClientState::default();
+        for label in ["first", "second"] {
+            s.pending_label = Some(label.to_string());
+            reduce(
+                &mut s,
+                ServerMessage::Applied {
+                    state: Box::new(sample_state()),
+                    events: Vec::new(),
+                    outcome: EngineOutcome::Done,
+                },
+            );
+        }
+        let headers: Vec<&str> = s.log.iter().map(|b| b.header.as_str()).collect();
+        assert_eq!(headers, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn rejected_clears_pending_label_without_pushing_a_batch() {
+        let mut s = ClientState {
+            pending_label: Some("Move to Cellar".into()),
+            ..Default::default()
+        };
+        reduce(
+            &mut s,
+            ServerMessage::Rejected {
+                reason: "nope".into(),
+            },
+        );
+        assert!(s.log.is_empty(), "rejection pushes no batch");
+        assert_eq!(s.pending_label, None, "rejection clears the stale label");
+    }
+
+    #[test]
+    fn hello_clears_log_and_pending_label() {
+        let mut s = ClientState {
+            pending_label: Some("stale".into()),
+            ..Default::default()
+        };
+        s.log.push(LogBatch {
+            header: "old".into(),
+            events: Vec::new(),
+        });
+        reduce(
+            &mut s,
+            ServerMessage::Hello {
+                state: Box::new(sample_state()),
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert!(s.log.is_empty());
+        assert_eq!(s.pending_label, None);
     }
 }
