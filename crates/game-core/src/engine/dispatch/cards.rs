@@ -35,8 +35,11 @@ fn is_weakness_code(code: &CardCode) -> bool {
 ///
 /// - Caller guarantees `investigator` exists in `cx.state.investigators`.
 /// - The loop terminates: if the deck runs out mid-replacement, the call
-///   returns without panic — the hand may be shorter than the original
-///   draw count, but it holds no weakness.
+///   returns without panic. The hand then holds no weakness — UNLESS the deck
+///   exhausted on a replacement draw that was itself a weakness (RR's "replaced
+///   by drawing another card" has no card left to draw). That needs a deck of
+///   almost entirely weaknesses, which a legal deck never is; the guard exists
+///   only so a pathological deck can't spin the loop forever.
 /// - Registry-free (no registry installed): `is_weakness_code` always returns
 ///   `false`, so this function is a no-op, preserving the engine's
 ///   registry-free unit test behavior.
