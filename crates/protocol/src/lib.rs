@@ -41,8 +41,9 @@ pub enum ServerMessage {
         outcome: EngineOutcome,
         /// Events emitted during scenario setup (`seat_and_open`), so
         /// the client's event log can show the opening draws, shuffles,
-        /// and weakness set-aside. Empty for a session reloaded from the
-        /// DB — setup already ran.
+        /// and weakness set-aside. Carried for both freshly-created and
+        /// reloaded games (the server persists them); empty only for games
+        /// created before this was added.
         events: Vec<Event>,
     },
     /// Broadcast to every connection of a game after an accepted action.

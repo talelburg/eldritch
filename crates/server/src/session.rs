@@ -48,9 +48,11 @@ pub struct GameSession {
     pub outcome: EngineOutcome,
     /// Events emitted during `seat_and_open` at creation time, surfaced to
     /// newly-connecting clients via `ServerMessage::Hello` so the event log
-    /// can show opening draws, shuffles, and the weakness set-aside.
-    /// Empty for a session reloaded from the DB — setup already ran and its
-    /// events are not recoverable from the persisted seed state.
+    /// can show opening draws, shuffles, and the weakness set-aside. Persisted
+    /// in the `setup_events` column and restored by [`load`](Self::load), so a
+    /// session reloaded from the DB carries the same list (the action log can't
+    /// reproduce them — setup isn't an action). A row created before migration
+    /// 0003 loads as empty (the column defaults to `'[]'`).
     pub setup_events: Vec<Event>,
     /// Next sequence number to assign to a persisted action — equal to
     /// the number of actions already in the log.
