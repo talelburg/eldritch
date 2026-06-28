@@ -320,8 +320,9 @@ async fn picking_an_option_sets_the_pending_log_header() {
     leptos::task::tick().await;
 
     let header = store.with_untracked(|s| s.pending_label.clone());
-    assert!(
-        header.is_some(),
-        "clicking an option must set the event-log header"
+    assert_eq!(
+        header.as_deref(),
+        Some("End turn"),
+        "clicking an option must set the event-log header to the chosen option's label"
     );
 }

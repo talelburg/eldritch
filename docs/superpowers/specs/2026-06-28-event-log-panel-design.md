@@ -60,8 +60,8 @@ framework boundaries are legible inline. No phase sub-segmentation.
 
 ## Architecture / components
 
-A thin client-only slice: store accumulation + a label helper + a new view +
-layout. No protocol or server changes.
+A thin client-only slice: store accumulation + a new view + layout. No protocol
+or server changes.
 
 ### 1. Client store — `crates/web/src/store.rs`
 
@@ -97,22 +97,7 @@ Reducer changes (`reduce`):
 This reducer is the **primary testable unit** (runs on the native test target —
 `store` is compiled on both targets).
 
-### 2. Label helper + view — `crates/web/src/event_log.rs` (new, both targets)
-
-A pure, DOM-free helper maps a submit to its header so it is unit-testable on the
-native target:
-
-```rust
-/// The event-log header for a submitted response, given the prompt it answered.
-/// - `PickSingle(id)` → that option's `label` (fallback `"Pick <n>"` if absent).
-/// - `Confirm`        → `"Confirm"`.
-/// - `Skip`           → `"Skip"`.
-/// - `PickMultiple`   → `"Commit <n> card(s)"`.
-pub(crate) fn response_label(
-    request: &InputRequest,
-    response: &InputResponse,
-) -> String { /* ... */ }
-```
+### 2. View — `crates/web/src/event_log.rs` (new, both targets)
 
 `EventLogView` reads the store and renders the log oldest-first (newest at the
 bottom):
@@ -130,29 +115,27 @@ bottom):
 </aside>
 ```
 
-`event_log` is declared `pub mod event_log;` (both targets) so `response_label`'s
-tests run under `cargo test`. The component body is target-agnostic except the
-**auto-scroll** effect — a `#[cfg(target_arch = "wasm32")]` effect keyed on the
-total batch/event count that sets `scroll_ref.scrollTop = scrollHeight` so the
-newest line is visible. The scroll effect (needs a real DOM) is the one piece not
-unit-tested; the pure `response_label` and the store reducer carry the coverage.
+`event_log` is declared `pub mod event_log;` (both targets). The component body
+is target-agnostic except the **auto-scroll** effect — a
+`#[cfg(target_arch = "wasm32")]` effect keyed on the total batch/event count that
+sets `scroll_ref.scrollTop = scrollHeight` so the newest line is visible. The
+scroll effect (needs a real DOM) is the one piece not unit-tested; the store
+reducer carries the native coverage.
 
 ### 3. Input view captures the header — `crates/web/src/input.rs`
 
 `AwaitingInputView` is the sole gameplay submit site (wasm-only). At each of its
-four submit sites (Skip / PickSingle option button / Confirm / PickMultiple
-commit), set the pending label in the store immediately before sending:
+four submit sites the pending label is set inline immediately before sending:
 
-```rust
-store.update(|s| s.pending_label = Some(crate::event_log::response_label(&request, &response)));
-let _ = tx.unbounded_send(ClientMessage::Submit { action: PlayerAction::ResolveInput { response } });
-```
+- **Skip** → `pending_label = Some("Skip".to_string())`
+- **PickSingle** option button → `pending_label = Some(label.clone())` where
+  `label` is the chosen `ChoiceOption`'s label already in scope in the button
+  closure
+- **Confirm** → `pending_label = Some("Confirm".to_string())`
+- **PickMultiple** commit → `pending_label = Some(format!("Commit {} card(s)", n))`
 
-`store` (an `RwSignal`, `Copy`) is already read at the top of the component, so it
-can be captured into the click closures. For the `PickSingle` buttons the chosen
-option's `label` is already in scope, so the header can be set directly from it
-(identical to `response_label`'s `PickSingle` arm) to avoid cloning the request
-into every button closure; the other three sites call `response_label`.
+There is no shared helper: each site sets `pending_label` directly. `store` (an
+`RwSignal`, `Copy`) is captured into the click closures.
 
 ### 4. Layout — `crates/web/src/app.rs` + `crates/web/style.css`
 
@@ -183,7 +166,7 @@ font-size: 0.8rem; }`, with light per-batch separation and a distinct
 
 ```
 prompt (AwaitingInput) shown by AwaitingInputView
-  → user picks option → set store.pending_label = response_label(request, response)
+  → user picks option → set store.pending_label = <chosen label> (inline at submit site)
   → Submit{ResolveInput{response}} → server apply → broadcast Applied{state, events, outcome}
   → client transport → store.reduce(Applied): header = pending_label.take(); push LogBatch{header, events}
   → EventLogView re-renders (oldest→newest) → auto-scroll to bottom
@@ -196,10 +179,9 @@ prompt (AwaitingInput) shown by AwaitingInputView
   `None`); consecutive `Applied`s accumulate in order; `Rejected` clears
   `pending_label` without pushing a batch; `Hello` clears `log` and
   `pending_label`; `last_events`/difficulty behavior unchanged.
-- **Label helper** (`event_log.rs`, native): `response_label` returns the option
-  label for `PickSingle`, `"Confirm"`/`"Skip"` for those, and
-  `"Commit <n> card(s)"` for `PickMultiple`; `PickSingle` with an unknown id
-  falls back to `"Pick <n>"`.
+- **PickSingle live path** (`awaiting_input.rs` wasm test): clicking an option
+  button sets `pending_label` to the exact option label (e.g. `"End turn"` for
+  `OptionId(0)` in the standard fixture); tested end-to-end via DOM click.
 - **Gauntlet:** fmt/clippy/test/doc + wasm-build/wasm-clippy/wasm-test (the new
   component must compile to wasm; the scroll effect is wasm-only).
 

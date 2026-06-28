@@ -1,6 +1,6 @@
-//! Headless render test for `EventLogView` (#505): seed the store with a couple
-//! of `LogBatch`es and assert the panel renders each header and its events as
-//! Debug text, oldest-first. wasm32-only (browser DOM).
+//! Headless render test for `EventLogView` (#505): seed the store with one
+//! `LogBatch` and assert the panel renders the batch header and an event's
+//! `Debug` text. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
 use leptos::prelude::*;
@@ -29,6 +29,7 @@ async fn renders_batches_with_headers_and_event_debug() {
     let logs = leptos::prelude::document()
         .query_selector_all(".event-log")
         .expect("query");
+    assert!(logs.length() >= 1, "no .event-log element rendered");
     let panel = logs
         .item(logs.length() - 1)
         .expect("an .event-log panel")
