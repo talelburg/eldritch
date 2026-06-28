@@ -14,15 +14,17 @@ pub(crate) async fn insert_game(
     scenario_id: &ScenarioId,
     seed_state: &str,
     seed_outcome: &str,
+    setup_events: &str,
     created_at: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO games (game_id, scenario_id, seed_state, seed_outcome, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO games (game_id, scenario_id, seed_state, seed_outcome, setup_events, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(game_id.as_str())
     .bind(scenario_id.as_str())
     .bind(seed_state)
     .bind(seed_outcome)
+    .bind(setup_events)
     .bind(created_at)
     .execute(db)
     .await?;
@@ -45,15 +47,19 @@ pub(crate) async fn insert_action(
     Ok(())
 }
 
-/// Fetch a game's `(scenario_id, seed_state, seed_outcome)`, or `None`.
+/// Fetch a game's `(scenario_id, seed_state, seed_outcome, setup_events)`, or
+/// `None`. `setup_events` is the JSON array of events emitted during setup
+/// (`'[]'` for rows created before the column existed).
 pub(crate) async fn load_game(
     db: &SqlitePool,
     game_id: &GameId,
-) -> Result<Option<(String, String, String)>, sqlx::Error> {
-    sqlx::query_as("SELECT scenario_id, seed_state, seed_outcome FROM games WHERE game_id = ?")
-        .bind(game_id.as_str())
-        .fetch_optional(db)
-        .await
+) -> Result<Option<(String, String, String, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT scenario_id, seed_state, seed_outcome, setup_events FROM games WHERE game_id = ?",
+    )
+    .bind(game_id.as_str())
+    .fetch_optional(db)
+    .await
 }
 
 /// Fetch a game's action JSON blobs in `seq` order.
