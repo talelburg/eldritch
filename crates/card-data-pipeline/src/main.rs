@@ -212,6 +212,7 @@ struct RawCard {
     enemy_damage: Option<u8>,
     enemy_horror: Option<u8>,
     health_per_investigator: Option<bool>,
+    subtype_code: Option<String>,
 }
 
 // ---- normalized shape we emit -----------------------------------
@@ -266,6 +267,7 @@ struct NormalizedCard {
     spawn_name: Option<String>,
     /// Spawn location code, resolved from `spawn_name` after all cards load.
     spawn_code: Option<String>,
+    weakness: bool,
 }
 
 fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
@@ -303,6 +305,11 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
     let spawn_name = raw.text.as_deref().and_then(parse_spawn_name);
     let uses = raw.text.as_deref().and_then(parse_uses);
     let commit_limit = raw.text.as_deref().and_then(parse_commit_limit);
+
+    let weakness = matches!(
+        raw.subtype_code.as_deref(),
+        Some("weakness" | "basicweakness")
+    );
 
     Ok(NormalizedCard {
         code: raw.code,
@@ -343,6 +350,7 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         prey,
         spawn_name,
         spawn_code: None,
+        weakness,
     })
 }
 
@@ -469,6 +477,7 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
         "            pack_code: {}.to_owned(),",
         str_lit(&c.pack_code)
     );
+    let _ = writeln!(out, "            weakness: {},", c.weakness);
     let _ = writeln!(out, "            kind: {},", render_kind(c));
     let _ = writeln!(out, "        }},");
 }
@@ -971,6 +980,7 @@ mod tests {
             enemy_damage: None,
             enemy_horror: None,
             health_per_investigator: None,
+            subtype_code: None,
         }
     }
 
@@ -1016,6 +1026,7 @@ mod tests {
             prey: PreyParse::None,
             spawn_name: None,
             spawn_code: None,
+            weakness: false,
         }
     }
 
@@ -1354,6 +1365,7 @@ mod tests {
             enemy_damage: None,
             enemy_horror: None,
             health_per_investigator: None,
+            subtype_code: None,
         };
         let norm = normalize(raw).expect("normalize");
         assert!(
@@ -1458,11 +1470,55 @@ mod tests {
             enemy_damage: None,
             enemy_horror: None,
             health_per_investigator: None,
+            subtype_code: None,
         };
         let norm = normalize(raw).expect("normalize");
         assert!(
             !norm.is_fast,
             "card text does NOT begin with \"Fast.\"; [fast] inside text is unrelated"
+        );
+    }
+
+    // ---- weakness subtype detection ---------------------------------
+
+    #[test]
+    fn normalize_weakness_subtype_sets_weakness_true() {
+        let mut raw = raw_card("01007");
+        raw.subtype_code = Some("weakness".to_owned());
+        let n = normalize(raw).expect("normalize");
+        assert!(n.weakness, "subtype_code=weakness should set weakness=true");
+    }
+
+    #[test]
+    fn normalize_basicweakness_subtype_sets_weakness_true() {
+        let mut raw = raw_card("01097");
+        raw.subtype_code = Some("basicweakness".to_owned());
+        let n = normalize(raw).expect("normalize");
+        assert!(
+            n.weakness,
+            "subtype_code=basicweakness should set weakness=true"
+        );
+    }
+
+    #[test]
+    fn normalize_no_subtype_sets_weakness_false() {
+        let raw = raw_card("01059");
+        // subtype_code is None on the default fixture
+        let n = normalize(raw).expect("normalize");
+        assert!(
+            !n.weakness,
+            "absent subtype_code should leave weakness=false"
+        );
+    }
+
+    #[test]
+    fn normalize_other_subtype_sets_weakness_false() {
+        let mut raw = raw_card("01088");
+        raw.subtype_code = Some("other".to_owned());
+        let n = normalize(raw).expect("normalize");
+        assert!(
+            !n.weakness,
+            "unrecognized subtype_code should leave weakness=false"
         );
     }
 }

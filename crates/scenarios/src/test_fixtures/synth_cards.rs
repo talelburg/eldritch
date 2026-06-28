@@ -103,6 +103,7 @@ fn synth_treachery_metadata() -> CardMetadata {
         text: Some("Revelation - You gain 1 resource. (Synthetic; not a printed card.)".to_owned()),
         traits: Vec::new(),
         pack_code: "_synth".to_owned(),
+        weakness: false,
         kind: CardKind::Treachery {
             surge: false,
             peril: false,
@@ -144,6 +145,7 @@ fn synth_enemy_metadata() -> CardMetadata {
         text: Some("Spawn: Synthetic Location. (Synthetic; not a printed card.)".to_owned()),
         traits: Vec::new(),
         pack_code: "_synth".to_owned(),
+        weakness: false,
         kind: CardKind::Enemy {
             fight: 1,
             evade: 1,
@@ -180,6 +182,7 @@ fn synth_surge_treachery_metadata() -> CardMetadata {
         ),
         traits: Vec::new(),
         pack_code: "_synth".to_owned(),
+        weakness: false,
         kind: CardKind::Treachery {
             surge: true,
             peril: false,
@@ -204,6 +207,7 @@ fn synth_fast_event_metadata() -> CardMetadata {
         ),
         traits: Vec::new(),
         pack_code: "_synth".to_owned(),
+        weakness: false,
         kind: CardKind::Event {
             class: Class::Neutral,
             cost: Some(0),
@@ -233,6 +237,7 @@ fn synth_cover_up_metadata() -> CardMetadata {
         ),
         traits: Vec::new(),
         pack_code: "_synth".to_owned(),
+        weakness: true,
         kind: CardKind::Treachery {
             surge: false,
             peril: false,

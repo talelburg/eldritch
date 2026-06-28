@@ -34,6 +34,7 @@ fn skill_metadata() -> CardMetadata {
                 .to_owned(),
         ),
         pack_code: "_mock".to_owned(),
+        weakness: false,
         kind: CardKind::Skill {
             class: Class::Guardian,
             xp: Some(0),

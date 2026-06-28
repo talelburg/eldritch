@@ -237,6 +237,10 @@ pub struct CardMetadata {
     pub text: Option<String>,
     /// Pack code this card belongs to (e.g. `"core"`, `"dwl"`).
     pub pack_code: String,
+    /// Whether this card is a weakness (`ArkhamDB` subtype `"weakness"` or
+    /// `"basicweakness"`). Orthogonal to card type — a weakness may be a
+    /// Treachery, Enemy, or Asset.
+    pub weakness: bool,
     /// Type-specific data.
     pub kind: CardKind,
 }
@@ -576,6 +580,13 @@ impl CardMetadata {
             CardKind::Enemy { peril: true, .. } | CardKind::Treachery { peril: true, .. }
         )
     }
+
+    /// Whether this card is a weakness. Mirrors the stored
+    /// [`weakness`](Self::weakness) field.
+    #[must_use]
+    pub fn is_weakness(&self) -> bool {
+        self.weakness
+    }
 }
 
 #[cfg(test)]
@@ -609,6 +620,7 @@ mod is_fast_tests {
             text: Some("Fast.\nYou get +1 [intellect] while investigating.".into()),
             traits: vec!["Item".into(), "Tool".into()],
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Asset {
                 class: Class::Seeker,
                 cost: Some(1),
@@ -637,6 +649,7 @@ mod is_fast_tests {
             traits: vec!["Insight".into()],
             text: Some("Fast. Play only during your turn. …".into()),
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Event {
                 class: Class::Seeker,
                 cost: Some(1),
@@ -659,6 +672,7 @@ mod is_fast_tests {
             traits: vec![],
             text: None,
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Asset {
                 class: Class::Guardian,
                 cost,
@@ -683,6 +697,7 @@ mod is_fast_tests {
             traits: vec![],
             text: None,
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Event {
                 class: Class::Neutral,
                 cost: Some(0),
@@ -702,6 +717,7 @@ mod is_fast_tests {
             traits: vec![],
             text: None,
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Skill {
                 class: Class::Survivor,
                 xp: None,
@@ -733,6 +749,7 @@ mod is_fast_tests {
             text: None,
             traits: Vec::new(),
             pack_code: "_synth".into(),
+            weakness: false,
             kind: CardKind::Treachery {
                 surge: true,
                 peril: false,
@@ -760,6 +777,7 @@ mod is_fast_tests {
             traits: vec![],
             text: None,
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Skill {
                 class: Class::Seeker,
                 xp: None,
@@ -780,6 +798,7 @@ mod is_fast_tests {
             traits: vec![],
             text: None,
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Treachery {
                 surge: false,
                 peril: false,
@@ -798,6 +817,7 @@ mod is_fast_tests {
             traits: vec![],
             text: None,
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Location {
                 shroud: 2,
                 printed_clues: ClueValue::PerInvestigator(2),
@@ -813,6 +833,7 @@ mod is_fast_tests {
             traits: vec![],
             text: None,
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
         };
         assert_eq!(agenda.card_type(), CardType::Agenda);
@@ -906,6 +927,7 @@ mod spawn_tests {
             text: None,
             traits: Vec::new(),
             pack_code: "_synth".into(),
+            weakness: false,
             kind: CardKind::Enemy {
                 fight: 3,
                 evade: 2,
@@ -937,6 +959,7 @@ mod spawn_tests {
             text: None,
             traits: Vec::new(),
             pack_code: "core".into(),
+            weakness: false,
             kind: CardKind::Treachery {
                 surge: false,
                 peril: false,
@@ -947,5 +970,36 @@ mod spawn_tests {
         let back: CardMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, original);
         assert!(matches!(back.kind, CardKind::Treachery { .. }));
+    }
+}
+
+#[cfg(test)]
+mod is_weakness_tests {
+    use super::*;
+
+    fn make_treachery(weakness: bool) -> CardMetadata {
+        CardMetadata {
+            code: "_test".into(),
+            name: "Test".into(),
+            text: None,
+            traits: Vec::new(),
+            pack_code: "_test".into(),
+            weakness,
+            kind: CardKind::Treachery {
+                surge: false,
+                peril: false,
+                quantity: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn is_weakness_true_when_field_is_true() {
+        assert!(make_treachery(true).is_weakness());
+    }
+
+    #[test]
+    fn is_weakness_false_when_field_is_false() {
+        assert!(!make_treachery(false).is_weakness());
     }
 }

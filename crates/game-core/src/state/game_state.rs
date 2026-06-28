@@ -2420,6 +2420,7 @@ mod add_location_tests {
             traits: vec![],
             text: None,
             pack_code: "core".to_string(),
+            weakness: false,
             kind: CardKind::Location {
                 shroud,
                 printed_clues: ClueValue::PerInvestigator(clues),
@@ -2466,6 +2467,7 @@ mod add_location_tests {
             traits: vec![],
             text: None,
             pack_code: "core".to_string(),
+            weakness: false,
             kind: CardKind::Enemy {
                 fight: 1,
                 evade: 1,
@@ -2512,6 +2514,7 @@ mod add_location_tests {
             traits: vec![],
             text: None,
             pack_code: "core".to_string(),
+            weakness: false,
             kind: CardKind::Act {
                 clue_threshold: Some(2),
                 victory: None,

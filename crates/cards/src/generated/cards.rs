@@ -21,6 +21,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("This is a placeholder random basic weakness\n You can replace it with a specific weakness using the Special tab or click the random button to replace it with a random weakness from your collection.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 15 },
         },
         CardMetadata {
@@ -29,6 +30,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Agency".to_owned(), "Detective".to_owned()],
             text: Some("[reaction] After you defeat an enemy: Discover 1 clue at your location. (Limit once per round.)\n[elder_sign] effect: +1 for each clue on your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Guardian, skills: Skills { willpower: 3, intellect: 3, combat: 4, agility: 2 }, health: 9, sanity: 5 },
         },
         CardMetadata {
@@ -37,6 +39,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("You may take an additional action during your turn, which can only be used on [[Tome]] [action] abilities.\n[elder_sign] effect: +0. If you succeed, draw 1 card for each [[Tome]] you control.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Seeker, skills: Skills { willpower: 3, intellect: 5, combat: 2, agility: 2 }, health: 5, sanity: 9 },
         },
         CardMetadata {
@@ -45,6 +48,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Criminal".to_owned()],
             text: Some("[fast] During your turn, spend 2 resources: You may take an additional action this turn. (Limit once per turn.)\n[elder_sign] effect: +2. If you succeed, gain 2 resources.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Rogue, skills: Skills { willpower: 2, intellect: 3, combat: 3, agility: 4 }, health: 8, sanity: 6 },
         },
         CardMetadata {
@@ -53,6 +57,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Sorcerer".to_owned()],
             text: Some("[reaction] After 1 or more horror is placed on Agnes Baker: Deal 1 damage to an enemy at your location. (Limit once per phase.)\n[elder_sign] effect: +1 for each horror on Agnes Baker.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Mystic, skills: Skills { willpower: 5, intellect: 2, combat: 2, agility: 3 }, health: 6, sanity: 8 },
         },
         CardMetadata {
@@ -61,6 +66,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Drifter".to_owned()],
             text: Some("[reaction] When you reveal a chaos token, choose and discard 1 card from your hand: Cancel that chaos token and return it to the bag. Reveal a new chaos token. (Limit once per test/ability.)\n[elder_sign] effect: +0. If Wendy's Amulet is in play, you automatically succeed instead.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Survivor, skills: Skills { willpower: 4, intellect: 3, combat: 1, agility: 4 }, health: 7, sanity: 7 },
         },
         CardMetadata {
@@ -69,6 +75,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Roland Banks deck only.\nUses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack (if there are 1 or more clues on your location, you get +3 [combat], instead). This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -77,6 +84,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Task".to_owned()],
             text: Some("<b>Revelation</b> - Put Cover Up into play in your threat area, with 3 clues on it.\n[reaction] When you would discover 1 or more clues at your location: Discard that many clues from Cover Up instead.\n<b>Forced</b> - When the game ends, if there are any clues on Cover Up: You suffer 1 mental trauma.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -85,6 +93,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Daisy Walker deck only.\nYou have 2 additional hand slots, which can only be used to hold [[Tome]] assets.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -93,6 +102,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("<b>Revelation</b> - Put The Necronomicon into play in your threat area, with 3 horror on it. It cannot leave play while it has 1 or more horror on it.\nTreat each [elder_sign] you reveal on a chaos token as a [auto_fail].\n[action]: Move 1 horror from The Necronomicon to Daisy Walker. Then, if The Necronomicon has no horror on it, discard it.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -101,6 +111,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("\"Skids\" O'Toole deck only.\nFast. Play after your turn begins.\nUntil the end of the round, non-[[Elite]] enemies cannot attack you.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(1), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 2 }, is_fast: false, deck_limit: 1, play_only_during_turn: false },
         },
         CardMetadata {
@@ -109,6 +120,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Task".to_owned()],
             text: Some("<b>Revelation</b> - Put Hospital Debts into play in your threat area.\n[fast]: Move 1 resource from your resource pool to Hospital Debts. (Limit twice per round.)\n<b>Forced</b> - When the game ends, if Hospital Debts has fewer than 6 resources on it: You earn 2 fewer experience for this scenario.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -117,6 +129,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Agnes Baker deck only.\n[reaction] After you play a [[Spell]] card: Draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -125,6 +138,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Place 1 doom on the current agenda. This effect can cause the current agenda to advance.\n<b>Forced</b> - If Dark Memory is in your hand at the end of your turn, reveal it and take 2 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(2), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, play_only_during_turn: false },
         },
         CardMetadata {
@@ -133,6 +147,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Wendy Adams deck only.\nYou may play the topmost event in your discard pile as if it were in your hand.\n<b>Forced</b> - After you play an event or discard an event from play: Place it on the bottom of your deck instead of in your discard pile.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -141,6 +156,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Take 2 direct horror and remove all cards in your discard pile from the game.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -149,6 +165,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +1 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -157,6 +174,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +1 [combat] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -165,6 +183,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Police".to_owned()],
             text: Some("You get +1 [combat].\n[fast] Discard Beat Cop: Deal 1 damage to an enemy at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -173,6 +192,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned(), "Science".to_owned()],
             text: Some("Uses (3 supplies). If First Aid has no supplies, discard it.\n[action] Spend 1 supply: Heal 1 damage or horror from an investigator at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: true }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -181,6 +201,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack. If the attacked enemy is the only enemy engaged with you, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -189,6 +210,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Creature".to_owned()],
             text: Some("[reaction] When an enemy attack deals damage to Guard Dog: Deal 1 damage to the attacking enemy.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -197,6 +219,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Fast. Play after you defeat an enemy.\nDiscover 1 clue at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -205,6 +228,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Fast. Play when an enemy attacks an investigator at your location.\nCancel that attack.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -213,6 +237,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Choose either your location or a connecting location. Deal 3 damage to each enemy and to each investigator at the chosen location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(5), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -221,6 +246,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("If this skill test is successful during an attack, that attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -229,6 +255,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Supply".to_owned()],
             text: Some("Place 3 ammo tokens on a [[Firearm]] asset controlled by an investigator at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(2), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -237,6 +264,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("You get +1 [willpower].\n[fast] While an investigator at your location is taking his or her turn, discard Police Badge: That investigator may take 2 additional actions this turn.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -245,6 +273,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Police".to_owned()],
             text: Some("You get +1 [combat].\n[fast] Exhaust Beat Cop and deal 1 damage to it: Deal 1 damage to an enemy at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(2), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -253,6 +282,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (2 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] for this attack. Instead of its standard damage, this attack deals 1 damage for each point you succeed by (to a minimum of 1, to a maximum of 5). If you fail and would damage another investigator, this attack deals 1 damage for each point you fail by (to a minimum of 1, to a maximum of 5).".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 2, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -261,6 +291,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned()],
             text: Some("Fast.\nYou get +1 [intellect] while investigating.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -269,6 +300,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("[action] Exhaust Old Book of Lore: Choose an investigator at your location. That investigator searches the top 3 cards of his or her deck for a card, draws it, and shuffles the remaining cards into his or her deck.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -277,6 +309,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] After Research Librarian enters play: Search your deck for a [[Tome]] asset and add it to your hand. Shuffle your deck.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -285,6 +318,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [intellect].\n[reaction] After you successfully investigate: Gain 1 resource.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -293,6 +327,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [intellect] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -301,6 +336,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("[action] Choose an investigator at your location and test [intellect] (2). If you succeed, heal 1 damage from that investigator. If you fail, deal 1 damage to that investigator.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -309,6 +345,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Fast. Play only during your turn.\nUntil the end of the round, you may use your [intellect] in place of your [combat] and [agility].".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -317,6 +354,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Fast. Play only during your turn.\nDiscover 1 clue at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -325,6 +363,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned(), "Tactic".to_owned()],
             text: Some("Attach to your location.\nNon-[[Elite]] enemies cannot move into attached location.\n<b>Forced</b> - When an investigator leaves attached location: Discard Barricade.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -333,6 +372,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("If this skill test is successful while investigating a location, discover 1 additional clue at that location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -341,6 +381,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned()],
             text: Some("Fast.\nYou get +1 [intellect] while investigating.\n[fast] If there are no clues on your location: Return Magnifying Glass to your hand.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(0), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -349,6 +390,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("[reaction] When a non-[[Elite]] enemy spawns at your location, discard Disc of Itzamna: Discard that enemy.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -357,6 +399,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("[action] Exhaust Encyclopedia: Choose an investigator at your location. That investigator gets +2 to a skill of your choice until the end of the phase.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -365,6 +408,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Fast. Play only during your turn.\nChoose an investigator at your location. That investigator draws 3 cards.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -373,6 +417,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned(), "Illicit".to_owned()],
             text: Some("Fast.\n[action]: <b>Fight.</b> If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -381,6 +426,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned(), "Illicit".to_owned()],
             text: Some("[action] Exhaust Burglary: <b>Investigate.</b> If you succeed, instead of discovering clues, gain 3 resources.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -389,6 +435,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned(), "Illicit".to_owned()],
             text: Some("[reaction] After you evade an enemy, exhaust Pickpocketing: Draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -397,6 +444,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +2 [combat] for this attack. If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(3), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -405,6 +453,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You may take an additional action during your turn.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(6), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -413,6 +462,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [combat] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -421,6 +471,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Fast. Play only during your turn.\nDisengage from each enemy engaged with you and move to a revealed location with no enemies.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -429,6 +480,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("<b>Fight.</b> This attack uses [agility] instead of [combat]. This attack deals +2 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(3), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -437,6 +489,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Deal 2 damage to an exhausted enemy at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -445,6 +498,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Commit only to a skill test you are performing.\nIf you succeed by 3 or more, return Opportunist to your hand after this test instead of discarding it.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -453,6 +507,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You may take an additional action during your turn.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -461,6 +516,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You get +1 [agility].\n[action] Exhaust Cat Burglar: Disengage from each enemy engaged with you and move to a connecting location. This action does not provoke attacks of opportunity.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(1), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -469,6 +525,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned(), "Insight".to_owned()],
             text: Some("Fast. Play after you reveal a chaos token with a negative modifier.\nSwitch that token's \"-\" to a \"+\".".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(2), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -477,6 +534,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Gain 10 resources.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(3), xp: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -485,6 +543,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Uses (4 secrets). If Forbidden Knowledge has no secrets, discard it.\n[fast] Exhaust Forbidden Knowledge and take 1 horror: Move 1 secret from Forbidden Knowledge to your resource pool, as a resource.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(0), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Secrets, count: 4, discard_when_empty: true }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -493,6 +552,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Charm".to_owned()],
             text: Some("You get +1 [willpower].".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -501,6 +561,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat] and deals +1 damage. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -509,6 +570,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Exhaust Scrying and spend 1 charge: Look at the top 3 cards of any investigator's deck or the encounter deck. Return them to the top of that deck in any order.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -517,6 +579,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +1 [intellect] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -525,6 +588,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Sorcerer".to_owned()],
             text: Some("<b>Forced</b> - After Arcane Initiate enters play: Place 1 doom on it.\n[fast] Exhaust Arcane Initiate: Search the top 3 cards of your deck for a [[Spell]] card and draw it. Shuffle your deck.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -533,6 +597,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Draw the top card of the encounter deck. Then, discover 2 clues at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -541,6 +606,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Spirit".to_owned()],
             text: Some("Fast. Play when you draw a non-weakness treachery card.\nCancel that card's revelation effect. Then, take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -549,6 +615,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("<b>Evade.</b> This evasion attempt uses [willpower] instead of [agility]. If you succeed, deal 1 damage to the enemy just evaded. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this evasion attempt, lose 1 action this turn.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -557,6 +624,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("If this skill test is successful, heal 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -565,6 +633,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Fast. Play after a phase begins.\nChoose a non-[[Elite]] enemy at your location. Treat the chosen enemy's printed text box as if it were blank (except for [[Traits]]) until the end of the phase.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(1), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -573,6 +642,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("<b>Evade.</b> This evasion attempt uses [willpower] instead of [agility]. If you succeed, deal 2 damage to the enemy just evaded. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this evasion attempt, lose 1 action this turn and take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -581,6 +651,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("You have 1 additional arcane slot.\n[action] Exhaust Book of Shadows: Add 1 charge to a [[Spell]] asset you control.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(3), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -589,6 +660,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Uses (4 charges). If Grotesque Statue has no charges, discard it.\n[reaction] When you would reveal a chaos token, spend 1 charge: Reveal 2 chaos tokens instead of 1. Choose 1 of those tokens to resolve, and ignore the other.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(4), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: true }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -597,6 +669,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Armor".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(0), xp: Some(0), slots: vec![Slot::Body], health: Some(2), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -605,6 +678,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[reaction] After you successfully investigate by 2 or more, exhaust Scavenging: Choose an [[Item]] card in your discard pile and add it to your hand.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -613,6 +687,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +2 [combat] for this attack. This attack deals +1 damage. If a [skull] or [auto_fail] symbol is revealed during this attack, discard Baseball Bat after the attack resolves.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -621,6 +696,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Charm".to_owned()],
             text: Some("[reaction] After you fail a skill test, exhaust Rabbit's Foot: Draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -629,6 +705,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Creature".to_owned()],
             text: Some("[fast] Discard Stray Cat: Automatically evade a non-[[Elite]] enemy at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -637,6 +714,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] Spend 1 resource: You get +1 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -645,6 +723,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("<b>Evade.</b> Automatically evade all enemies at your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(5), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -653,6 +732,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Fast. Play after you fail a skill test by 2 or less while investigating.\nDiscover 2 clues in your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -661,6 +741,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Fast. Play when you would fail a skill test.\nGet +2 to your skill value for that test.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -669,6 +750,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("If this skill test is successful during an evasion attempt, the evading investigator may immediately disengage from each other enemy engaged with him or her, and may move to a connecting location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -677,6 +759,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("[reaction] When an enemy attacks you, exhaust Aquinnah and deal 1 horror to her: Deal that enemy's damage to another enemy at your location, instead. (You still take horror dealt by the attack.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -685,6 +768,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Fast. Play after a non-weakness, non-[[Elite]] enemy at your location is evaded.\nShuffle that enemy into the encounter deck.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -693,6 +777,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Fast. Play when you would fail a skill test.\nGet +2 to your skill value for that test. Draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -701,6 +786,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spirit".to_owned()],
             text: Some("Fast. Play only during your turn.\nUntil the end of your turn, do not reveal chaos tokens for any skill tests you perform.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(4), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -709,6 +795,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack.\n[action] Discard Knife: <b>Fight.</b> You get +2 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -717,6 +804,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned()],
             text: Some("Uses (3 supplies).\n[action] Spend 1 supply: <b>Investigate.</b> Your location gets -2 shroud for this investigation.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -725,6 +813,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Supply".to_owned()],
             text: Some("Gain 3 resources.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -733,6 +822,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
@@ -741,6 +831,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
@@ -749,6 +840,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
@@ -757,6 +849,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Max 1 committed per skill test.\nIf this test is successful, draw 1 card.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
@@ -765,6 +858,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Max 1 committed per skill test.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Neutral, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
@@ -773,6 +867,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Armor".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Body], health: Some(4), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -781,6 +876,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -789,6 +885,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Choose and discard all but 1 card from your hand.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -797,6 +894,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Discard all your resources.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -805,6 +903,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Curse".to_owned()],
             text: Some("<b>Revelation</b> - Add Haunted to your threat area.\nYou get -1 to each of your skills.\n[action] [action]: Discard Haunted.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -813,6 +912,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Add Psychosis to your threat area.\n<b>Forced</b> - After you take 1 or more horror: Take 1 direct damage.\n[action] [action]: Discard Psychosis.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -821,6 +921,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Add Hypochondria to your threat area.\n<b>Forced</b> - After you take 1 or more damage: Take 1 direct horror.\n[action] [action]: Discard Hypochondria.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -829,6 +930,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned()],
             text: Some("<b>Prey</b> - Bearer only.\nHunter.\n[action] Spend 4 resources: <b>Parley.</b> Discard Mob Enforcer.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -837,6 +939,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned(), "Silver Twilight".to_owned()],
             text: Some("<b>Prey</b> - Bearer only.\nHunter.\n<b>Forced</b> - After Silver Twilight Acolyte attacks: Place 1 doom on the current agenda.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -845,6 +948,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Detective".to_owned()],
             text: Some("<b>Prey</b> - Bearer only.\nHunter.\nWhile Stubborn Detective is at your location, treat your investigator as if his or her printed text box were blank (except for [[Traits]]).".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: true,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -853,6 +957,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -861,6 +966,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -869,6 +975,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - At the end of the enemy phase: Each unengaged [[Ghoul]] enemy moves 1 location towards the Parlor.\n<b>Forced</b> - At the end of the round: Place 1 doom on this agenda for each [[Ghoul]] enemy in the Hallway or Parlor.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 10 },
         },
         CardMetadata {
@@ -877,6 +984,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -885,6 +993,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - When the round ends, investigators in the hallway may, as a group, spend the requisite number of clues to advance.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -893,6 +1002,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If the Ghoul Priest is Defeated, advance.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -901,6 +1011,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -909,6 +1020,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -917,6 +1029,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you enter the Attic: Take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -925,6 +1038,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you enter the Cellar: Take 1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -933,6 +1047,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action] <b>Resign.</b> \"This is too much for me!\" You run out the front door, fleeing in panic.\nWhile Lita Chantler is not controlled by a player, she gains: \"[action]: <b>Parley.</b> Test [intellect] (4). If you succeed, take control of Lita Chantler.\"".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -941,6 +1056,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned(), "Elite".to_owned()],
             text: Some("<b>Prey</b> - Highest [combat].\nHunter. Retaliate.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::PerInvestigator(5)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Ranked { direction: PreyDirection::Highest, measure: PreyMeasure::Skill(SkillKind::Combat) }, quantity: 1 },
         },
         CardMetadata {
@@ -949,6 +1065,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("While you control Lita Chantler, she gains:\n\"Each investigator at your location gets +1 [combat].\n[reaction] When an investigator at your location successfully attacks a [[Monster]] enemy: That investigator deals +1 damage.\"".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -957,6 +1074,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: Some("<b>Spawn</b> - Attic.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 1, damage: 1, horror: 2, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01113".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -965,6 +1083,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: Some("<b>Spawn</b> - Cellar.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01114".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -973,6 +1092,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action]: <b>Resign.</b> You don't want to risk taking too long, so you head to safety with the information you've gathered.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -981,6 +1101,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned(), "Elite".to_owned()],
             text: Some("<b>Spawn</b> - Engaged with Prey.\n<b>Prey</b> - Most clues.\nHunter.\nThe Masked Hunter gets +2 health per investigator.\nWhile you are engaged with The Masked Hunter, you cannot discover or spend clues.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -989,6 +1110,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action]: <b>Resign.</b> You don't want to risk taking too long, so you head to safety with the information you've gathered.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 8 },
         },
         CardMetadata {
@@ -997,6 +1119,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action] The investigators spend 2 clues per investigator, as a group: Draw the top card of the Cultist\u{a0}deck.\n<b>Objective</b> - Find as many unique [[Cultist]] enemies as you can and add them to the victory display. If there are 6 unique [[Cultist]] enemies in the victory display, advance. (Note: Not all 6 of them are in the Cultist deck.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1005,6 +1128,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("<b>Forced</b> - When the Ghoul Priest spawns: Spawn it here instead of at its normal location.\n[action]: Draw 1 card and gain 1 resource. (Limit once per turn.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1013,6 +1137,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned(), "Central".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1021,6 +1146,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Draw 3 cards. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1029,6 +1155,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Search your deck for an [[Ally]] asset and add it to your hand. Shuffle your deck. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1037,6 +1164,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Heal 3 damage. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1045,6 +1173,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Search the top 6 cards of your deck for a [[Tome]] or [[Spell]] card and add it to your hand. Shuffle your deck.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1053,6 +1182,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Gain 3 resources. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1061,6 +1191,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: Heal 3 horror. (Limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1069,6 +1200,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("While you are in Easttown, reduce the cost of each [[Ally]] asset you play by 2.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1077,6 +1209,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("<b>Forced</b> - After you enter the Graveyard: Test [willpower] (3). If you fail, you must either take 2 horror or move to Rivertown.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1085,6 +1218,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action] Spend 5 resources: Gain 2 clues from the token pool. (Group limit once per game.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1093,6 +1227,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Curse".to_owned()],
             text: Some("Peril.\n<b>Revelation</b> - You must either (choose one): Spend 1 clue or take 2 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1101,6 +1236,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Revelation</b> - If you have no clues, False Lead gains surge. If you have 1 or more clues, test [intellect] (4). For each point you fail by, place 1 of your clues on your location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1109,6 +1245,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Downtown.\n<b>Forced</b> - When \"Wolf-Man\" Drew attacks: Heal 1 damage from him.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01131".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1117,6 +1254,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Graveyard.\n[action] Choose and discard 4 cards from your hand: <b>Parley.</b> Add Herman Collins to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01133".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1125,6 +1263,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Miskatonic University.\n[action] Spend 2 clues: <b>Parley.</b> Add Peter Warren to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 2, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01129".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1133,6 +1272,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Northside.\n[action] Spend 5 resources: <b>Parley.</b> Add Victoria Devereux to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Specific("01134".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1141,6 +1281,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - St. Mary's Hospital.\n<b>Forced</b> - After Ruth Turner is evaded: Add her to the victory display.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 2, evade: 5, damage: 1, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1149,6 +1290,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -1157,6 +1299,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Each enemy gets +1 fight and +1 evade.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -1165,6 +1308,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - When this agenda advances:\n- If the investigators are at Act 1, put the set-aside Ritual Site into play and spawn the set-aside Umôrdhoth there.\n- If the investigators are at Act 2 or 3, discard all enemies at the Ritual Site and spawn the set-aside Umôrdhoth there.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -1173,6 +1317,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -1181,6 +1326,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If an investigator enters the Ritual Site, advance.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1189,6 +1335,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action] Spend 1 clue: Test [willpower] (3) or [agility] (3). If you succeed, place 1 clue on this Act.\n<b>Objective</b> - If there are 2 clues per investigator on this Act, advance.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1197,6 +1344,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("The Main Path is connected to each other [[Woods]] location.\n[action]: <b>Resign.</b> \"There's nothing we can do to stop them!\" You flee from the woods, leaving Arkham to its grisly fate.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1205,6 +1353,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("<b>Forced</b> - After you enter this location: Test [willpower] (4). If you fail, take 1 horror and 1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1213,6 +1362,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("<b>Forced</b> - When you move out of this location: Test [intellect] (3). If you fail, cancel the effects of the move.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1221,6 +1371,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("This location is investigated using [willpower] instead of the skill indicated by the investigation attempt.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1229,6 +1380,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("This location is investigated using [agility] instead of the skill indicated by the investigation attempt.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1237,6 +1389,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("This location is investigated using [combat] instead of the skill indicated by the investigation attempt.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1245,6 +1398,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Woods".to_owned()],
             text: Some("[action]: Heal 1 damage or heal 1 horror. (Limit once per turn.)".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1253,6 +1407,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Cave".to_owned()],
             text: Some("<b>Forced</b> - At the end of the round, if there are fewer than 2 clues per investigator on Ritual Site: Add clues to it until it has 2 clues per investigator on it.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -1261,6 +1416,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ancient One".to_owned(), "Elite".to_owned()],
             text: Some("Hunter. Massive.\nUmôrdhoth gets +4 health per investigator.\n<b>Forced</b> - At the end of each investigator's turn: Ready Umôrdhoth.\n[action] If you control Lita Chantler: \"It's only after her!\" You throw Lita to Umôrdhoth in order to spare your lives. <b>(→R3)</b>".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 5, evade: 6, damage: 3, horror: 3, health: Some(HealthValue::Fixed(6)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1269,6 +1425,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Curse".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (5). For each point you fail by, you must either (choose one): Choose and discard a card from your hand, or take 1 damage and 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1277,6 +1434,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned()],
             text: Some("Hunter.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 1, evade: 3, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1285,6 +1443,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: None,
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1293,6 +1452,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Ghoul".to_owned()],
             text: Some("<b>Prey</b> - Lowest remaining health.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Ranked { direction: PreyDirection::Lowest, measure: PreyMeasure::RemainingHealth }, quantity: 1 },
         },
         CardMetadata {
@@ -1301,6 +1461,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hazard".to_owned()],
             text: Some("<b>Revelation</b> - Test [agility] (3). For each point you fail by, take 1 damage.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1309,6 +1470,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (3). For each point you fail by, take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1317,6 +1479,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - Put Frozen in Fear into play in your threat area.\nThe first time you perform one of the following actions (move, fight, or evade) each round, it costs 1 additional action.\n<b>Forced</b> - At the end of your turn: Test [willpower] (3). If you succeed, discard Frozen in Fear.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1325,6 +1488,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - Put Dissonant Voices into play in your threat area.\nYou cannot play assets or events.\n<b>Forced</b> - At the end of the round: Discard Dissonant Voices.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1333,6 +1497,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("<b>Revelation</b> - Place 1 doom on the current agenda. This effect can cause the current agenda to advance.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -1341,6 +1506,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hazard".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (4). If you fail, choose and discard 1 asset you control (if you cannot, take 2 damage instead).".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1349,6 +1515,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hazard".to_owned()],
             text: Some("<b>Revelation</b> - Attach to your location. Limit 1 per location.\nAttached location gets +2 shroud.\n<b>Forced</b> - After attached location is successfully investigated: Discard Obscuring Fog.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1357,6 +1524,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Any empty location.\n<b>Forced</b> - After Acolyte enters play: Place 1 doom on it.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1365,6 +1533,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Cultist".to_owned()],
             text: Some("<b>Spawn</b> - Any empty location.\nRetaliate.\n<b>Forced</b> - At the end of the mythos phase: Place 1 doom on Wizard of the Order.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1373,6 +1542,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned()],
             text: Some("<b>Revelation</b> - Place 2 doom on the nearest [[Cultist]] enemy. If there are no [[Cultist]] enemies in play, search the encounter deck and discard pile for a [[Cultist]] enemy and draw it. Shuffle the encounter deck.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1381,6 +1551,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Nightgaunt".to_owned()],
             text: Some("Hunter.\nWhile attempting to evade Hunting Nightgaunt, double the negative modifier of each revealed chaos token.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 1, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -1389,6 +1560,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Revelation</b> - Test [agility] (4). If you fail, take 1 horror and 1 damage. Then, disengage with each non-[[Nightgaunt]] enemy engaged with you and move to a [[Central]] location.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1397,6 +1569,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Obstacle".to_owned()],
             text: Some("<b>Revelation</b> - Attach to the location in play with the most clues, and without a Locked Door attached.\nThe attached location cannot be investigated.\n[action]: Test [combat] (4) to break down the door or [agility] (4) to pick the lock. If you succeed, discard Locked Door.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1405,6 +1578,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Byakhee".to_owned()],
             text: Some("<b>Prey</b> - Lowest remaining sanity.\nHunter.\nWhile engaged with an investigator with remaining sanity 4 or fewer, Screeching Byakhee gets +1 fight and +1 evade.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 2, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -1413,6 +1587,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (4). If you fail, take 2 horror and search your deck for a [[Madness]] weakness. Draw that card and shuffle your deck.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1421,6 +1596,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Yithian".to_owned()],
             text: Some("<b>Prey</b> - Fewest cards in hand.\n<b>Forced</b> - When Yithian Observer attacks you: Discard 1 card at random from your hand. If you cannot, Yithian Observer deals +1 damage and +1 horror for this attack.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -1429,6 +1605,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Pact".to_owned()],
             text: Some("Peril.\n<b>Revelation</b> - You must either (choose one): draw 2 cards and place 2 doom on the current agenda (this effect can cause the current agenda to advance), or take 2 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1437,6 +1614,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Dark Young".to_owned()],
             text: Some("<b>Prey</b> - Lowest [agility].\n<b>Forced</b> - At the end of the round: Heal 2 damage from Relentless Dark Young.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1445,6 +1623,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned()],
             text: Some("Hunter. Retaliate.\n<b>Forced</b> - When Goat Spawn is defeated: Each investigator at this location takes 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -1453,6 +1632,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Deep One".to_owned()],
             text: Some("<b>Prey</b> - Lowest [combat].\nHunter.\n<b>Forced</b> - After Young Deep One engages you: Take 1 horror.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -1461,6 +1641,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("<b>Revelation</b> - Put Dreams of R'lyeh into play in your threat area.\nYou get -1 [willpower] and -1 sanity.\n[action]: Test [willpower] (3). If you succeed, Discard Dreams of R'lyeh.".to_owned()),
             pack_code: "core".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1469,6 +1650,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Believer".to_owned(), "Hunter".to_owned()],
             text: Some("[reaction] After you become engaged with an enemy: Gain 1 resource.\n[elder_sign] effect: +1. If this skill test is successful during an attack, that attack deals +1 damage.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Guardian, skills: Skills { willpower: 4, intellect: 2, combat: 4, agility: 2 }, health: 9, sanity: 6 },
         },
         CardMetadata {
@@ -1477,6 +1659,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Reporter".to_owned()],
             text: Some("[reaction] After you succeed at a skill test by 2 or more while investigating: Discover 1 clue at your location.\n[elder_sign] effect: +2. You may instead choose to automatically fail this skill test to draw 3 cards.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Seeker, skills: Skills { willpower: 3, intellect: 4, combat: 2, agility: 3 }, health: 6, sanity: 9 },
         },
         CardMetadata {
@@ -1485,6 +1668,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Drifter".to_owned()],
             text: Some("You collect 1 additional resource during each upkeep phase.\n[elder_sign] effect: +1 for each resource you have.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Rogue, skills: Skills { willpower: 3, intellect: 3, combat: 3, agility: 3 }, health: 8, sanity: 7 },
         },
         CardMetadata {
@@ -1493,6 +1677,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Performer".to_owned()],
             text: Some("Treat the modifier on [skull] tokens you reveal as \"0.\"\nAnytime you reveal a [elder_sign] token, you may choose to instead treat it as a [skull] token.\n[elder_sign] effect: +1.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Mystic, skills: Skills { willpower: 4, intellect: 3, combat: 3, agility: 2 }, health: 7, sanity: 8 },
         },
         CardMetadata {
@@ -1501,6 +1686,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Drifter".to_owned()],
             text: Some("You begin the game with Duke in play.\n[fast] Discard a card from your hand: Ready an asset you control. (Limit once per round.)\n[elder_sign] effect: +2. Ready Duke.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Investigator { class: Class::Survivor, skills: Skills { willpower: 4, intellect: 2, combat: 2, agility: 3 }, health: 6, sanity: 5 },
         },
         CardMetadata {
@@ -1509,6 +1695,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Charm".to_owned()],
             text: Some("Zoey Samaras deck only.\n[reaction] After an enemy becomes engaged with you, exhaust Zoey's Cross and spend 1 resource: Deal 1 damage to that enemy.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: None, slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1517,6 +1704,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Task".to_owned()],
             text: Some("<b>Revelation</b> - Discard cards from the top of the encounter deck until an enemy is discarded. Attach Smite the Wicked to that enemy and spawn it at the location farthest from you.\n<b>Forced</b> - When the game ends, if attached enemy is in play: Zoey Samaras suffers 1 mental trauma.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1525,6 +1713,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Rex Murphy deck only.\nDraw X cards, where X is the number of clues on Rex Murphy (to a maximum of 5).".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(1), xp: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1533,6 +1722,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Curse".to_owned()],
             text: Some("<b>Revelation</b> - Put Rex's Curse into play in your threat area.\n<b>Forced</b> - When you would succeed at a skill test: Return the revealed chaos token to the bag and reveal a new chaos token. If this effect causes you to fail the test, shuffle Rex's Curse into your deck. (Limit once per test.)".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1541,6 +1731,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Jenny Barnes deck only. Uses (X ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +2 [combat] for this attack. This attack deals +1 damage.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(-2), xp: None, slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1549,6 +1740,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Task".to_owned()],
             text: Some("<b>Revelation</b> - Attach Searching for Izzie to the location farthest from you.\n[action] [action]: <b>Investigate.</b> If you succeed, instead of discovering clues, discard Searching for Izzie.\n<b>Forced</b> - When the game ends, if Searching for Izzie is in play: Jenny Barnes suffers 1 mental trauma.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1557,6 +1749,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Instrument".to_owned(), "Relic".to_owned()],
             text: Some("Jim Culver deck only.\n[reaction] When a [skull] token is revealed during a skill test, exhaust Jim's Trumpet: Heal 1 horror from an investigator at your location or a connecting location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1565,6 +1758,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Endtimes".to_owned()],
             text: Some("<b>Revelation</b> - Reveal 5 chaos tokens from the chaos bag. For each [skull] and [auto_fail] token revealed, take 1 damage and 1 horror.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1573,6 +1767,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Creature".to_owned()],
             text: Some("\"Ashcan\" Pete deck only.\n[action] Exhaust Duke: <b>Fight.</b> You attack with a base [combat] skill of 4. This attack deals +1 damage.\n[action] Exhaust Duke: <b>Investigate.</b> You investigate with a base [intellect] skill of 4. You may move to a connecting location immediately before investigating with this effect.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1581,6 +1776,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Exhaust all assets you control and put Wracked by Nightmares into play in your threat area.\nAssets you control cannot ready.\n[action] [action]: Discard Wracked by Nightmares.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -1589,6 +1785,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack. If you perform this attack against an enemy engaged with another investigator and you fail, you deal no damage.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1597,6 +1794,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Fast. Play only during your turn.\nEngage any number of enemies at your location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -1605,6 +1803,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Investigators at your location may give or trade any number of [[Item]] assets, [[Ally]] assets, or resources among one another.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1613,6 +1812,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Fast. Play only during your turn.\nEngage any number of enemies at your location. Draw 1 card for each enemy engaged in this way.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -1621,6 +1821,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned(), "Science".to_owned()],
             text: Some("Your maximum hand size is increased by 2.\n[reaction] After Laboratory Assistant enters play: Draw 2 cards.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1629,6 +1830,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("[action] Test [intellect] (4). If you succeed, discard Strange Solution and draw 2 cards. Record in your Campaign Log that \"you have identified the solution.\"".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1637,6 +1839,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned(), "Tactic".to_owned()],
             text: Some("Fast. Play only during your turn.\nChoose an investigator at your location. Move that investigator to a connecting location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: true },
         },
         CardMetadata {
@@ -1645,6 +1848,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("<b>Investigate.</b> If you succeed, instead of discovering a clue at your location, discover a clue at a connecting location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1653,6 +1857,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (4 supplies).\n[action] Spend 1 supply: Choose an investigator at your location to heal 1 horror. Then, that investigator tests [willpower] (2). If the test succeeds, he or she heals 1 additional horror. If the test fails, he or she discards 1 card at random from his or her hand.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -1661,6 +1866,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Trick".to_owned()],
             text: Some("Fast. Play when an enemy would spawn at your location.\nImmediately move to a connecting location. (The enemy still spawns at your previous location.)".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1669,6 +1875,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Max 1 committed per skill test.\nDouble the difficulty of this skill test. If this skill test is successful, resolve the effects of the successful test twice.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: Some(1) },
         },
         CardMetadata {
@@ -1677,6 +1884,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("You get +1 [combat].\n<b>Forced</b> - At the end of the upkeep phase: You must either pay 1 resource or discard Hired Muscle.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1685,6 +1893,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: <b>Investigate.</b> Investigate using [willpower] instead of [intellect]. If you succeed, discover 1 additional clue at this location. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this test, after this test resolves lose all remaining actions and immediately end your turn.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -1693,6 +1902,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("[reaction] After a [skull], [cultist], [tablet], or [elder_thing] symbol is revealed during a test you are performing: You get +1 skill value for this test.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1701,6 +1911,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: Heal 1 horror from an investigator at your location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(0), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -1709,6 +1920,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("<b>Evade.</b> This evasion attempt uses [willpower] instead of [agility]. If you succeed and the enemy is non‑[[Elite]], evade it and attach Bind Monster to it.\n[reaction] When attached enemy would ready: Test [willpower] (3). If you succeed, attached enemy does not ready. If you fail, discard Bind Monster.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(3), xp: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1717,6 +1929,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> If you have no resources in your resource pool, this attack deals +1 damage.\n[fast] During an attack using Fire Axe, spend 1 resource: You get +2 [combat] for this skill test. (Limit three times per attack.)".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1725,6 +1938,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [agility].\n[reaction] After your turn ends: Heal 1 horror from Peter Sylvestre.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1733,6 +1947,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Trick".to_owned()],
             text: Some("<b>Evade.</b> If you succeed, if the enemy is non-[[Elite]], evade the enemy and move it to a connecting location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1741,6 +1956,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [agility] and +1 [willpower].\n[reaction] After your turn ends: Heal 1 horror from Peter Sylvestre.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(2), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1749,6 +1965,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack. If you succeed, you may spend 1 additional action to deal +1 damage for this attack.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1757,6 +1974,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Flaw".to_owned()],
             text: Some("Permanent.\nYou start each game with 2 fewer resources.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1765,6 +1983,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Injury".to_owned()],
             text: Some("<b>Revelation</b> - Place Internal Injury into play in your threat area.\n<b>Forced</b> - At the end of your turn: Take 1 direct damage.\n[action] [action]: Discard Internal Injury.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1773,6 +1992,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Place Chronophobia into play in your threat area.\n<b>Forced</b> - At the end of your turn: Take 1 direct horror.\n[action] [action]: Discard Chronophobia.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -1781,6 +2001,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] After you draw a non-weakness card, discard that card and exhaust Dr. Henry Armitage: Gain 3 resources.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 2 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1789,6 +2010,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -1797,6 +2019,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Each investigator's maximum hand size is reduced by 3 while checking his or her hand size during the upkeep phase.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -1805,6 +2028,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - When this agenda would advance by reaching its doom threshold: Instead, remove all doom in play and move The Experiment 1 location toward the Dormitories.\n<b>Objective</b> - If The Experiment enters the Dormitories, advance.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 2 },
         },
         CardMetadata {
@@ -1813,6 +2037,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -1821,6 +2046,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action] Spend 1 clue: Discard the top 5 cards of the encounter deck (top 10 instead if there is only 1 player in the game).\n<b>Forced</b> - If you discard \"Jazz\" Mulligan for any reason, resolve his revelation effect.\n<b>Objective</b> - When you take control of \"Jazz\" Mulligan, advance.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1829,6 +2055,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - Find and complete an objective on another encounter card.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1837,6 +2064,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action]: <b>Resign.</b> \"We can't find Rice anywhere...\" You leave the campus, hoping Armitage will forgive you.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1845,6 +2073,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - At the end of your turn, if you are in the Humanities Building: Discard the top X cards of your deck, where X is the amount of horror on you.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -1853,6 +2082,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("You must spend 1 additional action to investigate the Orne Library.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -1861,6 +2091,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Student Union is revealed: Put the set-aside Dormitories into play.\n[action] [action]: Heal 1 damage and 1 horror.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -1869,6 +2100,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Objective</b> - If investigators in the Dormitories spend 3 [per_investigator] clues, as a group: <b>(→R2)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(3), victory: Some(1) },
         },
         CardMetadata {
@@ -1877,6 +2109,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Administration Building is revealed: Put the set-aside Faculty Offices into play.\n<b>Forced</b> - At the end of your turn, if you are in the Administration Building: Discard the top card of your deck.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1885,6 +2118,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Faculty Offices is revealed: Search the encounter deck and discard pile for a [[Humanoid]] enemy and spawn it here. Shuffle the encounter deck.\n<b>Objective</b> - If investigators in the Faculty Offices spend 2 [per_investigator] clues, as a group: <b>(→R1)</b>".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -1893,6 +2127,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: None,
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1901,6 +2136,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("<b>Forced</b> - After Science Building is revealed: Put the set-aside Alchemy Labs into play.\n<b>Forced</b> - When you fail a [willpower] test in the Science Building: Take 1 damage.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -1909,6 +2145,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action]: <b>Investigate.</b> If you are successful, instead of discovering clues, take the Alchemical Concoction from underneath this location if able.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 5, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -1917,6 +2154,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned(), "Elite".to_owned()],
             text: Some("Massive.\nThe Experiment gets +3 [per_investigator] health.\n<b>Forced</b> - When the enemy phase begins: Ready The Experiment.\n<b>Objective</b> - If The Experiment is defeated, advance to act 3b.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(HealthValue::Fixed(7)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -1925,6 +2163,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("[action]: <b>Fight.</b> This attack uses [intellect] instead of [combat]. If used to attack The Experiment, this attack deals +6 damage. If you succeed, remove Alchemical Concoction from the game.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1933,6 +2172,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("<b>Revelation</b> - Put \"Jazz\" Mulligan into play at your location.\nWhile \"Jazz\" Mulligan is not controlled by a player, he gains: \"[action]: <b>Parley.</b> Test [intellect] (3). If successful, take control of \"Jazz\" Mulligan.\"\nWhile you control \"Jazz\" Mulligan, you ignore the text on each unrevealed [[Miskatonic]] location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1941,6 +2181,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [intellect].\n[reaction] After you discover the last remaining clue in your location, exhaust Professor Warren Rice: Draw 1 card.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(2), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -1949,6 +2190,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Each [[Criminal]] enemy gains Aloof.\n<b>Forced</b> - If an investigator deals damage to a [[Criminal]] enemy: Immediately advance.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -1957,6 +2199,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -1965,6 +2208,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - At the start of the enemy phase: Discard each [[Criminal]] enemy in the same location as an [[Abomination]] enemy.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -1973,6 +2217,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[reaction] When you reveal a chaos token: You may treat that token as if it were any other token in the chaos bag. If you do, remember that you have \"cheated.\" (Group limit once per round.)\n<b>Objective</b> - When the investigators have collected the requisite number of clues, they must immediately spend them and advance.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(4), victory: None },
         },
         CardMetadata {
@@ -1981,6 +2226,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - Only investigators in the VIP Area may spend the requisite number of clues, as a group, to advance.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -1989,6 +2235,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("While Dr. Morgan is not controlled by a player, he gains \"[action]: <b>Parley.</b> Test [willpower] (3) to shake Dr. Morgan out of his daze. If you succeed, place 1 clue from the token bank on him. If there are 1 [per_investigator] clues on Dr. Morgan, take control of him.\"\n<b>Objective</b> - If each undefeated investigator has resigned, advance.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -1997,6 +2244,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("While Peter Clover is not controlled by a player, he gains \"[action]: <b>Parley.</b> Test [willpower] (3) to convince Peter to follow you. If you succeed, place 1 clue from the token bank on him. If there are 1 [per_investigator] clues on Peter Clover, take control of him.\"\n<b>Objective</b> - If each undefeated investigator has resigned, advance.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2005,6 +2253,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Arkham".to_owned()],
             text: Some("[action]: <b>Resign.</b> This was a bust.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2013,6 +2262,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While it is Act 1, Clover Club Lounge gains:\n\"[action] Discard an [[Ally]] asset from your hand: Gain 2 clues from the token pool. (Limit once per game.)\"".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2021,6 +2271,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While it is Act 1, Clover Club Bar gains:\n\"[action] Spend 2 resources: Gain 2 clues from the token pool and draw 2 cards. Remember that you have 'had a drink.' (Limit once per game.)\"".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2029,6 +2280,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While it is Act 1, Clover Club Cardroom gains:\n\"[action] Spend 2 resources: Reveal a random chaos token.\nIf it is a [elder_sign] symbol, gain 2 clues and 2 resources from the token bank.\nIf it is an even number, gain 2 clues from the token bank.\nIf it is an odd number or a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol, nothing happens.\"".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2037,6 +2289,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("<b>Forced</b> - When Darkened Hall is revealed: Put into play the 3 set-aside Back Hall Doorway locations.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2045,6 +2298,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating the Art Gallery: Lose 2 resources.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2053,6 +2307,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("While you are in the VIP Area, you cannot draw cards or gain resources during the upkeep phase.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2061,6 +2316,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Clover Club".to_owned()],
             text: Some("[action]: <b>Resign.</b> We can get out this way!".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2069,6 +2325,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned(), "Elite".to_owned()],
             text: Some("<b>Prey</b> - Highest [intellect].\nHunter.\n<b>Forced</b> - After an investigator at Clover Club Pit Boss's location gains any number of clues: Clover Club Pit Boss readies, engages that investigator, and makes an immediate attack.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 2, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Ranked { direction: PreyDirection::Highest, measure: PreyMeasure::Skill(SkillKind::Intellect) }, quantity: 1 },
         },
         CardMetadata {
@@ -2077,6 +2334,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned()],
             text: Some("<b>Forced</b> - At the start of the enemy phase, if no investigator controls Peter Clover: Deal 1 damage to him.\n[fast] Exhaust Peter Clover: Automatically evade a [[Criminal]] enemy in your location.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2085,6 +2343,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +1 [combat].\n[reaction] After you defeat an enemy, exhaust Dr. Francis Morgan: Draw 1 card.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(4), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2093,6 +2352,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Poison".to_owned(), "Illicit".to_owned()],
             text: Some("Surge.\n<b>Revelation</b> - Each player who has \"had a drink\" loses 1 action.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2101,6 +2361,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Revelation</b> - Place 1 doom on each [[Criminal]] enemy at your location. If no doom was placed by this effect, lose 2 resources.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2109,6 +2370,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (5). For each point you fail by, discard the top card of your deck.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2117,6 +2379,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned()],
             text: Some("Surge.\n<b>Revelation</b> - Put Beyond the Veil into play in your threat area if there is no copy of Beyond the Veil in your threat area.\n<b>Forced</b> - If your deck has no cards in it: Take 10 damage and discard Beyond the Veil.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2125,6 +2388,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Pact".to_owned(), "Power".to_owned()],
             text: Some("Peril.\n<b>Revelation</b> - You must attach Light of Aforgomon to either the current agenda or the current act.\nLimit 1 per agenda/act. Treat all damage as direct damage and all horror as direct horror.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2133,6 +2397,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Spawn</b> - Location with the most clues.\nRetaliate.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -2141,6 +2406,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Sorcerer".to_owned()],
             text: Some("<b>Prey</b> - Least cards in hand.\nHunter.\n<b>Forced</b> - When the engaged investigator draws a [[Hex]] or [[Pact]] card: Wizard of Yog-Sothoth attacks that investigator.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -2149,6 +2415,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - Put Unhallowed Country into play in your threat area.\nYou cannot play [[Ally]] assets. Treat the printed text box of each [[Ally]] asset you control as if it were blank.\n<b>Forced</b> - At the end of your turn: Test [willpower] (3). If you succeed, discard Unhallowed Country.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2157,6 +2424,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - Attach Sordid and Silent to your location.\n<b>Forced</b> - At the end of the round: Each investigator at attached location takes 1 horror.\n<b>Forced</b> - When the agenda advances: Discard Sordid and Silent.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2165,6 +2433,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned()],
             text: Some("Aloof. Hunter.\nEach investigator at Whippoorwill's location gets -1 [willpower], -1 [intellect], -1 [combat], and -1 [agility].".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 2, evade: 4, damage: 0, horror: 1, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -2173,6 +2442,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (2). Increase this skill test's difficulty by 1 for each damage on you. If you fail, take 2 horror.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2181,6 +2451,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("<b>Revelation</b> - Put Cursed Luck into play in your threat area.\nYou get -1 skill value during skill tests.\n<b>Forced</b> - After you succeed at a skill test by 1 or more: Discard Cursed Luck.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2189,6 +2460,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("<b>Revelation</b> - Reveal a random token from the chaos bag.\nIf you reveal a [elder_sign] symbol or positive number, nothing happens.\nIf you reveal any other number, take 1 damage.\nIf you reveal a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol, take 2 horror.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2197,6 +2469,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned(), "Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Prey</b> - Lowest [intellect].\nHunter.\nWhile Avian Thrall is being attacked using a [[Ranged]], [[Firearm]], or [[Spell]] asset, it gets -3 fight.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 5, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2205,6 +2478,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Creature".to_owned(), "Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Spawn</b> - Farthest location from you.\n<b>Prey</b> - Lowest [agility].\nHunter. Retaliate.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2213,6 +2487,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Power".to_owned()],
             text: Some("<b>Revelation</b> - If there are no [[Abomination]] enemies in play, Altered Beast gains surge. Otherwise, choose an [[Abomination]] enemy. Heal all damage from that enemy and attached Altered Beast to it.\n<b>Forced</b> - When you enter attached enemy's location (or vice-versa): Take 1 horror.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2221,6 +2496,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned(), "Syndicate".to_owned()],
             text: Some("While O'Bannion's Thug is engaged with you, you cannot gain resources.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2229,6 +2505,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Criminal".to_owned(), "Syndicate".to_owned()],
             text: Some("Retaliate.\n<b>Forced</b> - After Mobster attacks you: Lose 1 resource.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2237,6 +2514,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("<b>Revelation</b> - If there are no unengaged [[Criminal]] enemies in play, Hunted Down gains surge. If there are 1 or more unengaged [[Criminal]] enemies in play, each of them moves 1 location toward you. Each [[Criminal]] enemy that engages you as a result of this effect makes an immediate attack.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2245,6 +2523,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned()],
             text: Some("<b>Revelation</b> - Choose and shuffle a non-story asset you control into your deck and discard the top 3 cards of your deck. If a copy of that asset is discarded, take 2 horror.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2253,6 +2532,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned(), "Terror".to_owned()],
             text: Some("Peril.\n<b>Revelation</b> - Choose one of the following cardtypes (asset, event, or skill). Each player must discard each card in his or her hand that is of the chosen cardtype. If this is not the first copy of Terror from Beyond drawn this phase, choose two cardtypes instead.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2261,6 +2541,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned(), "Obstacle".to_owned()],
             text: Some("<b>Revelation</b> - Attach to your location.\nAs an additional cost to move into or out of attached location, test [willpower] (4). If successful, discard Arcane Barrier. Otherwise, you must either cancel the effects of the move or discard the top 5 cards of your deck.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2269,6 +2550,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Prey</b> - Lowest [willpower].\nHunter.\n<b>Forced</b> - After you perform an attack against the Conglomeration of Spheres using a [[Melee]] card: Discard that card.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 1, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(6)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2277,6 +2559,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Prey</b> - Lowest [agility].\nHunter.\n<b>Forced</b> - When Servant of the Lurker attacks you: Discard the top 2 cards of your deck.".to_owned()),
             pack_code: "dwl".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -2285,6 +2568,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned(), "Science".to_owned()],
             text: Some("Choose an investigator at your location. Heal 2 damage from that investigator or from an [[Ally]] asset he or she controls.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2293,6 +2577,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("You get +1 [willpower].\nBrother Xavier may be assigned damage and/or horror dealt to other investigators at your location.\n[reaction] When Brother Xavier is defeated: Deal 2 damage to an enemy at your location.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(5), xp: Some(1), slots: vec![Slot::Ally], health: Some(3), sanity: Some(3), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2301,6 +2586,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned(), "Tactic".to_owned()],
             text: Some("<b>Fight.</b> This attack uses [intellect]. You deal +1 damage for this attack for each clue you have (max +3 damage).".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(3), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2309,6 +2595,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[fast] During your turn, if you are not engaged with any enemies, exhaust Pathfinder: Move to a connecting location.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(3), xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2317,6 +2604,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Supply".to_owned(), "Illicit".to_owned()],
             text: Some("Choose an asset controlled by an investigator at your location. Double the number of ammo or supply tokens on that asset.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(4), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2325,6 +2613,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nIn between each game of a campaign, you may swap up to two level 0 cards out of your deck in exchange for an equal number of level 0 cards. (You must still follow all deckbuilding rules for your investigator).".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(1), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2333,6 +2622,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("In player order, each investigator draws 1 card from the top of the encounter deck. Then, add Delve Too Deep to the victory display.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2341,6 +2631,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Song".to_owned()],
             text: Some("Uses (5 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +1 [willpower] for this attack. If a [skull] symbol is revealed during this attack, this attack deals +2 damage.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(2), xp: Some(2), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 5, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -2349,6 +2640,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Fast. Play after you fail a skill test by 2 or less while attacking an enemy engaged with you.\nDeal this attack's damage to a different enemy at your location.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2357,6 +2649,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tool".to_owned(), "Melee".to_owned()],
             text: Some("[action]: <b>Fight.</b> You get +1 [combat] for this attack.\n[action] Exile Fire Extinguisher: <b>Evade.</b> You get +3 [agility] for this test. If you are successful, evade each other enemy engaged with you, as well.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(1), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2365,6 +2658,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Either (choose one):\n- <b>Fight.</b> You get +3 [combat] and deal +2 damage for this attack. Exile Flare.\n- Search the top 9 cards of any investigator's deck for an [[Ally]] asset and put it into play under your control. Then, exile Flare. Shuffle the searched deck.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(2), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2373,6 +2667,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Uses (3 supplies).\n[fast] Spend 1 supply, exhaust Smoking Pipe, and take 1 damage: Heal 1 horror.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -2381,6 +2676,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Uses (3 supplies).\n[fast] Spend 1 supply, exhaust Painkillers, and take 1 horror: Heal 1 damage.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -2389,6 +2685,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - When Hunting Horror enters play: Attach the set-aside copy of Shadow-spawned to it, or add 1 resource to Shadow-spawned if it is already attached.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -2397,6 +2694,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - When Hunting Horror enters play: Attach the set-aside copy of Shadow-spawned to it, or add 1 resource to Shadow-spawned if it is already attached.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -2405,6 +2703,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - When Hunting Horror enters play: Attach the set-aside copy of Shadow-spawned to it, or add 1 resource to Shadow-spawned if it is already attached.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -2413,6 +2712,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -2421,6 +2721,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If an investigator enters the Exhibit Hall (<i>Restricted Hall</i>), advance.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2429,6 +2730,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If an investigator enters the Exhibit Hall (<i>Restricted Hall</i>), advance.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2437,6 +2739,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If there are no clues remaining in the Exhibit Hall <i>(Restricted Hall)</i>, advance.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2445,6 +2748,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("Investigators at the Museum Entrance cannot gain resources.\n[action] <b>Resign.</b> \"Eh. How important can a book really be, anyway?\"".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -2453,6 +2757,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("Museum Halls is connected to each copy of Exhibit Hall.\n[action] Investigators in the Museum Halls spend 1 [per_investigator] clues, as a group: Put the top card of the Exhibit deck into play, unrevealed.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2461,6 +2766,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action] [action]: Search the top 6 cards of your deck for a card and add it to your hand. Shuffle the rest back into your deck. (Limit once per turn.)".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2469,6 +2775,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("[action] [action]: Look at the revealed side of an Exhibit Hall in play, or the top card of the Exhibit deck. (Limit once per turn.)".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -2477,6 +2784,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("You cannot investigate Administration Office while you have 4 or fewer resources.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2485,6 +2793,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned()],
             text: Some("You cannot investigate Administration Office while you have 4 or fewer cards in your hand.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -2493,6 +2802,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you enter this location: Lose all of your remaining actions and immediately end your turn.\nWhile you are in this location, you get +2 [agility].".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2501,6 +2811,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating this location: Discard an asset you control.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2509,6 +2820,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you enter this location: Discard 2 cards from your hand at random.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2517,6 +2829,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating this location: Lose 1 action.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -2525,6 +2838,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating this location: Take 1 horror.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -2533,6 +2847,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Miskatonic".to_owned(), "Exhibit".to_owned()],
             text: Some("While Hunting Horror is at this location, this location cannot be investigated.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -2541,6 +2856,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("You get +2 [intellect] while investigating [[Miskatonic]] locations.\n<b>Forced</b> - When Harold Walsted leaves play: Remove him from the game and add 1 [tablet] token to the chaos bag for the remainder of the campaign.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2549,6 +2865,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("While you control Adam Lynch, treat the \"[action] [action]\" ability on the Security Office as if it were an \"[action]\" ability.\n<b>Forced</b> - When Adam Lynch leaves play: Remove him from the game and add 1 [tablet] token to the chaos bag for the remainder of the campaign.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2557,6 +2874,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Tome".to_owned()],
             text: Some("You get +1 [intellect].\n[action]: Gain 2 resources.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: None, slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2565,6 +2883,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Elite".to_owned()],
             text: Some("Hunter. Retaliate.\n<b>Forced</b> - At the start of the enemy phase: Reveal a random token from the chaos bag. If the revealed token has a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol, ready Hunting Horror.\n<b>Forced</b> - When Hunting Horror leaves play, place it in the void.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -2573,6 +2892,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Power".to_owned()],
             text: Some("Shadow-spawned remains attached to Hunting Horror if it enters the void.\nHunting Horror gets +1 fight, +1 health, and +1 evade for each resource on Shadow-spawned. If there are 3 resources on Shadow-spawned, Hunting Horror also gains Massive.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 1 },
         },
         CardMetadata {
@@ -2581,6 +2901,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("<b>Revelation</b> - If Hunting Horror is in play, it readies, engages you, and attacks each investigator at your location. Otherwise, Stalked in the Dark gains surge.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2589,6 +2910,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Power".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (3). This test has +2 difficulty if Hunting Horror is at your location. If you fail you must either (choose one): discard the top 5 cards of your deck, or take 1 direct damage and deal 1 damage to each of your [[Ally]] assets.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2597,6 +2919,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - Test [intellect] (3). If you fail, lose 1 action for each point you failed by.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2605,6 +2928,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Revelation</b> - If Hunting Horror is in play, add 1 doom to it. If Hunting Horror is not in play, search the encounter deck, discard pile, and the void for Hunting Horror and spawn it at your location, engaged with you. Shuffle the encounter deck.".to_owned()),
             pack_code: "tmm".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -2613,6 +2937,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("You have 1 additional hand slot, which can only be used to hold a [[Weapon]] asset.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(2), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2621,6 +2946,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spirit".to_owned()],
             text: Some("Choose another investigator at your location. Both you and that investigator draw 2 cards and gain 2 resources.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(0), xp: Some(3), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2629,6 +2955,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] After Art Student enters play: Discover 1 clue at your location.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(2), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2637,6 +2964,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned(), "Expert".to_owned()],
             text: Some("If this skill test is successful while investigating a location, discover 1 additional clue at that location (2 additional clues instead if it succeeds by 2 or more).".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Seeker, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -2645,6 +2973,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Trick".to_owned(), "Spirit".to_owned()],
             text: Some("Play only if there is a scenario card with a 'resign' ability in play.\n<b>Resign.</b> You get the hell out of here.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2653,6 +2982,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Melee".to_owned(), "Illicit".to_owned()],
             text: Some("Fast.\n[action] <b>Fight.</b> You get +2 [combat] for this attack. If you succeed by 2 or more, this attack deals +1 damage.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(2), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2661,6 +2991,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Fast. Play when an enemy attacks an investigator at your location.\nCancel that attack. Then, reveal a random token from the chaos bag. If it has a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol, deal the attacking enemy's damage to itself. ".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(3), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2669,6 +3000,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend one charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +2 [willpower] and deal +1 damage for this attack. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 1 horror. ".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -2677,6 +3009,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("You get +2 [intellect] while investigating if you have no clues.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(1), xp: Some(0), slots: vec![Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2685,6 +3018,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Trick".to_owned()],
             text: Some("Attach to your location.\n During the enemy phase, each enemy that moves does so along the shortest path toward the attached location, instead of to where it would normally move.\n <b>Forced</b> - While attached, at the end of the round: Discard Lure. ".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2693,6 +3027,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nYou have 1 additional accessory slot.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2701,6 +3036,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nYou have 1 additional ally slot.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2709,6 +3045,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -2717,6 +3054,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -2725,6 +3063,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -2733,6 +3072,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -2741,6 +3081,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
         },
         CardMetadata {
@@ -2749,6 +3090,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If an investigator enters the Engine Car, immediately advance.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2757,6 +3099,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If there are no clues in the Engine Car, immediately advance.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -2765,6 +3108,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [agility] icons or take 2 damage.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(3), victory: None },
         },
         CardMetadata {
@@ -2773,6 +3117,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [combat] icons or take 2 damage.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2781,6 +3126,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [willpower] icons or take 2 horror.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -2789,6 +3135,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard cards from your hand with at least 2 total [intellect] icons or take 2 horror.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -2797,6 +3144,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Passenger Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you enter Passenger Car: You must either discard a card from your hand with at least 1 [wild] icon or take 1 damage and 1 horror.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -2805,6 +3153,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Sleeping Car is connected to the locations to the left and right of it.\n[action]: Gain 3 resources. Remember that you have \"stolen a passenger's luggage.\" (Group limit once per game).".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -2813,6 +3162,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Dining Car is connected to the locations to the left and right of it.\n<b>Forced</b> - After you reveal Dining Car: Search the encounter deck and discard pile for a Grappling Horror and draw it.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -2821,6 +3171,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Parlor Car is connected to the locations to the left and right of it.\nParlor Car cannot be investigated.\n[action] Spend 3 resources: Discover 1 clue in the Parlor Car.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: Some(1) },
         },
         CardMetadata {
@@ -2829,6 +3180,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Engine Car is connected to the location to the left of it.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -2837,6 +3189,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Engine Car is connected to the location to the left of it.\n<b>Forced</b> - After you reveal Engine Car: Search the encounter deck and discard pile for a Grappling Horror and draw it. Shuffle the encounter deck.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -2845,6 +3198,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Train".to_owned()],
             text: Some("Engine Car is connected to the location to the left of it.\n<b>Forced</b> - After you reveal Engine Car: Draw the top 3 cards of the encounter deck.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(2), victory: Some(1) },
         },
         CardMetadata {
@@ -2853,6 +3207,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Madness".to_owned()],
             text: Some("<b>Revelation</b> - Discard the top 3 cards of your deck.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: true,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 4 },
         },
         CardMetadata {
@@ -2861,6 +3216,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Bystander".to_owned()],
             text: Some("Surge.\n<b>Revelation</b> - Put Helpless Passenger into play at the location to your left (or at your location if you cannot).\n[action] <b>Parley.</b> Take control of Helpless Passenger.\n<b>Forced</b> - If Helpless Passenger leaves play: Each investigator takes 1 horror.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2869,6 +3225,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Power".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (3). If you fail, take 2 damage and you cannot move from this location this round. Damage from this effect must be assigned to your assets first, if able.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2877,6 +3234,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hazard".to_owned()],
             text: Some("<b>Revelation</b> - Each investigator at your location loses 1 action. Each investigator at your location with 4 or more damage must also discard an asset he or she controls.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -2885,6 +3243,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("Hunter.\nWhile you are engaged with Grappling Horror, you cannot move.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2893,6 +3252,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("<b>Spawn</b> - The location to your right (or your location if there is no location to your right).\nEmergent Monstrosity enters play exhausted.".to_owned()),
             pack_code: "tece".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -2901,6 +3261,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Tactic".to_owned()],
             text: Some("Search the top 9 cards of your deck for a [[Weapon]] asset and add it to your hand. Shuffle your deck.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2909,6 +3270,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\n[fast] Spend 2 resources: You get +1 [intellect] until the end of the phase.\n[fast] Spend 2 resources: You get +1 [combat] until the end of the phase.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2917,6 +3279,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Play only if there is a clue on your location.\nDraw 3 cards.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(2), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2925,6 +3288,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\nWhile you have 5 or more cards in your hand, Higher Education gains:\n\"[fast] Spend 1 resource: You get +2 [willpower] for this skill test.\n[fast] Spend 1 resource: You get +2 [intellect] for this skill test.\"".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2933,6 +3297,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Limit 1 per investigator.\n[reaction] When your turn begins, if there are no other investigators at your location: Gain 1 resource.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(1), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2941,6 +3306,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\n[fast] Spend 2 resources: You get +3 [intellect] for this skill test.\n[fast] Spend 2 resources: You get +3 [agility] for this skill test.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2949,6 +3315,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Before revealing chaos tokens for this test, choose one of the following symbols: ([skull], [cultist], [tablet], or [elder_thing]). Ignore the effects of the chosen symbol during this test (including its modifier).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Mystic, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -2957,6 +3324,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Pact".to_owned()],
             text: Some("Permanent.\n[fast] Add 1 doom to Blood Pact: You get +3 [willpower] for this skill test. (Limit once per test.)\n[fast] Add 1 doom to Blood Pact: You get +3 [combat] for this skill test. (Limit once per test.)".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2965,6 +3333,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Commit only to a skill test you are performing, and only if the difficulty of that test is at least 2 higher than your base skill value.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -2973,6 +3342,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("Permanent.\n[fast] Spend 1 resource: You get +1 [combat] for this skill test.\n[fast] Spend 1 resource: You get +1 [agility] for this skill test.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: None, xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2981,6 +3351,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Supply".to_owned()],
             text: Some("Gain 3 resources and draw 1 card.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(0), xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -2989,6 +3360,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -2997,6 +3369,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -3005,6 +3378,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -3013,6 +3387,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - When an investigator enters The Hidden Chamber, advance.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3021,6 +3396,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - If Silas Bishop is defeated: <b>(→R1)\nObjective</b> - If there are no clues in the Hidden Chamber, advance.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3029,6 +3405,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Central".to_owned()],
             text: Some("[action] <b>Resign.</b> \"This is suicide! We're better off hiding out the night.\"".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3037,6 +3414,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy at Bishop's Brook deals +1 horror while it is attacking.\n[fast] If there are no clues here: Draw the encounter card underneath Bishop's Brook. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -3045,6 +3423,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("If there is an investigator at Bishop's Brook, other investigators cannot enter Bishop's Brook.\n[fast] If there are no clues here: Draw the encounter card underneath Bishop's Brook. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -3053,6 +3432,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy in the Burned Ruins gets +1 evade.\n[fast] If there are no clues here: Draw the encounter card underneath Burned Ruins. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -3061,6 +3441,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - After you fail a skill test while investigating the Burned Ruins: Flip 1 clue token on the Burned Ruins to its doom side.\n[fast] If there are no clues here: Draw the encounter card underneath Burned Ruins. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -3069,6 +3450,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("You cannot gain resources while you are in Osborn's General Store.\n[fast] If there are no clues here: Draw the encounter card underneath Osborn's General Store. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3077,6 +3459,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action]Spend 1 resource: Search the top 3 cards of your deck for an [[Item]] card and add it to your hand. Shuffle your deck.\n[fast] If there are no clues here: Draw the encounter card underneath Osborn's General Store. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3085,6 +3468,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - After Congregational Church is revealed: Search the encounter deck for a [[Humanoid]] enemy and spawn it at the Village Commons. Shuffle the encounter deck.\n[fast] If there are no clues here: Draw the encounter card underneath Congregational Church. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3093,6 +3477,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action] Choose and discard a card from your hand: Gain 2 resources.\n[fast] If there are no clues here: Draw the encounter card underneath Congregational Church. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3101,6 +3486,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("While you are in the House in the Reeds, you cannot play events.\n[fast] If there are no clues here: Draw the encounter card underneath House in the Reeds. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3109,6 +3495,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - After House in the Reeds is revealed: Search the encounter deck for a [[Nightgaunt]] enemy and spawn it in the Village Commons. Shuffle the encounter deck.\n[fast] If there are no clues here: Draw the encounter card underneath House in the Reeds. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3117,6 +3504,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("While you are in the Schoolhouse, you cannot commit skill cards to skill tests.\n[fast] If there are no clues here: Draw the encounter card underneath Schoolhouse. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -3125,6 +3513,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("You cannot discover clues here except by investigating.\n[fast] If there are no clues here: Draw the encounter card underneath Schoolhouse. (Group limit once per game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -3133,6 +3522,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Revelation</b> - Put The Hidden Chamber into play.\nThe Hidden Chamber and the location from which it was drawn are connected to one another.\nThe door to The Hidden Chamber is locked. You cannot enter The Hidden Chamber unless Key to the Chamber is attached to The Hidden Chamber.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: Some(2) },
         },
         CardMetadata {
@@ -3141,6 +3531,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Key".to_owned()],
             text: Some("<b>Revelation</b> - Take control of Key to the Chamber.\n[fast] If The Hidden Chamber is connected to your location: Attach Key to the Chamber to The Hidden Chamber.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3149,6 +3540,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned(), "Elite".to_owned()],
             text: Some("Massive.\nSilas Bishop cannot make attacks of opportunity.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 7, damage: 2, horror: 2, health: Some(HealthValue::PerInvestigator(6)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -3157,6 +3549,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Dunwich".to_owned()],
             text: Some("You get +1 [willpower].\n[reaction] After you succeed at a [willpower] test on a treachery card, exhaust Zebulon Whateley: Draw 1 card.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3165,6 +3558,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Dunwich".to_owned()],
             text: Some("You get +1 [agility].\n[reaction] After you evade an enemy, exhaust Earl Sawyer: Draw 1 card.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(3), xp: None, slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3173,6 +3567,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned()],
             text: Some("Powder of Ibn Ghazi enters play with X clues on it, where X is the number of characters who \"survived the Dunwich Legacy\" in your Campaign Log.\n[fast]: Move 1 clue from Powder of Ibn Ghazi to an exhausted Brood of Yog-Sothoth at your location.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3181,6 +3576,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Revelation</b> - Test [willpower] (4) or [agility] (4). If you fail, add an [[Ally]] asset you control to the pool of potential sacrifices. Then, attach Kidnapped! to the current agenda. If you have no [[Ally]] assets, take 2 damage and discard Kidnapped! instead.\n<b>Forced</b> - When attached agenda advances: Choose a potential sacrifice at random and place it underneath the agenda deck.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3189,6 +3585,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("Surge. Peril.\n<b>Revelation</b> - Add Psychopomp's Song to any investigator's threat area.\n<b>Forced</b> - When you would take 1 or more damage: Take 2 additional damage and discard Psychopomp's Song.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3197,6 +3594,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Omen".to_owned()],
             text: Some("<b>Revelation</b> - Test [intellect] (3). If you fail, add 1 clue from the token pool to your location (2 clues instead if there are 3 or 4 investigators in the game).".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3205,6 +3603,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - Test [willpower] (3). For each point you fail by, take 1 horror.\n".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3213,6 +3612,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned()],
             text: Some("<b>Spawn</b> - Any empty location.\nRetaliate.\n[reaction] After you defeat Servant of Many Mouths: Discover 1 clue at any location.".to_owned()),
             pack_code: "bota".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 1, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -3221,6 +3621,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Fast. Play after you defeat a [[Monster]] enemy.\nEach investigator at your location heals horror equal to that enemy's horror value.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 1, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3229,6 +3630,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +3 [combat] and deal +2 damage for this attack. Cannot be used to attack enemies engaged with you.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(4), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3237,6 +3639,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("Commit to a skill test only if there is a clue at your location.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Seeker, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 3 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3245,6 +3648,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("Fast. Play during any [fast] player window.\nChoose an enemy at your location. Test [intellect] (X), where X is that enemy's fight value. For each point you succeed by, reduce that enemy's fight value by 1 for the next attack performed against it this phase.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(0), xp: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 2, agility: 0, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3253,6 +3657,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned()],
             text: Some("If this skill test is successful by 2 or more, after it resolves, you may immediately take an action as if it were your turn (this action does not count toward the number of actions you can take each turn).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3261,6 +3666,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Exceptional.\n[reaction] When you reveal a non-[auto_fail] chaos token, spend 2 resources: Ignore that chaos token and reveal another one to resolve. If that token has a [auto_fail] symbol, remove Lucky Dice from the game (cannot be ignored/canceled).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(2), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3269,6 +3675,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Developed".to_owned()],
             text: Some("Commit only to a skill test you are performing.\nIf you succeed by 2 or more, return Opportunist to your hand after this test instead of discarding it.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Rogue, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3277,6 +3684,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Sorcerer".to_owned()],
             text: Some("You get +1 [intellect].\n[fast] Exhaust Alyssa Graham: Look at the top card of either the encounter deck or any player deck. You may then add 1 doom to Alyssa Graham to place the looked-at card on the bottom of its deck.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(1), sanity: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3285,6 +3693,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (3 charges).\n[action] Spend 1 charge: <b>Investigate.</b> Investigate using [willpower] instead of [intellect]. You get +2 [willpower] for this test. If successful, you discover 2 additional clues at this location. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this test, after this test resolves lose all remaining actions and immediately end your turn.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(5), xp: Some(4), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3293,6 +3702,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Condition".to_owned()],
             text: Some("Limit 1 per investigator.\nDuring the upkeep phase, you may choose to not gain resources.\nWhile you have no resources in your resource pool, you get +1 [willpower], +1 [intellect], +1 [combat], and +1 [agility].".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(3), xp: Some(0), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3301,6 +3711,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Developed".to_owned()],
             text: Some("If this test is successful during an evasion attempt, the evading investigator may immediately evade each other enemy engaged with him or her, and may move to a connecting location.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3309,6 +3720,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - At the end of the enemy phase: Move each Brood of Yog-Sothoth enemy once toward a random location.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 5 },
         },
         CardMetadata {
@@ -3317,6 +3729,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - At the end of the enemy phase: Move each Brood of Yog-Sothoth enemy once toward a random location.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -3325,6 +3738,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Each [[Abomination]] enemy gets +1 fight and +1 evade.\n<b>Forced</b> - At the end of the enemy phase: Move each Brood of Yog-Sothoth enemy once toward a random location.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 7 },
         },
         CardMetadata {
@@ -3333,6 +3747,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - Only investigators at Whateley Ruins may spend the requisite number of clues, as a group, to advance.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -3341,6 +3756,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - Defeat as many Brood of Yog-Sothoth enemies as you can. If there are no copies of Brood of Yog-Sothoth in play or set aside, advance.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3349,6 +3765,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action]: <b>Resign.</b> You hide from the rampaging creatures.\n[fast]: You borrow some hounds to track the creatures by scent. An investigator in Dunwich Village may place 1 of his or her clues on any [[Abomination]] enemy in play. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -3357,6 +3774,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[action]: <b>Resign.</b> You hide from the rampaging creatures.\n[action]: Move a Brood of Yog-Sothoth enemy once toward Dunwich Village.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -3365,6 +3783,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy in Cold Spring Glen gets -1 evade.\n[fast]: You lure the creature into the dense tree cover, and it becomes tangled. Investigators in Cold Spring Glen may, as a group, place up to 2 of their clues on an [[Abomination]] enemy in Cold Spring Glen. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -3373,6 +3792,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each enemy in Cold Spring Glen gets -1 evade.\n[reaction] After Cold Spring Glen is chosen as a random location: An investigator in Cold Spring Glen tests [agility] (3). If successful, choose a different random location.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3381,6 +3801,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You lure the monster into the rain. Place 1 clue from the token bank on an [[Abomination]] enemy in Ten-Acre Meadow. At the end of the round, remove 1 clue from that enemy. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -3389,6 +3810,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You set a bait using a live animal. Each investigator in Ten-Acre Meadow may place 1 of his or her clues on an [[Abomination]] enemy in Ten-Acre Meadow. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -3397,6 +3819,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You lure the creature into a patch of sand. Investigators in Blasted Heath may, as a group, place up to 2 of their clues on an [[Abomination]] enemy in Blasted Heath. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -3405,6 +3828,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("<b>Forced</b> - At the end of your turn, if you are in Blasted Heath: Take 1 damage.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -3413,6 +3837,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each investigator in Whateley Ruins gets -1 [willpower].\n[fast]: You hurl a nearby canister of paint at the monster. An investigator in Whateley Ruins may place up to 3 of his or her clues on an [[Abomination]] enemy in Whateley Ruins. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3421,6 +3846,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("Each investigator in Whateley Ruins gets -1 [willpower].\n[action]: Test [intellect] (4). If you are successful, move a Brood of Yog-Sothoth enemy 1 location in any direction.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3429,6 +3855,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: You lure the creature into the thick fog. An investigator in Devil's Hop Yard may place up to 2 of his or her clues on an [[Abomination]] enemy in Devil's Hop Yard. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -3437,6 +3864,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned()],
             text: Some("[fast]: The creature follows you into the mud. Each investigator in Devil's Hop Yard may place 1 of his or her clues on an [[Abomination]] enemy in Devil's Hop Yard. (Group limit once per game).".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3445,6 +3873,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("[action] <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +2 [willpower] for this attack for each clue on the attacked enemy. Use this ability only on an [[Abomination]] enemy.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(0), xp: None, slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 0, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3453,6 +3882,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Abomination".to_owned()],
             text: Some("Massive.\nBrood of Yog-Sothoth gets +1 [per_investigator] health and cannot be damaged or attacked except using the ability on Esoteric Formula.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 6, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(1)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 5 },
         },
         CardMetadata {
@@ -3461,6 +3891,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Peril.\n<b>Revelation</b> - Attach to a Brood of Yog-Sothoth enemy in play. If that enemy is at your location, take 1 damage.\nAttached enemy gets +1 fight and +1 health.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 4 },
         },
         CardMetadata {
@@ -3469,6 +3900,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hazard".to_owned()],
             text: Some("<b>Revelation</b> - If there are no investigators at the same location as a Brood of Yog-Sothoth, Ruin and Destruction gains surge. Otherwise, each investigator at the same location as a Brood of Yog-Sothoth tests [agility] (3). For each point he or she fails by, he or she takes 1 damage.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3477,6 +3909,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Surge.\n<b>Revelation</b> - Each Brood of Yog-Sothoth enemy in play moves once toward you.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3485,6 +3918,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("Peril.\n<b>Revelation</b> - You must either (choose one): Take 2 horror, or spawn a set aside Brood of Yog-Sothoth at a random location.".to_owned()),
             pack_code: "uau".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -3493,6 +3927,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned()],
             text: Some("While Leadership is committed to a skill test being performed by another investigator, Leadership gains [willpower] [wild].".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Guardian, xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3501,6 +3936,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spirit".to_owned()],
             text: Some("Fast. Play when you are dealt damage and/or horror.\nCancel up to 5 damage and/or horror just dealt to you. Then, gain that many resources.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(0), xp: Some(4), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3509,6 +3945,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (4 supplies).\n[action] Spend 1 supply: Heal 2 damage from an investigator at your location.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3517,6 +3954,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (3 supplies).\n[action] Spend 1 supply: <b>Fight.</b> Attack with a base [combat] skill of 6. This attack deals +2 damage.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3525,6 +3963,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Science".to_owned()],
             text: Some("Researched. Uses (4 supplies).\n[action] Spend 1 supply: <b>Evade.</b> Evade with a base [agility] skill of 6.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(4), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 2, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Supplies, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3533,6 +3972,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Criminal".to_owned()],
             text: Some("[fast] Spend 1 resource: Choose an [[Item]] asset from your hand and play it (paying its cost).".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(4), xp: Some(0), slots: vec![Slot::Ally], health: Some(3), sanity: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3541,6 +3981,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Trick".to_owned()],
             text: Some("Exceptional. Fast. Play only during your turn.\nYou may take an additional 3 actions this turn.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Rogue, cost: Some(0), xp: Some(3), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 1, play_only_during_turn: true },
         },
         CardMetadata {
@@ -3549,6 +3990,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Insight".to_owned()],
             text: Some("Remove all doom from 1 card you control.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(0), xp: Some(0), skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3557,6 +3999,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Developed".to_owned()],
             text: Some("If this skill test is successful, heal 1 horror (2 horror instead if it succeeds by 2 or more).".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Mystic, xp: Some(2), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3565,6 +4008,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("[reaction] After a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during a skill test at your location, exhaust Jewel of Aureolus: Draw 1 card or gain 2 resources.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(3), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3573,6 +4017,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Fortune".to_owned()],
             text: Some("Choose an [[Ally]] asset in any player's discard pile. Put that asset into play under your control. At the end of the round, if that asset is still in play, discard it.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Survivor, cost: Some(1), xp: Some(0), skill_icons: SkillIcons { willpower: 1, intellect: 1, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3581,6 +4026,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Innate".to_owned(), "Fortune".to_owned()],
             text: Some("Commit only to a skill test you are performing.\nAfter revealing chaos tokens for this test, you may choose to exile Stroke of Luck. If you do, this test is automatically successful (unless a [auto_fail] token was revealed).".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Survivor, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3589,6 +4035,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Clothing".to_owned()],
             text: Some("Reduce the difficulty of skill tests you perform during 'parley' actions by 2.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(1), xp: Some(0), slots: vec![Slot::Body], health: Some(1), sanity: Some(1), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3597,6 +4044,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spirit".to_owned()],
             text: Some("Play only if there are no enemies at your location.\nHeal 3 horror and draw 1 card.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Neutral, cost: Some(3), xp: Some(3), skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3605,6 +4053,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 12 },
         },
         CardMetadata {
@@ -3613,6 +4062,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: None,
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 10 },
         },
         CardMetadata {
@@ -3621,6 +4071,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - When the investigators have collected the requisite number of clues, they must immediately spend them and advance.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -3629,6 +4080,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Clues cannot be placed on non-[[Altered]] locations.\n<b>Objective</b> - When an investigator enters Sentinel Peak, advance.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3637,6 +4089,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Clues cannot be placed on non-[[Altered]] locations.\n<b>Objective</b> - When an investigator enters Sentinel Peak, advance.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3645,6 +4098,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("Clues cannot be placed on non-[[Altered]] locations.\n<b>Objective</b> - When an investigator enters Sentinel Peak, advance.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3653,6 +4107,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Objective</b> - Only investigators at Sentinel Peak may spend the requisite number of clues, as a group, to advance.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -3661,6 +4116,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Sentinel Hill".to_owned()],
             text: Some("Base of the Hill is connected to each copy of Diverging Path.\n[action]: <b>Investigate.</b> If you succeed, instead of discovering clues, put a random set-aside Diverging Path into play. (Limit once per round.)\n[action]: <b>Resign.</b> \"This is more than I signed up for!\"".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3669,6 +4125,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Sentinel Hill".to_owned()],
             text: Some("Ascending Path is connected to each copy of Altered Path.\n[action]: <b>Investigate.</b> If you succeed, instead of discovering clues, put a random set-aside Altered Path into play. (Limit once per round.)".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3677,6 +4134,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Sentinel Hill".to_owned()],
             text: Some("<b>Forced</b> - When an investigator at this location draws a [[Hex]] card: That investigator takes 1 damage.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(2), victory: Some(2) },
         },
         CardMetadata {
@@ -3685,6 +4143,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Slaughtered Woods: Take 2 horror if you have no actions remaining.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3693,6 +4152,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Eerie Glade: Discard the top 2 cards of your deck for each action you have remaining.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3701,6 +4161,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Destroyed Path: Place 1 [per_investigator] doom on it.\n[action]: <b>Investigate.</b> If you succeed, instead of discovering clues, remove 1 doom from Destroyed Path.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3709,6 +4170,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Frozen Spring: Lose the remainder of your actions and immediately end your turn.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3717,6 +4179,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Dimensional Gap: Discard cards from the top of the encounter deck until an enemy is discarded. Spawn that enemy here (instead of its normal spawn location).".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3725,6 +4188,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal A Tear in the Path: Take 2 damage if you have no actions remaining.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3733,6 +4197,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Uprooted Woods: Discard the top 5 cards of your deck if you have no actions remaining.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3741,6 +4206,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Dunwich".to_owned(), "Woods".to_owned(), "Altered".to_owned()],
             text: Some("<b>Forced</b> - After you reveal Lost Memories: Take 1 horror for each action you have remaining.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -3749,6 +4215,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Sorcerer".to_owned(), "Elite".to_owned()],
             text: Some("Retaliate.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 5, evade: 5, damage: 1, horror: 1, health: Some(HealthValue::PerInvestigator(3)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -3757,6 +4224,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Humanoid".to_owned(), "Sorcerer".to_owned()],
             text: Some("<b>Spawn</b> - Base of the Hill.\n<b>Forced</b> - At the end of the enemy phase, Devotee of the Key moves once toward Sentinel Peak. If Devotee of the Key is already at Sentinel Peak, discard it and add 2 doom to the current agenda, instead.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 3, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Specific("02282".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -3765,6 +4233,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Shoggoth".to_owned()],
             text: Some("<b>Spawn</b> - Nearest [[Altered]] location.\n<b>Forced</b> - When Crazed Shoggoth attacks: If this attack would defeat an investigator, that investigator is instead killed.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::Fixed(6)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -3773,6 +4242,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned()],
             text: Some("<b>Revelation</b> - Discard the top 3 cards of each investigator's deck. Each investigator at an [[Altered]] location shuffles each weakness in his or her discard pile into his or her deck.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3781,6 +4251,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned(), "Hazard".to_owned()],
             text: Some("<b>Revelation</b> - Flip each non-[[Sentinel Hill]] location in play to its unrevealed side, removing all clues from it. Each investigator and enemy at a location flipped in this way immediately moves to the nearest [[Sentinel Hill]] location. Shuffle each non-<i>Sentinel Hill </i>location, so the players do not know which is which.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3789,6 +4260,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hex".to_owned(), "Hazard".to_owned()],
             text: Some("<b>Revelation</b> - Each investigator at a [[Sentinel Hill]] location tests [willpower] (4). Each investigator who fails takes 2 damage.".to_owned()),
             pack_code: "wda".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -3797,6 +4269,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Practiced".to_owned(), "Expert".to_owned()],
             text: Some("If this skill test is successful during an attack, that attack deals +1 damage (+2 damage instead if it succeeds by 2 or more).".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Skill { class: Class::Guardian, xp: Some(2), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, deck_limit: 2, commit_limit: None },
         },
         CardMetadata {
@@ -3805,6 +4278,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spirit".to_owned()],
             text: Some("<b>Fight.</b> If this attack succeeds against a non-[[Elite]] enemy, defeat that enemy.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Guardian, cost: Some(1), xp: Some(5), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 1, agility: 0, wild: 1 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3813,6 +4287,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
             text: Some("Uses (3 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You get +5 [combat] for this attack. This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Guardian, cost: Some(6), xp: Some(5), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 1, combat: 1, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 3, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3821,6 +4296,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Miskatonic".to_owned()],
             text: Some("[reaction] When you draw an encounter card from the encounter deck, exhaust Dr. William T. Maleson and place 1 of your clues on your location: Cancel the drawing of that card and shuffle it back into the encounter deck. Then, draw a new card from the top of the encounter deck.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Seeker, cost: Some(1), xp: Some(0), slots: vec![Slot::Ally], health: Some(2), sanity: Some(2), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3829,6 +4305,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Insight".to_owned()],
             text: Some("<b>Investigate.</b> The difficulty of this skill test is equal to the highest shroud value among revealed locations in play. If you succeed, discover 1 clue from each revealed location in play.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Seeker, cost: Some(4), xp: Some(5), skill_icons: SkillIcons { willpower: 1, intellect: 2, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3837,6 +4314,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned(), "Illicit".to_owned()],
             text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: <b>Fight.</b> You may spend any number of additional actions when you perform this attack. You get +2 [combat] for this attack for each action being spent (including this ability's [action] cost). This attack deals +2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(5), xp: Some(4), slots: vec![Slot::Hand, Slot::Hand], health: None, sanity: None, skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Ammo, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3845,6 +4323,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Item".to_owned(), "Relic".to_owned()],
             text: Some("Exceptional.\n[reaction] When a phase begins, remove The Gold Pocket Watch from the game: Skip this phase.\n[reaction] After a phase ends, remove The Gold Pocket Watch from the game: Repeat that phase.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Rogue, cost: Some(2), xp: Some(4), slots: vec![Slot::Accessory], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: false, deck_limit: 1, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3853,6 +4332,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned()],
             text: Some("Uses (4 charges).\n[action] Spend 1 charge: <b>Fight.</b> This attack uses [willpower] instead of [combat]. You get +3 [willpower] and deal +2 damage for this attack. If a [skull], [cultist], [tablet], [elder_thing], or [auto_fail] symbol is revealed during this attack, take 2 horror.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Mystic, cost: Some(3), xp: Some(5), slots: vec![Slot::Arcane], health: None, sanity: None, skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 2, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: Some(Uses { kind: UseKind::Charges, count: 4, discard_when_empty: false }), play_only_during_turn: false },
         },
         CardMetadata {
@@ -3861,6 +4341,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Spell".to_owned(), "Spirit".to_owned()],
             text: Some("Fast. Play when you draw a non-weakness encounter card. \nCancel all of that card's effects and discard it. Then, take 1 horror.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Event { class: Class::Mystic, cost: Some(1), xp: Some(5), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3869,6 +4350,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned()],
             text: Some("[reaction] When an enemy attacks you, exhaust Aquinnah and deal 1 horror to her: Deal that enemy's damage to any enemy at your location, instead. (You still take horror dealt by the attack.)".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(4), xp: Some(3), slots: vec![Slot::Ally], health: Some(1), sanity: Some(4), skill_icons: SkillIcons { willpower: 1, intellect: 0, combat: 0, agility: 1, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3877,6 +4359,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Talent".to_owned()],
             text: Some("[reaction] After a skill test is failed, if a skill card you own is committed to that test, exhaust Try and Try Again: Return that skill card to your hand.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Survivor, cost: Some(2), xp: Some(3), slots: Vec::new(), health: None, sanity: None, skill_icons: SkillIcons { willpower: 2, intellect: 0, combat: 0, agility: 0, wild: 0 }, is_fast: false, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3885,6 +4368,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ally".to_owned(), "Conspirator".to_owned()],
             text: Some("Fast.\n[reaction] After The Red-Gloved Man enters play: Choose two of your skills. While The Red-Gloved Man is in play, raise the base value of each of those skills to 6.\n<b>Forced</b> - At the end of the mythos phase: Discard The Red-Gloved Man.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Asset { class: Class::Neutral, cost: Some(2), xp: Some(5), slots: vec![Slot::Ally], health: Some(4), sanity: Some(4), skill_icons: SkillIcons { willpower: 0, intellect: 0, combat: 0, agility: 0, wild: 1 }, is_fast: true, deck_limit: 2, uses: None, play_only_during_turn: false },
         },
         CardMetadata {
@@ -3893,6 +4377,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you are moved to a location by an encounter card effect: Take 1 horror.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -3901,6 +4386,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you are moved to a location by an encounter card effect: Take 1 horror.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 4 },
         },
         CardMetadata {
@@ -3909,6 +4395,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you are moved to a location by an encounter card effect: Take 1 horror.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 6 },
         },
         CardMetadata {
@@ -3917,6 +4404,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("<b>Forced</b> - After you are moved by an encounter card effect: Take 1 horror.\n<b>Forced</b> - If Yog-Sothoth is defeated, <b>(→R3)</b>.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Agenda { doom_threshold: 2 },
         },
         CardMetadata {
@@ -3925,6 +4413,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action]: Discard the top 3 cards of the encounter deck. Choose a location discarded by this effect and resolve its 'revelation' ability.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(2), victory: None },
         },
         CardMetadata {
@@ -3933,6 +4422,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action]: Discard the top 3 cards of the encounter deck. Choose a location discarded by this effect and resolve its 'revelation' ability.\n<b>Objective</b> - If an investigator enters The Edge of the Universe, advance.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3941,6 +4431,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action]: Discard the top 3 cards of the encounter deck. Choose a location discarded by this effect and resolve its 'revelation' ability.\n<b>Objective</b> - Only investigators at The Edge of the Universe may spend the requisite number of clues, as a group, to advance.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: Some(3), victory: None },
         },
         CardMetadata {
@@ -3949,6 +4440,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: Vec::new(),
             text: Some("[action]: Discard the top 3 cards of the encounter deck. Choose a location discarded by this effect and resolve its 'revelation' ability.\n<b>Objective</b> - If each undefeated investigator has resigned, advance.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Act { clue_threshold: None, victory: None },
         },
         CardMetadata {
@@ -3957,6 +4449,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned()],
             text: Some("<b>Forced</b> - When a location leaves play: Move each investigator and unengaged enemy at that location to Another Dimension. Cannot be canceled.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 6, printed_clues: ClueValue::PerInvestigator(0), victory: None },
         },
         CardMetadata {
@@ -3965,6 +4458,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned()],
             text: Some("You must have at least 2 clues in order to move to The Edge of the Universe.\nInvestigators at The Edge of the Universe cannot draw cards during the upkeep phase.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3973,6 +4467,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned()],
             text: Some("[action] Spend 2 clues: <b>Resign.</b> You find a new path and hope that it leads back to safety.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(2), victory: None },
         },
         CardMetadata {
@@ -3981,6 +4476,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Ancient One".to_owned(), "Elite".to_owned()],
             text: Some("Massive. Hunter. Retaliate.\nYog-Sothoth gets +6 [per_investigator] health.\nYog-Sothoth cannot be evaded and cannot make attacks of opportunity.\n[reaction] When Yog-Sothoth attacks you: Instead of taking up to X horror, you may discard the top X cards from your deck. Then, if you have no cards in your deck, you are driven insane.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 0, damage: 1, horror: 5, health: Some(HealthValue::Fixed(4)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
@@ -3989,6 +4485,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("Surge.\n<b>Revelation</b> - Put Tear Through Space into play.\n<b>Forced</b> - At the end of the round: Either place 1 doom on Tear Through Space, or discard it.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 1, printed_clues: ClueValue::Fixed(1), victory: None },
         },
         CardMetadata {
@@ -3997,6 +4494,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Prismatic Cascade into play and discard a random card from your hand.\n<b>Forced</b> - After the last clue on Prismatic Cascade is removed: Discard Prismatic Cascade.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::Fixed(3), victory: None },
         },
         CardMetadata {
@@ -4005,6 +4503,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Endless Bridge into play and lose 2 resources.\n<b>Forced</b> - After an investigator leaves Endless Bridge: Either place 1 doom on Endless Bridge, or discard it.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 4, printed_clues: ClueValue::Fixed(2), victory: None },
         },
         CardMetadata {
@@ -4013,6 +4512,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Steps of Y'hagharl into play. Then, draw the topmost [[Madness]] card in your discard pile.\n<b>Forced</b> - When you would leave Steps of Y'hagharl: Test [willpower] (2). If you fail, shuffle Steps of Y'hagharl into the encounter deck instead of moving to your original destination.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 3, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4021,6 +4521,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Otherworld".to_owned(), "Extradimensional".to_owned()],
             text: Some("<b>Revelation</b> - Put Dimensional Doorway into play. Then, draw the topmost [[Hex]] card in the encounter discard pile.\n<b>Forced</b> - At the end of your turn, if you are at Dimensional Doorway: You must either spend 2 resources or shuffle Dimensional Doorway into the encounter deck.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Location { shroud: 2, printed_clues: ClueValue::PerInvestigator(1), victory: None },
         },
         CardMetadata {
@@ -4029,6 +4530,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Yithian".to_owned()],
             text: Some("<b>Spawn</b> - Any [[Extradimensional]] location.\nHunter.\n<b>Forced</b> - When Interstellar Traveler enters a location: Flip 1 clue on that location to its doom side and place it on Interstellar Traveler, or place 1 doom on Interstellar Traveler if there are no clues on that location.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
@@ -4037,6 +4539,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Monster".to_owned(), "Yithian".to_owned()],
             text: Some("<b>Spawn</b> - Another Dimension.\nRetaliate.\n<b>Forced</b> - When Yithian Starseeker attacks an investigator with more than 10 cards in his or her discard pile: Place 1 doom on Yithian Starseeker.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Enemy { fight: 3, evade: 5, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Specific("02320".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
@@ -4045,6 +4548,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hazard".to_owned()],
             text: Some("<b>Revelation</b> - If you are at an [[Extradimensional]] location, discard it and take 1 damage. Otherwise, take 2 damage.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
         CardMetadata {
@@ -4053,6 +4557,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Hazard".to_owned()],
             text: Some("<b>Revelation</b> - Discard cards from the top of the encounter deck until a location is discarded. Resolve that location's 'revelation' ability, then move to that location.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 2 },
         },
         CardMetadata {
@@ -4061,6 +4566,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             traits: vec!["Terror".to_owned()],
             text: Some("<b>Revelation</b> - If there are no [[Extradimensional]] locations in play, Vast Expanse gains surge. Otherwise, test [willpower] (X), where X is the number of [[Extradimensional]] locations in play (max 5). For each point you fail by, take 1 horror.".to_owned()),
             pack_code: "litas".to_owned(),
+            weakness: false,
             kind: CardKind::Treachery { surge: false, peril: false, quantity: 3 },
         },
     ]

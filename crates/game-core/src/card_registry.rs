@@ -122,6 +122,7 @@ mod tests {
             text: None,
             traits: vec![],
             pack_code: "test".to_string(),
+            weakness: false,
             kind: CardKind::Asset {
                 class: Class::Neutral,
                 cost: Some(0),
