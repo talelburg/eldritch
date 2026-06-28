@@ -32,7 +32,7 @@ async fn connect_receives_hello_with_current_state() {
     let mut ws = connect(addr, "g-hello").await;
 
     match recv(&mut ws).await {
-        ServerMessage::Hello { state, outcome } => {
+        ServerMessage::Hello { state, outcome, .. } => {
             // create seats the roster: round is 1, mulligan is pending.
             assert_eq!(state.round, 1);
             assert!(

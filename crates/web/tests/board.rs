@@ -42,6 +42,7 @@ async fn render_state(state: game_core::state::GameState) -> String {
             ServerMessage::Hello {
                 state: Box::new(state),
                 outcome: EngineOutcome::Done,
+                events: Vec::new(),
             },
         );
     });

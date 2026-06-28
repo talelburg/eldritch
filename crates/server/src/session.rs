@@ -46,6 +46,12 @@ pub struct GameSession {
     /// with no actions yet — the seed outcome (the setup mulligan prompt,
     /// i.e. `AwaitingInput`).
     pub outcome: EngineOutcome,
+    /// Events emitted during `seat_and_open` at creation time, surfaced to
+    /// newly-connecting clients via `ServerMessage::Hello` so the event log
+    /// can show opening draws, shuffles, and the weakness set-aside.
+    /// Empty for a session reloaded from the DB — setup already ran and its
+    /// events are not recoverable from the persisted seed state.
+    pub setup_events: Vec<Event>,
     /// Next sequence number to assign to a persisted action — equal to
     /// the number of actions already in the log.
     seq: i64,
@@ -99,6 +105,7 @@ impl GameSession {
             }
             other => other,
         };
+        let setup_events = result.events;
         let state = result.state;
         let seed_state = serde_json::to_string(&state)?;
         let seed_outcome = serde_json::to_string(&outcome)?;
@@ -117,6 +124,7 @@ impl GameSession {
             game_id,
             state,
             outcome,
+            setup_events,
             seq: 0,
             db,
         })
@@ -185,6 +193,7 @@ impl GameSession {
             game_id: game_id.clone(),
             state,
             outcome,
+            setup_events: Vec::new(),
             seq,
             db,
         }))

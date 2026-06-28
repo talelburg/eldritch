@@ -30,6 +30,7 @@ async fn mount_state(state: game_core::state::GameState) {
             ServerMessage::Hello {
                 state: Box::new(state),
                 outcome: EngineOutcome::Done,
+                events: Vec::new(),
             },
         );
     });

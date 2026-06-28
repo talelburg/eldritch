@@ -49,6 +49,7 @@ async fn hello_renders_state_present() {
             ServerMessage::Hello {
                 state: Box::new(game),
                 outcome: EngineOutcome::Done,
+                events: Vec::new(),
             },
         );
     });

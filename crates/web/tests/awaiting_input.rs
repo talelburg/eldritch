@@ -53,6 +53,7 @@ async fn mount(
             ServerMessage::Hello {
                 state: Box::new(state),
                 outcome,
+                events: Vec::new(),
             },
         );
     });
@@ -303,6 +304,7 @@ async fn picking_an_option_sets_the_pending_log_header() {
             ServerMessage::Hello {
                 state: Box::new(base_game()),
                 outcome: awaiting_pick_single_input("Choose an action"),
+                events: Vec::new(),
             },
         );
     });

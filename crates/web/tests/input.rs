@@ -50,6 +50,7 @@ async fn mount(state: game_core::state::GameState) -> mpsc::UnboundedReceiver<Cl
             ServerMessage::Hello {
                 state: Box::new(state),
                 outcome: awaiting_commit_input("Commit cards for the skill test"),
+                events: Vec::new(),
             },
         );
     });

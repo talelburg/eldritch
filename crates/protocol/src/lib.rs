@@ -39,6 +39,11 @@ pub enum ServerMessage {
         state: Box<GameState>,
         /// Outcome of the most recent apply.
         outcome: EngineOutcome,
+        /// Events emitted during scenario setup (`seat_and_open`), so
+        /// the client's event log can show the opening draws, shuffles,
+        /// and weakness set-aside. Empty for a session reloaded from the
+        /// DB — setup already ran.
+        events: Vec<Event>,
     },
     /// Broadcast to every connection of a game after an accepted action.
     Applied {
@@ -130,19 +135,30 @@ mod tests {
 
     #[test]
     fn hello_round_trips_through_json() {
+        use game_core::Event;
+
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
+        let events = vec![Event::ScenarioStarted];
         let msg = ServerMessage::Hello {
             state: Box::new(state.clone()),
             outcome: EngineOutcome::Done,
+            events: events.clone(),
         };
 
         let json = serde_json::to_string(&msg).expect("serialize");
         let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
 
         match back {
-            ServerMessage::Hello { state: s, .. } => assert_eq!(*s, state),
+            ServerMessage::Hello {
+                state: s,
+                events: e,
+                ..
+            } => {
+                assert_eq!(*s, state);
+                assert_eq!(e, events, "events round-trip through JSON");
+            }
             other => panic!("expected Hello, got {other:?}"),
         }
     }
