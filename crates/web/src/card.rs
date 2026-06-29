@@ -4,6 +4,8 @@
 //! handlers) — interactivity is a later slice.
 
 use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
+use game_core::state::CardCode;
+use leptos::prelude::*;
 
 /// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
 /// brackets; the renderer re-adds brackets for `Unknown` so unmapped tokens are
@@ -266,6 +268,123 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
         }),
         _ => None,
     }
+}
+
+/// One card rendered as a faithful mini-card rectangle, colour-coded by class.
+///
+/// Looks metadata up via the installed registry; a card with no metadata
+/// (unimplemented stub, or registry absent in a render-only path) falls back to
+/// a bare rectangle showing the raw code. Non-hand card kinds render as a
+/// generic rectangle (name/traits/text) — their detailed faces are later slices.
+/// Display-only: no click handlers.
+// Leptos components receive props by value (the macro builds a props struct); a
+// reference here would require lifetime annotations the macro can't express.
+#[allow(clippy::needless_pass_by_value)]
+#[component]
+pub fn Card(code: CardCode) -> impl IntoView {
+    let Some(meta) = game_core::card_registry::current().and_then(|r| (r.metadata_for)(&code))
+    else {
+        return view! {
+            <div class="card card--unknown">
+                <span class="card-name">{code.to_string()}</span>
+            </div>
+        }
+        .into_any();
+    };
+
+    let name = meta.name.clone();
+    let traits = if meta.traits.is_empty() {
+        String::new()
+    } else {
+        format!("{}.", meta.traits.join(". "))
+    };
+    let text_view = meta
+        .text
+        .as_deref()
+        .map(|t| render_segments(parse_card_text(t)));
+    let weakness_view = meta
+        .weakness
+        .then(|| view! { <span class="card-weakness">"Weakness"</span> });
+
+    match card_face(&meta.kind) {
+        Some(face) => {
+            let CardFace {
+                class_css,
+                cost_corner,
+                slot_chips,
+                skill_chips,
+                is_fast,
+            } = face;
+            let cost_view = cost_corner.map(|c| view! { <span class="card-cost">{c}</span> });
+            let fast_view = is_fast.then(|| view! { <span class="card-fast">"Fast"</span> });
+            let slot_views: Vec<_> = slot_chips
+                .into_iter()
+                .map(|s| view! { <span class="chip chip--slot">{s}</span> })
+                .collect();
+            let skill_views: Vec<_> = skill_chips
+                .into_iter()
+                .map(|(name, n)| {
+                    let label = if n > 1 {
+                        format!("{name} ×{n}")
+                    } else {
+                        name.clone()
+                    };
+                    let cls = format!("chip chip--{name}");
+                    view! { <span class=cls>{label}</span> }
+                })
+                .collect();
+            view! {
+                <div class=format!("card {class_css}")>
+                    <div class="card-head">
+                        {cost_view}
+                        <span class="card-name">{name}</span>
+                        {fast_view}
+                        {weakness_view}
+                    </div>
+                    <div class="card-traits">{traits}</div>
+                    <div class="card-text">{text_view}</div>
+                    <div class="card-footer">
+                        <span class="card-slots">{slot_views}</span>
+                        <span class="card-skills">{skill_views}</span>
+                    </div>
+                </div>
+            }
+            .into_any()
+        }
+        None => view! {
+            <div class="card card--generic">
+                <div class="card-head">
+                    <span class="card-name">{name}</span>
+                    {weakness_view}
+                </div>
+                <div class="card-traits">{traits}</div>
+                <div class="card-text">{text_view}</div>
+            </div>
+        }
+        .into_any(),
+    }
+}
+
+/// Render parsed card text to views (known symbols → chips; unknown tokens keep
+/// their brackets in a `.unknown-token` span so they pop out).
+fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
+    segments
+        .into_iter()
+        .map(|seg| match seg {
+            TextSegment::Text(s) => view! { {s} }.into_any(),
+            TextSegment::LineBreak => view! { <br/> }.into_any(),
+            TextSegment::Symbol(tok) => {
+                let cls = format!("chip chip--{tok}");
+                view! { <span class=cls>{tok}</span> }.into_any()
+            }
+            TextSegment::Trait(t) => view! { <span class="card-trait-ref">{t}</span> }.into_any(),
+            TextSegment::Bold(s) => view! { <b>{s}</b> }.into_any(),
+            TextSegment::Italic(s) => view! { <i>{s}</i> }.into_any(),
+            TextSegment::Unknown(inner) => {
+                view! { <span class="unknown-token">{format!("[{inner}]")}</span> }.into_any()
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
