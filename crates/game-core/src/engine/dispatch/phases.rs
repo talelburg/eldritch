@@ -972,6 +972,10 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
 pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
     ready_exhausted_cards(cx); // 4.3
+                               // Sentinel for "4.4 pushed a continuation". Captured after 4.2/4.3 because
+                               // those are pure state mutations that never push — so a growth here is
+                               // attributable to the 4.4 draw (a drawn-weakness Revelation; or any future
+                               // pusher, which the cede below handles uniformly).
     let depth = cx.state.continuations.len();
     upkeep_draw_and_resource(cx); // 4.4 — may push a drawn-weakness Revelation (#509)
     if cx.state.continuations.len() > depth {
