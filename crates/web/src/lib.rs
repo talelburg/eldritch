@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod board;
+pub mod card;
 pub mod event_log;
 pub mod map;
 pub mod names;
