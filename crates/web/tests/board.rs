@@ -148,7 +148,7 @@ async fn investigators_panel_renders_stats_and_hand() {
     // Hand cards now render as Card rectangles (fallback to raw code without
     // metadata in the test registry).
     let cards = leptos::prelude::document()
-        .query_selector_all(".card")
+        .query_selector_all(".card-row .card")
         .expect("query_selector_all");
     assert!(
         cards.length() >= 1,

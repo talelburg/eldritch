@@ -88,12 +88,12 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
             let in_play: Vec<_> = inv
                 .cards_in_play
                 .iter()
-                .map(|c| view! { <li class="card">{crate::names::card_name(&c.code)}</li> })
+                .map(|c| view! { <li class="card-line">{crate::names::card_name(&c.code)}</li> })
                 .collect();
             let threat: Vec<_> = inv
                 .threat_area
                 .iter()
-                .map(|c| view! { <li class="card">{crate::names::card_name(&c.code)}</li> })
+                .map(|c| view! { <li class="card-line">{crate::names::card_name(&c.code)}</li> })
                 .collect();
             let engaged: Vec<_> = game
                 .enemies

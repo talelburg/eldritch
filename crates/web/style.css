@@ -7,7 +7,7 @@
 .investigators { display: flex; flex-wrap: wrap; gap: 1rem; }
 .investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 16rem; }
 .investigator span { font-size: 0.9rem; }
-.card { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+.card-line { font-family: ui-monospace, monospace; font-size: 0.85rem; }
 
 /* Spatial board map (#497). Nodes are absolutely positioned at computed
    left/top (set inline); the SVG line layer sits behind them. */
