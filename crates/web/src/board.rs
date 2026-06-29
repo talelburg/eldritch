@@ -82,7 +82,8 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
             let hand: Vec<_> = inv
                 .hand
                 .iter()
-                .map(|code| view! { <li class="card">{crate::names::card_name(code)}</li> })
+                .cloned()
+                .map(|code| view! { <crate::card::Card code=code/> })
                 .collect();
             let in_play: Vec<_> = inv
                 .cards_in_play
@@ -116,7 +117,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <span class="inv-sanity">"sanity " {inv.horror()} "/" {inv.max_sanity()}</span>
                     <span class="inv-clues">"clues " {inv.clues}</span>
                     <span class="inv-status">{format!("{:?}", inv.status)}</span>
-                    <div class="hand"><h4>"Hand"</h4><ul>{hand}</ul></div>
+                    <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
                     <div class="in-play"><h4>"In play"</h4><ul>{in_play}</ul></div>
                     <div class="threat"><h4>"Threat area"</h4><ul>{threat}{engaged}</ul></div>
                 </article>

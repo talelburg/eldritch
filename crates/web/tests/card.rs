@@ -47,10 +47,20 @@ async fn asset_renders_cost_name_traits_text_icons() {
 #[wasm_bindgen_test]
 async fn guardian_card_carries_class_modifier() {
     let _ = mount_card("01020").await;
+    // Scope to the last mounted .card (DOM accumulates across tests on the
+    // shared page) and assert IT carries the guardian class modifier.
     let cards = leptos::prelude::document()
-        .query_selector_all(".card--guardian")
+        .query_selector_all(".card")
         .expect("query_selector_all");
-    assert!(cards.length() >= 1, "guardian class modifier missing");
+    let last = cards
+        .item(cards.length() - 1)
+        .expect("at least one .card")
+        .dyn_into::<web_sys::Element>()
+        .expect("Element");
+    assert!(
+        last.class_list().contains("card--guardian"),
+        "last mounted card should carry the guardian class modifier"
+    );
 }
 
 #[wasm_bindgen_test]
