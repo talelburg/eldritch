@@ -130,11 +130,13 @@ fn playing_a_second_ally_auto_discards_the_first() {
     let discard_pos = r2
         .events
         .iter()
-        .position(|e| matches!(
-            e,
-            Event::CardDiscarded { code, from: Zone::InPlay, .. }
-                if code.as_str() == BEAT_COP
-        ))
+        .position(|e| {
+            matches!(
+                e,
+                Event::CardDiscarded { code, from: Zone::InPlay, .. }
+                    if code.as_str() == BEAT_COP
+            )
+        })
         .expect("CardDiscarded Beat Cop not found");
     assert!(
         played_pos < discard_pos,

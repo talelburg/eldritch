@@ -541,8 +541,8 @@ fn play_single_hand_asset_is_not_slot_rejected_on_empty_hands() {
     // Sanity: the new slot gate must not over-reject a normal single-slot asset
     // with both Hand slots free.
     let (state, id, _loc) = play_state(vec![MACHETE]); // single Hand slot, costs 3
-    // test_investigator starts with 5 resources (≥ Machete's cost of 3); no
-    // manual override needed.
+                                                       // test_investigator starts with 5 resources (≥ Machete's cost of 3); no
+                                                       // manual override needed.
     let result = dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {

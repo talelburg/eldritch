@@ -267,7 +267,9 @@ fn pay_activation_costs(
                     super::cards::discard_card_from_play(cx, investigator, instance_id);
                 }
             }
-            Cost::DiscardSelf => super::cards::discard_card_from_play(cx, investigator, instance_id),
+            Cost::DiscardSelf => {
+                super::cards::discard_card_from_play(cx, investigator, instance_id)
+            }
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
             }
