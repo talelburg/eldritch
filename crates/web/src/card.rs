@@ -3,6 +3,8 @@
 //! assembles them into a faithful mini-card rectangle. Display-only (no click
 //! handlers) — interactivity is a later slice.
 
+use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
+
 /// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
 /// brackets; the renderer re-adds brackets for `Unknown` so unmapped tokens are
 /// visible.
@@ -139,9 +141,227 @@ fn symbol_or_unknown(inner: String) -> TextSegment {
     }
 }
 
+/// Resource-cost label: the number, or `"X"` for an X-cost card.
+#[must_use]
+pub fn cost_label(cost: Option<i8>) -> String {
+    cost.map_or_else(|| "X".to_string(), |c| c.to_string())
+}
+
+/// CSS modifier class for a card's class colour.
+#[must_use]
+pub fn class_css(class: Class) -> &'static str {
+    match class {
+        Class::Guardian => "card--guardian",
+        Class::Seeker => "card--seeker",
+        Class::Rogue => "card--rogue",
+        Class::Mystic => "card--mystic",
+        Class::Survivor => "card--survivor",
+        Class::Neutral => "card--neutral",
+        Class::Mythos => "card--mythos",
+    }
+}
+
+/// Human slot name.
+fn slot_name(slot: Slot) -> &'static str {
+    match slot {
+        Slot::Hand => "Hand",
+        Slot::Accessory => "Accessory",
+        Slot::Ally => "Ally",
+        Slot::Arcane => "Arcane",
+        Slot::Body => "Body",
+        Slot::Tarot => "Tarot",
+    }
+}
+
+/// Slot chips in first-seen order, collapsing duplicates to `"Name ×N"`.
+#[must_use]
+pub fn slot_chips(slots: &[Slot]) -> Vec<String> {
+    let mut counts: Vec<(Slot, usize)> = Vec::new();
+    for &s in slots {
+        if let Some(entry) = counts.iter_mut().find(|(k, _)| *k == s) {
+            entry.1 += 1;
+        } else {
+            counts.push((s, 1));
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(s, n)| {
+            let name = slot_name(s);
+            if n > 1 {
+                format!("{name} ×{n}")
+            } else {
+                name.to_string()
+            }
+        })
+        .collect()
+}
+
+/// `(name, count)` for each non-zero skill icon, in canonical order.
+#[must_use]
+pub fn skill_chips(icons: &SkillIcons) -> Vec<(String, u8)> {
+    [
+        ("willpower", icons.willpower),
+        ("intellect", icons.intellect),
+        ("combat", icons.combat),
+        ("agility", icons.agility),
+        ("wild", icons.wild),
+    ]
+    .into_iter()
+    .filter(|&(_, n)| n > 0)
+    .map(|(name, n)| (name.to_string(), n))
+    .collect()
+}
+
+/// Render-ready normalization of a hand-eligible card's type data.
+pub struct CardFace {
+    pub class_css: &'static str,
+    /// `None` ⇒ no cost corner (Skill cards are committed, not played).
+    pub cost_corner: Option<String>,
+    pub slot_chips: Vec<String>,
+    pub skill_chips: Vec<(String, u8)>,
+    pub is_fast: bool,
+}
+
+/// Map a hand-eligible `CardKind` (Asset/Event/Skill) to a `CardFace`; `None`
+/// for other kinds (rendered as a generic rectangle this slice).
+#[must_use]
+pub fn card_face(kind: &CardKind) -> Option<CardFace> {
+    match kind {
+        CardKind::Asset {
+            class,
+            cost,
+            slots,
+            skill_icons,
+            is_fast,
+            ..
+        } => Some(CardFace {
+            class_css: class_css(*class),
+            cost_corner: Some(cost_label(*cost)),
+            slot_chips: slot_chips(slots),
+            skill_chips: skill_chips(skill_icons),
+            is_fast: *is_fast,
+        }),
+        CardKind::Event {
+            class,
+            cost,
+            skill_icons,
+            is_fast,
+            ..
+        } => Some(CardFace {
+            class_css: class_css(*class),
+            cost_corner: Some(cost_label(*cost)),
+            slot_chips: Vec::new(),
+            skill_chips: skill_chips(skill_icons),
+            is_fast: *is_fast,
+        }),
+        CardKind::Skill {
+            class, skill_icons, ..
+        } => Some(CardFace {
+            class_css: class_css(*class),
+            cost_corner: None,
+            slot_chips: Vec::new(),
+            skill_chips: skill_chips(skill_icons),
+            is_fast: false,
+        }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
+
+    #[test]
+    fn cost_label_handles_value_and_x() {
+        assert_eq!(cost_label(Some(3)), "3");
+        assert_eq!(cost_label(None), "X");
+    }
+
+    #[test]
+    fn class_css_maps_each_class() {
+        assert_eq!(class_css(Class::Guardian), "card--guardian");
+        assert_eq!(class_css(Class::Mystic), "card--mystic");
+        assert_eq!(class_css(Class::Neutral), "card--neutral");
+    }
+
+    #[test]
+    fn slot_chips_collapse_duplicates_with_counts() {
+        assert_eq!(slot_chips(&[Slot::Hand]), vec!["Hand".to_string()]);
+        assert_eq!(
+            slot_chips(&[Slot::Arcane, Slot::Arcane]),
+            vec!["Arcane ×2".to_string()]
+        );
+        assert!(slot_chips(&[]).is_empty());
+    }
+
+    #[test]
+    fn skill_chips_lists_nonzero_icons_in_order() {
+        let icons = SkillIcons {
+            willpower: 0,
+            intellect: 2,
+            combat: 1,
+            agility: 0,
+            wild: 1,
+        };
+        assert_eq!(
+            skill_chips(&icons),
+            vec![
+                ("intellect".to_string(), 2),
+                ("combat".to_string(), 1),
+                ("wild".to_string(), 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn card_face_asset_has_cost_slots_icons() {
+        let kind = CardKind::Asset {
+            class: Class::Guardian,
+            cost: Some(3),
+            xp: None,
+            slots: vec![Slot::Hand],
+            health: None,
+            sanity: None,
+            skill_icons: SkillIcons {
+                combat: 1,
+                ..SkillIcons::default()
+            },
+            is_fast: false,
+            deck_limit: 2,
+            uses: None,
+            play_only_during_turn: false,
+        };
+        let face = card_face(&kind).expect("asset has a face");
+        assert_eq!(face.class_css, "card--guardian");
+        assert_eq!(face.cost_corner.as_deref(), Some("3"));
+        assert_eq!(face.slot_chips, vec!["Hand".to_string()]);
+        assert_eq!(face.skill_chips, vec![("combat".to_string(), 1)]);
+    }
+
+    #[test]
+    fn card_face_skill_has_no_cost_corner() {
+        let kind = CardKind::Skill {
+            class: Class::Seeker,
+            xp: None,
+            skill_icons: SkillIcons {
+                intellect: 1,
+                ..SkillIcons::default()
+            },
+            deck_limit: 2,
+            commit_limit: Some(1),
+        };
+        let face = card_face(&kind).expect("skill has a face");
+        assert_eq!(face.cost_corner, None);
+        assert!(face.slot_chips.is_empty());
+    }
+
+    #[test]
+    fn card_face_is_none_for_non_hand_kinds() {
+        let kind = CardKind::Agenda { doom_threshold: 3 };
+        assert!(card_face(&kind).is_none());
+    }
 
     #[test]
     fn plain_text_is_one_segment() {
