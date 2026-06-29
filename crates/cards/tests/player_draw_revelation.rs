@@ -63,7 +63,10 @@ fn drawing_cover_up_reveals_it_into_the_threat_area() {
         .iter()
         .find(|c| c.code.as_str() == COVER_UP)
         .expect("Cover Up should be in the threat area after being drawn");
-    assert_eq!(placed.clues, 3, "Cover Up enters the threat area with 3 clues");
+    assert_eq!(
+        placed.clues, 3,
+        "Cover Up enters the threat area with 3 clues"
+    );
     assert!(
         result
             .events

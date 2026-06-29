@@ -142,11 +142,11 @@ pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: Inv
             .iter()
             .enumerate()
             .filter(|(_, code)| {
-                (reg.metadata_for)(code).is_some_and(|m| {
-                    m.is_weakness() && m.card_type() == CardType::Treachery
-                }) && super::encounter::treachery_is_persistent(
-                    &(reg.abilities_for)(code).unwrap_or_default(),
-                )
+                (reg.metadata_for)(code)
+                    .is_some_and(|m| m.is_weakness() && m.card_type() == CardType::Treachery)
+                    && super::encounter::treachery_is_persistent(
+                        &(reg.abilities_for)(code).unwrap_or_default(),
+                    )
             })
             .map(|(i, code)| (i, code.clone()))
             .collect()
