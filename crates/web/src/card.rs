@@ -226,7 +226,7 @@ pub struct CardFace {
 }
 
 /// Map a hand-eligible `CardKind` (Asset/Event/Skill) to a `CardFace`; `None`
-/// for other kinds (rendered as a generic rectangle this slice).
+/// for other kinds (rendered as a generic rectangle in this slice).
 #[must_use]
 pub fn card_face(kind: &CardKind) -> Option<CardFace> {
     match kind {

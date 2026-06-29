@@ -42,6 +42,12 @@ async fn asset_renders_cost_name_traits_text_icons() {
     assert!(html.contains("Fight."), "bold text missing: {html}");
     // [combat] / [action] become chips; assert the chip class is present.
     assert!(html.contains("chip--combat"), "combat chip missing: {html}");
+    // `chip--action` can only come from the card TEXT ([action]), not a footer
+    // skill chip — so it isolates the render_segments symbol→chip path.
+    assert!(
+        html.contains("chip--action"),
+        "action chip (from text) missing: {html}"
+    );
 }
 
 #[wasm_bindgen_test]
