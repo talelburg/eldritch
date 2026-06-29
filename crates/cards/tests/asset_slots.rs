@@ -5,7 +5,7 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, Phase, Zone};
+use game_core::state::{CardCode, Continuation, InvestigatorId, Phase, Zone};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
 };
@@ -195,4 +195,11 @@ fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
     assert_eq!(inv.cards_in_play.len(), 2);
     assert!(inv.discard.is_empty());
     assert!(inv.hand.contains(&CardCode::new(FLASHLIGHT)));
+    assert!(
+        r4.state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::SlotDiscard { .. })),
+        "the SlotDiscard prompt frame must persist after a rejected pick"
+    );
 }
