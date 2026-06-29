@@ -239,7 +239,7 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
     };
     // Collect the instances to defeat first (immutable scan), then mutate —
     // avoids holding a borrow across the discard mutation.
-    let defeated: Vec<(CardInstanceId, crate::state::CardCode)> = inv
+    let defeated: Vec<CardInstanceId> = inv
         .cards_in_play
         .iter()
         .filter_map(|card| {
@@ -249,31 +249,13 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
             };
             let dmg_defeated = health.is_some_and(|h| card.accumulated_damage >= h);
             let hor_defeated = sanity.is_some_and(|s| card.accumulated_horror >= s);
-            (dmg_defeated || hor_defeated).then(|| (card.instance_id, card.code.clone()))
+            (dmg_defeated || hor_defeated).then_some(card.instance_id)
         })
         .collect();
 
-    for (inst, code) in defeated {
-        let inv = cx
-            .state
-            .investigators
-            .get_mut(&investigator)
-            .unwrap_or_else(|| {
-                unreachable!(
-                    "defeat_overflowed_assets: investigator {investigator:?} vanished; \
-                     state-corruption invariant violation"
-                )
-            });
-        // RR: a defeated asset goes to its owner's discard pile.
-        if let Some(pos) = inv.cards_in_play.iter().position(|c| c.instance_id == inst) {
-            inv.cards_in_play.remove(pos);
-            inv.discard.push(code.clone());
-            cx.events.push(Event::CardDiscarded {
-                investigator,
-                code,
-                from: crate::state::Zone::InPlay,
-            });
-        }
+    for inst in defeated {
+        // RR p.7: a defeated asset goes to its owner's discard pile.
+        super::cards::discard_card_from_play(cx, investigator, inst);
     }
 }
 

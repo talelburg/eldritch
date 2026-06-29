@@ -1302,6 +1302,25 @@ fn check_event_play_changes_state(
     }
 }
 
+/// Gates RR p.19 slot capacity: Assets only; the only hard slot reject — a merely-full
+/// slot is not rejected here, make-room at enter-play handles it.
+fn check_play_slot_satisfiable(
+    card_type: CardType,
+    code: &CardCode,
+) -> Result<(), Cow<'static, str>> {
+    if card_type != CardType::Asset {
+        return Ok(());
+    }
+    if let Some(slot) = super::slots::unsatisfiable_slot(code) {
+        return Err(format!(
+            "PlayCard: {code} needs more {slot:?} slots than the investigator has \
+             (slot capacity exceeded; RR p.19)."
+        )
+        .into());
+    }
+    Ok(())
+}
+
 pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1382,6 +1401,12 @@ pub(crate) fn check_play_card(
     // RR p.11 initiation gate (#495): an event can't be played if its OnPlay
     // effect can't change game state — open-turn menu OR Fast window route here.
     check_event_play_changes_state(state, investigator, &code, card_type, &abilities)?;
+    // RR p.19 slots (#498): reject only when the card needs more of a slot type
+    // than the investigator has capacity for — unsatisfiable even after discarding
+    // every occupying asset. A merely-full slot is NOT rejected here; the play
+    // proceeds and discards occupiers to make room at enter-play time. Unreachable
+    // in the current corpus (max need is Hand×2 = cap 2); no silent no-op.
+    check_play_slot_satisfiable(card_type, &code)?;
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);

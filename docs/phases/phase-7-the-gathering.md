@@ -238,6 +238,18 @@ a snapshot bump + regen, no impl. Single-use card logic is `Effect::Native { tag
 reference-card effects live on the `ScenarioModule.resolve_symbol` hook, not card
 `abilities()`.
 
+**Asset slots (PR #516, #498).** Slot limits are enforced at the RR "entering the
+slot" moment (`dispatch/slots.rs`; `dispose_play_from_hand`'s InPlay branch →
+`enter_asset_making_room`), **not** at validation. `default_slot_capacity` holds the
+RR p.19 defaults (Ally/Body/Accessory 1, Hand/Arcane 2); a full slot does *not* block
+the play (`check_play_card` rejects only `need > cap`, unreachable in corpus) — instead
+occupying assets are discarded to make room: forced single-candidate auto-discards,
+2+ candidates suspend on a `Continuation::SlotDiscard` `PickSingle` (mirrors the soak
+`DamageAssignment` driver). A slot-modifying card (none in Core/Dunwich) turns
+`default_slot_capacity` into a per-investigator query. The in-play-asset discard sequence
+is now one helper, `cards::discard_card_from_play` (#119, reused by soak-defeat,
+uses-depletion, `Cost::DiscardSelf`, make-room).
+
 **Seating & the seed (PR #461).** Seating is **not** a player action — it's the engine
 fn `seat_and_open(setup_state, &roster) -> ApplyResult` (wraps the internal
 `start_scenario` + `drive` via `apply_via`). Hosts call it at game-creation and persist

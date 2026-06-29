@@ -53,6 +53,8 @@ pub(crate) mod reaction_windows;
 pub(crate) mod reveal;
 // pub(super): engine::evaluator reaches start_skill_test for Effect::SkillTest.
 pub(super) mod skill_test;
+// pub(super): slot-capacity table + deficit math for asset slot enforcement (#498).
+pub(super) mod slots;
 pub(crate) mod threat_area;
 
 /// Dispatch one enumerated open-turn action (the internal id→action map target).
@@ -640,6 +642,9 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::DamageAssignment { .. }) => {
             combat::resume_damage_assignment(cx, response)
         }
+        // The interactive slot make-room choice (#498): the `SlotDiscard` frame
+        // is the top prompt, resumed by its `PickSingle`.
+        Some(Continuation::SlotDiscard { .. }) => slots::resume_slot_discard(cx, response),
         // A mid-action ActionResolution frame never awaits input — it is only
         // momentarily top inside `drive`. A ResolveInput here is spurious.
         Some(Continuation::ActionResolution { .. }) => EngineOutcome::Rejected {

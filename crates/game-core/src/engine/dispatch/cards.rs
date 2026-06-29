@@ -6,7 +6,7 @@ use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::{Effect, Trigger};
 use crate::event::Event;
-use crate::state::{CardCode, InvestigatorId, Zone};
+use crate::state::{CardCode, CardInstanceId, InvestigatorId, Zone};
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
@@ -323,6 +323,38 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
         from: Zone::Hand,
     });
     Some(card)
+}
+
+/// Discard `instance_id` from `investigator`'s `cards_in_play` to their discard
+/// pile, emitting [`Event::CardDiscarded`] `{ from: Zone::InPlay }`. Shared by
+/// [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf) payment, uses-depletion
+/// auto-discard, soak-defeat asset removal, and slot make-room (#498/#119). A
+/// missing instance is a state-corruption invariant violation (callers locate it
+/// first).
+pub(in crate::engine) fn discard_card_from_play(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+) {
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("discard_card_from_play: investigator present");
+    let pos = inv
+        .cards_in_play
+        .iter()
+        .position(|c| c.instance_id == instance_id)
+        .unwrap_or_else(|| {
+            unreachable!("discard_card_from_play: instance {instance_id:?} not in cards_in_play")
+        });
+    let card = inv.cards_in_play.remove(pos);
+    inv.discard.push(card.code.clone());
+    cx.events.push(Event::CardDiscarded {
+        investigator,
+        code: card.code,
+        from: crate::state::Zone::InPlay,
+    });
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the
@@ -850,6 +882,42 @@ pub(super) fn play_card(
     complete_play(cx, investigator, idx, &code)
 }
 
+/// Move an asset from `investigator`'s hand at `hand_index` into play: mint +
+/// seed its in-play instance, push it to `cards_in_play`, and announce it via the
+/// `EnteredPlay` timing event. The emit outcome is intentionally discarded — the
+/// frame driving this call is already popped, so the `drive` loop opens any
+/// after-enters-play reaction window (Research Librarian 01032) itself. Shared by
+/// `dispose_play_from_hand` (no slot conflict) and the slot make-room path
+/// (#498).
+pub(in crate::engine) fn enter_asset_into_play(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    hand_index: u8,
+) {
+    let played = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("enter_asset_into_play: investigator present")
+        .hand
+        .remove(usize::from(hand_index));
+    let in_play = super::threat_area::new_in_play_instance(cx, played);
+    let instance = in_play.instance_id;
+    cx.state
+        .investigators
+        .get_mut(&investigator)
+        .expect("enter_asset_into_play: investigator present")
+        .cards_in_play
+        .push(in_play);
+    let _ = super::emit::emit_event(
+        cx,
+        &super::emit::TimingEvent::EnteredPlay {
+            instance,
+            controller: investigator,
+        },
+    );
+}
+
 /// Dispose of a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
 /// once its pushed `OnPlay`/`OnEvent` effect has popped (Slice D #423). Pops the
 /// frame first, then by destination: an **event** flushes its stashed
@@ -884,37 +952,12 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
             // flushes in `resume_action_resolution` instead; the two sites are
             // mutually exclusive, so the event discards exactly once per play.
             flush_pending_played_event(cx);
+            EngineOutcome::Done
         }
         super::PlayDestination::InPlay => {
-            // Asset: remove from hand, mint + seed its in-play instance, push it
-            // into play, then announce it. The drive loop opens the
-            // after-enters-play reaction window (Research Librarian 01032) if
-            // `emit_event` queued one — the frame is already popped.
-            let played = cx
-                .state
-                .investigators
-                .get_mut(&investigator)
-                .expect("dispose_play_from_hand: investigator present")
-                .hand
-                .remove(usize::from(hand_index));
-            let in_play = super::threat_area::new_in_play_instance(cx, played);
-            let instance = in_play.instance_id;
-            cx.state
-                .investigators
-                .get_mut(&investigator)
-                .expect("dispose_play_from_hand: investigator present")
-                .cards_in_play
-                .push(in_play);
-            let _ = super::emit::emit_event(
-                cx,
-                &super::emit::TimingEvent::EnteredPlay {
-                    instance,
-                    controller: investigator,
-                },
-            );
+            super::slots::enter_asset_making_room(cx, investigator, hand_index, &code)
         }
     }
-    EngineOutcome::Done
 }
 
 /// Push a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame and
