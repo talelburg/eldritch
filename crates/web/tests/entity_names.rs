@@ -45,6 +45,7 @@ async fn board_renders_card_and_location_names() {
             ServerMessage::Hello {
                 state: Box::new(state),
                 outcome: EngineOutcome::Done,
+                events: Vec::new(),
             },
         );
     });

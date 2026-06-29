@@ -46,6 +46,14 @@ pub struct GameSession {
     /// with no actions yet — the seed outcome (the setup mulligan prompt,
     /// i.e. `AwaitingInput`).
     pub outcome: EngineOutcome,
+    /// Events emitted during `seat_and_open` at creation time, surfaced to
+    /// newly-connecting clients via `ServerMessage::Hello` so the event log
+    /// can show opening draws, shuffles, and the weakness set-aside. Persisted
+    /// in the `setup_events` column and restored by [`load`](Self::load), so a
+    /// session reloaded from the DB carries the same list (the action log can't
+    /// reproduce them — setup isn't an action). A row created before migration
+    /// 0003 loads as empty (the column defaults to `'[]'`).
+    pub setup_events: Vec<Event>,
     /// Next sequence number to assign to a persisted action — equal to
     /// the number of actions already in the log.
     seq: i64,
@@ -99,9 +107,14 @@ impl GameSession {
             }
             other => other,
         };
+        let setup_events = result.events;
         let state = result.state;
         let seed_state = serde_json::to_string(&state)?;
         let seed_outcome = serde_json::to_string(&outcome)?;
+        // Persist the setup events so a reloaded session can still surface them
+        // in the client's event log (#512) — the action log doesn't contain
+        // them (setup isn't an action; the seed state is already post-setup).
+        let seed_setup_events = serde_json::to_string(&setup_events)?;
         let game_id = game_id.into();
         store::insert_game(
             &db,
@@ -109,6 +122,7 @@ impl GameSession {
             &scenario_id,
             &seed_state,
             &seed_outcome,
+            &seed_setup_events,
             &unix_millis_string(),
         )
         .await?;
@@ -117,6 +131,7 @@ impl GameSession {
             game_id,
             state,
             outcome,
+            setup_events,
             seq: 0,
             db,
         })
@@ -165,13 +180,18 @@ impl GameSession {
     /// [`SessionError::Db`] if a query fails, or [`SessionError::Serde`] if the
     /// persisted seed state or a logged action fails to deserialize.
     pub async fn load(db: SqlitePool, game_id: &GameId) -> Result<Option<Self>, SessionError> {
-        let Some((_scenario_id, seed_state, seed_outcome)) = store::load_game(&db, game_id).await?
+        let Some((_scenario_id, seed_state, seed_outcome, seed_setup_events)) =
+            store::load_game(&db, game_id).await?
         else {
             return Ok(None);
         };
 
         let mut state: GameState = serde_json::from_str(&seed_state)?;
         let mut outcome: EngineOutcome = serde_json::from_str(&seed_outcome)?;
+        // Setup events were captured at create time (#512); replaying the
+        // action log doesn't reproduce them (setup isn't an action), so they
+        // come straight from the persisted column.
+        let setup_events: Vec<Event> = serde_json::from_str(&seed_setup_events)?;
         let mut seq: i64 = 0;
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;
@@ -185,6 +205,7 @@ impl GameSession {
             game_id: game_id.clone(),
             state,
             outcome,
+            setup_events,
             seq,
             db,
         }))

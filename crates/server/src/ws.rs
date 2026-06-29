@@ -82,6 +82,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
         ServerMessage::Hello {
             state: Box::new(session.state.clone()),
             outcome: session.outcome.clone(),
+            events: session.setup_events.clone(),
         }
     };
     if send_msg(&mut sink, &hello).await.is_err() {

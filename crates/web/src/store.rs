@@ -61,7 +61,11 @@ pub struct ClientState {
 /// `game`/`outcome` unchanged (the rejection was sender-only).
 pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
     match msg {
-        ServerMessage::Hello { state: s, outcome } => {
+        ServerMessage::Hello {
+            state: s,
+            outcome,
+            events,
+        } => {
             state.game = Some(*s);
             state.outcome = Some(outcome);
             state.last_rejection = None;
@@ -69,6 +73,12 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.last_skill_test_difficulty = None;
             state.log = Vec::new();
             state.pending_label = None;
+            if !events.is_empty() {
+                state.log.push(LogBatch {
+                    header: "Setup".to_string(),
+                    events,
+                });
+            }
         }
         ServerMessage::Applied {
             state: s,
@@ -151,6 +161,7 @@ mod tests {
             ServerMessage::Hello {
                 state: Box::new(sample_state()),
                 outcome: EngineOutcome::Done,
+                events: Vec::new(),
             },
         );
         assert!(s.game.is_some());
@@ -214,6 +225,7 @@ mod tests {
             ServerMessage::Hello {
                 state: Box::new(sample_state()),
                 outcome: EngineOutcome::Done,
+                events: Vec::new(),
             },
         );
         assert!(
@@ -329,9 +341,61 @@ mod tests {
             ServerMessage::Hello {
                 state: Box::new(sample_state()),
                 outcome: EngineOutcome::Done,
+                events: Vec::new(),
             },
         );
         assert!(s.log.is_empty());
         assert_eq!(s.pending_label, None);
+    }
+
+    #[test]
+    fn hello_with_events_pushes_setup_batch() {
+        let mut s = ClientState::default();
+        reduce(
+            &mut s,
+            ServerMessage::Hello {
+                state: Box::new(sample_state()),
+                outcome: EngineOutcome::Done,
+                events: vec![game_core::Event::ScenarioStarted],
+            },
+        );
+        assert_eq!(s.log.len(), 1, "one Setup batch expected");
+        assert_eq!(s.log[0].header, "Setup");
+        assert_eq!(s.log[0].events, vec![game_core::Event::ScenarioStarted]);
+    }
+
+    #[test]
+    fn hello_with_empty_events_leaves_log_empty() {
+        let mut s = ClientState::default();
+        reduce(
+            &mut s,
+            ServerMessage::Hello {
+                state: Box::new(sample_state()),
+                outcome: EngineOutcome::Done,
+                events: Vec::new(),
+            },
+        );
+        assert!(s.log.is_empty(), "no setup batch when events is empty");
+    }
+
+    #[test]
+    fn hello_with_events_clears_prior_batches_first() {
+        let mut s = ClientState::default();
+        // Seed a prior action batch.
+        s.log.push(LogBatch {
+            header: "prior action".into(),
+            events: vec![game_core::Event::ScenarioStarted],
+        });
+        // Hello with setup events: prior batch gone, Setup batch present.
+        reduce(
+            &mut s,
+            ServerMessage::Hello {
+                state: Box::new(sample_state()),
+                outcome: EngineOutcome::Done,
+                events: vec![game_core::Event::ScenarioStarted],
+            },
+        );
+        assert_eq!(s.log.len(), 1, "only the Setup batch should remain");
+        assert_eq!(s.log[0].header, "Setup");
     }
 }
