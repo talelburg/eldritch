@@ -277,12 +277,17 @@ pub fn resolve_encounter_card(
 ///
 /// # Validate-first contract
 ///
-/// The one precondition that can reject — spawn-location resolution —
-/// is checked before any mutation, leaving `state`/`events` unchanged
-/// on rejection. Engagement resolution never rejects: it either
-/// resolves inline or suspends (`AwaitingInput`) with the enemy already
-/// minted into `state.enemies` and `Event::EnemySpawned` pushed (the
-/// pending choice carries the rest of the work to [`resume_spawn_engage`]).
+/// Spawn-location resolution is checked before any mutation. It has three
+/// outcomes: (1) a legal location → mint + engage (below); (2) a `Specific`
+/// location not in play → the enemy does **not** spawn and its card is placed
+/// in `encounter_discard`, returning `Done` (RR p.24 / Flesh-Eater 01118 FAQ,
+/// #517) — this is the only mutating non-spawn path; (3) the default spawn with
+/// no drawing-investigator location → `Rejected` with `state`/`events`
+/// unchanged (a state-corruption invariant, not the RR "no legal location"
+/// case). Engagement resolution never rejects: it either resolves inline or
+/// suspends (`AwaitingInput`) with the enemy already minted into `state.enemies`
+/// and `Event::EnemySpawned` pushed (the pending choice carries the rest of the
+/// work to [`resume_spawn_engage`]).
 fn spawn_enemy(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -846,7 +851,10 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 /// - `Spawn` (enemy, RR p.24 step 4): re-derive the enemy metadata from the
 ///   registry and [`spawn_enemy`] at the drawer's location. The spawn may
 ///   suspend on an engagement tie ([`EngineOutcome::AwaitingInput`]) or reject;
-///   either is returned immediately (the loop does not continue).
+///   either is returned immediately (the loop does not continue). It may also
+///   return `Done` *without* minting an enemy — a `Specific` spawn location not
+///   in play discards the card to `encounter_discard` (RR p.24, #517) — in which
+///   case the loop continues past the (already-popped) frame as usual.
 ///
 /// After disposal the frame is gone and the loop re-dispatches whatever is
 /// beneath: a [`PlayerDraw`](Continuation::PlayerDraw) frame (Mythos chain →
