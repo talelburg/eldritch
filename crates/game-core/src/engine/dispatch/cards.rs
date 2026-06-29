@@ -6,7 +6,7 @@ use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::{Effect, Trigger};
 use crate::event::Event;
-use crate::state::{CardCode, InvestigatorId, Zone};
+use crate::state::{CardCode, CardInstanceId, InvestigatorId, Zone};
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
@@ -323,6 +323,38 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
         from: Zone::Hand,
     });
     Some(card)
+}
+
+/// Discard `instance_id` from `investigator`'s `cards_in_play` to their discard
+/// pile, emitting [`Event::CardDiscarded`] `{ from: Zone::InPlay }`. Shared by
+/// [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf) payment, uses-depletion
+/// auto-discard, soak-defeat asset removal, and slot make-room (#498/#119). A
+/// missing instance is a state-corruption invariant violation (callers locate it
+/// first).
+pub(in crate::engine) fn discard_card_from_play(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+) {
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("discard_card_from_play: investigator present");
+    let pos = inv
+        .cards_in_play
+        .iter()
+        .position(|c| c.instance_id == instance_id)
+        .unwrap_or_else(|| {
+            unreachable!("discard_card_from_play: instance {instance_id:?} not in cards_in_play")
+        });
+    let card = inv.cards_in_play.remove(pos);
+    inv.discard.push(card.code.clone());
+    cx.events.push(Event::CardDiscarded {
+        investigator,
+        code: card.code,
+        from: crate::state::Zone::InPlay,
+    });
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the

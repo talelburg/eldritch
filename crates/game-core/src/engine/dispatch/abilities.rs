@@ -264,46 +264,15 @@ fn pay_activation_costs(
                     })
                     .is_some_and(|u| u.discard_when_empty && u.kind == *kind);
                 if depleted && discards_when_empty {
-                    discard_card_from_play(cx, investigator, instance_id);
+                    super::cards::discard_card_from_play(cx, investigator, instance_id);
                 }
             }
-            Cost::DiscardSelf => discard_card_from_play(cx, investigator, instance_id),
+            Cost::DiscardSelf => super::cards::discard_card_from_play(cx, investigator, instance_id),
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
             }
         }
     }
-}
-
-/// Discard `instance_id` from `investigator`'s `cards_in_play` to their discard
-/// pile, emitting [`Event::CardDiscarded`] `{ from: InPlay }`. Shared by
-/// [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf) payment and
-/// uses-depletion auto-discard. A missing instance is a state-corruption
-/// invariant violation (callers locate it first).
-pub(super) fn discard_card_from_play(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    instance_id: CardInstanceId,
-) {
-    let inv = cx
-        .state
-        .investigators
-        .get_mut(&investigator)
-        .expect("discard_card_from_play: investigator present");
-    let pos = inv
-        .cards_in_play
-        .iter()
-        .position(|c| c.instance_id == instance_id)
-        .unwrap_or_else(|| {
-            unreachable!("discard_card_from_play: instance {instance_id:?} not in cards_in_play")
-        });
-    let card = inv.cards_in_play.remove(pos);
-    inv.discard.push(card.code.clone());
-    cx.events.push(Event::CardDiscarded {
-        investigator,
-        code: card.code,
-        from: crate::state::Zone::InPlay,
-    });
 }
 
 /// Resolve the activated ability at `(code, ability_index)` from the
