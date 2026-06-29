@@ -1003,6 +1003,10 @@ pub enum UpkeepResume {
     Entry,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
+    /// Steps 4.2–4.4 ran and the 4.4 draw pushed a drawn-weakness Revelation
+    /// (#509) that ceded to the drive loop. On re-exposure of the anchor, run
+    /// 4.5 (hand size) + 4.6 (phase end).
+    AfterDraw,
     /// The round-end `EmitEvent` coordinator (the `when` act advance + the `at`
     /// doom) popped; run `upkeep_round_end_teardown` (expire until-end-of-round
     /// effects, Upkeep → Mythos). Set by `upkeep_phase_end` before it cedes to

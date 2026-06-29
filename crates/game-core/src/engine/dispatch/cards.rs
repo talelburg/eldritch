@@ -4,7 +4,7 @@
 use crate::action::InputResponse;
 use crate::card_data::CardType;
 use crate::card_registry;
-use crate::dsl::Trigger;
+use crate::dsl::{Effect, Trigger};
 use crate::event::Event;
 use crate::state::{CardCode, InvestigatorId, Zone};
 
@@ -108,6 +108,82 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
             .is_empty();
         if deck_empty {
             break;
+        }
+    }
+}
+
+/// Reveal-on-draw for a persistent treachery weakness drawn from the player
+/// deck during play (RR Weakness keyword: a drawn weakness resolves its
+/// Revelation immediately rather than staying a normal hand card). Scope:
+/// **persistent treachery weaknesses** (Cover Up 01007). Each matching card is
+/// removed from `investigator`'s hand, a [`Event::CardRevealed`] is emitted, and
+/// its `Trigger::Revelation` effects are pushed for the drive loop (Cover Up's
+/// `PutIntoThreatArea` then places it in the threat area).
+///
+/// Removal precedes the push deliberately: `PutIntoThreatArea` spawns a fresh
+/// instance by code, so a copy left in hand would duplicate the card.
+///
+/// Non-persistent treachery weaknesses and weakness enemies/assets are **left in
+/// hand untouched** — deferred to #514 (none reachable in the corpus draw path).
+/// No-op without an installed registry (registry-free engine unit tests).
+///
+/// MUST NOT be called from the setup opening-hand / mulligan path — those *set
+/// aside* weaknesses (#508), they do not resolve them.
+pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: InvestigatorId) {
+    let Some(reg) = card_registry::current() else {
+        return;
+    };
+    // Collect indices of drawn persistent treachery weaknesses, in hand order.
+    let matches: Vec<(usize, CardCode)> = {
+        let Some(inv) = cx.state.investigators.get(&investigator) else {
+            return;
+        };
+        inv.hand
+            .iter()
+            .enumerate()
+            .filter(|(_, code)| {
+                (reg.metadata_for)(code)
+                    .is_some_and(|m| m.is_weakness() && m.card_type() == CardType::Treachery)
+                    && super::encounter::treachery_is_persistent(
+                        &(reg.abilities_for)(code).unwrap_or_default(),
+                    )
+            })
+            .map(|(i, code)| (i, code.clone()))
+            .collect()
+    };
+    if matches.is_empty() {
+        return;
+    }
+    // Remove from hand high-index-to-low so earlier indices stay valid.
+    {
+        let inv = cx
+            .state
+            .investigators
+            .get_mut(&investigator)
+            .expect("resolve_drawn_weaknesses: investigator exists");
+        for &(i, _) in matches.iter().rev() {
+            inv.hand.remove(i);
+        }
+    }
+    // Reveal + push each Revelation, in original draw order.
+    for (_, code) in &matches {
+        cx.events.push(Event::CardRevealed {
+            investigator,
+            code: code.clone(),
+            card_type: CardType::Treachery,
+        });
+        let effects: Vec<Effect> = (reg.abilities_for)(code)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| a.trigger == Trigger::Revelation)
+            .map(|a| a.effect)
+            .collect();
+        if !effects.is_empty() {
+            push_effect(
+                cx,
+                &Effect::Seq(effects),
+                EvalContext::for_controller(investigator),
+            );
         }
     }
 }
@@ -358,6 +434,10 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
     } else {
         draw_cards(cx, investigator, 1);
     }
+    // RR Weakness keyword: a weakness drawn during play reveals + resolves its
+    // Revelation (#509). Setup's opening-hand draw uses `draw_cards` directly,
+    // so it is unaffected (it sets aside instead, #508).
+    resolve_drawn_weaknesses(cx, investigator);
 }
 
 /// Handler for `TurnAction::Draw`.

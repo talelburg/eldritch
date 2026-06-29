@@ -819,6 +819,11 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             );
             upkeep_resume(cx)
         }
+        // A step-4.4 drawn-weakness Revelation (#509) drained, re-exposing this
+        // anchor: run 4.5 (hand size) + 4.6 (phase end + transition).
+        Some(Continuation::UpkeepPhase {
+            resume: UpkeepResume::AfterDraw,
+        }) => upkeep_after_draw(cx),
         Some(Continuation::UpkeepPhase {
             resume: UpkeepResume::AfterRoundEnd,
         }) => {
@@ -955,16 +960,39 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     super::reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::UpkeepBegins))
 }
 
-/// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named
-/// call sites; step 4.5 ([`check_hand_size`]) may suspend with
-/// [`EngineOutcome::AwaitingInput`] when an investigator is over the hand
-/// cap — in which case `upkeep_resume` short-circuits and 4.6 runs only
-/// once the discard resolves. Otherwise it hands to [`upkeep_phase_end`]
-/// for 4.6 + transition.
+/// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named call
+/// sites. The 4.4 draw may resolve a drawn-weakness Revelation (#509), which
+/// `push_effect`s onto the stack above this anchor; when that happens
+/// `upkeep_resume` cedes (resume `AfterDraw`) so the drive loop drains the
+/// Revelation, then re-runs 4.5/4.6 via [`upkeep_after_draw`] on re-exposure.
+/// Otherwise 4.5/4.6 run inline: step 4.5 ([`check_hand_size`]) may suspend
+/// with [`EngineOutcome::AwaitingInput`] when an investigator is over the hand
+/// cap — in which case 4.6 runs only once the discard resolves — else it hands
+/// to [`upkeep_phase_end`] for 4.6 + transition.
 pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
     ready_exhausted_cards(cx); // 4.3
-    upkeep_draw_and_resource(cx); // 4.4
+                               // Sentinel for "4.4 pushed a continuation". Captured after 4.2/4.3 because
+                               // those are pure state mutations that never push — so a growth here is
+                               // attributable to the 4.4 draw (a drawn-weakness Revelation; or any future
+                               // pusher, which the cede below handles uniformly).
+    let depth = cx.state.continuations.len();
+    upkeep_draw_and_resource(cx); // 4.4 — may push a drawn-weakness Revelation (#509)
+    if cx.state.continuations.len() > depth {
+        // 4.4 pushed a drawn-weakness Revelation above the (now-buried) UpkeepPhase
+        // anchor. Cede: the drive loop resolves the Revelation, then re-exposes the
+        // anchor at AfterDraw (anchor_on_child_pop → upkeep_after_draw) for 4.5/4.6.
+        set_upkeep_resume(cx, crate::state::UpkeepResume::AfterDraw);
+        return EngineOutcome::Done;
+    }
+    upkeep_after_draw(cx) // 4.5 + 4.6 inline — common case, nothing pushed
+}
+
+/// Steps 4.5 (hand size; may suspend) + 4.6 (phase end + round-end transition).
+/// Run inline by `upkeep_resume` when 4.4 pushed nothing, or via
+/// `anchor_on_child_pop`'s `AfterDraw` arm once a 4.4 drawn-weakness Revelation
+/// has drained.
+fn upkeep_after_draw(cx: &mut Cx) -> EngineOutcome {
     if let outcome @ EngineOutcome::AwaitingInput { .. } = check_hand_size(cx) {
         return outcome; // 4.5 parked for discard; 4.6 runs on resume
     }
@@ -1004,15 +1032,22 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded)
 }
 
-/// Set the top [`UpkeepPhase`](crate::state::Continuation::UpkeepPhase) anchor's
-/// resume cursor. The anchor is the top frame when `upkeep_phase_end` runs (the
-/// round-end coordinator is pushed *after* this call).
+/// Set the [`UpkeepPhase`](crate::state::Continuation::UpkeepPhase) anchor's
+/// resume cursor. Reverse-searches the stack (mirroring [`set_enemy_anchor`])
+/// so it is robust whether the anchor is on top (`upkeep_phase_end`'s call, made
+/// before the round-end coordinator is pushed) or buried beneath a drawn-weakness
+/// Revelation pushed by the step-4.4 draw (#509, `upkeep_resume`'s cede).
 fn set_upkeep_resume(cx: &mut Cx, resume: crate::state::UpkeepResume) {
-    match cx.state.continuations.last_mut() {
-        Some(crate::state::Continuation::UpkeepPhase { resume: slot }) => *slot = resume,
-        other => {
-            unreachable!("set_upkeep_resume: expected UpkeepPhase anchor on top, got {other:?}")
-        }
+    if let Some(c) = cx
+        .state
+        .continuations
+        .iter_mut()
+        .rev()
+        .find(|c| matches!(c, crate::state::Continuation::UpkeepPhase { .. }))
+    {
+        *c = crate::state::Continuation::UpkeepPhase { resume };
+    } else {
+        unreachable!("set_upkeep_resume: no UpkeepPhase anchor on the stack");
     }
 }
 
@@ -2249,6 +2284,12 @@ mod upkeep_phase_tests {
             .build();
         state.turn_order = vec![id];
         state.active_investigator = None;
+        // Give the investigator a card so the step-4.4 draw pulls it normally
+        // rather than decking out: since #509 routed 4.4 through
+        // `draw_one_with_deckout`, an empty deck applies the deckout horror
+        // penalty, whose capacity read requires a CardRegistry this registry-free
+        // unit test cannot install.
+        state.investigators.get_mut(&id).unwrap().deck = vec![CardCode("01000".into())];
 
         let mut events = Vec::new();
         step_phase(&mut Cx {
