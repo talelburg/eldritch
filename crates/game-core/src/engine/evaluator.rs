@@ -626,6 +626,7 @@ fn draw_cards_effect(
         };
     }
     crate::engine::dispatch::cards::draw_cards(cx, target_id, count);
+    crate::engine::dispatch::cards::resolve_drawn_weaknesses(cx, target_id);
     EngineOutcome::Done
 }
 

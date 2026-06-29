@@ -99,7 +99,7 @@ pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId)
 /// treacheries). Revisit with an explicit persistence marker only if a
 /// treachery must persist with no ongoing ability, or auto-discard
 /// despite carrying one.
-fn treachery_is_persistent(abilities: &[crate::dsl::Ability]) -> bool {
+pub(crate) fn treachery_is_persistent(abilities: &[crate::dsl::Ability]) -> bool {
     abilities.iter().any(|a| a.trigger != Trigger::Revelation)
 }
 
