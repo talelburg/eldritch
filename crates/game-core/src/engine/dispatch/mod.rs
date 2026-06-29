@@ -53,6 +53,8 @@ pub(crate) mod reaction_windows;
 pub(crate) mod reveal;
 // pub(super): engine::evaluator reaches start_skill_test for Effect::SkillTest.
 pub(super) mod skill_test;
+// pub(super): slot-capacity table + deficit math for asset slot enforcement (#498).
+pub(super) mod slots;
 pub(crate) mod threat_area;
 
 /// Dispatch one enumerated open-turn action (the internal id→action map target).
