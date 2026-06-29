@@ -10,7 +10,10 @@ use std::collections::BTreeMap;
 
 use crate::card_data::Slot;
 use crate::card_registry;
-use crate::state::CardCode;
+use crate::engine::outcome::EngineOutcome;
+use crate::state::{CardCode, CardInstanceId, GameState, InvestigatorId};
+
+use super::Cx;
 
 /// Per-type slot counts (a multiset). `BTreeMap` keeps iteration deterministic.
 pub(super) type SlotCounts = BTreeMap<Slot, u8>;
@@ -42,7 +45,6 @@ pub(super) fn count_slots(slots: &[Slot]) -> SlotCounts {
 
 /// For each slot type the new card needs: `max(0, occupied + need - capacity)`.
 /// Only types with a positive deficit are present in the result.
-#[allow(dead_code)] // wired in a later task (#498) — make-room driver
 pub(super) fn deficit_from(occupied: &SlotCounts, need: &SlotCounts) -> SlotCounts {
     let mut deficit = SlotCounts::new();
     for (&slot, &n) in need {
@@ -82,6 +84,100 @@ pub(super) fn card_slot_need(code: &CardCode) -> SlotCounts {
 /// registry-free) always return `None`.
 pub(super) fn unsatisfiable_slot(code: &CardCode) -> Option<Slot> {
     slot_need_exceeds_capacity(&card_slot_need(code))
+}
+
+/// Slots occupied by `investigator`'s in-play assets. The investigator card is
+/// deliberately not in `cards_in_play`, so it is correctly excluded; slot-less
+/// and non-asset in-play cards contribute nothing. Empty when no registry is
+/// installed.
+pub(super) fn occupied_slots(state: &GameState, investigator: InvestigatorId) -> SlotCounts {
+    let mut occ = SlotCounts::new();
+    let Some(reg) = card_registry::current() else {
+        return occ;
+    };
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return occ;
+    };
+    for card in &inv.cards_in_play {
+        if let Some(meta) = (reg.metadata_for)(&card.code) {
+            for &slot in meta.slots() {
+                *occ.entry(slot).or_insert(0) += 1;
+            }
+        }
+    }
+    occ
+}
+
+/// Per-type shortfall for playing `code` now: `max(0, occupied + need - cap)`.
+/// Empty when the asset fits without discarding (or registry-free / unknown).
+pub(super) fn slot_deficit(
+    state: &GameState,
+    investigator: InvestigatorId,
+    code: &CardCode,
+) -> SlotCounts {
+    let need = card_slot_need(code);
+    if need.is_empty() {
+        return SlotCounts::new();
+    }
+    deficit_from(&occupied_slots(state, investigator), &need)
+}
+
+/// `investigator`'s in-play assets occupying at least one slot type currently in
+/// `deficit` — the assets eligible to be discarded to make room. Returned in
+/// `cards_in_play` order so an `OptionId` index is stable between the prompt and
+/// its resume.
+pub(super) fn make_room_candidates(
+    state: &GameState,
+    investigator: InvestigatorId,
+    deficit: &SlotCounts,
+) -> Vec<(CardInstanceId, CardCode)> {
+    let Some(reg) = card_registry::current() else {
+        return Vec::new();
+    };
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return Vec::new();
+    };
+    inv.cards_in_play
+        .iter()
+        .filter_map(|card| {
+            let meta = (reg.metadata_for)(&card.code)?;
+            let occupies_deficit = meta.slots().iter().any(|s| deficit.contains_key(s));
+            occupies_deficit.then(|| (card.instance_id, card.code.clone()))
+        })
+        .collect()
+}
+
+/// Bring the asset `code` (in `investigator`'s hand at `hand_index`) into play,
+/// discarding occupying assets to make room per RR p.19 (#498). Recursive:
+///
+/// - no deficit → enter directly;
+/// - a deficit with exactly one candidate → auto-discard it (forced) and recurse;
+/// - a deficit with 2+ candidates → (Task 6) suspend for a player `PickSingle`.
+///
+/// `check_play_card`'s `need <= cap` gate guarantees a candidate exists whenever
+/// a deficit does (occupied[T] >= deficit[T] > 0), so the recursion makes
+/// progress and terminates.
+pub(super) fn enter_asset_making_room(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    hand_index: u8,
+    code: &CardCode,
+) -> EngineOutcome {
+    let deficit = slot_deficit(cx.state, investigator, code);
+    if deficit.is_empty() {
+        super::cards::enter_asset_into_play(cx, investigator, hand_index);
+        return EngineOutcome::Done;
+    }
+    let candidates = make_room_candidates(cx.state, investigator, &deficit);
+    debug_assert!(
+        !candidates.is_empty(),
+        "slot deficit with no candidate to discard — check_play_card's need<=cap \
+         gate should make this unreachable (code {code}, deficit {deficit:?})"
+    );
+    // Task 6 inserts the 2+-candidate interactive suspend here.
+    let (inst, _) = candidates[0];
+    super::cards::discard_card_from_play(cx, investigator, inst);
+    enter_asset_making_room(cx, investigator, hand_index, code)
 }
 
 #[cfg(test)]

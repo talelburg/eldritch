@@ -952,12 +952,12 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
             // flushes in `resume_action_resolution` instead; the two sites are
             // mutually exclusive, so the event discards exactly once per play.
             flush_pending_played_event(cx);
+            EngineOutcome::Done
         }
         super::PlayDestination::InPlay => {
-            enter_asset_into_play(cx, investigator, hand_index);
+            super::slots::enter_asset_making_room(cx, investigator, hand_index, &code)
         }
     }
-    EngineOutcome::Done
 }
 
 /// Push a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame and
