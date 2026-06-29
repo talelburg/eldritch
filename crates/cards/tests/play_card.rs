@@ -537,6 +537,24 @@ fn play_card_at_exactly_its_cost_succeeds() {
 }
 
 #[test]
+fn play_single_hand_asset_is_not_slot_rejected_on_empty_hands() {
+    // Sanity: the new slot gate must not over-reject a normal single-slot asset
+    // with both Hand slots free.
+    let (state, id, _loc) = play_state(vec![MACHETE]); // single Hand slot, costs 3
+    // test_investigator starts with 5 resources (≥ Machete's cost of 3); no
+    // manual override needed.
+    let result = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::PlayCard {
+            investigator: id,
+            hand_index: 0,
+        },
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    assert_eq!(result.state.investigators[&id].cards_in_play.len(), 1);
+}
+
+#[test]
 fn play_zero_cost_card_is_free_and_emits_no_resources_paid() {
     // Emergency Cache (01088) costs 0: affordable even at 0 resources, and a
     // 0-resource deduction emits no ResourcesPaid event.

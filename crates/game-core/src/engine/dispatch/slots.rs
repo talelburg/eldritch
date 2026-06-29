@@ -9,9 +9,10 @@
 use std::collections::BTreeMap;
 
 use crate::card_data::Slot;
+use crate::card_registry;
+use crate::state::CardCode;
 
 /// Per-type slot counts (a multiset). `BTreeMap` keeps iteration deterministic.
-#[allow(dead_code)] // wired in Task 2 (#498)
 pub(super) type SlotCounts = BTreeMap<Slot, u8>;
 
 /// The slots normally available to an investigator (Rules Reference p.19):
@@ -23,7 +24,6 @@ pub(super) type SlotCounts = BTreeMap<Slot, u8>;
 /// TODO: slot-modifying cards (grant/remove a slot) — none in Core/Dunwich.
 /// When the first lands, this becomes a per-investigator query reading their
 /// in-play modifiers rather than a flat default.
-#[allow(dead_code)] // wired in Task 2 (#498)
 pub(super) fn default_slot_capacity(slot: Slot) -> u8 {
     match slot {
         Slot::Accessory | Slot::Body | Slot::Ally | Slot::Tarot => 1,
@@ -32,7 +32,6 @@ pub(super) fn default_slot_capacity(slot: Slot) -> u8 {
 }
 
 /// Tally a slot multiset (e.g. a two-handed weapon → `{Hand: 2}`).
-#[allow(dead_code)] // wired in Task 2 (#498)
 pub(super) fn count_slots(slots: &[Slot]) -> SlotCounts {
     let mut counts = SlotCounts::new();
     for &slot in slots {
@@ -43,7 +42,7 @@ pub(super) fn count_slots(slots: &[Slot]) -> SlotCounts {
 
 /// For each slot type the new card needs: `max(0, occupied + need - capacity)`.
 /// Only types with a positive deficit are present in the result.
-#[allow(dead_code)] // wired in Task 2 (#498)
+#[allow(dead_code)] // wired in a later task (#498) — make-room driver
 pub(super) fn deficit_from(occupied: &SlotCounts, need: &SlotCounts) -> SlotCounts {
     let mut deficit = SlotCounts::new();
     for (&slot, &n) in need {
@@ -61,11 +60,28 @@ pub(super) fn deficit_from(occupied: &SlotCounts, need: &SlotCounts) -> SlotCoun
 /// for — i.e. the play is unsatisfiable even after discarding every occupying
 /// asset. `None` when every `need[T] <= cap[T]`. Unreachable in the current
 /// corpus (max need is `Hand×2` = cap 2); exists for no-silent-approximation.
-#[allow(dead_code)] // wired in Task 2 (#498)
 pub(super) fn slot_need_exceeds_capacity(need: &SlotCounts) -> Option<Slot> {
     need.iter()
         .find(|(&slot, &n)| n > default_slot_capacity(slot))
         .map(|(&slot, _)| slot)
+}
+
+/// The slot multiset `code` needs to enter play, read from the installed
+/// registry. Empty when no registry is installed (registry-free engine unit
+/// tests), the code is unknown, or it is a non-asset / slot-less asset.
+pub(super) fn card_slot_need(code: &CardCode) -> SlotCounts {
+    card_registry::current()
+        .and_then(|reg| (reg.metadata_for)(code))
+        .map(|meta| count_slots(meta.slots()))
+        .unwrap_or_default()
+}
+
+/// The slot type `code` needs more of than the investigator has capacity for, or
+/// `None` if it can fit (possibly after discarding occupiers). See
+/// [`slot_need_exceeds_capacity`]. Empty-need cards (slot-less, non-asset,
+/// registry-free) always return `None`.
+pub(super) fn unsatisfiable_slot(code: &CardCode) -> Option<Slot> {
+    slot_need_exceeds_capacity(&card_slot_need(code))
 }
 
 #[cfg(test)]

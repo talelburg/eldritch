@@ -1302,6 +1302,7 @@ fn check_event_play_changes_state(
     }
 }
 
+#[allow(clippy::too_many_lines)] // validation gates must stay co-located for correctness review
 pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1382,6 +1383,20 @@ pub(crate) fn check_play_card(
     // RR p.11 initiation gate (#495): an event can't be played if its OnPlay
     // effect can't change game state — open-turn menu OR Fast window route here.
     check_event_play_changes_state(state, investigator, &code, card_type, &abilities)?;
+    // RR p.19 slots (#498): reject only when the card needs more of a slot type
+    // than the investigator has capacity for — unsatisfiable even after discarding
+    // every occupying asset. A merely-full slot is NOT rejected here; the play
+    // proceeds and discards occupiers to make room at enter-play time. Unreachable
+    // in the current corpus (max need is Hand×2 = cap 2); no silent no-op.
+    if card_type == CardType::Asset {
+        if let Some(slot) = super::slots::unsatisfiable_slot(&code) {
+            return Err(format!(
+                "PlayCard: {code} needs more {slot:?} slots than the investigator has \
+                 (slot capacity exceeded; RR p.19)."
+            )
+            .into());
+        }
+    }
     // Timing gate — see play_card doc-comment "# Timing gate" section.
     let active_during_investigation =
         state.phase == Phase::Investigation && state.active_investigator == Some(investigator);
