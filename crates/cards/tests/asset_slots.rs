@@ -9,12 +9,13 @@ use game_core::state::{CardCode, InvestigatorId, Phase, Zone};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{LocationId, TurnAction};
+use game_core::{apply, Action, InputResponse, LocationId, PlayerAction, TurnAction};
 
 const BEAT_COP: &str = "01018"; // Guardian Ally
 const GUARD_DOG: &str = "01021"; // Guardian Ally
 const MACHETE: &str = "01020"; // single Hand
 const KNIFE: &str = "01086"; // single Hand
+const FLASHLIGHT: &str = "01087"; // single Hand
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -49,6 +50,28 @@ fn play(state: game_core::GameState, id: InvestigatorId) -> game_core::ApplyResu
             hand_index: 0,
         },
     )
+}
+
+fn resolve(state: game_core::GameState, id: game_core::OptionId) -> game_core::ApplyResult {
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(id),
+        }),
+    )
+}
+
+/// Find the option whose label contains `needle` in an `AwaitingInput` outcome.
+fn pick(outcome: &EngineOutcome, needle: &str) -> game_core::OptionId {
+    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        panic!("expected AwaitingInput, got {outcome:?}");
+    };
+    request
+        .options
+        .iter()
+        .find(|o| o.label.contains(needle))
+        .unwrap_or_else(|| panic!("no option matching {needle:?} in {:?}", request.options))
+        .id
 }
 
 #[test]
@@ -93,15 +116,81 @@ fn playing_a_second_ally_auto_discards_the_first() {
         "Beat Cop discarded from play: {:?}",
         r2.events
     );
+
+    // Ordering: CardPlayed (announcement) fires before CardDiscarded (make-room).
+    // There is no separate Event::EnteredPlay game event; the asset's entry is
+    // witnessed by its presence in cards_in_play (asserted above). This ordering
+    // assertion verifies that the play was announced before the slot was cleared,
+    // i.e. the engine follows the correct sequence per RR p.19.
+    let played_pos = r2
+        .events
+        .iter()
+        .position(|e| matches!(e, Event::CardPlayed { code, .. } if code.as_str() == GUARD_DOG))
+        .expect("CardPlayed Guard Dog not found");
+    let discard_pos = r2
+        .events
+        .iter()
+        .position(|e| matches!(
+            e,
+            Event::CardDiscarded { code, from: Zone::InPlay, .. }
+                if code.as_str() == BEAT_COP
+        ))
+        .expect("CardDiscarded Beat Cop not found");
+    assert!(
+        played_pos < discard_pos,
+        "CardPlayed (announcement) must precede CardDiscarded (make-room, RR p.19)"
+    );
 }
 
 #[test]
-fn two_handed_weapon_auto_frees_both_hand_slots() {
-    // Two single-Hand weapons fill both Hand slots (cap 2); both coexist without
-    // make-room. This placeholder verifies the no-conflict path — Task 6 replaces
-    // it with an interactive multi-candidate test.
-    let (state, id) = play_state(vec![MACHETE, KNIFE]);
+fn third_hand_asset_prompts_to_choose_which_to_discard() {
+    // Two distinct single-Hand assets fill both Hand slots; playing a third
+    // single-Hand asset must free 1 — a genuine 2-candidate choice.
+    let (state, id) = play_state(vec![MACHETE, KNIFE, FLASHLIGHT]);
+    let r1 = play(state, id); // Machete enters (Hand 1/2)
+    let r2 = play(r1.state, id); // Knife enters (Hand 2/2)
+    assert_eq!(r2.state.investigators[&id].cards_in_play.len(), 2);
+
+    // Flashlight (index 0) — Hand full, 2 candidates → suspend for a choice.
+    let r3 = play(r2.state, id);
+    assert!(
+        matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }),
+        "expected a make-room prompt, got {:?}",
+        r3.outcome
+    );
+
+    // Discard Machete to make room.
+    let r4 = resolve(r3.state, pick(&r3.outcome, MACHETE));
+    assert_eq!(r4.outcome, EngineOutcome::Done);
+    let inv = &r4.state.investigators[&id];
+    let codes: Vec<&str> = inv.cards_in_play.iter().map(|c| c.code.as_str()).collect();
+    assert_eq!(
+        codes,
+        vec![KNIFE, FLASHLIGHT],
+        "Machete discarded, Knife + Flashlight in play"
+    );
+    assert_eq!(inv.discard, vec![CardCode::new(MACHETE)]);
+}
+
+#[test]
+fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
+    let (state, id) = play_state(vec![MACHETE, KNIFE, FLASHLIGHT]);
     let r1 = play(state, id);
     let r2 = play(r1.state, id);
-    assert_eq!(r2.state.investigators[&id].cards_in_play.len(), 2);
+    let r3 = play(r2.state, id);
+    assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
+
+    // Option 99 is out of range → Rejected, the prompt persists.
+    let r4 = resolve(r3.state, game_core::OptionId(99));
+    assert!(
+        matches!(r4.outcome, EngineOutcome::Rejected { .. }),
+        "out-of-range pick rejects: {:?}",
+        r4.outcome
+    );
+    // Still mid-investigation with both Hand assets and the pending Flashlight in
+    // hand — nothing was discarded.
+    let inv = &r4.state.investigators[&id];
+    assert_eq!(inv.cards_in_play.len(), 2);
+    assert!(inv.discard.is_empty());
+    assert!(inv.hand.contains(&CardCode::new(FLASHLIGHT)));
 }

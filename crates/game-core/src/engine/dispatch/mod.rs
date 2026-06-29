@@ -642,6 +642,9 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::DamageAssignment { .. }) => {
             combat::resume_damage_assignment(cx, response)
         }
+        // The interactive slot make-room choice (#498): the `SlotDiscard` frame
+        // is the top prompt, resumed by its `PickSingle`.
+        Some(Continuation::SlotDiscard { .. }) => slots::resume_slot_discard(cx, response),
         // A mid-action ActionResolution frame never awaits input — it is only
         // momentarily top inside `drive`. A ResolveInput here is spurious.
         Some(Continuation::ActionResolution { .. }) => EngineOutcome::Rejected {

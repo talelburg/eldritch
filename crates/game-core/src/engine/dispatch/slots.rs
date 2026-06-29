@@ -8,10 +8,12 @@
 
 use std::collections::BTreeMap;
 
+use crate::action::InputResponse;
 use crate::card_data::Slot;
 use crate::card_registry;
-use crate::engine::outcome::EngineOutcome;
-use crate::state::{CardCode, CardInstanceId, GameState, InvestigatorId};
+use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::OptionId;
+use crate::state::{CardCode, CardInstanceId, Continuation, GameState, InvestigatorId};
 
 use super::Cx;
 
@@ -174,10 +176,75 @@ pub(super) fn enter_asset_making_room(
         "slot deficit with no candidate to discard — check_play_card's need<=cap \
          gate should make this unreachable (code {code}, deficit {deficit:?})"
     );
-    // Task 6 inserts the 2+-candidate interactive suspend here.
+    if candidates.len() >= 2 {
+        // Genuine choice: the player picks which occupier to discard. Park the
+        // pending play (asset stays in hand at hand_index) and prompt.
+        cx.state.continuations.push(Continuation::SlotDiscard {
+            investigator,
+            code: code.clone(),
+            hand_index,
+        });
+        return prompt_slot_discard(cx, investigator, &deficit);
+    }
     let (inst, _) = candidates[0];
     super::cards::discard_card_from_play(cx, investigator, inst);
     enter_asset_making_room(cx, investigator, hand_index, code)
+}
+
+/// Build the `PickSingle` over the co-controlled assets occupying a still-deficit
+/// slot type (the top `SlotDiscard` frame must already be in place).
+fn prompt_slot_discard(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    deficit: &SlotCounts,
+) -> EngineOutcome {
+    let candidates = make_room_candidates(cx.state, investigator, deficit);
+    let codes: Vec<CardCode> = candidates.into_iter().map(|(_, code)| code).collect();
+    let prompt = format!(
+        "Investigator {investigator:?}: choose an asset to discard to make room \
+         (slots needed: {deficit:?})."
+    );
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(prompt, super::hunters::candidate_options(&codes)),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// Resume a slot make-room choice: discard the chosen occupier, then continue
+/// making room (re-prompt if still contested, auto-discard a forced last
+/// candidate, or enter the pending asset once the deficit clears). An invalid
+/// pick rejects and keeps the frame (the `DamageAssignment` / `HunterMove`
+/// contract).
+pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let Some(Continuation::SlotDiscard {
+        investigator,
+        code,
+        hand_index,
+    }) = cx.state.continuations.last().cloned()
+    else {
+        unreachable!("resume_slot_discard: top frame is not SlotDiscard");
+    };
+    let InputResponse::PickSingle(OptionId(i)) = response else {
+        return EngineOutcome::Rejected {
+            reason: format!("ResolveInput: slot make-room expects PickSingle, got {response:?}")
+                .into(),
+        };
+    };
+    let deficit = slot_deficit(cx.state, investigator, &code);
+    let candidates = make_room_candidates(cx.state, investigator, &deficit);
+    let Some(&(inst, _)) = candidates.get(*i as usize) else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: slot make-room option {i} out of range (0..{})",
+                candidates.len()
+            )
+            .into(),
+        };
+    };
+    // Valid: pop the frame we validated against, discard the choice, continue.
+    cx.state.continuations.pop();
+    super::cards::discard_card_from_play(cx, investigator, inst);
+    enter_asset_making_room(cx, investigator, hand_index, &code)
 }
 
 #[cfg(test)]

@@ -611,6 +611,22 @@ pub enum Continuation {
         /// stashed it in `pending_played_event`.
         hand_index: u8,
     },
+    /// A slot-conflicting asset play paused for the player to choose which
+    /// occupying asset to discard to make room (RR p.19, #498). Pushed by
+    /// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
+    /// slot type the new asset needs; the pending asset stays in
+    /// `investigator`'s hand at `hand_index` until the deficit is cleared, then
+    /// enters play. Resumed by `slots::resume_slot_discard` via a
+    /// `PickSingle(OptionId)` indexing the candidate list. Awaits input (covered
+    /// by the `awaits_input` catch-all; not a phase anchor).
+    SlotDiscard {
+        /// The investigator playing the asset.
+        investigator: InvestigatorId,
+        /// The pending asset's code (still in hand at `hand_index`).
+        code: CardCode,
+        /// Hand slot of the pending asset (enters play once room is made).
+        hand_index: u8,
+    },
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
     /// beneath the phase's framework windows. On a child window's close the
     /// framework routes to the anchor's `on_child_pop` (keyed by `resume`).
