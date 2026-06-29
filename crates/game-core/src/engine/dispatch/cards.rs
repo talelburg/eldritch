@@ -882,6 +882,42 @@ pub(super) fn play_card(
     complete_play(cx, investigator, idx, &code)
 }
 
+/// Move an asset from `investigator`'s hand at `hand_index` into play: mint +
+/// seed its in-play instance, push it to `cards_in_play`, and announce it via the
+/// `EnteredPlay` timing event. The emit outcome is intentionally discarded — the
+/// frame driving this call is already popped, so the `drive` loop opens any
+/// after-enters-play reaction window (Research Librarian 01032) itself. Shared by
+/// `dispose_play_from_hand` (no slot conflict) and the slot make-room path
+/// (#498).
+pub(in crate::engine) fn enter_asset_into_play(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    hand_index: u8,
+) {
+    let played = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("enter_asset_into_play: investigator present")
+        .hand
+        .remove(usize::from(hand_index));
+    let in_play = super::threat_area::new_in_play_instance(cx, played);
+    let instance = in_play.instance_id;
+    cx.state
+        .investigators
+        .get_mut(&investigator)
+        .expect("enter_asset_into_play: investigator present")
+        .cards_in_play
+        .push(in_play);
+    let _ = super::emit::emit_event(
+        cx,
+        &super::emit::TimingEvent::EnteredPlay {
+            instance,
+            controller: investigator,
+        },
+    );
+}
+
 /// Dispose of a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
 /// once its pushed `OnPlay`/`OnEvent` effect has popped (Slice D #423). Pops the
 /// frame first, then by destination: an **event** flushes its stashed
@@ -918,32 +954,7 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
             flush_pending_played_event(cx);
         }
         super::PlayDestination::InPlay => {
-            // Asset: remove from hand, mint + seed its in-play instance, push it
-            // into play, then announce it. The drive loop opens the
-            // after-enters-play reaction window (Research Librarian 01032) if
-            // `emit_event` queued one — the frame is already popped.
-            let played = cx
-                .state
-                .investigators
-                .get_mut(&investigator)
-                .expect("dispose_play_from_hand: investigator present")
-                .hand
-                .remove(usize::from(hand_index));
-            let in_play = super::threat_area::new_in_play_instance(cx, played);
-            let instance = in_play.instance_id;
-            cx.state
-                .investigators
-                .get_mut(&investigator)
-                .expect("dispose_play_from_hand: investigator present")
-                .cards_in_play
-                .push(in_play);
-            let _ = super::emit::emit_event(
-                cx,
-                &super::emit::TimingEvent::EnteredPlay {
-                    instance,
-                    controller: investigator,
-                },
-            );
+            enter_asset_into_play(cx, investigator, hand_index);
         }
     }
     EngineOutcome::Done
