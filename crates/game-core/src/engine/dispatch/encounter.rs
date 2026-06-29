@@ -277,12 +277,17 @@ pub fn resolve_encounter_card(
 ///
 /// # Validate-first contract
 ///
-/// The one precondition that can reject — spawn-location resolution —
-/// is checked before any mutation, leaving `state`/`events` unchanged
-/// on rejection. Engagement resolution never rejects: it either
-/// resolves inline or suspends (`AwaitingInput`) with the enemy already
-/// minted into `state.enemies` and `Event::EnemySpawned` pushed (the
-/// pending choice carries the rest of the work to [`resume_spawn_engage`]).
+/// Spawn-location resolution is checked before any mutation. It has three
+/// outcomes: (1) a legal location → mint + engage (below); (2) a `Specific`
+/// location not in play → the enemy does **not** spawn and its card is placed
+/// in `encounter_discard`, returning `Done` (RR p.24 / Flesh-Eater 01118 FAQ,
+/// #517) — this is the only mutating non-spawn path; (3) the default spawn with
+/// no drawing-investigator location → `Rejected` with `state`/`events`
+/// unchanged (a state-corruption invariant, not the RR "no legal location"
+/// case). Engagement resolution never rejects: it either resolves inline or
+/// suspends (`AwaitingInput`) with the enemy already minted into `state.enemies`
+/// and `Event::EnemySpawned` pushed (the pending choice carries the rest of the
+/// work to [`resume_spawn_engage`]).
 fn spawn_enemy(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -301,20 +306,28 @@ fn spawn_enemy(
     let location_id = match spawn {
         Some(Spawn {
             location: SpawnLocation::Specific(loc_code),
-        }) => match cx
-            .state
-            .locations
-            .iter()
-            .find(|(_, loc)| loc.code.as_str() == loc_code.as_str())
-        {
-            Some((id, _)) => *id,
-            None => {
-                return EngineOutcome::Rejected {
-                    reason: format!("spawn_enemy: spawn location not in play (code {loc_code:?})")
-                        .into(),
-                };
+        }) => {
+            if let Some((id, _)) = cx
+                .state
+                .locations
+                .iter()
+                .find(|(_, loc)| loc.code.as_str() == loc_code.as_str())
+            {
+                *id
+            } else {
+                // Rules Reference p.24: "If an enemy has no legal location to
+                // spawn at (for example, if its spawn instruction directs it to
+                // a specific location that is not in play …), it does not spawn,
+                // and is discarded instead." Flesh-Eater 01118 FAQ: "place that
+                // enemy card into the encounter discard pile without any further
+                // effects." So the draw resolves (`Done`) rather than rejecting:
+                // the enemy never enters play and its card goes to the encounter
+                // discard. Silent, matching the treachery `Discard` disposal
+                // arm. (#517.)
+                cx.state.encounter_discard.push(code);
+                return EngineOutcome::Done;
             }
-        },
+        }
         None => match cx
             .state
             .investigators
@@ -838,7 +851,10 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 /// - `Spawn` (enemy, RR p.24 step 4): re-derive the enemy metadata from the
 ///   registry and [`spawn_enemy`] at the drawer's location. The spawn may
 ///   suspend on an engagement tie ([`EngineOutcome::AwaitingInput`]) or reject;
-///   either is returned immediately (the loop does not continue).
+///   either is returned immediately (the loop does not continue). It may also
+///   return `Done` *without* minting an enemy — a `Specific` spawn location not
+///   in play discards the card to `encounter_discard` (RR p.24, #517) — in which
+///   case the loop continues past the (already-popped) frame as usual.
 ///
 /// After disposal the frame is gone and the loop re-dispatches whatever is
 /// beneath: a [`PlayerDraw`](Continuation::PlayerDraw) frame (Mythos chain →
@@ -1593,7 +1609,12 @@ mod spawn_enemy_tests {
     }
 
     #[test]
-    fn spawn_at_specific_location_rejects_when_location_not_in_play() {
+    fn spawn_at_specific_location_discards_when_location_not_in_play() {
+        // Rules Reference p.24: "If an enemy has no legal location to spawn at
+        // (for example, if its spawn instruction directs it to a specific
+        // location that is not in play …), it does not spawn, and is discarded
+        // instead." Flesh-Eater FAQ: "place that enemy card into the encounter
+        // discard pile without any further effects." So the draw does NOT reject.
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
@@ -1610,16 +1631,13 @@ mod spawn_enemy_tests {
             CardCode("_synth_enemy".into()),
             &metadata,
         );
-        match outcome {
-            EngineOutcome::Rejected { reason } => {
-                assert!(
-                    reason.contains("spawn location not in play"),
-                    "unexpected reason: {reason:?}",
-                );
-            }
-            other => panic!("expected Rejected, got {other:?}"),
-        }
-        assert!(state.enemies.is_empty());
+        assert_eq!(outcome, EngineOutcome::Done, "discard is not a rejection");
+        assert!(state.enemies.is_empty(), "the enemy does not spawn");
+        assert_eq!(
+            state.encounter_discard,
+            vec![CardCode("_synth_enemy".into())],
+            "the enemy card is placed in the encounter discard pile",
+        );
     }
 
     #[test]
