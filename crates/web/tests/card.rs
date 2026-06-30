@@ -117,6 +117,31 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
 }
 
 #[wasm_bindgen_test]
+async fn treachery_renders_generic_face_with_clues() {
+    let _ = game_core::card_registry::install(cards::REGISTRY);
+    // Cover Up 01007: treachery/weakness, traits "Task.", Revelation text;
+    // enters the threat area with clues on the card.
+    let mut inst = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+    inst.clues = 3;
+    leptos::mount::mount_to_body(
+        move || view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> },
+    );
+    leptos::task::tick().await;
+
+    assert!(
+        last_card_classes().contains("card--generic"),
+        "treachery should use the generic arm"
+    );
+    let html = last_card_html();
+    assert!(html.contains("Cover Up"), "name missing: {html}");
+    assert!(html.contains("Task"), "trait missing: {html}");
+    assert!(
+        html.contains("clues 3"),
+        "clues-on-card chip missing: {html}"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn in_play_ready_asset_is_not_dimmed() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
     let inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));

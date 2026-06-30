@@ -299,6 +299,9 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
             chips.push(format!("hor {}/{cap}", inst.accumulated_horror));
         }
     }
+    if inst.clues > 0 {
+        chips.push(format!("clues {}", inst.clues));
+    }
     chips
 }
 
@@ -411,9 +414,10 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
             .into_any()
         }
         None => {
-            // In-play overlays (exhausted dim/badge, live chips) apply only to
-            // the Asset face above; only assets reach `cards_in_play` today, so a
-            // non-asset in-play card renders its plain face here.
+            // The generic face (Treachery / Location / …). Per-instance state
+            // surfaces as the live-chip footer (e.g. a threat-area treachery's
+            // clues-on-card); the exhausted dim/badge stays Asset-only — no
+            // in-scope non-asset card exhausts.
             view! {
                 <div class="card card--generic">
                     <div class="card-head">
@@ -422,6 +426,9 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
                     </div>
                     <div class="card-traits">{traits}</div>
                     <div class="card-text">{text_view}</div>
+                    <div class="card-footer">
+                        <span class="card-live">{live_views}</span>
+                    </div>
                 </div>
             }
             .into_any()
@@ -619,6 +626,25 @@ mod tests {
     }
 
     use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
+
+    #[test]
+    fn live_state_chips_includes_clues_on_card() {
+        // A treachery (Cover Up) in the threat area carries clues on the card.
+        let meta = cards::by_code("01007").expect("Cover Up in corpus");
+        let mut inst = TestCardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+        inst.clues = 3;
+        assert_eq!(
+            live_state_chips(&inst, &meta.kind),
+            vec!["clues 3".to_string()]
+        );
+    }
+
+    #[test]
+    fn live_state_chips_omits_clues_when_zero() {
+        let meta = cards::by_code("01007").expect("Cover Up in corpus");
+        let inst = TestCardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+        assert!(live_state_chips(&inst, &meta.kind).is_empty());
+    }
 
     #[test]
     fn live_state_chips_soak_uses_real_capacity() {

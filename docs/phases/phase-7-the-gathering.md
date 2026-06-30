@@ -199,6 +199,19 @@ the now-stable set of input shapes:
     `docs/superpowers/specs/2026-06-30-location-card-rendering-design.md`,
     `docs/superpowers/plans/2026-06-30-location-card-rendering.md`. Interior-gap collapse,
     full cards inside nodes, and clickable locations stay out of scope.
+  - **Slice 5 — threat-area treacheries (#529, PR #530).** Threat-area treacheries (Cover
+    Up, Frozen in Fear) render via the **existing `Card` generic (`None`) arm** (no new
+    component — a treachery is a `CardInPlay`, exactly `Card`'s model): name/traits/text/
+    weakness + a clues-on-card chip (Cover Up's 3 clues). `live_state_chips` gained a
+    `clues N` chip and the generic arm gained a `card-live` footer (exhausted dim/badge
+    stays Asset-only — no in-scope non-asset exhausts). Treacheries render in the threat
+    `.card-row` alongside the engaged-enemy cards; dead `.threat ul` removed. **This
+    completes the display-only card coverage** for every zone (hand, in-play, enemies,
+    locations, act/agenda terse-only, threat area). Remaining web work: act/agenda cards
+    (terse phase-bar today) and the **interactivity pass** (cards/locations/enemies grow
+    their own action buttons; retire the sticky `.action-bar`). Spec/plan:
+    `docs/superpowers/specs/2026-06-30-treachery-card-rendering-design.md`,
+    `docs/superpowers/plans/2026-06-30-treachery-card-rendering.md`.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —

@@ -349,6 +349,35 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
 }
 
 #[wasm_bindgen_test]
+async fn threat_area_treachery_renders_as_card() {
+    use game_core::state::{CardCode, CardInPlay, CardInstanceId};
+
+    let mut inv = test_investigator(1);
+    inv.threat_area = vec![CardInPlay::enter_play(
+        CardCode::new("_synth_treachery"),
+        CardInstanceId(0),
+    )];
+    let state = GameStateBuilder::new().with_investigator(inv).build();
+
+    let html = render_state(state).await;
+
+    let games = leptos::prelude::document()
+        .query_selector_all(".game")
+        .expect("query_selector_all");
+    let last_game = games
+        .item(games.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("last .game is an Element");
+    let card = last_game
+        .query_selector(".threat .card-row .card")
+        .expect("query_selector");
+    assert!(
+        card.is_some(),
+        "threat-area treachery should render as a card: {html}"
+    );
+}
+
+#[wasm_bindgen_test]
 async fn board_renders_a_new_game_button() {
     let store = RwSignal::new(ClientState::default());
     leptos::mount::mount_to_body(move || {
