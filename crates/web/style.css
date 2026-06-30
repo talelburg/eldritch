@@ -22,7 +22,16 @@
 .inv-token { color: #157a3a; }
 .enemy-token { color: #a3261b; }
 .threat ul { list-style: none; padding-left: 0; margin: 0; }
-.board-main { display: flex; gap: 1rem; align-items: flex-start; }
+/* Map stacked above the investigators panel (not side-by-side): the map's
+   location nodes are absolutely positioned, so in a flex *row* a shrunk map
+   lets them overflow onto the panel. A column gives each full width — the map
+   reserves its inline height, the panel flows below it. */
+.board-main { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+/* Interactive controls pinned to the viewport bottom so they stay reachable
+   however far the (tall) board is scrolled. Transparent/zero-height when no
+   prompt is pending; the white background sits behind the controls so they
+   stay legible over scrolled board content. */
+.action-bar { position: sticky; bottom: 0; z-index: 10; background: #fff; padding: 0.25rem 0; }
 
 /* Event log panel (#505): fixed-width column left of the board, scrolls with
    the newest entry pinned to the bottom. Monospace so raw Debug lines align. */
