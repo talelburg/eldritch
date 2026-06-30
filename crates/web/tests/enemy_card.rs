@@ -47,6 +47,11 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
     assert!(html.contains("Ghoul Priest"), "name missing: {html}");
     assert!(html.contains("fight 4"), "fight chip missing: {html}");
     assert!(html.contains("health 0/2"), "health chip missing: {html}");
+    assert!(html.contains("evade 4"), "evade chip missing: {html}");
+    assert!(
+        html.contains("attack: 1 dmg · 0 hor"),
+        "attack chip missing: {html}"
+    );
     assert!(html.contains("Hunter"), "hunter chip missing: {html}");
     assert!(html.contains("Retaliate"), "retaliate chip missing: {html}");
     assert!(

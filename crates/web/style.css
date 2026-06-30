@@ -22,7 +22,6 @@
 .inv-token { color: #157a3a; }
 .enemy-token { color: #a3261b; }
 .threat ul { list-style: none; padding-left: 0; margin: 0; }
-.enemy-engaged { color: #a3261b; font-size: 0.85rem; }
 .board-main { display: flex; gap: 1rem; align-items: flex-start; }
 
 /* Event log panel (#505): fixed-width column left of the board, scrolls with
@@ -79,6 +78,7 @@
 .card-exhausted { color: #b06f00; }
 .chip--live { background: #e3ecf5; }
 .chip--keyword { background: #f3dede; }
+.chip--enemy-stat { background: #eef0f2; }
 .card-traits { font-style: italic; color: #555; }
 .card-text { line-height: 1.3; color: #222; }
 .card-footer { display: flex; justify-content: space-between; gap: 0.3rem; flex-wrap: wrap; margin-top: auto; }

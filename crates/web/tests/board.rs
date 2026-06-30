@@ -331,7 +331,14 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
 
     let html = render_state(state).await;
 
-    let card = leptos::prelude::document()
+    let games = leptos::prelude::document()
+        .query_selector_all(".game")
+        .expect("query_selector_all");
+    let last_game = games
+        .item(games.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("last .game is an Element");
+    let card = last_game
         .query_selector(".threat .card-row .card")
         .expect("query_selector");
     assert!(

@@ -105,7 +105,7 @@ mod tests {
         e.evade = 2;
         e.max_health = 3;
         e.damage = 1;
-        e.attack_damage = 1;
+        e.attack_damage = 2;
         e.attack_horror = 1;
         assert_eq!(
             enemy_stat_chips(&e),
@@ -113,7 +113,7 @@ mod tests {
                 "fight 3".to_string(),
                 "evade 2".to_string(),
                 "health 1/3".to_string(),
-                "attack: 1 dmg · 1 hor".to_string(),
+                "attack: 2 dmg · 1 hor".to_string(),
             ]
         );
     }
