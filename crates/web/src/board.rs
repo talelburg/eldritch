@@ -31,7 +31,6 @@ pub fn BoardView() -> impl IntoView {
             <div class="game">
                 {resolution_banner(&game)}
                 {crate::act_agenda::act_agenda_view(&game)}
-                {phase_bar(&game)}
                 <div class="board-main">
                     {crate::map::location_map(&game)}
                     {investigators_panel(&game)}
@@ -150,17 +149,4 @@ fn resolution_banner(game: &GameState) -> impl IntoView {
         };
         view! { <section class="resolution">{text}</section> }
     })
-}
-
-/// Phase + round header. Act/agenda now render as cards above the board via
-/// `act_agenda_view`; this bar keeps phase and round only.
-fn phase_bar(game: &GameState) -> impl IntoView {
-    let phase = format!("{:?}", game.phase);
-    let round = game.round;
-    view! {
-        <header class="phase-bar">
-            <span class="phase">{phase}</span>
-            <span class="round">"round " {round}</span>
-        </header>
-    }
 }

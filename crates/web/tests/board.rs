@@ -51,7 +51,7 @@ async fn render_state(state: game_core::state::GameState) -> String {
 }
 
 #[wasm_bindgen_test]
-async fn phase_bar_renders_phase_round_act_agenda() {
+async fn act_agenda_cards_render_name_and_thresholds() {
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_phase(Phase::Investigation)
@@ -71,15 +71,7 @@ async fn phase_bar_renders_phase_round_act_agenda() {
 
     let html = render_state(state).await;
 
-    assert!(html.contains("Investigation"), "phase missing: {html}");
-    assert!(
-        html.contains("round 3") || html.contains("Round 3"),
-        "round missing: {html}"
-    );
-    assert!(
-        html.contains("doom 1/5") || html.contains("1/5"),
-        "agenda doom missing: {html}"
-    );
+    assert!(html.contains("doom 1/5"), "agenda doom missing: {html}");
     assert!(
         html.contains("clues to advance: 2"),
         "act threshold missing: {html}"

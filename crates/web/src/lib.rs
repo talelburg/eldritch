@@ -14,6 +14,7 @@ pub mod map;
 pub mod names;
 pub mod skill_test_result;
 pub mod store;
+pub mod turn_tracker;
 pub mod url;
 
 #[cfg(target_arch = "wasm32")]

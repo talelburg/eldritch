@@ -40,6 +40,7 @@ pub fn App() -> impl IntoView {
                         { ().into_any() }
                     }
                 </div>
+                <crate::turn_tracker::TurnTrackerView/>
             </div>
         </main>
     }
