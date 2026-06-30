@@ -13,6 +13,7 @@ pub mod event_log;
 pub mod map;
 pub mod names;
 pub mod skill_test_result;
+pub mod status_bar;
 pub mod store;
 pub mod turn_tracker;
 pub mod url;

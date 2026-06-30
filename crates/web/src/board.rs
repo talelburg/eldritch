@@ -6,7 +6,7 @@ use game_core::state::GameState;
 use game_core::Resolution;
 use leptos::prelude::*;
 
-use crate::store::{use_store, ConnStatus};
+use crate::store::use_store;
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the panels when a game is present, else a
@@ -14,16 +14,6 @@ use crate::store::{use_store, ConnStatus};
 #[component]
 pub fn BoardView() -> impl IntoView {
     let store = use_store();
-
-    let status = move || match store.get().status {
-        ConnStatus::Connecting => "connecting",
-        ConnStatus::Connected => "connected",
-        ConnStatus::Reconnecting => "reconnecting",
-        ConnStatus::Failed => "failed",
-        ConnStatus::AwaitingRoster => "awaiting-roster",
-        ConnStatus::VersionMismatch => "version mismatch — restart the server and reload",
-    };
-    let rejection = move || store.get().last_rejection.unwrap_or_default();
 
     let board = move || match store.get().game {
         None => view! { <p class="no-game">"<no game>"</p> }.into_any(),
@@ -42,26 +32,6 @@ pub fn BoardView() -> impl IntoView {
 
     view! {
         <section class="board">
-            <p class="status">"status: " {status}</p>
-            <p class="rejection">"rejection: " {rejection}</p>
-            {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    view! {
-                        <button
-                            class="new-game"
-                            on:click=move |_| crate::transport::start_new_game()
-                        >
-                            "New game"
-                        </button>
-                    }
-                    .into_any()
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    ().into_any()
-                }
-            }
             {board}
         </section>
     }

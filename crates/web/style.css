@@ -1,5 +1,9 @@
 /* P6.5 board — minimal functional layout. */
 .board { font-family: system-ui, sans-serif; margin: 1rem; }
+/* Compact header: the title and the status strip share one horizontal row. */
+.app-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1rem; margin: 1rem; }
+.app-header h1 { margin: 0; font-size: 1.4rem; }
+.status-bar { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1rem; }
 .status, .rejection { font-size: 0.85rem; color: #555; }
 .game { display: flex; flex-direction: column; gap: 1rem; }
 .investigators { display: flex; flex-wrap: wrap; gap: 1rem; }

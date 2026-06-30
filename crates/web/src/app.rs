@@ -19,7 +19,10 @@ pub fn App() -> impl IntoView {
 
     view! {
         <main>
-            <h1>"Eldritch"</h1>
+            <header class="app-header">
+                <h1>"Eldritch"</h1>
+                <crate::status_bar::StatusBarView/>
+            </header>
             <div class="layout">
                 <crate::event_log::EventLogView/>
                 <div class="main-column">

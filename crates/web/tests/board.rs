@@ -258,38 +258,6 @@ async fn resolution_banner_renders_lost() {
 }
 
 #[wasm_bindgen_test]
-async fn version_mismatch_status_renders_actionable_message() {
-    use web::store::ConnStatus;
-    let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
-        provide_context(store);
-        leptos::view! { <BoardView/> }
-    });
-    store.update(|s| s.status = ConnStatus::VersionMismatch);
-    leptos::task::tick().await;
-
-    // Scope to the last mounted .status line (DOM accumulates across tests).
-    let lines = leptos::prelude::document()
-        .query_selector_all(".status")
-        .expect("query_selector_all");
-    let html = lines
-        .item(lines.length() - 1)
-        .expect("at least one .status line")
-        .dyn_ref::<web_sys::Element>()
-        .expect("Element")
-        .inner_html();
-
-    assert!(
-        html.contains("version mismatch"),
-        "status line must name the version mismatch: {html}"
-    );
-    assert!(
-        html.contains("restart the server"),
-        "status line must tell the user what to do: {html}"
-    );
-}
-
-#[wasm_bindgen_test]
 async fn map_and_investigators_are_inside_board_main() {
     let state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
@@ -381,29 +349,5 @@ async fn threat_area_treachery_renders_as_card() {
     assert!(
         card.is_some(),
         "threat-area treachery should render as a card: {html}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn board_renders_a_new_game_button() {
-    let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
-        provide_context(store);
-        leptos::view! { <BoardView/> }
-    });
-    leptos::task::tick().await;
-
-    // Scope to the last mounted .board (DOM accumulates across tests).
-    let boards = leptos::prelude::document()
-        .query_selector_all(".board")
-        .expect("query_selector_all");
-    let last = boards
-        .item(boards.length() - 1)
-        .expect("at least one .board section")
-        .dyn_into::<web_sys::Element>()
-        .expect("Element");
-    assert!(
-        last.query_selector(".new-game").expect("query").is_some(),
-        "BoardView must render a .new-game button"
     );
 }
