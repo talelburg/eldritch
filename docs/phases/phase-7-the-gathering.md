@@ -171,6 +171,17 @@ the now-stable set of input shapes:
     display-only; threat area, the spatial map (locations/enemies), and act/agenda remain
     later slices. Spec/plan: `docs/superpowers/specs/2026-06-30-in-play-card-rendering-design.md`,
     `docs/superpowers/plans/2026-06-30-in-play-card-rendering.md`.
+  - **Slice 3 — engaged enemies (#523, PR #524).** A **dedicated `EnemyCard`** component
+    (fork, not `Card`): enemies are a different data source — the `Enemy` *state struct*
+    carries stats + live state, vs `Card`'s `code`→registry + `CardInPlay`. Renders combat
+    stats (fight/evade/health/attack), keyword chips (Hunter/Retaliate/Victory), traits,
+    ability text (looked up by code via the registry, reusing `parse_card_text` +
+    the now-`pub(crate)` `render_segments`), and the `card--exhausted` dim + badge; red
+    `card--enemy` border. Engaged enemies render as a `.card-row` in the threat area; the
+    map's enemy tokens and threat-area treacheries stay later slices, and `prey` display is
+    deferred (moot in 1p). Spec/plan:
+    `docs/superpowers/specs/2026-06-30-enemy-card-rendering-design.md`,
+    `docs/superpowers/plans/2026-06-30-enemy-card-rendering.md`.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
