@@ -120,6 +120,10 @@
 .card--mythos   { border-color: #555; }
 .card--enemy    { border-color: #a3261b; }
 .card--unknown, .card--generic { border-style: dashed; }
+.act-agenda { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+.card--act { border-color: #c8a020; }
+.card--agenda { border-color: #7a2f2f; }
+.card-kind { font-size: 0.7rem; text-transform: uppercase; opacity: 0.7; margin-right: 0.3rem; }
 /* Exhausted in-play asset: dimmed + dashed so it reads as unavailable.
    Declared after the class palette so its border-color wins over the class hue. */
 .card--exhausted { opacity: 0.6; border-style: dashed; border-color: #aaa; }

@@ -4,6 +4,7 @@
 //! Components live here so integration tests in `tests/` — and later Phase-6
 //! components — can import them.
 
+pub mod act_agenda;
 pub mod app;
 pub mod board;
 pub mod card;

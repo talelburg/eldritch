@@ -30,6 +30,7 @@ pub fn BoardView() -> impl IntoView {
         Some(game) => view! {
             <div class="game">
                 {resolution_banner(&game)}
+                {crate::act_agenda::act_agenda_view(&game)}
                 {phase_bar(&game)}
                 <div class="board-main">
                     {crate::map::location_map(&game)}
@@ -151,26 +152,15 @@ fn resolution_banner(game: &GameState) -> impl IntoView {
     })
 }
 
-/// Phase + round, plus the current act's clue threshold and the current
-/// agenda's doom (`doom/threshold`). Act/agenda lines are omitted when
-/// their decks are empty (fixtures may omit them).
+/// Phase + round header. Act/agenda now render as cards above the board via
+/// `act_agenda_view`; this bar keeps phase and round only.
 fn phase_bar(game: &GameState) -> impl IntoView {
     let phase = format!("{:?}", game.phase);
     let round = game.round;
-    let act = game
-        .act_deck
-        .get(game.act_index)
-        .map(|a| format!("clues 0/{}", a.clue_threshold));
-    let agenda = game
-        .agenda_deck
-        .get(game.agenda_index)
-        .map(|a| format!("doom {}/{}", game.agenda_doom, a.doom_threshold));
     view! {
         <header class="phase-bar">
             <span class="phase">{phase}</span>
             <span class="round">"round " {round}</span>
-            {agenda.map(|t| view! { <span class="agenda">{t}</span> })}
-            {act.map(|t| view! { <span class="act">{t}</span> })}
         </header>
     }
 }

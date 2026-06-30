@@ -81,7 +81,7 @@ async fn phase_bar_renders_phase_round_act_agenda() {
         "agenda doom missing: {html}"
     );
     assert!(
-        html.contains("clues 0/2") || html.contains("0/2"),
+        html.contains("clues to advance: 2"),
         "act threshold missing: {html}"
     );
 }
