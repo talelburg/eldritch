@@ -55,6 +55,16 @@ pub(crate) fn layout_positions(
         });
         out.insert(*id, pos);
     }
+    // Normalize: shift so the placed nodes start at (0, 0), dropping any leading
+    // empty columns/rows a departed location leaves behind (e.g. the Study's
+    // column once Act 1 removes it). Interior gaps are not collapsed (no
+    // Core/Dunwich layout has them).
+    let min_col = out.values().map(|(c, _)| *c).min().unwrap_or(0);
+    let min_row = out.values().map(|(_, r)| *r).min().unwrap_or(0);
+    for (col, row) in out.values_mut() {
+        *col -= min_col;
+        *row -= min_row;
+    }
     out
 }
 
@@ -237,5 +247,29 @@ mod tests {
         ];
         let pos = layout_positions(&locs);
         assert_ne!(pos[&LocationId(1)], pos[&LocationId(2)]);
+    }
+
+    #[test]
+    fn positions_are_normalized_to_origin() {
+        // Post-Study Gathering set — all authored at cols 2-3 (Study's col 0/1
+        // is gone). Hallway 01112 (2,1), Attic 01113 (2,0), Cellar 01114 (3,1),
+        // Parlor 01115 (2,2).
+        let locs = vec![
+            (LocationId(1), CardCode::new("01112")),
+            (LocationId(2), CardCode::new("01113")),
+            (LocationId(3), CardCode::new("01114")),
+            (LocationId(4), CardCode::new("01115")),
+        ];
+        let pos = layout_positions(&locs);
+        let min_col = pos.values().map(|(c, _)| *c).min().unwrap();
+        let min_row = pos.values().map(|(_, r)| *r).min().unwrap();
+        assert_eq!(min_col, 0, "leading empty column not removed: {pos:?}");
+        assert_eq!(min_row, 0, "leading empty row not removed: {pos:?}");
+        // Relative offset preserved: Cellar one column right of Hallway.
+        assert_eq!(
+            pos[&LocationId(3)].0,
+            pos[&LocationId(1)].0 + 1,
+            "relative column offset not preserved: {pos:?}"
+        );
     }
 }
