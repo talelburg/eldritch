@@ -318,6 +318,30 @@ async fn map_and_investigators_are_inside_board_main() {
 }
 
 #[wasm_bindgen_test]
+async fn engaged_enemy_renders_as_card_in_threat_area() {
+    use game_core::state::InvestigatorId;
+    use game_core::test_support::fixtures::{test_enemy, test_investigator};
+
+    let mut enemy = test_enemy(1, "Ghoul Priest");
+    enemy.engaged_with = Some(InvestigatorId(1));
+    let state = GameStateBuilder::new()
+        .with_investigator(test_investigator(1))
+        .with_enemy(enemy)
+        .build();
+
+    let html = render_state(state).await;
+
+    let card = leptos::prelude::document()
+        .query_selector(".threat .card-row .card")
+        .expect("query_selector");
+    assert!(
+        card.is_some(),
+        "engaged enemy should render as a card: {html}"
+    );
+    assert!(html.contains("Ghoul Priest"), "enemy name missing: {html}");
+}
+
+#[wasm_bindgen_test]
 async fn board_renders_a_new_game_button() {
     let store = RwSignal::new(ClientState::default());
     leptos::mount::mount_to_body(move || {
