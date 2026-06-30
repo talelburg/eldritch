@@ -85,4 +85,10 @@ async fn log_collapses_and_expands() {
         "log body should be hidden after collapse: {}",
         scroll.class_name()
     );
+    // The panel itself collapses to a thin strip (frees the left side).
+    assert!(
+        panel.class_name().contains("collapsed"),
+        "panel should carry the collapsed class: {}",
+        panel.class_name()
+    );
 }

@@ -51,14 +51,14 @@ pub fn EventLogView() -> impl IntoView {
     };
 
     view! {
-        <aside class="event-log">
+        <aside class="event-log" class:collapsed=move || collapsed.get()>
             <div class="event-log-head">
                 <h2>"Event log"</h2>
                 <button
                     class="log-toggle"
                     on:click=move |_| collapsed.update(|c| *c = !*c)
                 >
-                    {move || if collapsed.get() { "show" } else { "hide" }}
+                    {move || if collapsed.get() { "▸ log" } else { "◂ hide" }}
                 </button>
             </div>
             <div
