@@ -4,6 +4,9 @@
 .phase-bar { display: flex; gap: 1rem; font-weight: 600; padding: 0.5rem 0; border-bottom: 1px solid #ccc; }
 .game { display: flex; flex-direction: column; gap: 1rem; }
 .investigators { display: flex; flex-wrap: wrap; gap: 1rem; }
+/* Full-width so the heading wraps onto its own line ABOVE the panels rather
+   than sitting beside them as a flex sibling. */
+.investigators h2 { flex-basis: 100%; margin: 0 0 0.25rem; }
 .investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 16rem; }
 .investigator span { font-size: 0.9rem; }
 .card-line { font-family: ui-monospace, monospace; font-size: 0.85rem; }
@@ -13,7 +16,9 @@
 .map { position: relative; margin: 1rem 0; }
 .map-lines { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
 .map-line { stroke: #999; stroke-width: 2; }
-.map-location { position: absolute; z-index: 1; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.25rem; font-size: 0.8rem; overflow: hidden; }
+.map-location { position: absolute; z-index: 1; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem; font-size: 0.8rem; overflow: hidden; display: flex; flex-direction: column; gap: 0.2rem; }
+.loc-card { display: flex; flex-direction: column; gap: 0.2rem; }
+.loc-stats { display: flex; gap: 0.4rem; align-items: baseline; }
 /* Unrevealed locations read as dimmed/face-down WITHOUT element opacity —
    opacity would let the connection lines behind the node bleed through. A muted
    opaque background + greyed text + dashed border keep the node solid. */
