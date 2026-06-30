@@ -103,13 +103,8 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                 .enemies
                 .values()
                 .filter(|e| e.engaged_with == Some(inv.id))
-                .map(|e| {
-                    view! {
-                        <li class="enemy-engaged">
-                            {e.name.clone()} " " {e.damage} "/" {e.max_health}
-                        </li>
-                    }
-                })
+                .cloned()
+                .map(|e| view! { <crate::enemy_card::EnemyCard enemy=e/> })
                 .collect();
             view! {
                 <article class="investigator">
@@ -123,7 +118,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <span class="inv-status">{format!("{:?}", inv.status)}</span>
                     <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
                     <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
-                    <div class="threat"><h4>"Threat area"</h4><ul>{threat}{engaged}</ul></div>
+                    <div class="threat"><h4>"Threat area"</h4><ul>{threat}</ul><div class="card-row">{engaged}</div></div>
                 </article>
             }
         })

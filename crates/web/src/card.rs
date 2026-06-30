@@ -431,7 +431,7 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
 
 /// Render parsed card text to views (known symbols → chips; unknown tokens keep
 /// their brackets in a `.unknown-token` span so they pop out).
-fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
+pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
     segments
         .into_iter()
         .map(|seg| match seg {
