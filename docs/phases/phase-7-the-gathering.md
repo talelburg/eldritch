@@ -182,6 +182,23 @@ the now-stable set of input shapes:
     deferred (moot in 1p). Spec/plan:
     `docs/superpowers/specs/2026-06-30-enemy-card-rendering-design.md`,
     `docs/superpowers/plans/2026-06-30-enemy-card-rendering.md`.
+  - **Slice 4 — location cards / the map (#527, PR #528).** The spatial map's nodes now
+    render as location cards (name, `shroud` chip, `clues`, traits, ability text, `Victory`
+    chip — traits/text/victory from the corpus by `loc.code`); unrevealed nodes withhold
+    that info *structurally* (`loc.revealed.then(...)`). The grid is **normalized to the
+    origin** (`layout_positions` subtracts min col/row) so a departed location (the Study,
+    post-Act-1) leaves no dead column; connection lines + `map_extent` derive from the same
+    positions. Unengaged-enemy tokens (deferred from slice 3) render in the nodes. Two
+    layout fixes shipped alongside (PRs #526): `.board-main` stacks the map above the
+    investigators panel (the map's absolutely-positioned nodes overflowed a shrunk flex
+    row), and a sticky `.action-bar` keeps the controls reachable on the now-tall board.
+    Registry-discipline note for future map tests: metadata-dependent rendering is tested
+    in its own binary (`tests/location_card.rs`, real `cards::REGISTRY`, mounts
+    `location_map` directly) since registry install is first-wins per process — `tests/map.rs`
+    keeps the synthetic registry. Spec/plan:
+    `docs/superpowers/specs/2026-06-30-location-card-rendering-design.md`,
+    `docs/superpowers/plans/2026-06-30-location-card-rendering.md`. Interior-gap collapse,
+    full cards inside nodes, and clickable locations stay out of scope.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
