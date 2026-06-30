@@ -88,7 +88,11 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
             let in_play: Vec<_> = inv
                 .cards_in_play
                 .iter()
-                .map(|c| view! { <li class="card-line">{crate::names::card_name(&c.code)}</li> })
+                .cloned()
+                .map(|c| {
+                    let code = c.code.clone();
+                    view! { <crate::card::Card code=code in_play=c/> }
+                })
                 .collect();
             let threat: Vec<_> = inv
                 .threat_area
@@ -118,7 +122,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <span class="inv-clues">"clues " {inv.clues}</span>
                     <span class="inv-status">{format!("{:?}", inv.status)}</span>
                     <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
-                    <div class="in-play"><h4>"In play"</h4><ul>{in_play}</ul></div>
+                    <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
                     <div class="threat"><h4>"Threat area"</h4><ul>{threat}{engaged}</ul></div>
                 </article>
             }

@@ -163,6 +163,14 @@ the now-stable set of input shapes:
   the chip→glyph seam built so it drops in without restructuring — revisit near a future
   merge. Spec/plan: `docs/superpowers/specs/2026-06-29-web-card-rendering-design.md`,
   `docs/superpowers/plans/2026-06-29-web-card-rendering-hand.md`.
+  - **Slice 2 — in-play assets (#521, PR #522).** `Card` gained an optional
+    `in_play: Option<CardInPlay>` prop (extend, don't fork): the printed face minus the
+    cost corner, plus live per-instance state — exhausted (`card--exhausted` dim + badge),
+    uses chips, and soak chips (`dmg`/`hor` vs the asset's health/sanity) built by a pure
+    `live_state_chips`. The board's in-play list is now a `.card-row` of `Card`s. Still
+    display-only; threat area, the spatial map (locations/enemies), and act/agenda remain
+    later slices. Spec/plan: `docs/superpowers/specs/2026-06-30-in-play-card-rendering-design.md`,
+    `docs/superpowers/plans/2026-06-30-in-play-card-rendering.md`.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —

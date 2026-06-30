@@ -4,7 +4,7 @@
 //! handlers) — interactivity is a later slice.
 
 use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
-use game_core::state::CardCode;
+use game_core::state::{CardCode, CardInPlay, UseKind};
 use leptos::prelude::*;
 
 /// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
@@ -270,6 +270,38 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
     }
 }
 
+/// Display label for a uses pool kind. `UseKind` is `#[non_exhaustive]`, so a
+/// future variant falls back to the generic `"uses"`.
+fn use_kind_label(kind: UseKind) -> &'static str {
+    match kind {
+        UseKind::Charges => "charges",
+        UseKind::Ammo => "ammo",
+        UseKind::Secrets => "secrets",
+        UseKind::Supplies => "supplies",
+        _ => "uses",
+    }
+}
+
+/// Live per-instance state of an in-play card as chip strings: uses pools first
+/// (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`) for an `Asset` that has
+/// that capacity. Empty for a plain asset with no uses and no soak capacity.
+#[must_use]
+pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
+    let mut chips = Vec::new();
+    for (use_kind, n) in &inst.uses {
+        chips.push(format!("{n} {}", use_kind_label(*use_kind)));
+    }
+    if let CardKind::Asset { health, sanity, .. } = kind {
+        if let Some(cap) = health {
+            chips.push(format!("dmg {}/{cap}", inst.accumulated_damage));
+        }
+        if let Some(cap) = sanity {
+            chips.push(format!("hor {}/{cap}", inst.accumulated_horror));
+        }
+    }
+    chips
+}
+
 /// One card rendered as a faithful mini-card rectangle, colour-coded by class.
 ///
 /// Looks metadata up via the installed registry; a card with no metadata
@@ -277,11 +309,15 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
 /// a bare rectangle showing the raw code. Non-hand card kinds render as a
 /// generic rectangle (name/traits/text) — their detailed faces are later slices.
 /// Display-only: no click handlers.
-// Leptos components receive props by value (the macro builds a props struct); a
-// reference here would require lifetime annotations the macro can't express.
-#[allow(clippy::needless_pass_by_value)]
+// `code` and `in_play` are taken by value: Leptos `#[component]` generates a
+// props struct requiring owned fields, so a reference would need a lifetime the
+// macro can't express.
+// `too_many_lines`: the component assembles many inline `view!` fragments
+// (head/traits/text/footer + the in-play overlays); splitting it would scatter
+// the markup without clarifying it.
+#[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 #[component]
-pub fn Card(code: CardCode) -> impl IntoView {
+pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> impl IntoView {
     let Some(meta) = game_core::card_registry::current().and_then(|r| (r.metadata_for)(&code))
     else {
         return view! {
@@ -306,6 +342,18 @@ pub fn Card(code: CardCode) -> impl IntoView {
         .weakness
         .then(|| view! { <span class="card-weakness">"Weakness"</span> });
 
+    let is_in_play = in_play.is_some();
+    let exhausted = in_play.as_ref().is_some_and(|c| c.exhausted);
+    let exhausted_badge =
+        exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
+    let live_views: Vec<_> = in_play
+        .as_ref()
+        .map(|inst| live_state_chips(inst, &meta.kind))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| view! { <span class="chip chip--live">{s}</span> })
+        .collect();
+
     match card_face(&meta.kind) {
         Some(face) => {
             let CardFace {
@@ -315,7 +363,16 @@ pub fn Card(code: CardCode) -> impl IntoView {
                 skill_chips,
                 is_fast,
             } = face;
-            let cost_view = cost_corner.map(|c| view! { <span class="card-cost">{c}</span> });
+            let cost_view = if is_in_play {
+                None
+            } else {
+                cost_corner.map(|c| view! { <span class="card-cost">{c}</span> })
+            };
+            let root_class = if exhausted {
+                format!("card {class_css} card--exhausted")
+            } else {
+                format!("card {class_css}")
+            };
             let fast_view = is_fast.then(|| view! { <span class="card-fast">"Fast"</span> });
             let slot_views: Vec<_> = slot_chips
                 .into_iter()
@@ -334,11 +391,12 @@ pub fn Card(code: CardCode) -> impl IntoView {
                 })
                 .collect();
             view! {
-                <div class=format!("card {class_css}")>
+                <div class=root_class>
                     <div class="card-head">
                         {cost_view}
                         <span class="card-name">{name}</span>
                         {fast_view}
+                        {exhausted_badge}
                         {weakness_view}
                     </div>
                     <div class="card-traits">{traits}</div>
@@ -346,22 +404,28 @@ pub fn Card(code: CardCode) -> impl IntoView {
                     <div class="card-footer">
                         <span class="card-slots">{slot_views}</span>
                         <span class="card-skills">{skill_views}</span>
+                        <span class="card-live">{live_views}</span>
                     </div>
                 </div>
             }
             .into_any()
         }
-        None => view! {
-            <div class="card card--generic">
-                <div class="card-head">
-                    <span class="card-name">{name}</span>
-                    {weakness_view}
+        None => {
+            // In-play overlays (exhausted dim/badge, live chips) apply only to
+            // the Asset face above; only assets reach `cards_in_play` today, so a
+            // non-asset in-play card renders its plain face here.
+            view! {
+                <div class="card card--generic">
+                    <div class="card-head">
+                        <span class="card-name">{name}</span>
+                        {weakness_view}
+                    </div>
+                    <div class="card-traits">{traits}</div>
+                    <div class="card-text">{text_view}</div>
                 </div>
-                <div class="card-traits">{traits}</div>
-                <div class="card-text">{text_view}</div>
-            </div>
+            }
+            .into_any()
         }
-        .into_any(),
     }
 }
 
@@ -552,5 +616,38 @@ mod tests {
             parse_card_text("a [b"),
             vec![TextSegment::Text("a [b".into())]
         );
+    }
+
+    use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
+
+    #[test]
+    fn live_state_chips_soak_uses_real_capacity() {
+        // Beat Cop 01018 is an ally asset with health 2 / sanity 2.
+        let meta = cards::by_code("01018").expect("Beat Cop in corpus");
+        let mut inst = TestCardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
+        inst.accumulated_damage = 1;
+        assert_eq!(
+            live_state_chips(&inst, &meta.kind),
+            vec!["dmg 1/2".to_string(), "hor 0/2".to_string()]
+        );
+    }
+
+    #[test]
+    fn live_state_chips_lists_uses_without_soak_for_plain_asset() {
+        // Machete 01020 is an asset with no soak capacity.
+        let meta = cards::by_code("01020").expect("Machete in corpus");
+        let mut inst = TestCardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(0));
+        inst.uses.insert(game_core::state::UseKind::Ammo, 2);
+        assert_eq!(
+            live_state_chips(&inst, &meta.kind),
+            vec!["2 ammo".to_string()]
+        );
+    }
+
+    #[test]
+    fn live_state_chips_empty_for_plain_asset_no_uses() {
+        let meta = cards::by_code("01020").expect("Machete in corpus");
+        let inst = TestCardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(0));
+        assert!(live_state_chips(&inst, &meta.kind).is_empty());
     }
 }
