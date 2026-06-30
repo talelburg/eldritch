@@ -58,5 +58,11 @@ async fn hello_renders_state_present() {
     // with `update`. Yield so the DOM reflects the new signal value.
     leptos::task::tick().await;
 
-    assert!(body_html().contains("phase-bar"), "after: {}", body_html());
+    // `phase_bar` was retired (phase/round moved to the turn tracker); assert the
+    // game now renders its board — the investigators-panel heading.
+    assert!(
+        body_html().contains("Investigators"),
+        "after: {}",
+        body_html()
+    );
 }
