@@ -53,9 +53,34 @@ async fn revealed_location_shows_metadata_traits() {
     leptos::mount::mount_to_body(move || web::map::location_map(&game));
     leptos::task::tick().await;
 
+    let text = node_text("Miskatonic University");
+    assert!(text.contains("Arkham"), "traits missing: {text}");
+}
+
+#[wasm_bindgen_test]
+async fn unrevealed_location_withholds_metadata() {
+    let _ = game_core::card_registry::install(cards::REGISTRY);
+    // Attic 01113 has victory 1 + Forced text ("...Take 1 horror."); unrevealed
+    // must withhold all of it (hidden info).
+    let mut attic = test_location(3, "Hidden Attic");
+    attic.code = CardCode::new("01113");
+    attic.revealed = false;
+    let game = GameStateBuilder::new().with_location(attic).build();
+    leptos::mount::mount_to_body(move || web::map::location_map(&game));
+    leptos::task::tick().await;
+
+    let text = node_text("Hidden Attic");
     assert!(
-        node_text("Miskatonic University").contains("Arkham"),
-        "traits missing: {}",
-        node_text("Miskatonic University")
+        text.contains("unrevealed"),
+        "unrevealed label missing: {text}"
     );
+    assert!(
+        !text.contains("Victory"),
+        "victory must be withheld: {text}"
+    );
+    assert!(
+        !text.contains("horror"),
+        "ability text must be withheld: {text}"
+    );
+    assert!(!text.contains("shroud"), "shroud must be withheld: {text}");
 }
