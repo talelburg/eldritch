@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use game_core::card_data::CardKind;
 use game_core::state::{CardCode, GameState, LocationId};
 use leptos::prelude::*;
 
@@ -79,10 +80,10 @@ fn advance_cell((col, row): (u16, u16)) -> (u16, u16) {
 
 /// Pixel geometry for the grid. A node occupies `NODE_W`×`NODE_H`; cells are
 /// larger to leave gaps for the connection lines.
-const CELL_W: u16 = 200;
-const CELL_H: u16 = 150;
-const NODE_W: u16 = 170;
-const NODE_H: u16 = 120;
+const CELL_W: u16 = 260;
+const CELL_H: u16 = 250;
+const NODE_W: u16 = 230;
+const NODE_H: u16 = 220;
 
 /// Center pixel of a node at grid cell `(col, row)`.
 fn node_center((col, row): (u16, u16)) -> (u16, u16) {
@@ -131,6 +132,7 @@ fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
 /// holding the investigators and unengaged enemies in it. Connection lines are
 /// drawn by a private helper; SVG lines sit behind the nodes. Read-only —
 /// pure derivation of `game`.
+#[allow(clippy::too_many_lines)]
 pub fn location_map(game: &GameState) -> impl IntoView {
     let locs: Vec<_> = game
         .locations
@@ -165,7 +167,8 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .map(|e| {
                     view! {
                         <div class="enemy-token">
-                            {e.name.clone()} " " {e.damage} "/" {e.max_health}
+                            {e.name.clone()} " health " {e.damage} "/" {e.max_health}
+                            {e.exhausted.then(|| view! { <span>" (exhausted)"</span> })}
                         </div>
                     }
                 })
@@ -181,14 +184,52 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             } else {
                 "unrevealed"
             };
-            let head = if loc.revealed {
-                format!("{} (shroud {} · clues {})", loc.name, loc.shroud, loc.clues)
-            } else {
-                loc.name.clone()
-            };
+            // Revealed: a location card (name + shroud chip, traits, ability
+            // text, clues + victory chip), with traits/text/victory from the
+            // corpus by code (absent when no metadata — synthetic registry /
+            // unknown code). Unrevealed: name only (hidden info withheld).
+            let detail = loc.revealed.then(|| {
+                let meta =
+                    game_core::card_registry::current().and_then(|r| (r.metadata_for)(&loc.code));
+                let traits = meta
+                    .map(|m| {
+                        if m.traits.is_empty() {
+                            String::new()
+                        } else {
+                            format!("{}.", m.traits.join(". "))
+                        }
+                    })
+                    .unwrap_or_default();
+                let text_view = meta
+                    .and_then(|m| m.text.as_deref())
+                    .map(|t| crate::card::render_segments(crate::card::parse_card_text(t)));
+                let victory = meta.and_then(|m| match &m.kind {
+                    CardKind::Location { victory, .. } => *victory,
+                    _ => None,
+                });
+                let victory_chip =
+                    victory.map(|n| view! { <span class="chip">{format!("Victory {n}")}</span> });
+                view! {
+                    <div class="loc-card">
+                        <div class="loc-head">
+                            {loc.name.clone()}
+                            <span class="chip">{format!("shroud {}", loc.shroud)}</span>
+                        </div>
+                        <div class="card-traits">{traits}</div>
+                        <div class="card-text">{text_view}</div>
+                        <div class="loc-stats">
+                            <span>{format!("clues {}", loc.clues)}</span>
+                            {victory_chip}
+                        </div>
+                    </div>
+                }
+            });
+            let unrevealed_head =
+                (!loc.revealed).then(|| view! { <div class="loc-head">{loc.name.clone()}</div> });
             view! {
                 <div class=node_class data-loc=loc.name.clone() style=style>
-                    <div class="loc-head">{head}</div>
+                    {detail}
+                    {unrevealed_head}
                     <span class="loc-revealed">{revealed_label}</span>
                     {invs}
                     {enemies}

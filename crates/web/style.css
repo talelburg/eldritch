@@ -13,7 +13,9 @@
 .map { position: relative; margin: 1rem 0; }
 .map-lines { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
 .map-line { stroke: #999; stroke-width: 2; }
-.map-location { position: absolute; z-index: 1; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.25rem; font-size: 0.8rem; overflow: hidden; }
+.map-location { position: absolute; z-index: 1; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem; font-size: 0.8rem; overflow: hidden; display: flex; flex-direction: column; gap: 0.2rem; }
+.loc-card { display: flex; flex-direction: column; gap: 0.2rem; }
+.loc-stats { display: flex; gap: 0.4rem; align-items: baseline; }
 /* Unrevealed locations read as dimmed/face-down WITHOUT element opacity —
    opacity would let the connection lines behind the node bleed through. A muted
    opaque background + greyed text + dashed border keep the node solid. */
