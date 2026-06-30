@@ -27,9 +27,14 @@ pub fn App() -> impl IntoView {
                     {
                         #[cfg(target_arch = "wasm32")]
                         { view! {
-                            <crate::picker::PickerView/>
-                            <crate::skill_test_result::SkillTestResultView/>
-                            <crate::input::AwaitingInputView/>
+                            // Sticky action bar: pinned to the viewport bottom so the
+                            // controls stay reachable however far the (tall) board is
+                            // scrolled. Invisible when nothing is pending.
+                            <div class="action-bar">
+                                <crate::picker::PickerView/>
+                                <crate::skill_test_result::SkillTestResultView/>
+                                <crate::input::AwaitingInputView/>
+                            </div>
                         }.into_any() }
                         #[cfg(not(target_arch = "wasm32"))]
                         { ().into_any() }
