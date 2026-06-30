@@ -26,7 +26,6 @@
 .loc-head { font-weight: 600; margin-bottom: 0.15rem; }
 .inv-token { color: #157a3a; }
 .enemy-token { color: #a3261b; }
-.threat ul { list-style: none; padding-left: 0; margin: 0; }
 /* Map stacked above the investigators panel (not side-by-side): the map's
    location nodes are absolutely positioned, so in a flex *row* a shrunk map
    lets them overflow onto the panel. A column gives each full width — the map
