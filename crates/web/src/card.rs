@@ -4,7 +4,7 @@
 //! handlers) — interactivity is a later slice.
 
 use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
-use game_core::state::CardCode;
+use game_core::state::{CardCode, CardInPlay, UseKind};
 use leptos::prelude::*;
 
 /// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
@@ -268,6 +268,38 @@ pub fn card_face(kind: &CardKind) -> Option<CardFace> {
         }),
         _ => None,
     }
+}
+
+/// Display label for a uses pool kind. `UseKind` is `#[non_exhaustive]`, so a
+/// future variant falls back to the generic `"uses"`.
+fn use_kind_label(kind: UseKind) -> &'static str {
+    match kind {
+        UseKind::Charges => "charges",
+        UseKind::Ammo => "ammo",
+        UseKind::Secrets => "secrets",
+        UseKind::Supplies => "supplies",
+        _ => "uses",
+    }
+}
+
+/// Live per-instance state of an in-play card as chip strings: uses pools first
+/// (`"2 ammo"`), then soak (`"dmg 1/2"` / `"hor 0/2"`) for an `Asset` that has
+/// that capacity. Empty for a plain asset with no uses and no soak capacity.
+#[must_use]
+pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
+    let mut chips = Vec::new();
+    for (use_kind, n) in &inst.uses {
+        chips.push(format!("{n} {}", use_kind_label(*use_kind)));
+    }
+    if let CardKind::Asset { health, sanity, .. } = kind {
+        if let Some(cap) = health {
+            chips.push(format!("dmg {}/{cap}", inst.accumulated_damage));
+        }
+        if let Some(cap) = sanity {
+            chips.push(format!("hor {}/{cap}", inst.accumulated_horror));
+        }
+    }
+    chips
 }
 
 /// One card rendered as a faithful mini-card rectangle, colour-coded by class.
@@ -552,5 +584,38 @@ mod tests {
             parse_card_text("a [b"),
             vec![TextSegment::Text("a [b".into())]
         );
+    }
+
+    use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
+
+    #[test]
+    fn live_state_chips_soak_uses_real_capacity() {
+        // Beat Cop 01018 is an ally asset with health 2 / sanity 2.
+        let meta = cards::by_code("01018").expect("Beat Cop in corpus");
+        let mut inst = TestCardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
+        inst.accumulated_damage = 1;
+        assert_eq!(
+            live_state_chips(&inst, &meta.kind),
+            vec!["dmg 1/2".to_string(), "hor 0/2".to_string()]
+        );
+    }
+
+    #[test]
+    fn live_state_chips_lists_uses_without_soak_for_plain_asset() {
+        // Machete 01020 is an asset with no soak capacity.
+        let meta = cards::by_code("01020").expect("Machete in corpus");
+        let mut inst = TestCardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(0));
+        inst.uses.insert(game_core::state::UseKind::Ammo, 2);
+        assert_eq!(
+            live_state_chips(&inst, &meta.kind),
+            vec!["2 ammo".to_string()]
+        );
+    }
+
+    #[test]
+    fn live_state_chips_empty_for_plain_asset_no_uses() {
+        let meta = cards::by_code("01020").expect("Machete in corpus");
+        let inst = TestCardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(0));
+        assert!(live_state_chips(&inst, &meta.kind).is_empty());
     }
 }
