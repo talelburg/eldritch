@@ -42,3 +42,39 @@ async fn renders_batches_with_headers_and_event_debug() {
         "event Debug rendered: {text}"
     );
 }
+
+#[wasm_bindgen_test]
+async fn log_collapses_and_expands() {
+    // Mount EventLogView (use the file's existing mount helper / store setup).
+    let store = leptos::prelude::RwSignal::new(web::store::ClientState::default());
+    leptos::mount::mount_to_body(move || {
+        leptos::prelude::provide_context(store);
+        leptos::view! { <web::event_log::EventLogView/> }
+    });
+    leptos::task::tick().await;
+
+    let doc = leptos::prelude::document();
+    let scroll = doc
+        .query_selector(".event-log .log-scroll")
+        .expect("query ok")
+        .expect(".log-scroll present");
+    assert!(
+        !scroll.class_name().contains("hidden"),
+        "log body should start visible: {}",
+        scroll.class_name()
+    );
+
+    let toggle = doc
+        .query_selector(".event-log .log-toggle")
+        .expect("query ok")
+        .expect(".log-toggle present")
+        .dyn_into::<web_sys::HtmlElement>()
+        .expect("HtmlElement");
+    toggle.click();
+    leptos::task::tick().await;
+    assert!(
+        scroll.class_name().contains("hidden"),
+        "log body should be hidden after collapse: {}",
+        scroll.class_name()
+    );
+}
