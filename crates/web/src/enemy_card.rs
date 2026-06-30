@@ -5,6 +5,9 @@
 //! vocabulary and the text renderer. Display-only.
 
 use game_core::state::Enemy;
+use leptos::prelude::*;
+
+use crate::card::{parse_card_text, render_segments};
 
 /// Combat stat chips for an enemy: fight, evade, health (damage/max), attack
 /// (damage + horror), in that order.
@@ -36,6 +39,58 @@ pub fn enemy_keyword_chips(enemy: &Enemy) -> Vec<String> {
         chips.push(format!("Victory {n}"));
     }
     chips
+}
+
+/// One engaged enemy rendered as a card (red border via `card--enemy`), reusing
+/// the card CSS and the `card--exhausted` dim from the asset slice. Reads from
+/// the `Enemy` state struct; ability text is looked up by code via the registry.
+/// Display-only — no click handlers.
+// `enemy` is taken by value: Leptos `#[component]` generates a props struct
+// requiring owned fields, so a reference would need a lifetime the macro can't
+// express.
+#[allow(clippy::needless_pass_by_value)]
+#[component]
+pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
+    let name = enemy.name.clone();
+    let traits = if enemy.traits.is_empty() {
+        String::new()
+    } else {
+        format!("{}.", enemy.traits.join(". "))
+    };
+    let text_view = game_core::card_registry::current()
+        .and_then(|r| (r.metadata_for)(&enemy.code))
+        .and_then(|m| m.text.as_deref())
+        .map(|t| render_segments(parse_card_text(t)));
+    let exhausted = enemy.exhausted;
+    let exhausted_badge =
+        exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
+    let stat_views: Vec<_> = enemy_stat_chips(&enemy)
+        .into_iter()
+        .map(|s| view! { <span class="chip chip--enemy-stat">{s}</span> })
+        .collect();
+    let keyword_views: Vec<_> = enemy_keyword_chips(&enemy)
+        .into_iter()
+        .map(|s| view! { <span class="chip chip--keyword">{s}</span> })
+        .collect();
+    let root_class = if exhausted {
+        "card card--enemy card--exhausted"
+    } else {
+        "card card--enemy"
+    };
+    view! {
+        <div class=root_class>
+            <div class="card-head">
+                <span class="card-name">{name}</span>
+                {exhausted_badge}
+            </div>
+            <div class="card-traits">{traits}</div>
+            <div class="card-text">{text_view}</div>
+            <div class="card-footer enemy-stats">
+                {stat_views}
+                {keyword_views}
+            </div>
+        </div>
+    }
 }
 
 #[cfg(test)]
