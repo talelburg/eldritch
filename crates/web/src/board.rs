@@ -113,16 +113,22 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
             view! {
                 <article class="investigator">
                     <h3 class="inv-name">{inv.name.clone()}</h3>
-                    <span class="inv-location">{location}</span>
-                    <span class="inv-actions">"actions " {inv.actions_remaining}</span>
-                    <span class="inv-resources">"resources " {inv.resources}</span>
-                    <span class="inv-health">"health " {inv.damage()} "/" {inv.max_health()}</span>
-                    <span class="inv-sanity">"sanity " {inv.horror()} "/" {inv.max_sanity()}</span>
-                    <span class="inv-clues">"clues " {inv.clues}</span>
-                    <span class="inv-status">{format!("{:?}", inv.status)}</span>
-                    <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
-                    <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
-                    <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
+                    <div class="inv-zones-top">
+                        <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
+                        <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
+                    </div>
+                    <div class="inv-zones-bottom">
+                        <div class="inv-stats">
+                            <span class="inv-location">{location}</span>
+                            <span class="inv-actions">"actions " {inv.actions_remaining}</span>
+                            <span class="inv-resources">"resources " {inv.resources}</span>
+                            <span class="inv-health">"health " {inv.damage()} "/" {inv.max_health()}</span>
+                            <span class="inv-sanity">"sanity " {inv.horror()} "/" {inv.max_sanity()}</span>
+                            <span class="inv-clues">"clues " {inv.clues}</span>
+                            <span class="inv-status">{format!("{:?}", inv.status)}</span>
+                        </div>
+                        <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
+                    </div>
                 </article>
             }
         })

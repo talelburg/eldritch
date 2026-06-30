@@ -154,6 +154,21 @@ async fn investigators_panel_renders_stats_and_hand() {
         cards.length() >= 1,
         "hand should render Card rectangles: {html}"
     );
+
+    // Layout: in-play + threat sit in the top zone row; the stat block + hand sit
+    // in the bottom row (stats left, hand right).
+    let doc = leptos::prelude::document();
+    for sel in [
+        ".investigator .inv-zones-top .in-play",
+        ".investigator .inv-zones-top .threat",
+        ".investigator .inv-zones-bottom .inv-stats",
+        ".investigator .inv-zones-bottom .hand",
+    ] {
+        assert!(
+            doc.query_selector(sel).expect("query ok").is_some(),
+            "expected layout element {sel}: {html}"
+        );
+    }
 }
 
 #[wasm_bindgen_test]

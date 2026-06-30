@@ -6,8 +6,15 @@
 /* Full-width so the heading wraps onto its own line ABOVE the panels rather
    than sitting beside them as a flex sibling. */
 .investigators h2 { flex-basis: 100%; margin: 0 0 0.25rem; }
-.investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 16rem; }
+.investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 30rem; }
 .investigator span { font-size: 0.9rem; }
+/* Top row: in-play (left) and threat (right), each boxed for clear separation. */
+.inv-zones-top { display: flex; gap: 1rem; align-items: flex-start; }
+.inv-zones-top > div { flex: 1; border: 1px solid #e3e3e3; border-radius: 4px; padding: 0.4rem; min-width: 0; }
+/* Bottom row: the stat block (left) beside the hand (right). */
+.inv-zones-bottom { display: flex; gap: 1rem; align-items: flex-start; }
+.inv-stats { flex: 0 0 auto; min-width: 9rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.inv-zones-bottom .hand { flex: 1; min-width: 0; }
 .card-line { font-family: ui-monospace, monospace; font-size: 0.85rem; }
 
 /* Spatial board map (#497). Nodes are absolutely positioned at computed
