@@ -309,11 +309,12 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
 /// a bare rectangle showing the raw code. Non-hand card kinds render as a
 /// generic rectangle (name/traits/text) — their detailed faces are later slices.
 /// Display-only: no click handlers.
-// Leptos components receive props by value (the macro builds a props struct); a
-// reference here would require lifetime annotations the macro can't express.
-#[allow(clippy::needless_pass_by_value)]
+// `code` and `in_play` are taken by value: Leptos `#[component]` generates a
+// props struct requiring owned fields, so a reference would need a lifetime the
+// macro can't express.
+#[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 #[component]
-pub fn Card(code: CardCode) -> impl IntoView {
+pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> impl IntoView {
     let Some(meta) = game_core::card_registry::current().and_then(|r| (r.metadata_for)(&code))
     else {
         return view! {
@@ -338,6 +339,18 @@ pub fn Card(code: CardCode) -> impl IntoView {
         .weakness
         .then(|| view! { <span class="card-weakness">"Weakness"</span> });
 
+    let is_in_play = in_play.is_some();
+    let exhausted = in_play.as_ref().is_some_and(|c| c.exhausted);
+    let exhausted_badge =
+        exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
+    let live_views: Vec<_> = in_play
+        .as_ref()
+        .map(|inst| live_state_chips(inst, &meta.kind))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| view! { <span class="chip chip--live">{s}</span> })
+        .collect();
+
     match card_face(&meta.kind) {
         Some(face) => {
             let CardFace {
@@ -347,7 +360,16 @@ pub fn Card(code: CardCode) -> impl IntoView {
                 skill_chips,
                 is_fast,
             } = face;
-            let cost_view = cost_corner.map(|c| view! { <span class="card-cost">{c}</span> });
+            let cost_view = if is_in_play {
+                None
+            } else {
+                cost_corner.map(|c| view! { <span class="card-cost">{c}</span> })
+            };
+            let root_class = if exhausted {
+                format!("card {class_css} card--exhausted")
+            } else {
+                format!("card {class_css}")
+            };
             let fast_view = is_fast.then(|| view! { <span class="card-fast">"Fast"</span> });
             let slot_views: Vec<_> = slot_chips
                 .into_iter()
@@ -366,11 +388,12 @@ pub fn Card(code: CardCode) -> impl IntoView {
                 })
                 .collect();
             view! {
-                <div class=format!("card {class_css}")>
+                <div class=root_class>
                     <div class="card-head">
                         {cost_view}
                         <span class="card-name">{name}</span>
                         {fast_view}
+                        {exhausted_badge}
                         {weakness_view}
                     </div>
                     <div class="card-traits">{traits}</div>
@@ -378,6 +401,7 @@ pub fn Card(code: CardCode) -> impl IntoView {
                     <div class="card-footer">
                         <span class="card-slots">{slot_views}</span>
                         <span class="card-skills">{skill_views}</span>
+                        <span class="card-live">{live_views}</span>
                     </div>
                 </div>
             }
