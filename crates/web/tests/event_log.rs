@@ -53,9 +53,17 @@ async fn log_collapses_and_expands() {
     });
     leptos::task::tick().await;
 
-    let doc = leptos::prelude::document();
-    let scroll = doc
-        .query_selector(".event-log .log-scroll")
+    let logs = leptos::prelude::document()
+        .query_selector_all(".event-log")
+        .expect("query ok");
+    let panel = logs
+        .item(logs.length() - 1)
+        .expect("an .event-log panel")
+        .dyn_into::<web_sys::Element>()
+        .expect("Element");
+
+    let scroll = panel
+        .query_selector(".log-scroll")
         .expect("query ok")
         .expect(".log-scroll present");
     assert!(
@@ -64,8 +72,8 @@ async fn log_collapses_and_expands() {
         scroll.class_name()
     );
 
-    let toggle = doc
-        .query_selector(".event-log .log-toggle")
+    let toggle = panel
+        .query_selector(".log-toggle")
         .expect("query ok")
         .expect(".log-toggle present")
         .dyn_into::<web_sys::HtmlElement>()

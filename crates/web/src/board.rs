@@ -136,7 +136,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
 }
 
 /// Win/loss banner — rendered only once `GameState.resolution` latches.
-/// Read-only display of state, matching the `phase_bar` pattern; keeps
+/// Read-only display of state, matching the pure-fn display pattern; keeps
 /// `board.rs` read-only (no new interactivity).
 fn resolution_banner(game: &GameState) -> impl IntoView {
     game.resolution.as_ref().map(|r| {

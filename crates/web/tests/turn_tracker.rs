@@ -69,6 +69,10 @@ async fn current_phase_is_highlighted() {
     mount_at(Phase::Enemy, 1).await;
     let tracker = last_tracker();
     // Exactly one phase block carries `current`, and it is the Enemy block.
+    let currents = tracker
+        .query_selector_all(".tracker-phase.current")
+        .expect("query ok");
+    assert_eq!(currents.length(), 1, "exactly one phase should be current");
     let current = tracker
         .query_selector(".tracker-phase.current")
         .expect("query ok")

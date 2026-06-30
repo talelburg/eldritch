@@ -1,10 +1,11 @@
 //! Right-hand turn tracker: the round's four phases with their Rules-Reference
 //! sub-steps and structural player windows, highlighting the current phase.
 //!
-//! The `ROUND` outline is transcribed verbatim from the FFG Rules Reference,
-//! Appendix II "Timing and Gameplay" — the Phase Sequence timing chart and
-//! Framework Event Details (`data/rules-reference/ahc01_rules_reference_web.pdf`,
-//! pp. 23-25). Grey boxes are framework events; red boxes are player windows.
+//! The `ROUND` outline's step labels are transcribed from the RR Appendix II
+//! "Timing and Gameplay" — the Phase Sequence timing chart and Framework Event
+//! Details (`data/rules-reference/ahc01_rules_reference_web.pdf`, pp. 23-25),
+//! with loop/flow-control tails elided for the cheat-sheet.
+//! Grey boxes are framework events; red boxes are player windows.
 //! The engine exposes only the coarse phase, so only the current *phase* is
 //! highlighted. Display-only.
 

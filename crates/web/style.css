@@ -1,7 +1,6 @@
 /* P6.5 board — minimal functional layout. */
 .board { font-family: system-ui, sans-serif; margin: 1rem; }
 .status, .rejection { font-size: 0.85rem; color: #555; }
-.phase-bar { display: flex; gap: 1rem; font-weight: 600; padding: 0.5rem 0; border-bottom: 1px solid #ccc; }
 .game { display: flex; flex-direction: column; gap: 1rem; }
 .investigators { display: flex; flex-wrap: wrap; gap: 1rem; }
 /* Full-width so the heading wraps onto its own line ABOVE the panels rather
