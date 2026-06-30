@@ -312,6 +312,9 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
 // `code` and `in_play` are taken by value: Leptos `#[component]` generates a
 // props struct requiring owned fields, so a reference would need a lifetime the
 // macro can't express.
+// `too_many_lines`: the component assembles many inline `view!` fragments
+// (head/traits/text/footer + the in-play overlays); splitting it would scatter
+// the markup without clarifying it.
 #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 #[component]
 pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> impl IntoView {
@@ -407,17 +410,22 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
             }
             .into_any()
         }
-        None => view! {
-            <div class="card card--generic">
-                <div class="card-head">
-                    <span class="card-name">{name}</span>
-                    {weakness_view}
+        None => {
+            // In-play overlays (exhausted dim/badge, live chips) apply only to
+            // the Asset face above; only assets reach `cards_in_play` today, so a
+            // non-asset in-play card renders its plain face here.
+            view! {
+                <div class="card card--generic">
+                    <div class="card-head">
+                        <span class="card-name">{name}</span>
+                        {weakness_view}
+                    </div>
+                    <div class="card-traits">{traits}</div>
+                    <div class="card-text">{text_view}</div>
                 </div>
-                <div class="card-traits">{traits}</div>
-                <div class="card-text">{text_view}</div>
-            </div>
+            }
+            .into_any()
         }
-        .into_any(),
     }
 }
 

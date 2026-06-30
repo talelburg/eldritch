@@ -128,4 +128,8 @@ async fn in_play_ready_asset_is_not_dimmed() {
         !last_card_classes().contains("card--exhausted"),
         "ready card must not be dimmed"
     );
+    assert!(
+        !last_card_html().contains("card-cost"),
+        "in-play card must not show a cost corner regardless of exhaustion"
+    );
 }
