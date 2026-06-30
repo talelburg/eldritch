@@ -151,6 +151,18 @@ the now-stable set of input shapes:
   > None`. Restart both processes after a wire change. Surfacing a visible
   > version-mismatch status instead of the silent drop is a possible future hardening
   > (out of #205 scope).
+- **Visual card rendering (#519, PR #520 — display-only).** Hand cards now render as
+  faithful mini-card rectangles (cost / name / traits / translated text / slots / skill
+  icons, class-coloured) via a reusable `Card` component (`crates/web/src/card.rs`),
+  replacing the flat name list. First slice of a **zone-by-zone** rework — in-play, threat,
+  locations, enemies, and act/agenda stay text until their own slices. ArkhamDB text markup
+  (`[symbol]` / `[[trait]]` / `<b>`) is translated to text **chips** by a pure
+  `parse_card_text` (split from rendering so it's native-testable); unknown tokens render
+  verbatim *with brackets* to surface unmapped markup. The ArkhamDB **icon font is deferred**
+  on provenance grounds (vendored-asset discipline, cf. the P6.4 leptos-use deferral), with
+  the chip→glyph seam built so it drops in without restructuring — revisit near a future
+  merge. Spec/plan: `docs/superpowers/specs/2026-06-29-web-card-rendering-design.md`,
+  `docs/superpowers/plans/2026-06-29-web-card-rendering-hand.md`.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —

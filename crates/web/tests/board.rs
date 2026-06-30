@@ -145,6 +145,15 @@ async fn investigators_panel_renders_stats_and_hand() {
         html.contains("_synth_asset"),
         "in-play card missing: {html}"
     );
+    // Hand cards now render as Card rectangles (fallback to raw code without
+    // metadata in the test registry).
+    let cards = leptos::prelude::document()
+        .query_selector_all(".card-row .card")
+        .expect("query_selector_all");
+    assert!(
+        cards.length() >= 1,
+        "hand should render Card rectangles: {html}"
+    );
 }
 
 #[wasm_bindgen_test]
