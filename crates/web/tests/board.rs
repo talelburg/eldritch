@@ -145,6 +145,14 @@ async fn investigators_panel_renders_stats_and_hand() {
         html.contains("_synth_asset"),
         "in-play card missing: {html}"
     );
+    // In-play assets now render as Card rectangles in their own card-row.
+    let in_play_cards = leptos::prelude::document()
+        .query_selector_all(".in-play .card-row .card")
+        .expect("query_selector_all");
+    assert!(
+        in_play_cards.length() >= 1,
+        "in-play should render a Card: {html}"
+    );
     // Hand cards now render as Card rectangles (fallback to raw code without
     // metadata in the test registry).
     let cards = leptos::prelude::document()
