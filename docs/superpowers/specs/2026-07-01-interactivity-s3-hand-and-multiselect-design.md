@@ -31,30 +31,35 @@ Two things for the hand:
 
 ## Architecture
 
-### `crates/web/src/card.rs` — `Card` gains a hand identity + two modes
+### `crates/web/src/card.rs` — new `HandCardView` wrapper (`Card` unchanged)
 
-- New prop `#[prop(optional)] hand: Option<HandSlot>`, `HandSlot { investigator:
-  InvestigatorId, index: u8 }`. Present only for hand cards; absent for
-  in-play/threat cards (unchanged, display-only).
-- When `hand` is `Some(slot)`, `Card` reads `PendingOptions` and the new
-  `MultiSelect` context and branches on `multi_select.active`:
-  - **active (a `PickMultiple` is live) → selection mode.** No menu. The card gets a
-    `.selected` class when `multi_select.selected` contains `slot.index`, and an
-    `on:click` toggles `slot.index` in `multi_select.selected`. This click is
-    **non-gated** — it reads no coords (unlike the Play menu's `menu_layer`), just
-    toggles a set, so it compiles on host like S1's original node toggle.
-  - **inactive → Play menu.** `menu_opts = options_for(pending, OptionTarget::HandCard
-    { investigator: slot.investigator, hand_index: slot.index })`; when non-empty,
-    add `.card.actionable` + the wasm-only `menu_layer` (a "Play …" menu that submits
-    `ResolveInput(PickSingle)`).
-  The two modes are mutually exclusive (a `PickMultiple` prompt is never the open
-  turn). The `index` = `OptionId(i)` hand-index convention `input.rs` already uses.
+`Card` stays display-only — it has two `view!` arms (asset/event vs generic) and is
+already `#[allow(too_many_lines)]`; threading interactivity through both would bloat
+it. Instead a focused wrapper owns the hand interaction:
 
-### `crates/web/src/board.rs` — pass the hand slot
+`#[component] pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index:
+u8)` renders `<div class="hand-slot"> <Card code/> …interaction… </div>`. It reads
+`PendingOptions` + the new `MultiSelect` context and branches on `multi_select.active`:
+- **active (a `PickMultiple` is live) → selection mode.** No menu. The `.hand-slot`
+  gets `class:selected` (reactive: `move || selected.get().contains(&index)`) and an
+  `on:click` toggling `index` in `multi_select.selected`. This click is **non-gated**
+  — it reads no coords (unlike the Play menu's `menu_layer`), just toggles a set, so it
+  compiles on host (like S1's original node toggle). The reactive `class:selected`
+  updates the ring on click without a re-mount.
+- **inactive → Play menu.** `menu_opts = options_for(pending, OptionTarget::HandCard
+  { investigator, hand_index: index })`; when non-empty, `.hand-slot` gets
+  `class:actionable` + the wasm-only `menu_layer` (a "Play …" menu → `PickSingle`).
+
+The two modes are mutually exclusive (a `PickMultiple` prompt is never the open turn).
+`index` = the `OptionId(i)` hand-index convention `input.rs` already uses. The glow /
+selection ring live on `.hand-slot` (which is `position: relative` so `menu_layer`'s
+hit-layer anchors); `Card`'s markup is untouched.
+
+### `crates/web/src/board.rs` — wrap hand cards
 
 The hand render changes from `inv.hand.iter().map(|code| <Card code/>)` to
-`.enumerate()`, passing `hand=HandSlot { investigator: inv.id, index: u8::try_from(i) }`.
-In-play / threat `Card`s are unchanged (no `hand` prop).
+`.enumerate().map(|(i, code)| <HandCardView code investigator=inv.id index=u8::try_from(i)…/>)`.
+In-play / threat `Card`s are unchanged (rendered bare).
 
 ### `crates/web/src/interaction.rs` — the `MultiSelect` context
 
@@ -97,24 +102,25 @@ remain. `active_hand` is deleted if now unused.
 
 ### `crates/web/src/lib.rs` / `style.css`
 
-`pub mod prompt_banner;` (wasm-gated, like `input`). CSS: `.card.selected { … a
-ring, e.g. box-shadow: 0 0 0 3px #4a90d9 }`; `.prompt-banner { position: fixed;
-bottom: 0; left: 0; right: 0; z-index: 25; … }` (above the menu's z20 so it's never
-occluded).
+`pub mod prompt_banner;` (wasm-gated, like `input`). CSS: `.hand-slot { position:
+relative; }`, `.hand-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor:
+pointer; }`, `.hand-slot.selected { box-shadow: 0 0 0 3px #4a90d9; cursor: pointer; }`;
+`.prompt-banner { position: fixed; bottom: 0; left: 0; right: 0; z-index: 25; … }`
+(above the menu's z20 so it's never occluded).
 
 ## Testing
 
 - **Native** (`interaction.rs`): `is_multi_select` — true for a `PickMultiple`
   outcome, false for `PickSingle` / `Confirm` / `Done` / none.
-- **Headless — hand Play menu** (extend `crates/web/tests/card.rs`): a `Card` with a
-  `hand` slot whose `HandCard` anchor has an option glows and opens a "Play" menu
-  that submits `PickSingle`; with no matching option it's inert; an in-play `Card`
-  (no `hand`) never glows.
+- **Headless — hand Play menu** (extend `crates/web/tests/card.rs`): a `HandCardView`
+  whose `HandCard` anchor has an option shows `.hand-slot.actionable` and opens a
+  "Play" menu that submits `PickSingle`; with no matching option it's inert; a bare
+  in-play `Card` never glows.
 - **Headless — selection mode + banner** (new `crates/web/tests/prompt_banner.rs`):
-  under a `PickMultiple` outcome, clicking a hand `Card` toggles `.selected`; the
-  banner's Confirm submits `PickMultiple { selected }` with the toggled indices; a
-  `skippable` `PickMultiple` shows Pass → `Skip`; selecting none → `PickMultiple {
-  selected: [] }`.
+  under a `PickMultiple` outcome (with `MultiSelect` provided), clicking a
+  `HandCardView` toggles `.hand-slot.selected`; the banner's Confirm submits
+  `PickMultiple { selected }` with the toggled indices; a `skippable` `PickMultiple`
+  shows Pass → `Skip`; selecting none → `PickMultiple { selected: [] }`.
 - **Regression:** `input.rs` no longer renders the commit UI. Its `tests/input.rs`
   `PickMultiple` tests (`renders_prompt_and_hand_cards`, `mulligan_*`, `commit_*`,
   `hand_size_discard_*`, `pick_multiple_button_reads_confirm`) move to the
