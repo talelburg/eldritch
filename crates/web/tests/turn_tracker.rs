@@ -14,7 +14,6 @@ use web::turn_tracker::TurnTrackerView;
 wasm_bindgen_test_configure!(run_in_browser);
 
 async fn mount_at(phase: Phase, round: u32) {
-    game_core::test_support::install_test_registry();
     let state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .with_phase(phase)

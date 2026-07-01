@@ -21,6 +21,7 @@ pub fn EventLogView() -> impl IntoView {
     {
         Effect::new(move |_| {
             let _ = store.with(|s| s.log.len());
+            let _ = collapsed.get();
             request_animation_frame(move || {
                 if let Some(el) = scroll_ref.get() {
                     el.set_scroll_top(el.scroll_height());

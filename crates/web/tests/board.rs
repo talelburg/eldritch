@@ -4,7 +4,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use game_core::state::GameStateBuilder;
-use game_core::state::{Act, Agenda, CardCode, Phase};
+use game_core::state::{Act, Agenda, CardCode};
 use game_core::test_support::fixtures::{test_investigator, test_location};
 use game_core::EngineOutcome;
 use leptos::prelude::{provide_context, RwSignal, Update};
@@ -54,8 +54,6 @@ async fn render_state(state: game_core::state::GameState) -> String {
 async fn act_agenda_cards_render_name_and_thresholds() {
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
-        .with_phase(Phase::Investigation)
-        .with_round(3)
         .build();
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
