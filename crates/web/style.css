@@ -172,3 +172,8 @@
     background: #1b1b1b; border: 1px solid #666; padding: 4px;
 }
 .context-menu .menu-item { display: block; width: 100%; text-align: left; cursor: pointer; }
+
+/* Interactivity S3 (#538): hand-card wrapper — glow (Play) / ring (select). */
+.hand-slot { position: relative; }
+.hand-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
+.hand-slot.selected { box-shadow: 0 0 0 3px #4a90d9; cursor: pointer; }
