@@ -249,10 +249,20 @@ the now-stable set of input shapes:
       component; `ContextMenu` is wasm-gated (submits via the wasm-only `OutboundTx`) while the
       glow/open/`on:click` stay non-gated so the node compiles on host. Plan:
       `docs/superpowers/plans/2026-07-01-interactivity-s1-location-menus.md`.
-    - **S2–S6** (#537–#541) queued: enemies (S2), hand + multi-select (S3), in-play/threat +
-      window triggers (S4), act/soak/effect-choices (S5), global-action homes + bar retirement
-      (S6). `TODO(#206)` in `map.rs` flags that the reused `ContextMenu` must escape its
-      `overflow:hidden` anchor (portal / drop overflow) before S2's denser menus.
+    - **S2 — enemy menus + fixed-at-cursor (#537, PR #544).** `EnemyCard` glows and opens a
+      Fight/Evade context menu (`options_for(Enemy(id))`). The shared `ContextMenu` moved to
+      **`position: fixed` at the cursor** — `open` is now `RwSignal<Option<(i32,i32)>>` and a
+      wasm-only `interaction::menu_layer` (a `.menu-hit` coord-capture layer + the menu) DRYs
+      the trigger; S1's map node migrated to it. This **resolves S1's `overflow` clipping**
+      (fixed escapes overflow) — but not `z-index` *stacking*: `.map-location` sets `z-index:1`,
+      so `.map-location.actionable` gets `z-index:20` to float its menu above the sticky
+      `.action-bar` (cards set no `z-index`, so theirs escape to root). **Deferred:** map-token
+      (co-located/unengaged) enemy menus — rare in 1p (enemies auto-engage). Plan:
+      `docs/superpowers/plans/2026-07-01-interactivity-s2-enemy-menus.md`.
+    - **S3–S6** (#538–#541) queued: hand + multi-select (S3), in-play/threat + window triggers
+      (S4), act/soak/effect-choices (S5), global-action homes + bar retirement (S6). The shared
+      `menu_layer` / fixed-at-cursor pattern is the seam they extend; new anchors inside a
+      `z-index`ed ancestor must float their menu like the map node does.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
