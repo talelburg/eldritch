@@ -36,6 +36,27 @@ pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<Choice
 #[derive(Clone)]
 pub struct PendingOptions(pub Signal<Vec<ChoiceOption>>);
 
+/// Multi-select (`PickMultiple`) UI state, shared so hand cards toggle it and the
+/// prompt banner reads it. `active` is true iff a `PickMultiple` prompt is live.
+#[derive(Clone)]
+pub struct MultiSelect {
+    /// True iff the live outcome is `AwaitingInput { kind: PickMultiple }`.
+    pub active: Signal<bool>,
+    /// The chosen hand indices (each `OptionId(i)` = hand index `i`).
+    pub selected: leptos::prelude::RwSignal<std::collections::BTreeSet<u32>>,
+}
+
+/// True iff the live outcome is an `AwaitingInput` whose kind is `PickMultiple`
+/// (mulligan / skill-test commit / hand-size discard). Pure.
+#[must_use]
+pub fn is_multi_select(state: &ClientState) -> bool {
+    matches!(
+        &state.outcome,
+        Some(EngineOutcome::AwaitingInput { request, .. })
+            if request.kind == game_core::InputKind::PickMultiple
+    )
+}
+
 /// A popover of a board entity's offered options (#536, #537). When `open` is
 /// `Some((x, y))`, renders a full-screen transparent `.menu-backdrop` (click →
 /// close) and a `.context-menu` positioned `fixed` at viewport coords `(x, y)`
@@ -172,5 +193,27 @@ mod tests {
         let got = options_for(&opts, OptionTarget::Location(LocationId(10)));
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].id, OptionId(0));
+    }
+
+    #[test]
+    fn is_multi_select_true_only_for_pick_multiple() {
+        let mut state = ClientState::default();
+        assert!(!is_multi_select(&state)); // no outcome
+
+        state.outcome = Some(EngineOutcome::Done);
+        assert!(!is_multi_select(&state));
+
+        state.outcome = Some(game_core::test_support::fixtures::awaiting_commit_input(
+            "Commit",
+        ));
+        assert!(is_multi_select(&state));
+
+        state.outcome = Some(
+            game_core::test_support::fixtures::awaiting_pick_single_with(
+                "x",
+                vec![opt(0, OptionTarget::Global)],
+            ),
+        );
+        assert!(!is_multi_select(&state));
     }
 }
