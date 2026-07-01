@@ -221,11 +221,28 @@ the now-stable set of input shapes:
     labels, loop tails elided — and cited in the module doc; reviewer-verified against the
     pinned PDF), highlighting the current phase. The **left event log is collapsible**. The
     `phase_bar` is **retired** (phase/round → tracker, act/agenda → cards). This finishes
-    the display-only card/layout pass for every zone. **The remaining web work is the
-    interactivity pass** (cards/locations/enemies grow their own action buttons; retire the
-    sticky `.action-bar`). Spec/plan:
+    the display-only card/layout pass for every zone. The remaining web work is the
+    **interactivity pass** (next bullet). Spec/plan:
     `docs/superpowers/specs/2026-06-30-act-agenda-and-sidebars-design.md`,
     `docs/superpowers/plans/2026-06-30-act-agenda-and-sidebars.md`.
+  - **Interactivity pass (#206 umbrella; slices S0–S6 = #535–#541).** Retires the flat
+    `.action-bar`: actionable board entities glow and open a **context menu** of their legal
+    actions; multi-select (mulligan/commit/discard) is click-to-select on the hand; windows /
+    soak / effect choices resolve on their source cards; a slim prompt banner carries prompt
+    text + Confirm/Pass. Engine-authoritative — each option the board offers *is* an option the
+    engine enumerated as legal, so the board can never surface an action the server rejects (no
+    client-side legality re-computation; the drift #206 warned of is structurally impossible).
+    Design (whole-model umbrella): `docs/superpowers/specs/2026-07-01-board-interactivity-pass-design.md`.
+    - **S0 — `OptionTarget` anchor on `ChoiceOption` (#535, PR #542).** Each wire `ChoiceOption`
+      gains a structured `OptionTarget` (`Global` / `Location` / `Enemy` / `HandCard` /
+      `CardInstance` / `Act`); `turn_menu` derives real anchors from a new `TurnAction::target`,
+      every other option-builder emits `Global` for now. `label` stays the full engine-authored
+      string. Required wire field (#453 precedent). Engine + protocol only — no web behavior
+      change (the bar still reads `label`). Plan:
+      `docs/superpowers/plans/2026-07-01-interactivity-s0-optiontarget.md`.
+    - **S1–S6** (#536–#541) queued: web plumbing + location menus (S1), enemies (S2), hand +
+      multi-select (S3), in-play/threat + window triggers (S4), act/soak/effect-choices (S5),
+      global-action homes + bar retirement (S6).
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
