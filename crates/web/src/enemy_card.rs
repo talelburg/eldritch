@@ -64,6 +64,16 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let exhausted = enemy.exhausted;
     let exhausted_badge =
         exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
+    // Interactivity (#537): route the live prompt's options to this enemy; glow +
+    // open a context menu of its offered actions (Fight/Evade) when non-empty.
+    let pending = use_context::<crate::interaction::PendingOptions>()
+        .map(|p| p.0.get())
+        .unwrap_or_default();
+    let menu_opts =
+        crate::interaction::options_for(&pending, game_core::OptionTarget::Enemy(enemy.id));
+    let actionable = !menu_opts.is_empty();
+    #[cfg(target_arch = "wasm32")]
+    let open = RwSignal::new(None::<(i32, i32)>);
     let stat_views: Vec<_> = enemy_stat_chips(&enemy)
         .into_iter()
         .map(|s| view! { <span class="chip chip--enemy-stat">{s}</span> })
@@ -72,11 +82,13 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
         .into_iter()
         .map(|s| view! { <span class="chip chip--keyword">{s}</span> })
         .collect();
-    let root_class = if exhausted {
-        "card card--enemy card--exhausted"
-    } else {
-        "card card--enemy"
-    };
+    let mut root_class = String::from("card card--enemy");
+    if exhausted {
+        root_class.push_str(" card--exhausted");
+    }
+    if actionable {
+        root_class.push_str(" actionable");
+    }
     view! {
         <div class=root_class>
             <div class="card-head">
@@ -89,6 +101,12 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
                 {stat_views}
                 {keyword_views}
             </div>
+            {
+                // wasm-only trigger + menu (web_sys / OutboundTx); host: empty,
+                // `menu_opts` used above by `actionable` (no unused-var warning).
+                #[cfg(target_arch = "wasm32")]
+                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+            }
         </div>
     }
 }
