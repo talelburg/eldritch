@@ -263,6 +263,13 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                         // wasm-only: ContextMenu submits via the wasm-only OutboundTx.
                         // On host the block is empty; `menu_opts` is still used above
                         // by `actionable`, so no unused-variable warning.
+                        //
+                        // TODO(#206): `.map-location` sets `overflow: hidden`, so the
+                        // absolutely-positioned menu is clipped to the node. Fine for S1's
+                        // <=2 short options; S2 (enemies: Fight/Evade/Engage) and S3 (hand,
+                        // denser boxes) will need the menu to escape its anchor — a
+                        // board-level portal layer, or dropping `overflow` on actionable
+                        // nodes. Decide the escape strategy in the shared ContextMenu then.
                         #[cfg(target_arch = "wasm32")]
                         actionable.then(|| view! {
                             <crate::interaction::ContextMenu options=menu_opts open=open/>
