@@ -111,9 +111,10 @@ fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            crate::engine::ChoiceOption::global(
+            crate::engine::ChoiceOption::new(
                 crate::engine::OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(state),
+                a.target(state),
             )
         })
         .collect();
@@ -715,4 +716,58 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // Mythos chain (#423). `apply_player_action` runs `drive(cx, outcome)` after
     // this returns.
     outcome
+}
+
+#[cfg(test)]
+mod turn_menu_tests {
+    use super::turn_menu;
+    use crate::engine::enumerate::legal_actions;
+    use crate::engine::OptionTarget;
+    use crate::state::{Continuation, InvestigationResume, InvestigatorId, Phase};
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+
+    #[test]
+    fn turn_menu_carries_action_targets() {
+        // An open-turn state with a co-located, engaged enemy so the menu holds
+        // at least one Enemy-anchored option (Fight/Evade), proving turn_menu
+        // propagates each action's target — not just Global.
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_chaos_bag(crate::state::ChaosBag::new([crate::state::ChaosToken::Numeric(0)]))
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(InvestigatorId(1))
+            .build();
+        let loc = test_location(10, "Study");
+        let loc_id = loc.id;
+        state.locations.insert(loc_id, loc);
+        state.locations.get_mut(&loc_id).unwrap().revealed = true;
+        {
+            let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
+            inv.current_location = Some(loc_id);
+            inv.actions_remaining = 3;
+        }
+        let mut e = test_enemy(7, "Ghoul");
+        e.engaged_with = Some(InvestigatorId(1));
+        e.current_location = Some(loc_id);
+        state.enemies.insert(e.id, e);
+
+        let actions = legal_actions(&state);
+        let menu = turn_menu(&state);
+        assert_eq!(menu.options.len(), actions.len());
+        for (i, action) in actions.iter().enumerate() {
+            assert_eq!(menu.options[i].target, action.target(&state));
+        }
+        assert!(
+            menu.options
+                .iter()
+                .any(|o| matches!(o.target, OptionTarget::Enemy(_))),
+            "expected at least one Enemy-anchored option, got {:?}",
+            menu.options.iter().map(|o| o.target).collect::<Vec<_>>()
+        );
+    }
 }
