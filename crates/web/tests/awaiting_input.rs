@@ -12,8 +12,7 @@ use futures::channel::mpsc;
 use game_core::state::GameStateBuilder;
 use game_core::state::InvestigatorId;
 use game_core::test_support::fixtures::{
-    awaiting_confirm_input, awaiting_pick_single_input, awaiting_skippable_pick_single_input,
-    test_investigator,
+    awaiting_confirm_input, awaiting_pick_single_input, test_investigator,
 };
 use game_core::{InputResponse, OptionId, PlayerAction};
 use leptos::prelude::*;
@@ -126,18 +125,6 @@ fn is_confirm(frame: &ClientMessage) -> bool {
     )
 }
 
-/// True if the frame is `ResolveInput(Skip)`.
-fn is_skip(frame: &ClientMessage) -> bool {
-    matches!(
-        frame,
-        ClientMessage::Submit {
-            action: PlayerAction::ResolveInput {
-                response: InputResponse::Skip
-            },
-        }
-    )
-}
-
 // ---- Tests ------------------------------------------------------------------
 
 #[wasm_bindgen_test]
@@ -228,46 +215,10 @@ async fn confirm_renders_confirm_button_and_submits_confirm() {
     );
 }
 
-#[wasm_bindgen_test]
-async fn skippable_window_renders_skip_button_and_submits_skip() {
-    let mut rx = mount(
-        base_game(),
-        awaiting_skippable_pick_single_input("Reaction window"),
-    )
-    .await;
-    let section = last_section();
-
-    assert!(
-        section.query_selector(".skip").expect("query").is_some(),
-        "skippable prompt must render a .skip button"
-    );
-    // The option list is still present for a PickSingle window.
-    assert_eq!(
-        section
-            .query_selector_all(".option")
-            .expect("query")
-            .length(),
-        1
-    );
-
-    click_in(&section, ".skip", 0);
-    leptos::task::tick().await;
-    let frame = rx.try_recv().expect("a frame after clicking Skip");
-    assert!(
-        is_skip(&frame),
-        "expected ResolveInput(Skip), got {frame:?}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn non_skippable_pick_single_has_no_skip_button() {
-    let _rx = mount(base_game(), awaiting_pick_single_input("Choose an action")).await;
-    let section = last_section();
-    assert!(
-        section.query_selector(".skip").expect("query").is_none(),
-        "a non-skippable prompt must not render a .skip button"
-    );
-}
+// The bar no longer renders a Skip control — a skippable window's Pass moved to
+// the bottom prompt banner (#539). That behavior is covered by
+// `tests/prompt_banner.rs` (`skippable_window_shows_prompt_and_pass_submits_skip`,
+// `non_skippable_pick_single_renders_no_banner`).
 
 #[wasm_bindgen_test]
 async fn pick_single_does_not_render_commit_button_or_hand_list() {

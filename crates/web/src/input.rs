@@ -15,9 +15,9 @@
 //! bottom [`PromptBanner`](crate::prompt_banner::PromptBanner) (#538); this view
 //! returns nothing for it.
 //!
-//! Orthogonally, when `request.skippable` is set (e.g. a non-forced reaction
-//! window), a "Skip" button → `ResolveInput(Skip)` renders alongside whichever
-//! control the `kind` selected.
+//! A skippable prompt's Pass/Skip control also moved out — it now lives in the
+//! bottom [`PromptBanner`](crate::prompt_banner::PromptBanner) (#539). This view
+//! renders only the `PickSingle` option list and the `Confirm` button.
 //!
 //! Nothing renders when the latest outcome is not `AwaitingInput`.
 
@@ -60,37 +60,8 @@ pub fn AwaitingInputView() -> impl IntoView {
                 return ().into_any();
             }
 
-            // A Skip/Pass control, rendered (independent of `kind`) whenever the
-            // request is skippable — e.g. a non-forced reaction window.
-            let skippable = request.skippable;
-            let skip_button = {
-                let tx = tx.clone();
-                move || {
-                    if !skippable {
-                        return ().into_any();
-                    }
-                    let tx = tx.clone();
-                    view! {
-                        <button
-                            class="skip"
-                            on:click=move |_| {
-                                if let Some(tx) = tx.clone() {
-                                    store.update(|s| s.pending_label = Some("Skip".to_string()));
-                                    let _ = tx.unbounded_send(ClientMessage::Submit {
-                                        action: PlayerAction::ResolveInput {
-                                            response: InputResponse::Skip,
-                                        },
-                                    });
-                                }
-                            }
-                        >
-                            "Skip"
-                        </button>
-                    }
-                    .into_any()
-                }
-            };
-
+            // A skippable window's Pass now lives in the bottom prompt banner
+            // (#539); this view no longer renders a Skip control.
             match request.kind {
                 // One button per offered option → ResolveInput(PickSingle(id)).
                 InputKind::PickSingle => {
@@ -126,7 +97,6 @@ pub fn AwaitingInputView() -> impl IntoView {
                         <section class="awaiting-input">
                             <p class="prompt">{request.prompt.clone()}</p>
                             <div class="option-list">{buttons}</div>
-                            {skip_button()}
                         </section>
                     }
                     .into_any()
@@ -152,17 +122,15 @@ pub fn AwaitingInputView() -> impl IntoView {
                             >
                                 "Confirm"
                             </button>
-                            {skip_button()}
                         </section>
                     }
                     .into_any()
                 }
                 // `InputKind` is `#[non_exhaustive]`; a future kind the client
-                // doesn't yet render falls back to the prompt + any Skip control.
+                // doesn't yet render falls back to the prompt alone.
                 _ => view! {
                     <section class="awaiting-input">
                         <p class="prompt">{request.prompt}</p>
-                        {skip_button()}
                     </section>
                 }
                 .into_any(),

@@ -141,3 +141,41 @@ async fn no_banner_for_non_pick_multiple() {
         "banner renders nothing for a non-PickMultiple outcome"
     );
 }
+
+#[wasm_bindgen_test]
+async fn skippable_window_shows_prompt_and_pass_submits_skip() {
+    // A skippable PickSingle (reaction/Fast window) → banner with prompt + Pass.
+    let outcome =
+        game_core::test_support::fixtures::awaiting_skippable_pick_single_input("You may trigger");
+    let mut rx = mount(outcome, &[]).await;
+    assert!(
+        last_banner()
+            .text_content()
+            .unwrap_or_default()
+            .contains("You may trigger"),
+        "window prompt shows in the banner"
+    );
+    click(".pass");
+    leptos::task::tick().await;
+    let msg = rx.try_recv().expect("a frame after tick");
+    match msg {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::Skip),
+        other @ ClientMessage::Submit { .. } => panic!("expected Skip, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn non_skippable_pick_single_renders_no_banner() {
+    // The open turn (non-skippable PickSingle) is not a banner concern.
+    let outcome = game_core::test_support::fixtures::awaiting_pick_single_input("Choose an action");
+    let _rx = mount(outcome, &[]).await;
+    assert!(
+        last_root()
+            .query_selector(".prompt-banner")
+            .expect("query")
+            .is_none(),
+        "no banner for a non-skippable PickSingle"
+    );
+}
