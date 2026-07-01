@@ -177,8 +177,30 @@
 .hand-slot { position: relative; }
 .hand-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .hand-slot.selected { box-shadow: 0 0 0 3px #4a90d9; cursor: pointer; }
+/* The multi-select prompt banner is a required decision, so it's styled to be
+   hard to miss: a warm amber bar that slides up with a one-shot glow pulse, a
+   bold prompt, and a high-contrast primary Confirm. */
+@keyframes prompt-banner-in {
+    0%   { transform: translateY(100%); opacity: 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3); }
+    60%  { transform: translateY(0); opacity: 1; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3); }
+    72%  { box-shadow: 0 -4px 26px 4px rgba(232, 162, 61, 0.85); }
+    100% { transform: translateY(0); opacity: 1; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3); }
+}
 .prompt-banner {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 25;
-    display: flex; align-items: center; gap: 0.5rem;
-    background: #1b1b1b; color: #eee; padding: 0.4rem 0.75rem;
+    display: flex; align-items: center; gap: 0.75rem;
+    background: #e8a23d; color: #1a1a1a;
+    padding: 0.75rem 1rem;
+    border-top: 2px solid #b06f00;
+    box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3);
+    animation: prompt-banner-in 0.4s ease-out;
+}
+.prompt-banner .prompt { font-weight: bold; font-size: 1.05rem; margin-right: auto; }
+.prompt-banner .confirm {
+    background: #1a1a1a; color: #fff; border: none; border-radius: 4px;
+    padding: 0.4rem 1.1rem; font-weight: bold; cursor: pointer;
+}
+.prompt-banner .pass {
+    background: transparent; color: #1a1a1a; border: 1px solid #1a1a1a;
+    border-radius: 4px; padding: 0.4rem 0.9rem; cursor: pointer;
 }
